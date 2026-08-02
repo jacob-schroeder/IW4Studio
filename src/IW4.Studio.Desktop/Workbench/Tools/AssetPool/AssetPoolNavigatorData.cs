@@ -162,7 +162,7 @@ public sealed class AssetPoolNavigatorNode
         AssetPoolNavigatorGroup group) =>
         new(
             group.Name,
-            $"{group.Count:N0} {(group.Count == 1 ? "asset" : "assets")}",
+            string.Empty,
             group.Count.ToString("N0"),
             AssetPoolNavigatorNodeKind.AssetType,
             Array.AsReadOnly(group.Rows.Select(ForRow).ToArray()),

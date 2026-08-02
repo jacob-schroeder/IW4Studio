@@ -9,6 +9,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
+using AvaloniaEdit.Highlighting;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.ViewModels;
@@ -84,25 +85,28 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             _viewModel?.GoToGscDefinition(_contentEditor.TextArea.Caret.Offset);
     }
 
-    private void FindGscUsagesMenuItem_Click(
+    private async void FindGscUsagesMenuItem_Click(
         object? sender,
         RoutedEventArgs e)
     {
-        if (_contentEditor is not null)
-            _viewModel?.FindGscUsages(_contentEditor.TextArea.Caret.Offset);
+        if (_contentEditor is not null && _viewModel is { } viewModel)
+        {
+            int caretOffset = _contentEditor.TextArea.Caret.Offset;
+            await viewModel.FindGscUsagesAsync(caretOffset);
+        }
     }
 
-    private void ContentEditor_KeyDown(object? sender, KeyEventArgs e)
+    private async void ContentEditor_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.F12 &&
             e.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
-            if (_contentEditor is not null)
-            {
-                _viewModel?.FindGscUsages(
-                    _contentEditor.TextArea.Caret.Offset);
-            }
             e.Handled = true;
+            if (_contentEditor is not null && _viewModel is { } viewModel)
+            {
+                int caretOffset = _contentEditor.TextArea.Caret.Offset;
+                await viewModel.FindGscUsagesAsync(caretOffset);
+            }
             return;
         }
 
@@ -344,6 +348,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
 
         SynchronizeEditorText();
+        ConfigureSyntaxHighlighting();
     }
 
     private void DetachViewModel()
@@ -360,6 +365,19 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
     {
         if (e.PropertyName is null or nameof(RawFileEditorViewModel.PayloadInput))
             SynchronizeEditorText();
+
+        if (e.PropertyName is null or nameof(RawFileEditorViewModel.IsGscSource))
+            ConfigureSyntaxHighlighting();
+    }
+
+    private void ConfigureSyntaxHighlighting()
+    {
+        if (_contentEditor is not null)
+        {
+            _contentEditor.SyntaxHighlighting = _viewModel?.IsGscSource == true
+                ? GscSyntaxHighlighting.Definition
+                : null;
+        }
     }
 
     private void SynchronizeEditorText()

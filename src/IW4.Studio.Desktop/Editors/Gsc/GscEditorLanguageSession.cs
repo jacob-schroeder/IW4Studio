@@ -40,13 +40,19 @@ internal sealed class GscEditorLanguageSession
         long bufferVersion,
         int sourceOffset,
         out GscWorkspaceSnapshot snapshot,
-        out GscSymbolDefinition[] definitions)
+        out GscSymbolDefinition[] definitions,
+        CancellationToken cancellationToken = default)
     {
-        snapshot = GetSnapshots(assetName, source, bufferVersion).Overlay;
+        snapshot = GetSnapshots(
+            assetName,
+            source,
+            bufferVersion,
+            cancellationToken).Overlay;
         GscScriptPath path = GscScriptPath.FromAssetName(assetName);
         definitions = snapshot.Index.FindDefinitions(path, sourceOffset).ToArray();
         if (definitions.Length == 0 && sourceOffset > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             definitions = snapshot.Index.FindDefinitions(path, sourceOffset - 1)
                 .ToArray();
         }

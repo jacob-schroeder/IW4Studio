@@ -267,6 +267,80 @@
                 </StackPanel>
               </Border>
 
+              <Border Padding="16"
+                      CornerRadius="8"
+                      Background="{DynamicResource StudioSurfaceRaisedBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="1">
+                <StackPanel Spacing="10">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="RECENT"
+                                 FontSize="10"
+                                 FontWeight="Bold"
+                                 LetterSpacing="1.2"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      <TextBlock Text="Choose one, then select a load type."
+                                 FontSize="11"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    </StackPanel>
+                    <materialIcons:MaterialIcon Grid.Column="1"
+                                                 Kind="History"
+                                                 FontSize="19"
+                                                 Foreground="{DynamicResource StudioAccentBrush}"
+                                                 VerticalAlignment="Center" />
+                  </Grid>
+
+                  <ItemsControl IsVisible="{Binding HasRecentFiles}"
+                                ItemsSource="{Binding RecentFiles}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="viewModels:RecentFastFileItem">
+                        <Button Classes="recentFile"
+                                Tag="{Binding Path}"
+                                IsEnabled="true"
+                                Click="RecentFileButton_Click">
+                          <Grid ColumnDefinitions="28,*,Auto" ColumnSpacing="10">
+                            <Border Grid.Column="0"
+                                    Width="28"
+                                    Height="28"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+                              <materialIcons:MaterialIcon Kind="FileCode"
+                                                           FontSize="16"
+                                                           Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Spacing="1"
+                                        VerticalAlignment="Center">
+                              <TextBlock Text="{Binding FileName}"
+                                         FontSize="12"
+                                         FontWeight="SemiBold"
+                                         TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding Directory}"
+                                         FontSize="10"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                         TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <materialIcons:MaterialIcon Grid.Column="2"
+                                                         Kind="ArrowRight"
+                                                         FontSize="16"
+                                                         Foreground="{DynamicResource StudioTextMutedBrush}"
+                                                         VerticalAlignment="Center" />
+                          </Grid>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <TextBlock IsVisible="{Binding !HasRecentFiles}"
+                             Text="Opened fastfiles will appear here."
+                             FontSize="11"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+              </Border>
+
               <Grid ColumnDefinitions="1*,1*"
                     ColumnSpacing="16"
                     HorizontalAlignment="Stretch">

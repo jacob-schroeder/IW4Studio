@@ -38,7 +38,7 @@
                             ItemsSource="{Binding Children}">
             <Grid ColumnDefinitions="22,*,Auto"
                   ColumnSpacing="7"
-                  Margin="1,2"
+                  Margin="1,2,14,2"
                   MinHeight="30">
               <materialIcons:MaterialIcon Grid.Column="0"
                                           Kind="FolderOutline"
@@ -64,11 +64,18 @@
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource StudioTextBrush}" />
                 <TextBlock Text="{Binding Detail}"
+                           IsVisible="{Binding !IsGroup}"
                            FontSize="8"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
               </StackPanel>
+              <Border Grid.Column="2"
+                      Classes="studioNavigatorCountBadge"
+                      IsVisible="{Binding IsGroup}">
+                <TextBlock Text="{Binding TrailingText}" />
+              </Border>
               <TextBlock Grid.Column="2"
+                         IsVisible="{Binding IsAsset}"
                          Text="{Binding TrailingText}"
                          VerticalAlignment="Center"
                          FontFamily="Consolas"

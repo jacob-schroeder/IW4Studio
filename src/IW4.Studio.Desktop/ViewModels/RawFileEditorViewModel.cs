@@ -47,6 +47,7 @@ public sealed class RawFileEditorViewModel
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
     private IReadOnlyList<EditorSourceDiagnostic> _sourceDiagnostics = [];
     private CancellationTokenSource? _gscAnalysisCancellation;
+    private CancellationTokenSource? _gscUsageSearchCancellation;
     private long _bufferVersion;
     private bool _isAnalyzingGsc;
     private string _gscAnalysisStatusMessage = string.Empty;
@@ -252,7 +253,7 @@ public sealed class RawFileEditorViewModel
             if (!SetProperty(ref _payloadInput, value))
                 return;
 
-            InvalidateGscAnalysis();
+            InvalidateGscBufferState();
         }
     }
 
@@ -423,37 +424,81 @@ public sealed class RawFileEditorViewModel
             : $"Navigated to the first of {definitions.Length:N0} matching definitions.";
     }
 
-    public void FindGscUsages(int sourceOffset)
+    public async Task FindGscUsagesAsync(int sourceOffset)
     {
-        if (!TryGetDefinitions(
-                sourceOffset,
-                out GscWorkspaceSnapshot? snapshot,
-                out GscSymbolDefinition[] definitions))
+        if (_disposed ||
+            !HasGscWorkspaceFeatures ||
+            sourceOffset < 0 ||
+            sourceOffset > PayloadInput.Length)
         {
             return;
         }
 
-        if (definitions.Length == 0)
-        {
-            StatusMessage = "No GSC symbol was found at the caret.";
-            return;
-        }
+        CancelGscUsageSearch();
+        var cancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = cancellation.Token;
+        _gscUsageSearchCancellation = cancellation;
+        long version = _bufferVersion;
+        string assetName = OriginalName;
+        string source = PayloadInput;
+        RawFileTextEncoding? sourceEncoding =
+            _contentClassification?.TextEncoding;
 
-        GscSymbolReference[] usages = definitions
-            .SelectMany(definition => snapshot!.Index.FindUsages(definition.Id))
-            .DistinctBy(reference => (
-                reference.Location.Path,
-                reference.Location.Span,
-                reference.Kind))
-            .ToArray();
-        GscUsagePresentationItem[] items = usages
-            .Select(reference => CreateUsagePresentation(snapshot!, reference))
-            .ToArray();
-        _gscUsagesPresenter!.Present(
-            new GscUsagePresentation(definitions[0].SourceName, items));
-        StatusMessage = items.Length == 1
-            ? $"Found 1 reference to '{definitions[0].SourceName}'."
-            : $"Found {items.Length:N0} references to '{definitions[0].SourceName}'.";
+        StatusMessage = "Finding GSC references…";
+
+        try
+        {
+            GscUsagePresentation? presentation = await Task.Run(
+                () => FindGscUsagesSnapshot(
+                    assetName,
+                    source,
+                    sourceEncoding,
+                    version,
+                    sourceOffset,
+                    cancellationToken),
+                cancellationToken);
+
+            if (_disposed ||
+                version != _bufferVersion ||
+                !ReferenceEquals(_gscUsageSearchCancellation, cancellation))
+            {
+                return;
+            }
+
+            if (presentation is null)
+            {
+                StatusMessage = "No GSC symbol was found at the caret.";
+                return;
+            }
+
+            _gscUsagesPresenter!.Present(presentation);
+            StatusMessage = presentation.Items.Count == 1
+                ? $"Found 1 reference to '{presentation.SymbolName}'."
+                : $"Found {presentation.Items.Count:N0} references to '{presentation.SymbolName}'.";
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A newer buffer or search owns the visible references state.
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+                InvalidDataException or
+                InvalidOperationException)
+        {
+            if (!_disposed &&
+                version == _bufferVersion &&
+                ReferenceEquals(_gscUsageSearchCancellation, cancellation))
+            {
+                StatusMessage = $"GSC reference search failed: {exception.Message}";
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_gscUsageSearchCancellation, cancellation))
+                _gscUsageSearchCancellation = null;
+
+            cancellation.Dispose();
+        }
     }
 
     public IReadOnlyList<GscEditorCompletion> GetGscFunctionCompletions(
@@ -704,6 +749,7 @@ public sealed class RawFileEditorViewModel
 
         _disposed = true;
         CancelGscAnalysis();
+        CancelGscUsageSearch();
         _nativePreview?.Dispose();
         _nativePreview = null;
     }
@@ -807,10 +853,13 @@ public sealed class RawFileEditorViewModel
         }
     }
 
-    private void InvalidateGscAnalysis()
+    private void InvalidateGscBufferState()
     {
         _bufferVersion = checked(_bufferVersion + 1);
         CancelGscAnalysis();
+        if (CancelGscUsageSearch())
+            StatusMessage = "GSC reference search canceled because the editor changed.";
+
         SourceDiagnostics = [];
         GscAnalysisStatusMessage = IsGscSource ? "GSC not analyzed." : string.Empty;
     }
@@ -823,6 +872,17 @@ public sealed class RawFileEditorViewModel
             cancellation.Cancel();
 
         IsAnalyzingGsc = false;
+    }
+
+    private bool CancelGscUsageSearch()
+    {
+        CancellationTokenSource? cancellation = _gscUsageSearchCancellation;
+        _gscUsageSearchCancellation = null;
+        if (cancellation is null)
+            return false;
+
+        cancellation.Cancel();
+        return true;
     }
 
     private static EditorSourceDiagnostic ToEditorDiagnostic(
@@ -878,6 +938,51 @@ public sealed class RawFileEditorViewModel
             sourceText,
             bufferVersion,
             cancellationToken);
+    }
+
+    private GscUsagePresentation? FindGscUsagesSnapshot(
+        string assetName,
+        string source,
+        RawFileTextEncoding? sourceEncoding,
+        long bufferVersion,
+        int sourceOffset,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _gscLanguageSession!.FindDefinitions(
+            assetName,
+            CreateGscSourceText(source, sourceEncoding),
+            bufferVersion,
+            sourceOffset,
+            out GscWorkspaceSnapshot snapshot,
+            out GscSymbolDefinition[] definitions,
+            cancellationToken);
+        if (definitions.Length == 0)
+            return null;
+
+        var items = new List<GscUsagePresentationItem>();
+        var seen = new HashSet<(
+            GscScriptPath Path,
+            GscTextSpan Span,
+            GscWorkspaceReferenceKind Kind)>();
+        foreach (GscSymbolDefinition definition in definitions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (GscSymbolReference reference in
+                     snapshot.Index.FindUsages(definition.Id))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (seen.Add((
+                        reference.Location.Path,
+                        reference.Location.Span,
+                        reference.Kind)))
+                {
+                    items.Add(CreateUsagePresentation(snapshot, reference));
+                }
+            }
+        }
+
+        return new GscUsagePresentation(definitions[0].SourceName, items);
     }
 
     private bool TryGetDefinitions(

@@ -10,6 +10,10 @@ public sealed class WelcomeViewModel : ObservableObject
     private bool _isBusy;
     private bool _hasError;
 
+    public IReadOnlyList<RecentFastFileItem> RecentFiles { get; private set; } = [];
+
+    public bool HasRecentFiles => RecentFiles.Count > 0;
+
     public string SelectedPath
     {
         get => _selectedPath;
@@ -102,9 +106,35 @@ public sealed class WelcomeViewModel : ObservableObject
         HasError = true;
     }
 
+    public void SetRecentFiles(IEnumerable<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        RecentFiles = paths
+            .Select(path => new RecentFastFileItem(path))
+            .ToArray();
+        OnPropertyChanged(nameof(RecentFiles));
+        OnPropertyChanged(nameof(HasRecentFiles));
+    }
+
     private void ClearError()
     {
         ErrorMessage = string.Empty;
         HasError = false;
     }
+}
+
+public sealed class RecentFastFileItem
+{
+    public RecentFastFileItem(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        Path = path;
+    }
+
+    public string Path { get; }
+
+    public string FileName => System.IO.Path.GetFileName(Path);
+
+    public string Directory => System.IO.Path.GetDirectoryName(Path) ?? Path;
 }

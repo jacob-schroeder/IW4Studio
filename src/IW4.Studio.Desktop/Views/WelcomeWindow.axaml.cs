@@ -3,6 +3,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using IW4.Runtime.Diagnostics;
+using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
@@ -11,6 +12,7 @@ namespace IW4.Studio.Desktop.Views;
 
 public sealed partial class WelcomeWindow : Window
 {
+    private readonly AppSettingsStore _settingsStore;
     private readonly WelcomeViewModel _viewModel = new();
     private readonly DispatcherTimer _progressTimer;
     private readonly object _progressSync = new();
@@ -18,10 +20,18 @@ public sealed partial class WelcomeWindow : Window
     private bool _isClosing;
 
     public WelcomeWindow()
+        : this(new AppSettingsStore(Path.Combine(AppContext.BaseDirectory, "appsettings.json")))
     {
+    }
+
+    internal WelcomeWindow(AppSettingsStore settingsStore)
+    {
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        _settingsStore = settingsStore;
         InitializeComponent();
         Icon = AppIcon.Create();
         DataContext = _viewModel;
+        _viewModel.SetRecentFiles(_settingsStore.LoadRecentFastFiles());
         _progressTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(80)
@@ -49,6 +59,12 @@ public sealed partial class WelcomeWindow : Window
 
     private async void LoadDependenciesButton_Click(object? sender, RoutedEventArgs e) =>
         await OpenWorkspaceAsync(withDependencies: true);
+
+    private void RecentFileButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string path })
+            _viewModel.SelectedPath = path;
+    }
 
     private void ThemeMenuItem_Click(object? sender, EventArgs e)
     {
@@ -149,7 +165,10 @@ public sealed partial class WelcomeWindow : Window
             FastFileWorkspace workspace = await Task.Run(() => service.Open(request));
             ApplyPendingProgress();
             if (!_isClosing)
+            {
+                SaveRecentFastFile(selectedPath);
                 WorkspaceOpened?.Invoke(this, workspace);
+            }
         }
         catch (Exception exception)
         {
@@ -181,5 +200,21 @@ public sealed partial class WelcomeWindow : Window
 
         if (progress is { } value)
             _viewModel.ReportProgress(value);
+    }
+
+    private void SaveRecentFastFile(string path)
+    {
+        try
+        {
+            _settingsStore.SaveRecentFastFile(path);
+        }
+        catch (IOException)
+        {
+            // A workspace that opened successfully should not be blocked by its history entry.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A workspace that opened successfully should not be blocked by its history entry.
+        }
     }
 }

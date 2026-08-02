@@ -34,7 +34,7 @@ public static class StudioToolRegistry
                     "Assets in this fastfile",
                     "FileTreeOutline",
                     10,
-                    defaultOpen: false,
+                    defaultOpen: true,
                     DockRegion.Left,
                     DockRailGroup.LeftTop),
                 new FastFileAssetsNavigatorView
@@ -48,7 +48,7 @@ public static class StudioToolRegistry
                     "Assets in asset pool",
                     "DatabaseOutline",
                     20,
-                    defaultOpen: true,
+                    defaultOpen: false,
                     DockRegion.Left,
                     DockRailGroup.LeftTop),
                 new AssetPoolNavigatorView

@@ -210,6 +210,19 @@
     <Setter Property="CornerRadius" Value="5" />
   </Style>
 
+  <Style Selector="Border.studioNavigatorCountBadge">
+    <Setter Property="Padding" Value="6,2" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource StudioAccentSecondarySurfaceBrush}" />
+  </Style>
+
+  <Style Selector="Border.studioNavigatorCountBadge TextBlock">
+    <Setter Property="FontSize" Value="8" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+  </Style>
+
   <!-- Dense rows shared by Console Output and Diagnostics. -->
   <Style Selector="ListBox.studioOutputList">
     <Setter Property="Padding" Value="0" />

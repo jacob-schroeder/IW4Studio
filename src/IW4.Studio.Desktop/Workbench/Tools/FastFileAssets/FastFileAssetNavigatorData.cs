@@ -60,8 +60,6 @@ public sealed record FastFileAssetNavigatorRow
 
     public string TypeName => AssetType.ToString();
 
-    public string SourceIndexText => $"#{SourceIndex:N0}";
-
     public string Detail => string.IsNullOrWhiteSpace(ProviderZone)
         ? $"{TypeName} · {Access}"
         : $"{TypeName} · {ProviderZone}";
@@ -138,7 +136,7 @@ public sealed class FastFileAssetNavigatorNode
         FastFileAssetNavigatorGroup group) =>
         new(
             group.Name,
-            $"{group.Count:N0} {(group.Count == 1 ? "asset" : "assets")}",
+            string.Empty,
             group.Count.ToString("N0"),
             isGroup: true,
             Array.AsReadOnly(group.Rows.Select(ForRow).ToArray()),
@@ -149,7 +147,7 @@ public sealed class FastFileAssetNavigatorNode
         new(
             row.DisplayName,
             row.Access.ToString(),
-            row.SourceIndexText,
+            string.Empty,
             isGroup: false,
             Array.Empty<FastFileAssetNavigatorNode>(),
             row);

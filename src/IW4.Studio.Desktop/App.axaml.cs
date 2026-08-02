@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using IW4.Studio.Desktop.Lifecycle;
+using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes;
 using IW4.Studio.Desktop.Views;
 using IW4.Studio.Documents;
@@ -12,6 +13,7 @@ namespace IW4.Studio.Desktop;
 public sealed partial class App : Application
 {
     private IClassicDesktopStyleApplicationLifetime? _desktop;
+    private AppSettingsStore? _settingsStore;
     private ThemeService? _themeService;
     private readonly DestructiveNavigationCoordinator _navigationCoordinator = new();
     private bool _approvedShutdownRetry;
@@ -19,9 +21,9 @@ public sealed partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-        var settingsStore = new AppSettingsStore(
+        _settingsStore = new AppSettingsStore(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
-        _themeService = new ThemeService(this, settingsStore);
+        _themeService = new ThemeService(this, _settingsStore);
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -39,7 +41,9 @@ public sealed partial class App : Application
 
     private WelcomeWindow CreateWelcomeWindow()
     {
-        var window = new WelcomeWindow();
+        var settingsStore = _settingsStore
+            ?? throw new InvalidOperationException("Application settings have not been initialized.");
+        var window = new WelcomeWindow(settingsStore);
         window.WorkspaceOpened += OpenEditor;
         window.ThemeRequested += SelectTheme;
         window.SetThemeMode(GetCurrentThemeMode());

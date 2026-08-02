@@ -117,6 +117,19 @@
       <Setter Property="Foreground" Value="{DynamicResource StudioTextDisabledBrush}" />
     </Style>
 
+    <Style Selector="Button.recentFile">
+      <Setter Property="MinHeight" Value="50" />
+      <Setter Property="Padding" Value="9,7" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button.recentFile:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+    </Style>
+
     <Style Selector="TextBox">
       <Setter Property="MinHeight" Value="38" />
       <Setter Property="Padding" Value="11,8" />

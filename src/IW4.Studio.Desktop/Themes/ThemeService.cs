@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Themes.Fluent;
+using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes.Design;
 
 namespace IW4.Studio.Desktop.Themes;
