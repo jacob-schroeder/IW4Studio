@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">IW4 Studio logo</title>
+  <desc id="desc">A square transparent logo with IW4 in white above Studio in green.</desc>
+
+  <!-- The shared 196px text width keeps both labels aligned. -->
+  <text x="30" y="112"
+        fill="#ffffff"
+        font-family="Arial Black, Impact, sans-serif"
+        font-size="86"
+        font-weight="900"
+        letter-spacing="-3"
+        textLength="196"
+        lengthAdjust="spacingAndGlyphs">IW4</text>
+
+  <text x="30" y="184"
+        fill="#8bd21c"
+        font-family="Arial Black, Impact, sans-serif"
+        font-size="58"
+        font-weight="900"
+        letter-spacing="-1"
+        textLength="196"
+        lengthAdjust="spacingAndGlyphs">Studio</text>
+</svg>

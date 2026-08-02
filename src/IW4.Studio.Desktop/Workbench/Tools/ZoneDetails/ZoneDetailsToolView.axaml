@@ -1,0 +1,122 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:zoneDetails="using:IW4.Studio.Desktop.Workbench.Tools.ZoneDetails"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.ZoneDetails.ZoneDetailsToolView"
+             x:DataType="zoneDetails:ZoneDetailsToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="700">
+  <Grid RowDefinitions="Auto,Auto,*">
+    <StackPanel Margin="16,16,16,14"
+                Spacing="14">
+      <StackPanel Spacing="5">
+        <TextBlock Text="{Binding ZoneName}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="DECODED TARGET ZONE"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.7"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+
+      <Border Padding="12"
+              CornerRadius="7"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,10,Auto"
+              ColumnDefinitions="116,*">
+          <TextBlock Text="Script strings" Classes="propertyLabel" />
+          <TextBlock Grid.Column="1"
+                     Text="{Binding ScriptStringCount}"
+                     Classes="propertyValue" />
+          <TextBlock Grid.Row="2" Text="Assets" Classes="propertyLabel" />
+          <TextBlock Grid.Row="2"
+                     Grid.Column="1"
+                     Text="{Binding AssetCount}"
+                     Classes="propertyValue" />
+        </Grid>
+      </Border>
+
+      <StackPanel Spacing="8">
+        <TextBlock Text="BLOCK STREAMS"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.8"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <ItemsControl ItemsSource="{Binding BlockStreams}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="zoneDetails:ZoneBlockStreamViewModel">
+              <Grid Margin="0,0,0,6"
+                    ColumnDefinitions="82,*,Auto"
+                    ColumnSpacing="8">
+                <TextBlock Text="{Binding TypeName}"
+                           FontSize="9"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource StudioTextBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding SizeText}"
+                           FontSize="9"
+                           HorizontalAlignment="Right"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <TextBlock Grid.Column="2"
+                           Text="{Binding HexSizeText}"
+                           FontSize="8"
+                           FontFamily="Consolas"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+
+    <Border Grid.Row="1"
+            Padding="16,10"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,1">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="SCRIPT STRINGS"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.8"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding ScriptStringCount}"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </Grid>
+    </Border>
+
+    <ListBox Grid.Row="2"
+             Margin="10,6,10,10"
+             ItemsSource="{Binding ScriptStrings}"
+             Classes="studioOutputList">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="zoneDetails:ZoneScriptStringViewModel">
+          <Grid ColumnDefinitions="48,*"
+                ColumnSpacing="8">
+            <TextBlock Text="{Binding IndexText}"
+                       HorizontalAlignment="Right"
+                       FontSize="8"
+                       FontFamily="Consolas"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding Value}"
+                       FontSize="9"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Grid>
+</UserControl>

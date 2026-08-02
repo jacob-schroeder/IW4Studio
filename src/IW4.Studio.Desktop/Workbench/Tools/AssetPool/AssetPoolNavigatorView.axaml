@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:assetPool="using:IW4.Studio.Desktop.Workbench.Tools.AssetPool"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.AssetPool.AssetPoolNavigatorView"
+             x:DataType="assetPool:AssetPoolNavigatorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="340"
+             d:DesignHeight="760">
+  <Grid RowDefinitions="Auto,*">
+    <Border Grid.Row="0"
+            Padding="10,9"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 MinHeight="32"
+                 Padding="10,6"
+                 PlaceholderText="Search asset pool"
+                 FontSize="10" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding ResultText}"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <TreeView Classes="studioNavigatorTree"
+                Margin="6"
+                ItemsSource="{Binding Nodes}"
+                SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
+        <TreeView.ItemTemplate>
+          <TreeDataTemplate x:DataType="assetPool:AssetPoolNavigatorNode"
+                            ItemsSource="{Binding Children}">
+            <Grid ColumnDefinitions="22,*,Auto"
+                  ColumnSpacing="7"
+                  Margin="1,2"
+                  MinHeight="30">
+              <materialIcons:MaterialIcon Grid.Column="0"
+                                          Kind="ArchiveOutline"
+                                          IsVisible="{Binding IsZone}"
+                                          Width="15"
+                                          Height="15"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Foreground="{DynamicResource StudioAccentSecondaryBrush}" />
+              <materialIcons:MaterialIcon Grid.Column="0"
+                                          Kind="FolderOutline"
+                                          IsVisible="{Binding IsAssetType}"
+                                          Width="15"
+                                          Height="15"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <materialIcons:MaterialIcon Grid.Column="0"
+                                          Kind="DatabaseOutline"
+                                          IsVisible="{Binding IsAsset}"
+                                          Width="14"
+                                          Height="14"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Foreground="{DynamicResource StudioAccentBrush}" />
+              <StackPanel Grid.Column="1"
+                          VerticalAlignment="Center"
+                          Spacing="1">
+                <TextBlock Text="{Binding Name}"
+                           FontSize="10"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StudioTextBrush}" />
+                <TextBlock Text="{Binding Detail}"
+                           FontSize="8"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              </StackPanel>
+              <TextBlock Grid.Column="2"
+                         Text="{Binding TrailingText}"
+                         VerticalAlignment="Center"
+                         FontFamily="Consolas"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </Grid>
+          </TreeDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+
+      <StackPanel IsVisible="{Binding !HasRows}"
+                  Margin="24"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="7">
+        <materialIcons:MaterialIcon Kind="DatabaseSearchOutline"
+                                    Width="28"
+                                    Height="28"
+                                    HorizontalAlignment="Center"
+                                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="No pool slots match"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</UserControl>

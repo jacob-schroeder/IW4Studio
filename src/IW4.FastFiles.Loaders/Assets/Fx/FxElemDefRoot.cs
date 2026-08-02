@@ -1,0 +1,42 @@
+using IW4.Assets.Assets.Fx;
+using IW4.FastFiles.Pointers;
+
+namespace IW4.FastFiles.Loaders.Assets.Fx;
+
+internal sealed record FxElemDefRoot(
+    int Offset,
+    int Flags,
+    FxSpawnDef Spawn,
+    FxFloatRange SpawnRange,
+    FxFloatRange FadeInRange,
+    FxFloatRange FadeOutRange,
+    float SpawnFrustumCullRadius,
+    FxIntRange SpawnDelayMsec,
+    FxIntRange LifeSpanMsec,
+    IReadOnlyList<FxFloatRange> SpawnOrigin,
+    FxFloatRange SpawnOffsetRadius,
+    FxFloatRange SpawnOffsetHeight,
+    IReadOnlyList<FxFloatRange> SpawnAngles,
+    IReadOnlyList<FxFloatRange> AngularVelocity,
+    FxFloatRange InitialRotation,
+    FxFloatRange Gravity,
+    FxFloatRange ReflectionFactor,
+    FxElemAtlas Atlas,
+    FxElemType ElemType,
+    byte VisualCount,
+    byte VelIntervalCount,
+    byte VisStateIntervalCount,
+    XPointer<FxElemVelStateSample[]> VelSamplesPointer,
+    XPointer<FxElemVisStateSample[]> VisSamplesPointer,
+    FxElemDefVisualsRoot Visuals,
+    Bounds CollBounds,
+    FxEffectDefRef EffectOnImpact,
+    FxEffectDefRef EffectOnDeath,
+    FxEffectDefRef EffectEmitted,
+    FxFloatRange EmitDist,
+    FxFloatRange EmitDistVariance,
+    XPointer<FxElemExtendedDef> ExtendedPointer,
+    byte SortOrder,
+    byte LightingFrac,
+    byte UseItemClip,
+    byte FadeInfo);

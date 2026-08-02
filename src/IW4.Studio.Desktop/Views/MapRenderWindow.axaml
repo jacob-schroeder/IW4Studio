@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="IW4.Studio.Desktop.Views.MapRenderWindow"
+        Title="Live Preview — IW4 Studio"
+        Width="1280"
+        Height="800"
+        MinWidth="800"
+        MinHeight="500"
+        WindowStartupLocation="CenterOwner">
+  <Grid>
+    <Border x:Name="StatusOverlay"
+            Padding="32"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="#E0111722">
+      <StackPanel HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  MaxWidth="560"
+                  Spacing="10">
+        <TextBlock x:Name="StatusHeading"
+                   HorizontalAlignment="Center"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   TextAlignment="Center" />
+        <TextBlock x:Name="StatusMessage"
+                   HorizontalAlignment="Center"
+                   Foreground="#D5DBE5"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

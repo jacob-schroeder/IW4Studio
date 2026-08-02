@@ -1,0 +1,453 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+        x:Class="IW4.Studio.Desktop.Views.WelcomeWindow"
+        x:DataType="viewModels:WelcomeViewModel"
+        mc:Ignorable="d"
+        d:DesignWidth="1040"
+        d:DesignHeight="680"
+        Title="Welcome to IW4 Studio"
+        Width="1040"
+        Height="680"
+        MinWidth="860"
+        MinHeight="590"
+        WindowStartupLocation="CenterScreen">
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="Options">
+        <NativeMenu>
+          <NativeMenuItem Header="Theme">
+            <NativeMenu>
+              <NativeMenuItem Header="Dark"
+                              ToggleType="Radio"
+                              CommandParameter="Dark"
+                              Click="ThemeMenuItem_Click" />
+              <NativeMenuItem Header="Light"
+                              ToggleType="Radio"
+                              CommandParameter="Light"
+                              Click="ThemeMenuItem_Click" />
+            </NativeMenu>
+          </NativeMenuItem>
+        </NativeMenu>
+      </NativeMenuItem>
+    </NativeMenu>
+  </NativeMenu.Menu>
+  <Grid>
+    <Grid ColumnDefinitions="280,*">
+      <Border Grid.Column="0"
+              Background="{DynamicResource StudioSidebarBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="0,0,1,0">
+        <Grid Margin="28,30,24,24" RowDefinitions="Auto,42,Auto,*,Auto">
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="13">
+            <Border Width="46"
+                    Height="46"
+                    CornerRadius="10"
+                    ClipToBounds="True"
+                    Background="{DynamicResource StudioAccentStrongBrush}">
+              <svg:Svg Width="46"
+                       Height="46"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Stretch="Uniform"
+                       Path="/Resources/logo.svg" />
+            </Border>
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <TextBlock Text="IW4 Studio"
+                         FontSize="18"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+              <TextBlock Text="Fastfile workspace"
+                         FontSize="12"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </StackPanel>
+          </StackPanel>
+
+          <Border Grid.Row="2"
+                  Margin="0,8,0,0"
+                  Padding="13,10"
+                  CornerRadius="6"
+                  Background="{DynamicResource StudioAccentSurfaceBrush}">
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+              <materialIcons:MaterialIcon Grid.Column="0"
+                                           Kind="Home"
+                                           FontSize="18"
+                                           Foreground="{DynamicResource StudioTextBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1"
+                         Text="Welcome"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource StudioTextBrush}"
+                         FontSize="13"
+                         FontWeight="SemiBold" />
+            </Grid>
+          </Border>
+
+          <StackPanel Grid.Row="3" Margin="12,26,0,0" Spacing="15">
+            <TextBlock Text="WORKSPACE"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}"
+                       FontSize="10"
+                       FontWeight="Bold"
+                       LetterSpacing="1.4" />
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon
+                        Grid.Column="0"
+                        Kind="CircleMedium"
+                        FontSize="14"
+                        Foreground="{DynamicResource StudioTextMutedBrush}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="Fastfile Packaging"
+                           Foreground="{DynamicResource StudioTextMutedBrush}"
+                           FontSize="12"
+                           VerticalAlignment="Center" />
+            </Grid>
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon
+                    Grid.Column="0"
+                    Kind="CircleMedium"
+                    FontSize="14"
+                    Foreground="{DynamicResource StudioTextMutedBrush}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="Zone Navigator"
+                           Foreground="{DynamicResource StudioTextMutedBrush}"
+                           FontSize="12"
+                           VerticalAlignment="Center" />
+            </Grid>
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon
+                    Grid.Column="0"
+                    Kind="CircleMedium"
+                    FontSize="14"
+                    Foreground="{DynamicResource StudioTextMutedBrush}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="XBlockStream Viewer"
+                           Foreground="{DynamicResource StudioTextMutedBrush}"
+                           FontSize="12"
+                           VerticalAlignment="Center" />
+            </Grid>
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon
+                    Grid.Column="0"
+                    Kind="CircleMedium"
+                    FontSize="14"
+                    Foreground="{DynamicResource StudioTextMutedBrush}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1"
+                         Text="XAssetPool Browser"
+                         Foreground="{DynamicResource StudioTextMutedBrush}"
+                         FontSize="12"
+                         VerticalAlignment="Center" />
+            </Grid>
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon
+                    Grid.Column="0"
+                    Kind="CircleMedium"
+                    FontSize="14"
+                    Foreground="{DynamicResource StudioTextMutedBrush}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="XAsset Editor"
+                           Foreground="{DynamicResource StudioTextMutedBrush}"
+                           FontSize="12"
+                           VerticalAlignment="Center" />
+            </Grid>
+            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon
+                    Grid.Column="0"
+                    Kind="CircleMedium"
+                    FontSize="14"
+                    Foreground="{DynamicResource StudioTextMutedBrush}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1"
+                         Text="Official Engine Dependency Load"
+                         Foreground="{DynamicResource StudioTextMutedBrush}"
+                         FontSize="12"
+                         VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Grid.Row="4" Spacing="5">
+            <TextBlock Text="IW4 STUDIO"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}"
+                       FontSize="10"
+                       FontWeight="Bold"
+                       LetterSpacing="1.2" />
+            <TextBlock Text="Desktop + Version {X}"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}"
+                       FontSize="11" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1" Padding="48,34,48,34">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Welcome to IW4 Studio"
+                         FontSize="14"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </StackPanel>
+            <Border Grid.Column="1"
+                    Padding="10,5"
+                    CornerRadius="12"
+                    Background="{DynamicResource StudioAccentSecondarySurfaceBrush}"
+                    VerticalAlignment="Top">
+              <TextBlock Text="PS3 - IW4"
+                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                         FontSize="11"
+                         FontWeight="SemiBold" />
+            </Border>
+          </Grid>
+
+          <ScrollViewer Grid.Row="1"
+                        Margin="0,32,0,18"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="720" HorizontalAlignment="Stretch" Spacing="20">
+              <TextBlock Text="Choose a fastfile, then open it directly or load with game engine dependencies."
+                         MaxWidth="650"
+                         HorizontalAlignment="Left"
+                         TextWrapping="Wrap"
+                         FontSize="14"
+                         LineHeight="21"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+              <Border Padding="18"
+                      CornerRadius="8"
+                      Background="{DynamicResource StudioSurfaceBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="1">
+                <StackPanel Spacing="11">
+                  <TextBlock Text="FASTFILE"
+                             FontSize="10"
+                             FontWeight="Bold"
+                             LetterSpacing="1.2"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <TextBox Grid.Column="0"
+                             Margin="0 0"
+                             Text="{Binding SelectedPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="Fastfile path"
+                             VerticalContentAlignment="Center" />
+                    <Button Grid.Column="1"
+                            Margin="0 0"
+                            Content="Browse"
+                            IsEnabled="{Binding CanBrowse}"
+                            Click="BrowseButton_Click" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*" ColumnSpacing="8">
+                               
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Text="{Binding SelectedFileName}"
+                                 FontSize="13"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource StudioTextBrush}"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding SelectedDirectory}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Grid ColumnDefinitions="1*,1*"
+                    ColumnSpacing="16"
+                    HorizontalAlignment="Stretch">
+                <Button Grid.Column="0"
+                        Classes="actionCard"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding CanLoad}"
+                        Click="LoadSingleButton_Click">
+                  <Grid RowDefinitions="Auto,*,Auto">
+                    <Grid Grid.Row="0"
+                          ColumnDefinitions="34,*"
+                          ColumnSpacing="10"
+                          VerticalAlignment="Center">
+                      <Border Grid.Column="0"
+                              Width="34"
+                              Height="34"
+                              CornerRadius="7"
+                              Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+                          <materialIcons:MaterialIcon Kind="FileCode"
+                                                       FontSize="18"
+                                                       Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock Text="Load File"
+                                 Grid.Column="1"
+                                 VerticalAlignment="Center"
+                                 FontSize="15"
+                                 FontWeight="SemiBold" />
+                    </Grid>
+                    <TextBlock Grid.Row="1"
+                               Margin="0,12,0,10"
+                               Text="Workspace with only the selected zone. Assets that are referenced will not be able to be viewed."
+                               HorizontalAlignment="Left"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    <Grid Grid.Row="2"
+                          Classes="iconTextRow"
+                          ColumnDefinitions="Auto,Auto"
+                          ColumnSpacing="4"
+                          HorizontalAlignment="Left">
+                      <TextBlock Text="Isolated Load"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource StudioAccentBrush}" />
+                      <materialIcons:MaterialIcon Grid.Column="1"
+                                                   Kind="ArrowRight"
+                                                   FontSize="14"
+                                                   Foreground="{DynamicResource StudioAccentBrush}"
+                                                   VerticalAlignment="Center" />
+                    </Grid>
+                  </Grid>
+                </Button>
+
+                <Button Grid.Column="1"
+                        Classes="actionCard primary"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding CanLoad}"
+                        Click="LoadDependenciesButton_Click">
+                  <Grid RowDefinitions="Auto,*,Auto">
+                    <Grid Grid.Row="0"
+                          ColumnDefinitions="34,*"
+                          ColumnSpacing="10"
+                          VerticalAlignment="Center">
+                      <Border Grid.Column="0"
+                              Width="34"
+                              Height="34"
+                              CornerRadius="7"
+                              Background="{DynamicResource StudioAccentStrongBrush}">
+                          <materialIcons:MaterialIcon Kind="FileTree"
+                                                       FontSize="18"
+                                                       Foreground="{DynamicResource StudioOnAccentBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock Text="Load File With Dependencies"
+                                 Grid.Column="1"
+                                 VerticalAlignment="Center"
+                                 FontSize="15"
+                                 FontWeight="SemiBold" />
+                    </Grid>
+                    <TextBlock Grid.Row="1"
+                               Margin="0,12,0,10"
+                               Text="Workspace with the selected zone, dependant zones and streamed pak files."
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    <Grid Grid.Row="2"
+                          Classes="iconTextRow"
+                          ColumnDefinitions="Auto,Auto"
+                          ColumnSpacing="4"
+                          HorizontalAlignment="Left">
+                      <TextBlock Text="Engine dependency load plan"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource StudioAccentBrush}" />
+                      <materialIcons:MaterialIcon Grid.Column="1"
+                                                   Kind="ArrowRight"
+                                                   FontSize="14"
+                                                   Foreground="{DynamicResource StudioAccentBrush}"
+                                                   VerticalAlignment="Center" />
+                    </Grid>
+                  </Grid>
+                </Button>
+              </Grid>
+
+              <Border IsVisible="{Binding HasError}"
+                      Padding="14,12"
+                      CornerRadius="6"
+                      Background="{DynamicResource StudioErrorSurfaceBrush}"
+                      BorderBrush="{DynamicResource StudioErrorBorderBrush}"
+                      BorderThickness="1">
+                <Grid ColumnDefinitions="22,*" ColumnSpacing="8">
+                  <TextBlock Text="!"
+                             Foreground="{DynamicResource StudioErrorBrush}"
+                             FontWeight="Bold" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding ErrorMessage}"
+                             TextWrapping="Wrap"
+                             Foreground="{DynamicResource StudioErrorBrush}"
+                             FontSize="12" />
+                </Grid>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Text="{Binding StatusText}"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}"
+                       FontSize="11"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1"
+                       Text="Dependencies are resolved beside the selected file"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}"
+                       FontSize="10" />
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Border IsVisible="{Binding IsBusy}"
+            Background="{DynamicResource StudioScrimBrush}">
+      <Border Width="480"
+              Padding="28"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              CornerRadius="10"
+              Background="{DynamicResource StudioSurfaceRaisedBrush}"
+              BorderBrush="{DynamicResource StudioBorderStrongBrush}"
+              BorderThickness="1">
+        <StackPanel Spacing="15">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Border Width="38"
+                    Height="38"
+                    CornerRadius="8"
+                    Background="{DynamicResource StudioAccentStrongBrush}">
+              <TextBlock Text="IW"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioOnAccentBrush}" />
+            </Border>
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <TextBlock Text="Loading workspace"
+                         FontSize="16"
+                         FontWeight="SemiBold" />
+              <TextBlock Text="The editor will open when the asset pool is ready."
+                         FontSize="11"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </StackPanel>
+          </StackPanel>
+          <ProgressBar Height="5"
+                       IsIndeterminate="True"
+                       Foreground="{DynamicResource StudioAccentBrush}" />
+          <TextBlock Text="{Binding StatusText}"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextMutedBrush}"
+                     FontSize="12" />
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</Window>

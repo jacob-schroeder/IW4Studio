@@ -1,0 +1,262 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Studio workbench-only style contracts. Keep this file included by the
+    workbench host rather than App.axaml so other Avalonia windows are isolated.
+  -->
+
+  <!-- Rider-like tool-window launchers on the left and right rails. -->
+  <Style Selector="ToggleButton.studioToolRailButton">
+    <Setter Property="Width" Value="38" />
+    <Setter Property="Height" Value="38" />
+    <Setter Property="MinWidth" Value="38" />
+    <Setter Property="MinHeight" Value="38" />
+    <Setter Property="Margin" Value="4,2" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton:pressed">
+    <Setter Property="Background" Value="{DynamicResource StudioControlPressedBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton:checked">
+    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton:checked:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentStrongBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton:disabled">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextDisabledBrush}" />
+    <Setter Property="Opacity" Value="0.62" />
+  </Style>
+
+  <!-- Console Output and Diagnostics are also exposed on the lower left rail.
+       Keep their active launchers neutral to match their bottom tabs. -->
+  <Style Selector="ToggleButton.studioToolRailButton.studioBottomToolRailButton:checked">
+    <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioToolRailButton.studioBottomToolRailButton:checked:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <!-- Compact actions hosted in a docked pane header. -->
+  <Style Selector="Button.studioPaneAction">
+    <Setter Property="Width" Value="26" />
+    <Setter Property="Height" Value="26" />
+    <Setter Property="MinWidth" Value="26" />
+    <Setter Property="MinHeight" Value="26" />
+    <Setter Property="Padding" Value="5" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioPaneAction:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioPaneAction:pressed">
+    <Setter Property="Background" Value="{DynamicResource StudioControlPressedBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioPaneAction:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioPaneAction:disabled">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextDisabledBrush}" />
+  </Style>
+
+  <!-- Text tabs used inside the full-width bottom tool header. -->
+  <Style Selector="ToggleButton.studioDockTab">
+    <!-- Use a small local template rather than Fluent's checked template:
+         Fluent paints its own accent background in the checked state. -->
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="StudioDockTabRoot"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            Padding="{TemplateBinding Padding}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="MinHeight" Value="27" />
+    <Setter Property="Padding" Value="10,4" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    <Setter Property="FontSize" Value="10" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioDockTab:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioDockTab:checked">
+    <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="ToggleButton.studioDockTab:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+  </Style>
+
+  <!-- Left-side asset navigator lists. -->
+  <Style Selector="ListBox.studioNavigatorList">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="ListBox.studioNavigatorList > ListBoxItem">
+    <Setter Property="MinHeight" Value="38" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="Padding" Value="6,4" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="ListBox.studioNavigatorList > ListBoxItem:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioNavigatorList > ListBoxItem:selected">
+    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioNavigatorList > ListBoxItem:selected:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentStrongBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioNavigatorList > ListBoxItem:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+  </Style>
+
+  <!-- Hierarchical asset taxonomies. Compact rows preserve room for deeply
+       nested zone/type/name paths without sacrificing keyboard navigation. -->
+  <Style Selector="TreeView.studioNavigatorTree">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="TreeView.studioNavigatorTree TreeViewItem">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="2,1" />
+    <Setter Property="Margin" Value="0,1" />
+  </Style>
+
+  <Style Selector="TreeView.studioNavigatorTree TreeViewItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+  </Style>
+
+  <Style Selector="TreeView.studioNavigatorTree TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+
+  <!-- Dense rows shared by Console Output and Diagnostics. -->
+  <Style Selector="ListBox.studioOutputList">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="ListBox.studioOutputList > ListBoxItem">
+    <Setter Property="MinHeight" Value="26" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="Padding" Value="6,3" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="ListBox.studioOutputList > ListBoxItem:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioOutputList > ListBoxItem:selected">
+    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioOutputList > ListBoxItem:selected:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioOutputList > ListBoxItem:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+  </Style>
+
+  <!-- Shared two-column metadata treatment for right-side tools. -->
+  <Style Selector="TextBlock.propertyLabel">
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="FontSize" Value="9" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextSubtleBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.propertyValue">
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+</Styles>

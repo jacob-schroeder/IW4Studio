@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:diagnostics="using:IW4.Studio.Desktop.Workbench.Tools.Diagnostics"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.Diagnostics.DiagnosticsView"
+             x:DataType="diagnostics:DiagnosticsAggregator"
+             mc:Ignorable="d"
+             d:DesignWidth="1100"
+             d:DesignHeight="260">
+  <Grid>
+    <Grid IsVisible="{Binding HasEntries}" RowDefinitions="32,*">
+      <Border Padding="10,0"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="110,120,170,*" ColumnSpacing="10">
+          <TextBlock Text="Severity"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="1"
+                     Text="Location"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="2"
+                     Text="Source"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="3"
+                     Text="Message"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+      </Border>
+
+      <ListBox x:Name="DiagnosticsList"
+               Grid.Row="1"
+               Classes="studioOutputList"
+               Margin="6"
+               ItemsSource="{Binding Entries}"
+               SelectionMode="Single"
+               DoubleTapped="DiagnosticsList_DoubleTapped">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="diagnostics:WorkbenchDiagnostic">
+            <Grid ColumnDefinitions="110,120,170,*"
+                  ColumnSpacing="10"
+                  Margin="4,3">
+              <TextBlock Text="{Binding Severity}"
+                         FontSize="10"
+                         Foreground="{DynamicResource StudioWarningBrush}" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding LocationText}"
+                         FontSize="10"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Grid.Column="2"
+                         Text="{Binding Source}"
+                         FontSize="10"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Grid.Column="3"
+                         Text="{Binding Message}"
+                         FontSize="10"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+
+    <StackPanel IsVisible="{Binding !HasEntries}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="5">
+      <TextBlock Text="✓"
+                 HorizontalAlignment="Center"
+                 FontSize="20"
+                 Foreground="{DynamicResource StudioSuccessBrush}" />
+      <TextBlock Text="No diagnostics"
+                 HorizontalAlignment="Center"
+                 FontSize="10"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

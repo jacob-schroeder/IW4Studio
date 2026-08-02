@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:console="using:IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput.ConsoleOutputView"
+             x:DataType="console:ConsoleOutputBuffer"
+             mc:Ignorable="d"
+             d:DesignWidth="1100"
+             d:DesignHeight="260">
+  <Grid>
+    <Grid IsVisible="{Binding HasEntries}" RowDefinitions="32,*">
+      <Border Padding="10,0"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="92,82,118,*"
+              ColumnSpacing="10">
+          <TextBlock Text="Date"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="1"
+                     Text="Type"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="2"
+                     Text="Category"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="3"
+                     Text="Detail"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+      </Border>
+
+      <ListBox Grid.Row="1"
+               Classes="studioOutputList"
+               Margin="6"
+               ItemsSource="{Binding Entries}"
+               SelectionMode="Single">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="console:ConsoleOutputEntry">
+          <Grid ColumnDefinitions="92,82,118,*"
+                ColumnSpacing="10"
+                Margin="4,3">
+            <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss.fff}'}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding Level}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioInfoBrush}" />
+            <TextBlock Grid.Column="2"
+                       Text="{Binding Source}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Grid.Column="3"
+                       Text="{Binding Message}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+
+    <TextBlock IsVisible="{Binding !HasEntries}"
+               Text="No console output yet"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"
+               FontSize="10"
+               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+  </Grid>
+</UserControl>

@@ -1,0 +1,1670 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+        xmlns:objects="using:IW4.Studio.MapEditor.Editing.Objects"
+        xmlns:documents="using:IW4.Studio.MapEditor.Editing.Documents"
+        xmlns:import="using:IW4.Studio.MapEditor.Compilation.Import"
+        xmlns:bundles="using:IW4.Studio.MapEditor.Compilation.Bundles"
+        xmlns:worldViewport="using:IW4.Studio.Desktop.Rendering.WorldViewport"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="IW4.Studio.Desktop.Views.MapEditorWindow"
+        x:DataType="viewModels:MapEditorWindowViewModel"
+        mc:Ignorable="d"
+        d:DesignWidth="1480"
+        d:DesignHeight="900"
+        Title="Map Editor — IW4 Studio"
+        Width="1480"
+        Height="900"
+        MinWidth="960"
+        MinHeight="640"
+        WindowStartupLocation="CenterOwner">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
+    <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
+    <KeyBinding Gesture="Meta+Z" Command="{Binding UndoCommand}" />
+    <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding RedoCommand}" />
+  </Window.KeyBindings>
+
+  <Window.Styles>
+    <Style Selector="ToggleButton.mapEditorRailButton">
+      <Setter Property="Width" Value="38" />
+      <Setter Property="Height" Value="38" />
+      <Setter Property="MinWidth" Value="38" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="Margin" Value="4,2" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.mapEditorRailButton:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.mapEditorRailButton:checked">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.mapEditorRailButton:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+
+    <Style Selector="Button.mapEditorIconButton">
+      <Setter Property="Width" Value="30" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="MinWidth" Value="30" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="Button.mapEditorIconButton:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    </Style>
+    <Style Selector="Button.mapEditorIconButton:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+
+    <Style Selector="Border.mapEditorFloatingPanel">
+      <Setter Property="Background" Value="{DynamicResource StudioSidebarBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style Selector="ListBox.mapEditorObjectList">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.mapEditorObjectList > ListBoxItem">
+      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Margin" Value="2,1" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ListBox.mapEditorObjectList > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.mapEditorObjectList > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    </Style>
+
+    <Style Selector="Expander.mapEditorSection">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+  </Window.Styles>
+
+  <!--
+    The OpenGL viewport is the canvas, not one cell in a dashboard. Every
+    editor surface below is an intentional overlay and may be collapsed
+    without reallocating viewport space.
+  -->
+  <Grid Background="#090C12" ClipToBounds="True">
+    <worldViewport:WorldViewportControl
+        x:Name="WorldViewport"
+        HorizontalAlignment="Stretch"
+        VerticalAlignment="Stretch"
+        TranslationTool="{Binding ActiveTranslationTool}"
+        IsTranslationModeActive="{Binding IsTranslateModeActive}"
+        IsCollisionOverlayVisible="{Binding IsCollisionOverlayVisible}"
+        IsCollisionIsolateActive="{Binding IsCollisionIsolateActive}"
+        IsCollisionWorkspaceActive="{Binding IsCollisionWorkspaceActive}"
+        IsCollisionPickingActive="{Binding IsCollisionPickingActive}" />
+
+    <!-- Compact document chrome. -->
+    <Border Classes="mapEditorFloatingPanel"
+            Height="42"
+            Margin="64,8,12,0"
+            Padding="12,5"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Top">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+        <StackPanel VerticalAlignment="Center" Spacing="1">
+          <TextBlock Text="{Binding MapIdentity}"
+                     FontSize="12"
+                     FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding EditorAvailabilityText}"
+                     FontSize="7"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    VerticalAlignment="Center"
+                    Spacing="2">
+          <Button Classes="mapEditorIconButton"
+                  Command="{Binding UndoCommand}"
+                  IsEnabled="{Binding CanUndo}"
+                  ToolTip.Tip="Undo (Ctrl+Z)">
+            <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
+          </Button>
+          <Button Classes="mapEditorIconButton"
+                  Command="{Binding RedoCommand}"
+                  IsEnabled="{Binding CanRedo}"
+                  ToolTip.Tip="Redo (Ctrl+Y)">
+            <materialIcons:MaterialIcon Kind="Redo" Width="16" Height="16" />
+          </Button>
+        </StackPanel>
+
+        <Border Grid.Column="2"
+                Padding="10,4"
+                VerticalAlignment="Center"
+                CornerRadius="11"
+                Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding DirtyStateText}"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+            <TextBlock Text="{Binding RevisionText}"
+                       FontSize="8"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+
+    <!-- Radiant-style tool rail. -->
+    <Border Width="48"
+            Margin="8"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Stretch"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSidebarBrush}"
+            BorderBrush="{DynamicResource StudioBorderStrongBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,Auto,Auto,12,Auto,Auto,*">
+        <ToggleButton Grid.Row="0"
+                      Classes="mapEditorRailButton"
+                      IsChecked="{Binding IsSceneWorkspaceActive, Mode=OneWay}"
+                      Command="{Binding ToggleObjectsPaneCommand}"
+                      ToolTip.Tip="Scene Workspace">
+          <materialIcons:MaterialIcon Kind="MapOutline" Width="19" Height="19" />
+        </ToggleButton>
+        <ToggleButton Grid.Row="1"
+                      Classes="mapEditorRailButton"
+                      IsChecked="{Binding IsCollisionWorkspaceActive, Mode=OneWay}"
+                      Command="{Binding ToggleCollisionPaneCommand}"
+                      ToolTip.Tip="Collision Workspace">
+          <materialIcons:MaterialIcon Kind="VectorSquare" Width="19" Height="19" />
+        </ToggleButton>
+        <ToggleButton Grid.Row="2"
+                      Classes="mapEditorRailButton"
+                      IsChecked="{Binding IsCompiledDataPaneOpen, Mode=OneWay}"
+                      Command="{Binding ToggleCompiledDataPaneCommand}"
+                      ToolTip.Tip="Compiled Data">
+          <materialIcons:MaterialIcon Kind="DatabaseOutline" Width="19" Height="19" />
+        </ToggleButton>
+
+        <Border Grid.Row="3"
+                Width="24"
+                Height="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{DynamicResource StudioBorderBrush}" />
+
+        <ToggleButton Grid.Row="4"
+                      Classes="mapEditorRailButton"
+                      IsChecked="{Binding IsSelectModeActive, Mode=OneWay}"
+                      Command="{Binding ActivateSelectModeCommand}"
+                      ToolTip.Tip="Select">
+          <materialIcons:MaterialIcon Kind="CursorDefaultOutline" Width="19" Height="19" />
+        </ToggleButton>
+        <ToggleButton Grid.Row="5"
+                      Classes="mapEditorRailButton"
+                      IsChecked="{Binding IsTranslateModeActive, Mode=OneWay}"
+                      IsEnabled="{Binding CanActivateTranslateMode}"
+                      Command="{Binding ActivateTranslateModeCommand}"
+                      ToolTip.Tip="Translate selected editable object">
+          <materialIcons:MaterialIcon Kind="ArrowAll" Width="19" Height="19" />
+        </ToggleButton>
+      </Grid>
+    </Border>
+
+    <!-- Collapsible object browser; this overlays rather than shrinks the canvas. -->
+    <Border Classes="mapEditorFloatingPanel"
+            Width="310"
+            Margin="64,58,0,48"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Stretch"
+            IsVisible="{Binding IsObjectsPaneOpen}">
+      <Grid RowDefinitions="42,Auto,Auto,*">
+        <Border Grid.Row="0"
+                Padding="11,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <StackPanel Spacing="1">
+              <TextBlock Text="SCENE OBJECTS"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Text="{Binding ObjectResultText}"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Classes="mapEditorIconButton"
+                    Command="{Binding ToggleObjectsPaneCommand}"
+                    ToolTip.Tip="Collapse Map Objects">
+              <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <TextBox Grid.Row="1"
+                 Margin="10,10,10,7"
+                 PlaceholderText="Search name or stable ID"
+                 Text="{Binding SearchText, Mode=TwoWay}" />
+
+        <ComboBox Grid.Row="2"
+                  Margin="10,0,10,7"
+                  ItemsSource="{Binding KindFilters}"
+                  SelectedItem="{Binding SelectedKindFilter, Mode=TwoWay}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:MapEditorObjectKindFilter">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <ListBox Grid.Row="3"
+                 Margin="6,0,6,6"
+                 Classes="mapEditorObjectList"
+                 ItemsSource="{Binding VisibleObjects}"
+                 SelectedItem="{Binding SelectedObject, Mode=TwoWay}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="objects:EditorMapObject">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{Binding DisplayName}"
+                             FontSize="10"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Kind}"
+                             FontSize="8"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
+
+    <!-- Collision is a first-class workspace, not a render-model filter. -->
+    <Border Classes="mapEditorFloatingPanel"
+            Width="330"
+            Margin="64,58,0,48"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Stretch"
+            IsVisible="{Binding IsCollisionPaneOpen}">
+      <Grid RowDefinitions="48,Auto,Auto,Auto,Auto,*">
+        <Border Grid.Row="0"
+                Padding="11,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <StackPanel Spacing="1">
+              <TextBlock Text="COLLISION"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Text="{Binding CollisionBrowser.ResultText}"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Classes="mapEditorIconButton"
+                    Command="{Binding ToggleCollisionPaneCommand}"
+                    ToolTip.Tip="Collapse Collision">
+              <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Margin="10,10,10,7"
+                Padding="8"
+                CornerRadius="6"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <StackPanel Spacing="7">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="VIEWPORT LAYER"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding CollisionDisplayStatusText}"
+                         FontSize="7"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,6,*">
+              <ToggleButton Content="Overlay"
+                            IsChecked="{Binding IsCollisionOverlayVisible, Mode=TwoWay}" />
+              <ToggleButton Grid.Column="2"
+                            Content="Isolate"
+                            IsChecked="{Binding IsCollisionIsolateActive, Mode=TwoWay}" />
+            </Grid>
+            <TextBlock Text="Display state is editor-only and independent from the Collision workspace and active tool."
+                       TextWrapping="Wrap"
+                       FontSize="7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Border Height="1"
+                    Background="{DynamicResource StudioBorderBrush}" />
+            <StackPanel Spacing="4">
+              <TextBlock Text="VIEWPORT FIDELITY"
+                         FontSize="7"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <Grid ColumnDefinitions="9,6,*">
+                <Border Width="8"
+                        Height="8"
+                        CornerRadius="4"
+                        Background="#1AD9F2" />
+                <TextBlock Grid.Column="2"
+                           Text="Exact imported triangles"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </Grid>
+              <Grid ColumnDefinitions="9,6,*">
+                <Border Width="8"
+                        Height="8"
+                        CornerRadius="4"
+                        Background="#FF6114" />
+                <TextBlock Grid.Column="2"
+                           Text="Brush bounds proxy"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </Grid>
+              <Grid ColumnDefinitions="9,6,*">
+                <Border Width="8"
+                        Height="8"
+                        CornerRadius="4"
+                        Background="#B84DFF" />
+                <TextBlock Grid.Column="2"
+                           Text="Static-model bounds proxy"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </Grid>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Expander Grid.Row="2"
+                  Margin="10,0,10,7"
+                  Classes="mapEditorSection"
+                  Header="Add standalone collision box">
+          <Border Margin="0,7,0,0"
+                  Padding="8"
+                  CornerRadius="6"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <StackPanel Spacing="7">
+              <TextBlock Text="MATERIAL"
+                         FontSize="7"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <ComboBox ItemsSource="{Binding CollisionBoxAuthoring.Materials}"
+                        SelectedItem="{Binding CollisionBoxAuthoring.SelectedMaterial, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Label}"
+                               FontSize="8"
+                               TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="BOX SIZE"
+                         FontSize="7"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <Grid ColumnDefinitions="*,5,*,5,*">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="X"
+                             FontSize="7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <NumericUpDown Value="{Binding CollisionBoxAuthoring.SizeX, Mode=TwoWay}"
+                                 Minimum="0.001"
+                                 Maximum="1000000"
+                                 Increment="1"
+                                 FormatString="0.###" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="2">
+                  <TextBlock Text="Y"
+                             FontSize="7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <NumericUpDown Value="{Binding CollisionBoxAuthoring.SizeY, Mode=TwoWay}"
+                                 Minimum="0.001"
+                                 Maximum="1000000"
+                                 Increment="1"
+                                 FormatString="0.###" />
+                </StackPanel>
+                <StackPanel Grid.Column="4" Spacing="2">
+                  <TextBlock Text="Z"
+                             FontSize="7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <NumericUpDown Value="{Binding CollisionBoxAuthoring.SizeZ, Mode=TwoWay}"
+                                 Minimum="0.001"
+                                 Maximum="1000000"
+                                 Increment="1"
+                                 FormatString="0.###" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="{Binding CollisionBoxAuthoring.AvailabilityText}"
+                         TextWrapping="Wrap"
+                         FontSize="7"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <Button Content="Add box at selected object"
+                      Command="{Binding CollisionBoxAuthoring.AddBoxCommand}"
+                      IsEnabled="{Binding CollisionBoxAuthoring.CanAddBox}" />
+            </StackPanel>
+          </Border>
+        </Expander>
+
+        <TextBox Grid.Row="3"
+                 Margin="10,0,10,7"
+                 PlaceholderText="Search collision or stable ID"
+                 Text="{Binding CollisionBrowser.SearchText, Mode=TwoWay}" />
+
+        <ComboBox Grid.Row="4"
+                  Margin="10,0,10,7"
+                  ItemsSource="{Binding CollisionBrowser.KindFilters}"
+                  SelectedItem="{Binding CollisionBrowser.SelectedKindFilter, Mode=TwoWay}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:MapEditorCollisionKindFilter">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <ListBox Grid.Row="5"
+                 Margin="6,0,6,6"
+                 Classes="mapEditorObjectList"
+                 ItemsSource="{Binding CollisionBrowser.VisibleRows}"
+                 SelectedItem="{Binding CollisionBrowser.SelectedRow, Mode=TwoWay}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:MapEditorCollisionBrowserRow">
+              <Grid>
+                <Grid IsVisible="{Binding IsGroupHeader}"
+                      ColumnDefinitions="*,Auto"
+                      Margin="0,4,0,1">
+                  <TextBlock Text="{Binding Label}"
+                             FontSize="8"
+                             FontWeight="Bold"
+                             LetterSpacing="0.5"
+                             Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding Detail}"
+                             FontSize="8"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Grid>
+                <StackPanel IsVisible="{Binding IsObject}" Spacing="2">
+                  <TextBlock Text="{Binding Label}"
+                             FontSize="10"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Detail}"
+                             FontSize="7"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
+
+    <!--
+      Existing compiler-oriented tools remain available, but no longer occupy
+      the default spatial editing surface.
+    -->
+    <Border Classes="mapEditorFloatingPanel"
+            Width="380"
+            Margin="64,58,0,48"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Stretch"
+            IsVisible="{Binding IsCompiledDataPaneOpen}">
+      <Grid RowDefinitions="42,*">
+        <Border Grid.Row="0"
+                Padding="11,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <StackPanel Spacing="1">
+              <TextBlock Text="COMPILED DATA"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Text="{Binding PendingEditCountText}"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Classes="mapEditorIconButton"
+                    Command="{Binding ToggleCompiledDataPaneCommand}"
+                    ToolTip.Tip="Collapse Compiled Data">
+              <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="10" Spacing="12">
+            <Expander Classes="mapEditorSection"
+                      Header="Selected compiled object"
+                      IsVisible="{Binding HasSelection}">
+              <StackPanel Margin="0,8,0,0" Spacing="8">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{Binding SelectedObject.DisplayName}"
+                             FontSize="12"
+                             FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding SelectedObjectId}"
+                             FontSize="7"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+                <CheckBox Content="Visible in editor projection"
+                          IsEnabled="{Binding AreEditorsEnabled}"
+                          IsChecked="{Binding IsSelectedObjectVisible, Mode=TwoWay}" />
+
+                <Border IsVisible="{Binding HasPrimaryLightEditor}"
+                        IsEnabled="{Binding AreEditorsEnabled}"
+                        Padding="10"
+                        CornerRadius="6"
+                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="PRIMARY LIGHT"
+                                   FontSize="8"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource StudioAccentBrush}" />
+                        <TextBlock Text="{Binding PrimaryLightEditor.SourceOrdinalText}"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      </StackPanel>
+                      <Border Grid.Column="1"
+                              Width="34"
+                              Height="22"
+                              CornerRadius="4"
+                              Background="{Binding PrimaryLightEditor.PreviewBrush}"
+                              BorderBrush="{DynamicResource StudioBorderBrush}"
+                              BorderThickness="1" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,6,*,6,*">
+                      <NumericUpDown Value="{Binding PrimaryLightEditor.Red, Mode=TwoWay}"
+                                     Minimum="0" Maximum="10000"
+                                     Increment="0.01" FormatString="0.###" />
+                      <NumericUpDown Grid.Column="2"
+                                     Value="{Binding PrimaryLightEditor.Green, Mode=TwoWay}"
+                                     Minimum="0" Maximum="10000"
+                                     Increment="0.01" FormatString="0.###" />
+                      <NumericUpDown Grid.Column="4"
+                                     Value="{Binding PrimaryLightEditor.Blue, Mode=TwoWay}"
+                                     Minimum="0" Maximum="10000"
+                                     Increment="0.01" FormatString="0.###" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,8,*">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="EXPONENT"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <NumericUpDown Value="{Binding PrimaryLightEditor.Exponent, Mode=TwoWay}"
+                                       Minimum="0" Maximum="255"
+                                       Increment="1" FormatString="0" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Spacing="2">
+                        <TextBlock Text="INNER CONE COSINE"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <NumericUpDown Value="{Binding PrimaryLightEditor.CosHalfFovInner, Mode=TwoWay}"
+                                       Minimum="0" Maximum="1"
+                                       Increment="0.001"
+                                       FormatString="0.######"
+                                       IsEnabled="{Binding PrimaryLightEditor.CanEditSpotFalloff}" />
+                      </StackPanel>
+                    </Grid>
+                    <TextBlock Text="{Binding PrimaryLightEditor.SpotFalloffStatusText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <Border IsVisible="{Binding HasFxGlassDefinitionEditor}"
+                        IsEnabled="{Binding AreEditorsEnabled}"
+                        Padding="10"
+                        CornerRadius="6"
+                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="FX GLASS DEFINITION"
+                                   FontSize="8"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource StudioAccentBrush}" />
+                        <TextBlock Text="{Binding FxGlassDefinitionEditor.SourceOrdinalText}"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      </StackPanel>
+                      <Border Grid.Column="1"
+                              Width="34"
+                              Height="22"
+                              CornerRadius="4"
+                              Background="{Binding FxGlassDefinitionEditor.PreviewBrush}"
+                              BorderBrush="{DynamicResource StudioBorderBrush}"
+                              BorderThickness="1" />
+                    </Grid>
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="HALF THICKNESS"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <NumericUpDown Value="{Binding FxGlassDefinitionEditor.HalfThickness, Mode=TwoWay}"
+                                     Minimum="0.000001"
+                                     Maximum="100000"
+                                     Increment="0.001"
+                                     FormatString="0.#########" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,5,*,5,*,5,*">
+                      <NumericUpDown Value="{Binding FxGlassDefinitionEditor.Red, Mode=TwoWay}"
+                                     Minimum="0" Maximum="255"
+                                     Increment="1" FormatString="0" />
+                      <NumericUpDown Grid.Column="2"
+                                     Value="{Binding FxGlassDefinitionEditor.Green, Mode=TwoWay}"
+                                     Minimum="0" Maximum="255"
+                                     Increment="1" FormatString="0" />
+                      <NumericUpDown Grid.Column="4"
+                                     Value="{Binding FxGlassDefinitionEditor.Blue, Mode=TwoWay}"
+                                     Minimum="0" Maximum="255"
+                                     Increment="1" FormatString="0" />
+                      <NumericUpDown Grid.Column="6"
+                                     Value="{Binding FxGlassDefinitionEditor.Alpha, Mode=TwoWay}"
+                                     Minimum="0" Maximum="255"
+                                     Increment="1" FormatString="0" />
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <Border IsVisible="{Binding HasEntityInspector}"
+                        IsEnabled="{Binding AreEditorsEnabled}"
+                        Padding="10"
+                        CornerRadius="6"
+                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="MAPENT PROPERTIES"
+                                   FontSize="8"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource StudioAccentBrush}" />
+                        <TextBlock Text="{Binding EntityInspector.EntityOrdinalText}"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding EntityInspector.SaveClassificationText}"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                    </Grid>
+                    <TextBlock Text="{Binding EntityInspector.SaveBlockerText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    <ItemsControl ItemsSource="{Binding EntityInspector.Properties}"
+                                  IsEnabled="{Binding EntityInspector.CanEditProperties}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:MapEntityPropertyRowViewModel">
+                          <Border Margin="0,0,0,6"
+                                  Padding="8"
+                                  CornerRadius="5"
+                                  Background="{DynamicResource StudioSurfaceRaisedBrush}"
+                                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                                  BorderThickness="1">
+                            <StackPanel Spacing="5">
+                              <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Text="{Binding OrdinalText}"
+                                           FontSize="8"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource StudioAccentBrush}" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="8,0,0,0"
+                                           Text="{Binding PropertyByteSpanText}"
+                                           TextTrimming="CharacterEllipsis"
+                                           FontSize="7"
+                                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              </Grid>
+                              <TextBox Text="{Binding KeyDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       PlaceholderText="Property key" />
+                              <TextBox Text="{Binding ValueDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       PlaceholderText="Property value" />
+                              <TextBlock IsVisible="{Binding HasValidationError}"
+                                         Text="{Binding ValidationMessage}"
+                                         TextWrapping="Wrap"
+                                         FontSize="7"
+                                         Foreground="{DynamicResource StudioErrorBrush}" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Entity builder"
+                      IsExpanded="True">
+              <Border Margin="0,8,0,0"
+                      Padding="10"
+                      CornerRadius="6"
+                      Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                      BorderBrush="{DynamicResource StudioAccentBrush}"
+                      BorderThickness="1">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="1">
+                      <TextBlock Text="SCRIPT_ORIGIN"
+                                 FontSize="8"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioAccentBrush}" />
+                      <TextBlock Text="{Binding ScriptOriginCardinalityEditor.EvidenceText}"
+                                 TextWrapping="Wrap"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ScriptOriginCardinalityEditor.ClassificationText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioSuccessBrush}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,6,*,6,*">
+                    <NumericUpDown Value="{Binding ScriptOriginCardinalityEditor.X, Mode=TwoWay}"
+                                   Minimum="-1000000" Maximum="1000000"
+                                   Increment="1" FormatString="0.###" />
+                    <NumericUpDown Grid.Column="2"
+                                   Value="{Binding ScriptOriginCardinalityEditor.Y, Mode=TwoWay}"
+                                   Minimum="-1000000" Maximum="1000000"
+                                   Increment="1" FormatString="0.###" />
+                    <NumericUpDown Grid.Column="4"
+                                   Value="{Binding ScriptOriginCardinalityEditor.Z, Mode=TwoWay}"
+                                   Minimum="-1000000" Maximum="1000000"
+                                   Increment="1" FormatString="0.###" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,7,*">
+                    <Button Content="Add at coordinates"
+                            Command="{Binding ScriptOriginCardinalityEditor.AppendCommand}"
+                            IsEnabled="{Binding ScriptOriginCardinalityEditor.CanAppend}" />
+                    <Button Grid.Column="2"
+                            Content="Remove final"
+                            Command="{Binding ScriptOriginCardinalityEditor.RemoveFinalCommand}"
+                            IsEnabled="{Binding ScriptOriginCardinalityEditor.CanRemoveFinal}" />
+                  </Grid>
+                  <TextBlock Text="{Binding ScriptOriginCardinalityEditor.FinalEntityText}"
+                             FontSize="7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <TextBlock IsVisible="{Binding ScriptOriginCardinalityEditor.HasValidationMessage}"
+                             Text="{Binding ScriptOriginCardinalityEditor.ValidationMessage}"
+                             TextWrapping="Wrap"
+                             FontSize="7"
+                             Foreground="{DynamicResource StudioErrorBrush}" />
+                </StackPanel>
+              </Border>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="{Binding PendingEditCountText}"
+                      IsExpanded="True">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding PendingEdits}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:MapEditorPendingEditRow">
+                    <Border Margin="0,0,0,6"
+                            Padding="9"
+                            CornerRadius="5"
+                            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                            BorderBrush="{DynamicResource StudioBorderBrush}"
+                            BorderThickness="1">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="{Binding Description}"
+                                   TextWrapping="Wrap"
+                                   FontSize="8"
+                                   FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBlock Text="{Binding Direction}"
+                                     FontSize="7"
+                                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding Classification}"
+                                     FontSize="7"
+                                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                        </Grid>
+                        <TextBlock Text="{Binding SaveBlocker}"
+                                   TextWrapping="Wrap"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Source bindings">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding SelectedBindings}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:MapEditorSourceBindingRow">
+                    <Border Margin="0,0,0,6"
+                            Padding="9"
+                            CornerRadius="5"
+                            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                            BorderBrush="{DynamicResource StudioBorderBrush}"
+                            BorderThickness="1">
+                      <StackPanel Spacing="3">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBlock Text="{Binding Asset}"
+                                     FontSize="9"
+                                     FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding Provenance}"
+                                     FontSize="7"
+                                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                        </Grid>
+                        <TextBlock Text="{Binding FieldPath}"
+                                   TextWrapping="Wrap"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <TextBlock Text="{Binding OwnerRow}"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Import audit">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding SemanticCounts}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="import:MapImportCount">
+                    <Grid Margin="2,3" ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Category}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Count}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextBrush}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Provenance audit">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding ProvenanceCounts}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="import:MapProvenanceCount">
+                    <Grid Margin="2,3" ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Provenance}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Count}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextBrush}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Environment">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding EnvironmentValues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="documents:EditorEnvironmentValue">
+                    <Grid Margin="2,4" ColumnDefinitions="118,*,Auto">
+                      <TextBlock Text="{Binding Name}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Value}"
+                                 TextWrapping="Wrap"
+                                 FontSize="8" />
+                      <TextBlock Grid.Column="2"
+                                 Margin="6,0,0,0"
+                                 Text="{Binding Provenance}"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Unresolved cross-asset joins">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding UnresolvedJoins}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Margin="2,0,2,6"
+                               Text="{Binding}"
+                               TextWrapping="Wrap"
+                               FontSize="8"
+                               Foreground="{DynamicResource StudioWarningBrush}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Bundle assets">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding Assets}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="bundles:CompiledMapAssetDescriptor">
+                    <Grid Margin="2,3" ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Kind}" FontSize="8" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding OwnerRow.SerializedIndex}"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Import diagnostics">
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding Diagnostics}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Margin="2,0,2,6"
+                               Text="{Binding}"
+                               TextWrapping="Wrap"
+                               FontSize="8"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+
+    <!-- Contextual spatial inspector. -->
+    <Border Classes="mapEditorFloatingPanel"
+            Width="350"
+            Margin="0,58,12,48"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Stretch"
+            IsVisible="{Binding HasContextualInspector}">
+      <Grid RowDefinitions="48,*">
+        <Border Grid.Row="0"
+                Padding="11,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <StackPanel Spacing="1">
+              <TextBlock Text="{Binding SelectedObject.DisplayName}"
+                         FontSize="11"
+                         FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding SelectedObject.Kind}"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioAccentBrush}" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Classes="mapEditorIconButton"
+                    Command="{Binding CloseInspectorCommand}"
+                    ToolTip.Tip="Clear selection">
+              <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="11" Spacing="11">
+            <CheckBox Content="Visible in editor projection"
+                      IsVisible="{Binding ShowsSelectionVisibilityControl}"
+                      IsEnabled="{Binding AreEditorsEnabled}"
+                      IsChecked="{Binding IsSelectedObjectVisible, Mode=TwoWay}" />
+
+            <Border IsVisible="{Binding HasWorldSurfaceInspector}"
+                    Padding="10"
+                    CornerRadius="6"
+                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource StudioWarningBrush}"
+                    BorderThickness="1">
+              <StackPanel Spacing="4">
+                <TextBlock Text="COMPILED TOPOLOGY LOCKED"
+                           FontSize="8"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource StudioWarningBrush}" />
+                <TextBlock Text="This world surface can be selected and inspected. Moving vertices or the whole surface requires rebuilding cells, portals, collision, lighting, and compiled indices, so transform controls remain unavailable."
+                           TextWrapping="Wrap"
+                           FontSize="8"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </StackPanel>
+            </Border>
+
+            <Border IsVisible="{Binding HasCollisionInspector}"
+                    Padding="10"
+                    CornerRadius="6"
+                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource StudioAccentSecondaryBrush}"
+                    BorderThickness="1">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{Binding CollisionInspector.CategoryText}"
+                               FontSize="9"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentBrush}" />
+                    <TextBlock Text="{Binding CollisionInspector.SourceIdentityText}"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                  <Border Grid.Column="1"
+                          Padding="7,3"
+                          CornerRadius="9"
+                          Background="{DynamicResource StudioSurfaceRaisedBrush}">
+                    <TextBlock Text="{Binding CollisionInspector.AuthorityBadgeText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="92,*"
+                      RowDefinitions="Auto,Auto,Auto"
+                      RowSpacing="5">
+                  <TextBlock Text="Topology"
+                             FontSize="8"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding CollisionInspector.TopologyText}"
+                             TextWrapping="Wrap"
+                             FontSize="8" />
+                  <TextBlock Grid.Row="1"
+                             Text="Bounds"
+                             FontSize="8"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <TextBlock Grid.Row="1"
+                             Grid.Column="1"
+                             Text="{Binding CollisionInspector.BoundsText}"
+                             TextWrapping="Wrap"
+                             FontSize="8" />
+                  <TextBlock Grid.Row="2"
+                             Text="Contents"
+                             IsVisible="{Binding CollisionInspector.HasContents}"
+                             FontSize="8"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <TextBlock Grid.Row="2"
+                             Grid.Column="1"
+                             Text="{Binding CollisionInspector.ContentsText}"
+                             IsVisible="{Binding CollisionInspector.HasContents}"
+                             FontSize="8" />
+                </Grid>
+
+                <Border Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioSurfaceRaisedBrush}">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="VIEWPORT REPRESENTATION"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    <TextBlock Text="{Binding CollisionInspector.ViewportRepresentationText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <Border Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioSurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource StudioWarningBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="5">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="COLLISION COMPILATION CONTRACT"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding CollisionInspector.CompilationContract.ReadinessText}"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioWarningBrush}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="72,*"
+                          RowDefinitions="Auto,Auto,Auto,Auto"
+                          RowSpacing="3">
+                      <TextBlock Text="Contract"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding CollisionInspector.CompilationContract.ContractIdentityText}"
+                                 TextWrapping="Wrap"
+                                 FontSize="7" />
+                      <TextBlock Grid.Row="1"
+                                 Text="Geometry"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      <TextBlock Grid.Row="1"
+                                 Grid.Column="1"
+                                 Text="{Binding CollisionInspector.CompilationContract.GeometryText}"
+                                 FontSize="7" />
+                      <TextBlock Grid.Row="2"
+                                 Text="Provenance"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      <TextBlock Grid.Row="2"
+                                 Grid.Column="1"
+                                 Text="{Binding CollisionInspector.CompilationContract.ProvenanceText}"
+                                 FontSize="7" />
+                      <TextBlock Grid.Row="3"
+                                 Text="Ownership"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      <TextBlock Grid.Row="3"
+                                 Grid.Column="1"
+                                 Text="{Binding CollisionInspector.CompilationContract.OwnershipText}"
+                                 TextWrapping="Wrap"
+                                 FontSize="7" />
+                    </Grid>
+                    <TextBlock Text="{Binding CollisionInspector.CompilationContract.GateSummaryText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                    <TextBlock Text="{Binding CollisionInspector.CompilationContract.ReadinessDetailText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <Border Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioSurfaceRaisedBrush}">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding CollisionInspector.RelationshipHeadingText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                    <TextBlock Text="{Binding CollisionInspector.RelationshipText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <TextBlock Text="{Binding CollisionInspector.ProvenanceSummaryText}"
+                           TextWrapping="Wrap"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+                <Border Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioSurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource StudioWarningBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="EDITING BOUNDARY"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioWarningBrush}" />
+                    <TextBlock Text="{Binding CollisionInspector.EditingBoundaryText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <Border IsVisible="{Binding HasAuthoredCollisionTransformEditor}"
+                    IsEnabled="{Binding AreEditorsEnabled}"
+                    Padding="10"
+                    CornerRadius="6"
+                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource StudioAccentBrush}"
+                    BorderThickness="1">
+              <StackPanel Spacing="9">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="TRANSLATE COLLISION"
+                               FontSize="8"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentBrush}" />
+                    <TextBlock Text="{Binding AuthoredCollisionTransformEditor.SourceIdentityText}"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                  <Border Grid.Column="1"
+                          Padding="7,3"
+                          CornerRadius="9"
+                          Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+                    <TextBlock Text="{Binding AuthoredCollisionTransformEditor.ClassificationText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                  </Border>
+                </Grid>
+
+                <TextBlock Text="Choose Translate on the left, then drag in the world viewport. Pointer updates stay transient; Apply creates one undo record and Cancel restores the committed source."
+                           TextWrapping="Wrap"
+                           FontSize="8"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+                <Border IsVisible="{Binding AuthoredCollisionTransformEditor.HasDraftChanges}"
+                        Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioAccentSurfaceBrush}">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="LIVE COLLISION DRAFT · no undo record"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentBrush}" />
+                    <TextBlock Text="{Binding AuthoredCollisionTransformEditor.DraftOriginText}"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <Grid ColumnDefinitions="*,7,*">
+                  <Button Content="Apply changes"
+                          Command="{Binding AuthoredCollisionTransformEditor.ApplyChangesCommand}"
+                          IsEnabled="{Binding AuthoredCollisionTransformEditor.CanApplyChanges}" />
+                  <Button Grid.Column="2"
+                          Content="Cancel changes"
+                          Command="{Binding AuthoredCollisionTransformEditor.CancelChangesCommand}"
+                          IsEnabled="{Binding AuthoredCollisionTransformEditor.CanCancelChanges}" />
+                </Grid>
+
+                <Border Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioErrorSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioErrorBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding AuthoredCollisionTransformEditor.SaveBoundaryText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <Button Content="Remove authored collision"
+                            Command="{Binding AuthoredCollisionTransformEditor.RemoveSourceCommand}"
+                            IsEnabled="{Binding AuthoredCollisionTransformEditor.CanRemoveSource}" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Collision source provenance"
+                      IsVisible="{Binding HasCollisionInspector}">
+              <ItemsControl Margin="0,7,0,0"
+                            ItemsSource="{Binding SelectedBindings}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:MapEditorSourceBindingRow">
+                    <Border Margin="0,0,0,6"
+                            Padding="8"
+                            CornerRadius="5"
+                            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                            BorderBrush="{DynamicResource StudioBorderBrush}"
+                            BorderThickness="1">
+                      <StackPanel Spacing="3">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBlock Text="{Binding Asset}"
+                                     FontSize="8"
+                                     FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding Provenance}"
+                                     FontSize="7"
+                                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                        </Grid>
+                        <TextBlock Text="{Binding FieldPath}"
+                                   TextWrapping="Wrap"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <TextBlock Text="{Binding OwnerRow}"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+
+            <Border IsVisible="{Binding HasStaticModelTransformEditor}"
+                    IsEnabled="{Binding AreEditorsEnabled}"
+                    Padding="10"
+                    CornerRadius="6"
+                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource StudioAccentBrush}"
+                    BorderThickness="1">
+              <StackPanel Spacing="9">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="TRANSLATE"
+                               FontSize="8"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentBrush}" />
+                    <TextBlock Text="{Binding StaticModelTransformEditor.SourceOrdinalText}"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                  <Border Grid.Column="1"
+                          Padding="7,3"
+                          CornerRadius="9"
+                          Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+                    <TextBlock Text="{Binding StaticModelTransformEditor.ClassificationText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                  </Border>
+                </Grid>
+
+                <TextBlock Text="Choose Translate on the left, then drag the selected model in the viewport. Movement stays a live draft until you apply it; Cancel restores the committed position."
+                           TextWrapping="Wrap"
+                           FontSize="8"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+                <Border IsVisible="{Binding StaticModelTransformEditor.HasDraftChanges}"
+                        Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioAccentSurfaceBrush}">
+                  <TextBlock Text="LIVE DRAFT · no undo record has been created"
+                             FontSize="7"
+                             FontWeight="Bold"
+                             Foreground="{DynamicResource StudioAccentBrush}" />
+                </Border>
+
+                <Grid ColumnDefinitions="*,7,*">
+                  <Button Content="{Binding StaticModelTransformEditor.ApplyPositionText}"
+                          Command="{Binding StaticModelTransformEditor.ApplyPositionCommand}"
+                          IsEnabled="{Binding StaticModelTransformEditor.CanApplyPosition}" />
+                  <Button Grid.Column="2"
+                          Content="Cancel changes"
+                          Command="{Binding StaticModelTransformEditor.CancelPositionCommand}"
+                          IsEnabled="{Binding StaticModelTransformEditor.HasDraftChanges}" />
+                </Grid>
+
+                <Expander Classes="mapEditorSection"
+                          Header="Precise transform">
+                  <Grid Margin="0,7,0,0"
+                        ColumnDefinitions="*,6,*,6,*">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="X"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <NumericUpDown Value="{Binding StaticModelTransformEditor.X, Mode=TwoWay}"
+                                     Minimum="-10000000"
+                                     Maximum="10000000"
+                                     Increment="1"
+                                     FormatString="0.###" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="2">
+                      <TextBlock Text="Y"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <NumericUpDown Value="{Binding StaticModelTransformEditor.Y, Mode=TwoWay}"
+                                     Minimum="-10000000"
+                                     Maximum="10000000"
+                                     Increment="1"
+                                     FormatString="0.###" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4" Spacing="2">
+                      <TextBlock Text="Z"
+                                 FontSize="7"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <NumericUpDown Value="{Binding StaticModelTransformEditor.Z, Mode=TwoWay}"
+                                     Minimum="-10000000"
+                                     Maximum="10000000"
+                                     Increment="1"
+                                     FormatString="0.###" />
+                    </StackPanel>
+                  </Grid>
+                </Expander>
+
+                <Border IsVisible="{Binding StaticModelTransformEditor.IsPatchSaveable}"
+                        Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioSurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource StudioSuccessBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding StaticModelTransformEditor.SaveBoundaryHeadingText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioSuccessBrush}" />
+                    <TextBlock Text="{Binding StaticModelTransformEditor.SaveBlockerText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <Border IsVisible="{Binding StaticModelTransformEditor.IsCompiledSaveBlocked}"
+                        Padding="8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioErrorSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioErrorBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding StaticModelTransformEditor.SaveBoundaryHeadingText}"
+                               FontSize="7"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource StudioErrorBrush}" />
+                    <TextBlock Text="{Binding StaticModelTransformEditor.SaveBlockerText}"
+                               TextWrapping="Wrap"
+                               FontSize="7"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Compiled presence"
+                      IsVisible="{Binding HasStaticModelSuppressionEditor}">
+              <StackPanel Margin="0,7,0,0" Spacing="7">
+                <TextBlock Text="{Binding StaticModelSuppressionEditor.CorrespondenceStatusText}"
+                           FontSize="8"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                <TextBlock Text="{Binding StaticModelSuppressionEditor.CollisionPairText}"
+                           FontSize="8" />
+                <TextBlock Text="{Binding StaticModelSuppressionEditor.CorrespondenceEvidenceText}"
+                           TextWrapping="Wrap"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <Button Content="Suppress render + collision pair"
+                        Command="{Binding StaticModelSuppressionEditor.SuppressCompiledPairCommand}"
+                        IsEnabled="{Binding StaticModelSuppressionEditor.CanSuppressCompiledPair}" />
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Remove compiled pair"
+                      IsVisible="{Binding HasStaticModelRemovalEditor}">
+              <StackPanel Margin="0,7,0,0" Spacing="7">
+                <TextBlock Text="{Binding StaticModelRemovalEditor.StatusText}"
+                           FontSize="8"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource StudioAccentBrush}" />
+                <TextBlock Text="{Binding StaticModelRemovalEditor.EvidenceText}"
+                           TextWrapping="Wrap"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <Button Content="Remove render + collision pair"
+                        Command="{Binding StaticModelRemovalEditor.RemoveCompiledPairCommand}"
+                        IsEnabled="{Binding StaticModelRemovalEditor.CanRemoveCompiledPair}" />
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Duplicate static model"
+                      IsVisible="{Binding HasStaticModelDuplicationEditor}">
+              <StackPanel Margin="0,7,0,0" Spacing="7">
+                <TextBlock Text="{Binding StaticModelDuplicationEditor.StatusText}"
+                           FontSize="8"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                <TextBlock Text="{Binding StaticModelDuplicationEditor.PairText}"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <Grid ColumnDefinitions="*,6,*,6,*">
+                  <NumericUpDown Value="{Binding StaticModelDuplicationEditor.X, Mode=TwoWay}"
+                                 Increment="0.125"
+                                 FormatString="0.######" />
+                  <NumericUpDown Grid.Column="2"
+                                 Value="{Binding StaticModelDuplicationEditor.Y, Mode=TwoWay}"
+                                 Increment="0.125"
+                                 FormatString="0.######" />
+                  <NumericUpDown Grid.Column="4"
+                                 Value="{Binding StaticModelDuplicationEditor.Z, Mode=TwoWay}"
+                                 Increment="0.125"
+                                 FormatString="0.######" />
+                </Grid>
+                <TextBlock Text="{Binding StaticModelDuplicationEditor.EvidenceText}"
+                           TextWrapping="Wrap"
+                           FontSize="7"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <Button Content="Create render + collision pair"
+                        Command="{Binding StaticModelDuplicationEditor.DuplicatePairCommand}"
+                        IsEnabled="{Binding StaticModelDuplicationEditor.CanDuplicatePair}" />
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="mapEditorSection"
+                      Header="Object properties"
+                      IsExpanded="True">
+              <ItemsControl Margin="0,7,0,0"
+                            ItemsSource="{Binding SelectedProperties}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="objects:EditorObjectProperty">
+                    <Border Padding="7,6"
+                            BorderBrush="{DynamicResource StudioBorderBrush}"
+                            BorderThickness="0,0,0,1">
+                      <Grid ColumnDefinitions="112,*,Auto">
+                        <TextBlock Text="{Binding Name}"
+                                   FontSize="8"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Value}"
+                                   TextWrapping="Wrap"
+                                   FontSize="8" />
+                        <TextBlock Grid.Column="2"
+                                   Margin="6,0,0,0"
+                                   Text="{Binding Provenance}"
+                                   FontSize="7"
+                                   Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+
+    <!-- Viewport feedback stays concise and never captures pointer input. -->
+    <Border Classes="mapEditorFloatingPanel"
+            Margin="64,0,12,8"
+            Padding="10,6"
+            MaxWidth="900"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Bottom"
+            IsHitTestVisible="False">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+        <StackPanel Spacing="1">
+          <TextBlock Text="{Binding #WorldViewport.StatusHeading}"
+                     FontSize="7"
+                     FontWeight="Bold"
+                     Foreground="{DynamicResource StudioAccentBrush}" />
+          <TextBlock Text="{Binding #WorldViewport.StatusMessage}"
+                     TextTrimming="CharacterEllipsis"
+                     FontSize="7"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    VerticalAlignment="Center"
+                    Spacing="8">
+          <TextBlock Text="{Binding LiveProjectionText}"
+                     FontSize="7"
+                     FontWeight="Bold"
+                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+          <TextBlock Text="{Binding ViewportInteractionHintText}"
+                     FontSize="7"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

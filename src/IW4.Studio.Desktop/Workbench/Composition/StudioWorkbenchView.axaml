@@ -1,0 +1,636 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:composition="using:IW4.Studio.Desktop.Workbench.Composition"
+             xmlns:docking="using:IW4.Studio.Desktop.Workbench.Docking"
+             x:Class="IW4.Studio.Desktop.Workbench.Composition.StudioWorkbenchView"
+             x:DataType="composition:StudioWorkbenchViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1440"
+             d:DesignHeight="820">
+  <UserControl.Resources>
+    <composition:MaterialIconKindConverter x:Key="ToolIconConverter" />
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <StyleInclude Source="../Styles/StudioWorkbenchStyles.axaml" />
+  </UserControl.Styles>
+
+  <Grid x:Name="WorkbenchRoot"
+        Background="{DynamicResource StudioBackgroundBrush}"
+        ClipToBounds="True">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="48" />
+      <ColumnDefinition Width="{Binding LeftPaneWidth}" />
+      <ColumnDefinition Width="5" />
+      <ColumnDefinition Width="*" MinWidth="420" />
+      <ColumnDefinition Width="5" />
+      <ColumnDefinition Width="{Binding RightPaneWidth}" />
+      <ColumnDefinition Width="48" />
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" MinHeight="300" />
+      <RowDefinition Height="5" />
+      <RowDefinition Height="{Binding BottomPaneHeight}" />
+    </Grid.RowDefinitions>
+
+    <!-- Left Rider-style rail. Top tools own the left navigator; bottom tools
+         own the full-width console/diagnostics region. -->
+    <Border x:Name="LeftRail"
+            Grid.RowSpan="3"
+            Background="{DynamicResource StudioSidebarBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,0,1,0">
+      <Grid RowDefinitions="Auto,*,Auto">
+        <ItemsControl x:Name="LeftTopToolItems"
+                      Grid.Row="0"
+                      Margin="0,5"
+                      ItemsSource="{Binding LeftTools}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="docking:DockToolState">
+              <ToggleButton Classes="studioToolRailButton"
+                            Tag="{Binding Id}"
+                            IsChecked="{Binding IsActive, Mode=OneWay}"
+                            IsEnabled="{Binding IsImplemented}"
+                            Click="ToolButton_Click"
+                            PointerPressed="ToolDrag_PointerPressed"
+                            PointerMoved="ToolDrag_PointerMoved"
+                            PointerReleased="ToolDrag_PointerReleased"
+                            ToolTip.Tip="{Binding Title}">
+                <materialIcons:MaterialIcon Kind="{Binding IconToken, Converter={StaticResource ToolIconConverter}}"
+                                            Width="19"
+                                            Height="19" />
+              </ToggleButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <ItemsControl x:Name="LeftBottomToolItems"
+                      Grid.Row="2"
+                      Margin="0,5"
+                      ItemsSource="{Binding BottomTools}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="docking:DockToolState">
+              <ToggleButton Classes="studioToolRailButton studioBottomToolRailButton"
+                            Tag="{Binding Id}"
+                            IsChecked="{Binding IsActive, Mode=OneWay}"
+                            IsEnabled="{Binding IsImplemented}"
+                            Click="ToolButton_Click"
+                            PointerPressed="ToolDrag_PointerPressed"
+                            PointerMoved="ToolDrag_PointerMoved"
+                            PointerReleased="ToolDrag_PointerReleased"
+                            ToolTip.Tip="{Binding Title}">
+                <materialIcons:MaterialIcon Kind="{Binding IconToken, Converter={StaticResource ToolIconConverter}}"
+                                            Width="19"
+                                            Height="19" />
+              </ToggleButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </Border>
+
+    <!-- Left navigator pane. -->
+    <Border x:Name="LeftPane"
+            Grid.Column="1"
+            Grid.Row="0"
+            Margin="4,4,0,4"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSidebarBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1"
+            IsVisible="{Binding IsLeftOpen}">
+      <Grid RowDefinitions="38,*">
+        <Border Padding="10,0"
+                CornerRadius="7,7,0,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Tag="{Binding LeftActiveToolId}">
+          <Grid ColumnDefinitions="Auto,8,*,Auto" VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="DragVertical"
+                                        Tag="{Binding LeftActiveToolId}"
+                                        Width="14"
+                                        Height="14"
+                                        Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                        PointerPressed="ToolDrag_PointerPressed"
+                                        PointerMoved="ToolDrag_PointerMoved"
+                                        PointerReleased="ToolDrag_PointerReleased" />
+            <TextBlock Grid.Column="2"
+                       Text="{Binding LeftTitle}"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="3"
+                    Classes="studioPaneAction"
+                    Click="CollapseLeftButton_Click"
+                    ToolTip.Tip="Collapse left tools">
+              <materialIcons:MaterialIcon Kind="ChevronLeft" Width="15" Height="15" />
+            </Button>
+          </Grid>
+        </Border>
+        <ContentControl Grid.Row="1"
+                        Content="{Binding ActiveLeftContent}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch" />
+      </Grid>
+    </Border>
+
+    <GridSplitter x:Name="LeftSplitter"
+                  Grid.Column="2"
+                  Grid.Row="0"
+                  ResizeDirection="Columns"
+                  ResizeBehavior="PreviousAndNext"
+                  Background="Transparent"
+                  Cursor="SizeWestEast"
+                  ToolTip.Tip="Drag to resize the left navigator"
+                  IsVisible="{Binding IsLeftOpen}"
+                  PointerReleased="LeftSplitter_PointerReleased" />
+    <materialIcons:MaterialIcon Grid.Column="2"
+                                Grid.Row="0"
+                                Kind="DragVertical"
+                                Width="14"
+                                Height="14"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding IsLeftOpen}"
+                                Opacity="0.62"
+                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+    <!-- The center is deliberately the visual focus and always retains the
+         star-sized portion of the window. -->
+    <Border x:Name="CenterWorkspace"
+            Grid.Column="3"
+            Grid.Row="0"
+            Margin="0,4"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="38,*">
+        <Border Grid.Row="0"
+                Padding="11,0"
+                CornerRadius="7,7,0,0"
+                Background="{DynamicResource StudioSidebarBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="Auto,8,*,Auto,Auto,Auto" ColumnSpacing="7">
+            <materialIcons:MaterialIcon Kind="ApplicationBracesOutline"
+                                        Width="16"
+                                        Height="16"
+                                        VerticalAlignment="Center"
+                                        Foreground="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Grid.Column="2"
+                       IsVisible="{Binding HasNoSelection}"
+                       Text="{Binding TargetFileName}"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2"
+                       IsVisible="{Binding HasSelection}"
+                       Text="{Binding SelectedName}"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+            <Border Grid.Column="3"
+                    IsVisible="{Binding HasSelection}"
+                    Padding="7,2">
+              <TextBlock Text="{Binding SelectedKind}"
+                         VerticalAlignment="Center"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+            </Border>
+            <TextBlock Grid.Column="4"
+                       IsVisible="{Binding HasSelection}"
+                       Text="{Binding SelectedAccessBadge}"
+                       VerticalAlignment="Center"
+                       FontSize="8"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Button Grid.Column="5"
+                    IsVisible="{Binding HasSelection}"
+                    Classes="studioPaneAction"
+                    Click="CloseEditorButton_Click"
+                    ToolTip.Tip="Close selected editor">
+              <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+          <ScrollViewer IsVisible="{Binding HasNoSelection}"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="44,42"
+                        MaxWidth="820"
+                        HorizontalAlignment="Center"
+                        Spacing="22">
+              <StackPanel Spacing="7">
+                <TextBlock Text="WORKSPACE READY"
+                           FontSize="9"
+                           FontWeight="Bold"
+                           LetterSpacing="1.1"
+                           Foreground="{DynamicResource StudioSuccessBrush}" />
+                <TextBlock Text="{Binding TargetFileName}"
+                           FontSize="28"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource StudioTextBrush}" />
+                <TextBlock Text="Choose an asset from the left. The center stays dedicated to its editor or preview, while metadata and output remain docked around it."
+                           MaxWidth="690"
+                           TextWrapping="Wrap"
+                           FontSize="12"
+                           LineHeight="19"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </StackPanel>
+
+              <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                <Border Grid.Column="0"
+                        Padding="17"
+                        CornerRadius="8"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="5">
+                    <TextBlock Text="{Binding AssetCountText}" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="CATALOG ENTRIES" FontSize="8" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1"
+                        Padding="17"
+                        CornerRadius="8"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="5">
+                    <TextBlock Text="{Binding TargetRowCountText}" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="TARGET ROWS" FontSize="8" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2"
+                        Padding="17"
+                        CornerRadius="8"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="5">
+                    <TextBlock Text="{Binding DependencyAssetCountText}" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="DEPENDENCY CONTENT" FontSize="8" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <Border Padding="15,13"
+                      CornerRadius="8"
+                      Background="{DynamicResource StudioSurfaceBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="1">
+                <Grid ColumnDefinitions="Auto,12,*">
+                  <Border Width="34"
+                          Height="34"
+                          CornerRadius="7"
+                          Background="{DynamicResource StudioAccentSurfaceBrush}">
+                    <materialIcons:MaterialIcon Kind="FileCodeOutline"
+                                                Width="18"
+                                                Height="18"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource StudioAccentBrush}" />
+                  </Border>
+                  <StackPanel Grid.Column="2" Spacing="3">
+                    <TextBlock Text="RawFile editor available"
+                               FontSize="11"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="Other asset types intentionally open a clear editor-placeholder until their dedicated editor scope is implemented."
+                               TextWrapping="Wrap"
+                               FontSize="9"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <Grid IsVisible="{Binding HasSelection}">
+            <ContentControl Margin="14"
+                            Content="{Binding SelectedHostedView}"
+                            IsVisible="{Binding HasSelectedHostedView}"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" />
+
+            <ScrollViewer IsVisible="{Binding HasEditorFallback}"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="42"
+                          MaxWidth="660"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Spacing="18">
+                <Border Width="64"
+                        Height="64"
+                        HorizontalAlignment="Center"
+                        CornerRadius="14"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderStrongBrush}"
+                        BorderThickness="1">
+                  <materialIcons:MaterialIcon Kind="CodeBracesBox"
+                                              Width="31"
+                                              Height="31"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Border>
+                <StackPanel Spacing="7">
+                  <TextBlock Text="{Binding EditorFallbackHeading}"
+                             HorizontalAlignment="Center"
+                             TextAlignment="Center"
+                             FontSize="19"
+                             FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding EditorFallbackMessage}"
+                             MaxWidth="560"
+                             TextAlignment="Center"
+                             TextWrapping="Wrap"
+                             FontSize="11"
+                             LineHeight="18"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </StackPanel>
+                <Border Padding="14"
+                        CornerRadius="8"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <Grid RowDefinitions="Auto,9,Auto,9,Auto" ColumnDefinitions="112,*">
+                    <TextBlock Text="Resource" Classes="propertyLabel" />
+                    <TextBlock Grid.Column="1" Text="{Binding SelectedName}" Classes="propertyValue" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="2" Text="Serialized type" Classes="propertyLabel" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedKind}" Classes="propertyValue" />
+                    <TextBlock Grid.Row="4" Text="Provider zone" Classes="propertyLabel" />
+                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedProviderZone}" Classes="propertyValue" TextWrapping="Wrap" />
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <GridSplitter x:Name="RightSplitter"
+                  Grid.Column="4"
+                  Grid.Row="0"
+                  ResizeDirection="Columns"
+                  ResizeBehavior="PreviousAndNext"
+                  Background="Transparent"
+                  Cursor="SizeWestEast"
+                  ToolTip.Tip="Drag to resize the right inspector"
+                  IsVisible="{Binding IsRightOpen}"
+                  PointerReleased="RightSplitter_PointerReleased" />
+    <materialIcons:MaterialIcon Grid.Column="4"
+                                Grid.Row="0"
+                                Kind="DragVertical"
+                                Width="14"
+                                Height="14"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding IsRightOpen}"
+                                Opacity="0.62"
+                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+    <!-- Right inspector/tool pane. -->
+    <Border x:Name="RightPane"
+            Grid.Column="5"
+            Grid.Row="0"
+            Margin="0,4,4,4"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSidebarBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1"
+            IsVisible="{Binding IsRightOpen}">
+      <Grid RowDefinitions="38,*">
+        <Border Padding="10,0"
+                CornerRadius="7,7,0,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Tag="{Binding RightActiveToolId}">
+          <Grid ColumnDefinitions="Auto,8,*,Auto" VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="DragVertical"
+                                        Tag="{Binding RightActiveToolId}"
+                                        Width="14"
+                                        Height="14"
+                                        Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                        PointerPressed="ToolDrag_PointerPressed"
+                                        PointerMoved="ToolDrag_PointerMoved"
+                                        PointerReleased="ToolDrag_PointerReleased" />
+            <TextBlock Grid.Column="2"
+                       Text="{Binding RightTitle}"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="3"
+                    Classes="studioPaneAction"
+                    Click="CollapseRightButton_Click"
+                    ToolTip.Tip="Collapse right tools">
+              <materialIcons:MaterialIcon Kind="ChevronRight" Width="15" Height="15" />
+            </Button>
+          </Grid>
+        </Border>
+        <ContentControl Grid.Row="1"
+                        Content="{Binding ActiveRightContent}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch" />
+      </Grid>
+    </Border>
+
+    <!-- Right Rider-style rail. -->
+    <Border x:Name="RightRail"
+            Grid.Column="6"
+            Grid.RowSpan="3"
+            Background="{DynamicResource StudioSidebarBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1,0,0,0">
+      <ItemsControl x:Name="RightToolItems"
+                    Margin="0,5"
+                    ItemsSource="{Binding RightTools}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="docking:DockToolState">
+            <ToggleButton Classes="studioToolRailButton"
+                          Tag="{Binding Id}"
+                          IsChecked="{Binding IsActive, Mode=OneWay}"
+                          IsEnabled="{Binding IsImplemented}"
+                          Click="ToolButton_Click"
+                          PointerPressed="ToolDrag_PointerPressed"
+                          PointerMoved="ToolDrag_PointerMoved"
+                          PointerReleased="ToolDrag_PointerReleased"
+                          ToolTip.Tip="{Binding Title}">
+              <materialIcons:MaterialIcon Kind="{Binding IconToken, Converter={StaticResource ToolIconConverter}}"
+                                          Width="19"
+                                          Height="19" />
+            </ToggleButton>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+
+    <GridSplitter x:Name="BottomSplitter"
+                  Grid.Column="1"
+                  Grid.ColumnSpan="5"
+                  Grid.Row="1"
+                  ResizeDirection="Rows"
+                  ResizeBehavior="PreviousAndNext"
+                  Background="Transparent"
+                  Cursor="SizeNorthSouth"
+                  ToolTip.Tip="Drag to resize the bottom tools"
+                  IsVisible="{Binding IsBottomOpen}"
+                  PointerReleased="BottomSplitter_PointerReleased" />
+    <materialIcons:MaterialIcon Grid.Column="1"
+                                Grid.ColumnSpan="5"
+                                Grid.Row="1"
+                                Kind="DragHorizontal"
+                                Width="14"
+                                Height="14"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding IsBottomOpen}"
+                                Opacity="0.62"
+                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+    <!-- Console and diagnostics always span the bottom workspace. -->
+    <Border x:Name="BottomPane"
+            Grid.Column="1"
+            Grid.ColumnSpan="5"
+            Grid.Row="2"
+            Margin="4,4,4,4"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSidebarBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1"
+            IsVisible="{Binding IsBottomOpen}">
+      <Grid RowDefinitions="38,*">
+        <Border Padding="10,0"
+                CornerRadius="7,7,0,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Tag="{Binding BottomActiveToolId}">
+          <Grid ColumnDefinitions="Auto,10,*,Auto">
+            <materialIcons:MaterialIcon Kind="DragHorizontal"
+                                        Tag="{Binding BottomActiveToolId}"
+                                        Width="14"
+                                        Height="14"
+                                        VerticalAlignment="Center"
+                                        Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                        PointerPressed="ToolDrag_PointerPressed"
+                                        PointerMoved="ToolDrag_PointerMoved"
+                                        PointerReleased="ToolDrag_PointerReleased" />
+            <ItemsControl Grid.Column="2"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Center"
+                          ItemsSource="{Binding BottomTools}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="4" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="docking:DockToolState">
+                  <ToggleButton Classes="studioDockTab"
+                                Tag="{Binding Id}"
+                                Content="{Binding Title}"
+                                IsChecked="{Binding IsActive, Mode=OneWay}"
+                                IsEnabled="{Binding IsImplemented}"
+                                Click="ToolButton_Click"
+                                PointerPressed="ToolDrag_PointerPressed"
+                                PointerMoved="ToolDrag_PointerMoved"
+                                PointerReleased="ToolDrag_PointerReleased" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Grid.Column="3"
+                    Classes="studioPaneAction"
+                    VerticalAlignment="Center"
+                    Click="CollapseBottomButton_Click"
+                    ToolTip.Tip="Collapse bottom tools">
+              <materialIcons:MaterialIcon Kind="ChevronDown" Width="15" Height="15" />
+            </Button>
+          </Grid>
+        </Border>
+        <ContentControl Grid.Row="1"
+                        Content="{Binding ActiveBottomContent}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch" />
+      </Grid>
+    </Border>
+
+    <!-- Fixed snap cues. Only the region allowed by the dragged tool is shown;
+         the other two regions never advertise an invalid drop. -->
+    <Border x:Name="LeftDropCue"
+            Grid.Column="1"
+            Grid.Row="0"
+            Margin="10"
+            CornerRadius="10"
+            IsHitTestVisible="False"
+            Opacity="0"
+            Background="{DynamicResource StudioAccentSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioAccentStrongBrush}"
+            BorderThickness="2">
+      <TextBlock Text="LEFT NAVIGATOR"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 FontSize="10"
+                 FontWeight="Bold"
+                 LetterSpacing="1"
+                 Foreground="{DynamicResource StudioAccentBrush}" />
+    </Border>
+    <Border x:Name="RightDropCue"
+            Grid.Column="5"
+            Grid.Row="0"
+            Margin="10"
+            CornerRadius="10"
+            IsHitTestVisible="False"
+            Opacity="0"
+            Background="{DynamicResource StudioAccentSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioAccentStrongBrush}"
+            BorderThickness="2">
+      <TextBlock Text="RIGHT INSPECTOR"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 FontSize="10"
+                 FontWeight="Bold"
+                 LetterSpacing="1"
+                 Foreground="{DynamicResource StudioAccentBrush}" />
+    </Border>
+    <Border x:Name="BottomDropCue"
+            Grid.Column="1"
+            Grid.ColumnSpan="5"
+            Grid.Row="2"
+            Margin="10"
+            CornerRadius="10"
+            IsHitTestVisible="False"
+            Opacity="0"
+            Background="{DynamicResource StudioAccentSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioAccentStrongBrush}"
+            BorderThickness="2">
+      <TextBlock Text="BOTTOM OUTPUT"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 FontSize="10"
+                 FontWeight="Bold"
+                 LetterSpacing="1"
+                 Foreground="{DynamicResource StudioAccentBrush}" />
+    </Border>
+  </Grid>
+</UserControl>

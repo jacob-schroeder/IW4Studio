@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:fastFileDetails="using:IW4.Studio.Desktop.Workbench.Tools.FastFileDetails"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileDetails.FastFileDetailsToolView"
+             x:DataType="fastFileDetails:FastFileDetailsToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="640">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="14">
+      <StackPanel Spacing="5">
+        <TextBlock Text="{Binding FileName}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="PRESERVED FASTFILE HEADER"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.7"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+
+      <Border Padding="12"
+              CornerRadius="7"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto"
+              ColumnDefinitions="116,*">
+          <TextBlock Text="Magic" Classes="propertyLabel" />
+          <TextBlock Grid.Column="1"
+                     Text="{Binding Magic}"
+                     Classes="propertyValue"
+                     FontFamily="Consolas" />
+
+          <TextBlock Grid.Row="2" Text="Magic type" Classes="propertyLabel" />
+          <TextBlock Grid.Row="2"
+                     Grid.Column="1"
+                     Text="{Binding MagicType}"
+                     Classes="propertyValue" />
+
+          <TextBlock Grid.Row="4" Text="Version" Classes="propertyLabel" />
+          <TextBlock Grid.Row="4"
+                     Grid.Column="1"
+                     Text="{Binding Version}"
+                     Classes="propertyValue" />
+
+          <TextBlock Grid.Row="6" Text="Online updatable" Classes="propertyLabel" />
+          <TextBlock Grid.Row="6"
+                     Grid.Column="1"
+                     Text="{Binding OnlineUpdatable}"
+                     Classes="propertyValue" />
+
+          <TextBlock Grid.Row="8" Text="File creation time" Classes="propertyLabel" />
+          <TextBlock Grid.Row="8"
+                     Grid.Column="1"
+                     Text="{Binding FileCreationTime}"
+                     Classes="propertyValue"
+                     TextWrapping="Wrap" />
+
+          <TextBlock Grid.Row="10" Text="Language" Classes="propertyLabel" />
+          <TextBlock Grid.Row="10"
+                     Grid.Column="1"
+                     Text="{Binding Language}"
+                     Classes="propertyValue"
+                     FontFamily="Consolas" />
+
+          <TextBlock Grid.Row="12" Text="Streamed images" Classes="propertyLabel" />
+          <TextBlock Grid.Row="12"
+                     Grid.Column="1"
+                     Text="{Binding StreamedImageCount}"
+                     Classes="propertyValue" />
+        </Grid>
+      </Border>
+
+      <TextBlock Text="Header values are read-only and belong to the target fastfile."
+                 FontSize="9"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

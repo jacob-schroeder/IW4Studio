@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>IW4.Studio.Desktop</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <Version>1.0.1</Version>
+    <Title>IW4 Studio</Title>
+    <Authors>Jacob Schroeder</Authors>
+    <Description>Studio and workspace editor for IW4 (Infinity Ward) fastfiles on the Playstation 3 platform.</Description>
+    <PackageProjectUrl>https://github.com/jacob-schroeder/IW4Studio</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jacob-schroeder/IW4Studio</RepositoryUrl>
+    <Product>IW4 Studio</Product>
+    <AssemblyVersion>1.0.1</AssemblyVersion>
+    <AssemblyName>IW4 Studio</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.3" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
+    <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
+    <PackageReference Include="Svg.Controls.Skia.Avalonia" Version="12.0.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IW4.Gsc\IW4.Gsc.csproj" />
+    <ProjectReference Include="..\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\IW4.Studio.MapEditor\IW4.Studio.MapEditor.csproj" />
+    <ProjectReference Include="..\IW4.Render.OpenGl\IW4.Render.OpenGl.csproj" />
+    <AvaloniaResource Include="..\..\Resources\logo_alt.svg" Link="Resources\logo_alt.svg" />
+    <AvaloniaResource Include="..\..\Resources\logo.svg" Link="Resources\logo.svg" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

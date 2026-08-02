@@ -1,0 +1,142 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:composition="using:IW4.Studio.Desktop.Workbench.Composition"
+        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+        x:Class="IW4.Studio.Desktop.Views.EditorWindow"
+        x:DataType="composition:StudioWorkbenchViewModel"
+        mc:Ignorable="d"
+        d:DesignWidth="1440"
+        d:DesignHeight="900"
+        Title="IW4 Studio"
+        Width="1440"
+        Height="900"
+        MinWidth="1180"
+        MinHeight="700"
+        WindowStartupLocation="CenterScreen">
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="File" IsVisible="True" IsEnabled="True">
+        <NativeMenu>
+          <NativeMenuItem Header="Save As…" IsEnabled="{Binding CanSaveAs}" Click="SaveAsMenuItem_Click" />
+          <NativeMenuItem Header="Open another fastfile…" Click="OpenAnotherMenuItem_Click" />
+          <NativeMenuItemSeparator />
+          <NativeMenuItem Header="Exit" Click="ExitMenuItem_Click" />
+        </NativeMenu>
+      </NativeMenuItem>
+      <NativeMenuItem Header="Edit" IsVisible="True" IsEnabled="True">
+        <NativeMenu>
+          <NativeMenuItem Header="Copy" IsEnabled="False" />
+          <NativeMenuItem Header="Paste" IsEnabled="False" />
+        </NativeMenu>
+      </NativeMenuItem>
+      <NativeMenuItem Header="Tools" IsVisible="True" IsEnabled="True">
+        <NativeMenu>
+          <NativeMenuItem Header="Live Preview" Click="LivePreviewMenuItem_Click" />
+          <NativeMenuItem Header="Map Editor" Click="MapEditorMenuItem_Click" />
+        </NativeMenu>
+      </NativeMenuItem>
+      <NativeMenuItem Header="Options" IsVisible="True" IsEnabled="True">
+        <NativeMenu>
+          <NativeMenuItem Header="Theme">
+            <NativeMenu>
+              <NativeMenuItem Header="Dark" ToggleType="Radio" CommandParameter="Dark" Click="ThemeMenuItem_Click" />
+              <NativeMenuItem Header="Light" ToggleType="Radio" CommandParameter="Light" Click="ThemeMenuItem_Click" />
+            </NativeMenu>
+          </NativeMenuItem>
+        </NativeMenu>
+      </NativeMenuItem>
+    </NativeMenu>
+  </NativeMenu.Menu>
+
+  <Grid RowDefinitions="52,*,25">
+    <Border Grid.Row="0"
+            Padding="14,7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,12,*,Auto" VerticalAlignment="Center">
+        <Border Grid.Column="0"
+                Width="32"
+                Height="32"
+                CornerRadius="7"
+                Background="{DynamicResource StudioAccentStrongBrush}">
+          <svg:Svg Width="46"
+                   Height="46"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Stretch="Uniform"
+                   Path="/Resources/logo.svg" />
+        </Border>
+        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+          <TextBlock Text="{Binding TargetFileName}"
+                     HorizontalAlignment="Left"
+                     FontSize="13"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding TargetPath}"
+                     HorizontalAlignment="Left"
+                     MaxWidth="760"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9">
+          <Border Padding="10,5"
+                  CornerRadius="12"
+                  Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+            <TextBlock Text="{Binding ModeName}"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                       FontSize="10"
+                       FontWeight="SemiBold" />
+          </Border>
+          <Button Classes="ghost"
+                  MinHeight="32"
+                  Padding="11,5"
+                  Content="Save As..."
+                  IsEnabled="{Binding CanSaveAs}"
+                  Click="SaveAsButton_Click" />
+          <Button Classes="ghost"
+                  MinHeight="32"
+                  Padding="11,5"
+                  Content="Open another..."
+                  Click="OpenAnotherButton_Click" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <composition:StudioWorkbenchView Grid.Row="1" />
+
+    <Border Grid.Row="2"
+            Padding="9,0"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="18">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7">
+          <TextBlock Text="●"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     Foreground="{DynamicResource StudioSuccessBrush}" />
+          <TextBlock Text="Workspace catalog loaded"
+                     VerticalAlignment="Center"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioSuccessBrush}" />
+        </StackPanel>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding ModeName}"
+                   VerticalAlignment="Center"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <TextBlock Grid.Column="3"
+                   Text="{Binding SearchResultText}"
+                   VerticalAlignment="Center"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

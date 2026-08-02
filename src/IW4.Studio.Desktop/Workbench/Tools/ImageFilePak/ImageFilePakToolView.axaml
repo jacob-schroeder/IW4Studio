@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:imageFilePak="using:IW4.Studio.Desktop.Workbench.Tools.ImageFilePak"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.ImageFilePak.ImageFilePakToolView"
+             x:DataType="imageFilePak:ImageFilePakToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="340"
+             d:DesignHeight="760">
+  <Grid RowDefinitions="Auto,*">
+    <Border Grid.Row="0"
+            Padding="10,9"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="8">
+        <TextBox Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 MinHeight="32"
+                 Padding="10,6"
+                 PlaceholderText="Search streamed images"
+                 FontSize="10" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding ResultText}"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <ListBox Classes="studioNavigatorList"
+               Margin="6"
+               ItemsSource="{Binding VisibleEntries}"
+               SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+               SelectionMode="Single">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="imageFilePak:ImageFilePakEntryViewModel">
+            <Grid ColumnDefinitions="28,*,Auto"
+                  ColumnSpacing="7"
+                  Margin="2,3">
+              <Border Width="25"
+                      Height="25"
+                      CornerRadius="5"
+                      Background="{DynamicResource StudioSurfaceSunkenBrush}">
+                <materialIcons:MaterialIcon Kind="ImageOutline"
+                                            Width="14"
+                                            Height="14"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource StudioAccentBrush}" />
+              </Border>
+              <StackPanel Grid.Column="1"
+                          Spacing="2">
+                <TextBlock Text="{Binding Name}"
+                           FontSize="10"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StudioTextBrush}" />
+                <TextBlock Text="{Binding OwningFastFileName}"
+                           FontSize="8"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                <TextBlock Text="{Binding PackageText}"
+                           FontSize="8"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StudioInfoBrush}" />
+              </StackPanel>
+              <TextBlock Grid.Column="2"
+                         Text="{Binding DimensionsText}"
+                         VerticalAlignment="Center"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <StackPanel IsVisible="{Binding !HasEntries}"
+                  Margin="24"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="7">
+        <materialIcons:MaterialIcon Kind="ImageOffOutline"
+                                    Width="28"
+                                    Height="28"
+                                    HorizontalAlignment="Center"
+                                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="No streamed images found"
+                   HorizontalAlignment="Center"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</UserControl>

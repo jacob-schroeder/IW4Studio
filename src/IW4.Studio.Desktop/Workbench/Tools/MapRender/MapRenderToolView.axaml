@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:mapRender="using:IW4.Studio.Desktop.Workbench.Tools.MapRender"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.MapRender.MapRenderToolView"
+             x:DataType="mapRender:MapRenderToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="380"
+             d:DesignHeight="640">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="14">
+      <Border Height="176"
+              CornerRadius="8"
+              ClipToBounds="True"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid>
+          <Image Source="{Binding LevelBriefingPreview}"
+                 Stretch="UniformToFill"
+                 IsVisible="{Binding HasLevelBriefingPreview}" />
+          <materialIcons:MaterialIcon Kind="MapOutline"
+                                      Width="54"
+                                      Height="54"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      IsVisible="{Binding HasNoLevelBriefingPreview}"
+                                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <Border Margin="10"
+                  Padding="8,4"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Bottom"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="LIVE PREVIEW"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+        </Grid>
+      </Border>
+
+      <StackPanel Spacing="5">
+        <TextBlock Text="{Binding StatusHeading}"
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="{Binding StatusMessage}"
+                   TextWrapping="Wrap"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+
+      <Border Padding="12"
+              CornerRadius="7"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,9,Auto" ColumnDefinitions="82,*">
+          <TextBlock Text="Fastfile" Classes="propertyLabel" />
+          <TextBlock Grid.Column="1"
+                     Text="{Binding DocumentName}"
+                     Classes="propertyValue"
+                     TextWrapping="Wrap" />
+          <TextBlock Grid.Row="2" Text="Target zone" Classes="propertyLabel" />
+          <TextBlock Grid.Row="2"
+                     Grid.Column="1"
+                     Text="{Binding ZoneName}"
+                     Classes="propertyValue"
+                     TextWrapping="Wrap" />
+        </Grid>
+      </Border>
+
+      <Button Classes="primary"
+              HorizontalAlignment="Stretch"
+              Content="Open Live Preview"
+              IsEnabled="{Binding CanLaunch}"
+              Click="OpenRendererButton_Click" />
+
+      <TextBlock Text="Live Preview approximates the in-game rendering of the loaded compiled map in a native OpenGL window. It remains separate from the authoritative Map Editor document."
+                 TextWrapping="Wrap"
+                 FontSize="9"
+                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

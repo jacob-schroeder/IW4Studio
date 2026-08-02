@@ -1,0 +1,238 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:edit="using:AvaloniaEdit"
+             xmlns:editing="using:AvaloniaEdit.Editing"
+             xmlns:editors="using:IW4.Studio.Desktop.Editors"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.RawFile.RawFileEditorView"
+             x:DataType="viewModels:RawFileEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="900"
+             d:DesignHeight="640">
+  <Grid RowDefinitions="Auto,10,*,10,Auto">
+    <Border Grid.Row="0"
+            Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <TextBlock Text="{Binding OriginalName}"
+                   VerticalAlignment="Center"
+                   FontSize="17"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}"
+                   TextTrimming="CharacterEllipsis" />
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Spacing="7">
+          <TextBlock Text="{Binding GscAnalysisStatusMessage}"
+                     IsVisible="{Binding IsGscSource}"
+                     VerticalAlignment="Center"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="10,5"
+                  Content="Check GSC"
+                  IsVisible="{Binding IsGscSource}"
+                  IsEnabled="{Binding CanAnalyzeGsc}"
+                  ToolTip.Tip="Analyze the current editor buffer without applying it"
+                  Click="AnalyzeGscButton_Click" />
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="10,5"
+                  Content="Clear"
+                  IsEnabled="{Binding CanClearBuffer}"
+                  Click="ClearBufferButton_Click" />
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="10,5"
+                  Content="Revert"
+                  IsEnabled="{Binding CanRevert}"
+                  Click="RevertDraftButton_Click" />
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="10,5"
+                  Content="Replace"
+                  IsVisible="{Binding CanReplaceFromFile}"
+                  IsEnabled="{Binding CanReplaceFromFile}"
+                  ToolTip.Tip="Replace this binary RawFile with a local file"
+                  Click="ReplaceFromFileButton_Click" />
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="10,5"
+                  Content="Export view"
+                  ToolTip.Tip="Copy the current text or hex view to the clipboard"
+                  Click="ExportPayloadButton_Click" />
+          <Button Classes="primary"
+                  MinHeight="31"
+                  Padding="12,5"
+                  Content="Apply changes"
+                  IsEnabled="{Binding CanImport}"
+                  Click="ImportPayloadButton_Click" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioInputBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid>
+        <!-- AvaloniaEdit virtualizes visual lines and owns its native line-number margin. -->
+        <edit:TextEditor x:Name="ContentEditor"
+                         MinHeight="360"
+                         Padding="14,12"
+                         ShowLineNumbers="True"
+                         LineNumbersMargin="0,0,12,0"
+                         WordWrap="False"
+                         HorizontalScrollBarVisibility="Auto"
+                         VerticalScrollBarVisibility="Auto"
+                         IsReadOnly="{Binding IsInputReadOnly}"
+                         FontFamily="JetBrains Mono, Menlo, Consolas"
+                         FontSize="14"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="{DynamicResource StudioTextBrush}"
+                         LineNumbersForeground="{DynamicResource StudioTextSubtleBrush}"
+                         IsVisible="{Binding !HasNativePreview}"
+                         TextChanged="ContentEditor_TextChanged"
+                         KeyDown="ContentEditor_KeyDown">
+          <edit:TextEditor.Styles>
+            <Style Selector="editing|TextArea">
+              <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+              <Setter Property="SelectionBrush" Value="{DynamicResource StudioSelectionBrush}" />
+              <Setter Property="SelectionForeground" Value="{DynamicResource StudioSelectionTextBrush}" />
+              <Setter Property="RightClickMovesCaret" Value="True" />
+            </Style>
+          </edit:TextEditor.Styles>
+          <edit:TextEditor.ContextFlyout>
+            <MenuFlyout>
+              <MenuItem Header="Copy"
+                        Command="{x:Static edit:ApplicationCommands.Copy}"
+                        CommandParameter="{Binding #ContentEditor.TextArea}" />
+              <MenuItem Header="Cut"
+                        Command="{x:Static edit:ApplicationCommands.Cut}"
+                        CommandParameter="{Binding #ContentEditor.TextArea}" />
+              <MenuItem Header="Paste"
+                        Command="{x:Static edit:ApplicationCommands.Paste}"
+                        CommandParameter="{Binding #ContentEditor.TextArea}" />
+              <Separator />
+              <MenuItem Header="Go to definition"
+                        IsVisible="{Binding HasGscWorkspaceFeatures}"
+                        Click="GoToGscDefinitionMenuItem_Click" />
+              <MenuItem Header="Find references"
+                        IsVisible="{Binding HasGscWorkspaceFeatures}"
+                        Click="FindGscUsagesMenuItem_Click" />
+              <Separator IsVisible="{Binding HasGscWorkspaceFeatures}" />
+              <MenuItem Header="Select all"
+                        Command="{x:Static edit:ApplicationCommands.SelectAll}"
+                        CommandParameter="{Binding #ContentEditor.TextArea}" />
+            </MenuFlyout>
+          </edit:TextEditor.ContextFlyout>
+        </edit:TextEditor>
+
+        <Grid IsVisible="{Binding HasNativePreview}"
+              RowDefinitions="32,*">
+          <Border Padding="12,0"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="0,0,0,1">
+            <TextBlock Text="{Binding NativePreviewTitle}"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </Border>
+          <ScrollViewer Grid.Row="1"
+                        Margin="12"
+                        HorizontalScrollBarVisibility="Auto"
+                        VerticalScrollBarVisibility="Auto">
+            <Image Source="{Binding NativePreview}"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center" />
+          </ScrollViewer>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="4"
+            MaxHeight="180"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1"
+            IsVisible="{Binding HasSourceDiagnostics}">
+      <Grid RowDefinitions="32,*">
+        <Border Padding="12,0"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="120,80,*"
+                ColumnSpacing="10">
+            <TextBlock Text="Location"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="Code"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="2"
+                       Text="Message"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </Grid>
+        </Border>
+
+        <ListBox Grid.Row="1"
+                 Classes="studioOutputList"
+                 Margin="6"
+                 ItemsSource="{Binding SourceDiagnostics}"
+                 SelectionMode="Single">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="editors:EditorSourceDiagnostic">
+              <Button Classes="ghost"
+                      Padding="4,3"
+                      HorizontalContentAlignment="Stretch"
+                      Click="GscDiagnosticButton_Click">
+                <Grid ColumnDefinitions="120,80,*"
+                      ColumnSpacing="10">
+                  <TextBlock Text="{Binding Location.DisplayText}"
+                             FontSize="10"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding Code}"
+                             FontSize="10"
+                             Foreground="{DynamicResource StudioWarningBrush}" />
+                  <TextBlock Grid.Column="2"
+                             Text="{Binding Message}"
+                             FontSize="10"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource StudioTextBrush}" />
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

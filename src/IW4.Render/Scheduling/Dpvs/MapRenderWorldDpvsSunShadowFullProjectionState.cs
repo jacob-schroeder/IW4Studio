@@ -1,0 +1,182 @@
+using System.Numerics;
+
+namespace IW4.Render.Scheduling.Dpvs;
+
+/// <summary>
+/// Semantic form of the PS3 GfxSunShadowProjectionSetup fields used while
+/// producing GfxSunShadowClip. Axis rows retain their native ordering.
+/// </summary>
+public sealed class MapRenderWorldDpvsSunShadowFullProjectionState
+{
+    internal MapRenderWorldDpvsSunShadowFullProjectionState(
+        Vector3 axis0,
+        Vector3 axis1,
+        Vector3 axis2,
+        Vector3 cameraOrigin,
+        Vector3 cameraForward,
+        float nearShadowMinDistance,
+        float frustumRayDistanceToEdgeOfNearMap,
+        float worldDepthMinimum,
+        float worldDepthMaximum,
+        Vector2 shadowOrigin,
+        Vector2 shadowOriginPixelCenter,
+        Vector2 partition0SnappedShadowOrigin,
+        Vector2 partition1SnappedShadowOrigin,
+        float partition0SampleSize,
+        float partition1SampleSize,
+        Matrix4x4 partition0WorldToClip,
+        Matrix4x4 partition1WorldToClip,
+        Matrix4x4 shadowLookupMatrix,
+        MapRenderWorldDpvsSunShadowProjectionCodeConstants codeConstants)
+    {
+        ArgumentNullException.ThrowIfNull(codeConstants);
+        if (!IsFinite(axis0) ||
+            !IsFinite(axis1) ||
+            !IsFinite(axis2) ||
+            !IsFinite(cameraOrigin) ||
+            !IsFinite(cameraForward) ||
+            !(nearShadowMinDistance > 0f) ||
+            !float.IsFinite(nearShadowMinDistance) ||
+            !(frustumRayDistanceToEdgeOfNearMap > 0f) ||
+            !float.IsFinite(frustumRayDistanceToEdgeOfNearMap) ||
+            !float.IsFinite(worldDepthMinimum) ||
+            !float.IsFinite(worldDepthMaximum) ||
+            !(worldDepthMaximum - worldDepthMinimum + 2f > 0f) ||
+            !IsFinite(shadowOrigin) ||
+            !IsFinite(shadowOriginPixelCenter) ||
+            !IsFinite(partition0SnappedShadowOrigin) ||
+            !IsFinite(partition1SnappedShadowOrigin) ||
+            !(partition0SampleSize > 0f) ||
+            !float.IsFinite(partition0SampleSize) ||
+            !(partition1SampleSize > 0f) ||
+            !float.IsFinite(partition1SampleSize) ||
+            !IsFinite(partition0WorldToClip) ||
+            !IsFinite(partition1WorldToClip) ||
+            !IsFinite(shadowLookupMatrix))
+        {
+            throw new ArgumentException(
+                "Sun-shadow projection payload must contain finite native axes, spans, origins, sample sizes, and matrices.");
+        }
+        Axis0 = axis0;
+        Axis1 = axis1;
+        Axis2 = axis2;
+        CameraOrigin = cameraOrigin;
+        CameraForward = cameraForward;
+        NearShadowMinDistance = nearShadowMinDistance;
+        FrustumRayDistanceToEdgeOfNearMap =
+            frustumRayDistanceToEdgeOfNearMap;
+        WorldDepthMinimum = worldDepthMinimum;
+        WorldDepthMaximum = worldDepthMaximum;
+        ShadowOrigin = shadowOrigin;
+        ShadowOriginPixelCenter = shadowOriginPixelCenter;
+        Partition0SnappedShadowOrigin = partition0SnappedShadowOrigin;
+        Partition1SnappedShadowOrigin = partition1SnappedShadowOrigin;
+        Partition0SampleSize = partition0SampleSize;
+        Partition1SampleSize = partition1SampleSize;
+        Partition0WorldToClip = partition0WorldToClip;
+        Partition1WorldToClip = partition1WorldToClip;
+        ShadowLookupMatrix = shadowLookupMatrix;
+        CodeConstants = codeConstants;
+    }
+
+    public Vector3 Axis0 { get; }
+
+    public Vector3 Axis1 { get; }
+
+    public Vector3 Axis2 { get; }
+
+    public Vector3 CameraOrigin { get; }
+
+    public Vector3 CameraForward { get; }
+
+    public float NearShadowMinDistance { get; }
+
+    /// <summary>
+    /// Exact denominator used by the lookup matrix's light/camera-forward
+    /// column. This is retained alongside the producer's established
+    /// near-distance name so consumers never have to reconstruct it.
+    /// </summary>
+    public float NearShadowDepthSpan => NearShadowMinDistance;
+
+    public float FrustumRayDistanceToEdgeOfNearMap { get; }
+
+    public float WorldDepthMinimum { get; }
+
+    public float WorldDepthMaximum { get; }
+
+    /// <summary>
+    /// Exact orthographic depth denominator:
+    /// <c>worldDepthMaximum - worldDepthMinimum + 2</c>.
+    /// </summary>
+    public float WorldDepthSpan =>
+        WorldDepthMaximum - WorldDepthMinimum + 2f;
+
+    public Vector2 ShadowOrigin { get; }
+
+    public Vector2 ShadowOriginPixelCenter { get; }
+
+    public Vector2 Partition0SnappedShadowOrigin { get; }
+
+    public Vector2 Partition1SnappedShadowOrigin { get; }
+
+    public float Partition0SampleSize { get; }
+
+    public float Partition1SampleSize { get; }
+
+    public Matrix4x4 Partition0WorldToClip { get; }
+
+    public Matrix4x4 Partition1WorldToClip { get; }
+
+    /// <summary>
+    /// Exact flat-layout matrix published at renderer-global +0x20F0 and
+    /// consumed by derived code matrix 0x57.
+    /// </summary>
+    public Matrix4x4 ShadowLookupMatrix { get; }
+
+    /// <summary>
+    /// Exact direct rows generated by this same projection operation.
+    /// </summary>
+    public MapRenderWorldDpvsSunShadowProjectionCodeConstants CodeConstants
+        { get; }
+
+    public Vector2 SnappedShadowOrigin(int partitionIndex) =>
+        partitionIndex switch
+        {
+            0 => Partition0SnappedShadowOrigin,
+            1 => Partition1SnappedShadowOrigin,
+            _ => throw new ArgumentOutOfRangeException(nameof(partitionIndex))
+        };
+
+    public float SampleSize(int partitionIndex) => partitionIndex switch
+    {
+        0 => Partition0SampleSize,
+        1 => Partition1SampleSize,
+        _ => throw new ArgumentOutOfRangeException(nameof(partitionIndex))
+    };
+
+    public Matrix4x4 WorldToClip(int partitionIndex) =>
+        partitionIndex switch
+        {
+            0 => Partition0WorldToClip,
+            1 => Partition1WorldToClip,
+            _ => throw new ArgumentOutOfRangeException(nameof(partitionIndex))
+        };
+
+    private static bool IsFinite(Vector2 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y);
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z);
+
+    private static bool IsFinite(Matrix4x4 value) =>
+        float.IsFinite(value.M11) && float.IsFinite(value.M12) &&
+        float.IsFinite(value.M13) && float.IsFinite(value.M14) &&
+        float.IsFinite(value.M21) && float.IsFinite(value.M22) &&
+        float.IsFinite(value.M23) && float.IsFinite(value.M24) &&
+        float.IsFinite(value.M31) && float.IsFinite(value.M32) &&
+        float.IsFinite(value.M33) && float.IsFinite(value.M34) &&
+        float.IsFinite(value.M41) && float.IsFinite(value.M42) &&
+        float.IsFinite(value.M43) && float.IsFinite(value.M44);
+}

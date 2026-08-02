@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:mapEditor="using:IW4.Studio.Desktop.Workbench.Tools.MapEditor"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.MapEditor.MapEditorToolView"
+             x:DataType="mapEditor:MapEditorToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="380"
+             d:DesignHeight="640">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="14">
+      <Border Height="130"
+              CornerRadius="8"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid>
+          <materialIcons:MaterialIcon Kind="VectorSquare"
+                                      Width="52"
+                                      Height="52"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Foreground="{DynamicResource StudioAccentBrush}" />
+          <Border Margin="10"
+                  Padding="8,4"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Bottom"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="COMPILED-MAP EDITOR"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+        </Grid>
+      </Border>
+
+      <StackPanel Spacing="5">
+        <TextBlock Text="{Binding StatusHeading}"
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="{Binding StatusMessage}"
+                   TextWrapping="Wrap"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+
+      <Border Padding="12"
+              CornerRadius="7"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,8,Auto,8,Auto,8,Auto"
+              ColumnDefinitions="105,*">
+          <TextBlock Text="Map identity" Classes="propertyLabel" />
+          <TextBlock Grid.Column="1"
+                     Text="{Binding MapIdentity}"
+                     Classes="propertyValue"
+                     TextWrapping="Wrap" />
+          <TextBlock Grid.Row="2" Text="Semantic objects" Classes="propertyLabel" />
+          <TextBlock Grid.Row="2"
+                     Grid.Column="1"
+                     Text="{Binding ObjectCountText}"
+                     Classes="propertyValue" />
+          <TextBlock Grid.Row="4" Text="Source bindings" Classes="propertyLabel" />
+          <TextBlock Grid.Row="4"
+                     Grid.Column="1"
+                     Text="{Binding SourceBindingCountText}"
+                     Classes="propertyValue" />
+          <TextBlock Grid.Row="6" Text="Save policy" Classes="propertyLabel" />
+          <TextBlock Grid.Row="6"
+                     Grid.Column="1"
+                     Text="{Binding SavePolicy}"
+                     Classes="propertyValue"
+                     TextWrapping="Wrap" />
+        </Grid>
+      </Border>
+
+      <Button Classes="primary"
+              HorizontalAlignment="Stretch"
+              Content="Open Map Editor"
+              IsEnabled="{Binding CanLaunch}"
+              Click="OpenMapEditorButton_Click" />
+
+      <TextBlock Text="The editor keeps imported compiled truth immutable, applies typed semantic commands with undo/redo, and projects supported changes into Live Preview. Structural edits remain blocked until their rebuilders are proven."
+                 TextWrapping="Wrap"
+                 FontSize="9"
+                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

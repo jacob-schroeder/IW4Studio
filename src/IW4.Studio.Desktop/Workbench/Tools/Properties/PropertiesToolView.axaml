@@ -1,0 +1,240 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:editors="using:IW4.Studio.Desktop.Editors"
+             xmlns:imageFilePak="using:IW4.Studio.Desktop.Workbench.Tools.ImageFilePak"
+             xmlns:properties="using:IW4.Studio.Desktop.Workbench.Tools.Properties"
+             xmlns:avalonia="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.Properties.PropertiesToolView"
+             x:DataType="properties:PropertiesToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="640">
+  <Grid>
+    <StackPanel IsVisible="{Binding HasNoSelection}"
+                Margin="24"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="8">
+      <avalonia:MaterialIcon
+                 Kind="AlertCircleOutline"
+                 HorizontalAlignment="Center"
+                 FontSize="26"
+                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      <TextBlock Text="No item selected"
+                 HorizontalAlignment="Center"
+                 FontSize="13"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource StudioTextBrush}" />
+      <TextBlock Text="Choose an item from a workbench navigator."
+                 MaxWidth="240"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 FontSize="10"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+
+    <ScrollViewer IsVisible="{Binding HasSelection}"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="16" Spacing="14">
+        <StackPanel Spacing="5">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <Border HorizontalAlignment="Left"
+                  Padding="8,3"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioAccentSecondarySurfaceBrush}"
+                  BorderBrush="{DynamicResource StudioSuccessBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="{Binding AssetType}"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+          </Border>
+        </StackPanel>
+
+        <Border Padding="12"
+                CornerRadius="7"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <StackPanel Spacing="12">
+            <Grid RowDefinitions="Auto,9,Auto,9,Auto,9,Auto,9,Auto,9,Auto,9,Auto"
+                  ColumnDefinitions="92,*">
+              <TextBlock Text="Navigator" Classes="propertyLabel" />
+              <TextBlock Grid.Column="1" Text="{Binding Navigator}" Classes="propertyValue" />
+              <TextBlock Grid.Row="2" Text="Identity" Classes="propertyLabel" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Identity}" Classes="propertyValue" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="4" Text="Provider zone" Classes="propertyLabel" />
+              <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ProviderZone}" Classes="propertyValue" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="6" Text="Access" Classes="propertyLabel" />
+              <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Access}" Classes="propertyValue" />
+              <TextBlock Grid.Row="8" Text="Origin" Classes="propertyLabel" />
+              <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Origin}" Classes="propertyValue" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="10" Text="Editor" Classes="propertyLabel" />
+              <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Editor}" Classes="propertyValue" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="12" Text="Serialized type" Classes="propertyLabel" />
+              <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding AssetType}" Classes="propertyValue" />
+            </Grid>
+
+            <StackPanel IsVisible="{Binding HasEditorProperties}" Spacing="10">
+              <Border Height="1"
+                      Background="{DynamicResource StudioBorderBrush}" />
+              <TextBlock Text="{Binding EditorPropertySectionName}"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <ItemsControl ItemsSource="{Binding EditorProperties}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="editors:AssetEditorProperty">
+                    <Grid ColumnDefinitions="92,*"
+                          Margin="0,0,0,8">
+                      <TextBlock Text="{Binding Name}"
+                                 Classes="propertyLabel" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Value}"
+                                 Classes="propertyValue"
+                                 TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <StackPanel IsVisible="{Binding HasStreamedImageDetails}"
+                    Spacing="10">
+          <Grid ColumnDefinitions="*,Auto"
+                VerticalAlignment="Center">
+            <TextBlock Text="STREAM DETAILS"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.8"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Border Grid.Column="1"
+                    Padding="7,3"
+                    CornerRadius="4"
+                    Background="{DynamicResource StudioInfoSurfaceBrush}"
+                    BorderBrush="{DynamicResource StudioInfoBorderBrush}"
+                    BorderThickness="1">
+              <TextBlock Text="READ ONLY"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioInfoBrush}" />
+            </Border>
+          </Grid>
+
+          <Border Padding="12"
+                  CornerRadius="7"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <Grid RowDefinitions="Auto,7,Auto,7,Auto,7,Auto"
+                  ColumnDefinitions="82,*">
+              <TextBlock Text="Package" Classes="propertyLabel" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding StreamedImage.PackageText}"
+                         Classes="propertyValue"
+                         TextWrapping="Wrap" />
+              <TextBlock Grid.Row="2" Text="Dimensions" Classes="propertyLabel" />
+              <TextBlock Grid.Row="2"
+                         Grid.Column="1"
+                         Text="{Binding StreamedImage.DimensionsText}"
+                         Classes="propertyValue" />
+              <TextBlock Grid.Row="4" Text="Stream bytes" Classes="propertyLabel" />
+              <TextBlock Grid.Row="4"
+                         Grid.Column="1"
+                         Text="{Binding StreamedImage.TotalByteCountText}"
+                         Classes="propertyValue" />
+              <TextBlock Grid.Row="6" Text="Stream index" Classes="propertyLabel" />
+              <TextBlock Grid.Row="6"
+                         Grid.Column="1"
+                         Text="{Binding StreamedImage.StreamIndexText}"
+                         Classes="propertyValue"
+                         FontFamily="Consolas" />
+            </Grid>
+          </Border>
+
+          <TextBlock Text="STREAM ENTRIES"
+                     FontSize="8"
+                     FontWeight="Bold"
+                     LetterSpacing="0.8"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+          <ItemsControl ItemsSource="{Binding StreamedImage.StreamParts}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="imageFilePak:ImageFilePakStreamPartViewModel">
+                <Border Margin="0,0,0,7"
+                        Padding="10"
+                        CornerRadius="7"
+                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="7">
+                    <Grid ColumnDefinitions="*,Auto"
+                          ColumnSpacing="8">
+                      <StackPanel Orientation="Horizontal"
+                                  Spacing="6">
+                        <TextBlock Text="{Binding PartText}"
+                                   FontSize="9"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource StudioTextBrush}" />
+                        <TextBlock Text="{Binding LevelText}"
+                                   FontSize="8"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding DimensionsText}"
+                                 FontSize="9"
+                                 Foreground="{DynamicResource StudioAccentBrush}" />
+                    </Grid>
+                    <Grid RowDefinitions="Auto,5,Auto,5,Auto,5,Auto,5,Auto"
+                          ColumnDefinitions="76,*">
+                      <TextBlock Text="Package" Classes="propertyLabel" />
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding PackageName}"
+                                 Classes="propertyValue"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Row="2" Text="Payload" Classes="propertyLabel" />
+                      <TextBlock Grid.Row="2"
+                                 Grid.Column="1"
+                                 Text="{Binding ByteCountText}"
+                                 Classes="propertyValue" />
+                      <TextBlock Grid.Row="4" Text="Source" Classes="propertyLabel" />
+                      <TextBlock Grid.Row="4"
+                                 Grid.Column="1"
+                                 Text="{Binding SourceRangeText}"
+                                 Classes="propertyValue"
+                                 FontFamily="Consolas" />
+                      <TextBlock Grid.Row="6" Text="Block offset" Classes="propertyLabel" />
+                      <TextBlock Grid.Row="6"
+                                 Grid.Column="1"
+                                 Text="{Binding BlockOffsetText}"
+                                 Classes="propertyValue"
+                                 FontFamily="Consolas" />
+                      <TextBlock Grid.Row="8" Text="Stream offset" Classes="propertyLabel" />
+                      <TextBlock Grid.Row="8"
+                                 Grid.Column="1"
+                                 Text="{Binding StreamOffsetText}"
+                                 Classes="propertyValue"
+                                 FontFamily="Consolas" />
+                    </Grid>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

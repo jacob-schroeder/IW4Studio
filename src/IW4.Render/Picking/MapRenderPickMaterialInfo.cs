@@ -1,0 +1,55 @@
+using System.Numerics;
+using IW4.Assets.Assets.ColMap;
+using IW4.Assets.Assets.GfxMap;
+using IW4.FastFiles.Zone;
+using IW4.Runtime.Database;
+
+using IW4.Render.Execution;
+using IW4.Render.Materials;
+using IW4.Render.Textures;
+
+namespace IW4.Render.Picking;
+
+public sealed record MapRenderPickMaterialInfo(
+    string MaterialName,
+    string TechniqueSetName,
+    int TechniqueSlot,
+    string TechniqueName,
+    string PassClass,
+    int PassIndex,
+    int SamplerArgIndex,
+    ushort SamplerDest,
+    uint SamplerHash,
+    byte TextureSemantic,
+    byte TexCoordSource,
+    string TextureName,
+    int TextureWidth,
+    int TextureHeight,
+    string TextureFormat,
+    byte SamplerState,
+    int SamplerRsxClampMax,
+    byte SamplerRsxDescriptorPad0F,
+    byte SamplerRsxDescriptorPad1B,
+    uint SamplerRsxCachePayload,
+    uint SamplerRsxTexEnablePayload,
+    uint SamplerRsxTexFilterPayload,
+    uint SamplerRsxTexWrapPayload,
+    int SamplerFilterClass,
+    int SamplerMipClass,
+    MapRenderTextureFilter SamplerMinFilter,
+    MapRenderTextureFilter SamplerMagFilter,
+    MapRenderTextureFilter SamplerMipFilter,
+    int SamplerMaxAnisotropy,
+    MapRenderTextureAddressMode SamplerAddressU,
+    MapRenderTextureAddressMode SamplerAddressV,
+    MapRenderTextureAddressMode SamplerAddressW,
+    MapRenderRsxTextureCommandState RsxTextureCommandState,
+    bool TextureHasTransparency,
+    int TextureMipLevelCount,
+    int UnresolvedCodeSamplerCount,
+    IReadOnlyList<MapRenderPickColorLayerInfo> ColorLayers,
+    IReadOnlyList<MapRenderPickMaterialSamplerInfo> MaterialSamplers,
+    MapRenderShaderExecutionContract ShaderExecution,
+    string ShaderExecutionStatus,
+    MapRenderUvRoute UvRoute,
+    MapRenderState State);

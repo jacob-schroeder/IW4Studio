@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:dependencyGraph="using:IW4.Studio.Desktop.Workbench.Tools.DependencyGraph"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.DependencyGraph.DependencyGraphToolView"
+             x:DataType="dependencyGraph:DependencyGraphToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="640">
+  <Grid RowDefinitions="Auto,*">
+    <Border Padding="16,14"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,0,0,1">
+      <StackPanel Spacing="4">
+        <TextBlock Text="{Binding Header}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="Physical fastfiles in dependency load order"
+                   FontSize="9"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <ItemsControl Margin="16,18"
+                    ItemsSource="{Binding Nodes}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="dependencyGraph:DependencyGraphNodeViewModel">
+            <StackPanel>
+              <Border Padding="12"
+                      CornerRadius="7"
+                      Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="1"
+                      ToolTip.Tip="{Binding PhysicalPath}">
+                <Grid ColumnDefinitions="Auto,10,*">
+                  <materialIcons:MaterialIcon Kind="CheckCircleOutline"
+                                              Width="20"
+                                              Height="20"
+                                              VerticalAlignment="Center"
+                                              IsVisible="{Binding IsLoaded}"
+                                              Foreground="{DynamicResource StudioSuccessBrush}" />
+                  <materialIcons:MaterialIcon Kind="InformationOutline"
+                                              Width="20"
+                                              Height="20"
+                                              VerticalAlignment="Center"
+                                              IsVisible="{Binding IsSkippedOptional}"
+                                              Foreground="{DynamicResource StudioInfoBrush}" />
+                  <materialIcons:MaterialIcon Kind="AlertCircleOutline"
+                                              Width="20"
+                                              Height="20"
+                                              VerticalAlignment="Center"
+                                              IsVisible="{Binding IsMissingRequired}"
+                                              Foreground="{DynamicResource StudioErrorBrush}" />
+
+                  <StackPanel Grid.Column="2"
+                              Spacing="3">
+                    <TextBlock Text="{Binding FileName}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding IsLoaded}"
+                               Foreground="{DynamicResource StudioSuccessBrush}" />
+                    <TextBlock Text="{Binding FileName}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding IsSkippedOptional}"
+                               Foreground="{DynamicResource StudioInfoBrush}" />
+                    <TextBlock Text="{Binding FileName}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding IsMissingRequired}"
+                               Foreground="{DynamicResource StudioErrorBrush}" />
+                    <TextBlock Text="{Binding StatusText}"
+                               FontSize="8"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+
+              <Grid Height="32"
+                    IsVisible="{Binding HasSuccessor}">
+                <Border Width="1"
+                        Height="18"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Background="{DynamicResource StudioBorderStrongBrush}" />
+                <materialIcons:MaterialIcon Kind="ArrowDown"
+                                            Width="16"
+                                            Height="16"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Bottom"
+                                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              </Grid>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
