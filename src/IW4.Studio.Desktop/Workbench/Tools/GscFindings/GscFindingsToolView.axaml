@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:editors="using:IW4.Studio.Desktop.Editors"
+             xmlns:findings="using:IW4.Studio.Desktop.Workbench.Tools.GscFindings"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.GscFindings.GscFindingsToolView"
+             x:DataType="findings:GscFindingsToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1100"
+             d:DesignHeight="260">
+  <Grid>
+    <Grid IsVisible="{Binding HasItems}" RowDefinitions="32,*">
+      <Border Padding="10,0"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="90,120,100,*" ColumnSpacing="10">
+          <TextBlock Text="Severity"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="1"
+                     Text="Location"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="2"
+                     Text="Code"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="3"
+                     Text="Message"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+      </Border>
+
+      <ListBox Grid.Row="1"
+               Classes="studioOutputList"
+               Margin="6"
+               ItemsSource="{Binding Items}"
+               SelectionMode="Single">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="editors:EditorSourceDiagnostic">
+            <Button Classes="ghost"
+                    Padding="4,3"
+                    HorizontalContentAlignment="Stretch"
+                    Click="FindingButton_Click">
+              <Grid ColumnDefinitions="90,120,100,*" ColumnSpacing="10">
+                <TextBlock Text="{Binding Severity}"
+                           FontSize="10"
+                           Foreground="{DynamicResource StudioWarningBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Location.DisplayText}"
+                           FontSize="10"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <TextBlock Grid.Column="2"
+                           Text="{Binding Code}"
+                           FontSize="10"
+                           Foreground="{DynamicResource StudioWarningBrush}" />
+                <TextBlock Grid.Column="3"
+                           Text="{Binding Message}"
+                           FontSize="10"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StudioTextBrush}" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+
+    <StackPanel IsVisible="{Binding !HasItems}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+      <TextBlock Text="{Binding ResultText}"
+                 HorizontalAlignment="Center"
+                 FontSize="10"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+  </Grid>
+</UserControl>
