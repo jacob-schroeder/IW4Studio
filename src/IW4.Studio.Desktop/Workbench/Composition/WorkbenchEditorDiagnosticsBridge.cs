@@ -75,6 +75,12 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         {
             _observedHostedViewModel.PropertyChanged -=
                 HostedEditor_PropertyChanged;
+            if (_observedHostedViewModel is
+                IAssetEditorSourceDiagnosticsPresentation presentation)
+            {
+                presentation.SourceDiagnosticsPresentationRequested -=
+                    SourceDiagnostics_PresentationRequested;
+            }
         }
 
         _observedHostedViewModel = viewModel;
@@ -82,6 +88,12 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         {
             _observedHostedViewModel.PropertyChanged +=
                 HostedEditor_PropertyChanged;
+            if (_observedHostedViewModel is
+                IAssetEditorSourceDiagnosticsPresentation presentation)
+            {
+                presentation.SourceDiagnosticsPresentationRequested +=
+                    SourceDiagnostics_PresentationRequested;
+            }
         }
     }
 
@@ -98,14 +110,14 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         if (args.PropertyName is null or
             nameof(IAssetEditorSourceDiagnostics.SourceDiagnostics))
         {
-            RefreshGscFindings(requestPresentation: true);
+            RefreshGscFindings();
         }
     }
 
     private void Refresh()
     {
         RefreshValidationDiagnostics();
-        RefreshGscFindings(requestPresentation: false);
+        RefreshGscFindings();
     }
 
     private void RefreshValidationDiagnostics()
@@ -151,7 +163,7 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         _diagnostics.ReplaceBySource(SourceName, validationProjection);
     }
 
-    private void RefreshGscFindings(bool requestPresentation)
+    private void RefreshGscFindings()
     {
         AssetExplorerTabViewModel? tab = _editor.SelectedTab;
         IReadOnlyList<EditorSourceDiagnostic> findings =
@@ -166,7 +178,14 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         }
 
         _gscFindings.Replace(tab.Title, findings);
-        if (requestPresentation)
+    }
+
+    private void SourceDiagnostics_PresentationRequested(
+        object? sender,
+        EventArgs args)
+    {
+        RefreshGscFindings();
+        if (_gscFindings.HasItems)
             GscFindingsPresented?.Invoke(this, EventArgs.Empty);
     }
 

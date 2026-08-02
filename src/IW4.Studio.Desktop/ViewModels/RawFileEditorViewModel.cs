@@ -30,11 +30,16 @@ public sealed class RawFileEditorViewModel
       IAssetEditorProperties,
       IAssetEditorDiagnostics,
       IAssetEditorSourceDiagnostics,
+      IAssetEditorSourceDiagnosticsPresentation,
       IDisposable
 {
+    private static readonly TimeSpan LiveGscAnalysisDelay =
+        TimeSpan.FromMilliseconds(300);
+
     private readonly AssetEditorSession _editorSession;
     private readonly IGscAnalyzer _gscAnalyzer;
     private readonly GscEditorLanguageSession? _gscLanguageSession;
+    private readonly GscEditorLanguageSession? _gscAnalysisLanguageSession;
     private readonly IGscSourceNavigator? _gscSourceNavigator;
     private readonly IGscUsagesPresenter? _gscUsagesPresenter;
     private RawFileDraft? _draft;
@@ -55,6 +60,8 @@ public sealed class RawFileEditorViewModel
     private RawFileNativeViewerKind? _nativeViewerKind;
     private bool _disposed;
 
+    public event EventHandler? SourceDiagnosticsPresentationRequested;
+
     public RawFileEditorViewModel(
         AssetEditorSession editorSession,
         IGscAnalyzer gscAnalyzer,
@@ -65,6 +72,11 @@ public sealed class RawFileEditorViewModel
         _editorSession = editorSession ?? throw new ArgumentNullException(nameof(editorSession));
         _gscAnalyzer = gscAnalyzer ?? throw new ArgumentNullException(nameof(gscAnalyzer));
         _gscLanguageSession = gscWorkspace is null
+            ? null
+            : new GscEditorLanguageSession(gscWorkspace);
+        // Workspace overlay construction holds a session-local lock. Keeping
+        // analysis separate prevents worker checks from delaying UI queries.
+        _gscAnalysisLanguageSession = gscWorkspace is null
             ? null
             : new GscEditorLanguageSession(gscWorkspace);
         _gscSourceNavigator = gscSourceNavigator;
@@ -241,8 +253,8 @@ public sealed class RawFileEditorViewModel
     }
 
     /// <summary>
-    /// Staged text/hex input. It is not a semantic edit until ImportPayload is
-    /// explicitly invoked.
+    /// Staged text/hex input. It is not a semantic edit until
+    /// <see cref="ImportPayloadAsync"/> is explicitly invoked.
     /// </summary>
     public string PayloadInput
     {
@@ -300,6 +312,9 @@ public sealed class RawFileEditorViewModel
         get => _sourceDiagnostics;
         private set
         {
+            if (_sourceDiagnostics.SequenceEqual(value))
+                return;
+
             _sourceDiagnostics = value;
             OnPropertyChanged();
         }
@@ -324,8 +339,9 @@ public sealed class RawFileEditorViewModel
     }
 
     /// <summary>
-    /// Analyzes the current presentation buffer only. This method never applies
-    /// the buffer to the detached RawFile draft.
+    /// Runs an immediate workspace-aware analysis of the current presentation
+    /// buffer. This method never applies the buffer to the detached RawFile
+    /// draft.
     /// </summary>
     public async Task AnalyzeGscAsync()
     {
@@ -336,68 +352,13 @@ public sealed class RawFileEditorViewModel
             return;
         }
 
-        CancelGscAnalysis();
-        var cancellation = new CancellationTokenSource();
-        CancellationToken cancellationToken = cancellation.Token;
-        _gscAnalysisCancellation = cancellation;
-        long version = _bufferVersion;
-        string snapshot = PayloadInput;
-        RawFileTextEncoding? sourceEncoding =
-            _contentClassification?.TextEncoding;
-
-        IsAnalyzingGsc = true;
-        GscAnalysisStatusMessage = "Analyzing GSC…";
-
-        try
-        {
-            GscAnalysisResult result = await Task.Run(
-                () => AnalyzeGscSnapshot(
-                    snapshot,
-                    sourceEncoding,
-                    version,
-                    cancellationToken),
-                cancellationToken);
-
-            if (version != _bufferVersion ||
-                !ReferenceEquals(_gscAnalysisCancellation, cancellation))
-            {
-                return;
-            }
-
-            SourceDiagnostics = Array.AsReadOnly(
-                result.Diagnostics.Select(ToEditorDiagnostic).ToArray());
-            int errorCount = SourceDiagnostics.Count(
-                diagnostic => diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
-            GscAnalysisStatusMessage = errorCount == 0
-                ? "No GSC errors."
-                : errorCount == 1
-                    ? "1 GSC error."
-                    : $"{errorCount} GSC errors.";
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-            // A newer buffer or analysis owns the visible GSC state.
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or InvalidDataException or InvalidOperationException)
-        {
-            if (version == _bufferVersion &&
-                ReferenceEquals(_gscAnalysisCancellation, cancellation))
-            {
-                SourceDiagnostics = [];
-                GscAnalysisStatusMessage = $"GSC analysis failed: {exception.Message}";
-            }
-        }
-        finally
-        {
-            if (ReferenceEquals(_gscAnalysisCancellation, cancellation))
-            {
-                _gscAnalysisCancellation = null;
-                IsAnalyzingGsc = false;
-            }
-
-            cancellation.Dispose();
-        }
+        GscAnalysisOperation operation = BeginGscAnalysis();
+        GscAnalysisOutcome? outcome = await RunGscAnalysisAsync(
+            operation,
+            useWorkspace: true,
+            delay: TimeSpan.Zero,
+            activeStatusMessage: "Analyzing GSC…");
+        RequestSourceDiagnosticsPresentation(outcome);
     }
 
     public void GoToGscDefinition(int sourceOffset)
@@ -555,7 +516,7 @@ public sealed class RawFileEditorViewModel
         }
     }
 
-    public void ImportPayload()
+    public async Task ImportPayloadAsync()
     {
         if (!CanImport || _draft is null)
         {
@@ -563,12 +524,37 @@ public sealed class RawFileEditorViewModel
             return;
         }
 
+        string payloadSnapshot = PayloadInput;
+        RawFileDisplayEncoding displayEncoding = DisplayEncoding;
+        RawFileContentClassification? classificationSnapshot =
+            _contentClassification;
+        GscAnalysisOutcome? gscOutcome = null;
+        if (IsGscSource && displayEncoding == RawFileDisplayEncoding.Text)
+        {
+            GscAnalysisOperation operation = BeginGscAnalysis();
+            gscOutcome = await RunGscAnalysisAsync(
+                operation,
+                useWorkspace: true,
+                delay: TimeSpan.Zero,
+                activeStatusMessage: "Checking GSC before applying…");
+            if (gscOutcome is null)
+                return;
+            if (gscOutcome.FailureMessage is { } failureMessage)
+            {
+                StatusMessage =
+                    $"Changes were not applied because GSC analysis failed: {failureMessage}";
+                return;
+            }
+
+            RequestSourceDiagnosticsPresentation(gscOutcome);
+        }
+
         try
         {
-            if (DisplayEncoding == RawFileDisplayEncoding.Text)
+            if (displayEncoding == RawFileDisplayEncoding.Text)
             {
                 RawFileContentClassification classification =
-                    _contentClassification
+                    classificationSnapshot
                     ?? throw new InvalidOperationException(
                         "RawFile content classification is unavailable.");
                 if (!classification.IsTextual)
@@ -580,18 +566,18 @@ public sealed class RawFileEditorViewModel
                 RawFileTextEncoding encoding =
                     classification.TextEncoding ?? RawFileTextEncoding.Utf8;
                 _editorSession.Apply<RawFileDraft>(
-                    draft => draft.ReplaceCanonicalText(PayloadInput, encoding));
+                    draft => draft.ReplaceCanonicalText(payloadSnapshot, encoding));
             }
             else
             {
-                byte[] bytes = ParseHex(PayloadInput);
+                byte[] bytes = ParseHex(payloadSnapshot);
                 _editorSession.Apply<RawFileDraft>(
                     draft => draft.ReplaceCanonicalContent(bytes));
             }
 
             _draft = _editorSession.ReadDraft<RawFileDraft>();
             Diagnostics = _editorSession.Validation.Issues;
-            StatusMessage = "Applied logical content with canonical RawFile storage.";
+            StatusMessage = CreateApplyStatusMessage(gscOutcome);
             RefreshPresentation();
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or IOException or OverflowException)
@@ -745,6 +731,7 @@ public sealed class RawFileEditorViewModel
         CancelGscUsageSearch();
         _nativePreview?.Dispose();
         _nativePreview = null;
+        SourceDiagnosticsPresentationRequested = null;
     }
 
     private byte[] CurrentLogicalContentCopy() => _draft?.GetLogicalContentCopy()
@@ -854,7 +841,107 @@ public sealed class RawFileEditorViewModel
             StatusMessage = "GSC reference search canceled because the editor changed.";
 
         SourceDiagnostics = [];
-        GscAnalysisStatusMessage = IsGscSource ? "GSC not analyzed." : string.Empty;
+        if (!IsGscSource || DisplayEncoding != RawFileDisplayEncoding.Text)
+        {
+            GscAnalysisStatusMessage = string.Empty;
+            return;
+        }
+
+        GscAnalysisStatusMessage = "GSC check pending…";
+        GscAnalysisOperation operation = BeginGscAnalysis();
+        _ = RunGscAnalysisAsync(
+            operation,
+            useWorkspace: false,
+            delay: LiveGscAnalysisDelay,
+            activeStatusMessage: "Checking GSC…");
+    }
+
+    private GscAnalysisOperation BeginGscAnalysis()
+    {
+        CancelGscAnalysis();
+        var cancellation = new CancellationTokenSource();
+        _gscAnalysisCancellation = cancellation;
+        return new GscAnalysisOperation(
+            OriginalName,
+            PayloadInput,
+            _contentClassification?.TextEncoding,
+            _bufferVersion,
+            cancellation);
+    }
+
+    private async Task<GscAnalysisOutcome?> RunGscAnalysisAsync(
+        GscAnalysisOperation operation,
+        bool useWorkspace,
+        TimeSpan delay,
+        string activeStatusMessage)
+    {
+        CancellationToken cancellationToken = operation.Cancellation.Token;
+        try
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, cancellationToken);
+
+            if (!OwnsGscAnalysis(operation))
+                return null;
+
+            IsAnalyzingGsc = true;
+            GscAnalysisStatusMessage = activeStatusMessage;
+            GscAnalysisResult result = await Task.Run(
+                () => useWorkspace
+                    ? AnalyzeAuthoritativeGscSnapshot(operation, cancellationToken)
+                    : AnalyzeLocalGscSnapshot(operation, cancellationToken),
+                cancellationToken);
+            if (!OwnsGscAnalysis(operation))
+                return null;
+
+            IReadOnlyList<EditorSourceDiagnostic> diagnostics =
+                Array.AsReadOnly(result.Diagnostics
+                    .Select(ToEditorDiagnostic)
+                    .ToArray());
+            var outcome = new GscAnalysisOutcome(diagnostics, FailureMessage: null);
+            SourceDiagnostics = diagnostics;
+            GscAnalysisStatusMessage = CreateGscAnalysisStatusMessage(outcome);
+            return outcome;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer buffer or analysis owns the visible GSC state.
+            return null;
+        }
+        catch (Exception exception)
+        {
+            if (!OwnsGscAnalysis(operation))
+                return null;
+
+            var outcome = new GscAnalysisOutcome([], exception.Message);
+            SourceDiagnostics = [];
+            GscAnalysisStatusMessage = CreateGscAnalysisStatusMessage(outcome);
+            return outcome;
+        }
+        finally
+        {
+            if (ReferenceEquals(
+                    _gscAnalysisCancellation,
+                    operation.Cancellation))
+            {
+                _gscAnalysisCancellation = null;
+                IsAnalyzingGsc = false;
+            }
+
+            operation.Cancellation.Dispose();
+        }
+    }
+
+    private bool OwnsGscAnalysis(GscAnalysisOperation operation) =>
+        !_disposed &&
+        operation.BufferVersion == _bufferVersion &&
+        ReferenceEquals(_gscAnalysisCancellation, operation.Cancellation);
+
+    private void RequestSourceDiagnosticsPresentation(
+        GscAnalysisOutcome? outcome)
+    {
+        if (outcome is { FailureMessage: null, Diagnostics.Count: > 0 })
+            SourceDiagnosticsPresentationRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void CancelGscAnalysis()
@@ -916,21 +1003,76 @@ public sealed class RawFileEditorViewModel
         return new GscSourceText(source);
     }
 
-    private GscAnalysisResult AnalyzeGscSnapshot(
-        string source,
-        RawFileTextEncoding? encoding,
-        long bufferVersion,
+    private GscAnalysisResult AnalyzeLocalGscSnapshot(
+        GscAnalysisOperation operation,
         CancellationToken cancellationToken)
     {
-        GscSourceText sourceText = CreateGscSourceText(source, encoding);
-        if (_gscLanguageSession is null)
+        GscSourceText sourceText = CreateGscSourceText(
+            operation.Source,
+            operation.Encoding);
+        return _gscAnalyzer.Analyze(sourceText, cancellationToken);
+    }
+
+    private GscAnalysisResult AnalyzeAuthoritativeGscSnapshot(
+        GscAnalysisOperation operation,
+        CancellationToken cancellationToken)
+    {
+        GscSourceText sourceText = CreateGscSourceText(
+            operation.Source,
+            operation.Encoding);
+        if (_gscAnalysisLanguageSession is null)
             return _gscAnalyzer.Analyze(sourceText, cancellationToken);
 
-        return _gscLanguageSession.Analyze(
-            OriginalName,
+        return _gscAnalysisLanguageSession.Analyze(
+            operation.AssetName,
             sourceText,
-            bufferVersion,
+            operation.BufferVersion,
             cancellationToken);
+    }
+
+    private static string CreateGscAnalysisStatusMessage(
+        GscAnalysisOutcome outcome)
+    {
+        if (outcome.FailureMessage is { } failureMessage)
+            return $"GSC analysis failed: {failureMessage}";
+
+        int errorCount = outcome.Diagnostics.Count(diagnostic =>
+            diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
+        int warningCount = outcome.Diagnostics.Count - errorCount;
+        if (errorCount == 0 && warningCount == 0)
+            return "No GSC errors.";
+
+        return $"GSC check found {CreateFindingCountText(errorCount, warningCount)}.";
+    }
+
+    private static string CreateApplyStatusMessage(
+        GscAnalysisOutcome? outcome)
+    {
+        const string applied =
+            "Applied logical content with canonical RawFile storage.";
+        if (outcome is null)
+            return applied;
+
+        int errorCount = outcome.Diagnostics.Count(diagnostic =>
+            diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
+        int warningCount = outcome.Diagnostics.Count - errorCount;
+        if (errorCount == 0 && warningCount == 0)
+            return $"{applied} GSC check passed.";
+
+        return $"{applied} GSC check reported " +
+            $"{CreateFindingCountText(errorCount, warningCount)}; findings are advisory.";
+    }
+
+    private static string CreateFindingCountText(
+        int errorCount,
+        int warningCount)
+    {
+        var counts = new List<string>(2);
+        if (errorCount != 0)
+            counts.Add(errorCount == 1 ? "1 error" : $"{errorCount} errors");
+        if (warningCount != 0)
+            counts.Add(warningCount == 1 ? "1 warning" : $"{warningCount} warnings");
+        return string.Join(" and ", counts);
     }
 
     private GscUsagePresentation? FindGscUsagesSnapshot(
@@ -1054,4 +1196,15 @@ public sealed class RawFileEditorViewModel
 
         return compact.Length == 0 ? [] : Convert.FromHexString(compact);
     }
+
+    private sealed record GscAnalysisOperation(
+        string AssetName,
+        string Source,
+        RawFileTextEncoding? Encoding,
+        long BufferVersion,
+        CancellationTokenSource Cancellation);
+
+    private sealed record GscAnalysisOutcome(
+        IReadOnlyList<EditorSourceDiagnostic> Diagnostics,
+        string? FailureMessage);
 }

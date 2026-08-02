@@ -23,6 +23,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
     private bool _isSynchronizingEditorText;
     private CompletionWindow? _completionWindow;
     private OverloadInsightWindow? _signatureWindow;
+    private GscDiagnosticRenderer? _diagnosticRenderer;
 
     public RawFileEditorView()
     {
@@ -33,8 +34,13 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         DataContextChanged += RawFileEditorView_DataContextChanged;
     }
 
-    private void ImportPayloadButton_Click(object? sender, RoutedEventArgs e) =>
-        (DataContext as RawFileEditorViewModel)?.ImportPayload();
+    private async void ImportPayloadButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (DataContext is RawFileEditorViewModel viewModel)
+            await viewModel.ImportPayloadAsync();
+    }
 
     private async void AnalyzeGscButton_Click(object? sender, RoutedEventArgs e)
     {
@@ -316,6 +322,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        AttachDiagnosticRenderer();
         RebindViewModel();
     }
 
@@ -324,6 +331,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         CloseCompletionWindow();
         CloseSignatureWindow();
         DetachViewModel();
+        DetachDiagnosticRenderer();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -343,6 +351,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
 
         SynchronizeEditorText();
         ConfigureSyntaxHighlighting();
+        RefreshDiagnosticMarkers();
     }
 
     private void DetachViewModel()
@@ -351,6 +360,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
 
         _viewModel = null;
+        RefreshDiagnosticMarkers();
     }
 
     private void ViewModel_PropertyChanged(
@@ -362,6 +372,12 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
 
         if (e.PropertyName is null or nameof(RawFileEditorViewModel.IsGscSource))
             ConfigureSyntaxHighlighting();
+
+        if (e.PropertyName is null or
+            nameof(RawFileEditorViewModel.SourceDiagnostics))
+        {
+            RefreshDiagnosticMarkers();
+        }
     }
 
     private void ConfigureSyntaxHighlighting()
@@ -373,6 +389,35 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
                 : null;
         }
     }
+
+    private void AttachDiagnosticRenderer()
+    {
+        if (_contentEditor is null || _diagnosticRenderer is not null)
+            return;
+
+        var renderer = new GscDiagnosticRenderer(
+            _contentEditor.TextArea.TextView);
+        _contentEditor.TextArea.TextView.BackgroundRenderers.Add(renderer);
+        _diagnosticRenderer = renderer;
+        RefreshDiagnosticMarkers();
+    }
+
+    private void DetachDiagnosticRenderer()
+    {
+        if (_contentEditor is null || _diagnosticRenderer is null)
+            return;
+
+        _contentEditor.TextArea.TextView.BackgroundRenderers.Remove(
+            _diagnosticRenderer);
+        _diagnosticRenderer.Dispose();
+        _diagnosticRenderer = null;
+    }
+
+    private void RefreshDiagnosticMarkers() =>
+        _diagnosticRenderer?.Replace(
+            _viewModel?.IsGscSource == true
+                ? _viewModel.SourceDiagnostics
+                : []);
 
     private void SynchronizeEditorText()
     {

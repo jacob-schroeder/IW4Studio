@@ -83,6 +83,15 @@ public interface IAssetEditorSourceDiagnostics : INotifyPropertyChanged
     IReadOnlyList<EditorSourceDiagnostic> SourceDiagnostics { get; }
 }
 
+/// <summary>
+/// Optional signal for an editor that wants its source findings tool shown.
+/// Continuous background analysis updates diagnostics without raising it.
+/// </summary>
+public interface IAssetEditorSourceDiagnosticsPresentation
+{
+    event EventHandler? SourceDiagnosticsPresentationRequested;
+}
+
 /// <summary>Implemented by editor views that can select a source location.</summary>
 public interface IEditorTextNavigator
 {
