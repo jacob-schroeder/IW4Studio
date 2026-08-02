@@ -42,12 +42,6 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             await viewModel.AnalyzeGscAsync();
     }
 
-    private void GscDiagnosticButton_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { DataContext: EditorSourceDiagnostic diagnostic })
-            NavigateTo(diagnostic.Location);
-    }
-
     public void NavigateTo(EditorTextLocation location)
     {
         TextEditor? editor = _contentEditor;

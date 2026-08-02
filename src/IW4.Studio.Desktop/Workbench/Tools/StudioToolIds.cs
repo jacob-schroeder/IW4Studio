@@ -7,6 +7,7 @@ public static class StudioToolIds
     public const string ImageFilePak = "imagefile-pak";
     public const string ConsoleOutput = "console-output";
     public const string Diagnostics = "diagnostics";
+    public const string GscFindings = "gsc-findings";
     public const string GscUsages = "gsc-usages";
     public const string LivePreview = "map-render";
     [Obsolete("Use LivePreview.")]

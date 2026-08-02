@@ -4,14 +4,13 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:edit="using:AvaloniaEdit"
              xmlns:editing="using:AvaloniaEdit.Editing"
-             xmlns:editors="using:IW4.Studio.Desktop.Editors"
              xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
              x:Class="IW4.Studio.Desktop.Editors.RawFile.RawFileEditorView"
              x:DataType="viewModels:RawFileEditorViewModel"
              mc:Ignorable="d"
              d:DesignWidth="900"
              d:DesignHeight="640">
-  <Grid RowDefinitions="Auto,10,*,10,Auto">
+  <Grid RowDefinitions="Auto,10,*">
     <Border Grid.Row="0"
             Padding="14,10"
             CornerRadius="8"
@@ -167,72 +166,5 @@
       </Grid>
     </Border>
 
-    <Border Grid.Row="4"
-            MaxHeight="180"
-            CornerRadius="8"
-            ClipToBounds="True"
-            Background="{DynamicResource StudioSurfaceBrush}"
-            BorderBrush="{DynamicResource StudioBorderBrush}"
-            BorderThickness="1"
-            IsVisible="{Binding HasSourceDiagnostics}">
-      <Grid RowDefinitions="32,*">
-        <Border Padding="12,0"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="0,0,0,1">
-          <Grid ColumnDefinitions="120,80,*"
-                ColumnSpacing="10">
-            <TextBlock Text="Location"
-                       VerticalAlignment="Center"
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            <TextBlock Grid.Column="1"
-                       Text="Code"
-                       VerticalAlignment="Center"
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            <TextBlock Grid.Column="2"
-                       Text="Message"
-                       VerticalAlignment="Center"
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-          </Grid>
-        </Border>
-
-        <ListBox Grid.Row="1"
-                 Classes="studioOutputList"
-                 Margin="6"
-                 ItemsSource="{Binding SourceDiagnostics}"
-                 SelectionMode="Single">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="editors:EditorSourceDiagnostic">
-              <Button Classes="ghost"
-                      Padding="4,3"
-                      HorizontalContentAlignment="Stretch"
-                      Click="GscDiagnosticButton_Click">
-                <Grid ColumnDefinitions="120,80,*"
-                      ColumnSpacing="10">
-                  <TextBlock Text="{Binding Location.DisplayText}"
-                             FontSize="10"
-                             Foreground="{DynamicResource StudioTextMutedBrush}" />
-                  <TextBlock Grid.Column="1"
-                             Text="{Binding Code}"
-                             FontSize="10"
-                             Foreground="{DynamicResource StudioWarningBrush}" />
-                  <TextBlock Grid.Column="2"
-                             Text="{Binding Message}"
-                             FontSize="10"
-                             TextTrimming="CharacterEllipsis"
-                             Foreground="{DynamicResource StudioTextBrush}" />
-                </Grid>
-              </Button>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </Grid>
-    </Border>
   </Grid>
 </UserControl>

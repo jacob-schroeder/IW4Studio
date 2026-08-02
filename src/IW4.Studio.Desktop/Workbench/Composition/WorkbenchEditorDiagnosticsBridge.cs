@@ -2,14 +2,14 @@ using System.ComponentModel;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
+using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Composition;
 
 /// <summary>
 /// Window-local adapter from the selected editor's validation contracts into
-/// the reusable diagnostics tool. It deliberately knows nothing about dock
-/// layout, navigator routing, or window lifecycle.
+/// the field diagnostics and GSC findings tools.
 /// </summary>
 public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
 {
@@ -17,22 +17,28 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
 
     private readonly EditorViewModel _editor;
     private readonly DiagnosticsAggregator _diagnostics;
+    private readonly GscFindingsToolViewModel _gscFindings;
     private INotifyPropertyChanged? _observedHostedViewModel;
     private bool _disposed;
 
     public WorkbenchEditorDiagnosticsBridge(
         EditorViewModel editor,
-        DiagnosticsAggregator diagnostics)
+        DiagnosticsAggregator diagnostics,
+        GscFindingsToolViewModel gscFindings)
     {
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
         _diagnostics = diagnostics
             ?? throw new ArgumentNullException(nameof(diagnostics));
+        _gscFindings = gscFindings
+            ?? throw new ArgumentNullException(nameof(gscFindings));
         _editor.PropertyChanged += Editor_PropertyChanged;
-        _diagnostics.DiagnosticActivated += Diagnostics_DiagnosticActivated;
+        _gscFindings.FindingActivated += GscFindings_FindingActivated;
         ObserveHostedViewModel(
             _editor.SelectedTab?.HostedViewModel as INotifyPropertyChanged);
         Refresh();
     }
+
+    public event EventHandler? GscFindingsPresented;
 
     public void Dispose()
     {
@@ -41,9 +47,11 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
 
         _disposed = true;
         _editor.PropertyChanged -= Editor_PropertyChanged;
-        _diagnostics.DiagnosticActivated -= Diagnostics_DiagnosticActivated;
+        _gscFindings.FindingActivated -= GscFindings_FindingActivated;
         ObserveHostedViewModel(null);
         _diagnostics.ClearSource(SourceName);
+        _gscFindings.Clear();
+        GscFindingsPresented = null;
     }
 
     private void Editor_PropertyChanged(
@@ -82,14 +90,25 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         PropertyChangedEventArgs args)
     {
         if (args.PropertyName is null or
-            nameof(IAssetEditorDiagnostics.Diagnostics) or
+            nameof(IAssetEditorDiagnostics.Diagnostics))
+        {
+            RefreshValidationDiagnostics();
+        }
+
+        if (args.PropertyName is null or
             nameof(IAssetEditorSourceDiagnostics.SourceDiagnostics))
         {
-            Refresh();
+            RefreshGscFindings(requestPresentation: true);
         }
     }
 
     private void Refresh()
+    {
+        RefreshValidationDiagnostics();
+        RefreshGscFindings(requestPresentation: false);
+    }
+
+    private void RefreshValidationDiagnostics()
     {
         AssetExplorerTabViewModel? tab = _editor.SelectedTab;
         if (tab is null)
@@ -103,12 +122,8 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
             editorDiagnostics.Diagnostics.Count != 0
                 ? editorDiagnostics.Diagnostics
                 : tab.BackendEditor?.Validation.Issues ?? [];
-        IReadOnlyList<EditorSourceDiagnostic> sourceDiagnostics =
-            tab.HostedViewModel is IAssetEditorSourceDiagnostics editorSourceDiagnostics
-                ? editorSourceDiagnostics.SourceDiagnostics
-                : [];
 
-        if (validationIssues.Count == 0 && sourceDiagnostics.Count == 0)
+        if (validationIssues.Count == 0)
         {
             _diagnostics.ReplaceBySource(
                 SourceName,
@@ -118,7 +133,7 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
                         WorkbenchDiagnosticSeverity.Information,
                         SourceName,
                         tab.HasHostedEditor
-                            ? $"No validation errors for '{tab.Title}'."
+                            ? $"No asset validation errors for '{tab.Title}'."
                             : $"No editor is implemented for {tab.Entry.AssetType}.")
                 ]);
             return;
@@ -132,33 +147,34 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
                     : WorkbenchDiagnosticSeverity.Warning,
                 SourceName,
                 $"{issue.FieldPath} — {issue.Message}"));
-        IEnumerable<WorkbenchDiagnostic> sourceProjection =
-            sourceDiagnostics.Select((diagnostic, index) => new WorkbenchDiagnostic(
-                $"source:{diagnostic.Code}:{diagnostic.Location.Start}:{diagnostic.Location.Length}:{index}",
-                diagnostic.Severity == EditorSourceDiagnosticSeverity.Error
-                    ? WorkbenchDiagnosticSeverity.Error
-                    : WorkbenchDiagnosticSeverity.Warning,
-                SourceName,
-                $"{diagnostic.Code} — {diagnostic.Message}",
-                diagnostic.Location));
 
-        _diagnostics.ReplaceBySource(
-            SourceName,
-            validationProjection.Concat(sourceProjection));
+        _diagnostics.ReplaceBySource(SourceName, validationProjection);
     }
 
-    private void Diagnostics_DiagnosticActivated(
-        object? sender,
-        WorkbenchDiagnosticActivatedEventArgs args)
+    private void RefreshGscFindings(bool requestPresentation)
     {
-        WorkbenchDiagnostic diagnostic = args.Diagnostic;
-        if (!string.Equals(diagnostic.Source, SourceName, StringComparison.Ordinal) ||
-            diagnostic.Location is not { } location)
+        AssetExplorerTabViewModel? tab = _editor.SelectedTab;
+        IReadOnlyList<EditorSourceDiagnostic> findings =
+            tab?.HostedViewModel is IAssetEditorSourceDiagnostics sourceDiagnostics
+                ? sourceDiagnostics.SourceDiagnostics
+                : [];
+
+        if (tab is null || findings.Count == 0)
         {
+            _gscFindings.Clear();
             return;
         }
 
+        _gscFindings.Replace(tab.Title, findings);
+        if (requestPresentation)
+            GscFindingsPresented?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void GscFindings_FindingActivated(
+        object? sender,
+        GscFindingActivatedEventArgs args)
+    {
         if (_editor.SelectedTab?.HostedView is IEditorTextNavigator navigator)
-            navigator.NavigateTo(location);
+            navigator.NavigateTo(args.Finding.Location);
     }
 }

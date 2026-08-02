@@ -13,6 +13,7 @@ using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
 using IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 using IW4.Studio.Desktop.Workbench.Tools.FastFileDetails;
+using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.MapEditor;
@@ -86,8 +87,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         };
         ConsoleOutput = new ConsoleOutputBuffer();
         Diagnostics = new DiagnosticsAggregator();
+        GscFindings = new GscFindingsToolViewModel();
         _editorDiagnosticsBridge =
-            new WorkbenchEditorDiagnosticsBridge(Editor, Diagnostics);
+            new WorkbenchEditorDiagnosticsBridge(
+                Editor,
+                Diagnostics,
+                GscFindings);
         LivePreview = new MapRenderToolViewModel(workspace);
         MapEditor = new MapEditorToolViewModel(
             workspace,
@@ -105,6 +110,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             ImageFilePak,
             ConsoleOutput,
             Diagnostics,
+            GscFindings,
             GscUsages,
             LivePreview,
             MapEditor,
@@ -128,6 +134,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             GscSourceNavigation_NavigationRequested;
         _gscUsagesPresenter.PresentationRequested +=
             GscUsagesPresenter_PresentationRequested;
+        _editorDiagnosticsBridge.GscFindingsPresented +=
+            EditorDiagnosticsBridge_GscFindingsPresented;
         Editor.PropertyChanged += Editor_PropertyChanged;
         DockLayout.State.Left.PropertyChanged += DockRegion_PropertyChanged;
         DockLayout.State.Bottom.PropertyChanged += DockRegion_PropertyChanged;
@@ -177,6 +185,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public ConsoleOutputBuffer ConsoleOutput { get; }
 
     public DiagnosticsAggregator Diagnostics { get; }
+
+    public GscFindingsToolViewModel GscFindings { get; }
 
     public GscUsagesToolViewModel GscUsages { get; }
 
@@ -458,6 +468,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             GscSourceNavigation_NavigationRequested;
         _gscUsagesPresenter.PresentationRequested -=
             GscUsagesPresenter_PresentationRequested;
+        _editorDiagnosticsBridge.GscFindingsPresented -=
+            EditorDiagnosticsBridge_GscFindingsPresented;
         Editor.PropertyChanged -= Editor_PropertyChanged;
         DockLayout.State.Left.PropertyChanged -= DockRegion_PropertyChanged;
         DockLayout.State.Bottom.PropertyChanged -= DockRegion_PropertyChanged;
@@ -479,6 +491,17 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _registrationsById.TryGetValue(toolId, out StudioToolRegistration? registration)
             ? registration.Content
             : null;
+
+    private void EditorDiagnosticsBridge_GscFindingsPresented(
+        object? sender,
+        EventArgs args)
+    {
+        if (!_disposed &&
+            DockLayout.State.Bottom.ActiveToolId != StudioToolIds.GscFindings)
+        {
+            _ = ActivateTool(StudioToolIds.GscFindings);
+        }
+    }
 
     private void GscUsagesPresenter_PresentationRequested(
         object? sender,

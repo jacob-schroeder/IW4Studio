@@ -302,15 +302,8 @@ public sealed class RawFileEditorViewModel
         {
             _sourceDiagnostics = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(HasSourceDiagnostics));
-            OnPropertyChanged(nameof(HasGscErrors));
         }
     }
-
-    public bool HasSourceDiagnostics => SourceDiagnostics.Count != 0;
-
-    public bool HasGscErrors => SourceDiagnostics.Any(
-        diagnostic => diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
 
     public bool IsAnalyzingGsc
     {

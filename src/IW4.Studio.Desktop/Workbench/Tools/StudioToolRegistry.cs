@@ -5,6 +5,7 @@ using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
 using IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 using IW4.Studio.Desktop.Workbench.Tools.FastFileDetails;
+using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.MapEditor;
@@ -100,10 +101,24 @@ public static class StudioToolRegistry
                 context.Diagnostics),
             Implemented(
                 Descriptor(
+                    StudioToolIds.GscFindings,
+                    "GSC Errors",
+                    "CodeBracesBox",
+                    30,
+                    defaultOpen: false,
+                    DockRegion.Bottom,
+                    DockRailGroup.LeftBottom),
+                new GscFindingsToolView
+                {
+                    DataContext = context.GscFindings
+                },
+                context.GscFindings),
+            Implemented(
+                Descriptor(
                     StudioToolIds.GscUsages,
                     "GSC References",
                     "FileFindOutline",
-                    30,
+                    40,
                     defaultOpen: false,
                     DockRegion.Bottom,
                     DockRailGroup.LeftBottom),
