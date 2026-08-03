@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:edit="using:AvaloniaEdit"
              xmlns:editing="using:AvaloniaEdit.Editing"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
              x:Class="IW4.Studio.Desktop.Editors.RawFile.RawFileEditorView"
              x:DataType="viewModels:RawFileEditorViewModel"
@@ -33,10 +34,13 @@
                     Spacing="7">
           <Button Classes="ghost"
                   MinHeight="31"
-                  Padding="10,5"
-                  Content="Revert"
+                  Padding="8,5"
                   IsEnabled="{Binding CanRevert}"
-                  Click="RevertDraftButton_Click" />
+                  ToolTip.Tip="Revert changes"
+                  AutomationProperties.Name="Revert changes"
+                  Click="RevertDraftButton_Click">
+            <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
+          </Button>
           <Button Classes="ghost"
                   MinHeight="31"
                   Padding="10,5"
@@ -47,16 +51,23 @@
                   Click="ReplaceFromFileButton_Click" />
           <Button Classes="ghost"
                   MinHeight="31"
-                  Padding="10,5"
-                  Content="Export view"
-                  ToolTip.Tip="Copy the current text or hex view to the clipboard"
-                  Click="ExportPayloadButton_Click" />
+                  Padding="8,5"
+                  ToolTip.Tip="Copy to clipboard"
+                  AutomationProperties.Name="Copy to clipboard"
+                  Click="ExportPayloadButton_Click">
+            <materialIcons:MaterialIcon Kind="Clipboard" Width="16" Height="16" />
+          </Button>
           <Button Classes="primary"
                   MinHeight="31"
                   Padding="12,5"
-                  Content="Apply changes"
                   IsEnabled="{Binding CanImport}"
-                  Click="ImportPayloadButton_Click" />
+                  ToolTip.Tip="Apply changes"
+                  Click="ImportPayloadButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
         </StackPanel>
       </Grid>
     </Border>
