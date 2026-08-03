@@ -57,8 +57,9 @@ public sealed class StringTableRowEditorViewModel
 }
 
 /// <summary>
-/// One row-major cell projection. Editing the value updates only the detached
-/// draft; the serialized hash remains an explicit, preserved source value.
+/// One row-major cell projection. Editing the value updates only the local
+/// staged draft; the serialized hash remains an explicit, preserved source
+/// value.
 /// </summary>
 public sealed class StringTableCellEditorViewModel : ObservableObject
 {
@@ -127,7 +128,8 @@ public sealed class StringTableEditorViewModel
     : ObservableObject, IAssetEditorProperties, IAssetEditorDiagnostics
 {
     private readonly AssetEditorSession _editorSession;
-    private readonly Action<int, int, string?> _applyCellValue;
+    private readonly Action<int, int, string?> _stageCellValue;
+    private readonly Dictionary<int, string?> _pendingOriginalValues = [];
     private StringTableDraft? _draft;
     private StringTableReadOnlySnapshot? _readOnlySnapshot;
     private string _statusMessage = string.Empty;
@@ -140,7 +142,7 @@ public sealed class StringTableEditorViewModel
     {
         _editorSession = editorSession
             ?? throw new ArgumentNullException(nameof(editorSession));
-        _applyCellValue = ApplyCellValue;
+        _stageCellValue = StageCellValue;
         if (editorSession.Entry.AssetType != XAssetType.StringTable)
         {
             throw new InvalidDataException(
@@ -153,7 +155,7 @@ public sealed class StringTableEditorViewModel
                 _draft = editorSession.OpenDraft<StringTableDraft>();
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage =
-                    "Changes are applied to the detached target-owned draft. Stored hashes are preserved.";
+                    "Cell edits are staged until Apply. Stored hashes are preserved.";
                 break;
 
             case AssetEditorMode.ReadOnly:
@@ -193,6 +195,8 @@ public sealed class StringTableEditorViewModel
 
     public AssetEditorMode Mode => _editorSession.Mode;
     public bool IsEditable => Mode == AssetEditorMode.Editable;
+    public bool CanApply =>
+        IsEditable && _draft is not null && _pendingOriginalValues.Count != 0;
     public bool CanRevert => IsEditable;
     public bool HasTable => _draft is not null || _readOnlySnapshot is not null;
     public string OriginalName =>
@@ -264,10 +268,54 @@ public sealed class StringTableEditorViewModel
         new("Hashes", "Preserved source values")
     ];
 
-    public void SetCell(int row, int column, string? value)
+    public void ApplyChanges()
     {
-        ApplyCellValue(row, column, value);
-        RefreshTable();
+        if (!CanApply || _draft is null)
+        {
+            StatusMessage = IsEditable
+                ? "There are no staged StringTable changes to apply."
+                : "This StringTable is read-only or its content is unavailable.";
+            return;
+        }
+
+        int columnCount = _draft.ColumnCount;
+        var changes = _pendingOriginalValues.Keys
+            .Order()
+            .Select(index => (
+                Row: index / columnCount,
+                Column: index % columnCount,
+                Value: _draft.Cells[index].Value))
+            .ToArray();
+
+        try
+        {
+            _draft = _editorSession.ApplyAndRead<StringTableDraft>(
+                currentDraft =>
+                {
+                    foreach (var change in changes)
+                    {
+                        currentDraft.SetCellValue(
+                            change.Row,
+                            change.Column,
+                            change.Value);
+                    }
+                },
+                out _);
+
+            _pendingOriginalValues.Clear();
+            Diagnostics = _editorSession.Validation.Issues;
+            StatusMessage = changes.Length == 1
+                ? "Applied 1 cell change; its stored hash was preserved."
+                : $"Applied {changes.Length:N0} cell changes; their stored hashes were preserved.";
+            RefreshTable();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+            InvalidOperationException or
+            OverflowException)
+        {
+            StatusMessage = exception.Message;
+        }
     }
 
     public void RevertDraft()
@@ -281,13 +329,14 @@ public sealed class StringTableEditorViewModel
 
         _ = _editorSession.Revert();
         _draft = _editorSession.ReadDraft<StringTableDraft>();
+        _pendingOriginalValues.Clear();
         Diagnostics = _editorSession.Validation.Issues;
         StatusMessage =
             "Reverted the detached StringTable draft to its authored baseline.";
         RefreshTable();
     }
 
-    private void ApplyCellValue(int row, int column, string? value)
+    private void StageCellValue(int row, int column, string? value)
     {
         if (!IsEditable || _draft is null)
         {
@@ -298,14 +347,34 @@ public sealed class StringTableEditorViewModel
 
         try
         {
-            _draft = _editorSession.ApplyAndRead<StringTableDraft>(
-                draft => draft.SetCellValue(row, column, value),
-                out bool changed);
+            int index = CheckedCellIndex(_draft, row, column);
+            string? previousValue = _draft.Cells[index].Value;
+            if (string.Equals(previousValue, value, StringComparison.Ordinal))
+                return;
 
-            Diagnostics = _editorSession.Validation.Issues;
-            StatusMessage =
-                $"Updated row {row}, column {column}; its stored hash was preserved.";
-            if (changed)
+            bool hadPendingChanges = _pendingOriginalValues.Count != 0;
+            bool wasPending = _pendingOriginalValues.TryGetValue(
+                index,
+                out string? originalValue);
+            if (!wasPending)
+                originalValue = previousValue;
+
+            _draft.SetCellValue(row, column, value);
+            if (string.Equals(originalValue, value, StringComparison.Ordinal))
+            {
+                _pendingOriginalValues.Remove(index);
+            }
+            else if (!wasPending)
+            {
+                _pendingOriginalValues.Add(index, originalValue);
+            }
+
+            StatusMessage = _pendingOriginalValues.ContainsKey(index)
+                ? $"Staged row {row}, column {column}."
+                : $"Restored row {row}, column {column} to its applied value.";
+            if (hadPendingChanges != (_pendingOriginalValues.Count != 0))
+                OnPropertyChanged(nameof(CanApply));
+            if ((previousValue is null) != (value is null))
                 OnPropertyChanged(nameof(EditorProperties));
         }
         catch (Exception exception) when (
@@ -358,7 +427,7 @@ public sealed class StringTableEditorViewModel
                 ColumnCount,
                 cells,
                 IsEditable,
-                _applyCellValue);
+                _stageCellValue);
         }
 
         Rows = Array.AsReadOnly(rows);
@@ -368,7 +437,23 @@ public sealed class StringTableEditorViewModel
         OnPropertyChanged(nameof(CellCount));
         OnPropertyChanged(nameof(DimensionText));
         OnPropertyChanged(nameof(HasTable));
+        OnPropertyChanged(nameof(CanApply));
         OnPropertyChanged(nameof(EditorProperties));
+    }
+
+    private static int CheckedCellIndex(
+        StringTableDraft draft,
+        int row,
+        int column)
+    {
+        if ((uint)row >= (uint)draft.RowCount ||
+            (uint)column >= (uint)draft.ColumnCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                $"Cell ({row}, {column}) is outside this {draft.RowCount}×{draft.ColumnCount} StringTable.");
+        }
+
+        return checked(row * draft.ColumnCount + column);
     }
 
     private IReadOnlyList<StringTableCellDraft> CurrentCells() =>

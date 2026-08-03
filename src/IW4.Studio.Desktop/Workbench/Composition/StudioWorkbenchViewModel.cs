@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
+using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.ViewModels;
@@ -63,21 +64,27 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _gscUsagesPresenter = new GscUsagesPresenter(
             GscUsages,
             _gscSourceNavigation);
-        Editor = new EditorViewModel(
-            workspace,
-            viewRegistry: AssetEditorViewRegistry.CreateDefault(
+        AssetEditorViewRegistry editorViewRegistry =
+            AssetEditorViewRegistry.CreateDefault(
                 _gscWorkspace,
                 _gscSourceNavigation,
-                _gscUsagesPresenter));
+                _gscUsagesPresenter);
+        Editor = new EditorViewModel(
+            workspace,
+            viewRegistry: editorViewRegistry);
         _selectionRouter = new WorkbenchAssetSelectionRouter(
             workspace.AssetCatalog);
+        Func<XAssetType, bool> hasDesktopEditor = assetType =>
+            editorViewRegistry.TryGetFactory(assetType, out _);
 
         FastFileAssets = new FastFileAssetsNavigatorViewModel(
             workspace,
-            _selectionContext);
+            _selectionContext,
+            hasDesktopEditor);
         AssetPool = new AssetPoolNavigatorViewModel(
             workspace,
-            _selectionContext);
+            _selectionContext,
+            hasDesktopEditor);
         _gscWorkbenchNavigator = new GscWorkbenchNavigator(
             workspace,
             _gscWorkspace,

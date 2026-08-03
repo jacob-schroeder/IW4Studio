@@ -332,10 +332,10 @@
                                                 Foreground="{DynamicResource StudioAccentBrush}" />
                   </Border>
                   <StackPanel Grid.Column="2" Spacing="3">
-                    <TextBlock Text="RawFile editor available"
+                    <TextBlock Text="Asset editors available"
                                FontSize="11"
                                FontWeight="SemiBold" />
-                    <TextBlock Text="Other asset types intentionally open a clear editor-placeholder until their dedicated editor scope is implemented."
+                    <TextBlock Text="RawFile, StringTable, and Localize assets open in dedicated editors; other asset types use a clear structural fallback."
                                TextWrapping="Wrap"
                                FontSize="9"
                                Foreground="{DynamicResource StudioTextMutedBrush}" />

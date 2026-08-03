@@ -1,59 +1,202 @@
 using IW4.FastFiles.Zone;
+using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
-/// <summary>Detached Localize presentation; the key is intentionally locked as row identity.</summary>
-public sealed class LocalizeEditorViewModel : ObservableObject
+/// <summary>
+/// Desktop façade over one Localize editor session. The localized value is
+/// staged in the text buffer until Apply; the key remains locked because it
+/// is the serialized row identity.
+/// </summary>
+public sealed class LocalizeEditorViewModel
+    : ObservableObject, IAssetEditorProperties, IAssetEditorDiagnostics
 {
-    private readonly AssetEditorSession _session;
+    private readonly AssetEditorSession _editorSession;
     private LocalizeDraft? _draft;
+    private LocalizeReadOnlySnapshot? _readOnlySnapshot;
     private string _valueInput = string.Empty;
     private string _statusMessage = string.Empty;
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
 
-    public LocalizeEditorViewModel(AssetEditorSession session)
+    public LocalizeEditorViewModel(AssetEditorSession editorSession)
     {
-        _session = session ?? throw new ArgumentNullException(nameof(session));
-        if (session.Entry.AssetType != IW4.FastFiles.Zone.XAssetType.Localize)
-            throw new InvalidDataException("The Localize view model can host only Localize sessions.");
-        if (session.Mode == AssetEditorMode.Editable)
+        _editorSession = editorSession
+            ?? throw new ArgumentNullException(nameof(editorSession));
+        if (editorSession.Entry.AssetType != XAssetType.Localize)
         {
-            _draft = session.OpenDraft<LocalizeDraft>();
-            _valueInput = _draft.Value ?? string.Empty;
-            _diagnostics = session.Validation.Issues;
-            _statusMessage = "Detached target-owned Localize draft. The key is locked because it is row identity.";
+            throw new InvalidDataException(
+                "The Localize view model can host only Localize editor sessions.");
         }
-        else
+
+        switch (editorSession.Mode)
         {
-            _statusMessage = session.Mode == AssetEditorMode.ReadOnly
-                ? "Resolved dependency Localize content is read-only."
-                : "Localize content is unavailable because this target row is unresolved.";
+            case AssetEditorMode.Editable:
+                _draft = editorSession.OpenDraft<LocalizeDraft>();
+                _valueInput = DisplayValue(_draft.Value);
+                _diagnostics = editorSession.Validation.Issues;
+                _statusMessage =
+                    "Value edits are staged until Apply. The key remains locked as row identity.";
+                break;
+
+            case AssetEditorMode.ReadOnly:
+                try
+                {
+                    _readOnlySnapshot =
+                        LocalizeReadOnlySnapshot.CaptureResolvedProvider(
+                            editorSession);
+                    _valueInput = DisplayValue(_readOnlySnapshot.Value);
+                    _statusMessage =
+                        "Detached read-only copy of the catalog-resolved provider.";
+                }
+                catch (InvalidDataException exception)
+                {
+                    _statusMessage = exception.Message;
+                    _diagnostics =
+                    [
+                        new AssetValidationIssue(
+                            "provider",
+                            exception.Message,
+                            AssetValidationSeverity.Error)
+                    ];
+                }
+                break;
+
+            case AssetEditorMode.ContentUnavailable:
+                _statusMessage =
+                    "Localize content is unavailable because this reference has no resolved provider.";
+                break;
+
+            default:
+                throw new InvalidDataException(
+                    $"Unknown Localize editor mode '{editorSession.Mode}'.");
         }
     }
 
-    public bool IsEditable => _session.Mode == AssetEditorMode.Editable;
+    public AssetEditorMode Mode => _editorSession.Mode;
+    public bool IsEditable => Mode == AssetEditorMode.Editable;
     public bool IsInputReadOnly => !IsEditable;
-    public string Key => _draft?.Name ?? _session.Entry.OriginalName ?? string.Empty;
-    public string KeyPolicy => "Key/rename is locked because it defines serialized row identity and identity updates are not supported.";
-    public string ValueInput { get => _valueInput; set => SetProperty(ref _valueInput, value ?? string.Empty); }
-    public string StatusMessage { get => _statusMessage; private set => SetProperty(ref _statusMessage, value); }
-    public IReadOnlyList<AssetValidationIssue> Diagnostics { get => _diagnostics; private set { _diagnostics = value; OnPropertyChanged(); OnPropertyChanged(nameof(DiagnosticsSummary)); } }
-    public string DiagnosticsSummary => string.Join(Environment.NewLine, Diagnostics.Select(issue => $"{issue.Severity}: {issue.FieldPath} — {issue.Message}"));
+    public bool CanApply =>
+        IsEditable &&
+        _draft is not null &&
+        !string.Equals(
+            ValueInput,
+            DisplayValue(_draft.Value),
+            StringComparison.Ordinal);
+    public bool CanRevert => IsEditable;
 
-    public void ApplyValue()
+    public string OriginalName =>
+        _draft?.Name
+        ?? _readOnlySnapshot?.Name
+        ?? _editorSession.Entry.OriginalName
+        ?? string.Empty;
+
+    public string ValueInput
     {
-        if (!IsEditable) { StatusMessage = "This Localize row is read-only or unavailable."; return; }
-        _session.Apply<LocalizeDraft>(draft => draft.SetValue(ValueInput));
-        _draft = _session.ReadDraft<LocalizeDraft>();
-        Diagnostics = _session.Validation.Issues;
-        StatusMessage = "Updated the detached Localize value draft.";
+        get => _valueInput;
+        set
+        {
+            value ??= string.Empty;
+            if (!SetProperty(ref _valueInput, value))
+                return;
+
+            OnPropertyChanged(nameof(CanApply));
+            OnPropertyChanged(nameof(EditorProperties));
+        }
     }
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set => SetProperty(ref _statusMessage, value);
+    }
+
+    public IReadOnlyList<AssetValidationIssue> Diagnostics
+    {
+        get => _diagnostics;
+        private set
+        {
+            _diagnostics = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDiagnostics));
+            OnPropertyChanged(nameof(DiagnosticsSummary));
+        }
+    }
+
+    public bool HasDiagnostics => Diagnostics.Count != 0;
+
+    public string DiagnosticsSummary => string.Join(
+        Environment.NewLine,
+        Diagnostics.Select(issue =>
+            $"{issue.Severity}: {issue.FieldPath} — {issue.Message}"));
+
+    public string PropertySectionName => "Localize";
+
+    public IReadOnlyList<AssetEditorProperty> EditorProperties =>
+    [
+        new("Characters", ValueInput.Length.ToString("N0")),
+        new(
+            "Applied storage",
+            CurrentStoredValue() is null ? "NULL" : "String"),
+        new("Key", "Locked row identity")
+    ];
+
+    public void ApplyChanges()
+    {
+        if (!CanApply || _draft is null)
+        {
+            StatusMessage = IsEditable
+                ? "There is no staged Localize change to apply."
+                : "This Localize value is read-only or unavailable.";
+            return;
+        }
+
+        string valueSnapshot = ValueInput;
+        try
+        {
+            _draft = _editorSession.ApplyAndRead<LocalizeDraft>(
+                draft => draft.SetValue(valueSnapshot),
+                out bool changed);
+
+            Diagnostics = _editorSession.Validation.Issues;
+            ValueInput = DisplayValue(_draft.Value);
+            StatusMessage = changed
+                ? "Applied the localized value."
+                : "The localized value already matched the current draft.";
+            OnPropertyChanged(nameof(CanApply));
+            OnPropertyChanged(nameof(EditorProperties));
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+            InvalidOperationException or
+            OverflowException)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
+
     public void RevertDraft()
     {
-        if (!IsEditable) return;
-        _session.Revert(); _draft = _session.ReadDraft<LocalizeDraft>();
-        ValueInput = _draft.Value ?? string.Empty; Diagnostics = _session.Validation.Issues;
-        StatusMessage = "Reverted the Localize draft.";
+        if (!CanRevert)
+        {
+            StatusMessage =
+                "Read-only Localize content cannot be reverted because it has no target-owned draft.";
+            return;
+        }
+
+        _ = _editorSession.Revert();
+        _draft = _editorSession.ReadDraft<LocalizeDraft>();
+        Diagnostics = _editorSession.Validation.Issues;
+        ValueInput = DisplayValue(_draft.Value);
+        StatusMessage =
+            "Reverted the detached Localize draft to its authored baseline.";
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(EditorProperties));
     }
+
+    private string? CurrentStoredValue() => _draft is not null
+        ? _draft.Value
+        : _readOnlySnapshot?.Value;
+
+    private static string DisplayValue(string? value) => value ?? string.Empty;
 }

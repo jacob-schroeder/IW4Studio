@@ -132,8 +132,8 @@ public sealed record WorkbenchAssetSelection
         WorkspaceAssetAccess access,
         string origin,
         string? providerZone,
-        XAssetProviderId? providerId = null,
-        bool? hasEditor = null)
+        bool hasEditor,
+        XAssetProviderId? providerId = null)
     {
         if (identity.IsEmpty)
             throw new ArgumentException("A selection identity cannot be empty.", nameof(identity));
@@ -149,7 +149,7 @@ public sealed record WorkbenchAssetSelection
         Origin = origin;
         ProviderZone = providerZone;
         ProviderId = providerId;
-        HasEditor = hasEditor ?? assetType == XAssetType.RawFile;
+        HasEditor = hasEditor;
     }
 
     public WorkbenchAssetSelectionIdentity Identity { get; }

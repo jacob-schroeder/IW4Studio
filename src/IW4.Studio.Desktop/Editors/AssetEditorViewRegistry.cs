@@ -4,6 +4,7 @@ using IW4.Gsc.Analysis;
 using IW4.Studio.Documents;
 using IW4.Studio.Gsc;
 using IW4.Studio.Desktop.Editors.Gsc;
+using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
@@ -64,6 +65,7 @@ public sealed class AssetEditorViewRegistry
             gscSourceNavigator,
             gscUsagesPresenter));
         registry.Register(new StringTableViewFactory());
+        registry.Register(new LocalizeViewFactory());
         return registry;
     }
 

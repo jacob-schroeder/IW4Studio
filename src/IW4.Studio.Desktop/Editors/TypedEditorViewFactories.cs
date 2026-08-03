@@ -20,23 +20,6 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
     private static AssetEditorViewHost Summary(object viewModel, IEnumerable<string> paths) { var panel = new StackPanel { Spacing = 8 }; foreach (string path in paths) { var text = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; text.Bind(TextBlock.TextProperty, new Binding(path)); panel.Children.Add(text); } return new AssetEditorViewHost(new UserControl { Content = panel, DataContext = viewModel }, viewModel); }
 }
 
-public sealed class LocalizeEditorViewFactory : IAssetEditorViewFactory
-{
-    public XAssetType AssetType => XAssetType.Localize;
-    public AssetEditorViewHost Create(AssetEditorSession editorSession) => CreateHost(new LocalizeEditorViewModel(editorSession));
-    private static AssetEditorViewHost CreateHost(LocalizeEditorViewModel viewModel)
-    {
-        var input = new TextBox { AcceptsReturn = true, MinHeight = 90 };
-        input.Bind(TextBox.TextProperty, new Binding("ValueInput") { Mode = BindingMode.TwoWay });
-        input.Bind(TextBox.IsReadOnlyProperty, new Binding("IsInputReadOnly"));
-        var apply = new Button { Content = "Apply value" }; apply.Click += (_, _) => viewModel.ApplyValue();
-        var revert = new Button { Content = "Revert" }; revert.Click += (_, _) => viewModel.RevertDraft();
-        var panel = new StackPanel { Spacing = 8, Children = { Text("Key"), Text("KeyPolicy"), Text("StatusMessage"), input, apply, revert, Text("DiagnosticsSummary") } };
-        return new AssetEditorViewHost(new UserControl { Content = panel, DataContext = viewModel }, viewModel);
-    }
-    private static TextBlock Text(string path) { var control = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; control.Bind(TextBlock.TextProperty, new Binding(path)); return control; }
-}
-
 public sealed class StructuredDataEditorViewFactory : IAssetEditorViewFactory
 {
     public XAssetType AssetType => XAssetType.StructuredDataDef;

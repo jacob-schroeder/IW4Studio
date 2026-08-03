@@ -1,6 +1,7 @@
 using IW4.Assets.Assets.Localize;
 using IW4.FastFiles.Zone;
 using IW4.FastFiles.Emitters.Assets;
+using IW4.Runtime.Assets;
 
 namespace IW4.Studio.Documents;
 
@@ -57,6 +58,49 @@ public sealed class LocalizeBuildData : ILocalizeBuildData
     public XAssetType AssetType => XAssetType.Localize;
     public string? Name { get; }
     public string? Value { get; }
+}
+
+/// <summary>
+/// Detached read-only copy of a currently resolved Localize provider. It
+/// retains only authored strings and never exposes the runtime asset.
+/// </summary>
+public sealed class LocalizeReadOnlySnapshot
+{
+    private LocalizeReadOnlySnapshot(string name, string? value)
+    {
+        Name = name;
+        Value = value;
+    }
+
+    public string Name { get; }
+    public string? Value { get; }
+
+    public static LocalizeReadOnlySnapshot CaptureResolvedProvider(
+        AssetEditorSession editorSession)
+    {
+        ArgumentNullException.ThrowIfNull(editorSession);
+        WorkspaceAssetCatalogEntry entry = editorSession.Entry;
+        WorkspaceAssetResolvedProvider provider = entry.ResolvedProvider
+            ?? throw new InvalidDataException(
+                "Localize read-only viewing requires a catalog-resolved full-definition provider.");
+        XAssetProviderContribution contribution = editorSession.Workspace.Runtime.AssetPool.Slots
+            .SelectMany(slot => slot.Providers)
+            .SingleOrDefault(candidate => candidate.Id == provider.ProviderId)
+            ?? throw new InvalidDataException(
+                "The catalog-resolved Localize provider is no longer present in this workspace runtime.");
+        if (contribution.AssetType != XAssetType.Localize ||
+            contribution.IsReferencePlaceholder ||
+            contribution.Owner != provider.Zone.Handle ||
+            contribution.Asset is not LocalizeAsset localize)
+        {
+            throw new InvalidDataException(
+                "The catalog-resolved provider no longer matches a readable Localize full definition.");
+        }
+
+        return new LocalizeReadOnlySnapshot(
+            localize.Name ?? contribution.Name,
+            localize.Value);
+    }
 }
 
 public sealed class LocalizeAuthoringAdapter : AssetAuthoringAdapter<LocalizeAuthoredSnapshot, LocalizeDraft, LocalizeBuildData>

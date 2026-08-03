@@ -24,8 +24,13 @@ public sealed class AssetPoolNavigatorViewModel : ObservableObject, IDisposable
 
     public AssetPoolNavigatorViewModel(
         FastFileWorkspace workspace,
-        IWorkbenchSelectionContext selectionContext)
-        : this(AssetPoolNavigatorSnapshot.Capture(workspace), selectionContext)
+        IWorkbenchSelectionContext selectionContext,
+        Func<IW4.FastFiles.Zone.XAssetType, bool> hasDesktopEditor)
+        : this(
+            AssetPoolNavigatorSnapshot.Capture(
+                workspace,
+                hasDesktopEditor),
+            selectionContext)
     {
     }
 

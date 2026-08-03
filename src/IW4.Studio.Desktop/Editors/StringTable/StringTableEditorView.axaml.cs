@@ -17,6 +17,9 @@ public sealed partial class StringTableEditorView : UserControl
     private void RevertDraftButton_Click(object? sender, RoutedEventArgs e) =>
         (DataContext as StringTableEditorViewModel)?.RevertDraft();
 
+    private void ApplyChangesButton_Click(object? sender, RoutedEventArgs e) =>
+        (DataContext as StringTableEditorViewModel)?.ApplyChanges();
+
     private void TableBodyScrollViewer_ScrollChanged(
         object? sender,
         ScrollChangedEventArgs e)

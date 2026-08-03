@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.Localize.LocalizeEditorView"
+             x:DataType="viewModels:LocalizeEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="900"
+             d:DesignHeight="640">
+  <Grid RowDefinitions="Auto,10,*">
+    <Border Grid.Row="0"
+            Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <TextBlock Text="{Binding OriginalName}"
+                   VerticalAlignment="Center"
+                   FontSize="17"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}"
+                   TextTrimming="CharacterEllipsis" />
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Spacing="7">
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="8,5"
+                  IsEnabled="{Binding CanRevert}"
+                  ToolTip.Tip="Revert changes"
+                  AutomationProperties.Name="Revert changes"
+                  Click="RevertDraftButton_Click">
+            <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
+          </Button>
+          <Button Classes="primary"
+                  MinHeight="31"
+                  Padding="12,5"
+                  IsEnabled="{Binding CanApply}"
+                  ToolTip.Tip="Apply changes"
+                  Click="ApplyChangesButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioInputBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <TextBox Text="{Binding ValueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+               IsReadOnly="{Binding IsInputReadOnly}"
+               AcceptsReturn="True"
+               TextWrapping="Wrap"
+               VerticalContentAlignment="Top"
+               Padding="14,12"
+               Background="Transparent"
+               BorderThickness="0"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               AutomationProperties.Name="Localized value" />
+    </Border>
+  </Grid>
+</UserControl>

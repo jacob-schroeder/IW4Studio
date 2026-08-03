@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
              x:Class="IW4.Studio.Desktop.Editors.StringTable.StringTableEditorView"
              x:DataType="viewModels:StringTableEditorViewModel"
@@ -57,10 +58,24 @@
           </Border>
           <Button Classes="ghost"
                   MinHeight="31"
-                  Padding="10,5"
-                  Content="Revert"
+                  Padding="8,5"
                   IsEnabled="{Binding CanRevert}"
-                  Click="RevertDraftButton_Click" />
+                  ToolTip.Tip="Revert changes"
+                  AutomationProperties.Name="Revert changes"
+                  Click="RevertDraftButton_Click">
+            <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
+          </Button>
+          <Button Classes="primary"
+                  MinHeight="31"
+                  Padding="12,5"
+                  IsEnabled="{Binding CanApply}"
+                  ToolTip.Tip="Apply changes"
+                  Click="ApplyChangesButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
         </StackPanel>
       </Grid>
     </Border>

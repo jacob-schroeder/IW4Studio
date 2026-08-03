@@ -23,7 +23,8 @@ public sealed record AssetPoolSlotSnapshot
         DbZoneHandle activeProviderOwner,
         long activeProviderRegistrationSequence,
         bool isReferencePlaceholder,
-        string? providerZone)
+        string? providerZone,
+        bool hasEditor)
     {
         Address = address;
         AssetType = assetType;
@@ -35,6 +36,7 @@ public sealed record AssetPoolSlotSnapshot
         ActiveProviderRegistrationSequence = activeProviderRegistrationSequence;
         IsReferencePlaceholder = isReferencePlaceholder;
         ProviderZone = providerZone;
+        HasEditor = hasEditor;
     }
 
     public XAssetPoolAddress Address { get; }
@@ -63,6 +65,8 @@ public sealed record AssetPoolSlotSnapshot
 
     public string? ProviderZone { get; }
 
+    public bool HasEditor { get; }
+
     public string TypeName => AssetType.ToString();
 
     public string AddressText => $"0x{unchecked((uint)RawAddress):X8}";
@@ -80,10 +84,8 @@ public sealed record AssetPoolSlotSnapshot
             WorkspaceAssetAccess.ReadOnly,
             "RuntimeAssetPool",
             ProviderZone,
-            ActiveProviderId,
-            hasEditor:
-                AssetType == XAssetType.RawFile &&
-                !IsReferencePlaceholder);
+            hasEditor: HasEditor && !IsReferencePlaceholder,
+            providerId: ActiveProviderId);
 }
 
 public sealed record AssetPoolNavigatorGroup(
@@ -199,9 +201,12 @@ public sealed class AssetPoolNavigatorSnapshot
     /// <summary>Stable pool-slot order as exposed by XAssetPool.Slots.</summary>
     public IReadOnlyList<AssetPoolSlotSnapshot> Rows { get; }
 
-    public static AssetPoolNavigatorSnapshot Capture(FastFileWorkspace workspace)
+    public static AssetPoolNavigatorSnapshot Capture(
+        FastFileWorkspace workspace,
+        Func<XAssetType, bool> hasDesktopEditor)
     {
         ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(hasDesktopEditor);
 
         XAssetPool pool = workspace.Runtime.AssetPool;
         IReadOnlyDictionary<DbZoneHandle, string> zoneNames = workspace.LoadedZones
@@ -233,7 +238,8 @@ public sealed class AssetPoolNavigatorSnapshot
                 provider.Owner,
                 provider.RegistrationSequence,
                 provider.IsReferencePlaceholder,
-                zoneName);
+                zoneName,
+                hasDesktopEditor(slot.AssetType));
         }).ToArray();
 
         if (pool.Revision != revision)

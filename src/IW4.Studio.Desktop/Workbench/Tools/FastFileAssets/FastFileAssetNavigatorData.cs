@@ -20,7 +20,8 @@ public sealed record FastFileAssetNavigatorRow
         WorkspaceAssetContentSource contentSource,
         XAssetHeaderKind? headerKind,
         int? rawHeader,
-        string? providerZone)
+        string? providerZone,
+        bool hasEditor)
     {
         Identity = identity;
         SourceIndex = sourceIndex;
@@ -33,6 +34,7 @@ public sealed record FastFileAssetNavigatorRow
         HeaderKind = headerKind;
         RawHeader = rawHeader;
         ProviderZone = providerZone;
+        HasEditor = hasEditor;
     }
 
     public TargetZoneRowIdentity Identity { get; }
@@ -58,6 +60,8 @@ public sealed record FastFileAssetNavigatorRow
 
     public string? ProviderZone { get; }
 
+    public bool HasEditor { get; }
+
     public string TypeName => AssetType.ToString();
 
     public string Detail => string.IsNullOrWhiteSpace(ProviderZone)
@@ -73,13 +77,7 @@ public sealed record FastFileAssetNavigatorRow
             Access,
             Origin.ToString(),
             ProviderZone,
-            hasEditor:
-                AssetType == XAssetType.RawFile &&
-                ContentSource != WorkspaceAssetContentSource.Unavailable &&
-                Origin is not WorkspaceAssetOrigin.NullRow and
-                    not WorkspaceAssetOrigin.OpaqueRow and
-                    not WorkspaceAssetOrigin.OffsetAliasRow and
-                    not WorkspaceAssetOrigin.UnsupportedRow);
+            hasEditor: HasEditor);
 }
 
 /// <summary>
@@ -168,12 +166,14 @@ public sealed class FastFileAssetsNavigatorSnapshot
     public IReadOnlyList<FastFileAssetNavigatorRow> Rows { get; }
 
     public static FastFileAssetsNavigatorSnapshot Capture(
-        FastFileWorkspace workspace)
+        FastFileWorkspace workspace,
+        Func<XAssetType, bool> hasDesktopEditor)
     {
         ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(hasDesktopEditor);
 
         FastFileAssetNavigatorRow[] rows = workspace.AssetCatalog.TargetEntries
-            .Select(Project)
+            .Select(entry => Project(entry, hasDesktopEditor))
             .ToArray();
         for (int index = 0; index < rows.Length; index++)
         {
@@ -188,7 +188,8 @@ public sealed class FastFileAssetsNavigatorSnapshot
     }
 
     private static FastFileAssetNavigatorRow Project(
-        WorkspaceAssetCatalogEntry entry)
+        WorkspaceAssetCatalogEntry entry,
+        Func<XAssetType, bool> hasDesktopEditor)
     {
         TargetZoneRowIdentity identity = entry.TargetRowIdentity
             ?? throw new InvalidDataException(
@@ -213,7 +214,13 @@ public sealed class FastFileAssetsNavigatorSnapshot
             entry.ContentSource,
             entry.HeaderKind,
             entry.RawHeader,
-            providerZone);
+            providerZone,
+            hasDesktopEditor(entry.AssetType) &&
+            entry.ContentSource != WorkspaceAssetContentSource.Unavailable &&
+            entry.Origin is not WorkspaceAssetOrigin.NullRow and
+                not WorkspaceAssetOrigin.OpaqueRow and
+                not WorkspaceAssetOrigin.OffsetAliasRow and
+                not WorkspaceAssetOrigin.UnsupportedRow);
     }
 
     private static string StructuralRowName(WorkspaceAssetOrigin origin) =>
