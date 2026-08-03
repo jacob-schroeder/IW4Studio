@@ -3,6 +3,7 @@ using Avalonia.Media;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
+using Material.Icons;
 
 namespace IW4.Studio.Desktop.Editors.Gsc;
 
@@ -17,25 +18,32 @@ public sealed class GscCompletionData : ICompletionData
     public GscCompletionData(
         string insertionText,
         string displayText,
-        string? description = null,
+        string description,
+        GscEditorCompletionKind kind,
         string? filterText = null,
-        double priority = 0,
-        IImage? image = null)
+        double priority = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(insertionText);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayText);
+        ArgumentException.ThrowIfNullOrWhiteSpace(description);
         if (filterText is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(filterText);
 
         _insertionText = insertionText;
         Text = filterText ?? insertionText;
+        DisplayText = displayText;
+        DetailText = description;
+        (IconKind, KindLabel) = GetPresentation(kind);
         Content = displayText;
-        Description = description ?? string.Empty;
+        Description = new GscCompletionDescription(
+            displayText,
+            KindLabel,
+            description,
+            IconKind);
         Priority = priority;
-        Image = image;
     }
 
-    public IImage? Image { get; }
+    public IImage? Image => null;
 
     public string Text { get; }
 
@@ -44,6 +52,14 @@ public sealed class GscCompletionData : ICompletionData
     public object Description { get; }
 
     public double Priority { get; }
+
+    public string DisplayText { get; }
+
+    public string DetailText { get; }
+
+    public MaterialIconKind IconKind { get; }
+
+    public string KindLabel { get; }
 
     public void Complete(
         TextArea textArea,
@@ -54,7 +70,28 @@ public sealed class GscCompletionData : ICompletionData
         ArgumentNullException.ThrowIfNull(completionSegment);
         textArea.Document.Replace(completionSegment, _insertionText);
     }
+
+    private static (MaterialIconKind Icon, string Label) GetPresentation(
+        GscEditorCompletionKind kind) => kind switch
+    {
+        GscEditorCompletionKind.Function =>
+            (MaterialIconKind.Function, "Function"),
+        GscEditorCompletionKind.ObservedFunction =>
+            (MaterialIconKind.FunctionVariant, "Observed function"),
+        GscEditorCompletionKind.Field =>
+            (MaterialIconKind.VariableBox, "Field"),
+        GscEditorCompletionKind.BuiltIn =>
+            (MaterialIconKind.PropertyTag, "Built-in"),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
 }
+
+/// <summary>Presentation model for the completion details card.</summary>
+public sealed record GscCompletionDescription(
+    string Title,
+    string KindLabel,
+    string DetailText,
+    MaterialIconKind IconKind);
 
 /// <summary>Presentation pair for one callable overload.</summary>
 public sealed record GscOverloadItem

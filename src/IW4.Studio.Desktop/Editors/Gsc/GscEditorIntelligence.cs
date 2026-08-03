@@ -1,5 +1,13 @@
 namespace IW4.Studio.Desktop.Editors.Gsc;
 
+public enum GscEditorCompletionKind
+{
+    Function,
+    ObservedFunction,
+    Field,
+    BuiltIn
+}
+
 /// <summary>Pure editor completion result; AvaloniaEdit owns its presentation.</summary>
 public sealed record GscEditorCompletion(
     int ReplacementStart,
@@ -7,6 +15,7 @@ public sealed record GscEditorCompletion(
     string DisplayText,
     string FilterText,
     string Description,
+    GscEditorCompletionKind Kind = GscEditorCompletionKind.Function,
     double Priority = 0);
 
 public sealed record GscEditorSignature(

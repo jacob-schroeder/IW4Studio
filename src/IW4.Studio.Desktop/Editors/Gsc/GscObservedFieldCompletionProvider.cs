@@ -90,6 +90,7 @@ internal static class GscObservedFieldCompletionProvider
                 "size",
                 "size",
                 "Built-in size property",
+                Kind: GscEditorCompletionKind.BuiltIn,
                 Priority: 1_000));
         }
 
@@ -143,6 +144,7 @@ internal static class GscObservedFieldCompletionProvider
             field.SourceName,
             $"Observed field on '{field.Receiver.SourceText}' in " +
             $"active scripts ({observationText}; advisory)",
+            Kind: GscEditorCompletionKind.Field,
             Priority: 100 - candidate.Rank);
     }
 

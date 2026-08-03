@@ -396,6 +396,7 @@ internal sealed class GscEditorLanguageSession
                 function.DeclarationSignature,
                 function.SourceName,
                 function.Location.Path.Value,
+                Kind: GscEditorCompletionKind.Function,
                 Priority: function.Location.Path == currentPath ? 100 : 50);
         }
 
@@ -407,7 +408,8 @@ internal sealed class GscEditorLanguageSession
             $"{qualifiedPath}::{function.SourceName}",
             $"{qualifiedPath}::{function.DeclarationSignature}",
             function.SourceName,
-            function.Location.Path.Value);
+            function.Location.Path.Value,
+            Kind: GscEditorCompletionKind.Function);
     }
 
     private static GscEditorCompletion CreateObservedCompletion(
@@ -419,6 +421,7 @@ internal sealed class GscEditorLanguageSession
             $"{reference.SourceName}(…)",
             reference.SourceName,
             ObservedCallableDescription,
+            Kind: GscEditorCompletionKind.ObservedFunction,
             Priority: 25);
 
     private static GscEditorSignature CreateSignature(

@@ -13,6 +13,7 @@
     <FluentTheme />
     <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
     <materialIcons:MaterialIconStyles />
+    <StyleInclude Source="Editors/Gsc/GscCompletionStyles.axaml" />
 
     <Style Selector="Window">
       <Setter Property="Background" Value="{DynamicResource StudioBackgroundBrush}" />

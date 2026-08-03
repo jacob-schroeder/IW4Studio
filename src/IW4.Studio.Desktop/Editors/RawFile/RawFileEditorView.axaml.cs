@@ -253,7 +253,10 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         var window = new CompletionWindow(editor.TextArea)
         {
             StartOffset = replacementStart,
-            EndOffset = caret
+            EndOffset = caret,
+            MinWidth = 360,
+            MaxWidth = 660,
+            MaxHeight = 300
         };
         foreach (GscEditorCompletion suggestion in suggestions)
         {
@@ -261,6 +264,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
                 suggestion.InsertionText,
                 suggestion.DisplayText,
                 suggestion.Description,
+                suggestion.Kind,
                 filterText: suggestion.FilterText,
                 priority: suggestion.Priority));
         }

@@ -1,0 +1,153 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:completion="using:AvaloniaEdit.CodeCompletion"
+        xmlns:gsc="using:IW4.Studio.Desktop.Editors.Gsc"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
+
+  <!-- Keep AvaloniaEdit's interaction model and replace only its presentation. -->
+  <Style Selector="completion|CompletionList">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Margin="4"
+                Padding="3"
+                CornerRadius="7"
+                Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                BorderBrush="{DynamicResource StudioBorderStrongBrush}"
+                BorderThickness="1"
+                BoxShadow="0 8 24 0 #66000000">
+          <completion:CompletionListBox Name="PART_ListBox"
+                                        Classes="gscCompletionList"
+                                        Padding="0"
+                                        Background="Transparent"
+                                        BorderThickness="0">
+            <completion:CompletionListBox.ItemContainerTheme>
+              <ControlTheme TargetType="ListBoxItem"
+                            BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                <Setter Property="MinHeight" Value="30" />
+                <Setter Property="Margin" Value="0,1" />
+                <Setter Property="Padding" Value="7,4" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="1" />
+              </ControlTheme>
+            </completion:CompletionListBox.ItemContainerTheme>
+
+            <completion:CompletionListBox.ItemTemplate>
+              <DataTemplate x:DataType="gsc:GscCompletionData">
+                <Grid MinWidth="340"
+                      ColumnDefinitions="22,*,Auto"
+                      ColumnSpacing="7">
+                  <Border Width="20"
+                          Height="20"
+                          CornerRadius="4"
+                          Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+                    <materialIcons:MaterialIcon Width="13"
+                                                Height="13"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                                                Kind="{Binding IconKind}" />
+                  </Border>
+
+                  <TextBlock Grid.Column="1"
+                             VerticalAlignment="Center"
+                             FontFamily="JetBrains Mono, Menlo, Consolas"
+                             FontSize="12"
+                             Foreground="{DynamicResource StudioTextBrush}"
+                             Text="{Binding DisplayText}"
+                             TextTrimming="CharacterEllipsis" />
+
+                  <TextBlock Grid.Column="2"
+                             Margin="12,0,3,0"
+                             VerticalAlignment="Center"
+                             FontSize="9"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}"
+                             Text="{Binding KindLabel}" />
+                </Grid>
+              </DataTemplate>
+            </completion:CompletionListBox.ItemTemplate>
+          </completion:CompletionListBox>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- Fluent paints item states inside its presenter, so target that part. -->
+  <Style Selector="completion|CompletionListBox.gscCompletionList > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+
+  <Style Selector="completion|CompletionListBox.gscCompletionList > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+
+  <Style Selector="completion|CompletionListBox.gscCompletionList > ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentStrongBrush}" />
+  </Style>
+
+  <!-- AvaloniaEdit displays the selected item's description in an adjacent popup. -->
+  <Style Selector="completion|CompletionTipContentControl">
+    <Setter Property="MinWidth" Value="280" />
+    <Setter Property="MaxWidth" Value="430" />
+    <Setter Property="Padding" Value="12,10" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="Background" Value="{DynamicResource StudioSurfaceOverlayBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    <Setter Property="ContentTemplate">
+      <DataTemplate x:DataType="gsc:GscCompletionDescription">
+        <Grid RowDefinitions="Auto,Auto"
+              RowSpacing="8">
+          <Grid ColumnDefinitions="22,*,Auto"
+                ColumnSpacing="8">
+            <Border Width="20"
+                    Height="20"
+                    CornerRadius="4"
+                    Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+              <materialIcons:MaterialIcon Width="13"
+                                          Height="13"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                                          Kind="{Binding IconKind}" />
+            </Border>
+
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       FontFamily="JetBrains Mono, Menlo, Consolas"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextBrush}"
+                       Text="{Binding Title}"
+                       TextTrimming="CharacterEllipsis" />
+
+            <Border Grid.Column="2"
+                    Padding="7,2"
+                    CornerRadius="8"
+                    Background="{DynamicResource StudioControlBrush}">
+              <TextBlock FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}"
+                         Text="{Binding KindLabel}" />
+            </Border>
+          </Grid>
+
+          <TextBlock Grid.Row="1"
+                     MaxWidth="390"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextMutedBrush}"
+                     Text="{Binding DetailText}"
+                     TextWrapping="Wrap" />
+        </Grid>
+      </DataTemplate>
+    </Setter>
+  </Style>
+</Styles>
