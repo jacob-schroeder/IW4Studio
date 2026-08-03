@@ -1,0 +1,71 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:edit="using:AvaloniaEdit"
+        xmlns:editing="using:AvaloniaEdit.Editing"
+        x:Class="IW4.Studio.Desktop.Views.GscEngineReferenceWindow"
+        Title="IW4 multiplayer engine built-ins"
+        Width="1040"
+        Height="760"
+        MinWidth="720"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+  <Grid Margin="16"
+        RowDefinitions="Auto,10,*">
+    <Border Grid.Row="0"
+            Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <StackPanel Spacing="3">
+        <TextBlock Text="IW4 multiplayer engine built-ins"
+                   FontSize="17"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="Read-only native registration reference · parameter metadata is not present in the tables"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="2"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioInputBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <edit:TextEditor x:Name="ReferenceEditor"
+                       Padding="14,12"
+                       ShowLineNumbers="True"
+                       LineNumbersMargin="8,0,20,0"
+                       WordWrap="False"
+                       HorizontalScrollBarVisibility="Auto"
+                       VerticalScrollBarVisibility="Auto"
+                       IsReadOnly="True"
+                       FontFamily="JetBrains Mono, Menlo, Consolas"
+                       FontSize="14"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       Foreground="{DynamicResource StudioTextBrush}"
+                       LineNumbersForeground="{DynamicResource StudioTextSubtleBrush}">
+        <edit:TextEditor.Styles>
+          <Style Selector="editing|TextArea">
+            <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource StudioSelectionBrush}" />
+            <Setter Property="SelectionForeground" Value="{DynamicResource StudioSelectionTextBrush}" />
+            <Setter Property="RightClickMovesCaret" Value="True" />
+          </Style>
+        </edit:TextEditor.Styles>
+        <edit:TextEditor.ContextFlyout>
+          <MenuFlyout>
+            <MenuItem Header="Copy"
+                      Command="{x:Static edit:ApplicationCommands.Copy}"
+                      CommandParameter="{Binding #ReferenceEditor.TextArea}" />
+            <MenuItem Header="Select all"
+                      Command="{x:Static edit:ApplicationCommands.SelectAll}"
+                      CommandParameter="{Binding #ReferenceEditor.TextArea}" />
+          </MenuFlyout>
+        </edit:TextEditor.ContextFlyout>
+      </edit:TextEditor>
+    </Border>
+  </Grid>
+</Window>

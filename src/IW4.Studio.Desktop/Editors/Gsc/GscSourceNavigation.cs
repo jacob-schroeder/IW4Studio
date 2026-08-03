@@ -1,3 +1,4 @@
+using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Workspace;
 
 namespace IW4.Studio.Desktop.Editors.Gsc;
@@ -10,6 +11,8 @@ namespace IW4.Studio.Desktop.Editors.Gsc;
 public interface IGscSourceNavigator
 {
     void NavigateTo(GscSourceLocation location);
+
+    void NavigateTo(Iw4GscBuiltInDefinition builtIn);
 }
 
 public sealed class GscSourceNavigationRequestedEventArgs : EventArgs
@@ -18,6 +21,15 @@ public sealed class GscSourceNavigationRequestedEventArgs : EventArgs
         Location = location;
 
     public GscSourceLocation Location { get; }
+}
+
+public sealed class GscEngineBuiltInNavigationRequestedEventArgs : EventArgs
+{
+    public GscEngineBuiltInNavigationRequestedEventArgs(
+        Iw4GscBuiltInDefinition builtIn) =>
+        BuiltIn = builtIn ?? throw new ArgumentNullException(nameof(builtIn));
+
+    public Iw4GscBuiltInDefinition BuiltIn { get; }
 }
 
 /// <summary>
@@ -29,8 +41,16 @@ public sealed class GscSourceNavigationBroker : IGscSourceNavigator
     public event EventHandler<GscSourceNavigationRequestedEventArgs>?
         NavigationRequested;
 
+    public event EventHandler<GscEngineBuiltInNavigationRequestedEventArgs>?
+        EngineBuiltInNavigationRequested;
+
     public void NavigateTo(GscSourceLocation location) =>
         NavigationRequested?.Invoke(
             this,
             new GscSourceNavigationRequestedEventArgs(location));
+
+    public void NavigateTo(Iw4GscBuiltInDefinition builtIn) =>
+        EngineBuiltInNavigationRequested?.Invoke(
+            this,
+            new GscEngineBuiltInNavigationRequestedEventArgs(builtIn));
 }

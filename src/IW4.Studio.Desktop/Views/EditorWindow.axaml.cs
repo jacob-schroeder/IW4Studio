@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Lifecycle;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Desktop.Themes;
@@ -24,6 +25,7 @@ public sealed partial class EditorWindow : Window
     private readonly FastFileRenderViewService _renderViewService = new();
     private StudioWorkbenchViewModel? _workbench;
     private MapEditorWindow? _mapEditorWindow;
+    private GscEngineReferenceWindow? _gscEngineReferenceWindow;
     private MapEditorLivePreviewBridge? _mapEditorLivePreviewBridge;
     private readonly HashSet<MapRenderWindow> _livePreviewWindows = [];
     private readonly RetryableRenderWarmup _renderWarmup = new();
@@ -58,6 +60,8 @@ public sealed partial class EditorWindow : Window
         _workbench = new StudioWorkbenchViewModel(workspace);
         _workbench.LivePreviewRequested += Workbench_LivePreviewRequested;
         _workbench.MapEditorRequested += Workbench_MapEditorRequested;
+        _workbench.EngineBuiltInReferenceRequested +=
+            Workbench_EngineBuiltInReferenceRequested;
         DataContext = _workbench;
         Title = $"{Path.GetFileName(workspace.Document.Request.Path)} — IW4 Studio";
         Opened += EditorWindow_Opened;
@@ -200,6 +204,27 @@ public sealed partial class EditorWindow : Window
             "Map Editor",
             $"Opening aggregate compiled-map document '{session.Bundle.MapIdentity}'.");
         _mapEditorWindow.Show(this);
+    }
+
+    private void Workbench_EngineBuiltInReferenceRequested(
+        object? sender,
+        GscEngineBuiltInNavigationRequestedEventArgs args)
+    {
+        if (_disposed)
+            return;
+
+        if (_gscEngineReferenceWindow is null)
+        {
+            _gscEngineReferenceWindow = new GscEngineReferenceWindow(
+                args.BuiltIn);
+            _gscEngineReferenceWindow.Closed += (_, _) =>
+                _gscEngineReferenceWindow = null;
+            _gscEngineReferenceWindow.Show(this);
+            return;
+        }
+
+        _gscEngineReferenceWindow.NavigateTo(args.BuiltIn);
+        _gscEngineReferenceWindow.Activate();
     }
 
     private void EditorWindow_Opened(object? sender, EventArgs e)
@@ -665,6 +690,8 @@ public sealed partial class EditorWindow : Window
 
         _disposed = true;
         _renderViewService.Dispose();
+        _gscEngineReferenceWindow?.Close();
+        _gscEngineReferenceWindow = null;
         _mapEditorWindow?.Close();
         _mapEditorWindow = null;
         _mapEditorLivePreviewBridge?.Dispose();
@@ -675,6 +702,8 @@ public sealed partial class EditorWindow : Window
             _workbench.LivePreviewRequested -=
                 Workbench_LivePreviewRequested;
             _workbench.MapEditorRequested -= Workbench_MapEditorRequested;
+            _workbench.EngineBuiltInReferenceRequested -=
+                Workbench_EngineBuiltInReferenceRequested;
             _workbench.Dispose();
             _workbench = null;
         }

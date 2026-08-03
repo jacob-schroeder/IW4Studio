@@ -134,6 +134,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
         _gscSourceNavigation.NavigationRequested +=
             GscSourceNavigation_NavigationRequested;
+        _gscSourceNavigation.EngineBuiltInNavigationRequested +=
+            GscSourceNavigation_EngineBuiltInNavigationRequested;
         _gscUsagesPresenter.PresentationRequested +=
             GscUsagesPresenter_PresentationRequested;
         _editorDiagnosticsBridge.GscFindingsPresented +=
@@ -179,6 +181,9 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         add => MapEditor.LaunchRequested += value;
         remove => MapEditor.LaunchRequested -= value;
     }
+
+    public event EventHandler<GscEngineBuiltInNavigationRequestedEventArgs>?
+        EngineBuiltInReferenceRequested;
 
     public FastFileWorkspace Workspace { get; }
 
@@ -476,6 +481,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
         _gscSourceNavigation.NavigationRequested -=
             GscSourceNavigation_NavigationRequested;
+        _gscSourceNavigation.EngineBuiltInNavigationRequested -=
+            GscSourceNavigation_EngineBuiltInNavigationRequested;
         _gscUsagesPresenter.PresentationRequested -=
             GscUsagesPresenter_PresentationRequested;
         _editorDiagnosticsBridge.GscFindingsPresented -=
@@ -564,6 +571,14 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 "GSC navigation",
                 $"Could not navigate to '{args.Location.Path}': {failureReason}");
         }
+    }
+
+    private void GscSourceNavigation_EngineBuiltInNavigationRequested(
+        object? sender,
+        GscEngineBuiltInNavigationRequestedEventArgs args)
+    {
+        if (!_disposed)
+            EngineBuiltInReferenceRequested?.Invoke(this, args);
     }
 
     private void AppendInitialOutput()

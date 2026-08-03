@@ -1,5 +1,6 @@
 using IW4.FastFiles.Zone;
 using IW4.Gsc.Analysis;
+using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
 using System.Text;
@@ -363,19 +364,35 @@ public sealed class RawFileEditorViewModel
 
     public void GoToGscDefinition(int sourceOffset)
     {
-        if (!TryGetDefinitions(sourceOffset, out _, out GscSymbolDefinition[] definitions))
+        if (!TryGetDefinitionTargets(
+                sourceOffset,
+                out GscSymbolDefinition[] definitions,
+                out Iw4GscBuiltInDefinition[] builtIns))
+        {
             return;
+        }
 
-        if (definitions.Length == 0)
+        if (definitions.Length == 0 && builtIns.Length == 0)
         {
             StatusMessage = "No GSC definition was found at the caret.";
             return;
         }
 
-        _gscSourceNavigator!.NavigateTo(definitions[0].Location);
-        StatusMessage = definitions.Length == 1
-            ? $"Navigated to '{definitions[0].SourceName}'."
-            : $"Navigated to the first of {definitions.Length:N0} matching definitions.";
+        if (definitions.Length != 0)
+        {
+            _gscSourceNavigator!.NavigateTo(definitions[0].Location);
+            StatusMessage = definitions.Length == 1
+                ? $"Navigated to '{definitions[0].SourceName}'."
+                : $"Navigated to the first of {definitions.Length:N0} " +
+                  "matching definitions.";
+            return;
+        }
+
+        _gscSourceNavigator!.NavigateTo(builtIns[0]);
+        StatusMessage = builtIns.Length == 1
+            ? $"Opened engine definition for '{builtIns[0].Name}'."
+            : $"Opened the first of {builtIns.Length:N0} engine registrations " +
+              $"for '{builtIns[0].Name}'.";
     }
 
     public async Task FindGscUsagesAsync(int sourceOffset)
@@ -1209,6 +1226,44 @@ public sealed class RawFileEditorViewModel
                 out GscWorkspaceSnapshot foundSnapshot,
                 out definitions);
             snapshot = foundSnapshot;
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+                InvalidDataException or
+                InvalidOperationException)
+        {
+            StatusMessage = $"GSC workspace query failed: {exception.Message}";
+            return false;
+        }
+    }
+
+    private bool TryGetDefinitionTargets(
+        int sourceOffset,
+        out GscSymbolDefinition[] definitions,
+        out Iw4GscBuiltInDefinition[] builtIns)
+    {
+        definitions = [];
+        builtIns = [];
+        if (!HasGscWorkspaceFeatures ||
+            sourceOffset < 0 ||
+            sourceOffset > PayloadInput.Length)
+        {
+            return false;
+        }
+
+        try
+        {
+            _gscLanguageSession!.FindDefinitionTargets(
+                OriginalName,
+                CreateGscSourceText(
+                    PayloadInput,
+                    _contentClassification?.TextEncoding),
+                _bufferVersion,
+                sourceOffset,
+                out _,
+                out definitions,
+                out builtIns);
             return true;
         }
         catch (Exception exception) when (

@@ -1,4 +1,5 @@
 using IW4.Gsc.Analysis;
+using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
 using IW4.Studio.Gsc;
@@ -56,6 +57,29 @@ internal sealed class GscEditorLanguageSession
             definitions = snapshot.Index.FindDefinitions(path, sourceOffset - 1)
                 .ToArray();
         }
+    }
+
+    internal void FindDefinitionTargets(
+        string assetName,
+        GscSourceText source,
+        long bufferVersion,
+        int sourceOffset,
+        out GscWorkspaceSnapshot snapshot,
+        out GscSymbolDefinition[] definitions,
+        out Iw4GscBuiltInDefinition[] builtIns,
+        CancellationToken cancellationToken = default)
+    {
+        FindDefinitions(
+            assetName,
+            source,
+            bufferVersion,
+            sourceOffset,
+            out snapshot,
+            out definitions,
+            cancellationToken);
+        builtIns = definitions.Length == 0
+            ? FindBuiltIns(snapshot, assetName, sourceOffset)
+            : [];
     }
 
     internal IReadOnlyList<GscEditorCompletion> GetCompletions(
@@ -154,6 +178,11 @@ internal sealed class GscEditorLanguageSession
                     function,
                     context,
                     hasExplicitQualifier: false))
+                .Concat(Iw4GscBuiltInCatalog.Multiplayer
+                    .FindCallables(context.Prefix)
+                    .Select(builtIn => CreateBuiltInCompletion(
+                        context,
+                        builtIn)))
                 .Concat(FindObservedCallables(
                         baseSnapshot,
                         overlay,
@@ -176,7 +205,7 @@ internal sealed class GscEditorLanguageSession
             .DistinctBy(
                 completion => completion.InsertionText,
                 StringComparer.OrdinalIgnoreCase)
-            .Take(200)
+            .Take(500)
             .ToArray();
         cancellationToken.ThrowIfCancellationRequested();
         return Array.AsReadOnly(result);
@@ -224,6 +253,21 @@ internal sealed class GscEditorLanguageSession
         }
         if (functions.Count == 0)
         {
+            if (targetPath is null)
+            {
+                IReadOnlyList<Iw4GscBuiltInDefinition> builtIns =
+                    Iw4GscBuiltInCatalog.Multiplayer.FindCallablesByName(
+                        call.Name);
+                if (builtIns.Count != 0)
+                {
+                    return new GscEditorSignatureHelp(
+                        builtIns.Select(builtIn => CreateBuiltInSignature(
+                            builtIn,
+                            call.ActiveParameter)),
+                        call.ActiveParameter);
+                }
+            }
+
             GscSymbolReference? observed = targetPath is null
                 ? FindObservedCallable(
                     baseSnapshot,
@@ -424,6 +468,18 @@ internal sealed class GscEditorLanguageSession
             Kind: GscEditorCompletionKind.ObservedFunction,
             Priority: 25);
 
+    private static GscEditorCompletion CreateBuiltInCompletion(
+        GscCallableCompletionContext context,
+        Iw4GscBuiltInDefinition builtIn) =>
+        new(
+            context.ReplacementStart,
+            builtIn.Name,
+            builtIn.DisplaySignature,
+            builtIn.Name,
+            builtIn.Description,
+            Kind: GscEditorCompletionKind.BuiltIn,
+            Priority: 75);
+
     private static GscEditorSignature CreateSignature(
         GscFunctionDefinition function,
         int activeParameter)
@@ -447,6 +503,51 @@ internal sealed class GscEditorLanguageSession
             $"{name}(…)",
             $"Argument {activeParameter + 1}; parameter metadata is " +
             "unavailable for this observed callable");
+
+    private static GscEditorSignature CreateBuiltInSignature(
+        Iw4GscBuiltInDefinition builtIn,
+        int activeParameter) =>
+        new(
+            builtIn.DisplaySignature,
+            $"Argument {activeParameter + 1}; native registry parameter " +
+            $"metadata is unavailable · Handler: {builtIn.NativeHandler}");
+
+    private static Iw4GscBuiltInDefinition[] FindBuiltIns(
+        GscWorkspaceSnapshot snapshot,
+        string assetName,
+        int sourceOffset)
+    {
+        GscScriptPath path = GscScriptPath.FromAssetName(assetName);
+        GscIndexedDocument document = snapshot.Index.GetDocument(path);
+        GscSymbolReference[] references = document.References
+            .Where(reference =>
+                reference.Kind == GscWorkspaceReferenceKind.Call &&
+                reference.Targets.Count == 0 &&
+                reference.QualifiedTargetPath is null &&
+                Contains(reference.Location.Span, sourceOffset))
+            .ToArray();
+        if (references.Length == 0 && sourceOffset > 0)
+        {
+            references = document.References
+                .Where(reference =>
+                    reference.Kind == GscWorkspaceReferenceKind.Call &&
+                    reference.Targets.Count == 0 &&
+                    reference.QualifiedTargetPath is null &&
+                    Contains(reference.Location.Span, sourceOffset - 1))
+                .ToArray();
+        }
+
+        return references
+            .SelectMany(reference => Iw4GscBuiltInCatalog.Multiplayer
+                .FindCallablesByName(reference.Name))
+            .Distinct()
+            .ToArray();
+    }
+
+    private static bool Contains(GscTextSpan span, int offset) =>
+        span.Length == 0
+            ? offset == span.Start
+            : offset >= span.Start && offset < span.End;
 
     private static string RemoveScriptExtension(string path) =>
         path.EndsWith(".gsc", StringComparison.Ordinal) ||
