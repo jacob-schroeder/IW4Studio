@@ -58,7 +58,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         OpenEditorTabs = new ReadOnlyObservableCollection<WorkbenchEditorTabViewModel>(
             _openEditorTabs);
-        _gscWorkspace = new GscWorkspaceIndexService(workspace);
+        var editingSession = new FastFileEditingSession(workspace);
+        _gscWorkspace = new GscWorkspaceIndexService(editingSession);
         _gscSourceNavigation = new GscSourceNavigationBroker();
         GscUsages = new GscUsagesToolViewModel();
         _gscUsagesPresenter = new GscUsagesPresenter(
@@ -71,6 +72,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 _gscUsagesPresenter);
         Editor = new EditorViewModel(
             workspace,
+            editingSession,
             viewRegistry: editorViewRegistry);
         _selectionRouter = new WorkbenchAssetSelectionRouter(
             workspace.AssetCatalog,

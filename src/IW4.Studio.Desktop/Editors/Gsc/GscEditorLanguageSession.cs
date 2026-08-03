@@ -307,7 +307,7 @@ internal sealed class GscEditorLanguageSession
             GscWorkspaceSnapshot baseSnapshot = _workspace.GetSnapshot(
                 cancellationToken);
             if (_cachedSnapshot is not null &&
-                _cachedSnapshot.AssetPoolRevision == baseSnapshot.AssetPoolRevision &&
+                ReferenceEquals(_cachedBaseSnapshot, baseSnapshot) &&
                 _cachedBufferVersion == bufferVersion &&
                 _cachedPath == path)
             {

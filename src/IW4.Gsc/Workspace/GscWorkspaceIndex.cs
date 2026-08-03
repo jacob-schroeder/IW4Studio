@@ -75,15 +75,37 @@ public sealed class GscWorkspaceIndex
     /// </summary>
     public GscWorkspaceIndex WithDocument(
         GscDocumentSnapshot document,
+        CancellationToken cancellationToken = default) =>
+        WithDocuments([document], cancellationToken);
+
+    /// <summary>
+    /// Returns a new index in which each supplied document adds or replaces
+    /// one normalized path. All replacements are indexed before the workspace
+    /// is resolved, avoiding one full resolution pass per document.
+    /// </summary>
+    public GscWorkspaceIndex WithDocuments(
+        IEnumerable<GscDocumentSnapshot> documents,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(documents);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var sources = new Dictionary<GscScriptPath, GscWorkspaceSourceDocument>(_sources)
+        var sources = new Dictionary<GscScriptPath, GscWorkspaceSourceDocument>(
+            _sources);
+        foreach (GscDocumentSnapshot document in documents)
         {
-            [document.Path] = GscDocumentIndexer.Build(document, cancellationToken)
-        };
+            cancellationToken.ThrowIfCancellationRequested();
+            if (document is null)
+            {
+                throw new ArgumentException(
+                    "A workspace replacement document cannot be null.",
+                    nameof(documents));
+            }
+
+            sources[document.Path] =
+                GscDocumentIndexer.Build(document, cancellationToken);
+        }
+
         return new GscWorkspaceIndex(sources, cancellationToken);
     }
 

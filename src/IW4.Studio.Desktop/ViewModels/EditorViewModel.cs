@@ -27,12 +27,21 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     public EditorViewModel(
         FastFileWorkspace workspace,
+        FastFileEditingSession editingSession,
         AssetAuthoringAdapterRegistry? authoringRegistry = null,
         AssetEditorViewRegistry? viewRegistry = null)
     {
         ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(editingSession);
+        if (!ReferenceEquals(editingSession.Workspace, workspace))
+        {
+            throw new ArgumentException(
+                "The editing session belongs to another fastfile workspace.",
+                nameof(editingSession));
+        }
+
         Workspace = workspace;
-        EditingSession = new FastFileEditingSession(workspace);
+        EditingSession = editingSession;
         _authoringRegistry = authoringRegistry ?? AssetAuthoringAdapterRegistry.CreateDefault();
         _viewRegistry = viewRegistry ?? AssetEditorViewRegistry.CreateDefault();
         AddableAssetTypes = Array.AsReadOnly(

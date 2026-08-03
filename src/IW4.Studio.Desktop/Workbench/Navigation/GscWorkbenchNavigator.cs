@@ -11,8 +11,9 @@ using IW4.Studio.Gsc;
 namespace IW4.Studio.Desktop.Workbench.Navigation;
 
 /// <summary>
-/// Resolves a host-neutral GSC location through the active runtime provider,
-/// opens the matching workbench document, and selects its exact source span.
+/// Resolves a host-neutral GSC location through the effective authored/runtime
+/// workspace, opens the matching workbench document, and selects its exact
+/// source span.
 /// </summary>
 internal sealed class GscWorkbenchNavigator
 {
@@ -59,26 +60,51 @@ internal sealed class GscWorkbenchNavigator
     private string? NavigateCore(GscSourceLocation location)
     {
         GscWorkspaceSnapshot snapshot = _gscWorkspace.GetSnapshot();
-        GscWorkspaceRawFileSlot? slot = snapshot.Slots.SingleOrDefault(
-            candidate =>
-                candidate.Source is not null &&
+        GscWorkspaceAuthoredDocument? authoredDocument = snapshot
+            .AuthoredDocuments
+            .LastOrDefault(candidate =>
                 GscScriptPath.FromAssetName(candidate.AssetName) == location.Path);
-        if (slot is null)
+
+        string? selectionFailure;
+        if (authoredDocument is not null)
         {
-            return "the active RawFile is no longer present in the workspace index.";
+            selectionFailure = SelectAuthoredRawFile(authoredDocument);
+        }
+        else
+        {
+            GscWorkspaceRawFileSlot? slot = snapshot.Slots.SingleOrDefault(
+                candidate =>
+                    candidate.Source is not null &&
+                    GscScriptPath.FromAssetName(candidate.AssetName) == location.Path);
+            if (slot is null)
+            {
+                return "the RawFile is no longer present in the workspace index.";
+            }
+
+            selectionFailure = SelectRawFile(slot);
         }
 
-        string? selectionFailure = SelectRawFile(slot);
         if (selectionFailure is not null)
             return selectionFailure;
 
         if (_editor.SelectedEditorHost?.HostedView is not IEditorTextNavigator navigator)
             return "the selected RawFile does not expose text navigation.";
 
-        string source = _editor.SelectedEditorHost.HostedViewModel is
-            RawFileEditorViewModel rawFileEditor
-                ? rawFileEditor.PayloadInput
-                : snapshot.Index.GetDocument(location.Path).Snapshot.Source.Text;
+        string indexedSource = snapshot.Index
+            .GetDocument(location.Path)
+            .Snapshot.Source.Text;
+        string source = indexedSource;
+        if (_editor.SelectedEditorHost.HostedViewModel is
+            RawFileEditorViewModel rawFileEditor)
+        {
+            source = rawFileEditor.PayloadInput;
+            if (!string.Equals(source, indexedSource, StringComparison.Ordinal))
+            {
+                return "the destination RawFile has unapplied changes; apply " +
+                       "or discard them before navigating to an indexed span.";
+            }
+        }
+
         if (location.Span.End > source.Length)
             return "the indexed source span is outside the selected editor buffer.";
 
@@ -89,6 +115,29 @@ internal sealed class GscWorkbenchNavigator
             location.Span.Length,
             position.Line,
             position.Character));
+        return null;
+    }
+
+    private string? SelectAuthoredRawFile(
+        GscWorkspaceAuthoredDocument document)
+    {
+        FastFileAssetNavigatorRow? targetRow = _fastFileAssets.AllRows
+            .SingleOrDefault(row => row.Identity == document.RowIdentity);
+        if (targetRow is null)
+        {
+            return "the applied RawFile target row is absent from the " +
+                   "navigator snapshot.";
+        }
+
+        _fastFileAssets.SelectedRow = targetRow;
+        WorkspaceAssetCatalogEntry? selectedEntry =
+            _editor.SelectedEditorHost?.Entry.Entry;
+        if (selectedEntry?.TargetRowIdentity != document.RowIdentity)
+        {
+            return "workbench catalog routing did not open the applied " +
+                   "RawFile target row.";
+        }
+
         return null;
     }
 

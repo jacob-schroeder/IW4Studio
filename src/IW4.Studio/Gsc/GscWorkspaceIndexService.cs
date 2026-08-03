@@ -10,19 +10,29 @@ using IW4.Studio.Documents;
 namespace IW4.Studio.Gsc;
 
 /// <summary>
-/// Captures the runtime pool's active GSC/CSC documents into an immutable,
-/// revision-keyed Studio snapshot. Unsaved editor content is represented as
-/// an overlay and never mutates runtime assets or the cached base snapshot.
+/// Builds an immutable GSC/CSC workspace from active runtime providers and
+/// applied target-document drafts. Exact editor-buffer content is represented
+/// by a final overlay and never mutates runtime assets or session drafts.
 /// </summary>
 public sealed class GscWorkspaceIndexService
 {
+    private static readonly RawFileAuthoringAdapter RawFileAuthoring = new();
+
     private readonly object _sync = new();
     private readonly FastFileWorkspace _workspace;
+    private readonly FastFileEditingSession _editingSession;
+    private readonly HashSet<TargetZoneRowIdentity> _originalTargetRows;
+    private RuntimeWorkspaceCapture? _cachedRuntimeCapture;
     private GscWorkspaceSnapshot? _cachedBaseSnapshot;
 
-    public GscWorkspaceIndexService(FastFileWorkspace workspace)
+    public GscWorkspaceIndexService(FastFileEditingSession editingSession)
     {
-        _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        _editingSession = editingSession
+            ?? throw new ArgumentNullException(nameof(editingSession));
+        _workspace = editingSession.Workspace;
+        _originalTargetRows = _workspace.TargetSource.Rows
+            .Select(row => row.Identity)
+            .ToHashSet();
     }
 
     public GscWorkspaceSnapshot GetSnapshot(CancellationToken cancellationToken = default)
@@ -30,22 +40,49 @@ public sealed class GscWorkspaceIndexService
         lock (_sync)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            long revision = _workspace.Runtime.AssetPool.Revision;
-            if (_cachedBaseSnapshot?.AssetPoolRevision == revision)
+            long assetPoolRevision = _workspace.Runtime.AssetPool.Revision;
+            long editingSessionRevision = _editingSession.Revision;
+            if (_cachedBaseSnapshot is
+                {
+                    AssetPoolRevision: var cachedPoolRevision,
+                    EditingSessionRevision: var cachedSessionRevision
+                } &&
+                cachedPoolRevision == assetPoolRevision &&
+                cachedSessionRevision == editingSessionRevision)
+            {
                 return _cachedBaseSnapshot;
+            }
 
-            GscWorkspaceSnapshot captured = CaptureStableSnapshot(
-                revision,
-                cancellationToken);
+            RuntimeWorkspaceCapture runtimeCapture =
+                GetRuntimeCapture(assetPoolRevision, cancellationToken);
+            FastFileEditingSaveSnapshot editingCapture =
+                _editingSession.CaptureForSave();
+            GscWorkspaceAuthoredDocument[] authoredDocuments =
+                CaptureAuthoredDocuments(editingCapture, cancellationToken);
+            GscWorkspaceIndex effectiveIndex = authoredDocuments.Length == 0
+                ? runtimeCapture.Index
+                : runtimeCapture.Index.WithDocuments(
+                    authoredDocuments.Select(document =>
+                        new GscDocumentSnapshot(
+                            GscScriptPath.FromAssetName(document.AssetName),
+                            document.Source.Text)),
+                    cancellationToken);
+            var captured = new GscWorkspaceSnapshot(
+                runtimeCapture.AssetPoolRevision,
+                editingCapture.Revision,
+                runtimeCapture.Slots,
+                authoredDocuments,
+                effectiveIndex);
             _cachedBaseSnapshot = captured;
             return captured;
         }
     }
 
     /// <summary>
-    /// Warms the immutable base snapshot for the current asset-pool revision
-    /// on a worker thread. The normal snapshot cache serializes concurrent
-    /// captures; editor buffer overlays remain demand-driven.
+    /// Warms the immutable base snapshot for the current runtime-pool and
+    /// editing-session revisions on a worker thread. The normal snapshot cache
+    /// serializes concurrent captures; editor buffer overlays remain
+    /// demand-driven.
     /// </summary>
     public Task<GscWorkspaceSnapshot> WarmBaseSnapshotAsync(
         CancellationToken cancellationToken = default) =>
@@ -70,7 +107,22 @@ public sealed class GscWorkspaceIndexService
                extension.Equals(".csc", StringComparison.OrdinalIgnoreCase);
     }
 
-    private GscWorkspaceSnapshot CaptureStableSnapshot(
+    private RuntimeWorkspaceCapture GetRuntimeCapture(
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        if (_cachedRuntimeCapture?.AssetPoolRevision == expectedRevision)
+            return _cachedRuntimeCapture;
+
+        RuntimeWorkspaceCapture captured = CaptureRuntimeSnapshot(
+            expectedRevision,
+            cancellationToken);
+        _cachedRuntimeCapture = captured;
+        _cachedBaseSnapshot = null;
+        return captured;
+    }
+
+    private RuntimeWorkspaceCapture CaptureRuntimeSnapshot(
         long expectedRevision,
         CancellationToken cancellationToken)
     {
@@ -136,7 +188,62 @@ public sealed class GscWorkspaceIndexService
                 $"The runtime asset pool changed from revision {expectedRevision} while the GSC language index was built.");
         }
 
-        return new GscWorkspaceSnapshot(expectedRevision, orderedSlots, index);
+        return new RuntimeWorkspaceCapture(
+            expectedRevision,
+            Array.AsReadOnly(orderedSlots),
+            index);
+    }
+
+    private GscWorkspaceAuthoredDocument[] CaptureAuthoredDocuments(
+        FastFileEditingSaveSnapshot editingCapture,
+        CancellationToken cancellationToken)
+    {
+        var documents = new List<GscWorkspaceAuthoredDocument>();
+        foreach (TargetZoneRowSource row in editingCapture.TargetRows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (row.SerializedType != XAssetType.RawFile ||
+                !editingCapture.TryGetDraftObject(
+                    row.Identity,
+                    out object? draftObject))
+            {
+                continue;
+            }
+            if (draftObject is not RawFileDraft draft)
+            {
+                throw new InvalidDataException(
+                    $"Applied RawFile row {row.SerializedIndex} has draft " +
+                    $"type '{draftObject?.GetType().FullName ?? "null"}'.");
+            }
+            if (!IsScriptAssetName(draft.OriginalName))
+                continue;
+            if (!IsEffectiveAuthoredOverride(row, draft))
+                continue;
+
+            documents.Add(new GscWorkspaceAuthoredDocument(
+                row.Identity,
+                draft.OriginalName,
+                CaptureSource(draft)));
+        }
+
+        return documents.ToArray();
+    }
+
+    private bool IsEffectiveAuthoredOverride(
+        TargetZoneRowSource row,
+        RawFileDraft draft)
+    {
+        if (!_originalTargetRows.Contains(row.Identity))
+            return true;
+
+        if (row.AuthoredDefinition?.SemanticSnapshot is not
+            RawFileAuthoredSnapshot authoredSnapshot)
+        {
+            return true;
+        }
+
+        RawFileDraft original = RawFileDraft.FromSnapshot(authoredSnapshot);
+        return !RawFileAuthoring.SemanticallyEquals(original, draft);
     }
 
     private static GscWorkspaceProviderProvenance CaptureProvenance(
@@ -221,17 +328,44 @@ public sealed class GscWorkspaceIndexService
             logicalContent = payload[..rawFile.Len];
         }
 
+        return CreateSource(
+            assetName,
+            logicalContent,
+            isCompressed,
+            payload.Length);
+    }
+
+    private static GscWorkspaceRawFileSource CaptureSource(
+        RawFileDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        byte[] logicalContent = draft.GetLogicalContentCopy();
+        return CreateSource(
+            draft.OriginalName,
+            logicalContent,
+            draft.Mode == RawFilePayloadMode.CompressedPayload,
+            draft.GetSerializedPayloadCopy().Length);
+    }
+
+    private static GscWorkspaceRawFileSource CreateSource(
+        string assetName,
+        byte[] logicalContent,
+        bool isCompressed,
+        int serializedLength)
+    {
         RawFileContentClassification classification =
             RawFileContentClassifier.Classify(assetName, logicalContent);
         RawFileTextEncoding encoding = classification.TextEncoding
             ?? throw new InvalidDataException(
                 $"RawFile '{assetName}' does not contain decodable script text.");
-        string text = RawFileContentClassifier.DecodeText(logicalContent, encoding);
+        string text = RawFileContentClassifier.DecodeText(
+            logicalContent,
+            encoding);
         return new GscWorkspaceRawFileSource(
             new GscSourceText(text, CreateSourceEncoding(encoding)),
             encoding,
             isCompressed,
-            payload.Length,
+            serializedLength,
             logicalContent.Length);
     }
 
@@ -249,4 +383,9 @@ public sealed class GscWorkspaceIndexService
             _ => throw new ArgumentOutOfRangeException(nameof(encoding))
         };
     }
+
+    private sealed record RuntimeWorkspaceCapture(
+        long AssetPoolRevision,
+        IReadOnlyList<GscWorkspaceRawFileSlot> Slots,
+        GscWorkspaceIndex Index);
 }
