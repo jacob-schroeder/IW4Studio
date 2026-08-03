@@ -396,9 +396,6 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         }
     }
 
-    private void ClearBufferButton_Click(object? sender, RoutedEventArgs e) =>
-        (DataContext as RawFileEditorViewModel)?.ClearBuffer();
-
     private void RevertDraftButton_Click(object? sender, RoutedEventArgs e) =>
         (DataContext as RawFileEditorViewModel)?.RevertDraft();
 
