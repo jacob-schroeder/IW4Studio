@@ -456,29 +456,27 @@ public sealed class RawFileEditorViewModel
     }
 
     /// <summary>
-    /// Queries function completions for an explicit request such as
-    /// Ctrl+Space or a completed scope operator. All syntax and workspace work
-    /// runs outside the UI thread.
+    /// Queries context-appropriate GSC completions for an explicit request.
+    /// All syntax and workspace work runs outside the UI thread.
     /// </summary>
     public Task<IReadOnlyList<GscEditorCompletion>>
-        GetGscFunctionCompletionsAsync(
+        GetGscCompletionsAsync(
             int caretOffset,
             CancellationToken cancellationToken = default) =>
-        GetGscFunctionCompletionsAsync(
+        GetGscCompletionsAsync(
             caretOffset,
             requireAutomaticContext: false,
             cancellationToken);
 
     /// <summary>
-    /// Queries function completions only when the captured caret is in a
-    /// valid automatic-completion context. Context parsing and workspace work
-    /// both run outside the UI thread.
+    /// Queries completions only when the captured caret is in a valid
+    /// automatic-completion context.
     /// </summary>
     public Task<IReadOnlyList<GscEditorCompletion>>
-        GetAutomaticGscFunctionCompletionsAsync(
+        GetAutomaticGscCompletionsAsync(
             int caretOffset,
             CancellationToken cancellationToken = default) =>
-        GetGscFunctionCompletionsAsync(
+        GetGscCompletionsAsync(
             caretOffset,
             requireAutomaticContext: true,
             cancellationToken);
@@ -837,7 +835,7 @@ public sealed class RawFileEditorViewModel
     }
 
     private async Task<IReadOnlyList<GscEditorCompletion>>
-        GetGscFunctionCompletionsAsync(
+        GetGscCompletionsAsync(
             int caretOffset,
             bool requireAutomaticContext,
             CancellationToken cancellationToken)
@@ -852,21 +850,12 @@ public sealed class RawFileEditorViewModel
                 () =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (requireAutomaticContext &&
-                        !GscEditorTextQueries.IsAutomaticCompletionContext(
-                            query.Source,
-                            query.CaretOffset,
-                            cancellationToken))
-                    {
-                        return (IReadOnlyList<GscEditorCompletion>)
-                            Array.Empty<GscEditorCompletion>();
-                    }
-
-                    return _gscLanguageSession!.GetFunctionCompletions(
+                    return _gscLanguageSession!.GetCompletions(
                         query.AssetName,
                         CreateGscSourceText(query.Source, query.Encoding),
                         query.BufferVersion,
                         query.CaretOffset,
+                        requireAutomaticContext,
                         cancellationToken);
                 },
                 cancellationToken);

@@ -23,6 +23,7 @@ internal static class GscDocumentIndexer
                 [],
                 [],
                 [],
+                [],
                 []);
         }
 
@@ -124,6 +125,12 @@ internal static class GscDocumentIndexer
             references,
             ExtractIncludes(snapshot, model.SyntaxTree).ToArray(),
             functions,
+            ExtractObservedFields(
+                    snapshot,
+                    model,
+                    definitionBySymbol,
+                    cancellationToken)
+                .ToArray(),
             ExtractFunctionReferences(snapshot, model.SyntaxTree).ToArray());
 
         GscSymbolDefinition AddDefinition(
@@ -168,6 +175,104 @@ internal static class GscDocumentIndexer
         string ReadSource(GscTextSpan span) => snapshot.Source.Text.Substring(
             span.Start,
             span.Length);
+    }
+
+    private static IEnumerable<GscObservedField> ExtractObservedFields(
+        GscDocumentSnapshot snapshot,
+        GscSemanticModel model,
+        IReadOnlyDictionary<GscSymbol, GscSymbolDefinition> definitions,
+        CancellationToken cancellationToken)
+    {
+        foreach (GscSyntaxNode node in DescendantNodes(model.SyntaxTree.Root))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (node.Production != GscProduction.FieldLValue)
+                continue;
+
+            GscSyntaxElement receiverElement = node.Children[0];
+            GscSyntaxTokenElement fieldToken = GscSemanticSyntax.Token(
+                node.Children[2]);
+            string sourceName = GscSemanticSyntax.Text(
+                snapshot.Source,
+                fieldToken);
+
+            string receiverSource = snapshot.Source.GetText(receiverElement.Span);
+            GscSymbolId? binding = TryGetReceiverBinding(
+                receiverElement,
+                model,
+                definitions);
+            yield return new GscObservedField(
+                new GscSourceLocation(snapshot.Path, fieldToken.Token.Span),
+                sourceName.ToLowerInvariant(),
+                sourceName,
+                new GscObservedReceiver(receiverSource, binding));
+        }
+    }
+
+    private static GscSymbolId? TryGetReceiverBinding(
+        GscSyntaxElement receiver,
+        GscSemanticModel model,
+        IReadOnlyDictionary<GscSymbol, GscSymbolDefinition> definitions)
+    {
+        if (!TryGetReceiverRootToken(receiver, out GscSyntaxTokenElement root) ||
+            !model.TryGetReference(root, out GscBoundReference reference) ||
+            !definitions.TryGetValue(
+                reference.Symbol,
+                out GscSymbolDefinition? definition) ||
+            definition.Kind is not (
+                GscWorkspaceSymbolKind.Local or
+                GscWorkspaceSymbolKind.Parameter))
+        {
+            return null;
+        }
+
+        return definition.Id;
+    }
+
+    private static bool TryGetReceiverRootToken(
+        GscSyntaxElement element,
+        out GscSyntaxTokenElement token)
+    {
+        if (element is not GscSyntaxNode node)
+        {
+            token = null!;
+            return false;
+        }
+
+        if (node.Production == GscProduction.LocalLValue)
+        {
+            token = GscSemanticSyntax.Token(node.Children[0]);
+            return true;
+        }
+
+        if (node.Production is GscProduction.FieldLValue or
+            GscProduction.IndexLValue or
+            GscProduction.PrimaryLValueExpression)
+        {
+            return TryGetReceiverRootToken(node.Children[0], out token);
+        }
+
+        if (node.Production == GscProduction.ParenthesizedExpressionList)
+        {
+            GscSyntaxNode optional = GscSemanticSyntax.Node(node.Children[1]);
+            if (optional.Production ==
+                GscProduction.OptionalExpressionListPresent)
+            {
+                GscSyntaxNode[] expressions = GscSemanticSyntax
+                    .EnumerateExpressions(
+                        GscSemanticSyntax.Node(optional.Children[0]))
+                    .Take(2)
+                    .ToArray();
+                if (expressions.Length == 1)
+                    return TryGetReceiverRootToken(expressions[0], out token);
+            }
+        }
+
+        if (node.Children.Count == 1)
+            return TryGetReceiverRootToken(node.Children[0], out token);
+
+        token = null!;
+        return false;
     }
 
     private static IEnumerable<GscIncludeReference> ExtractIncludes(

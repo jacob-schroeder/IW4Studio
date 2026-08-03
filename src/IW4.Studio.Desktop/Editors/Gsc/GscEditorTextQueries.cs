@@ -8,73 +8,6 @@ namespace IW4.Studio.Desktop.Editors.Gsc;
 /// </summary>
 internal static class GscEditorTextQueries
 {
-    internal static GscCompletionPrefix FindCompletionPrefix(
-        string source,
-        int caretOffset)
-    {
-        int nameStart = caretOffset;
-        while (nameStart > 0 && IsIdentifierPart(source[nameStart - 1]))
-            nameStart--;
-
-        string name = source[nameStart..caretOffset].ToLowerInvariant();
-        string? qualifier = null;
-        if (nameStart >= 2 &&
-            source.AsSpan(nameStart - 2, 2).SequenceEqual("::"))
-        {
-            int qualifierEnd = nameStart - 2;
-            int qualifierStart = qualifierEnd;
-            while (qualifierStart > 0 &&
-                   IsScriptPathPart(source[qualifierStart - 1]))
-            {
-                qualifierStart--;
-            }
-
-            if (qualifierStart != qualifierEnd)
-                qualifier = source[qualifierStart..qualifierEnd];
-        }
-
-        return new GscCompletionPrefix(nameStart, name, qualifier);
-    }
-
-    internal static bool IsAutomaticCompletionContext(
-        string source,
-        int caretOffset,
-        CancellationToken cancellationToken = default)
-    {
-        if (caretOffset <= 0 || caretOffset > source.Length)
-            return false;
-
-        GscCompletionPrefix prefix = FindCompletionPrefix(source, caretOffset);
-        if (prefix.Name.Length < 2)
-            return false;
-
-        GscSyntaxResult syntax = new GscSyntaxAnalyzer().Analyze(
-            source,
-            cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        GscToken[] tokens = syntax.Tokens.ToArray();
-        int probeOffset = caretOffset - 1;
-        int tokenIndex = Array.FindIndex(
-            tokens,
-            token =>
-                token.Span.Start <= probeOffset &&
-                probeOffset < token.Span.End);
-        if (tokenIndex < 0)
-            return false;
-
-        GscToken token = tokens[tokenIndex];
-        if (token.Kind != GscTokenKind.Identifier ||
-            token.Span.Start != prefix.ReplacementStart)
-        {
-            return false;
-        }
-
-        GscTokenKind? previousKind = tokenIndex == 0
-            ? null
-            : tokens[tokenIndex - 1].Kind;
-        return previousKind != GscTokenKind.Dot;
-    }
-
     internal static GscCallSite? FindContainingCall(
         string source,
         int caretOffset,
@@ -181,18 +114,7 @@ internal static class GscEditorTextQueries
 
         return activeParameter;
     }
-
-    private static bool IsIdentifierPart(char character) =>
-        char.IsLetterOrDigit(character) || character == '_';
-
-    private static bool IsScriptPathPart(char character) =>
-        IsIdentifierPart(character) || character is '\\' or '/';
 }
-
-internal sealed record GscCompletionPrefix(
-    int ReplacementStart,
-    string Name,
-    string? Qualifier);
 
 internal sealed record GscCallSite(
     string Name,

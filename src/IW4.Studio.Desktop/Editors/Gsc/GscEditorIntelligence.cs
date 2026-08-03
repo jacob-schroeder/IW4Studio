@@ -5,7 +5,9 @@ public sealed record GscEditorCompletion(
     int ReplacementStart,
     string InsertionText,
     string DisplayText,
-    string Description);
+    string FilterText,
+    string Description,
+    double Priority = 0);
 
 public sealed record GscEditorSignature(
     string Header,

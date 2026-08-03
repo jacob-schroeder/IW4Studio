@@ -9,6 +9,7 @@ internal sealed record GscWorkspaceSourceDocument(
     IReadOnlyList<GscSymbolReference> References,
     IReadOnlyList<GscIncludeReference> Includes,
     IReadOnlyList<GscFunctionDefinition> Functions,
+    IReadOnlyList<GscObservedField> ObservedFields,
     IReadOnlyList<GscPendingFunctionReference> FunctionReferences);
 
 internal sealed record GscPendingFunctionReference(

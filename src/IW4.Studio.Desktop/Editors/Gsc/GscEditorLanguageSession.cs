@@ -58,11 +58,12 @@ internal sealed class GscEditorLanguageSession
         }
     }
 
-    internal IReadOnlyList<GscEditorCompletion> GetFunctionCompletions(
+    internal IReadOnlyList<GscEditorCompletion> GetCompletions(
         string assetName,
         GscSourceText source,
         long bufferVersion,
         int caretOffset,
+        bool requireAutomaticContext,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -73,20 +74,57 @@ internal sealed class GscEditorLanguageSession
                 bufferVersion,
                 cancellationToken);
         GscScriptPath currentPath = GscScriptPath.FromAssetName(assetName);
-        GscCompletionPrefix prefix = GscEditorTextQueries.FindCompletionPrefix(
+        GscAnalysisResult analysis = overlay.Index.GetAnalysis(currentPath);
+        GscCompletionContext? context = GscCompletionContextQueries.Find(
             source.Text,
-            caretOffset);
-        GscScriptPath? targetPath = ResolveQualifier(currentPath, prefix.Qualifier);
-        if (prefix.Qualifier is not null && targetPath is null)
+            caretOffset,
+            requireAutomaticContext,
+            analysis.Tokens,
+            cancellationToken);
+        if (context is null)
+            return [];
+
+        return context switch
+        {
+            GscCallableCompletionContext callable => GetCallableCompletions(
+                baseSnapshot,
+                overlay,
+                currentPath,
+                callable,
+                cancellationToken),
+            GscFieldCompletionContext field =>
+                GscObservedFieldCompletionProvider.GetCompletions(
+                    baseSnapshot,
+                    overlay,
+                    currentPath,
+                    field,
+                    HasSyntaxErrors(overlay, currentPath),
+                    cancellationToken),
+            _ => throw new InvalidOperationException(
+                $"Unknown GSC completion context '{context.GetType().Name}'.")
+        };
+    }
+
+    private static IReadOnlyList<GscEditorCompletion> GetCallableCompletions(
+        GscWorkspaceSnapshot baseSnapshot,
+        GscWorkspaceSnapshot overlay,
+        GscScriptPath currentPath,
+        GscCallableCompletionContext context,
+        CancellationToken cancellationToken)
+    {
+        GscScriptPath? targetPath = ResolveQualifier(
+            currentPath,
+            context.Qualifier);
+        if (context.Qualifier is not null && targetPath is null)
             return [];
 
         IEnumerable<GscFunctionDefinition> functions =
-            overlay.Index.FindFunctions(prefix.Name, targetPath);
+            overlay.Index.FindFunctions(context.Prefix, targetPath);
         if ((targetPath is null || targetPath == currentPath) &&
             HasSyntaxErrors(overlay, currentPath))
         {
             functions = functions.Concat(
-                baseSnapshot.Index.FindFunctions(prefix.Name, currentPath));
+                baseSnapshot.Index.FindFunctions(context.Prefix, currentPath));
         }
 
         GscFunctionDefinition[] orderedFunctions = functions
@@ -104,7 +142,7 @@ internal sealed class GscEditorLanguageSession
             completions = orderedFunctions.Select(function => CreateCompletion(
                 currentPath,
                 function,
-                prefix,
+                context,
                 hasExplicitQualifier: true));
         }
         else
@@ -114,23 +152,23 @@ internal sealed class GscEditorLanguageSession
                 .Select(function => CreateCompletion(
                     currentPath,
                     function,
-                    prefix,
+                    context,
                     hasExplicitQualifier: false))
                 .Concat(FindObservedCallables(
                         baseSnapshot,
                         overlay,
                         currentPath,
-                        prefix.Name,
+                        context.Prefix,
                         cancellationToken)
                     .Select(reference => CreateObservedCompletion(
-                        prefix,
+                        context,
                         reference)))
                 .Concat(orderedFunctions
                     .Where(function => function.Location.Path != currentPath)
                     .Select(function => CreateCompletion(
                         currentPath,
                         function,
-                        prefix,
+                        context,
                         hasExplicitQualifier: false)));
         }
 
@@ -347,36 +385,41 @@ internal sealed class GscEditorLanguageSession
     private static GscEditorCompletion CreateCompletion(
         GscScriptPath currentPath,
         GscFunctionDefinition function,
-        GscCompletionPrefix prefix,
+        GscCallableCompletionContext context,
         bool hasExplicitQualifier)
     {
         if (hasExplicitQualifier || function.Location.Path == currentPath)
         {
             return new GscEditorCompletion(
-                prefix.ReplacementStart,
+                context.ReplacementStart,
                 function.SourceName,
                 function.DeclarationSignature,
-                function.Location.Path.Value);
+                function.SourceName,
+                function.Location.Path.Value,
+                Priority: function.Location.Path == currentPath ? 100 : 50);
         }
 
         string qualifiedPath = RemoveScriptExtension(
                 function.Location.Path.Value)
             .Replace('/', '\\');
         return new GscEditorCompletion(
-            prefix.ReplacementStart,
+            context.ReplacementStart,
             $"{qualifiedPath}::{function.SourceName}",
             $"{qualifiedPath}::{function.DeclarationSignature}",
+            function.SourceName,
             function.Location.Path.Value);
     }
 
     private static GscEditorCompletion CreateObservedCompletion(
-        GscCompletionPrefix prefix,
+        GscCallableCompletionContext context,
         GscSymbolReference reference) =>
         new(
-            prefix.ReplacementStart,
+            context.ReplacementStart,
             reference.SourceName,
             $"{reference.SourceName}(…)",
-            ObservedCallableDescription);
+            reference.SourceName,
+            ObservedCallableDescription,
+            Priority: 25);
 
     private static GscEditorSignature CreateSignature(
         GscFunctionDefinition function,

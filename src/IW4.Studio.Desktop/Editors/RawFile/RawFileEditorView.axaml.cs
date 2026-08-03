@@ -130,7 +130,9 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             e.Handled = true;
-            await ShowGscCompletionAsync(isAutomatic: false);
+            await ShowGscCompletionAsync(
+                requireAutomaticContext: false,
+                useDelay: false);
         }
     }
 
@@ -159,18 +161,32 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             caret >= 2 &&
             _contentEditor.Text.AsSpan(caret - 2, 2).SequenceEqual("::"))
         {
-            await ShowGscCompletionAsync(isAutomatic: false);
+            await ShowGscCompletionAsync(
+                requireAutomaticContext: false,
+                useDelay: false);
+            return;
+        }
+
+        if (text == ".")
+        {
+            await ShowGscCompletionAsync(
+                requireAutomaticContext: true,
+                useDelay: false);
             return;
         }
 
         if (_completionWindow is null &&
             EndsWithIdentifierCharacter(text))
         {
-            await ShowGscCompletionAsync(isAutomatic: true);
+            await ShowGscCompletionAsync(
+                requireAutomaticContext: true,
+                useDelay: true);
         }
     }
 
-    private async Task ShowGscCompletionAsync(bool isAutomatic)
+    private async Task ShowGscCompletionAsync(
+        bool requireAutomaticContext,
+        bool useDelay)
     {
         if (_contentEditor is not { } editor ||
             _viewModel is not { } viewModel ||
@@ -183,14 +199,15 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         CancellationTokenSource cancellation = BeginGscIntelligenceRequest();
         try
         {
-            if (isAutomatic)
+            if (useDelay)
                 await Task.Delay(AutomaticCompletionDelay, cancellation.Token);
 
-            IReadOnlyList<GscEditorCompletion> suggestions = isAutomatic
-                ? await viewModel.GetAutomaticGscFunctionCompletionsAsync(
+            IReadOnlyList<GscEditorCompletion> suggestions =
+                requireAutomaticContext
+                ? await viewModel.GetAutomaticGscCompletionsAsync(
                     caret,
                     cancellation.Token)
-                : await viewModel.GetGscFunctionCompletionsAsync(
+                : await viewModel.GetGscCompletionsAsync(
                     caret,
                     cancellation.Token);
             if (!IsCurrentGscIntelligenceRequest(
@@ -244,8 +261,8 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
                 suggestion.InsertionText,
                 suggestion.DisplayText,
                 suggestion.Description,
-                filterText: GetCompletionFilterText(
-                    suggestion.InsertionText)));
+                filterText: suggestion.FilterText,
+                priority: suggestion.Priority));
         }
         window.CompletionList.SelectItem(
             editor.Text[replacementStart..caret]);
@@ -262,16 +279,6 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
     private static bool EndsWithIdentifierCharacter(string text) =>
         text.Length > 0 &&
         (char.IsLetterOrDigit(text[^1]) || text[^1] == '_');
-
-    private static string GetCompletionFilterText(string insertionText)
-    {
-        int separator = insertionText.LastIndexOf(
-            "::",
-            StringComparison.Ordinal);
-        return separator < 0
-            ? insertionText
-            : insertionText[(separator + 2)..];
-    }
 
     private async Task ShowGscSignatureHelpAsync()
     {

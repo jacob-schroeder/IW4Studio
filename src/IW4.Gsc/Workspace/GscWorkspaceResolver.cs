@@ -44,7 +44,8 @@ internal static class GscWorkspaceResolver
                     source.Definitions,
                     imported.References,
                     source.Includes,
-                    source.Functions));
+                    source.Functions,
+                    source.ObservedFields));
         }
 
         return result;

@@ -129,6 +129,7 @@ public sealed class GscIndexedDocument
     private readonly IReadOnlyList<GscSymbolReference> _references;
     private readonly IReadOnlyList<GscIncludeReference> _includes;
     private readonly IReadOnlyList<GscFunctionDefinition> _functions;
+    private readonly IReadOnlyList<GscObservedField> _observedFields;
 
     internal GscIndexedDocument(
         GscDocumentSnapshot snapshot,
@@ -136,7 +137,8 @@ public sealed class GscIndexedDocument
         IEnumerable<GscSymbolDefinition> definitions,
         IEnumerable<GscSymbolReference> references,
         IEnumerable<GscIncludeReference> includes,
-        IEnumerable<GscFunctionDefinition> functions)
+        IEnumerable<GscFunctionDefinition> functions,
+        IEnumerable<GscObservedField> observedFields)
     {
         Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         Analysis = analysis ?? throw new ArgumentNullException(nameof(analysis));
@@ -144,6 +146,7 @@ public sealed class GscIndexedDocument
         _references = Array.AsReadOnly(references.ToArray());
         _includes = Array.AsReadOnly(includes.ToArray());
         _functions = Array.AsReadOnly(functions.ToArray());
+        _observedFields = Array.AsReadOnly(observedFields.ToArray());
     }
 
     public GscDocumentSnapshot Snapshot { get; }
@@ -159,4 +162,6 @@ public sealed class GscIndexedDocument
     public IReadOnlyList<GscIncludeReference> Includes => _includes;
 
     public IReadOnlyList<GscFunctionDefinition> Functions => _functions;
+
+    public IReadOnlyList<GscObservedField> ObservedFields => _observedFields;
 }
