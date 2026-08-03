@@ -18,12 +18,16 @@ namespace IW4.Studio.Desktop.Editors.RawFile;
 
 public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigator
 {
+    private static readonly TimeSpan AutomaticCompletionDelay =
+        TimeSpan.FromMilliseconds(100);
+
     private TextEditor? _contentEditor;
     private RawFileEditorViewModel? _viewModel;
     private bool _isSynchronizingEditorText;
     private CompletionWindow? _completionWindow;
     private OverloadInsightWindow? _signatureWindow;
     private GscDiagnosticRenderer? _diagnosticRenderer;
+    private CancellationTokenSource? _gscIntelligenceCancellation;
 
     public RawFileEditorView()
     {
@@ -69,6 +73,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
 
     private void ContentEditor_TextChanged(object? sender, EventArgs e)
     {
+        CancelGscIntelligenceRequest();
         if (!_isSynchronizingEditorText &&
             sender is TextEditor editor &&
             _viewModel is not null)
@@ -124,12 +129,12 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         if (e.Key == Key.Space &&
             e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            ShowGscCompletion();
             e.Handled = true;
+            await ShowGscCompletionAsync(isAutomatic: false);
         }
     }
 
-    private void ContentEditor_TextEntered(
+    private async void ContentEditor_TextEntered(
         object? sender,
         TextInputEventArgs e)
     {
@@ -139,11 +144,12 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         string text = e.Text ?? string.Empty;
         if (text is "(" or ",")
         {
-            ShowGscSignatureHelp();
+            await ShowGscSignatureHelpAsync();
             return;
         }
         if (text == ")")
         {
+            CancelGscIntelligenceRequest();
             CloseSignatureWindow();
             return;
         }
@@ -153,41 +159,81 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             caret >= 2 &&
             _contentEditor.Text.AsSpan(caret - 2, 2).SequenceEqual("::"))
         {
-            ShowGscCompletion();
+            await ShowGscCompletionAsync(isAutomatic: false);
             return;
         }
 
         if (_completionWindow is null &&
-            GscEditorTextQueries.IsAutomaticCompletionContext(
-                _contentEditor.Text,
-                caret))
+            EndsWithIdentifierCharacter(text))
         {
-            ShowGscCompletion();
+            await ShowGscCompletionAsync(isAutomatic: true);
         }
     }
 
-    private void ShowGscCompletion()
+    private async Task ShowGscCompletionAsync(bool isAutomatic)
     {
-        if (_contentEditor is null || _viewModel is null)
+        if (_contentEditor is not { } editor ||
+            _viewModel is not { } viewModel ||
+            !viewModel.IsGscSource)
+        {
             return;
+        }
 
-        int caret = _contentEditor.TextArea.Caret.Offset;
-        IReadOnlyList<GscEditorCompletion> suggestions =
-            _viewModel.GetGscFunctionCompletions(caret);
-        CloseCompletionWindow();
-        if (suggestions.Count == 0)
-            return;
+        int caret = editor.TextArea.Caret.Offset;
+        CancellationTokenSource cancellation = BeginGscIntelligenceRequest();
+        try
+        {
+            if (isAutomatic)
+                await Task.Delay(AutomaticCompletionDelay, cancellation.Token);
 
+            IReadOnlyList<GscEditorCompletion> suggestions = isAutomatic
+                ? await viewModel.GetAutomaticGscFunctionCompletionsAsync(
+                    caret,
+                    cancellation.Token)
+                : await viewModel.GetGscFunctionCompletionsAsync(
+                    caret,
+                    cancellation.Token);
+            if (!IsCurrentGscIntelligenceRequest(
+                    cancellation,
+                    editor,
+                    viewModel,
+                    caret))
+            {
+                return;
+            }
+
+            CloseCompletionWindow();
+            if (suggestions.Count == 0)
+                return;
+
+            ShowGscCompletionWindow(editor, suggestions, caret);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A newer edit or request owns the editor UI.
+        }
+        finally
+        {
+            CompleteGscIntelligenceRequest(cancellation);
+        }
+    }
+
+    private void ShowGscCompletionWindow(
+        TextEditor editor,
+        IReadOnlyList<GscEditorCompletion> suggestions,
+        int caret)
+    {
         int replacementStart = suggestions[0].ReplacementStart;
         if (replacementStart < 0 ||
             replacementStart > caret ||
+            caret > editor.Text.Length ||
             suggestions.Any(suggestion =>
                 suggestion.ReplacementStart != replacementStart))
         {
             return;
         }
 
-        var window = new CompletionWindow(_contentEditor.TextArea)
+        var window = new CompletionWindow(editor.TextArea)
         {
             StartOffset = replacementStart,
             EndOffset = caret
@@ -202,7 +248,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
                     suggestion.InsertionText)));
         }
         window.CompletionList.SelectItem(
-            _contentEditor.Text[replacementStart..caret]);
+            editor.Text[replacementStart..caret]);
 
         window.Closed += (_, _) =>
         {
@@ -212,6 +258,10 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         _completionWindow = window;
         window.Show();
     }
+
+    private static bool EndsWithIdentifierCharacter(string text) =>
+        text.Length > 0 &&
+        (char.IsLetterOrDigit(text[^1]) || text[^1] == '_');
 
     private static string GetCompletionFilterText(string insertionText)
     {
@@ -223,32 +273,95 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
             : insertionText[(separator + 2)..];
     }
 
-    private void ShowGscSignatureHelp()
+    private async Task ShowGscSignatureHelpAsync()
     {
-        if (_contentEditor is null || _viewModel is null)
-            return;
-
-        GscEditorSignatureHelp? help = _viewModel.GetGscSignatureHelp(
-            _contentEditor.TextArea.Caret.Offset);
-        CloseSignatureWindow();
-        if (help is null)
-            return;
-
-        var provider = new GscOverloadProvider(help.Signatures.Select(
-            signature => new GscOverloadItem(
-                signature.Header,
-                signature.ActiveParameterText)));
-        var window = new OverloadInsightWindow(_contentEditor.TextArea)
+        if (_contentEditor is not { } editor ||
+            _viewModel is not { } viewModel ||
+            !viewModel.IsGscSource)
         {
-            Provider = provider
-        };
-        window.Closed += (_, _) =>
+            return;
+        }
+
+        int caret = editor.TextArea.Caret.Offset;
+        CancellationTokenSource cancellation = BeginGscIntelligenceRequest();
+        try
         {
-            if (ReferenceEquals(_signatureWindow, window))
-                _signatureWindow = null;
-        };
-        _signatureWindow = window;
-        window.Show();
+            GscEditorSignatureHelp? help =
+                await viewModel.GetGscSignatureHelpAsync(
+                    caret,
+                    cancellation.Token);
+            if (!IsCurrentGscIntelligenceRequest(
+                    cancellation,
+                    editor,
+                    viewModel,
+                    caret))
+            {
+                return;
+            }
+
+            CloseSignatureWindow();
+            if (help is null)
+                return;
+
+            var provider = new GscOverloadProvider(help.Signatures.Select(
+                signature => new GscOverloadItem(
+                    signature.Header,
+                    signature.ActiveParameterText)));
+            var window = new OverloadInsightWindow(editor.TextArea)
+            {
+                Provider = provider
+            };
+            window.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_signatureWindow, window))
+                    _signatureWindow = null;
+            };
+            _signatureWindow = window;
+            window.Show();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A newer edit or request owns the editor UI.
+        }
+        finally
+        {
+            CompleteGscIntelligenceRequest(cancellation);
+        }
+    }
+
+    private CancellationTokenSource BeginGscIntelligenceRequest()
+    {
+        CancelGscIntelligenceRequest();
+        var cancellation = new CancellationTokenSource();
+        _gscIntelligenceCancellation = cancellation;
+        return cancellation;
+    }
+
+    private void CancelGscIntelligenceRequest()
+    {
+        CancellationTokenSource? cancellation = _gscIntelligenceCancellation;
+        _gscIntelligenceCancellation = null;
+        cancellation?.Cancel();
+    }
+
+    private bool IsCurrentGscIntelligenceRequest(
+        CancellationTokenSource cancellation,
+        TextEditor editor,
+        RawFileEditorViewModel viewModel,
+        int caret) =>
+        !cancellation.IsCancellationRequested &&
+        ReferenceEquals(_gscIntelligenceCancellation, cancellation) &&
+        ReferenceEquals(_contentEditor, editor) &&
+        ReferenceEquals(_viewModel, viewModel) &&
+        editor.TextArea.Caret.Offset == caret;
+
+    private void CompleteGscIntelligenceRequest(
+        CancellationTokenSource cancellation)
+    {
+        if (ReferenceEquals(_gscIntelligenceCancellation, cancellation))
+            _gscIntelligenceCancellation = null;
+
+        cancellation.Dispose();
     }
 
     private void CloseCompletionWindow()
@@ -328,6 +441,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        CancelGscIntelligenceRequest();
         CloseCompletionWindow();
         CloseSignatureWindow();
         DetachViewModel();
@@ -356,6 +470,9 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
 
     private void DetachViewModel()
     {
+        CancelGscIntelligenceRequest();
+        CloseCompletionWindow();
+        CloseSignatureWindow();
         if (_viewModel is not null)
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
 

@@ -38,7 +38,8 @@ internal static class GscEditorTextQueries
 
     internal static bool IsAutomaticCompletionContext(
         string source,
-        int caretOffset)
+        int caretOffset,
+        CancellationToken cancellationToken = default)
     {
         if (caretOffset <= 0 || caretOffset > source.Length)
             return false;
@@ -47,7 +48,10 @@ internal static class GscEditorTextQueries
         if (prefix.Name.Length < 2)
             return false;
 
-        GscSyntaxResult syntax = new GscSyntaxAnalyzer().Analyze(source);
+        GscSyntaxResult syntax = new GscSyntaxAnalyzer().Analyze(
+            source,
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         GscToken[] tokens = syntax.Tokens.ToArray();
         int probeOffset = caretOffset - 1;
         int tokenIndex = Array.FindIndex(
@@ -73,9 +77,13 @@ internal static class GscEditorTextQueries
 
     internal static GscCallSite? FindContainingCall(
         string source,
-        int caretOffset)
+        int caretOffset,
+        CancellationToken cancellationToken = default)
     {
-        GscSyntaxResult syntax = new GscSyntaxAnalyzer().Analyze(source);
+        GscSyntaxResult syntax = new GscSyntaxAnalyzer().Analyze(
+            source,
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         GscToken[] tokens = syntax.Tokens
             .Where(token => token.Span.Start < caretOffset)
             .ToArray();

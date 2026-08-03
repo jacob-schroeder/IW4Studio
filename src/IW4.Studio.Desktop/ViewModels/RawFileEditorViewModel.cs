@@ -455,63 +455,66 @@ public sealed class RawFileEditorViewModel
         }
     }
 
-    public IReadOnlyList<GscEditorCompletion> GetGscFunctionCompletions(
-        int caretOffset)
-    {
-        if (_gscLanguageSession is null ||
-            !IsGscSource ||
-            caretOffset < 0 ||
-            caretOffset > PayloadInput.Length)
-        {
-            return [];
-        }
+    /// <summary>
+    /// Queries function completions for an explicit request such as
+    /// Ctrl+Space or a completed scope operator. All syntax and workspace work
+    /// runs outside the UI thread.
+    /// </summary>
+    public Task<IReadOnlyList<GscEditorCompletion>>
+        GetGscFunctionCompletionsAsync(
+            int caretOffset,
+            CancellationToken cancellationToken = default) =>
+        GetGscFunctionCompletionsAsync(
+            caretOffset,
+            requireAutomaticContext: false,
+            cancellationToken);
 
-        try
-        {
-            return _gscLanguageSession.GetFunctionCompletions(
-                OriginalName,
-                CreateGscSourceText(
-                    PayloadInput,
-                    _contentClassification?.TextEncoding),
-                _bufferVersion,
-                caretOffset);
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or
-                InvalidDataException or
-                InvalidOperationException)
-        {
-            StatusMessage = $"GSC completion failed: {exception.Message}";
-            return [];
-        }
-    }
+    /// <summary>
+    /// Queries function completions only when the captured caret is in a
+    /// valid automatic-completion context. Context parsing and workspace work
+    /// both run outside the UI thread.
+    /// </summary>
+    public Task<IReadOnlyList<GscEditorCompletion>>
+        GetAutomaticGscFunctionCompletionsAsync(
+            int caretOffset,
+            CancellationToken cancellationToken = default) =>
+        GetGscFunctionCompletionsAsync(
+            caretOffset,
+            requireAutomaticContext: true,
+            cancellationToken);
 
-    public GscEditorSignatureHelp? GetGscSignatureHelp(int caretOffset)
+    public async Task<GscEditorSignatureHelp?> GetGscSignatureHelpAsync(
+        int caretOffset,
+        CancellationToken cancellationToken = default)
     {
-        if (_gscLanguageSession is null ||
-            !IsGscSource ||
-            caretOffset < 0 ||
-            caretOffset > PayloadInput.Length)
-        {
+        GscEditorQuerySnapshot? query = CaptureGscEditorQuery(caretOffset);
+        if (query is null)
             return null;
-        }
 
         try
         {
-            return _gscLanguageSession.GetSignatureHelp(
-                OriginalName,
-                CreateGscSourceText(
-                    PayloadInput,
-                    _contentClassification?.TextEncoding),
-                _bufferVersion,
-                caretOffset);
+            GscEditorSignatureHelp? help = await Task.Run(
+                () =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return _gscLanguageSession!.GetSignatureHelp(
+                        query.AssetName,
+                        CreateGscSourceText(query.Source, query.Encoding),
+                        query.BufferVersion,
+                        query.CaretOffset,
+                        cancellationToken);
+                },
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return OwnsGscEditorQuery(query) ? help : null;
         }
         catch (Exception exception) when (
             exception is ArgumentException or
                 InvalidDataException or
                 InvalidOperationException)
         {
-            StatusMessage = $"GSC signature help failed: {exception.Message}";
+            if (OwnsGscEditorQuery(query))
+                StatusMessage = $"GSC signature help failed: {exception.Message}";
             return null;
         }
     }
@@ -832,6 +835,77 @@ public sealed class RawFileEditorViewModel
             return $"{length:N0} bytes";
         }
     }
+
+    private async Task<IReadOnlyList<GscEditorCompletion>>
+        GetGscFunctionCompletionsAsync(
+            int caretOffset,
+            bool requireAutomaticContext,
+            CancellationToken cancellationToken)
+    {
+        GscEditorQuerySnapshot? query = CaptureGscEditorQuery(caretOffset);
+        if (query is null)
+            return [];
+
+        try
+        {
+            IReadOnlyList<GscEditorCompletion> completions = await Task.Run(
+                () =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (requireAutomaticContext &&
+                        !GscEditorTextQueries.IsAutomaticCompletionContext(
+                            query.Source,
+                            query.CaretOffset,
+                            cancellationToken))
+                    {
+                        return (IReadOnlyList<GscEditorCompletion>)
+                            Array.Empty<GscEditorCompletion>();
+                    }
+
+                    return _gscLanguageSession!.GetFunctionCompletions(
+                        query.AssetName,
+                        CreateGscSourceText(query.Source, query.Encoding),
+                        query.BufferVersion,
+                        query.CaretOffset,
+                        cancellationToken);
+                },
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return OwnsGscEditorQuery(query) ? completions : [];
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+                InvalidDataException or
+                InvalidOperationException)
+        {
+            if (OwnsGscEditorQuery(query))
+                StatusMessage = $"GSC completion failed: {exception.Message}";
+            return [];
+        }
+    }
+
+    private GscEditorQuerySnapshot? CaptureGscEditorQuery(int caretOffset)
+    {
+        string source = PayloadInput;
+        if (_disposed ||
+            _gscLanguageSession is null ||
+            !IsGscSource ||
+            caretOffset < 0 ||
+            caretOffset > source.Length)
+        {
+            return null;
+        }
+
+        return new GscEditorQuerySnapshot(
+            OriginalName,
+            source,
+            _contentClassification?.TextEncoding,
+            _bufferVersion,
+            caretOffset);
+    }
+
+    private bool OwnsGscEditorQuery(GscEditorQuerySnapshot query) =>
+        !_disposed && query.BufferVersion == _bufferVersion;
 
     private void InvalidateGscBufferState()
     {
@@ -1207,4 +1281,11 @@ public sealed class RawFileEditorViewModel
     private sealed record GscAnalysisOutcome(
         IReadOnlyList<EditorSourceDiagnostic> Diagnostics,
         string? FailureMessage);
+
+    private sealed record GscEditorQuerySnapshot(
+        string AssetName,
+        string Source,
+        RawFileTextEncoding? Encoding,
+        long BufferVersion,
+        int CaretOffset);
 }

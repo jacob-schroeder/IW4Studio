@@ -62,13 +62,16 @@ internal sealed class GscEditorLanguageSession
         string assetName,
         GscSourceText source,
         long bufferVersion,
-        int caretOffset)
+        int caretOffset,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         (GscWorkspaceSnapshot baseSnapshot, GscWorkspaceSnapshot overlay) =
             GetSnapshots(
                 assetName,
                 source,
-                bufferVersion);
+                bufferVersion,
+                cancellationToken);
         GscScriptPath currentPath = GscScriptPath.FromAssetName(assetName);
         GscCompletionPrefix prefix = GscEditorTextQueries.FindCompletionPrefix(
             source.Text,
@@ -94,6 +97,7 @@ internal sealed class GscEditorLanguageSession
                 function => function.Location.Path.Value,
                 StringComparer.Ordinal)
             .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
         IEnumerable<GscEditorCompletion> completions;
         if (targetPath is not null)
         {
@@ -116,7 +120,8 @@ internal sealed class GscEditorLanguageSession
                         baseSnapshot,
                         overlay,
                         currentPath,
-                        prefix.Name)
+                        prefix.Name,
+                        cancellationToken)
                     .Select(reference => CreateObservedCompletion(
                         prefix,
                         reference)))
@@ -129,23 +134,27 @@ internal sealed class GscEditorLanguageSession
                         hasExplicitQualifier: false)));
         }
 
-        return Array.AsReadOnly(completions
+        GscEditorCompletion[] result = completions
             .DistinctBy(
                 completion => completion.InsertionText,
                 StringComparer.OrdinalIgnoreCase)
             .Take(200)
-            .ToArray());
+            .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        return Array.AsReadOnly(result);
     }
 
     internal GscEditorSignatureHelp? GetSignatureHelp(
         string assetName,
         GscSourceText source,
         long bufferVersion,
-        int caretOffset)
+        int caretOffset,
+        CancellationToken cancellationToken = default)
     {
         GscCallSite? call = GscEditorTextQueries.FindContainingCall(
             source.Text,
-            caretOffset);
+            caretOffset,
+            cancellationToken);
         if (call is null)
             return null;
 
@@ -158,12 +167,14 @@ internal sealed class GscEditorLanguageSession
             GetSnapshots(
                 assetName,
                 source,
-                bufferVersion);
+                bufferVersion,
+                cancellationToken);
         IReadOnlyList<GscFunctionDefinition> functions =
             overlay.Index.FindFunctionSignatures(
                 currentPath,
                 call.Name,
                 targetPath);
+        cancellationToken.ThrowIfCancellationRequested();
         if (functions.Count == 0 &&
             (targetPath is null || targetPath == currentPath) &&
             HasSyntaxErrors(overlay, currentPath))
@@ -181,7 +192,8 @@ internal sealed class GscEditorLanguageSession
                     overlay,
                     currentPath,
                     call.Name,
-                    call.NameStart)
+                    call.NameStart,
+                    cancellationToken)
                 : null;
             if (observed is null)
                 return null;
@@ -206,6 +218,7 @@ internal sealed class GscEditorLanguageSession
         long bufferVersion,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         GscScriptPath path = GscScriptPath.FromAssetName(assetName);
         lock (_sync)
         {
@@ -216,16 +229,19 @@ internal sealed class GscEditorLanguageSession
                 _cachedBufferVersion == bufferVersion &&
                 _cachedPath == path)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 return (_cachedBaseSnapshot!, _cachedSnapshot);
             }
 
-            _cachedSnapshot = _workspace.GetSnapshot(
+            GscWorkspaceSnapshot overlaySnapshot = _workspace.GetSnapshot(
                 new GscWorkspaceBufferOverlay(assetName, source),
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            _cachedSnapshot = overlaySnapshot;
             _cachedBaseSnapshot = baseSnapshot;
             _cachedPath = path;
             _cachedBufferVersion = bufferVersion;
-            return (baseSnapshot, _cachedSnapshot);
+            return (baseSnapshot, overlaySnapshot);
         }
     }
 
@@ -240,8 +256,13 @@ internal sealed class GscEditorLanguageSession
         GscWorkspaceSnapshot baseSnapshot,
         GscWorkspaceSnapshot overlay,
         GscScriptPath currentPath,
-        string namePrefix) =>
-        EnumerateObservedCallables(baseSnapshot, overlay, currentPath)
+        string namePrefix,
+        CancellationToken cancellationToken) =>
+        EnumerateObservedCallables(
+                baseSnapshot,
+                overlay,
+                currentPath,
+                cancellationToken)
             .Where(reference => reference.Name.StartsWith(
                 namePrefix,
                 StringComparison.Ordinal))
@@ -254,17 +275,24 @@ internal sealed class GscEditorLanguageSession
         GscWorkspaceSnapshot overlay,
         GscScriptPath currentPath,
         string name,
-        int currentCallStart) =>
-        EnumerateObservedCallables(baseSnapshot, overlay, currentPath).FirstOrDefault(
-            reference =>
-                reference.Name == name &&
-                (reference.Location.Path != currentPath ||
-                 reference.Location.Span.Start != currentCallStart));
+        int currentCallStart,
+        CancellationToken cancellationToken) =>
+        EnumerateObservedCallables(
+                baseSnapshot,
+                overlay,
+                currentPath,
+                cancellationToken)
+            .FirstOrDefault(
+                reference =>
+                    reference.Name == name &&
+                    (reference.Location.Path != currentPath ||
+                     reference.Location.Span.Start != currentCallStart));
 
     private static IEnumerable<GscSymbolReference> EnumerateObservedCallables(
         GscWorkspaceSnapshot baseSnapshot,
         GscWorkspaceSnapshot overlay,
-        GscScriptPath currentPath)
+        GscScriptPath currentPath,
+        CancellationToken cancellationToken)
     {
         IEnumerable<GscSymbolReference> references = overlay.Index.Documents
             .Where(document => document.Path.Kind == currentPath.Kind)
@@ -277,7 +305,7 @@ internal sealed class GscEditorLanguageSession
                 references = references.Concat(baseDocument.References);
         }
 
-        return references
+        return EnumerateWithCancellation(references, cancellationToken)
             .Where(reference =>
                 reference.Kind == GscWorkspaceReferenceKind.Call &&
                 reference.Targets.Count == 0 &&
@@ -286,6 +314,17 @@ internal sealed class GscEditorLanguageSession
                 reference.Location,
                 reference.Name,
                 reference.Kind));
+    }
+
+    private static IEnumerable<T> EnumerateWithCancellation<T>(
+        IEnumerable<T> source,
+        CancellationToken cancellationToken)
+    {
+        foreach (T item in source)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+        }
     }
 
     private static GscScriptPath? ResolveQualifier(

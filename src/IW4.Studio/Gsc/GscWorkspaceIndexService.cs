@@ -42,6 +42,17 @@ public sealed class GscWorkspaceIndexService
         }
     }
 
+    /// <summary>
+    /// Warms the immutable base snapshot for the current asset-pool revision
+    /// on a worker thread. The normal snapshot cache serializes concurrent
+    /// captures; editor buffer overlays remain demand-driven.
+    /// </summary>
+    public Task<GscWorkspaceSnapshot> WarmBaseSnapshotAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () => GetSnapshot(cancellationToken),
+            cancellationToken);
+
     public GscWorkspaceSnapshot GetSnapshot(
         GscWorkspaceBufferOverlay overlay,
         CancellationToken cancellationToken = default)

@@ -36,8 +36,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private const string LivePreviewDiagnosticSource = "Live Preview";
 
     private readonly WorkbenchSelectionContext _selectionContext = new();
+    private readonly CancellationTokenSource _gscWorkspaceWarmupCancellation = new();
     private readonly WorkbenchAssetSelectionRouter _selectionRouter;
     private readonly GscWorkspaceIndexService _gscWorkspace;
+    private readonly Task _gscWorkspaceWarmup;
     private readonly GscSourceNavigationBroker _gscSourceNavigation;
     private readonly GscWorkbenchNavigator _gscWorkbenchNavigator;
     private readonly GscUsagesPresenter _gscUsagesPresenter;
@@ -151,6 +153,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     "Workspace",
                     $"Workspace catalog loaded with {Editor.AssetCountText} entries.")
             ]);
+
+        CancellationToken warmupCancellation =
+            _gscWorkspaceWarmupCancellation.Token;
+        _gscWorkspaceWarmup = ObserveGscWorkspaceWarmupAsync(
+            _gscWorkspace.WarmBaseSnapshotAsync(warmupCancellation),
+            warmupCancellation);
     }
 
     public event EventHandler? LivePreviewRequested
@@ -463,6 +471,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             return;
 
         _disposed = true;
+        if (!_gscWorkspaceWarmup.IsCompleted)
+            _gscWorkspaceWarmupCancellation.Cancel();
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
         _gscSourceNavigation.NavigationRequested -=
             GscSourceNavigation_NavigationRequested;
@@ -484,6 +494,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         Properties.Dispose();
         Diagnostics.Dispose();
         Editor.Dispose();
+        _gscWorkspaceWarmupCancellation.Dispose();
     }
 
     private Control? ContentFor(string? toolId) =>
@@ -491,6 +502,30 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _registrationsById.TryGetValue(toolId, out StudioToolRegistration? registration)
             ? registration.Content
             : null;
+
+    private async Task ObserveGscWorkspaceWarmupAsync(
+        Task<GscWorkspaceSnapshot> warmup,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await warmup;
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (!_disposed)
+            {
+                ConsoleOutput.Append(
+                    ConsoleOutputLevel.Warning,
+                    "GSC",
+                    $"Workspace index warm-up failed; the next GSC request will retry. {exception.Message}");
+            }
+        }
+    }
 
     private void EditorDiagnosticsBridge_GscFindingsPresented(
         object? sender,
