@@ -16,6 +16,7 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
     private readonly IWorkbenchSelectionContext _selectionContext;
     private readonly ImageFilePakToolViewModel? _imageFilePak;
     private WorkbenchAssetSelection? _selection;
+    private ImageFilePakEntryViewModel? _streamedImage;
     private IAssetEditorProperties? _editorPropertiesSource;
     private bool _disposed;
 
@@ -27,6 +28,10 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
             ?? throw new ArgumentNullException(nameof(selectionContext));
         _imageFilePak = imageFilePak;
         _selection = selectionContext.Current;
+        _streamedImage = _selection?.Source ==
+            WorkbenchAssetSelectionSource.ImageFilePak
+                ? _imageFilePak?.SelectedEntry
+                : null;
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
     }
 
@@ -80,10 +85,7 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
     };
 
     public ImageFilePakEntryViewModel? StreamedImage =>
-        _selection?.Source ==
-        WorkbenchAssetSelectionSource.ImageFilePak
-            ? _imageFilePak?.SelectedEntry
-            : null;
+        _streamedImage;
 
     public bool HasStreamedImageDetails =>
         StreamedImage is not null;
@@ -119,6 +121,33 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         NotifyEditorPropertiesChanged();
     }
 
+    internal void SetDocumentSelection(
+        WorkbenchAssetSelection? selection,
+        ImageFilePakEntryViewModel? streamedImage)
+    {
+        if (Equals(_selection, selection) &&
+            ReferenceEquals(_streamedImage, streamedImage))
+        {
+            return;
+        }
+
+        _selection = selection;
+        _streamedImage = streamedImage;
+        SetEditorPropertiesSource(null);
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasNoSelection));
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(AssetType));
+        OnPropertyChanged(nameof(Navigator));
+        OnPropertyChanged(nameof(ProviderZone));
+        OnPropertyChanged(nameof(Access));
+        OnPropertyChanged(nameof(Origin));
+        OnPropertyChanged(nameof(Editor));
+        OnPropertyChanged(nameof(Identity));
+        OnPropertyChanged(nameof(StreamedImage));
+        OnPropertyChanged(nameof(HasStreamedImageDetails));
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -138,20 +167,11 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         object? sender,
         WorkbenchSelectionChangedEventArgs args)
     {
-        _selection = args.Current;
-        SetEditorPropertiesSource(null);
-        OnPropertyChanged(nameof(HasSelection));
-        OnPropertyChanged(nameof(HasNoSelection));
-        OnPropertyChanged(nameof(Name));
-        OnPropertyChanged(nameof(AssetType));
-        OnPropertyChanged(nameof(Navigator));
-        OnPropertyChanged(nameof(ProviderZone));
-        OnPropertyChanged(nameof(Access));
-        OnPropertyChanged(nameof(Origin));
-        OnPropertyChanged(nameof(Editor));
-        OnPropertyChanged(nameof(Identity));
-        OnPropertyChanged(nameof(StreamedImage));
-        OnPropertyChanged(nameof(HasStreamedImageDetails));
+        SetDocumentSelection(
+            args.Current,
+            args.Current?.Source == WorkbenchAssetSelectionSource.ImageFilePak
+                ? _imageFilePak?.SelectedEntry
+                : null);
     }
 
     private void EditorPropertiesSource_PropertyChanged(

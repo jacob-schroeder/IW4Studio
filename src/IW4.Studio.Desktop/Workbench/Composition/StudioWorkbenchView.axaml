@@ -7,6 +7,7 @@
              xmlns:docking="using:IW4.Studio.Desktop.Workbench.Docking"
              x:Class="IW4.Studio.Desktop.Workbench.Composition.StudioWorkbenchView"
              x:DataType="composition:StudioWorkbenchViewModel"
+             KeyDown="StudioWorkbenchView_KeyDown"
              mc:Ignorable="d"
              d:DesignWidth="1440"
              d:DesignHeight="820">
@@ -175,54 +176,79 @@
             BorderThickness="1">
       <Grid RowDefinitions="38,*">
         <Border Grid.Row="0"
-                Padding="11,0"
                 CornerRadius="7,7,0,0"
                 Background="{DynamicResource StudioSidebarBrush}"
                 BorderBrush="{DynamicResource StudioBorderBrush}"
                 BorderThickness="0,0,0,1">
-          <Grid ColumnDefinitions="Auto,8,*,Auto,Auto,Auto" ColumnSpacing="7">
-            <materialIcons:MaterialIcon Kind="ApplicationBracesOutline"
-                                        Width="16"
-                                        Height="16"
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource StudioAccentBrush}" />
-            <TextBlock Grid.Column="2"
-                       IsVisible="{Binding HasNoSelection}"
-                       Text="{Binding TargetFileName}"
-                       VerticalAlignment="Center"
-                       FontSize="11"
-                       FontWeight="SemiBold"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="2"
-                       IsVisible="{Binding HasSelection}"
-                       Text="{Binding SelectedName}"
-                       VerticalAlignment="Center"
-                       FontSize="11"
-                       FontWeight="SemiBold"
-                       TextTrimming="CharacterEllipsis" />
-            <Border Grid.Column="3"
-                    IsVisible="{Binding HasSelection}"
-                    Padding="7,2">
-              <TextBlock Text="{Binding SelectedKind}"
+          <Grid>
+            <Grid IsVisible="{Binding HasNoOpenEditorTabs}"
+                  Margin="11,0"
+                  ColumnDefinitions="Auto,8,*">
+              <materialIcons:MaterialIcon Kind="ApplicationBracesOutline"
+                                          Width="16"
+                                          Height="16"
+                                          VerticalAlignment="Center"
+                                          Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Grid.Column="2"
+                         Text="{Binding TargetFileName}"
                          VerticalAlignment="Center"
-                         FontSize="8"
-                         FontWeight="Bold"
-                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
-            </Border>
-            <TextBlock Grid.Column="4"
-                       IsVisible="{Binding HasSelection}"
-                       Text="{Binding SelectedAccessBadge}"
-                       VerticalAlignment="Center"
-                       FontSize="8"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            <Button Grid.Column="5"
-                    IsVisible="{Binding HasSelection}"
-                    Classes="studioPaneAction"
-                    Click="CloseEditorButton_Click"
-                    ToolTip.Tip="Close selected editor">
-              <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14" />
-            </Button>
+                         FontSize="11"
+                         FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+            </Grid>
+
+            <ListBox x:Name="EditorTabStrip"
+                     IsVisible="{Binding HasOpenEditorTabs}"
+                     Classes="studioEditorTabStrip"
+                     ItemsSource="{Binding OpenEditorTabs}"
+                     SelectedItem="{Binding SelectedEditorTab, Mode=TwoWay}"
+                     SelectionMode="Single"
+                     ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                     SelectionChanged="EditorTabStrip_SelectionChanged"
+                     PointerWheelChanged="EditorTabStrip_PointerWheelChanged">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="composition:WorkbenchEditorTabViewModel">
+                  <Grid ColumnDefinitions="Auto,7,*,7,Auto,4,Auto"
+                        ToolTip.Tip="{Binding ToolTipText}"
+                        AutomationProperties.Name="{Binding Title}"
+                        AutomationProperties.HelpText="{Binding ToolTipText}">
+                    <materialIcons:MaterialIcon Kind="{Binding IconToken, Converter={StaticResource ToolIconConverter}}"
+                                                Width="14"
+                                                Height="14"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    <TextBlock Grid.Column="2"
+                               Classes="studioEditorTabTitle"
+                               Text="{Binding Title}"
+                               TextTrimming="CharacterEllipsis" />
+                    <Border Grid.Column="4"
+                            Width="6"
+                            Height="6"
+                            CornerRadius="3"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource StudioAccentBrush}"
+                            IsVisible="{Binding IsDirty}"
+                            ToolTip.Tip="Unsaved changes" />
+                    <Button Grid.Column="6"
+                            Classes="studioEditorTabClose"
+                            PointerPressed="CloseEditorTabButton_PointerPressed"
+                            Click="CloseEditorTabButton_Click"
+                            AutomationProperties.Name="{Binding Title, StringFormat='Close {0}'}"
+                            ToolTip.Tip="Close tab">
+                      <materialIcons:MaterialIcon Kind="Close"
+                                                  Width="13"
+                                                  Height="13" />
+                    </Button>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
           </Grid>
         </Border>
 

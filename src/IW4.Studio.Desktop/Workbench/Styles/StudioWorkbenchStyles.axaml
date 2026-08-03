@@ -149,6 +149,115 @@
     <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
   </Style>
 
+  <!-- Rider-like document tabs. The active tab gains a quiet elevation and
+       uses the IW4 accent only as a narrow state marker. -->
+  <Style Selector="ListBox.studioEditorTabStrip">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="{DynamicResource StudioSidebarBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid>
+          <Border Name="EditorTabBackground"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Padding="{TemplateBinding Padding}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+          <Border Name="EditorTabActiveIndicator"
+                  Height="2"
+                  VerticalAlignment="Top"
+                  Background="Transparent"
+                  IsHitTestVisible="False" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="MinWidth" Value="128" />
+    <Setter Property="MaxWidth" Value="260" />
+    <Setter Property="Height" Value="38" />
+    <Setter Property="Padding" Value="10,0,5,0" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:pointerover /template/ Border#EditorTabBackground">
+    <Setter Property="Background" Value="{DynamicResource StudioControlPressedBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:selected /template/ Border#EditorTabBackground">
+    <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:selected /template/ Border#EditorTabActiveIndicator">
+    <Setter Property="Background" Value="{DynamicResource StudioAccentBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:focus-visible /template/ Border#EditorTabBackground">
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="TextBlock.studioEditorTabTitle">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:selected TextBlock.studioEditorTabTitle">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioEditorTabClose">
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="MinWidth" Value="22" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextSubtleBrush}" />
+    <Setter Property="Opacity" Value="0" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:pointerover Button.studioEditorTabClose">
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+
+  <Style Selector="ListBox.studioEditorTabStrip > ListBoxItem:selected Button.studioEditorTabClose">
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+
+  <Style Selector="Button.studioEditorTabClose:pointerover">
+    <Setter Property="Background" Value="{DynamicResource StudioControlPressedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioEditorTabClose:pressed">
+    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+  </Style>
+
+  <Style Selector="Button.studioEditorTabClose:focus-visible">
+    <Setter Property="Opacity" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
   <!-- Left-side asset navigator lists. -->
   <Style Selector="ListBox.studioNavigatorList">
     <Setter Property="Padding" Value="0" />

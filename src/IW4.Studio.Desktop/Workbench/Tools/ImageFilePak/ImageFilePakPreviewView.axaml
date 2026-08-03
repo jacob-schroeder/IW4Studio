@@ -5,7 +5,7 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:imageFilePak="using:IW4.Studio.Desktop.Workbench.Tools.ImageFilePak"
              x:Class="IW4.Studio.Desktop.Workbench.Tools.ImageFilePak.ImageFilePakPreviewView"
-             x:DataType="imageFilePak:ImageFilePakToolViewModel"
+             x:DataType="imageFilePak:ImageFilePakPreviewViewModel"
              mc:Ignorable="d"
              d:DesignWidth="920"
              d:DesignHeight="660">

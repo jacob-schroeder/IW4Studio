@@ -1,6 +1,4 @@
-using Avalonia.Media.Imaging;
 using IW4.Assets.Assets.Image;
-using IW4.Render.Textures;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Documents;
@@ -9,7 +7,7 @@ namespace IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 
 /// <summary>
 /// Searchable, read-only view over every streamed GfxImage definition loaded
-/// into the current workspace. Preview decoding is deferred until selection.
+/// into the current workspace. Preview documents own their decode lifetime.
 /// </summary>
 public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
 {
@@ -20,11 +18,7 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
         ImageFilePakEntryViewModel> _entriesByIdentity;
     private IReadOnlyList<ImageFilePakEntryViewModel> _visibleEntries;
     private ImageFilePakEntryViewModel? _selectedEntry;
-    private Bitmap? _preview;
-    private CancellationTokenSource? _previewCancellation;
     private string _searchText = string.Empty;
-    private string _previewMessage = "Select a streamed image to preview it.";
-    private bool _isPreviewLoading;
     private bool _disposed;
 
     public ImageFilePakToolViewModel(
@@ -73,34 +67,7 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(HasNoSelection));
             if (value is not null)
                 _selectionContext.Select(value.ToSelection());
-            BeginPreviewLoad(value);
         }
-    }
-
-    public Bitmap? Preview
-    {
-        get => _preview;
-        private set
-        {
-            Bitmap? previous = _preview;
-            if (!SetProperty(ref _preview, value))
-                return;
-
-            previous?.Dispose();
-            OnPropertyChanged(nameof(HasPreview));
-        }
-    }
-
-    public string PreviewMessage
-    {
-        get => _previewMessage;
-        private set => SetProperty(ref _previewMessage, value);
-    }
-
-    public bool IsPreviewLoading
-    {
-        get => _isPreviewLoading;
-        private set => SetProperty(ref _isPreviewLoading, value);
     }
 
     public int TotalCount => _allEntries.Count;
@@ -112,8 +79,6 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
     public bool HasSelection => SelectedEntry is not null;
 
     public bool HasNoSelection => !HasSelection;
-
-    public bool HasPreview => Preview is not null;
 
     public string ResultText => string.IsNullOrWhiteSpace(SearchText)
         ? $"{TotalCount:N0} streamed images"
@@ -127,11 +92,16 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
         _disposed = true;
         _selectionContext.SelectionChanged -=
             SelectionContext_SelectionChanged;
-        _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
-        _previewCancellation = null;
-        Preview = null;
     }
+
+    internal ImageFilePakEntryViewModel RequireEntry(
+        WorkbenchStreamedImageIdentity identity) =>
+        _entriesByIdentity.TryGetValue(
+            identity,
+            out ImageFilePakEntryViewModel? entry)
+            ? entry
+            : throw new KeyNotFoundException(
+                "The streamed image is not part of this workspace.");
 
     private static IReadOnlyList<ImageFilePakEntryViewModel> CaptureEntries(
         FastFileWorkspace workspace)
@@ -210,96 +180,5 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedEntry));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
-        BeginPreviewLoad(desired);
-    }
-
-    private void BeginPreviewLoad(ImageFilePakEntryViewModel? entry)
-    {
-        _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
-        _previewCancellation = null;
-        Preview = null;
-
-        if (entry is null)
-        {
-            IsPreviewLoading = false;
-            PreviewMessage = "Select a streamed image to preview it.";
-            return;
-        }
-
-        var cancellation = new CancellationTokenSource();
-        _previewCancellation = cancellation;
-        IsPreviewLoading = true;
-        PreviewMessage = "Loading streamed image preview…";
-        _ = LoadPreviewAsync(entry, cancellation);
-    }
-
-    private async Task LoadPreviewAsync(
-        ImageFilePakEntryViewModel entry,
-        CancellationTokenSource cancellation)
-    {
-        PreviewLoadResult result;
-        try
-        {
-            result = await Task.Run(
-                () => PreviewLoadResult.Decode(entry),
-                cancellation.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            result = new PreviewLoadResult(
-                false,
-                null,
-                $"Preview could not be decoded: {exception.Message}");
-        }
-
-        if (_disposed ||
-            cancellation.IsCancellationRequested ||
-            !ReferenceEquals(_previewCancellation, cancellation))
-        {
-            return;
-        }
-
-        _previewCancellation = null;
-        cancellation.Dispose();
-        IsPreviewLoading = false;
-        if (!result.Success || result.Preview is null)
-        {
-            PreviewMessage = result.Reason;
-            return;
-        }
-
-        try
-        {
-            using var stream = new MemoryStream(
-                result.Preview.GetPngBytesCopy(),
-                writable: false);
-            Preview = new Bitmap(stream);
-            PreviewMessage =
-                $"{result.Preview.Width:N0} × {result.Preview.Height:N0} · " +
-                result.Preview.Format;
-        }
-        catch (Exception exception)
-        {
-            PreviewMessage = $"Preview could not be created: {exception.Message}";
-        }
-    }
-
-    private sealed record PreviewLoadResult(
-        bool Success,
-        GfxImagePreviewSnapshot? Preview,
-        string Reason)
-    {
-        public static PreviewLoadResult Decode(
-            ImageFilePakEntryViewModel entry) =>
-            entry.TryDecodePreview(
-                out GfxImagePreviewSnapshot? preview,
-                out string reason)
-                ? new PreviewLoadResult(true, preview, string.Empty)
-                : new PreviewLoadResult(false, null, reason);
     }
 }

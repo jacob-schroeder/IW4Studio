@@ -56,12 +56,17 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
                         },
                         new TextBlock
                         {
-                            Text = $"{prompt.FastFileName} has {FormatChangedItemCount(prompt.ChangedItemCount)}.",
+                            Text = prompt.Action == DestructiveNavigationAction.CloseEditorTab
+                                ? $"This tab has {FormatChangedItemCount(prompt.ChangedItemCount)}."
+                                : $"{prompt.FastFileName} has {FormatChangedItemCount(prompt.ChangedItemCount)}.",
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap
                         },
                         new TextBlock
                         {
-                            Text = prompt.CanSave
+                            Text = prompt.CanSave &&
+                                   prompt.Action == DestructiveNavigationAction.CloseEditorTab
+                                ? "Save As writes all pending workspace changes. Discarding reverts only this tab."
+                                : prompt.CanSave
                                 ? "Save writes a validated Save As candidate. Discarding allows this action to continue without saving."
                                 : "This zone cannot be saved yet. Discarding allows this action to continue without saving.",
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap

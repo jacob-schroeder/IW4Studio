@@ -10,6 +10,7 @@ namespace IW4.Studio.Desktop.Lifecycle;
 public enum DestructiveNavigationAction
 {
     OpenAnother,
+    CloseEditorTab,
     Exit,
     WindowClose,
     ApplicationShutdown
@@ -163,14 +164,8 @@ public sealed class DestructiveNavigationCoordinator
         if (!Enum.IsDefined(action))
             throw new ArgumentOutOfRangeException(nameof(action));
 
-        object navigation = new();
-        lock (_gate)
-        {
-            if (_activeNavigation is not null)
-                return Task.FromResult(DestructiveNavigationResult.Coalesced);
-
-            _activeNavigation = navigation;
-        }
+        if (!TryBeginNavigation(out object navigation))
+            return Task.FromResult(DestructiveNavigationResult.Coalesced);
 
         return NavigateCoreAsync(
             session,
@@ -179,6 +174,34 @@ public sealed class DestructiveNavigationCoordinator
             proceedAsync,
             saveAsync,
             supplementalChanges,
+            navigation);
+    }
+
+    /// <summary>
+    /// Requests permission to close one editor tab. The decision and discard
+    /// operation are scoped to <paramref name="rowIdentity"/>. Save remains a
+    /// whole-workspace operation because fastfiles have one transaction boundary.
+    /// </summary>
+    public Task<DestructiveNavigationResult> CloseEditorTabAsync(
+        FastFileEditingSession session,
+        TargetZoneRowIdentity? rowIdentity,
+        IUnsavedChangesDialog dialog,
+        Func<Task> proceedAsync,
+        Func<Task<WorkspaceSaveOutcome>>? saveAsync = null)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(dialog);
+        ArgumentNullException.ThrowIfNull(proceedAsync);
+
+        if (!TryBeginNavigation(out object navigation))
+            return Task.FromResult(DestructiveNavigationResult.Coalesced);
+
+        return CloseEditorTabCoreAsync(
+            session,
+            rowIdentity,
+            dialog,
+            proceedAsync,
+            saveAsync,
             navigation);
     }
 
@@ -248,13 +271,93 @@ public sealed class DestructiveNavigationCoordinator
         }
         finally
         {
-            lock (_gate)
-            {
-                if (ReferenceEquals(_activeNavigation, navigation))
-                    _activeNavigation = null;
-            }
+            EndNavigation(navigation);
         }
     }
+
+    private async Task<DestructiveNavigationResult> CloseEditorTabCoreAsync(
+        FastFileEditingSession session,
+        TargetZoneRowIdentity? rowIdentity,
+        IUnsavedChangesDialog dialog,
+        Func<Task> proceedAsync,
+        Func<Task<WorkspaceSaveOutcome>>? saveAsync,
+        object navigation)
+    {
+        try
+        {
+            if (rowIdentity is { } row && HasChanges(session, row))
+            {
+                var prompt = new UnsavedChangesPrompt(
+                    DestructiveNavigationAction.CloseEditorTab,
+                    session.Workspace.Document.Request.Path,
+                    ChangedItemCount: 1,
+                    CanSave: saveAsync is not null);
+                UnsavedChangesDecision decision = await dialog.ShowAsync(prompt);
+                switch (decision)
+                {
+                    case UnsavedChangesDecision.DiscardChanges:
+                        session.RevertOne(row);
+                        if (HasChanges(session, row))
+                            return DestructiveNavigationResult.Failed;
+                        break;
+                    case UnsavedChangesDecision.Save when saveAsync is not null:
+                    {
+                        WorkspaceSaveOutcome save =
+                            (await saveAsync()).Validate();
+                        if (save.Cancelled)
+                            return DestructiveNavigationResult.Cancelled;
+                        if (!save.Succeeded || HasChanges(session, row))
+                            return DestructiveNavigationResult.Failed;
+                        break;
+                    }
+                    default:
+                        return DestructiveNavigationResult.Cancelled;
+                }
+            }
+
+            await proceedAsync();
+            return DestructiveNavigationResult.Proceeded;
+        }
+        catch (OperationCanceledException)
+        {
+            return DestructiveNavigationResult.Cancelled;
+        }
+        catch
+        {
+            return DestructiveNavigationResult.Failed;
+        }
+        finally
+        {
+            EndNavigation(navigation);
+        }
+    }
+
+    private bool TryBeginNavigation(out object navigation)
+    {
+        navigation = new object();
+        lock (_gate)
+        {
+            if (_activeNavigation is not null)
+                return false;
+
+            _activeNavigation = navigation;
+            return true;
+        }
+    }
+
+    private void EndNavigation(object navigation)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(_activeNavigation, navigation))
+                _activeNavigation = null;
+        }
+    }
+
+    private static bool HasChanges(
+        FastFileEditingSession session,
+        TargetZoneRowIdentity rowIdentity) =>
+        session.ChangeSet.TryGetChange(rowIdentity, out _);
 
     private static SupplementalUnsavedChanges CaptureSupplementalChanges(
         Func<SupplementalUnsavedChanges>? source) =>

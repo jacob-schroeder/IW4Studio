@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
 using IW4.Studio.Desktop.Editors;
@@ -45,14 +46,17 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private readonly GscUsagesPresenter _gscUsagesPresenter;
     private readonly IReadOnlyDictionary<string, StudioToolRegistration> _registrationsById;
     private readonly WorkbenchEditorDiagnosticsBridge _editorDiagnosticsBridge;
-    private readonly Control _imageFilePakPreviewView;
-    private WorkbenchAssetSelection? _currentSelection;
-    private WorkbenchAssetSelectionRoute? _currentRoute;
+    private readonly ObservableCollection<WorkbenchEditorTabViewModel> _openEditorTabs = [];
+    private readonly Dictionary<WorkbenchEditorTabKey, WorkbenchEditorTabViewModel>
+        _editorTabsByKey = [];
+    private WorkbenchEditorTabViewModel? _selectedEditorTab;
     private bool _disposed;
 
     public StudioWorkbenchViewModel(FastFileWorkspace workspace)
     {
         Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        OpenEditorTabs = new ReadOnlyObservableCollection<WorkbenchEditorTabViewModel>(
+            _openEditorTabs);
         _gscWorkspace = new GscWorkspaceIndexService(workspace);
         _gscSourceNavigation = new GscSourceNavigationBroker();
         GscUsages = new GscUsagesToolViewModel();
@@ -83,10 +87,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         ImageFilePak = new ImageFilePakToolViewModel(
             workspace,
             _selectionContext);
-        _imageFilePakPreviewView = new ImageFilePakPreviewView
-        {
-            DataContext = ImageFilePak
-        };
         ConsoleOutput = new ConsoleOutputBuffer();
         Diagnostics = new DiagnosticsAggregator();
         GscFindings = new GscFindingsToolViewModel();
@@ -185,7 +185,30 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public event EventHandler<GscEngineBuiltInNavigationRequestedEventArgs>?
         EngineBuiltInReferenceRequested;
 
+    public event EventHandler<WorkbenchEditorTabCloseRequestedEventArgs>?
+        EditorTabCloseRequested;
+
     public FastFileWorkspace Workspace { get; }
+
+    public ReadOnlyObservableCollection<WorkbenchEditorTabViewModel>
+        OpenEditorTabs { get; }
+
+    public WorkbenchEditorTabViewModel? SelectedEditorTab
+    {
+        get => _selectedEditorTab;
+        set
+        {
+            if (value is not null &&
+                !ReferenceEquals(_selectedEditorTab, value))
+            {
+                ActivateEditorTab(value);
+            }
+        }
+    }
+
+    public bool HasOpenEditorTabs => OpenEditorTabs.Count != 0;
+
+    public bool HasNoOpenEditorTabs => !HasOpenEditorTabs;
 
     public EditorViewModel Editor { get; }
 
@@ -267,7 +290,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public Control? ActiveRightContent => ContentFor(DockLayout.State.Right.ActiveToolId);
 
-    public bool HasSelection => _currentSelection is not null;
+    public bool HasSelection => SelectedEditorTab is not null;
 
     public bool HasNoSelection => !HasSelection;
 
@@ -275,46 +298,40 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         HasSelection && !HasSelectedHostedView;
 
     public Control? SelectedHostedView =>
-        _currentSelection?.Source ==
-        WorkbenchAssetSelectionSource.ImageFilePak
-            ? _imageFilePakPreviewView
-            : _currentRoute?.OpensCatalogEditor == true
-                ? Editor.SelectedHostedView
-                : null;
+        SelectedEditorTab?.HostedView;
 
     public bool HasSelectedHostedView => SelectedHostedView is not null;
 
     public string SelectedName =>
-        _currentSelection?.DisplayName ?? string.Empty;
+        SelectedEditorTab?.Title ?? string.Empty;
 
     public string SelectedKind =>
-        _currentSelection?.AssetType.ToString() ?? string.Empty;
+        SelectedEditorTab?.Kind ?? string.Empty;
 
     public string SelectedAccessBadge =>
-        _currentSelection?.Source switch
+        SelectedEditorTab?.Selection.Source switch
         {
             WorkbenchAssetSelectionSource.AssetPool =>
                 "RUNTIME INSPECTION",
             WorkbenchAssetSelectionSource.ImageFilePak =>
                 "READ ONLY",
-            _ => Editor.SelectedAccessBadge
+            _ => SelectedEditorTab?.AccessBadge ?? string.Empty
         };
 
     public string SelectedProviderZone =>
-        _currentSelection?.ProviderZone
-        ?? Editor.SelectedProviderZone;
+        SelectedEditorTab?.ProviderZone ?? string.Empty;
 
     public string EditorFallbackHeading =>
-        _currentRoute is { IsResolved: false }
+        SelectedEditorTab?.Route is { IsResolved: false }
             ? "No workspace editor target was found"
-            : _currentRoute is { OpensCatalogEditor: false } &&
-              _currentSelection?.Source == WorkbenchAssetSelectionSource.AssetPool
+            : SelectedEditorTab?.Route is { OpensCatalogEditor: false } &&
+              SelectedEditorTab?.Selection.Source == WorkbenchAssetSelectionSource.AssetPool
                 ? "Runtime preview is not implemented yet"
                 : "No editor exists for this resource yet";
 
     public string EditorFallbackMessage =>
-        !string.IsNullOrWhiteSpace(_currentRoute?.UnavailableReason)
-            ? _currentRoute!.UnavailableReason!
+        !string.IsNullOrWhiteSpace(SelectedEditorTab?.Route?.UnavailableReason)
+            ? SelectedEditorTab!.Route!.UnavailableReason!
             : string.IsNullOrWhiteSpace(SelectedKind)
             ? "This resource can still be inspected in the Properties tool."
             : $"A {SelectedKind} editor has not been implemented in IW4 Studio. " +
@@ -374,13 +391,68 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         int targetIndex) =>
         DockLayout.MoveTool(toolId, region, targetIndex);
 
-    public void RefreshSaveAvailability() =>
-        Editor.RefreshSaveAvailability();
+    public void RefreshAfterSave() =>
+        Editor.RefreshAfterSave();
 
-    public void CloseCurrentSelection()
+    public void RequestCloseEditorTab(WorkbenchEditorTabViewModel tab)
     {
-        if (_currentSelection is { } selection)
-            _selectionContext.Clear(selection.Source);
+        ArgumentNullException.ThrowIfNull(tab);
+        if (!_openEditorTabs.Contains(tab))
+            return;
+
+        EditorTabCloseRequested?.Invoke(
+            this,
+            new WorkbenchEditorTabCloseRequestedEventArgs(tab));
+    }
+
+    internal bool CloseEditorTab(WorkbenchEditorTabViewModel tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+        int closingIndex = _openEditorTabs.IndexOf(tab);
+        if (closingIndex < 0)
+            return false;
+
+        bool wasSelected = ReferenceEquals(_selectedEditorTab, tab);
+        WorkbenchAssetSelection closingSelection = tab.Selection;
+        if (wasSelected)
+        {
+            _selectedEditorTab = null;
+            OnPropertyChanged(nameof(SelectedEditorTab));
+        }
+
+        _editorTabsByKey.Remove(tab.Key);
+        _openEditorTabs.RemoveAt(closingIndex);
+        if (tab.CatalogEditor is { } catalogEditor)
+            Editor.CloseEditor(catalogEditor.Entry.Identity);
+        tab.Dispose();
+        OnPropertyChanged(nameof(HasOpenEditorTabs));
+        OnPropertyChanged(nameof(HasNoOpenEditorTabs));
+
+        if (!wasSelected)
+            return true;
+
+        if (_openEditorTabs.Count != 0)
+        {
+            int replacementIndex = Math.Min(
+                closingIndex,
+                _openEditorTabs.Count - 1);
+            ActivateEditorTab(_openEditorTabs[replacementIndex]);
+            return true;
+        }
+
+        Editor.DeactivateSelection();
+        if (Equals(_selectionContext.Current, closingSelection))
+            _selectionContext.Clear(closingSelection.Source);
+        NotifyCenterSelectionChanged();
+        return true;
+    }
+
+    private void ActivateEditorTab(WorkbenchEditorTabViewModel tab)
+    {
+        if (!_openEditorTabs.Contains(tab))
+            return;
+
+        _selectionContext.Select(tab.Selection);
     }
 
     public void ReportRenderProgress(string message)
@@ -500,6 +572,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         LivePreview.Dispose();
         Properties.Dispose();
         Diagnostics.Dispose();
+        foreach (WorkbenchEditorTabViewModel tab in _openEditorTabs)
+            tab.Dispose();
+        _openEditorTabs.Clear();
+        _editorTabsByKey.Clear();
         Editor.Dispose();
         _gscWorkspaceWarmupCancellation.Dispose();
     }
@@ -610,39 +686,81 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         WorkbenchSelectionChangedEventArgs args)
     {
         WorkbenchAssetSelection? selection = args.Current;
-        _currentSelection = selection;
-        _currentRoute = selection is not null &&
-                        selection.Source !=
-                        WorkbenchAssetSelectionSource.ImageFilePak
-            ? _selectionRouter.Resolve(selection)
-            : null;
-
         if (selection is null)
         {
-            Editor.CloseSelectedTab();
             NotifyCenterSelectionChanged();
             return;
         }
 
-        if (selection.Source ==
-            WorkbenchAssetSelectionSource.ImageFilePak)
-        {
-            Editor.CloseSelectedTab();
-            ConsoleOutput.Append(
-                ConsoleOutputLevel.Information,
-                "Imagefile.pak",
-                $"Selected streamed image '{selection.DisplayName}'.");
-            NotifyCenterSelectionChanged();
-            return;
-        }
+        WorkbenchAssetSelectionRoute? route =
+            selection.Source == WorkbenchAssetSelectionSource.ImageFilePak
+                ? null
+                : _selectionRouter.Resolve(selection);
+        AssetEditorHostViewModel? catalogEditor = null;
 
-        if (_currentRoute is
+        if (route is
             {
                 CatalogEntry: { } entry,
                 OpensCatalogEditor: true
             })
         {
-            Editor.SelectEntry(AssetExplorerItemIdentity.From(entry));
+            catalogEditor = Editor.SelectEntry(
+                AssetExplorerItemIdentity.From(entry));
+        }
+        else
+        {
+            Editor.DeactivateSelection();
+        }
+
+        WorkbenchEditorTabKey key =
+            WorkbenchEditorTabKey.Create(selection, route);
+        if (!_editorTabsByKey.TryGetValue(
+                key,
+                out WorkbenchEditorTabViewModel? tab))
+        {
+            Control? standaloneView = null;
+            ImageFilePakEntryViewModel? streamedImage = null;
+            IDisposable? ownedContent = null;
+            if (selection.Identity.StreamedImageIdentity is { } imageIdentity)
+            {
+                streamedImage = ImageFilePak.RequireEntry(imageIdentity);
+                var preview = new ImageFilePakPreviewViewModel(streamedImage);
+                standaloneView = new ImageFilePakPreviewView
+                {
+                    DataContext = preview
+                };
+                ownedContent = preview;
+            }
+
+            tab = new WorkbenchEditorTabViewModel(
+                key,
+                selection,
+                route,
+                catalogEditor,
+                standaloneView,
+                streamedImage,
+                ownedContent);
+            _editorTabsByKey.Add(key, tab);
+            _openEditorTabs.Add(tab);
+            OnPropertyChanged(nameof(HasOpenEditorTabs));
+            OnPropertyChanged(nameof(HasNoOpenEditorTabs));
+        }
+        else
+        {
+            tab.UpdateSelection(selection, route);
+        }
+
+        SetSelectedEditorTab(tab);
+
+        if (selection.Source == WorkbenchAssetSelectionSource.ImageFilePak)
+        {
+            ConsoleOutput.Append(
+                ConsoleOutputLevel.Information,
+                "Imagefile.pak",
+                $"Selected streamed image '{selection.DisplayName}'.");
+        }
+        else if (route?.OpensCatalogEditor == true)
+        {
             ConsoleOutput.Append(
                 ConsoleOutputLevel.Information,
                 selection.Source == WorkbenchAssetSelectionSource.AssetPool
@@ -652,24 +770,37 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
         else
         {
-            Editor.CloseSelectedTab();
             ConsoleOutput.Append(
                 ConsoleOutputLevel.Warning,
                 "Workbench",
-                _currentRoute?.UnavailableReason ??
+                route?.UnavailableReason ??
                 $"Could not resolve {selection.AssetType} '{selection.DisplayName}' into the workspace catalog.");
         }
 
         NotifyCenterSelectionChanged();
     }
 
+    private void SetSelectedEditorTab(WorkbenchEditorTabViewModel tab)
+    {
+        if (ReferenceEquals(_selectedEditorTab, tab))
+            return;
+
+        _selectedEditorTab = tab;
+        OnPropertyChanged(nameof(SelectedEditorTab));
+    }
+
     private void Editor_PropertyChanged(
         object? sender,
         PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(EditorViewModel.SelectedTab))
+        if (args.PropertyName == nameof(EditorViewModel.SelectedEditorHost))
         {
-            NotifyCenterSelectionChanged();
+            if (ReferenceEquals(
+                    SelectedEditorTab?.CatalogEditor,
+                    Editor.SelectedEditorHost))
+            {
+                NotifyCenterSelectionChanged();
+            }
         }
         else if (args.PropertyName == nameof(EditorViewModel.CanSaveAs))
         {
@@ -683,10 +814,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     private void NotifyCenterSelectionChanged()
     {
+        Properties.SetDocumentSelection(
+            SelectedEditorTab?.Selection,
+            SelectedEditorTab?.StreamedImage);
         Properties.SetEditorPropertiesSource(
-            _currentRoute?.OpensCatalogEditor == true
-                ? Editor.SelectedTab?.HostedViewModel as IAssetEditorProperties
-                : null);
+            SelectedEditorTab?.CatalogEditor?.HostedViewModel
+                as IAssetEditorProperties);
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(HasEditorFallback));

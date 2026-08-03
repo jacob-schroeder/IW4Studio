@@ -72,10 +72,10 @@ internal sealed class GscWorkbenchNavigator
         if (selectionFailure is not null)
             return selectionFailure;
 
-        if (_editor.SelectedTab?.HostedView is not IEditorTextNavigator navigator)
+        if (_editor.SelectedEditorHost?.HostedView is not IEditorTextNavigator navigator)
             return "the selected RawFile does not expose text navigation.";
 
-        string source = _editor.SelectedTab.HostedViewModel is
+        string source = _editor.SelectedEditorHost.HostedViewModel is
             RawFileEditorViewModel rawFileEditor
                 ? rawFileEditor.PayloadInput
                 : snapshot.Index.GetDocument(location.Path).Snapshot.Source.Text;
@@ -186,7 +186,7 @@ internal sealed class GscWorkbenchNavigator
             return "the active RawFile target row is absent from the navigator snapshot.";
 
         _fastFileAssets.SelectedRow = targetRow;
-        WorkspaceAssetCatalogEntry? selectedEntry = _editor.SelectedTab?.Entry.Entry;
+        WorkspaceAssetCatalogEntry? selectedEntry = _editor.SelectedEditorHost?.Entry.Entry;
         if (selectedEntry?.TargetRowIdentity != targetIdentity ||
             selectedEntry?.ResolvedProvider?.ProviderId != slot.ActiveProviderId)
         {
@@ -210,7 +210,7 @@ internal sealed class GscWorkbenchNavigator
         }
 
         _assetPool.SelectedRow = poolRow;
-        if (_editor.SelectedTab?.Entry.Entry.ResolvedProvider?.ProviderId !=
+        if (_editor.SelectedEditorHost?.Entry.Entry.ResolvedProvider?.ProviderId !=
             slot.ActiveProviderId)
         {
             return $"workbench catalog routing did not open active provider " +

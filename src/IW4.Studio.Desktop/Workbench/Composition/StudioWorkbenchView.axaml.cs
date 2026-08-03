@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using IW4.Studio.Desktop.Workbench.Docking;
 
 namespace IW4.Studio.Desktop.Workbench.Composition;
@@ -126,8 +127,99 @@ public sealed partial class StudioWorkbenchView : UserControl
     private void CollapseRightButton_Click(object? sender, RoutedEventArgs e) =>
         (DataContext as StudioWorkbenchViewModel)?.CollapseRegion(DockRegion.Right);
 
-    private void CloseEditorButton_Click(object? sender, RoutedEventArgs e) =>
-        (DataContext as StudioWorkbenchViewModel)?.CloseCurrentSelection();
+    private void CloseEditorTabButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (sender is Button
+            {
+                DataContext: WorkbenchEditorTabViewModel tab
+            })
+        {
+            (DataContext as StudioWorkbenchViewModel)?
+                .RequestCloseEditorTab(tab);
+            e.Handled = true;
+        }
+    }
+
+    private static void CloseEditorTabButton_PointerPressed(
+        object? sender,
+        PointerPressedEventArgs e) =>
+        e.Handled = true;
+
+    private void EditorTabStrip_SelectionChanged(
+        object? sender,
+        SelectionChangedEventArgs e)
+    {
+        if (sender is not ListBox listBox ||
+            DataContext is not StudioWorkbenchViewModel viewModel)
+        {
+            return;
+        }
+
+        if (listBox.SelectedItem is null &&
+            viewModel.SelectedEditorTab is { } selectedTab)
+        {
+            listBox.SelectedItem = selectedTab;
+            return;
+        }
+
+        if (listBox.SelectedItem is not null)
+            listBox.ScrollIntoView(listBox.SelectedItem);
+    }
+
+    private static void EditorTabStrip_PointerWheelChanged(
+        object? sender,
+        PointerWheelEventArgs e)
+    {
+        if (sender is not ListBox listBox)
+            return;
+
+        ScrollViewer? scrollViewer = listBox
+            .GetVisualDescendants()
+            .OfType<ScrollViewer>()
+            .FirstOrDefault();
+        if (scrollViewer is null)
+            return;
+
+        double horizontalRange = Math.Max(
+            0,
+            scrollViewer.Extent.Width - scrollViewer.Viewport.Width);
+        if (horizontalRange == 0)
+            return;
+
+        double wheelDelta = e.Delta.Y != 0
+            ? e.Delta.Y
+            : e.Delta.X;
+        double nextOffset = Math.Clamp(
+            scrollViewer.Offset.X - (wheelDelta * 48),
+            0,
+            horizontalRange);
+        scrollViewer.Offset = new Vector(
+            nextOffset,
+        scrollViewer.Offset.Y);
+        e.Handled = true;
+    }
+
+    private void StudioWorkbenchView_KeyDown(
+        object? sender,
+        KeyEventArgs e)
+    {
+        bool hasCloseModifier =
+            e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+            e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (!hasCloseModifier || e.Key != Key.W)
+            return;
+
+        if (DataContext is StudioWorkbenchViewModel
+            {
+                SelectedEditorTab: { } selectedTab
+            } viewModel)
+        {
+            viewModel.RequestCloseEditorTab(selectedTab);
+            e.Handled = true;
+        }
+    }
 
     private void LeftSplitter_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {

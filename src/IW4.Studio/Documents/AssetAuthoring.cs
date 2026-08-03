@@ -268,6 +268,10 @@ public sealed class AssetEditorSession : AssetEditorSurface
 
     public bool IsDraftOpen => _rowIdentity is { } identity && _editingSession.IsDraftOpen(identity);
 
+    public bool HasUnsavedChanges =>
+        _rowIdentity is { } identity &&
+        _editingSession.ChangeSet.TryGetChange(identity, out _);
+
     public AssetEditorValidationState Validation => _validation;
 
     public object OpenDraft()

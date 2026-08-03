@@ -60,6 +60,8 @@ public sealed partial class EditorWindow : Window
         _workbench = new StudioWorkbenchViewModel(workspace);
         _workbench.LivePreviewRequested += Workbench_LivePreviewRequested;
         _workbench.MapEditorRequested += Workbench_MapEditorRequested;
+        _workbench.EditorTabCloseRequested +=
+            Workbench_EditorTabCloseRequested;
         _workbench.EngineBuiltInReferenceRequested +=
             Workbench_EngineBuiltInReferenceRequested;
         DataContext = _workbench;
@@ -204,6 +206,34 @@ public sealed partial class EditorWindow : Window
             "Map Editor",
             $"Opening aggregate compiled-map document '{session.Bundle.MapIdentity}'.");
         _mapEditorWindow.Show(this);
+    }
+
+    private async void Workbench_EditorTabCloseRequested(
+        object? sender,
+        WorkbenchEditorTabCloseRequestedEventArgs args)
+    {
+        if (_disposed ||
+            _workbench is not { } workbench ||
+            !ReferenceEquals(sender, workbench) ||
+            Volatile.Read(ref _saveAsInProgress) != 0)
+        {
+            return;
+        }
+
+        Func<Task<WorkspaceSaveOutcome>>? saveAsync =
+            workbench.CanSaveAs ? RequestSaveAsAsync : null;
+        await _navigationCoordinator.CloseEditorTabAsync(
+            workbench.Editor.EditingSession,
+            args.Tab.EditableRowIdentity,
+            _unsavedChangesDialog,
+            () =>
+            {
+                if (!_disposed && ReferenceEquals(_workbench, workbench))
+                    workbench.CloseEditorTab(args.Tab);
+
+                return Task.CompletedTask;
+            },
+            saveAsync);
     }
 
     private void Workbench_EngineBuiltInReferenceRequested(
@@ -525,7 +555,7 @@ public sealed partial class EditorWindow : Window
                     saveLease.Dispose();
                     throw;
                 }
-                workbench.RefreshSaveAvailability();
+                workbench.RefreshAfterSave();
                 LogMapSaveResult(workbench, mapResult);
                 if (!mapResult.Succeeded && !_disposed)
                 {
@@ -555,7 +585,7 @@ public sealed partial class EditorWindow : Window
                 // semantic revision without changing its live editor state.
                 mapSession!.Document.MarkRevisionSaved(savedMapRevision);
             }
-            workbench.RefreshSaveAvailability();
+            workbench.RefreshAfterSave();
             workbench.LogSaveResult(result);
             if (!result.Succeeded && !_disposed)
             {
@@ -702,6 +732,8 @@ public sealed partial class EditorWindow : Window
             _workbench.LivePreviewRequested -=
                 Workbench_LivePreviewRequested;
             _workbench.MapEditorRequested -= Workbench_MapEditorRequested;
+            _workbench.EditorTabCloseRequested -=
+                Workbench_EditorTabCloseRequested;
             _workbench.EngineBuiltInReferenceRequested -=
                 Workbench_EngineBuiltInReferenceRequested;
             _workbench.Dispose();

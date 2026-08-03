@@ -34,7 +34,7 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         _editor.PropertyChanged += Editor_PropertyChanged;
         _gscFindings.FindingActivated += GscFindings_FindingActivated;
         ObserveHostedViewModel(
-            _editor.SelectedTab?.HostedViewModel as INotifyPropertyChanged);
+            _editor.SelectedEditorHost?.HostedViewModel as INotifyPropertyChanged);
         Refresh();
     }
 
@@ -58,11 +58,11 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         object? sender,
         PropertyChangedEventArgs args)
     {
-        if (args.PropertyName != nameof(EditorViewModel.SelectedTab))
+        if (args.PropertyName != nameof(EditorViewModel.SelectedEditorHost))
             return;
 
         ObserveHostedViewModel(
-            _editor.SelectedTab?.HostedViewModel as INotifyPropertyChanged);
+            _editor.SelectedEditorHost?.HostedViewModel as INotifyPropertyChanged);
         Refresh();
     }
 
@@ -122,18 +122,18 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
 
     private void RefreshValidationDiagnostics()
     {
-        AssetExplorerTabViewModel? tab = _editor.SelectedTab;
-        if (tab is null)
+        AssetEditorHostViewModel? editorHost = _editor.SelectedEditorHost;
+        if (editorHost is null)
         {
             _diagnostics.ClearSource(SourceName);
             return;
         }
 
         IReadOnlyList<AssetValidationIssue> validationIssues =
-            tab.HostedViewModel is IAssetEditorDiagnostics editorDiagnostics &&
+            editorHost.HostedViewModel is IAssetEditorDiagnostics editorDiagnostics &&
             editorDiagnostics.Diagnostics.Count != 0
                 ? editorDiagnostics.Diagnostics
-                : tab.BackendEditor?.Validation.Issues ?? [];
+                : editorHost.BackendEditor?.Validation.Issues ?? [];
 
         if (validationIssues.Count == 0)
         {
@@ -144,9 +144,9 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
                         "selection-valid",
                         WorkbenchDiagnosticSeverity.Information,
                         SourceName,
-                        tab.HasHostedEditor
-                            ? $"No asset validation errors for '{tab.Title}'."
-                            : $"No editor is implemented for {tab.Entry.AssetType}.")
+                        editorHost.HasHostedEditor
+                            ? $"No asset validation errors for '{editorHost.Title}'."
+                            : $"No editor is implemented for {editorHost.Entry.AssetType}.")
                 ]);
             return;
         }
@@ -165,19 +165,19 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
 
     private void RefreshGscFindings()
     {
-        AssetExplorerTabViewModel? tab = _editor.SelectedTab;
+        AssetEditorHostViewModel? editorHost = _editor.SelectedEditorHost;
         IReadOnlyList<EditorSourceDiagnostic> findings =
-            tab?.HostedViewModel is IAssetEditorSourceDiagnostics sourceDiagnostics
+            editorHost?.HostedViewModel is IAssetEditorSourceDiagnostics sourceDiagnostics
                 ? sourceDiagnostics.SourceDiagnostics
                 : [];
 
-        if (tab is null || findings.Count == 0)
+        if (editorHost is null || findings.Count == 0)
         {
             _gscFindings.Clear();
             return;
         }
 
-        _gscFindings.Replace(tab.Title, findings);
+        _gscFindings.Replace(editorHost.Title, findings);
     }
 
     private void SourceDiagnostics_PresentationRequested(
@@ -193,7 +193,7 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         object? sender,
         GscFindingActivatedEventArgs args)
     {
-        if (_editor.SelectedTab?.HostedView is IEditorTextNavigator navigator)
+        if (_editor.SelectedEditorHost?.HostedView is IEditorTextNavigator navigator)
             navigator.NavigateTo(args.Finding.Location);
     }
 }

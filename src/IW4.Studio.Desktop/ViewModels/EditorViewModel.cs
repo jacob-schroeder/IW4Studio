@@ -1,4 +1,3 @@
-using Avalonia.Controls;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
 
@@ -15,11 +14,11 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     private readonly AssetEditorViewRegistry _viewRegistry;
     private readonly AssetExplorerEntryViewModel[] _allEntries;
     private readonly IReadOnlyDictionary<AssetExplorerItemIdentity, AssetExplorerEntryViewModel> _entriesByIdentity;
-    private readonly Dictionary<AssetExplorerItemIdentity, AssetExplorerTabViewModel> _tabs = [];
+    private readonly Dictionary<AssetExplorerItemIdentity, AssetEditorHostViewModel> _editorHosts = [];
     private string _searchText = string.Empty;
     private IReadOnlyList<AssetTreeNode> _assetGroups = Array.Empty<AssetTreeNode>();
     private AssetTreeNode? _selectedNode;
-    private AssetExplorerTabViewModel? _selectedTab;
+    private AssetEditorHostViewModel? _selectedEditorHost;
     private AssetExplorerItemIdentity? _selectedIdentity;
     private int _visibleAssetCount;
     private bool _suppressTreeSelection;
@@ -66,12 +65,6 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     public FastFileEditingSession EditingSession { get; }
 
     public IReadOnlyList<AssetExplorerEntryViewModel> CatalogEntries { get; }
-
-    public IReadOnlyList<AssetExplorerTabViewModel> OpenTabs =>
-        Array.AsReadOnly(_tabs.Values
-            .OrderBy(tab => tab.Entry.Entry.TargetRowIdentity?.SerializedIndex ?? int.MaxValue)
-            .ThenBy(tab => tab.Entry.Entry.DependencyIdentity?.ProviderId.Value ?? long.MaxValue)
-            .ToArray());
 
     public string TargetFileName { get; }
 
@@ -157,62 +150,11 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         }
     }
 
-    public AssetExplorerTabViewModel? SelectedTab
+    public AssetEditorHostViewModel? SelectedEditorHost
     {
-        get => _selectedTab;
-        private set
-        {
-            if (!SetProperty(ref _selectedTab, value))
-                return;
-
-            OnPropertyChanged(nameof(HasSelection));
-            OnPropertyChanged(nameof(HasNoSelection));
-            OnPropertyChanged(nameof(SelectedName));
-            OnPropertyChanged(nameof(SelectedKind));
-            OnPropertyChanged(nameof(SelectedDescription));
-            OnPropertyChanged(nameof(SelectedOwnershipBadge));
-            OnPropertyChanged(nameof(SelectedResolutionBadge));
-            OnPropertyChanged(nameof(SelectedAccessBadge));
-            OnPropertyChanged(nameof(SelectedEditorBadge));
-            OnPropertyChanged(nameof(SelectedProviderZone));
-            OnPropertyChanged(nameof(SelectedInspectorReason));
-            OnPropertyChanged(nameof(SelectedHostedView));
-            OnPropertyChanged(nameof(HasSelectedHostedView));
-            OnPropertyChanged(nameof(HasStructuralInspector));
-            OnPropertyChanged(nameof(SelectedMode));
-            OnPropertyChanged(nameof(OpenTabs));
-        }
+        get => _selectedEditorHost;
+        private set => SetProperty(ref _selectedEditorHost, value);
     }
-
-    public bool HasSelection => SelectedTab is not null;
-
-    public bool HasNoSelection => !HasSelection;
-
-    public string SelectedName => SelectedTab?.Entry.Name ?? string.Empty;
-
-    public string SelectedKind => SelectedTab?.Entry.AssetType.ToString() ?? string.Empty;
-
-    public string SelectedDescription => SelectedTab?.Entry.Description ?? string.Empty;
-
-    public string SelectedOwnershipBadge => SelectedTab?.Entry.OwnershipBadge ?? string.Empty;
-
-    public string SelectedResolutionBadge => SelectedTab?.Entry.ResolutionBadge ?? string.Empty;
-
-    public string SelectedAccessBadge => SelectedTab?.Entry.AccessBadge ?? string.Empty;
-
-    public string SelectedEditorBadge => SelectedTab?.Entry.EditorBadge ?? string.Empty;
-
-    public string SelectedProviderZone => SelectedTab?.Entry.ProviderZone ?? string.Empty;
-
-    public string SelectedInspectorReason => SelectedTab?.InspectorReason ?? string.Empty;
-
-    public AssetEditorMode? SelectedMode => SelectedTab?.BackendEditor?.Mode;
-
-    public Control? SelectedHostedView => SelectedTab?.HostedView;
-
-    public bool HasSelectedHostedView => SelectedHostedView is not null;
-
-    public bool HasStructuralInspector => SelectedTab?.StructuralInspector is not null;
 
     /// <summary>
     /// Save As is always available. The save transaction performs the single
@@ -220,41 +162,43 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool CanSaveAs => true;
 
-    public void RefreshSaveAvailability() =>
+    public void RefreshAfterSave()
+    {
         OnPropertyChanged(nameof(CanSaveAs));
+        foreach (AssetEditorHostViewModel editorHost in _editorHosts.Values)
+            editorHost.RefreshState();
+    }
 
     /// <summary>
     /// Rebuilds catalog projections after filtering or a completed dependency
-    /// load without clearing selected identity, open tabs, or session drafts.
+    /// load without clearing selected identity, editor hosts, or session drafts.
     /// </summary>
     public void RefreshExplorer() => RebuildAssetGroups();
 
-    public void SelectEntry(AssetExplorerItemIdentity identity) =>
+    public AssetEditorHostViewModel SelectEntry(
+        AssetExplorerItemIdentity identity) =>
         SelectEntry(identity, synchronizeTree: true);
 
-    public bool CloseSelectedTab()
+    public void DeactivateSelection()
     {
-        if (SelectedTab is not { } tab)
-            return false;
-
-        CloseTab(tab.Entry.Identity);
-        return true;
+        _selectedIdentity = null;
+        EditingSession.SelectRow(null);
+        SelectedEditorHost = null;
+        SetSelectedNode(null);
     }
 
-    public void CloseTab(AssetExplorerItemIdentity identity)
+    public void CloseEditor(AssetExplorerItemIdentity identity)
     {
-        if (!_tabs.Remove(identity, out AssetExplorerTabViewModel? tab))
+        if (!_editorHosts.Remove(identity, out AssetEditorHostViewModel? editorHost))
             return;
 
-        tab.Dispose();
+        editorHost.Dispose();
         if (_selectedIdentity == identity)
         {
             _selectedIdentity = null;
-            SelectedTab = null;
+            SelectedEditorHost = null;
             SetSelectedNode(null);
         }
-
-        OnPropertyChanged(nameof(OpenTabs));
     }
 
     public void Dispose()
@@ -263,13 +207,15 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             return;
 
         _disposed = true;
-        foreach (AssetExplorerTabViewModel tab in _tabs.Values)
-            tab.Dispose();
-        _tabs.Clear();
+        foreach (AssetEditorHostViewModel editorHost in _editorHosts.Values)
+            editorHost.Dispose();
+        _editorHosts.Clear();
         EditingSession.Dispose();
     }
 
-    private void SelectEntry(AssetExplorerItemIdentity identity, bool synchronizeTree)
+    private AssetEditorHostViewModel SelectEntry(
+        AssetExplorerItemIdentity identity,
+        bool synchronizeTree)
     {
         ThrowIfDisposed();
         if (!_entriesByIdentity.TryGetValue(identity, out AssetExplorerEntryViewModel? entry))
@@ -283,22 +229,24 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         else
             EditingSession.SelectRow(null);
 
-        if (!_tabs.TryGetValue(identity, out AssetExplorerTabViewModel? tab))
+        if (!_editorHosts.TryGetValue(identity, out AssetEditorHostViewModel? editorHost))
         {
-            tab = CreateTab(entry);
-            _tabs.Add(identity, tab);
+            editorHost = CreateEditorHost(entry);
+            _editorHosts.Add(identity, editorHost);
         }
 
-        SelectedTab = tab;
+        SelectedEditorHost = editorHost;
         if (synchronizeTree)
             SetSelectedNode(FindNode(identity));
+
+        return editorHost;
     }
 
-    private AssetExplorerTabViewModel CreateTab(AssetExplorerEntryViewModel entry)
+    private AssetEditorHostViewModel CreateEditorHost(AssetExplorerEntryViewModel entry)
     {
         if (!entry.HasUsableEditor)
         {
-            return new AssetExplorerTabViewModel(
+            return new AssetEditorHostViewModel(
                 entry,
                 StructuralAssetInspector.Create(
                     entry.Entry,
@@ -308,17 +256,17 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
         AssetEditorSurface surface = _authoringRegistry.CreateSurface(EditingSession, entry.Entry);
         if (surface is not AssetEditorSession editorSession)
-            return new AssetExplorerTabViewModel(entry, surface, viewHost: null);
+            return new AssetEditorHostViewModel(entry, surface, viewHost: null);
 
         if (_viewRegistry.TryGetFactory(entry.AssetType, out _))
         {
-            return new AssetExplorerTabViewModel(
+            return new AssetEditorHostViewModel(
                 entry,
                 editorSession,
                 _viewRegistry.Create(editorSession));
         }
 
-        return new AssetExplorerTabViewModel(
+        return new AssetEditorHostViewModel(
             entry,
             StructuralAssetInspector.Create(
                 entry.Entry,
