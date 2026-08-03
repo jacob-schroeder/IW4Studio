@@ -62,6 +62,8 @@ public sealed partial class EditorWindow : Window
         _workbench.MapEditorRequested += Workbench_MapEditorRequested;
         _workbench.EditorTabCloseRequested +=
             Workbench_EditorTabCloseRequested;
+        _workbench.EditorTabsCloseRequested +=
+            Workbench_EditorTabsCloseRequested;
         _workbench.EngineBuiltInReferenceRequested +=
             Workbench_EngineBuiltInReferenceRequested;
         DataContext = _workbench;
@@ -230,6 +232,49 @@ public sealed partial class EditorWindow : Window
             {
                 if (!_disposed && ReferenceEquals(_workbench, workbench))
                     workbench.CloseEditorTab(args.Tab);
+
+                return Task.CompletedTask;
+            },
+            saveAsync);
+    }
+
+    private async void Workbench_EditorTabsCloseRequested(
+        object? sender,
+        WorkbenchEditorTabsCloseRequestedEventArgs args)
+    {
+        if (_disposed ||
+            _workbench is not { } workbench ||
+            !ReferenceEquals(sender, workbench) ||
+            Volatile.Read(ref _saveAsInProgress) != 0)
+        {
+            return;
+        }
+
+        WorkbenchEditorTabViewModel[] tabs = args.Tabs
+            .Where(workbench.OpenEditorTabs.Contains)
+            .Distinct()
+            .ToArray();
+        if (tabs.Length == 0)
+            return;
+
+        Func<Task<WorkspaceSaveOutcome>>? saveAsync =
+            workbench.CanSaveAs ? RequestSaveAsAsync : null;
+        await _navigationCoordinator.CloseEditorTabsAsync(
+            workbench.Editor.EditingSession,
+            tabs.Select(tab => tab.EditableRowIdentity),
+            _unsavedChangesDialog,
+            () =>
+            {
+                if (!_disposed && ReferenceEquals(_workbench, workbench))
+                {
+                    foreach (WorkbenchEditorTabViewModel tab in tabs
+                        .OrderBy(tab => ReferenceEquals(
+                            tab,
+                            workbench.SelectedEditorTab)))
+                    {
+                        workbench.CloseEditorTab(tab);
+                    }
+                }
 
                 return Task.CompletedTask;
             },
@@ -734,6 +779,8 @@ public sealed partial class EditorWindow : Window
             _workbench.MapEditorRequested -= Workbench_MapEditorRequested;
             _workbench.EditorTabCloseRequested -=
                 Workbench_EditorTabCloseRequested;
+            _workbench.EditorTabsCloseRequested -=
+                Workbench_EditorTabsCloseRequested;
             _workbench.EngineBuiltInReferenceRequested -=
                 Workbench_EngineBuiltInReferenceRequested;
             _workbench.Dispose();

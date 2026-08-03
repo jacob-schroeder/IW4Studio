@@ -165,3 +165,11 @@ public sealed class WorkbenchEditorTabCloseRequestedEventArgs(
     public WorkbenchEditorTabViewModel Tab { get; } =
         tab ?? throw new ArgumentNullException(nameof(tab));
 }
+
+public sealed class WorkbenchEditorTabsCloseRequestedEventArgs(
+    IEnumerable<WorkbenchEditorTabViewModel> tabs) : EventArgs
+{
+    public IReadOnlyList<WorkbenchEditorTabViewModel> Tabs { get; } =
+        Array.AsReadOnly(
+            (tabs ?? throw new ArgumentNullException(nameof(tabs))).ToArray());
+}

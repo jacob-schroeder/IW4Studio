@@ -11,6 +11,7 @@ public enum DestructiveNavigationAction
 {
     OpenAnother,
     CloseEditorTab,
+    CloseEditorTabs,
     Exit,
     WindowClose,
     ApplicationShutdown
@@ -198,7 +199,45 @@ public sealed class DestructiveNavigationCoordinator
 
         return CloseEditorTabCoreAsync(
             session,
-            rowIdentity,
+            rowIdentity is { } row ? [row] : [],
+            DestructiveNavigationAction.CloseEditorTab,
+            dialog,
+            proceedAsync,
+            saveAsync,
+            navigation);
+    }
+
+    /// <summary>
+    /// Requests permission to close several editor tabs as one operation.
+    /// Prompting and discard apply only to the supplied target rows; Save
+    /// remains a whole-workspace operation because fastfiles have one
+    /// transaction boundary.
+    /// </summary>
+    public Task<DestructiveNavigationResult> CloseEditorTabsAsync(
+        FastFileEditingSession session,
+        IEnumerable<TargetZoneRowIdentity?> rowIdentities,
+        IUnsavedChangesDialog dialog,
+        Func<Task> proceedAsync,
+        Func<Task<WorkspaceSaveOutcome>>? saveAsync = null)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(rowIdentities);
+        ArgumentNullException.ThrowIfNull(dialog);
+        ArgumentNullException.ThrowIfNull(proceedAsync);
+
+        TargetZoneRowIdentity[] rows = rowIdentities
+            .Where(row => row is not null)
+            .Select(row => row!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (!TryBeginNavigation(out object navigation))
+            return Task.FromResult(DestructiveNavigationResult.Coalesced);
+
+        return CloseEditorTabCoreAsync(
+            session,
+            rows,
+            DestructiveNavigationAction.CloseEditorTabs,
             dialog,
             proceedAsync,
             saveAsync,
@@ -277,7 +316,8 @@ public sealed class DestructiveNavigationCoordinator
 
     private async Task<DestructiveNavigationResult> CloseEditorTabCoreAsync(
         FastFileEditingSession session,
-        TargetZoneRowIdentity? rowIdentity,
+        IReadOnlyList<TargetZoneRowIdentity> rowIdentities,
+        DestructiveNavigationAction action,
         IUnsavedChangesDialog dialog,
         Func<Task> proceedAsync,
         Func<Task<WorkspaceSaveOutcome>>? saveAsync,
@@ -285,19 +325,23 @@ public sealed class DestructiveNavigationCoordinator
     {
         try
         {
-            if (rowIdentity is { } row && HasChanges(session, row))
+            TargetZoneRowIdentity[] changedRows = rowIdentities
+                .Where(row => HasChanges(session, row))
+                .ToArray();
+            if (changedRows.Length != 0)
             {
                 var prompt = new UnsavedChangesPrompt(
-                    DestructiveNavigationAction.CloseEditorTab,
+                    action,
                     session.Workspace.Document.Request.Path,
-                    ChangedItemCount: 1,
+                    ChangedItemCount: changedRows.Length,
                     CanSave: saveAsync is not null);
                 UnsavedChangesDecision decision = await dialog.ShowAsync(prompt);
                 switch (decision)
                 {
                     case UnsavedChangesDecision.DiscardChanges:
-                        session.RevertOne(row);
-                        if (HasChanges(session, row))
+                        foreach (TargetZoneRowIdentity row in changedRows)
+                            session.RevertOne(row);
+                        if (changedRows.Any(row => HasChanges(session, row)))
                             return DestructiveNavigationResult.Failed;
                         break;
                     case UnsavedChangesDecision.Save when saveAsync is not null:
@@ -306,8 +350,11 @@ public sealed class DestructiveNavigationCoordinator
                             (await saveAsync()).Validate();
                         if (save.Cancelled)
                             return DestructiveNavigationResult.Cancelled;
-                        if (!save.Succeeded || HasChanges(session, row))
+                        if (!save.Succeeded ||
+                            changedRows.Any(row => HasChanges(session, row)))
+                        {
                             return DestructiveNavigationResult.Failed;
+                        }
                         break;
                     }
                     default:

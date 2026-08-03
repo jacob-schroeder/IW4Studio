@@ -18,6 +18,7 @@ public sealed partial class StudioWorkbenchView : UserControl
     private Control? _capturedControl;
     private bool _isDraggingTool;
     private string? _suppressClickToolId;
+    private WorkbenchEditorTabViewModel? _contextMenuTab;
 
     public StudioWorkbenchView()
     {
@@ -142,10 +143,82 @@ public sealed partial class StudioWorkbenchView : UserControl
         }
     }
 
+    private void EditorTab_PointerPressed(
+        object? sender,
+        PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed ||
+            sender is not Control
+            {
+                DataContext: WorkbenchEditorTabViewModel tab
+            })
+        {
+            return;
+        }
+
+        _contextMenuTab = tab;
+        if (DataContext is StudioWorkbenchViewModel viewModel)
+            viewModel.SelectedEditorTab = tab;
+    }
+
+    private void CloseEditorTabMenuItem_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (TryGetContextMenuTab(
+                sender,
+                out WorkbenchEditorTabViewModel? tab) &&
+            tab is not null)
+        {
+            (DataContext as StudioWorkbenchViewModel)?
+                .RequestCloseEditorTab(tab);
+            e.Handled = true;
+        }
+    }
+
+    private void CloseOtherEditorTabsMenuItem_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (TryGetContextMenuTab(
+                sender,
+                out WorkbenchEditorTabViewModel? tab) &&
+            tab is not null)
+        {
+            (DataContext as StudioWorkbenchViewModel)?
+                .RequestCloseOtherEditorTabs(tab);
+            e.Handled = true;
+        }
+    }
+
+    private void CloseAllEditorTabsMenuItem_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (DataContext is StudioWorkbenchViewModel viewModel)
+        {
+            viewModel.RequestCloseAllEditorTabs();
+            e.Handled = true;
+        }
+    }
+
     private static void CloseEditorTabButton_PointerPressed(
         object? sender,
-        PointerPressedEventArgs e) =>
-        e.Handled = true;
+        PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
+            e.Handled = true;
+    }
+
+    private bool TryGetContextMenuTab(
+        object? sender,
+        out WorkbenchEditorTabViewModel? tab)
+    {
+        tab = (sender as Control)?.Tag as WorkbenchEditorTabViewModel
+            ?? _contextMenuTab
+            ?? (DataContext as StudioWorkbenchViewModel)?.SelectedEditorTab;
+        return tab is not null;
+    }
 
     private void EditorTabStrip_SelectionChanged(
         object? sender,

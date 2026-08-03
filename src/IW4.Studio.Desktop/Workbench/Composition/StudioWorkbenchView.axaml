@@ -215,9 +215,23 @@
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="composition:WorkbenchEditorTabViewModel">
                   <Grid ColumnDefinitions="Auto,7,*,7,Auto,4,Auto"
+                        PointerPressed="EditorTab_PointerPressed"
                         ToolTip.Tip="{Binding ToolTipText}"
                         AutomationProperties.Name="{Binding Title}"
                         AutomationProperties.HelpText="{Binding ToolTipText}">
+                    <Grid.ContextFlyout>
+                      <MenuFlyout>
+                        <MenuItem Header="Close"
+                                  Tag="{Binding}"
+                                  Click="CloseEditorTabMenuItem_Click" />
+                        <MenuItem Header="Close Other Tabs"
+                                  Tag="{Binding}"
+                                  Click="CloseOtherEditorTabsMenuItem_Click" />
+                        <MenuItem Header="Close All Tabs"
+                                  Tag="{Binding}"
+                                  Click="CloseAllEditorTabsMenuItem_Click" />
+                      </MenuFlyout>
+                    </Grid.ContextFlyout>
                     <materialIcons:MaterialIcon Kind="{Binding IconToken, Converter={StaticResource ToolIconConverter}}"
                                                 Width="14"
                                                 Height="14"

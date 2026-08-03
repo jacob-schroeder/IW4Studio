@@ -195,6 +195,9 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public event EventHandler<WorkbenchEditorTabCloseRequestedEventArgs>?
         EditorTabCloseRequested;
 
+    public event EventHandler<WorkbenchEditorTabsCloseRequestedEventArgs>?
+        EditorTabsCloseRequested;
+
     public FastFileWorkspace Workspace { get; }
 
     public ReadOnlyObservableCollection<WorkbenchEditorTabViewModel>
@@ -412,6 +415,21 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             new WorkbenchEditorTabCloseRequestedEventArgs(tab));
     }
 
+    public void RequestCloseOtherEditorTabs(WorkbenchEditorTabViewModel tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+        if (!_openEditorTabs.Contains(tab))
+            return;
+
+        RequestCloseEditorTabs(
+            _openEditorTabs
+                .Where(candidate => !ReferenceEquals(candidate, tab))
+                .ToArray());
+    }
+
+    public void RequestCloseAllEditorTabs() =>
+        RequestCloseEditorTabs(_openEditorTabs.ToArray());
+
     internal bool CloseEditorTab(WorkbenchEditorTabViewModel tab)
     {
         ArgumentNullException.ThrowIfNull(tab);
@@ -452,6 +470,17 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             _selectionContext.Clear(closingSelection.Source);
         NotifyCenterSelectionChanged();
         return true;
+    }
+
+    private void RequestCloseEditorTabs(
+        IReadOnlyList<WorkbenchEditorTabViewModel> tabs)
+    {
+        if (tabs.Count == 0)
+            return;
+
+        EditorTabsCloseRequested?.Invoke(
+            this,
+            new WorkbenchEditorTabsCloseRequestedEventArgs(tabs));
     }
 
     private void ActivateEditorTab(WorkbenchEditorTabViewModel tab)
