@@ -30,6 +30,7 @@ public sealed class RawFileEditorViewModel
     : ObservableObject,
       IAssetEditorProperties,
       IAssetEditorDiagnostics,
+      IAssetEditorStagingState,
       IAssetEditorSourceDiagnostics,
       IAssetEditorSourceDiagnosticsPresentation,
       IDisposable
@@ -48,6 +49,7 @@ public sealed class RawFileEditorViewModel
     private RawFileContentClassification? _contentClassification;
     private RawFileDisplayEncoding _displayEncoding;
     private string _payloadInput = string.Empty;
+    private string _draftPayloadPresentation = string.Empty;
     private string _exportedPayload = string.Empty;
     private string _statusMessage = string.Empty;
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
@@ -56,6 +58,7 @@ public sealed class RawFileEditorViewModel
     private CancellationTokenSource? _gscUsageSearchCancellation;
     private long _bufferVersion;
     private bool _isAnalyzingGsc;
+    private bool _isApplyingPayload;
     private string _gscAnalysisStatusMessage = string.Empty;
     private Bitmap? _nativePreview;
     private RawFileNativeViewerKind? _nativeViewerKind;
@@ -135,6 +138,17 @@ public sealed class RawFileEditorViewModel
     public bool IsInputReadOnly => !IsEditable;
 
     public bool CanImport => IsEditable && _draft is not null;
+
+    public bool HasPendingPayloadChanges =>
+        CanImport &&
+        !string.Equals(
+            PayloadInput,
+            _draftPayloadPresentation,
+            StringComparison.Ordinal);
+
+    public bool HasUnappliedChanges => HasPendingPayloadChanges;
+
+    public bool CanApply => HasPendingPayloadChanges && !IsApplyingPayload;
 
     public bool CanClearBuffer => CanImport && _draft!.Mode != RawFilePayloadMode.CompressedPayload;
 
@@ -266,6 +280,7 @@ public sealed class RawFileEditorViewModel
             if (!SetProperty(ref _payloadInput, value))
                 return;
 
+            NotifyStagingStateChanged();
             InvalidateGscBufferState();
         }
     }
@@ -330,6 +345,18 @@ public sealed class RawFileEditorViewModel
                 return;
 
             OnPropertyChanged(nameof(CanAnalyzeGsc));
+        }
+    }
+
+    public bool IsApplyingPayload
+    {
+        get => _isApplyingPayload;
+        private set
+        {
+            if (!SetProperty(ref _isApplyingPayload, value))
+                return;
+
+            OnPropertyChanged(nameof(CanApply));
         }
     }
 
@@ -536,39 +563,48 @@ public sealed class RawFileEditorViewModel
 
     public async Task ImportPayloadAsync()
     {
+        if (IsApplyingPayload)
+            return;
+
         if (!CanImport || _draft is null)
         {
             StatusMessage = "This RawFile is read-only or content is unavailable.";
             return;
         }
-
-        string payloadSnapshot = PayloadInput;
-        RawFileDisplayEncoding displayEncoding = DisplayEncoding;
-        RawFileContentClassification? classificationSnapshot =
-            _contentClassification;
-        GscAnalysisOutcome? gscOutcome = null;
-        if (IsGscSource && displayEncoding == RawFileDisplayEncoding.Text)
+        if (!HasPendingPayloadChanges)
         {
-            GscAnalysisOperation operation = BeginGscAnalysis();
-            gscOutcome = await RunGscAnalysisAsync(
-                operation,
-                useWorkspace: true,
-                delay: TimeSpan.Zero,
-                activeStatusMessage: "Checking GSC before applying…");
-            if (gscOutcome is null)
-                return;
-            if (gscOutcome.FailureMessage is { } failureMessage)
-            {
-                StatusMessage =
-                    $"Changes were not applied because GSC analysis failed: {failureMessage}";
-                return;
-            }
-
-            RequestSourceDiagnosticsPresentation(gscOutcome);
+            StatusMessage = "The RawFile draft already matches the editor content.";
+            return;
         }
 
+        IsApplyingPayload = true;
         try
         {
+            string payloadSnapshot = PayloadInput;
+            RawFileDisplayEncoding displayEncoding = DisplayEncoding;
+            RawFileContentClassification? classificationSnapshot =
+                _contentClassification;
+            GscAnalysisOutcome? gscOutcome = null;
+            if (IsGscSource && displayEncoding == RawFileDisplayEncoding.Text)
+            {
+                StatusMessage = "Checking GSC before applying…";
+                GscAnalysisOperation operation = BeginGscAnalysis();
+                gscOutcome = await RunGscAnalysisAsync(
+                    operation,
+                    useWorkspace: true,
+                    delay: TimeSpan.Zero,
+                    activeStatusMessage: "Checking GSC before applying…");
+                if (gscOutcome is null)
+                {
+                    StatusMessage =
+                        "Apply canceled because the editor content changed during the GSC check.";
+                    return;
+                }
+
+                RequestSourceDiagnosticsPresentation(gscOutcome);
+            }
+
+            bool changed;
             if (displayEncoding == RawFileDisplayEncoding.Text)
             {
                 RawFileContentClassification classification =
@@ -583,24 +619,28 @@ public sealed class RawFileEditorViewModel
 
                 RawFileTextEncoding encoding =
                     classification.TextEncoding ?? RawFileTextEncoding.Utf8;
-                _editorSession.Apply<RawFileDraft>(
+                changed = _editorSession.Apply<RawFileDraft>(
                     draft => draft.ReplaceCanonicalText(payloadSnapshot, encoding));
             }
             else
             {
                 byte[] bytes = ParseHex(payloadSnapshot);
-                _editorSession.Apply<RawFileDraft>(
+                changed = _editorSession.Apply<RawFileDraft>(
                     draft => draft.ReplaceCanonicalContent(bytes));
             }
 
             _draft = _editorSession.ReadDraft<RawFileDraft>();
             Diagnostics = _editorSession.Validation.Issues;
-            StatusMessage = CreateApplyStatusMessage(gscOutcome);
+            StatusMessage = CreateApplyStatusMessage(changed, gscOutcome);
             RefreshPresentation();
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or IOException or OverflowException)
         {
             StatusMessage = exception.Message;
+        }
+        finally
+        {
+            IsApplyingPayload = false;
         }
     }
 
@@ -706,16 +746,16 @@ public sealed class RawFileEditorViewModel
                 OnPropertyChanged(nameof(DisplayEncoding));
             }
 
-            PayloadInput = FormatPayload(
+            SetDraftPayloadPresentation(FormatPayload(
                 logicalContent,
                 _contentClassification,
-                DisplayEncoding);
+                DisplayEncoding));
             RefreshNativePreview(logicalContent);
         }
         else
         {
             _contentClassification = null;
-            PayloadInput = string.Empty;
+            SetDraftPayloadPresentation(string.Empty);
             RefreshNativePreview([]);
         }
 
@@ -737,6 +777,25 @@ public sealed class RawFileEditorViewModel
         OnPropertyChanged(nameof(IsGscSource));
         OnPropertyChanged(nameof(HasGscWorkspaceFeatures));
         OnPropertyChanged(nameof(CanAnalyzeGsc));
+    }
+
+    private void SetDraftPayloadPresentation(string value)
+    {
+        _draftPayloadPresentation = value;
+        if (!string.Equals(PayloadInput, value, StringComparison.Ordinal))
+        {
+            PayloadInput = value;
+            return;
+        }
+
+        NotifyStagingStateChanged();
+    }
+
+    private void NotifyStagingStateChanged()
+    {
+        OnPropertyChanged(nameof(HasPendingPayloadChanges));
+        OnPropertyChanged(nameof(HasUnappliedChanges));
+        OnPropertyChanged(nameof(CanApply));
     }
 
     public void Dispose()
@@ -1126,12 +1185,20 @@ public sealed class RawFileEditorViewModel
     }
 
     private static string CreateApplyStatusMessage(
+        bool changed,
         GscAnalysisOutcome? outcome)
     {
-        const string applied =
-            "Applied logical content with canonical RawFile storage.";
+        const string applied = "Applied logical content to the RawFile draft. " +
+            "Use Save As to write the fastfile.";
+        if (!changed)
+        {
+            return "The RawFile draft already matched the editor content. " +
+                "Use Save As to write the fastfile.";
+        }
         if (outcome is null)
             return applied;
+        if (outcome.FailureMessage is { } failureMessage)
+            return $"{applied} GSC check was unavailable: {failureMessage}";
 
         int errorCount = outcome.Diagnostics.Count(diagnostic =>
             diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);

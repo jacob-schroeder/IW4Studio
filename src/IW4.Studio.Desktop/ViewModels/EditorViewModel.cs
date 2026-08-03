@@ -1,19 +1,20 @@
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
 /// <summary>
-/// Catalog-driven Desktop explorer and editor host. Target ownership is read
-/// exclusively from <see cref="WorkspaceAssetCatalog"/>; runtime pool state
-/// is never enumerated for explorer rows or authoring decisions.
+/// Document-driven Desktop explorer and editor host. Opened dependency content
+/// remains catalog-backed, while target ownership follows the live editing
+/// document. Runtime pool state is never used as an authoring authority.
 /// </summary>
 public sealed class EditorViewModel : ObservableObject, IDisposable
 {
     private readonly AssetAuthoringAdapterRegistry _authoringRegistry;
     private readonly AssetEditorViewRegistry _viewRegistry;
-    private readonly AssetExplorerEntryViewModel[] _allEntries;
-    private readonly IReadOnlyDictionary<AssetExplorerItemIdentity, AssetExplorerEntryViewModel> _entriesByIdentity;
+    private AssetExplorerEntryViewModel[] _allEntries = [];
+    private Dictionary<AssetExplorerItemIdentity, AssetExplorerEntryViewModel> _entriesByIdentity = [];
     private readonly Dictionary<AssetExplorerItemIdentity, AssetEditorHostViewModel> _editorHosts = [];
     private string _searchText = string.Empty;
     private IReadOnlyList<AssetTreeNode> _assetGroups = Array.Empty<AssetTreeNode>();
@@ -34,6 +35,10 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         EditingSession = new FastFileEditingSession(workspace);
         _authoringRegistry = authoringRegistry ?? AssetAuthoringAdapterRegistry.CreateDefault();
         _viewRegistry = viewRegistry ?? AssetEditorViewRegistry.CreateDefault();
+        AddableAssetTypes = Array.AsReadOnly(
+            EditingSession.AddableAssetTypes
+                .Where(assetType => _authoringRegistry.TryGetAdapter(assetType, out _))
+                .ToArray());
         TargetFileName = Path.GetFileName(workspace.Document.Request.Path);
         TargetPath = Path.GetFullPath(workspace.Document.Request.Path);
         ModeName = workspace.ZonePlanProfileName is null
@@ -45,26 +50,18 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             "  ·  ",
             workspace.ActiveZones.Select(zone => zone.LogicalZoneName));
 
-        _allEntries = workspace.AssetCatalog.Entries
-            .Select(entry => new AssetExplorerEntryViewModel(
-                entry,
-                _authoringRegistry.TryGetAdapter(entry.AssetType, out _),
-                _viewRegistry.TryGetFactory(entry.AssetType, out _)))
-            .ToArray();
-        _entriesByIdentity = _allEntries.ToDictionary(entry => entry.Identity);
-        CatalogEntries = Array.AsReadOnly(_allEntries);
-        AssetCount = _allEntries.Length;
-        TargetRowCount = workspace.AssetCatalog.TargetEntries.Count;
-        DependencyAssetCount = workspace.AssetCatalog.DependencyEntries.Count;
-        AssetTypeCount = _allEntries.Select(entry => entry.AssetType).Distinct().Count();
-        RebuildAssetGroups();
+        CatalogEntries = Array.Empty<AssetExplorerEntryViewModel>();
+        RebuildCatalogEntries(notify: false);
+        EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
     }
 
     public FastFileWorkspace Workspace { get; }
 
     public FastFileEditingSession EditingSession { get; }
 
-    public IReadOnlyList<AssetExplorerEntryViewModel> CatalogEntries { get; }
+    public IReadOnlyList<XAssetType> AddableAssetTypes { get; }
+
+    public IReadOnlyList<AssetExplorerEntryViewModel> CatalogEntries { get; private set; }
 
     public string TargetFileName { get; }
 
@@ -78,19 +75,19 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     public string ActiveZoneNames { get; }
 
-    public int AssetCount { get; }
+    public int AssetCount { get; private set; }
 
     public string AssetCountText => AssetCount.ToString("N0");
 
-    public int TargetRowCount { get; }
+    public int TargetRowCount { get; private set; }
 
     public string TargetRowCountText => TargetRowCount.ToString("N0");
 
-    public int DependencyAssetCount { get; }
+    public int DependencyAssetCount { get; private set; }
 
     public string DependencyAssetCountText => DependencyAssetCount.ToString("N0");
 
-    public int AssetTypeCount { get; }
+    public int AssetTypeCount { get; private set; }
 
     public string AssetTypeCountText => AssetTypeCount.ToString("N0");
 
@@ -162,6 +159,14 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool CanSaveAs => true;
 
+    public string? ValidateNewAssetName(string name) =>
+        EditingSession.ValidateNewAssetName(name);
+
+    public WorkspaceAssetCatalogEntry AddAsset(
+        XAssetType assetType,
+        string name) =>
+        _authoringRegistry.AddAsset(EditingSession, assetType, name);
+
     public void RefreshAfterSave()
     {
         OnPropertyChanged(nameof(CanSaveAs));
@@ -207,10 +212,85 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             return;
 
         _disposed = true;
+        EditingSession.TargetRowsChanged -= EditingSession_TargetRowsChanged;
         foreach (AssetEditorHostViewModel editorHost in _editorHosts.Values)
             editorHost.Dispose();
         _editorHosts.Clear();
         EditingSession.Dispose();
+    }
+
+    private void EditingSession_TargetRowsChanged(object? sender, EventArgs args)
+    {
+        if (!_disposed)
+            RebuildCatalogEntries(notify: true);
+    }
+
+    private void RebuildCatalogEntries(bool notify)
+    {
+        WorkspaceAssetCatalogEntry[] entries =
+        [
+            .. EditingSession.Document.Rows,
+            .. Workspace.AssetCatalog.DependencyEntries
+        ];
+        Dictionary<AssetExplorerItemIdentity, AssetExplorerEntryViewModel> previous =
+            _entriesByIdentity;
+        AssetExplorerEntryViewModel[] rebuilt = entries
+            .Select(entry =>
+            {
+                AssetExplorerItemIdentity identity =
+                    AssetExplorerItemIdentity.From(entry);
+                return previous.TryGetValue(
+                           identity,
+                           out AssetExplorerEntryViewModel? existing) &&
+                       ReferenceEquals(existing.Entry, entry)
+                    ? existing
+                    : new AssetExplorerEntryViewModel(
+                        entry,
+                        _authoringRegistry.TryGetAdapter(entry.AssetType, out _),
+                        _viewRegistry.TryGetFactory(entry.AssetType, out _));
+            })
+            .ToArray();
+        var rebuiltByIdentity = rebuilt.ToDictionary(entry => entry.Identity);
+
+        AssetExplorerItemIdentity[] removedIdentities = previous.Keys
+            .Where(identity => !rebuiltByIdentity.ContainsKey(identity))
+            .ToArray();
+        foreach (AssetExplorerItemIdentity identity in removedIdentities)
+        {
+            if (_editorHosts.Remove(identity, out AssetEditorHostViewModel? host))
+                host.Dispose();
+            if (_selectedIdentity == identity)
+            {
+                _selectedIdentity = null;
+                SelectedEditorHost = null;
+            }
+        }
+
+        _allEntries = rebuilt;
+        _entriesByIdentity = rebuiltByIdentity;
+        CatalogEntries = Array.AsReadOnly(_allEntries);
+        AssetCount = _allEntries.Length;
+        TargetRowCount = EditingSession.Document.Rows.Count;
+        DependencyAssetCount = Workspace.AssetCatalog.DependencyEntries.Count;
+        AssetTypeCount = _allEntries
+            .Select(entry => entry.AssetType)
+            .Distinct()
+            .Count();
+        RebuildAssetGroups();
+
+        if (!notify)
+            return;
+
+        OnPropertyChanged(nameof(CatalogEntries));
+        OnPropertyChanged(nameof(AssetCount));
+        OnPropertyChanged(nameof(AssetCountText));
+        OnPropertyChanged(nameof(TargetRowCount));
+        OnPropertyChanged(nameof(TargetRowCountText));
+        OnPropertyChanged(nameof(DependencyAssetCount));
+        OnPropertyChanged(nameof(DependencyAssetCountText));
+        OnPropertyChanged(nameof(AssetTypeCount));
+        OnPropertyChanged(nameof(AssetTypeCountText));
+        OnPropertyChanged(nameof(SearchResultText));
     }
 
     private AssetEditorHostViewModel SelectEntry(
@@ -289,7 +369,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             .Where(entry => !entry.IsTargetRow)
             .ToArray();
         var groups = new List<AssetTreeNode>();
-        AddGroup(groups, "SELECTED ZONE ROWS", "▰", targetRows, "Serialized target rows in immutable source order.");
+        AddGroup(groups, "SELECTED ZONE ROWS", "▰", targetRows, "Serialized target rows in current document order.");
         AddGroup(groups, "DEPENDENCY CONTENT", "◆", dependencies, "Read-only active dependency content not represented by a target row.");
 
         AssetGroups = Array.AsReadOnly(groups.ToArray());

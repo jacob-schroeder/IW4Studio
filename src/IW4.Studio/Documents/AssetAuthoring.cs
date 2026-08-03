@@ -535,6 +535,31 @@ public sealed class AssetAuthoringAdapterRegistry
                 $"No backend asset authoring adapter is registered for serialized type '{assetType}'. " +
                 "Use the structural inspector fallback or register a detached adapter.");
 
+    /// <summary>
+    /// Adds a new target-owned definition using this registry's stable
+    /// adapter instance, so future editor surfaces reopen the retained draft
+    /// without rebinding it to a control-local adapter.
+    /// </summary>
+    public WorkspaceAssetCatalogEntry AddAsset(
+        FastFileEditingSession editingSession,
+        XAssetType assetType,
+        string name)
+    {
+        ArgumentNullException.ThrowIfNull(editingSession);
+        if (!_registrations.TryGetValue(
+                assetType,
+                out RegisteredAssetAuthoringAdapter? registration))
+        {
+            throw new NotSupportedException(
+                $"No backend asset authoring adapter is registered for serialized type '{assetType}'.");
+        }
+
+        return editingSession.AddAsset(
+            assetType,
+            name,
+            registration);
+    }
+
     public AssetEditorSurface CreateSurface(
         FastFileEditingSession editingSession,
         WorkspaceAssetCatalogEntry entry)

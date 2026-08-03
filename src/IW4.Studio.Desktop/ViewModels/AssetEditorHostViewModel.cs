@@ -44,6 +44,11 @@ public sealed class AssetEditorHostViewModel : ObservableObject
 
     public bool HasHostedEditor => HostedView is not null;
 
+    /// <summary>
+    /// True only while the hosted view owns input that has not been applied
+    /// to the session draft. Applied document changes are owned by the
+    /// workspace and survive closing this visual editor.
+    /// </summary>
     public bool IsDirty => _isDirty;
 
     public string Title => Entry.Name;
@@ -73,5 +78,8 @@ public sealed class AssetEditorHostViewModel : ObservableObject
         RefreshState();
 
     private bool ReadDirtyState() =>
-        BackendEditor?.HasUnsavedChanges == true;
+        HostedViewModel is IAssetEditorStagingState
+        {
+            HasUnappliedChanges: true
+        };
 }

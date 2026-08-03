@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using IW4.FastFiles.Zone;
+using IW4.Runtime.Assets;
 
 namespace IW4.Studio.Documents;
 
@@ -27,8 +28,10 @@ public interface ITargetZoneDraftAdapter<TDraft>
 /// </summary>
 public sealed class TargetZoneDocument
 {
-    private readonly IReadOnlyList<WorkspaceAssetCatalogEntry> _rows;
-    private readonly IReadOnlyDictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry> _rowsByIdentity;
+    private readonly List<WorkspaceAssetCatalogEntry> _rows;
+    private readonly IReadOnlyList<WorkspaceAssetCatalogEntry> _readOnlyRows;
+    private readonly Dictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry> _rowsByIdentity;
+    private int _nextSerializedIdentity;
 
     public TargetZoneDocument(FastFileWorkspace workspace)
     {
@@ -59,14 +62,16 @@ public sealed class TargetZoneDocument
         }
 
         DocumentId = workspace.Document.DocumentId;
-        _rows = Array.AsReadOnly(rows);
-        _rowsByIdentity = new ReadOnlyDictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry>(rowsByIdentity);
+        _rows = [.. rows];
+        _readOnlyRows = _rows.AsReadOnly();
+        _rowsByIdentity = rowsByIdentity;
+        _nextSerializedIdentity = rows.Length;
     }
 
     public Guid DocumentId { get; }
 
     /// <summary>Exact serialized target rows, always in source order.</summary>
-    public IReadOnlyList<WorkspaceAssetCatalogEntry> Rows => _rows;
+    public IReadOnlyList<WorkspaceAssetCatalogEntry> Rows => _readOnlyRows;
 
     public bool TryGetRow(
         TargetZoneRowIdentity identity,
@@ -78,19 +83,124 @@ public sealed class TargetZoneDocument
             ? row!
             : throw new KeyNotFoundException(
                 $"Target row {identity.DocumentId}/{identity.SerializedIndex} is not part of this authoring document.");
+
+    internal WorkspaceAssetCatalogEntry AppendDefinition(
+        XAssetType assetType,
+        string name,
+        ITargetZoneDetachedSemanticSnapshot semanticSnapshot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(semanticSnapshot);
+        if (semanticSnapshot.AssetType != assetType)
+        {
+            throw new InvalidDataException(
+                $"New {assetType} semantic data was captured as {semanticSnapshot.AssetType}.");
+        }
+        if (_nextSerializedIdentity == int.MaxValue)
+            throw new InvalidOperationException("The target document cannot allocate another stable row identity.");
+
+        var identity = new TargetZoneRowIdentity(
+            DocumentId,
+            _nextSerializedIdentity++);
+        XAssetType canonicalType =
+            XAssetTypeRuntimeMetadataCatalog.Get(assetType).CanonicalType;
+        var source = new TargetZoneRowSource(
+            identity,
+            assetType,
+            rawHeader: -1,
+            XAssetHeaderKind.Pointer,
+            name,
+            new XAssetStableIdentity(assetType, canonicalType, name),
+            externalReference: null,
+            new TargetZoneAuthoredDefinitionSource(semanticSnapshot),
+            TargetZoneRowSourceState.Definition);
+        WorkspaceAssetCatalogEntry entry = CreateDefinitionEntry(source);
+        AppendSourceRow(entry);
+        return entry;
+    }
+
+    internal void AppendCapturedRow(TargetZoneRowSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Identity.DocumentId != DocumentId)
+        {
+            throw new InvalidDataException(
+                "A captured target row belongs to a different authoring document.");
+        }
+        if (source.State != TargetZoneRowSourceState.Definition ||
+            source.AuthoredDefinition is null)
+        {
+            throw new InvalidDataException(
+                "Only authored definition rows can be appended to a staging document.");
+        }
+
+        AppendSourceRow(CreateDefinitionEntry(source));
+        if (source.SerializedIndex >= _nextSerializedIdentity)
+        {
+            if (source.SerializedIndex == int.MaxValue)
+                throw new InvalidOperationException("The target document cannot allocate another stable row identity.");
+            _nextSerializedIdentity = source.SerializedIndex + 1;
+        }
+    }
+
+    internal WorkspaceAssetCatalogEntry RemoveRow(TargetZoneRowIdentity identity)
+    {
+        WorkspaceAssetCatalogEntry entry = GetRow(identity);
+        if (!_rowsByIdentity.Remove(identity) || !_rows.Remove(entry))
+        {
+            throw new InvalidDataException(
+                $"Target row {identity.SerializedIndex} could not be removed consistently.");
+        }
+
+        return entry;
+    }
+
+    private void AppendSourceRow(WorkspaceAssetCatalogEntry entry)
+    {
+        TargetZoneRowIdentity identity = entry.TargetRowIdentity
+            ?? throw new InvalidDataException("An appended target row has no identity.");
+        if (identity.DocumentId != DocumentId ||
+            !_rowsByIdentity.TryAdd(identity, entry))
+        {
+            throw new InvalidDataException(
+                $"Target row {identity.SerializedIndex} has duplicate or foreign identity.");
+        }
+
+        _rows.Add(entry);
+    }
+
+    private static WorkspaceAssetCatalogEntry CreateDefinitionEntry(
+        TargetZoneRowSource source) =>
+        new(
+            source,
+            dependencyIdentity: null,
+            WorkspaceAssetOrigin.TargetOwnedDefinition,
+            WorkspaceAssetAccess.Editable,
+            WorkspaceAssetContentSource.TargetAuthoredBaseline,
+            source.SerializedType,
+            source.OriginalSerializedName,
+            source.NormalizedKey,
+            resolvedProvider: null);
 }
 
 /// <summary>
 /// Reviewable semantic change for one target row. The change set contains no
 /// UI events and no runtime asset references.
 /// </summary>
+public enum AssetRowChangeKind
+{
+    Modified,
+    Added
+}
+
 public sealed record AssetRowChange(
     TargetZoneRowIdentity RowIdentity,
     XAssetType SerializedType,
     string? OriginalSerializedName,
     WorkspaceAssetOrigin Origin,
     long FirstChangedRevision,
-    long LastChangedRevision);
+    long LastChangedRevision,
+    AssetRowChangeKind Kind = AssetRowChangeKind.Modified);
 
 /// <summary>
 /// Immutable, deterministically ordered semantic changes for prompt and save
@@ -114,6 +224,7 @@ public sealed class AssetChangeSet
         {
             if (change.RowIdentity.DocumentId == Guid.Empty ||
                 change.RowIdentity.SerializedIndex < 0 ||
+                !Enum.IsDefined(change.Kind) ||
                 change.FirstChangedRevision <= 0 ||
                 change.LastChangedRevision < change.FirstChangedRevision ||
                 !changesByRow.TryAdd(change.RowIdentity, change))
@@ -145,6 +256,7 @@ public sealed class AssetChangeSet
 /// </summary>
 public sealed class FastFileEditingSaveSnapshot
 {
+    private readonly IReadOnlyList<TargetZoneRowSource> _targetRows;
     private readonly IReadOnlyDictionary<TargetZoneRowIdentity, IEditingSessionDraftCapture> _drafts;
 
     internal FastFileEditingSaveSnapshot(
@@ -152,6 +264,7 @@ public sealed class FastFileEditingSaveSnapshot
         Guid documentId,
         long revision,
         AssetChangeSet changeSet,
+        IReadOnlyList<TargetZoneRowSource> targetRows,
         IReadOnlyDictionary<TargetZoneRowIdentity, IEditingSessionDraftCapture> drafts)
     {
         if (sessionId == Guid.Empty)
@@ -161,18 +274,28 @@ public sealed class FastFileEditingSaveSnapshot
         if (revision < 0)
             throw new ArgumentOutOfRangeException(nameof(revision));
         ArgumentNullException.ThrowIfNull(changeSet);
+        ArgumentNullException.ThrowIfNull(targetRows);
         ArgumentNullException.ThrowIfNull(drafts);
-        if (changeSet.ChangedRowCount != drafts.Count ||
-            changeSet.Changes.Any(change => !drafts.ContainsKey(change.RowIdentity)))
+        TargetZoneRowSource[] copiedRows = targetRows.ToArray();
+        TargetZoneRowIdentity[] rowIdentities = copiedRows
+            .Select(row => row.Identity)
+            .ToArray();
+        if (copiedRows.Any(row => row.Identity.DocumentId != documentId) ||
+            rowIdentities.Distinct().Count() != rowIdentities.Length ||
+            changeSet.Changes.Any(change =>
+                !rowIdentities.Contains(change.RowIdentity) ||
+                !drafts.ContainsKey(change.RowIdentity)) ||
+            drafts.Keys.Any(identity => !rowIdentities.Contains(identity)))
         {
             throw new InvalidDataException(
-                "A save snapshot must contain exactly one detached draft for every semantic change.");
+                "A save snapshot must contain a unique ordered target-row manifest and detached drafts for every semantic change.");
         }
 
         SessionId = sessionId;
         DocumentId = documentId;
         Revision = revision;
         ChangeSet = changeSet;
+        _targetRows = Array.AsReadOnly(copiedRows);
         _drafts = new ReadOnlyDictionary<TargetZoneRowIdentity, IEditingSessionDraftCapture>(
             new Dictionary<TargetZoneRowIdentity, IEditingSessionDraftCapture>(drafts));
     }
@@ -184,6 +307,11 @@ public sealed class FastFileEditingSaveSnapshot
     public long Revision { get; }
 
     public AssetChangeSet ChangeSet { get; }
+
+    internal IReadOnlyList<TargetZoneRowSource> TargetRows => _targetRows;
+
+    internal IEnumerable<KeyValuePair<TargetZoneRowIdentity, IEditingSessionDraftCapture>> DraftCaptures =>
+        _drafts;
 
     public bool TryGetDraft<TDraft>(
         TargetZoneRowIdentity identity,
@@ -314,6 +442,41 @@ public sealed class FastFileCompiledMapSaveLease : IDisposable
 }
 
 /// <summary>
+/// Protects additions present in one ordinary Save As capture from being
+/// removed before that exact revision is acknowledged. Other N/N+1 draft
+/// edits, including additions created after the capture, remain available.
+/// </summary>
+internal sealed class FastFileTransactionalSaveCaptureLease : IDisposable
+{
+    private readonly FastFileEditingSession _session;
+    private readonly Guid _leaseId;
+    private int _disposed;
+
+    internal FastFileTransactionalSaveCaptureLease(
+        FastFileEditingSession session,
+        Guid leaseId,
+        FastFileEditingSaveSnapshot capture)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        if (leaseId == Guid.Empty)
+            throw new ArgumentOutOfRangeException(nameof(leaseId));
+
+        _leaseId = leaseId;
+        Capture = capture ?? throw new ArgumentNullException(nameof(capture));
+    }
+
+    public FastFileEditingSaveSnapshot Capture { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        _session.ReleaseTransactionalSaveCaptureLease(_leaseId);
+    }
+}
+
+/// <summary>
 /// Mutable authoring layer over an immutable workspace. Mutation, capture,
 /// acknowledgement, and disposal are serialized by one short critical
 /// section. A save can therefore acknowledge revision N after revision N+1
@@ -324,6 +487,13 @@ public sealed class FastFileEditingSession : IDisposable
     private readonly object _gate = new();
     private readonly Guid _sessionId = Guid.NewGuid();
     private readonly Dictionary<TargetZoneRowIdentity, IEditingSessionDraftState> _drafts = [];
+    // Reverted additions leave a detached read-only draft behind until the
+    // session closes. A synchronous row-change notification can dispose an
+    // active editor while its Revert command is still unwinding; retaining
+    // this copy lets that command complete its final validation read without
+    // making the removed row mutable or save-visible.
+    private readonly Dictionary<TargetZoneRowIdentity, IEditingSessionDraftState> _retiredDrafts = [];
+    private readonly Dictionary<TargetZoneRowIdentity, long> _pendingAdditions = [];
     private readonly HashSet<TargetZoneRowIdentity> _openDrafts = [];
     private readonly CancellationTokenSource _cancellation = new();
     private readonly CancellationToken _cancellationToken;
@@ -333,6 +503,8 @@ public sealed class FastFileEditingSession : IDisposable
     private SavedDocumentState _savedDocumentState;
     private TargetZoneRowIdentity? _selectedRow;
     private Guid? _compiledMapSaveLeaseId;
+    private Guid? _transactionalSaveCaptureLeaseId;
+    private HashSet<TargetZoneRowIdentity> _transactionalSaveProtectedAdditions = [];
     private bool _disposed;
 
     public FastFileEditingSession(FastFileWorkspace workspace)
@@ -347,6 +519,11 @@ public sealed class FastFileEditingSession : IDisposable
     public FastFileWorkspace Workspace { get; }
 
     public TargetZoneDocument Document { get; }
+
+    public event EventHandler? TargetRowsChanged;
+
+    public IReadOnlyList<XAssetType> AddableAssetTypes =>
+        NewAssetDefinitionFactory.SupportedAssetTypes;
 
     public CancellationToken CancellationToken => _cancellationToken;
 
@@ -444,6 +621,84 @@ public sealed class FastFileEditingSession : IDisposable
 
             _selectedRow = identity;
         }
+    }
+
+    /// <summary>
+    /// Validates one proposed definition name against both the immutable
+    /// runtime pool and live authoring rows. Lookup normalization is applied
+    /// globally so an added definition cannot collide under native DB rules,
+    /// even when the existing row has another serialized type.
+    /// </summary>
+    public string? ValidateNewAssetName(string? name)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return ValidateNewAssetNameUnsafe(name);
+        }
+    }
+
+    internal WorkspaceAssetCatalogEntry AddAsset(
+        XAssetType assetType,
+        string name,
+        RegisteredAssetAuthoringAdapter adapter)
+    {
+        ArgumentNullException.ThrowIfNull(adapter);
+        WorkspaceAssetCatalogEntry entry;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            RequireNoCompiledMapSave();
+            if (adapter.AssetType != assetType)
+            {
+                throw new ArgumentException(
+                    $"The supplied authoring adapter handles {adapter.AssetType}, not {assetType}.",
+                    nameof(adapter));
+            }
+            if (!NewAssetDefinitionFactory.SupportedAssetTypes.Contains(assetType))
+            {
+                throw new NotSupportedException(
+                    $"Serialized asset type '{assetType}' cannot be added as an authored definition.");
+            }
+
+            string? validationError = ValidateNewAssetNameUnsafe(name);
+            if (validationError is not null)
+                throw new ArgumentException(validationError, nameof(name));
+
+            ITargetZoneDetachedSemanticSnapshot semanticSnapshot =
+                NewAssetDefinitionFactory.Create(assetType, name);
+            entry = Document.AppendDefinition(
+                assetType,
+                name,
+                semanticSnapshot);
+            TargetZoneRowIdentity identity = entry.TargetRowIdentity!.Value;
+            try
+            {
+                object baseline = RequireDraftValue(
+                    adapter.CreateBaseline(entry.TargetRow!),
+                    "baseline",
+                    identity);
+                var state = new DraftState<object>(
+                    identity,
+                    entry,
+                    adapter,
+                    baseline);
+                long revision = NextRevision();
+                _drafts.Add(identity, state);
+                _pendingAdditions.Add(identity, revision);
+                RebuildChangeSet();
+            }
+            catch
+            {
+                _drafts.Remove(identity);
+                _pendingAdditions.Remove(identity);
+                Document.RemoveRow(identity);
+                throw;
+            }
+        }
+
+        TargetRowsChanged?.Invoke(this, EventArgs.Empty);
+        return entry;
     }
 
     /// <summary>
@@ -655,46 +910,114 @@ public sealed class FastFileEditingSession : IDisposable
 
     public bool RevertOne(TargetZoneRowIdentity identity)
     {
+        bool targetRowsChanged = false;
+        bool reverted;
         lock (_gate)
         {
             ThrowIfDisposed();
             RequireNoCompiledMapSave();
             _ = RequireEditableRow(identity);
-            if (!_drafts.TryGetValue(identity, out IEditingSessionDraftState? state) ||
-                !state.IsChanged)
+            if (_pendingAdditions.ContainsKey(identity) &&
+                _transactionalSaveProtectedAdditions.Contains(identity))
             {
-                return false;
+                throw new InvalidOperationException(
+                    "This added asset is part of the Save As revision currently being written and cannot be reverted until that operation finishes.");
             }
-
-            long revision = NextRevision();
-            state.RestoreSavedBaseline(revision);
-            RebuildChangeSet();
-            return true;
+            if (_pendingAdditions.Remove(identity))
+            {
+                long revision = NextRevision();
+                if (_drafts.Remove(identity, out IEditingSessionDraftState? retired))
+                {
+                    retired.RestoreSavedBaseline(revision);
+                    _retiredDrafts.Add(identity, retired);
+                }
+                _openDrafts.Remove(identity);
+                if (_selectedRow == identity)
+                    _selectedRow = null;
+                Document.RemoveRow(identity);
+                RebuildChangeSet();
+                targetRowsChanged = true;
+                reverted = true;
+            }
+            else if (!_drafts.TryGetValue(identity, out IEditingSessionDraftState? state) ||
+                     !state.IsChanged)
+            {
+                reverted = false;
+            }
+            else
+            {
+                long revision = NextRevision();
+                state.RestoreSavedBaseline(revision);
+                RebuildChangeSet();
+                reverted = true;
+            }
         }
+
+        if (targetRowsChanged)
+            TargetRowsChanged?.Invoke(this, EventArgs.Empty);
+        return reverted;
     }
 
     public bool RevertAll()
     {
+        bool targetRowsChanged = false;
+        bool reverted;
         lock (_gate)
         {
             ThrowIfDisposed();
             RequireNoCompiledMapSave();
+            TargetZoneRowIdentity[] pendingAdditions = _pendingAdditions.Keys
+                .OrderBy(identity => identity.SerializedIndex)
+                .ToArray();
+            if (pendingAdditions.Any(
+                    _transactionalSaveProtectedAdditions.Contains))
+            {
+                throw new InvalidOperationException(
+                    "Added assets in the Save As revision currently being written cannot be reverted until that operation finishes.");
+            }
             IEditingSessionDraftState[] changed = _drafts.Values
-                .Where(state => state.IsChanged)
+                .Where(state =>
+                    state.IsChanged &&
+                    !_pendingAdditions.ContainsKey(state.Identity))
                 .OrderBy(state => state.Identity.SerializedIndex)
                 .ToArray();
-            if (changed.Length == 0)
-                return false;
+            if (changed.Length == 0 && pendingAdditions.Length == 0)
+            {
+                reverted = false;
+            }
+            else
+            {
+                foreach (IEditingSessionDraftState state in changed)
+                    _ = RequireEditableRow(state.Identity);
+                foreach (TargetZoneRowIdentity identity in pendingAdditions)
+                    _ = RequireEditableRow(identity);
 
-            foreach (IEditingSessionDraftState state in changed)
-                _ = RequireEditableRow(state.Identity);
+                long revision = NextRevision();
+                foreach (IEditingSessionDraftState state in changed)
+                    state.RestoreSavedBaseline(revision);
+                foreach (TargetZoneRowIdentity identity in pendingAdditions)
+                {
+                    _pendingAdditions.Remove(identity);
+                    if (_drafts.Remove(identity, out IEditingSessionDraftState? retired))
+                    {
+                        retired.RestoreSavedBaseline(revision);
+                        _retiredDrafts.Add(identity, retired);
+                    }
+                    _openDrafts.Remove(identity);
+                    if (_selectedRow == identity)
+                        _selectedRow = null;
+                    Document.RemoveRow(identity);
+                }
 
-            long revision = NextRevision();
-            foreach (IEditingSessionDraftState state in changed)
-                state.RestoreSavedBaseline(revision);
-            RebuildChangeSet();
-            return true;
+                RebuildChangeSet();
+                targetRowsChanged = pendingAdditions.Length != 0;
+                reverted = true;
+            }
         }
+
+        if (targetRowsChanged)
+            TargetRowsChanged?.Invoke(this, EventArgs.Empty);
+        return reverted;
     }
 
     /// <summary>
@@ -711,6 +1034,44 @@ public sealed class FastFileEditingSession : IDisposable
     }
 
     /// <summary>
+    /// Atomically captures an ordinary Save As revision and protects only the
+    /// pending additions contained by that manifest until the operation ends.
+    /// </summary>
+    internal FastFileTransactionalSaveCaptureLease
+        AcquireTransactionalSaveCaptureLease()
+    {
+        Guid leaseId;
+        FastFileEditingSaveSnapshot capture;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_compiledMapSaveLeaseId is not null)
+            {
+                throw new InvalidOperationException(
+                    "A compiled-map save already owns this Studio editing session.");
+            }
+            if (_transactionalSaveCaptureLeaseId is not null)
+            {
+                throw new InvalidOperationException(
+                    "An ordinary Save As already owns this Studio manifest capture.");
+            }
+
+            capture = CaptureForSaveUnsafe();
+            leaseId = Guid.NewGuid();
+            _transactionalSaveCaptureLeaseId = leaseId;
+            _transactionalSaveProtectedAdditions = capture.ChangeSet.Changes
+                .Where(change => change.Kind == AssetRowChangeKind.Added)
+                .Select(change => change.RowIdentity)
+                .ToHashSet();
+        }
+
+        return new FastFileTransactionalSaveCaptureLease(
+            this,
+            leaseId,
+            capture);
+    }
+
+    /// <summary>
     /// Acquires exclusive mutation ownership for a compiled-map transaction
     /// and captures the source revision atomically with the lease.
     /// </summary>
@@ -721,10 +1082,11 @@ public sealed class FastFileEditingSession : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            if (_compiledMapSaveLeaseId is not null)
+            if (_compiledMapSaveLeaseId is not null ||
+                _transactionalSaveCaptureLeaseId is not null)
             {
                 throw new InvalidOperationException(
-                    "A compiled-map save already owns this Studio editing " +
+                    "A save operation already owns this Studio editing " +
                     "session.");
             }
 
@@ -771,19 +1133,17 @@ public sealed class FastFileEditingSession : IDisposable
             var staging = new FastFileEditingSession(Workspace);
             try
             {
-                foreach (AssetRowChange change in snapshot.ChangeSet.Changes)
+                foreach (TargetZoneRowSource row in snapshot.TargetRows)
                 {
-                    if (!snapshot.TryGetCapture(
-                            change.RowIdentity,
-                            out IEditingSessionDraftCapture? capture) ||
-                        capture is null)
-                    {
-                        throw new InvalidDataException(
-                            $"Captured change for target row " +
-                            $"{change.RowIdentity.SerializedIndex} has no " +
-                            "detached draft.");
-                    }
-                    capture.SeedInto(staging, change);
+                    if (!staging.Document.TryGetRow(row.Identity, out _))
+                        staging.Document.AppendCapturedRow(row);
+                }
+                foreach (KeyValuePair<TargetZoneRowIdentity, IEditingSessionDraftCapture> captured in
+                         snapshot.DraftCaptures)
+                {
+                    captured.Value.SeedInto(
+                        staging,
+                        captured.Key);
                 }
                 return staging;
             }
@@ -815,6 +1175,7 @@ public sealed class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposed();
             RequireNoCompiledMapSave();
+            RequireAddedRowsProtectedForAcknowledgement(snapshot);
             MarkRevisionSavedUnsafe(
                 snapshot,
                 savedDocumentState);
@@ -841,6 +1202,10 @@ public sealed class FastFileEditingSession : IDisposable
             _disposed = true;
             _cancellation.Cancel();
             _drafts.Clear();
+            _retiredDrafts.Clear();
+            _pendingAdditions.Clear();
+            _transactionalSaveProtectedAdditions.Clear();
+            _transactionalSaveCaptureLeaseId = null;
             _openDrafts.Clear();
             _selectedRow = null;
         }
@@ -873,8 +1238,11 @@ public sealed class FastFileEditingSession : IDisposable
     {
         if (!_drafts.TryGetValue(identity, out IEditingSessionDraftState? existing))
         {
-            throw new InvalidOperationException(
-                $"Target row {identity.SerializedIndex} has no detached draft. Open or mutate it first.");
+            if (!_retiredDrafts.TryGetValue(identity, out existing))
+            {
+                throw new InvalidOperationException(
+                    $"Target row {identity.SerializedIndex} has no detached draft. Open or mutate it first.");
+            }
         }
 
         return RequireDraftType(existing, adapter, identity);
@@ -913,6 +1281,37 @@ public sealed class FastFileEditingSession : IDisposable
         return entry;
     }
 
+    private string? ValidateNewAssetNameUnsafe(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "Name is required.";
+        if (!string.Equals(name, name.Trim(), StringComparison.Ordinal))
+            return "Name cannot contain leading or trailing whitespace.";
+        if (name[0] == ',')
+            return "Name cannot begin with a comma because that spelling denotes an external reference.";
+        if (name.Any(character => character == '\0' || character > byte.MaxValue))
+            return "Name must be a Latin-1 string without embedded null characters.";
+
+        string canonical = name.Replace('\\', '/');
+        if (canonical.Split('/').Any(segment => segment.Length == 0))
+            return "Name cannot contain empty path segments.";
+
+        string normalized = XAssetStableIdentity.NormalizeLookupName(name);
+        bool targetCollision = Document.Rows.Any(entry =>
+            string.Equals(
+                entry.NormalizedName,
+                normalized,
+                StringComparison.Ordinal));
+        bool poolCollision = Workspace.Runtime.AssetPool.Slots.Any(slot =>
+            string.Equals(
+                XAssetStableIdentity.NormalizeLookupName(slot.Name),
+                normalized,
+                StringComparison.Ordinal));
+        return targetCollision || poolCollision
+            ? $"An asset named '{name}' already exists in the loaded XAsset pool."
+            : null;
+    }
+
     private long NextRevision()
     {
         if (_revision == long.MaxValue)
@@ -923,18 +1322,25 @@ public sealed class FastFileEditingSession : IDisposable
 
     private void RebuildChangeSet()
     {
-        _changeSet = new AssetChangeSet(_drafts.Values
-            .Where(state => state.IsChanged)
-            .Select(state => state.CreateChange()));
+        IEnumerable<AssetRowChange> modified = _drafts.Values
+            .Where(state =>
+                state.IsChanged &&
+                !_pendingAdditions.ContainsKey(state.Identity))
+            .Select(state => state.CreateChange());
+        IEnumerable<AssetRowChange> added = _pendingAdditions.Select(value =>
+            _drafts.TryGetValue(value.Key, out IEditingSessionDraftState? state)
+                ? state.CreateAddedChange(value.Value)
+                : throw new InvalidDataException(
+                    $"Pending target row {value.Key.SerializedIndex} has no detached draft."));
+        _changeSet = new AssetChangeSet(modified.Concat(added));
     }
 
     internal void SeedCapturedDraft<TDraft>(
-        AssetRowChange change,
+        TargetZoneRowIdentity identity,
         ITargetZoneDraftAdapter<TDraft> adapter,
         TDraft capturedDraft)
         where TDraft : notnull
     {
-        ArgumentNullException.ThrowIfNull(change);
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(capturedDraft);
 
@@ -942,45 +1348,30 @@ public sealed class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposed();
             WorkspaceAssetCatalogEntry entry =
-                RequireEditableRow(change.RowIdentity);
-            if (entry.AssetType != change.SerializedType ||
-                entry.Origin != change.Origin ||
-                !string.Equals(
-                    entry.OriginalName,
-                    change.OriginalSerializedName,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    $"Captured change metadata does not match target row " +
-                    $"{change.RowIdentity.SerializedIndex}.");
-            }
-            if (_drafts.ContainsKey(change.RowIdentity))
+                RequireEditableRow(identity);
+            if (_drafts.ContainsKey(identity))
             {
                 throw new InvalidDataException(
                     $"The staging session already contains target row " +
-                    $"{change.RowIdentity.SerializedIndex}.");
+                    $"{identity.SerializedIndex}.");
             }
 
             TDraft baseline = RequireDraftValue(
                 adapter.CreateBaseline(entry.TargetRow!),
                 "baseline",
-                change.RowIdentity);
+                identity);
             var state = new DraftState<TDraft>(
-                change.RowIdentity,
+                identity,
                 entry,
                 adapter,
                 baseline);
-            if (state.SemanticallyEqualsCurrent(capturedDraft))
+            if (!state.SemanticallyEqualsCurrent(capturedDraft))
             {
-                throw new InvalidDataException(
-                    $"Captured change for target row " +
-                    $"{change.RowIdentity.SerializedIndex} is semantically " +
-                    "equal to its immutable baseline.");
+                long revision = NextRevision();
+                state.SetCurrent(capturedDraft, revision);
             }
 
-            long revision = NextRevision();
-            state.SetCurrent(capturedDraft, revision);
-            _drafts.Add(change.RowIdentity, state);
+            _drafts.Add(identity, state);
             RebuildChangeSet();
         }
     }
@@ -1032,6 +1423,23 @@ public sealed class FastFileEditingSession : IDisposable
         }
     }
 
+    internal void ReleaseTransactionalSaveCaptureLease(Guid leaseId)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+            if (_transactionalSaveCaptureLeaseId != leaseId)
+            {
+                throw new InvalidOperationException(
+                    "The ordinary Save As manifest lease does not own this editing session.");
+            }
+
+            _transactionalSaveProtectedAdditions.Clear();
+            _transactionalSaveCaptureLeaseId = null;
+        }
+    }
+
     private FastFileEditingSaveSnapshot CaptureForSaveUnsafe()
     {
         var captures =
@@ -1039,18 +1447,25 @@ public sealed class FastFileEditingSession : IDisposable
                 TargetZoneRowIdentity,
                 IEditingSessionDraftCapture>();
         foreach (IEditingSessionDraftState state in
-                 _drafts.Values.Where(state => state.IsChanged))
+                 _drafts.Values)
         {
             captures.Add(
                 state.Identity,
                 state.CaptureForSave());
         }
 
+        TargetZoneRowSource[] targetRows = Document.Rows
+            .Select(entry => entry.TargetRow ??
+                throw new InvalidDataException(
+                    "A live authoring target entry has no detached source row."))
+            .ToArray();
+
         return new FastFileEditingSaveSnapshot(
             _sessionId,
             Document.DocumentId,
             _revision,
             _changeSet,
+            Array.AsReadOnly(targetRows),
             captures);
     }
 
@@ -1102,6 +1517,14 @@ public sealed class FastFileEditingSession : IDisposable
             state.AcknowledgeSavedBaseline(
                 capture,
                 snapshot.Revision);
+            if (change.Kind == AssetRowChangeKind.Added &&
+                _pendingAdditions.TryGetValue(
+                    change.RowIdentity,
+                    out long firstAddedRevision) &&
+                firstAddedRevision <= snapshot.Revision)
+            {
+                _pendingAdditions.Remove(change.RowIdentity);
+            }
         }
 
         _lastSavedRevision = snapshot.Revision;
@@ -1123,6 +1546,19 @@ public sealed class FastFileEditingSession : IDisposable
             throw new InvalidOperationException(
                 "Studio draft mutation and revert are unavailable while a " +
                 "compiled-map save is in progress.");
+        }
+    }
+
+    private void RequireAddedRowsProtectedForAcknowledgement(
+        FastFileEditingSaveSnapshot snapshot)
+    {
+        if (snapshot.ChangeSet.Changes.Any(change =>
+                change.Kind == AssetRowChangeKind.Added &&
+                !_transactionalSaveProtectedAdditions.Contains(
+                    change.RowIdentity)))
+        {
+            throw new InvalidOperationException(
+                "A save snapshot containing added assets must be acknowledged through an active transactional Save As capture lease.");
         }
     }
 
@@ -1169,6 +1605,7 @@ public sealed class FastFileEditingSession : IDisposable
         void SetCurrentObject(object current, long revision);
         void RestoreSavedBaseline(long revision);
         AssetRowChange CreateChange();
+        AssetRowChange CreateAddedChange(long firstAddedRevision);
         IEditingSessionDraftCapture CaptureForSave();
         void AcknowledgeSavedBaseline(IEditingSessionDraftCapture capture, long acknowledgedRevision);
     }
@@ -1253,6 +1690,21 @@ public sealed class FastFileEditingSession : IDisposable
                 _lastMutationRevision);
         }
 
+        public AssetRowChange CreateAddedChange(long firstAddedRevision)
+        {
+            if (firstAddedRevision <= 0)
+                throw new ArgumentOutOfRangeException(nameof(firstAddedRevision));
+
+            return new AssetRowChange(
+                Identity,
+                _entry.AssetType,
+                _entry.OriginalName,
+                _entry.Origin,
+                firstAddedRevision,
+                Math.Max(firstAddedRevision, _lastMutationRevision),
+                AssetRowChangeKind.Added);
+        }
+
         public IEditingSessionDraftCapture CaptureForSave() =>
             new EditingSessionDraftCapture<TDraft>(Adapter, CloneRequired(_current, "save snapshot"));
 
@@ -1323,7 +1775,7 @@ internal interface IEditingSessionDraftCapture
     object CloneObject();
     void SeedInto(
         FastFileEditingSession target,
-        AssetRowChange change);
+        TargetZoneRowIdentity identity);
 }
 
 internal sealed class EditingSessionDraftCapture<TDraft> : IEditingSessionDraftCapture
@@ -1361,12 +1813,11 @@ internal sealed class EditingSessionDraftCapture<TDraft> : IEditingSessionDraftC
 
     public void SeedInto(
         FastFileEditingSession target,
-        AssetRowChange change)
+        TargetZoneRowIdentity identity)
     {
         ArgumentNullException.ThrowIfNull(target);
-        ArgumentNullException.ThrowIfNull(change);
         target.SeedCapturedDraft(
-            change,
+            identity,
             _adapter,
             CloneDraft());
     }

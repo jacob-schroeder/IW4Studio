@@ -1,6 +1,4 @@
-using IW4.Assets.Assets.Weapon;
 using IW4.FastFiles.Zone;
-using IW4.FastFiles.Emitters.Assets;
 using IW4.FastFiles.Emitters.Linking;
 
 namespace IW4.Studio.Documents;
@@ -30,7 +28,7 @@ public static class ZoneBuildSnapshotLinkAdapter
                     builder.AddOwned(key, owned.BuildData, importedOrder: row.Index, entryId: entryId);
                     break;
                 case ExternalReferenceBuildRow external:
-                    builder.AddExternal(new ZoneAssetKey(row.AssetType, external.Reference.OriginalSerializedName.TrimStart(',')), row.Index, entryId);
+                    builder.AddExternal(key, row.Index, entryId);
                     break;
                 case NullBuildRow:
                     builder.AddNull(key, row.Index, entryId);
@@ -58,29 +56,15 @@ public static class ZoneBuildSnapshotLinkAdapter
             layout);
     }
 
-    internal static string LogicalName(ZoneBuildRow row) => row switch
+    internal static string LogicalName(ZoneBuildRow row)
     {
-        OwnedDefinitionBuildRow { BuildData: IRawFileBuildData raw } => raw.OriginalName,
-        OwnedDefinitionBuildRow { BuildData: ILocalizeBuildData localize } when localize.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IStringTableBuildData table } when table.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: StructuredDataBuildData data } when data.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: ITechniqueSetBuildData techset } when techset.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IWeaponBuildData weapon } when weapon.Variant.InternalName is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IMenuFileBuildData menuFile } when menuFile.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IMenuBuildData menu } when menu.Definition.Window.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IXAnimBuildData xanim } when xanim.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IXModelBuildData xmodel } when xmodel.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IMaterialBuildData material } when material.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: ISoundAliasListBuildData sound } when sound.AliasName is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IClipMapBuildData clipMap } when clipMap.Definition.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IComWorldBuildData comWorld } when comWorld.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IGameWorldMpBuildData gameWorld } when gameWorld.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IFxWorldBuildData fxWorld } when fxWorld.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IGfxWorldBuildData gfxWorld } when gfxWorld.Definition.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: ILightDefBuildData lightDef } when lightDef.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IFxEffectDefBuildData effect } when effect.Name is { Length: > 0 } name => name,
-        OwnedDefinitionBuildRow { BuildData: IFxImpactTableBuildData impact } when impact.Name is { Length: > 0 } name => name,
-        ExternalReferenceBuildRow external => external.Reference.OriginalSerializedName.TrimStart(','),
-        _ => $"row/{row.Index}"
-    };
+        ArgumentNullException.ThrowIfNull(row);
+        string? sourceName = row.OriginalSerializedName ??
+            (row as ExternalReferenceBuildRow)?.Reference.OriginalSerializedName;
+        return sourceName is { Length: > 0 }
+            ? ZoneAssetKey.FromWireName(
+                row.AssetType,
+                sourceName).LogicalName
+            : $"row/{row.Index}";
+    }
 }

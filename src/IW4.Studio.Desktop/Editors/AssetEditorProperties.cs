@@ -28,3 +28,13 @@ public interface IAssetEditorDiagnostics : INotifyPropertyChanged
 {
     IReadOnlyList<AssetValidationIssue> Diagnostics { get; }
 }
+
+/// <summary>
+/// Opt-in state for input that still belongs to an editor view and has not
+/// been applied to the session-owned asset draft. Tab lifetime follows this
+/// state; whole-fastfile persistence continues to follow the editing session.
+/// </summary>
+public interface IAssetEditorStagingState : INotifyPropertyChanged
+{
+    bool HasUnappliedChanges { get; }
+}

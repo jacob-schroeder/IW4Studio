@@ -29,6 +29,13 @@
     </Border>
 
     <Grid Grid.Row="1">
+      <Grid.ContextFlyout>
+        <MenuFlyout>
+          <MenuItem Header="Add Asset"
+                    IsEnabled="{Binding CanAddAssets}"
+                    Click="AddAssetMenuItem_Click" />
+        </MenuFlyout>
+      </Grid.ContextFlyout>
       <TreeView Classes="studioNavigatorTree"
                 Margin="6"
                 ItemsSource="{Binding Nodes}"

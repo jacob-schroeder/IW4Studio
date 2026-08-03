@@ -59,24 +59,35 @@ public sealed record ResourceOutputPlan
 
 public abstract class ZoneBuildRow
 {
-    protected ZoneBuildRow(int index, XAssetType assetType, int rawHeader) { Index = index; AssetType = assetType; RawHeader = rawHeader; }
+    protected ZoneBuildRow(
+        int index,
+        XAssetType assetType,
+        int rawHeader,
+        string? originalSerializedName)
+    {
+        Index = index;
+        AssetType = assetType;
+        RawHeader = rawHeader;
+        OriginalSerializedName = originalSerializedName;
+    }
     public int Index { get; }
     public XAssetType AssetType { get; }
     public int RawHeader { get; }
+    public string? OriginalSerializedName { get; }
 }
 public sealed class OwnedDefinitionBuildRow : ZoneBuildRow
 {
-    public OwnedDefinitionBuildRow(int index, XAssetType assetType, int rawHeader, IXAssetBuildData buildData) : base(index, assetType, rawHeader) => BuildData = buildData ?? throw new ArgumentNullException(nameof(buildData));
+    public OwnedDefinitionBuildRow(int index, XAssetType assetType, int rawHeader, IXAssetBuildData buildData, string? originalSerializedName = null) : base(index, assetType, rawHeader, originalSerializedName) => BuildData = buildData ?? throw new ArgumentNullException(nameof(buildData));
     public IXAssetBuildData BuildData { get; }
 }
 public sealed class ExternalReferenceBuildRow : ZoneBuildRow
 {
-    public ExternalReferenceBuildRow(int index, XAssetType assetType, int rawHeader, TargetZoneExternalReferenceIdentity reference) : base(index, assetType, rawHeader) => Reference = reference ?? throw new ArgumentNullException(nameof(reference));
+    public ExternalReferenceBuildRow(int index, XAssetType assetType, int rawHeader, TargetZoneExternalReferenceIdentity reference, string? originalSerializedName = null) : base(index, assetType, rawHeader, originalSerializedName) => Reference = reference ?? throw new ArgumentNullException(nameof(reference));
     public TargetZoneExternalReferenceIdentity Reference { get; }
 }
-public sealed class NullBuildRow(int index, XAssetType assetType, int rawHeader) : ZoneBuildRow(index, assetType, rawHeader);
-public sealed class OpaqueNativeNoOpBuildRow(int index, XAssetType assetType, int rawHeader) : ZoneBuildRow(index, assetType, rawHeader);
-public sealed class UnsupportedBuildRow(int index, XAssetType assetType, int rawHeader, string reason) : ZoneBuildRow(index, assetType, rawHeader) { public string Reason { get; } = reason; }
+public sealed class NullBuildRow(int index, XAssetType assetType, int rawHeader, string? originalSerializedName = null) : ZoneBuildRow(index, assetType, rawHeader, originalSerializedName);
+public sealed class OpaqueNativeNoOpBuildRow(int index, XAssetType assetType, int rawHeader, string? originalSerializedName = null) : ZoneBuildRow(index, assetType, rawHeader, originalSerializedName);
+public sealed class UnsupportedBuildRow(int index, XAssetType assetType, int rawHeader, string reason, string? originalSerializedName = null) : ZoneBuildRow(index, assetType, rawHeader, originalSerializedName) { public string Reason { get; } = reason; }
 
 /// <summary>Frozen revision input. It contains no runtime, pool, workspace, or editor-control reference.</summary>
 public sealed class ZoneBuildSnapshot
@@ -153,10 +164,16 @@ public sealed class ZoneBuildSnapshotBuilder
         ArgumentNullException.ThrowIfNull(save);
         ValidateSaveCapture(editingSession, save);
         TargetZoneSourceSnapshot source = editingSession.Workspace.TargetSource;
-        var rows = new List<ZoneBuildRow>(source.Rows.Count);
+        var rows = new List<ZoneBuildRow>(save.TargetRows.Count);
         var errors = new List<ZoneBuildError>();
-        foreach (TargetZoneRowSource row in source.Rows.OrderBy(row => row.SerializedIndex))
-            rows.Add(CreateRow(row, save, errors));
+        for (int outputIndex = 0; outputIndex < save.TargetRows.Count; outputIndex++)
+        {
+            rows.Add(CreateRow(
+                outputIndex,
+                save.TargetRows[outputIndex],
+                save,
+                errors));
+        }
         PreserveDetachedSemanticGraphIdentity(rows);
         ResourceOutputPlan[] resourceOutputs = CreateResourceOutputPlans(source, rows, errors);
         var validation = new ZoneBuildValidation(errors);
@@ -172,15 +189,17 @@ public sealed class ZoneBuildSnapshotBuilder
     }
 
     private ZoneBuildRow CreateRow(
+        int outputIndex,
         TargetZoneRowSource row,
         FastFileEditingSaveSnapshot save,
         List<ZoneBuildError> errors)
     {
-        int index = row.SerializedIndex;
+        int index = outputIndex;
         switch (row.State)
         {
             case TargetZoneRowSourceState.Definition:
                 return CreateOwned(
+                    outputIndex,
                     row,
                     save,
                     errors);
@@ -190,12 +209,12 @@ public sealed class ZoneBuildSnapshotBuilder
                 {
                     string headerReason = "External-reference rows require an inline (-1) top-level header; insert-cell emission is not enabled.";
                     errors.Add(new ZoneBuildError(index, "header", headerReason));
-                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, headerReason);
+                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, headerReason, row.OriginalSerializedName);
                 }
                 if (row.ExternalReference is null)
                 {
                     errors.Add(new ZoneBuildError(index, "reference", "Reference row has no immutable external-reference identity."));
-                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, "Missing external reference identity.");
+                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, "Missing external reference identity.", row.OriginalSerializedName);
                 }
                 if (!_referenceShapes.TryGet(row.SerializedType, out _))
                 {
@@ -206,17 +225,18 @@ public sealed class ZoneBuildSnapshotBuilder
                         index,
                         row.SerializedType,
                         row.RawHeader,
-                        referenceReason);
+                        referenceReason,
+                        row.OriginalSerializedName);
                 }
-                return new ExternalReferenceBuildRow(index, row.SerializedType, row.RawHeader, row.ExternalReference);
+                return new ExternalReferenceBuildRow(index, row.SerializedType, row.RawHeader, row.ExternalReference, row.OriginalSerializedName);
             case TargetZoneRowSourceState.Null:
                 if (row.RawHeader != 0)
                 {
                     string nullHeaderReason = "Null rows require a zero serialized header.";
                     errors.Add(new ZoneBuildError(index, "header", nullHeaderReason));
-                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, nullHeaderReason);
+                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, nullHeaderReason, row.OriginalSerializedName);
                 }
-                return new NullBuildRow(index, row.SerializedType, row.RawHeader);
+                return new NullBuildRow(index, row.SerializedType, row.RawHeader, row.OriginalSerializedName);
             case TargetZoneRowSourceState.OpaqueNativeNoOp:
                 if (row.HeaderKind != XAssetHeaderKind.Opaque ||
                     XAssetTypeRuntimeMetadataCatalog.Get(row.SerializedType).Disposition !=
@@ -227,27 +247,28 @@ public sealed class ZoneBuildSnapshotBuilder
                     string opaqueReason =
                         "Opaque rows require a native no-op asset type and an exact opaque header.";
                     errors.Add(new ZoneBuildError(index, "header", opaqueReason));
-                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, opaqueReason);
+                    return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, opaqueReason, row.OriginalSerializedName);
                 }
-                return new OpaqueNativeNoOpBuildRow(index, row.SerializedType, row.RawHeader);
+                return new OpaqueNativeNoOpBuildRow(index, row.SerializedType, row.RawHeader, row.OriginalSerializedName);
             default:
                 string reason = $"Target row classification '{row.State}' is not compiler-supported.";
                 errors.Add(new ZoneBuildError(index, "classification", reason));
-                return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+                return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
     }
 
     private ZoneBuildRow CreateOwned(
+        int outputIndex,
         TargetZoneRowSource row,
         FastFileEditingSaveSnapshot save,
         List<ZoneBuildError> errors)
     {
-        int index = row.SerializedIndex;
+        int index = outputIndex;
         if (row.RawHeader != -1)
         {
             string reason = "Owned definitions require an inline (-1) top-level header; insert-cell emission is not enabled.";
             errors.Add(new ZoneBuildError(index, "header", reason));
-            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
         if (XAssetTopLevelDispatch.Classify(row.SerializedType) !=
             XAssetTopLevelDispatchKind.PointerWrapper)
@@ -255,19 +276,19 @@ public sealed class ZoneBuildSnapshotBuilder
             string reason =
                 $"Owned type '{row.SerializedType}' has no top-level pointer-wrapper loader.";
             errors.Add(new ZoneBuildError(index, "loader", reason));
-            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
         if (!_adapters.TryGetAdapter(row.SerializedType, out IAssetAuthoringAdapter? adapter) || adapter is null)
         {
             string reason = $"Owned type '{row.SerializedType}' has no detached authoring adapter.";
             errors.Add(new ZoneBuildError(index, "adapter", reason));
-            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
         if (!_emitters.TryGet(row.SerializedType, out _))
         {
             string reason = $"Owned type '{row.SerializedType}' has no body emitter.";
             errors.Add(new ZoneBuildError(index, "emitter", reason));
-            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
 
         try
@@ -305,15 +326,15 @@ public sealed class ZoneBuildSnapshotBuilder
             {
                 string reason = "Adapter exported a non-emitter build model or contradictory serialized type.";
                 errors.Add(new ZoneBuildError(index, "buildData", reason));
-                return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+                return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
             }
-            return new OwnedDefinitionBuildRow(index, row.SerializedType, row.RawHeader, detached);
+            return new OwnedDefinitionBuildRow(index, row.SerializedType, row.RawHeader, detached, row.OriginalSerializedName);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or OverflowException or ArgumentException)
         {
             string reason = exception.Message;
             errors.Add(new ZoneBuildError(index, "buildData", reason));
-            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason);
+            return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
     }
 
@@ -339,7 +360,8 @@ public sealed class ZoneBuildSnapshotBuilder
                     owned.Index,
                     owned.AssetType,
                     owned.RawHeader,
-                    detached);
+                    detached,
+                    owned.OriginalSerializedName);
             }
         }
     }

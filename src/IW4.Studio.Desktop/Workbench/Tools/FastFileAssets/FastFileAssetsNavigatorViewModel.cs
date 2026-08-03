@@ -5,13 +5,15 @@ using IW4.Studio.Documents;
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 
 /// <summary>
-/// Searchable, grouped view of target fastfile rows. The immutable
-/// <see cref="AllRows"/> sequence always retains serialized source order.
+/// Searchable, grouped view of the target fastfile's current authored rows.
+/// <see cref="AllRows"/> retains document order as rows are appended or reverted.
 /// </summary>
 public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDisposable
 {
     private readonly IWorkbenchSelectionContext _selectionContext;
-    private readonly IReadOnlyList<FastFileAssetNavigatorRow> _allRows;
+    private readonly EditorViewModel _editor;
+    private readonly Func<IW4.FastFiles.Zone.XAssetType, bool> _hasDesktopEditor;
+    private IReadOnlyList<FastFileAssetNavigatorRow> _allRows;
     private string _searchText = string.Empty;
     private IReadOnlyList<FastFileAssetNavigatorRow> _visibleRows;
     private IReadOnlyList<FastFileAssetNavigatorGroup> _groups;
@@ -21,32 +23,28 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     private bool _disposed;
 
     public FastFileAssetsNavigatorViewModel(
-        FastFileWorkspace workspace,
+        EditorViewModel editor,
         IWorkbenchSelectionContext selectionContext,
         Func<IW4.FastFiles.Zone.XAssetType, bool> hasDesktopEditor)
-        : this(
-            FastFileAssetsNavigatorSnapshot.Capture(
-                workspace,
-                hasDesktopEditor),
-            selectionContext)
     {
-    }
-
-    public FastFileAssetsNavigatorViewModel(
-        FastFileAssetsNavigatorSnapshot snapshot,
-        IWorkbenchSelectionContext selectionContext)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
+        _editor = editor ?? throw new ArgumentNullException(nameof(editor));
         _selectionContext = selectionContext
             ?? throw new ArgumentNullException(nameof(selectionContext));
+        _hasDesktopEditor = hasDesktopEditor
+            ?? throw new ArgumentNullException(nameof(hasDesktopEditor));
+        FastFileAssetsNavigatorSnapshot snapshot =
+            FastFileAssetsNavigatorSnapshot.Capture(
+                _editor.EditingSession.Document,
+                _hasDesktopEditor);
         _allRows = snapshot.Rows;
         _visibleRows = _allRows;
         _groups = BuildGroups(_allRows);
         _nodes = BuildNodes(_groups);
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
+        _editor.EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
     }
 
-    /// <summary>Target rows only, in exact serialized source order.</summary>
+    /// <summary>Target rows only, in current authored document order.</summary>
     public IReadOnlyList<FastFileAssetNavigatorRow> AllRows => _allRows;
 
     public IReadOnlyList<FastFileAssetNavigatorRow> VisibleRows
@@ -120,6 +118,31 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
 
     public int TotalCount => _allRows.Count;
 
+    public bool CanAddAssets => AddableAssetTypes.Count != 0;
+
+    public IReadOnlyList<IW4.FastFiles.Zone.XAssetType> AddableAssetTypes =>
+        _editor.AddableAssetTypes;
+
+    public string? ValidateNewAssetName(string name) =>
+        _editor.ValidateNewAssetName(name);
+
+    public void AddAsset(
+        IW4.FastFiles.Zone.XAssetType assetType,
+        string name)
+    {
+        WorkspaceAssetCatalogEntry entry =
+            _editor.AddAsset(assetType, name);
+        TargetZoneRowIdentity identity = entry.TargetRowIdentity
+            ?? throw new InvalidDataException(
+                "A newly added asset has no stable target-row identity.");
+        FastFileAssetNavigatorRow addedRow = _allRows
+            .SingleOrDefault(row => row.Identity == identity)
+            ?? throw new InvalidDataException(
+                "The fastfile asset navigator did not project the newly added row.");
+
+        SelectedRow = addedRow;
+    }
+
     public int VisibleCount => VisibleRows.Count;
 
     public bool HasRows => VisibleCount > 0;
@@ -134,7 +157,31 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
             return;
 
         _disposed = true;
+        _editor.EditingSession.TargetRowsChanged -= EditingSession_TargetRowsChanged;
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
+    }
+
+    private void EditingSession_TargetRowsChanged(object? sender, EventArgs args)
+    {
+        if (_disposed)
+            return;
+
+        TargetZoneRowIdentity? selectedIdentity = _selectedRow?.Identity;
+        _allRows = FastFileAssetsNavigatorSnapshot.Capture(
+            _editor.EditingSession.Document,
+            _hasDesktopEditor).Rows;
+        _selectedRow = selectedIdentity is { } identity
+            ? _allRows.FirstOrDefault(row => row.Identity == identity)
+            : null;
+        if (selectedIdentity is not null && _selectedRow is null)
+        {
+            _selectionContext.Clear(
+                WorkbenchAssetSelectionSource.FastFileAssets);
+        }
+        OnPropertyChanged(nameof(AllRows));
+        OnPropertyChanged(nameof(SelectedRow));
+        OnPropertyChanged(nameof(TotalCount));
+        RebuildProjection();
     }
 
     private void RebuildProjection()

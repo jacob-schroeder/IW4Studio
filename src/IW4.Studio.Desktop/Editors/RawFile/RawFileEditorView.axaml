@@ -20,12 +20,25 @@
             BorderThickness="1">
       <Grid ColumnDefinitions="*,Auto"
             ColumnSpacing="16">
-        <TextBlock Text="{Binding OriginalName}"
-                   VerticalAlignment="Center"
-                   FontSize="17"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource StudioTextBrush}"
-                   TextTrimming="CharacterEllipsis" />
+        <StackPanel VerticalAlignment="Center"
+                    Spacing="3">
+          <TextBlock Text="{Binding OriginalName}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding StatusMessage}"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}"
+                     TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding StatusMessage}" />
+          <TextBlock Text="{Binding GscAnalysisStatusMessage}"
+                     IsVisible="{Binding IsGscSource}"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextMutedBrush}"
+                     TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding GscAnalysisStatusMessage}" />
+        </StackPanel>
 
         <StackPanel Grid.Column="1"
                     Orientation="Horizontal"
@@ -60,8 +73,8 @@
           <Button Classes="primary"
                   MinHeight="31"
                   Padding="12,5"
-                  IsEnabled="{Binding CanImport}"
-                  ToolTip.Tip="Apply changes"
+                  IsEnabled="{Binding CanApply}"
+                  ToolTip.Tip="Apply editor content to the asset draft; use Save As to write the fastfile"
                   Click="ImportPayloadButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" />

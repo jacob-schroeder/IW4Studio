@@ -30,6 +30,7 @@ public sealed partial class EditorWindow : Window
     private readonly HashSet<MapRenderWindow> _livePreviewWindows = [];
     private readonly RetryableRenderWarmup _renderWarmup = new();
     private int _saveAsInProgress;
+    private int _navigationInProgress;
     private bool _approvedCloseRetry;
     private bool _disposed;
 
@@ -222,20 +223,16 @@ public sealed partial class EditorWindow : Window
             return;
         }
 
-        Func<Task<WorkspaceSaveOutcome>>? saveAsync =
-            workbench.CanSaveAs ? RequestSaveAsAsync : null;
         await _navigationCoordinator.CloseEditorTabAsync(
             workbench.Editor.EditingSession,
-            args.Tab.EditableRowIdentity,
+            args.Tab.IsDirty,
             _unsavedChangesDialog,
             () =>
             {
                 if (!_disposed && ReferenceEquals(_workbench, workbench))
                     workbench.CloseEditorTab(args.Tab);
-
                 return Task.CompletedTask;
-            },
-            saveAsync);
+            });
     }
 
     private async void Workbench_EditorTabsCloseRequested(
@@ -257,11 +254,9 @@ public sealed partial class EditorWindow : Window
         if (tabs.Length == 0)
             return;
 
-        Func<Task<WorkspaceSaveOutcome>>? saveAsync =
-            workbench.CanSaveAs ? RequestSaveAsAsync : null;
         await _navigationCoordinator.CloseEditorTabsAsync(
             workbench.Editor.EditingSession,
-            tabs.Select(tab => tab.EditableRowIdentity),
+            tabs.Count(tab => tab.IsDirty),
             _unsavedChangesDialog,
             () =>
             {
@@ -275,10 +270,8 @@ public sealed partial class EditorWindow : Window
                         workbench.CloseEditorTab(tab);
                     }
                 }
-
                 return Task.CompletedTask;
-            },
-            saveAsync);
+            });
     }
 
     private void Workbench_EngineBuiltInReferenceRequested(
@@ -419,22 +412,44 @@ public sealed partial class EditorWindow : Window
                 return Task.CompletedTask;
             });
 
-    private Task<DestructiveNavigationResult> RequestNavigationAsync(
+    private async Task<DestructiveNavigationResult> RequestNavigationAsync(
         DestructiveNavigationAction action,
         Func<Task> proceedAsync)
     {
         if (_disposed || _workbench is not { } workbench)
-            return Task.FromResult(DestructiveNavigationResult.Cancelled);
+            return DestructiveNavigationResult.Cancelled;
         if (Volatile.Read(ref _saveAsInProgress) != 0)
-            return Task.FromResult(DestructiveNavigationResult.Coalesced);
+            return DestructiveNavigationResult.Coalesced;
+        if (Interlocked.CompareExchange(
+                ref _navigationInProgress,
+                1,
+                comparand: 0) != 0)
+        {
+            return DestructiveNavigationResult.Coalesced;
+        }
 
-        return _navigationCoordinator.NavigateAsync(
-            workbench.Editor.EditingSession,
-            action,
-            _unsavedChangesDialog,
-            proceedAsync,
-            workbench.CanSaveAs ? RequestSaveAsAsync : null,
-            CaptureMapEditorUnsavedChanges);
+        Control? editorContent = Content as Control;
+        bool wasContentEnabled = editorContent?.IsEnabled == true;
+        if (editorContent is not null)
+            editorContent.IsEnabled = false;
+
+        try
+        {
+            return await _navigationCoordinator.NavigateAsync(
+                workbench.Editor.EditingSession,
+                action,
+                _unsavedChangesDialog,
+                proceedAsync,
+                workbench.CanSaveAs ? RequestSaveAsAsync : null,
+                CaptureMapEditorUnsavedChanges,
+                CaptureStagedEditorChanges);
+        }
+        finally
+        {
+            if (!_disposed && editorContent is not null)
+                editorContent.IsEnabled = wasContentEnabled;
+            Volatile.Write(ref _navigationInProgress, 0);
+        }
     }
 
     private Task<WorkspaceSaveOutcome> RequestSaveAsAsync()
@@ -721,6 +736,19 @@ public sealed partial class EditorWindow : Window
         return new SupplementalUnsavedChanges(
             IsDirty: true,
             ChangedItemCount: changedItemCount);
+    }
+
+    private SupplementalUnsavedChanges CaptureStagedEditorChanges()
+    {
+        if (_disposed || _workbench is not { } workbench)
+            return SupplementalUnsavedChanges.Clean;
+
+        int changedTabCount = workbench.OpenEditorTabs.Count(tab => tab.IsDirty);
+        return changedTabCount == 0
+            ? SupplementalUnsavedChanges.Clean
+            : new SupplementalUnsavedChanges(
+                IsDirty: true,
+                ChangedItemCount: changedTabCount);
     }
 
     private static WorkspaceSaveOutcome ToWorkspaceSaveOutcome(

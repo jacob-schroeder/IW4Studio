@@ -125,7 +125,10 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
 /// definitions, while stored hashes and table dimensions remain preserved.
 /// </summary>
 public sealed class StringTableEditorViewModel
-    : ObservableObject, IAssetEditorProperties, IAssetEditorDiagnostics
+    : ObservableObject,
+      IAssetEditorProperties,
+      IAssetEditorDiagnostics,
+      IAssetEditorStagingState
 {
     private readonly AssetEditorSession _editorSession;
     private readonly Action<int, int, string?> _stageCellValue;
@@ -197,6 +200,7 @@ public sealed class StringTableEditorViewModel
     public bool IsEditable => Mode == AssetEditorMode.Editable;
     public bool CanApply =>
         IsEditable && _draft is not null && _pendingOriginalValues.Count != 0;
+    public bool HasUnappliedChanges => CanApply;
     public bool CanRevert => IsEditable;
     public bool HasTable => _draft is not null || _readOnlySnapshot is not null;
     public string OriginalName =>
@@ -373,7 +377,7 @@ public sealed class StringTableEditorViewModel
                 ? $"Staged row {row}, column {column}."
                 : $"Restored row {row}, column {column} to its applied value.";
             if (hadPendingChanges != (_pendingOriginalValues.Count != 0))
-                OnPropertyChanged(nameof(CanApply));
+                NotifyStagingStateChanged();
             if ((previousValue is null) != (value is null))
                 OnPropertyChanged(nameof(EditorProperties));
         }
@@ -437,8 +441,14 @@ public sealed class StringTableEditorViewModel
         OnPropertyChanged(nameof(CellCount));
         OnPropertyChanged(nameof(DimensionText));
         OnPropertyChanged(nameof(HasTable));
-        OnPropertyChanged(nameof(CanApply));
+        NotifyStagingStateChanged();
         OnPropertyChanged(nameof(EditorProperties));
+    }
+
+    private void NotifyStagingStateChanged()
+    {
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(HasUnappliedChanges));
     }
 
     private static int CheckedCellIndex(

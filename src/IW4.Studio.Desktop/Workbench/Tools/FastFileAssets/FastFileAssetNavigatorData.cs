@@ -39,7 +39,7 @@ public sealed record FastFileAssetNavigatorRow
 
     public TargetZoneRowIdentity Identity { get; }
 
-    /// <summary>The exact immutable target catalog/source position.</summary>
+    /// <summary>The row's current position in the authored target document.</summary>
     public int SourceIndex { get; }
 
     public XAssetType AssetType { get; }
@@ -82,8 +82,8 @@ public sealed record FastFileAssetNavigatorRow
 
 /// <summary>
 /// Read-only type grouping for tree-style navigator presentation.
-/// Types and rows are ordered by their display names; <see cref="FastFileAssetsNavigatorSnapshot.Rows"/>
-/// remains the source-order authority.
+/// Types and rows are ordered by display name; <see cref="FastFileAssetsNavigatorSnapshot.Rows"/>
+/// remains the current document-order authority.
 /// </summary>
 public sealed record FastFileAssetNavigatorGroup(
     XAssetType AssetType,
@@ -152,8 +152,8 @@ public sealed class FastFileAssetNavigatorNode
 }
 
 /// <summary>
-/// One-time copy of <see cref="WorkspaceAssetCatalog.TargetEntries"/>.
-/// Dependency-only catalog entries and runtime-only pool slots are excluded.
+/// Detached copy of the current target document rows. Dependency-only catalog
+/// entries and runtime-only pool slots are excluded.
 /// </summary>
 public sealed class FastFileAssetsNavigatorSnapshot
 {
@@ -170,25 +170,34 @@ public sealed class FastFileAssetsNavigatorSnapshot
         Func<XAssetType, bool> hasDesktopEditor)
     {
         ArgumentNullException.ThrowIfNull(workspace);
+        return Capture(workspace.AssetCatalog.TargetEntries, hasDesktopEditor);
+    }
+
+    public static FastFileAssetsNavigatorSnapshot Capture(
+        TargetZoneDocument document,
+        Func<XAssetType, bool> hasDesktopEditor)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        return Capture(document.Rows, hasDesktopEditor);
+    }
+
+    private static FastFileAssetsNavigatorSnapshot Capture(
+        IEnumerable<WorkspaceAssetCatalogEntry> entries,
+        Func<XAssetType, bool> hasDesktopEditor)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(hasDesktopEditor);
 
-        FastFileAssetNavigatorRow[] rows = workspace.AssetCatalog.TargetEntries
-            .Select(entry => Project(entry, hasDesktopEditor))
+        FastFileAssetNavigatorRow[] rows = entries
+            .Select((entry, sourceIndex) =>
+                Project(entry, sourceIndex, hasDesktopEditor))
             .ToArray();
-        for (int index = 0; index < rows.Length; index++)
-        {
-            if (rows[index].SourceIndex != index)
-            {
-                throw new InvalidDataException(
-                    "The target asset catalog no longer matches immutable source order.");
-            }
-        }
-
         return new FastFileAssetsNavigatorSnapshot(rows);
     }
 
     private static FastFileAssetNavigatorRow Project(
         WorkspaceAssetCatalogEntry entry,
+        int sourceIndex,
         Func<XAssetType, bool> hasDesktopEditor)
     {
         TargetZoneRowIdentity identity = entry.TargetRowIdentity
@@ -205,7 +214,7 @@ public sealed class FastFileAssetsNavigatorSnapshot
 
         return new FastFileAssetNavigatorRow(
             identity,
-            identity.SerializedIndex,
+            sourceIndex,
             entry.AssetType,
             displayName,
             entry.NormalizedName ?? string.Empty,

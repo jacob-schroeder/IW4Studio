@@ -177,6 +177,7 @@ public sealed class TransactionalSaveAsService
         string? temporaryPath = null;
         var stagedSidecars = new List<StagedSidecar>();
         var committedSidecars = new List<string>();
+        FastFileTransactionalSaveCaptureLease? captureLease = null;
         bool committed = false;
         try
         {
@@ -193,7 +194,9 @@ public sealed class TransactionalSaveAsService
 
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new(SaveAsStage.Capturing, "Capturing the current detached revision."));
-            FastFileEditingSaveSnapshot capture = editingSession.CaptureForSave();
+            captureLease =
+                editingSession.AcquireTransactionalSaveCaptureLease();
+            FastFileEditingSaveSnapshot capture = captureLease.Capture;
             if (request.ExpectedEditingSessionRevision is { } expectedRevision &&
                 capture.Revision != expectedRevision)
             {
@@ -357,6 +360,7 @@ public sealed class TransactionalSaveAsService
         }
         finally
         {
+            captureLease?.Dispose();
             if (!committed)
             {
                 foreach (string path in committedSidecars)

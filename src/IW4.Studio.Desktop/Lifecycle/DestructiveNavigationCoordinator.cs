@@ -28,6 +28,13 @@ public enum UnsavedChangesDecision
     Save = 2
 }
 
+/// <summary>Ownership boundary for the changes described by a prompt.</summary>
+public enum UnsavedChangesScope
+{
+    Workspace,
+    EditorInput
+}
+
 /// <summary>
 /// The observable result of a destructive-navigation request.
 /// </summary>
@@ -115,14 +122,15 @@ public readonly record struct SupplementalUnsavedChanges(
 }
 
 /// <summary>
-/// Immutable prompt data derived from all revisioned workspace change sets.
-/// It deliberately contains no runtime asset or mutable draft data.
+/// Immutable prompt data for either workspace changes or transient editor
+/// input. It deliberately contains no runtime asset or mutable draft data.
 /// </summary>
 public sealed record UnsavedChangesPrompt(
     DestructiveNavigationAction Action,
     string FastFilePath,
     int ChangedItemCount,
-    bool CanSave)
+    bool CanSave,
+    UnsavedChangesScope Scope)
 {
     public string FastFileName => Path.GetFileName(FastFilePath);
 }
@@ -157,7 +165,8 @@ public sealed class DestructiveNavigationCoordinator
         IUnsavedChangesDialog dialog,
         Func<Task> proceedAsync,
         Func<Task<WorkspaceSaveOutcome>>? saveAsync = null,
-        Func<SupplementalUnsavedChanges>? supplementalChanges = null)
+        Func<SupplementalUnsavedChanges>? supplementalChanges = null,
+        Func<SupplementalUnsavedChanges>? stagedEditorChanges = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(dialog);
@@ -175,20 +184,20 @@ public sealed class DestructiveNavigationCoordinator
             proceedAsync,
             saveAsync,
             supplementalChanges,
+            stagedEditorChanges,
             navigation);
     }
 
     /// <summary>
-    /// Requests permission to close one editor tab. The decision and discard
-    /// operation are scoped to <paramref name="rowIdentity"/>. Save remains a
-    /// whole-workspace operation because fastfiles have one transaction boundary.
+    /// Requests permission to close one editor tab. Only input that has not
+    /// been applied to its session draft is destructive at tab scope; applied
+    /// document changes remain pending in the workspace after the view closes.
     /// </summary>
     public Task<DestructiveNavigationResult> CloseEditorTabAsync(
         FastFileEditingSession session,
-        TargetZoneRowIdentity? rowIdentity,
+        bool hasUnappliedChanges,
         IUnsavedChangesDialog dialog,
-        Func<Task> proceedAsync,
-        Func<Task<WorkspaceSaveOutcome>>? saveAsync = null)
+        Func<Task> proceedAsync)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(dialog);
@@ -197,50 +206,40 @@ public sealed class DestructiveNavigationCoordinator
         if (!TryBeginNavigation(out object navigation))
             return Task.FromResult(DestructiveNavigationResult.Coalesced);
 
-        return CloseEditorTabCoreAsync(
+        return CloseEditorTabsCoreAsync(
             session,
-            rowIdentity is { } row ? [row] : [],
+            hasUnappliedChanges ? 1 : 0,
             DestructiveNavigationAction.CloseEditorTab,
             dialog,
             proceedAsync,
-            saveAsync,
             navigation);
     }
 
     /// <summary>
     /// Requests permission to close several editor tabs as one operation.
-    /// Prompting and discard apply only to the supplied target rows; Save
-    /// remains a whole-workspace operation because fastfiles have one
-    /// transaction boundary.
+    /// Discarding drops only unapplied view input and never reverts a
+    /// session-owned asset draft.
     /// </summary>
     public Task<DestructiveNavigationResult> CloseEditorTabsAsync(
         FastFileEditingSession session,
-        IEnumerable<TargetZoneRowIdentity?> rowIdentities,
+        int unappliedTabCount,
         IUnsavedChangesDialog dialog,
-        Func<Task> proceedAsync,
-        Func<Task<WorkspaceSaveOutcome>>? saveAsync = null)
+        Func<Task> proceedAsync)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(rowIdentities);
+        ArgumentOutOfRangeException.ThrowIfNegative(unappliedTabCount);
         ArgumentNullException.ThrowIfNull(dialog);
         ArgumentNullException.ThrowIfNull(proceedAsync);
-
-        TargetZoneRowIdentity[] rows = rowIdentities
-            .Where(row => row is not null)
-            .Select(row => row!.Value)
-            .Distinct()
-            .ToArray();
 
         if (!TryBeginNavigation(out object navigation))
             return Task.FromResult(DestructiveNavigationResult.Coalesced);
 
-        return CloseEditorTabCoreAsync(
+        return CloseEditorTabsCoreAsync(
             session,
-            rows,
+            unappliedTabCount,
             DestructiveNavigationAction.CloseEditorTabs,
             dialog,
             proceedAsync,
-            saveAsync,
             navigation);
     }
 
@@ -251,10 +250,26 @@ public sealed class DestructiveNavigationCoordinator
         Func<Task> proceedAsync,
         Func<Task<WorkspaceSaveOutcome>>? saveAsync,
         Func<SupplementalUnsavedChanges>? supplementalChanges,
+        Func<SupplementalUnsavedChanges>? stagedEditorChanges,
         object navigation)
     {
         try
         {
+            SupplementalUnsavedChanges stagedChanges =
+                CaptureSupplementalChanges(stagedEditorChanges);
+            if (stagedChanges.IsDirty)
+            {
+                var prompt = new UnsavedChangesPrompt(
+                    action,
+                    session.Workspace.Document.Request.Path,
+                    stagedChanges.ChangedItemCount,
+                    CanSave: false,
+                    UnsavedChangesScope.EditorInput);
+                UnsavedChangesDecision decision = await dialog.ShowAsync(prompt);
+                if (decision != UnsavedChangesDecision.DiscardChanges)
+                    return DestructiveNavigationResult.Cancelled;
+            }
+
             WorkspaceUnsavedChanges beforeDecision =
                 CaptureWorkspaceChanges(
                     session,
@@ -265,7 +280,8 @@ public sealed class DestructiveNavigationCoordinator
                     action,
                     session.Workspace.Document.Request.Path,
                     beforeDecision.ChangedItemCount,
-                    CanSave: saveAsync is not null);
+                    CanSave: saveAsync is not null,
+                    UnsavedChangesScope.Workspace);
                 UnsavedChangesDecision decision = await dialog.ShowAsync(prompt);
                 switch (decision)
                 {
@@ -314,51 +330,28 @@ public sealed class DestructiveNavigationCoordinator
         }
     }
 
-    private async Task<DestructiveNavigationResult> CloseEditorTabCoreAsync(
+    private async Task<DestructiveNavigationResult> CloseEditorTabsCoreAsync(
         FastFileEditingSession session,
-        IReadOnlyList<TargetZoneRowIdentity> rowIdentities,
+        int unappliedTabCount,
         DestructiveNavigationAction action,
         IUnsavedChangesDialog dialog,
         Func<Task> proceedAsync,
-        Func<Task<WorkspaceSaveOutcome>>? saveAsync,
         object navigation)
     {
         try
         {
-            TargetZoneRowIdentity[] changedRows = rowIdentities
-                .Where(row => HasChanges(session, row))
-                .ToArray();
-            if (changedRows.Length != 0)
+            if (unappliedTabCount != 0)
             {
                 var prompt = new UnsavedChangesPrompt(
                     action,
                     session.Workspace.Document.Request.Path,
-                    ChangedItemCount: changedRows.Length,
-                    CanSave: saveAsync is not null);
+                    ChangedItemCount: unappliedTabCount,
+                    CanSave: false,
+                    UnsavedChangesScope.EditorInput);
                 UnsavedChangesDecision decision = await dialog.ShowAsync(prompt);
-                switch (decision)
+                if (decision != UnsavedChangesDecision.DiscardChanges)
                 {
-                    case UnsavedChangesDecision.DiscardChanges:
-                        foreach (TargetZoneRowIdentity row in changedRows)
-                            session.RevertOne(row);
-                        if (changedRows.Any(row => HasChanges(session, row)))
-                            return DestructiveNavigationResult.Failed;
-                        break;
-                    case UnsavedChangesDecision.Save when saveAsync is not null:
-                    {
-                        WorkspaceSaveOutcome save =
-                            (await saveAsync()).Validate();
-                        if (save.Cancelled)
-                            return DestructiveNavigationResult.Cancelled;
-                        if (!save.Succeeded ||
-                            changedRows.Any(row => HasChanges(session, row)))
-                        {
-                            return DestructiveNavigationResult.Failed;
-                        }
-                        break;
-                    }
-                    default:
-                        return DestructiveNavigationResult.Cancelled;
+                    return DestructiveNavigationResult.Cancelled;
                 }
             }
 
@@ -400,11 +393,6 @@ public sealed class DestructiveNavigationCoordinator
                 _activeNavigation = null;
         }
     }
-
-    private static bool HasChanges(
-        FastFileEditingSession session,
-        TargetZoneRowIdentity rowIdentity) =>
-        session.ChangeSet.TryGetChange(rowIdentity, out _);
 
     private static SupplementalUnsavedChanges CaptureSupplementalChanges(
         Func<SupplementalUnsavedChanges>? source) =>

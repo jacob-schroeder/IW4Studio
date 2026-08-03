@@ -248,7 +248,7 @@
                             VerticalAlignment="Center"
                             Background="{DynamicResource StudioAccentBrush}"
                             IsVisible="{Binding IsDirty}"
-                            ToolTip.Tip="Unsaved changes" />
+                            ToolTip.Tip="Unapplied editor changes" />
                     <Button Grid.Column="6"
                             Classes="studioEditorTabClose"
                             PointerPressed="CloseEditorTabButton_PointerPressed"

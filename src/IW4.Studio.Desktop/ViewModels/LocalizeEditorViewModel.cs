@@ -10,7 +10,10 @@ namespace IW4.Studio.Desktop.ViewModels;
 /// is the serialized row identity.
 /// </summary>
 public sealed class LocalizeEditorViewModel
-    : ObservableObject, IAssetEditorProperties, IAssetEditorDiagnostics
+    : ObservableObject,
+      IAssetEditorProperties,
+      IAssetEditorDiagnostics,
+      IAssetEditorStagingState
 {
     private readonly AssetEditorSession _editorSession;
     private LocalizeDraft? _draft;
@@ -83,6 +86,7 @@ public sealed class LocalizeEditorViewModel
             ValueInput,
             DisplayValue(_draft.Value),
             StringComparison.Ordinal);
+    public bool HasUnappliedChanges => CanApply;
     public bool CanRevert => IsEditable;
 
     public string OriginalName =>
@@ -100,7 +104,7 @@ public sealed class LocalizeEditorViewModel
             if (!SetProperty(ref _valueInput, value))
                 return;
 
-            OnPropertyChanged(nameof(CanApply));
+            NotifyStagingStateChanged();
             OnPropertyChanged(nameof(EditorProperties));
         }
     }
@@ -163,7 +167,7 @@ public sealed class LocalizeEditorViewModel
             StatusMessage = changed
                 ? "Applied the localized value."
                 : "The localized value already matched the current draft.";
-            OnPropertyChanged(nameof(CanApply));
+            NotifyStagingStateChanged();
             OnPropertyChanged(nameof(EditorProperties));
         }
         catch (Exception exception) when (
@@ -190,8 +194,14 @@ public sealed class LocalizeEditorViewModel
         ValueInput = DisplayValue(_draft.Value);
         StatusMessage =
             "Reverted the detached Localize draft to its authored baseline.";
-        OnPropertyChanged(nameof(CanApply));
+        NotifyStagingStateChanged();
         OnPropertyChanged(nameof(EditorProperties));
+    }
+
+    private void NotifyStagingStateChanged()
+    {
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(HasUnappliedChanges));
     }
 
     private string? CurrentStoredValue() => _draft is not null

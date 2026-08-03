@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using Avalonia.Controls;
-using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
@@ -87,16 +86,11 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
         string.IsNullOrWhiteSpace(ProviderZone)
             ? "Provider: workspace"
             : $"Provider: {ProviderZone}",
-        IsDirty ? "Unsaved changes" : "No unsaved changes");
+        IsDirty ? "Unapplied editor changes" : "Editor content applied");
 
     public bool IsDirty => CatalogEditor?.IsDirty == true;
 
     internal WorkbenchAssetSelectionRoute? Route => _route;
-
-    internal TargetZoneRowIdentity? EditableRowIdentity =>
-        CatalogEditor?.BackendEditor is { CanEdit: true } editor
-            ? editor.RowIdentity
-            : null;
 
     internal void UpdateSelection(
         WorkbenchAssetSelection selection,

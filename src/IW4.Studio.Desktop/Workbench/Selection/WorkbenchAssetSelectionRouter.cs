@@ -20,6 +20,7 @@ public sealed record WorkbenchAssetSelectionRoute(
 /// </summary>
 public sealed class WorkbenchAssetSelectionRouter
 {
+    private readonly TargetZoneDocument? _targetDocument;
     private readonly IReadOnlyDictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry>
         _targetRows;
     private readonly IReadOnlyDictionary<XAssetProviderId, WorkspaceAssetCatalogEntry[]>
@@ -27,9 +28,24 @@ public sealed class WorkbenchAssetSelectionRouter
     private readonly IReadOnlyDictionary<(XAssetType Type, string Name), WorkspaceAssetCatalogEntry[]>
         _entriesByCanonicalIdentity;
 
-    public WorkbenchAssetSelectionRouter(WorkspaceAssetCatalog catalog)
+    public WorkbenchAssetSelectionRouter(
+        WorkspaceAssetCatalog catalog,
+        TargetZoneDocument? targetDocument = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        Guid? catalogDocumentId = catalog.TargetEntries
+            .Select(entry => entry.TargetRowIdentity?.DocumentId)
+            .FirstOrDefault(documentId => documentId is not null);
+        if (targetDocument is not null &&
+            catalogDocumentId is { } expectedDocumentId &&
+            targetDocument.DocumentId != expectedDocumentId)
+        {
+            throw new ArgumentException(
+                "The live target document does not belong to this workspace catalog.",
+                nameof(targetDocument));
+        }
+
+        _targetDocument = targetDocument;
         _targetRows = catalog.TargetEntries
             .Where(entry => entry.TargetRowIdentity is not null)
             .ToDictionary(entry => entry.TargetRowIdentity!.Value);
@@ -55,11 +71,14 @@ public sealed class WorkbenchAssetSelectionRouter
         ArgumentNullException.ThrowIfNull(selection);
         if (selection.Identity.TargetRowIdentity is { } targetIdentity)
         {
-            return _targetRows.TryGetValue(
-                targetIdentity,
-                out WorkspaceAssetCatalogEntry? targetEntry)
+            WorkspaceAssetCatalogEntry? targetEntry = null;
+            bool found = _targetDocument?.TryGetRow(
+                    targetIdentity,
+                    out targetEntry) ??
+                _targetRows.TryGetValue(targetIdentity, out targetEntry);
+            return found
                 ? new WorkbenchAssetSelectionRoute(
-                    targetEntry,
+                    targetEntry!,
                     OpensCatalogEditor: true,
                     UnavailableReason: null)
                 : Unavailable("The selected target row is not present in this workspace catalog.");

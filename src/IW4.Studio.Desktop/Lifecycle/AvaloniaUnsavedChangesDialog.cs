@@ -24,6 +24,8 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
     {
         public UnsavedChangesDialogWindow(UnsavedChangesPrompt prompt)
         {
+            bool concernsEditorInput =
+                prompt.Scope == UnsavedChangesScope.EditorInput;
             var actions = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -33,8 +35,11 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
             actions.Children.Add(CreateButton("Cancel", UnsavedChangesDecision.Cancel, isDefault: true));
             if (prompt.CanSave)
                 actions.Children.Add(CreateButton("Save As…", UnsavedChangesDecision.Save, isDefault: false));
-            actions.Children.Add(CreateButton("Discard changes", UnsavedChangesDecision.DiscardChanges, isDefault: false));
-            Title = "Unsaved changes";
+            actions.Children.Add(CreateButton(
+                concernsEditorInput ? "Discard input" : "Discard changes",
+                UnsavedChangesDecision.DiscardChanges,
+                isDefault: false));
+            Title = concernsEditorInput ? "Unapplied changes" : "Unsaved changes";
             Width = 480;
             MinWidth = 480;
             CanResize = false;
@@ -50,31 +55,18 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
                     {
                         new TextBlock
                         {
-                            Text = prompt.CanSave ? "Save changes before continuing?" : "Discard unsaved changes?",
+                            Text = CreateHeading(prompt),
                             FontSize = 20,
                             FontWeight = Avalonia.Media.FontWeight.SemiBold
                         },
                         new TextBlock
                         {
-                            Text = prompt.Action is
-                                DestructiveNavigationAction.CloseEditorTab or
-                                DestructiveNavigationAction.CloseEditorTabs
-                                ? prompt.ChangedItemCount == 1
-                                    ? "This tab has 1 unsaved item."
-                                    : $"These tabs have {FormatChangedItemCount(prompt.ChangedItemCount)}."
-                                : $"{prompt.FastFileName} has {FormatChangedItemCount(prompt.ChangedItemCount)}.",
+                            Text = CreateDetail(prompt),
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap
                         },
                         new TextBlock
                         {
-                            Text = prompt.CanSave &&
-                                   prompt.Action is
-                                       DestructiveNavigationAction.CloseEditorTab or
-                                       DestructiveNavigationAction.CloseEditorTabs
-                                ? "Save As writes all pending workspace changes. Discarding reverts only the tabs being closed."
-                                : prompt.CanSave
-                                ? "Save writes a validated Save As candidate. Discarding allows this action to continue without saving."
-                                : "This zone cannot be saved yet. Discarding allows this action to continue without saving.",
+                            Text = CreateExplanation(prompt),
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap
                         },
                         actions
@@ -97,6 +89,51 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
             button.Click += (_, _) => Close(decision);
             return button;
         }
+
+        private static string CreateHeading(UnsavedChangesPrompt prompt) =>
+            prompt.Scope == UnsavedChangesScope.EditorInput
+                ? "Discard unapplied editor input?"
+                : prompt.CanSave
+                    ? "Save changes before continuing?"
+                    : "Discard unsaved changes?";
+
+        private static string CreateDetail(UnsavedChangesPrompt prompt) =>
+            prompt.Action switch
+            {
+                DestructiveNavigationAction.CloseEditorTab =>
+                    "This tab has unapplied editor input.",
+                DestructiveNavigationAction.CloseEditorTabs =>
+                    $"{prompt.ChangedItemCount:N0} tabs have unapplied editor input.",
+                _ when prompt.Scope == UnsavedChangesScope.EditorInput =>
+                    prompt.ChangedItemCount == 1
+                        ? "1 open editor tab has unapplied input."
+                        : $"{prompt.ChangedItemCount:N0} open editor tabs have unapplied input.",
+                _ =>
+                    $"{prompt.FastFileName} has " +
+                    $"{FormatChangedItemCount(prompt.ChangedItemCount)}."
+            };
+
+        private static string CreateExplanation(UnsavedChangesPrompt prompt) =>
+            prompt.Action switch
+            {
+                DestructiveNavigationAction.CloseEditorTab =>
+                    "Discarding closes the tab and drops only its unapplied " +
+                    "input. Applied asset changes remain pending in the " +
+                    "workspace until Save As.",
+                DestructiveNavigationAction.CloseEditorTabs =>
+                    "Discarding closes the tabs and drops only their unapplied " +
+                    "input. Applied asset changes remain pending in the " +
+                    "workspace until Save As.",
+                _ when prompt.Scope == UnsavedChangesScope.EditorInput =>
+                    "Continuing drops the unapplied editor input. Applied " +
+                    "workspace changes are handled separately.",
+                _ when prompt.CanSave =>
+                    "Save writes a validated Save As candidate. Discarding " +
+                    "allows this action to continue without saving.",
+                _ =>
+                    "This zone cannot be saved yet. Discarding allows this " +
+                    "action to continue without saving."
+            };
 
         private static string FormatChangedItemCount(int count) =>
             count == 1

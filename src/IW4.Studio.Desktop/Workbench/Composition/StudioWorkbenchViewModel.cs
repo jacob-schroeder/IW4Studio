@@ -73,12 +73,13 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             workspace,
             viewRegistry: editorViewRegistry);
         _selectionRouter = new WorkbenchAssetSelectionRouter(
-            workspace.AssetCatalog);
+            workspace.AssetCatalog,
+            Editor.EditingSession.Document);
         Func<XAssetType, bool> hasDesktopEditor = assetType =>
             editorViewRegistry.TryGetFactory(assetType, out _);
 
         FastFileAssets = new FastFileAssetsNavigatorViewModel(
-            workspace,
+            Editor,
             _selectionContext,
             hasDesktopEditor);
         AssetPool = new AssetPoolNavigatorViewModel(
@@ -148,6 +149,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _editorDiagnosticsBridge.GscFindingsPresented +=
             EditorDiagnosticsBridge_GscFindingsPresented;
         Editor.PropertyChanged += Editor_PropertyChanged;
+        Editor.EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
         DockLayout.State.Left.PropertyChanged += DockRegion_PropertyChanged;
         DockLayout.State.Bottom.PropertyChanged += DockRegion_PropertyChanged;
         DockLayout.State.Right.PropertyChanged += DockRegion_PropertyChanged;
@@ -596,6 +598,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _editorDiagnosticsBridge.GscFindingsPresented -=
             EditorDiagnosticsBridge_GscFindingsPresented;
         Editor.PropertyChanged -= Editor_PropertyChanged;
+        Editor.EditingSession.TargetRowsChanged -= EditingSession_TargetRowsChanged;
         DockLayout.State.Left.PropertyChanged -= DockRegion_PropertyChanged;
         DockLayout.State.Bottom.PropertyChanged -= DockRegion_PropertyChanged;
         DockLayout.State.Right.PropertyChanged -= DockRegion_PropertyChanged;
@@ -846,6 +849,40 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         {
             OnPropertyChanged(nameof(SearchResultText));
         }
+        else if (args.PropertyName == nameof(EditorViewModel.AssetCountText))
+        {
+            OnPropertyChanged(nameof(AssetCountText));
+        }
+        else if (args.PropertyName == nameof(EditorViewModel.TargetRowCountText))
+        {
+            OnPropertyChanged(nameof(TargetRowCountText));
+        }
+        else if (args.PropertyName == nameof(EditorViewModel.DependencyAssetCountText))
+        {
+            OnPropertyChanged(nameof(DependencyAssetCountText));
+        }
+    }
+
+    private void EditingSession_TargetRowsChanged(
+        object? sender,
+        EventArgs args)
+    {
+        if (_disposed)
+            return;
+
+        HashSet<TargetZoneRowIdentity> liveRows = Editor.EditingSession.Document.Rows
+            .Select(entry => entry.TargetRowIdentity ??
+                throw new InvalidDataException(
+                    "A live authoring row has no stable target-row identity."))
+            .ToHashSet();
+        WorkbenchEditorTabViewModel[] removedRowTabs = _openEditorTabs
+            .Where(tab =>
+                tab.Selection.Identity.TargetRowIdentity is { } identity &&
+                identity.DocumentId == Editor.EditingSession.Document.DocumentId &&
+                !liveRows.Contains(identity))
+            .ToArray();
+        foreach (WorkbenchEditorTabViewModel tab in removedRowTabs)
+            CloseEditorTab(tab);
     }
 
     private void NotifyCenterSelectionChanged()
