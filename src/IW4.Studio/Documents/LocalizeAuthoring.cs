@@ -88,11 +88,35 @@ public sealed class LocalizeAuthoringAdapter : AssetAuthoringAdapter<LocalizeAut
 
     internal static void ValidateString(string? value, string path, List<AssetValidationIssue> issues)
     {
-        if (value is null)
-            return;
-        if (value.IndexOf('\0') >= 0)
+        (bool hasEmbeddedNull, bool hasNonLatin1) = InspectString(value);
+        if (hasEmbeddedNull)
             issues.Add(new AssetValidationIssue(path, "XString values cannot contain embedded null characters.", AssetValidationSeverity.Error));
-        if (value.Any(character => character > byte.MaxValue))
+        if (hasNonLatin1)
             issues.Add(new AssetValidationIssue(path, "XString values must be representable in Latin-1; no replacement is performed.", AssetValidationSeverity.Error));
+    }
+
+    internal static bool IsStringValid(string? value)
+    {
+        (bool hasEmbeddedNull, bool hasNonLatin1) = InspectString(value);
+        return !hasEmbeddedNull && !hasNonLatin1;
+    }
+
+    private static (bool HasEmbeddedNull, bool HasNonLatin1) InspectString(
+        string? value)
+    {
+        bool hasEmbeddedNull = false;
+        bool hasNonLatin1 = false;
+        if (value is null)
+            return (hasEmbeddedNull, hasNonLatin1);
+
+        foreach (char character in value)
+        {
+            hasEmbeddedNull |= character == '\0';
+            hasNonLatin1 |= character > byte.MaxValue;
+            if (hasEmbeddedNull && hasNonLatin1)
+                break;
+        }
+
+        return (hasEmbeddedNull, hasNonLatin1);
     }
 }

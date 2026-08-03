@@ -298,13 +298,7 @@ public sealed class AssetEditorSession : AssetEditorSurface
 
     public bool Apply(Action<object> mutation)
     {
-        ArgumentNullException.ThrowIfNull(mutation);
-        TargetZoneRowIdentity identity = RequireEditableRowIdentity();
-        bool changed = _editingSession.MutateDraft<object>(identity, _adapter, mutation);
-        if (changed)
-            RefreshValidationFrom(ReadDraft());
-
-        return changed;
+        return ApplyCore(mutation, captureCurrent: false, out _);
     }
 
     public bool Apply<TDraft>(Action<TDraft> mutation)
@@ -313,6 +307,25 @@ public sealed class AssetEditorSession : AssetEditorSurface
         ArgumentNullException.ThrowIfNull(mutation);
         EnsureDeclaredDraftType<TDraft>();
         return Apply(draft => mutation(RequireDraftType<TDraft>(draft)));
+    }
+
+    /// <summary>
+    /// Applies a mutation and returns the exact detached current draft used
+    /// for post-mutation validation. Callers that retain a local projection
+    /// can stay synchronized without cloning the draft a second time.
+    /// </summary>
+    public TDraft ApplyAndRead<TDraft>(
+        Action<TDraft> mutation,
+        out bool changed)
+        where TDraft : notnull
+    {
+        ArgumentNullException.ThrowIfNull(mutation);
+        EnsureDeclaredDraftType<TDraft>();
+        changed = ApplyCore(
+            draft => mutation(RequireDraftType<TDraft>(draft)),
+            captureCurrent: true,
+            out object? currentDraft);
+        return RequireDraftType<TDraft>(currentDraft!);
     }
 
     public bool Revert()
@@ -358,6 +371,26 @@ public sealed class AssetEditorSession : AssetEditorSurface
 
     private void RefreshValidationFrom(object draft) =>
         _validation = new AssetEditorValidationState(true, _adapter.ValidateDraft(draft));
+
+    private bool ApplyCore(
+        Action<object> mutation,
+        bool captureCurrent,
+        out object? currentDraft)
+    {
+        ArgumentNullException.ThrowIfNull(mutation);
+        TargetZoneRowIdentity identity = RequireEditableRowIdentity();
+        bool changed = _editingSession.MutateDraft<object>(
+            identity,
+            _adapter,
+            mutation);
+        currentDraft = changed || captureCurrent
+            ? _editingSession.ReadDraft<object>(identity, _adapter)
+            : null;
+        if (changed)
+            RefreshValidationFrom(currentDraft!);
+
+        return changed;
+    }
 
     private void RequireEditable()
     {

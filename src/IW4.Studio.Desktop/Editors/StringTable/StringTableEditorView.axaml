@@ -72,10 +72,12 @@
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
       <Grid>
-        <ScrollViewer IsVisible="{Binding HasTable}"
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto">
-          <StackPanel>
+        <Grid IsVisible="{Binding HasTable}"
+              RowDefinitions="34,*">
+          <ScrollViewer x:Name="ColumnHeaderScrollViewer"
+                        HorizontalScrollBarVisibility="Hidden"
+                        VerticalScrollBarVisibility="Disabled"
+                        IsHitTestVisible="False">
             <StackPanel Orientation="Horizontal">
               <Border Width="52"
                       Height="34"
@@ -112,14 +114,28 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
+              <Border x:Name="ColumnHeaderEndSpacer"
+                      Width="0" />
             </StackPanel>
+          </ScrollViewer>
 
+          <ScrollViewer x:Name="TableBodyScrollViewer"
+                        Grid.Row="1"
+                        HorizontalScrollBarVisibility="Auto"
+                        VerticalScrollBarVisibility="Auto"
+                        ScrollChanged="TableBodyScrollViewer_ScrollChanged">
             <ItemsControl ItemsSource="{Binding Rows}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="viewModels:StringTableRowEditorViewModel">
-                  <StackPanel Orientation="Horizontal">
+                  <StackPanel Orientation="Horizontal"
+                              Height="76">
                     <Border Width="52"
-                            MinHeight="76"
+                            Height="76"
                             Background="{DynamicResource StudioSurfaceSunkenBrush}"
                             BorderBrush="{DynamicResource StudioBorderBrush}"
                             BorderThickness="0,0,1,1">
@@ -140,7 +156,7 @@
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="viewModels:StringTableCellEditorViewModel">
                           <Border Width="220"
-                                  MinHeight="76"
+                                  Height="76"
                                   Padding="7,6"
                                   Background="{DynamicResource StudioInputBrush}"
                                   BorderBrush="{DynamicResource StudioBorderBrush}"
@@ -180,8 +196,8 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-          </StackPanel>
-        </ScrollViewer>
+          </ScrollViewer>
+        </Grid>
 
         <StackPanel IsVisible="{Binding !HasTable}"
                     Margin="32"

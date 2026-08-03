@@ -10,18 +10,50 @@ public sealed record StringTableColumnHeaderViewModel(
 
 public sealed class StringTableRowEditorViewModel
 {
+    private readonly IReadOnlyList<StringTableCellDraft> _sourceCells;
+    private readonly int _columnCount;
+    private readonly bool _canEdit;
+    private readonly Action<int, int, string?> _applyValue;
+    private IReadOnlyList<StringTableCellEditorViewModel>? _cells;
+
     internal StringTableRowEditorViewModel(
         int row,
-        IReadOnlyList<StringTableCellEditorViewModel> cells)
+        int columnCount,
+        IReadOnlyList<StringTableCellDraft> sourceCells,
+        bool canEdit,
+        Action<int, int, string?> applyValue)
     {
+        ArgumentNullException.ThrowIfNull(sourceCells);
+        ArgumentNullException.ThrowIfNull(applyValue);
         Row = row;
         Label = row.ToString();
-        Cells = cells;
+        _columnCount = columnCount;
+        _sourceCells = sourceCells;
+        _canEdit = canEdit;
+        _applyValue = applyValue;
     }
 
     public int Row { get; }
     public string Label { get; }
-    public IReadOnlyList<StringTableCellEditorViewModel> Cells { get; }
+    public IReadOnlyList<StringTableCellEditorViewModel> Cells =>
+        _cells ??= CreateCells();
+
+    private IReadOnlyList<StringTableCellEditorViewModel> CreateCells()
+    {
+        var cells = new StringTableCellEditorViewModel[_columnCount];
+        int rowOffset = checked(Row * _columnCount);
+        for (int column = 0; column < cells.Length; column++)
+        {
+            cells[column] = new StringTableCellEditorViewModel(
+                Row,
+                column,
+                _sourceCells[rowOffset + column],
+                _canEdit,
+                _applyValue);
+        }
+
+        return Array.AsReadOnly(cells);
+    }
 }
 
 /// <summary>
@@ -95,17 +127,20 @@ public sealed class StringTableEditorViewModel
     : ObservableObject, IAssetEditorProperties, IAssetEditorDiagnostics
 {
     private readonly AssetEditorSession _editorSession;
+    private readonly Action<int, int, string?> _applyCellValue;
     private StringTableDraft? _draft;
     private StringTableReadOnlySnapshot? _readOnlySnapshot;
     private string _statusMessage = string.Empty;
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
     private IReadOnlyList<StringTableColumnHeaderViewModel> _columns = [];
     private IReadOnlyList<StringTableRowEditorViewModel> _rows = [];
+    private int? _readOnlyNullCellCount;
 
     public StringTableEditorViewModel(AssetEditorSession editorSession)
     {
         _editorSession = editorSession
             ?? throw new ArgumentNullException(nameof(editorSession));
+        _applyCellValue = ApplyCellValue;
         if (editorSession.Entry.AssetType != XAssetType.StringTable)
         {
             throw new InvalidDataException(
@@ -225,7 +260,7 @@ public sealed class StringTableEditorViewModel
         new("Rows", RowCount.ToString("N0")),
         new("Columns", ColumnCount.ToString("N0")),
         new("Cells", CellCount.ToString("N0")),
-        new("Null values", CurrentCells().Count(cell => cell.Value is null).ToString("N0")),
+        new("Null values", NullCellCount.ToString("N0")),
         new("Hashes", "Preserved source values")
     ];
 
@@ -263,13 +298,15 @@ public sealed class StringTableEditorViewModel
 
         try
         {
-            _editorSession.Apply<StringTableDraft>(
-                draft => draft.SetCellValue(row, column, value));
-            _draft = _editorSession.ReadDraft<StringTableDraft>();
+            _draft = _editorSession.ApplyAndRead<StringTableDraft>(
+                draft => draft.SetCellValue(row, column, value),
+                out bool changed);
+
             Diagnostics = _editorSession.Validation.Issues;
             StatusMessage =
                 $"Updated row {row}, column {column}; its stored hash was preserved.";
-            OnPropertyChanged(nameof(EditorProperties));
+            if (changed)
+                OnPropertyChanged(nameof(EditorProperties));
         }
         catch (Exception exception) when (
             exception is ArgumentException or
@@ -283,6 +320,29 @@ public sealed class StringTableEditorViewModel
     private void RefreshTable()
     {
         IReadOnlyList<StringTableCellDraft> cells = CurrentCells();
+        _readOnlyNullCellCount = null;
+        int expectedCellCount;
+        try
+        {
+            expectedCellCount = checked(RowCount * ColumnCount);
+        }
+        catch (OverflowException)
+        {
+            expectedCellCount = -1;
+        }
+
+        if (RowCount < 0 ||
+            ColumnCount < 0 ||
+            expectedCellCount < 0 ||
+            expectedCellCount != cells.Count)
+        {
+            StatusMessage =
+                "StringTable dimensions do not match the available row-major cells.";
+            Columns = [];
+            Rows = [];
+            return;
+        }
+
         Columns = Array.AsReadOnly(
             Enumerable.Range(0, ColumnCount)
                 .Select(column => new StringTableColumnHeaderViewModel(
@@ -293,29 +353,12 @@ public sealed class StringTableEditorViewModel
         var rows = new StringTableRowEditorViewModel[RowCount];
         for (int row = 0; row < RowCount; row++)
         {
-            var rowCells = new StringTableCellEditorViewModel[ColumnCount];
-            for (int column = 0; column < ColumnCount; column++)
-            {
-                int index = checked(row * ColumnCount + column);
-                if ((uint)index >= (uint)cells.Count)
-                {
-                    StatusMessage =
-                        "StringTable dimensions do not match the available row-major cells.";
-                    Rows = [];
-                    return;
-                }
-
-                rowCells[column] = new StringTableCellEditorViewModel(
-                    row,
-                    column,
-                    cells[index],
-                    IsEditable,
-                    ApplyCellValue);
-            }
-
             rows[row] = new StringTableRowEditorViewModel(
                 row,
-                Array.AsReadOnly(rowCells));
+                ColumnCount,
+                cells,
+                IsEditable,
+                _applyCellValue);
         }
 
         Rows = Array.AsReadOnly(rows);
@@ -332,4 +375,9 @@ public sealed class StringTableEditorViewModel
         _draft?.Cells
         ?? _readOnlySnapshot?.Cells
         ?? [];
+
+    private int NullCellCount =>
+        _draft?.NullCellCount
+        ?? (_readOnlyNullCellCount ??=
+            _readOnlySnapshot?.Cells.Count(cell => cell.Value is null) ?? 0);
 }

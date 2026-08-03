@@ -30,7 +30,7 @@ public sealed class StringTableAuthoredSnapshot : ITargetZoneDetachedSemanticSna
         {
             throw new InvalidDataException("StringTable editing requires a capture-time detached semantic snapshot; source-fragment replay is not an authoring input.");
         }
-        return new StringTableAuthoredSnapshot(snapshot.Name, snapshot.RowCount, snapshot.ColumnCount, snapshot.Cells);
+        return snapshot;
     }
 
     internal static StringTableAuthoredSnapshot FromLoaded(StringTableAsset asset)
@@ -47,28 +47,55 @@ public sealed class StringTableAuthoredSnapshot : ITargetZoneDetachedSemanticSna
 public sealed class StringTableDraft
 {
     private readonly List<StringTableCellDraft> _cells;
+    private readonly IReadOnlyList<StringTableCellDraft> _readOnlyCells;
+
     internal StringTableDraft(StringTableAuthoredSnapshot snapshot)
+        : this(
+            snapshot.Name,
+            snapshot.RowCount,
+            snapshot.ColumnCount,
+            snapshot.Cells,
+            nullCellCount: null)
     {
-        Name = snapshot.Name;
-        RowCount = snapshot.RowCount;
-        ColumnCount = snapshot.ColumnCount;
-        _cells = snapshot.Cells.ToList();
     }
+
+    private StringTableDraft(
+        string? name,
+        int rowCount,
+        int columnCount,
+        IEnumerable<StringTableCellDraft> cells,
+        int? nullCellCount)
+    {
+        Name = name;
+        RowCount = rowCount;
+        ColumnCount = columnCount;
+        _cells = cells.ToList();
+        _readOnlyCells = _cells.AsReadOnly();
+        NullCellCount = nullCellCount
+            ?? _cells.Count(cell => cell.Value is null);
+    }
+
     public string? Name { get; }
     public int RowCount { get; }
     public int ColumnCount { get; }
-    public IReadOnlyList<StringTableCellDraft> Cells => _cells.AsReadOnly();
+    public IReadOnlyList<StringTableCellDraft> Cells => _readOnlyCells;
+    public int NullCellCount { get; private set; }
+
     public void SetCellValue(int row, int column, string? value)
     {
         int index = CheckedIndex(row, column);
+        bool wasNull = _cells[index].Value is null;
         _cells[index] = _cells[index] with { Value = value };
+        if (wasNull != (value is null))
+            NullCellCount += value is null ? 1 : -1;
     }
     public void SetCellHash(int row, int column, int hash)
     {
         int index = CheckedIndex(row, column);
         _cells[index] = _cells[index] with { Hash = hash };
     }
-    internal StringTableDraft Clone() => new(new StringTableAuthoredSnapshot(Name, RowCount, ColumnCount, _cells));
+    internal StringTableDraft Clone() =>
+        new(Name, RowCount, ColumnCount, _cells, NullCellCount);
     private int CheckedIndex(int row, int column)
     {
         if ((uint)row >= (uint)RowCount || (uint)column >= (uint)ColumnCount)
@@ -158,12 +185,17 @@ public sealed class StringTableAuthoringAdapter : AssetAuthoringAdapter<StringTa
         ArgumentNullException.ThrowIfNull(draft);
         var issues = new List<AssetValidationIssue>();
         LocalizeAuthoringAdapter.ValidateString(draft.Name, "name", issues);
+        IReadOnlyList<StringTableCellDraft> cells = draft.Cells;
         int expected = -1;
         try { expected = checked(draft.RowCount * draft.ColumnCount); } catch (OverflowException) { }
-        if (draft.RowCount < 0 || draft.ColumnCount < 0 || expected < 0 || expected > 0x100000 || draft.Cells.Count != expected)
+        if (draft.RowCount < 0 || draft.ColumnCount < 0 || expected < 0 || expected > 0x100000 || cells.Count != expected)
             issues.Add(new AssetValidationIssue("dimensions", "Row/column dimensions must remain within the loader bounds and match the ordered cell count.", AssetValidationSeverity.Error));
-        for (int index = 0; index < draft.Cells.Count; index++)
-            LocalizeAuthoringAdapter.ValidateString(draft.Cells[index].Value, $"cells[{index}].value", issues);
+        for (int index = 0; index < cells.Count; index++)
+        {
+            string? value = cells[index].Value;
+            if (!LocalizeAuthoringAdapter.IsStringValid(value))
+                LocalizeAuthoringAdapter.ValidateString(value, $"cells[{index}].value", issues);
+        }
         return Array.AsReadOnly(issues.ToArray());
     }
     public override bool SemanticallyEquals(StringTableDraft baseline, StringTableDraft current) =>
