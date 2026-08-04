@@ -39,6 +39,7 @@ public sealed class MenuEditorViewModel
         AssetEditorSession session,
         MenuEditingCoordinator coordinator,
         IMenuPreviewMaterialResolver materialResolver,
+        IMenuTextResourceResolver textResourceResolver,
         bool canSelectAssetReferences = false,
         Func<XAssetType, string?, bool>? isAssetReferenceResolved = null)
     {
@@ -46,6 +47,7 @@ public sealed class MenuEditorViewModel
         _coordinator = coordinator ??
             throw new ArgumentNullException(nameof(coordinator));
         ArgumentNullException.ThrowIfNull(materialResolver);
+        ArgumentNullException.ThrowIfNull(textResourceResolver);
         if (session.Entry.AssetType != XAssetType.Menu)
         {
             throw new InvalidDataException(
@@ -66,6 +68,7 @@ public sealed class MenuEditorViewModel
                 ? RequestAssetReferenceSelection
                 : null,
             materialResolver,
+            textResourceResolver,
             () => IsEditable,
             isAssetReferenceResolved);
         Designer.PropertyChanged += Designer_PropertyChanged;

@@ -504,22 +504,6 @@ public sealed partial class MapSceneBuilder
             _ => 3
         };
 
-    internal static IReadOnlyList<string> UnsupportedRsxProgramRenderStateCapabilities(
-        MapRenderState state)
-    {
-        var blockers = new List<string>(2);
-        if (state.AlphaTestEnabled &&
-            MapRenderAlphaTest.Resolve(state) is null)
-        {
-            blockers.Add(
-                $"renderStateAlphaTest=unsupportedTuple(" +
-                $"func=0x{state.AlphaFunc:X4},ref=0x{state.AlphaRef:X2})");
-        }
-        if (state.StencilEnabled)
-            blockers.Add("renderStateStencilMrtWriteMaskAndFaceConvention=OPEN");
-        return blockers;
-    }
-
     private static SelectedColorPass? SelectStaticModelBaseSurfaceTexturePass(
         MaterialAsset material,
         MaterialTechniqueSetAsset? techset,

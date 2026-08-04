@@ -5,8 +5,8 @@ namespace IW4.Assets.Assets.Font;
 
 public sealed record FontGlyph(
     ushort Letter,
-    byte X0,
-    byte Y0,
+    sbyte X0,
+    sbyte Y0,
     byte Dx,
     byte PixelWidth,
     byte PixelHeight,

@@ -10,12 +10,15 @@ namespace IW4.Studio.Rendering;
 public sealed class MenuPreviewMaterialResolution
 {
     private readonly IReadOnlyList<UiMaterialPreviewDiagnostic> _diagnostics;
+    private readonly IReadOnlyList<UiMaterialExecutionDiagnostic>
+        _executionDiagnostics;
 
     private MenuPreviewMaterialResolution(
         MenuPreviewMaterialSnapshot? snapshot,
         string? failure,
         long poolRevision,
-        IEnumerable<UiMaterialPreviewDiagnostic>? diagnostics)
+        IEnumerable<UiMaterialPreviewDiagnostic>? diagnostics,
+        IEnumerable<UiMaterialExecutionDiagnostic>? executionDiagnostics)
     {
         Snapshot = snapshot;
         Failure = string.IsNullOrWhiteSpace(failure) ? null : failure.Trim();
@@ -23,6 +26,8 @@ public sealed class MenuPreviewMaterialResolution
         UiMaterialPreviewDiagnostic[] diagnosticSnapshot =
             diagnostics?.ToArray() ?? [];
         _diagnostics = Array.AsReadOnly(diagnosticSnapshot);
+        _executionDiagnostics = Array.AsReadOnly(
+            executionDiagnostics?.ToArray() ?? []);
     }
 
     public MenuPreviewMaterialSnapshot? Snapshot { get; }
@@ -34,12 +39,17 @@ public sealed class MenuPreviewMaterialResolution
     public IReadOnlyList<UiMaterialPreviewDiagnostic> Diagnostics =>
         _diagnostics;
 
+    public IReadOnlyList<UiMaterialExecutionDiagnostic>
+        ExecutionDiagnostics => _executionDiagnostics;
+
     public bool IsResolved => Snapshot is not null;
 
     public static MenuPreviewMaterialResolution Failed(
         string failure,
         long poolRevision = -1,
-        IEnumerable<UiMaterialPreviewDiagnostic>? diagnostics = null) =>
+        IEnumerable<UiMaterialPreviewDiagnostic>? diagnostics = null,
+        IEnumerable<UiMaterialExecutionDiagnostic>?
+            executionDiagnostics = null) =>
         new(
             null,
             string.IsNullOrWhiteSpace(failure)
@@ -48,7 +58,8 @@ public sealed class MenuPreviewMaterialResolution
                     nameof(failure))
                 : failure,
             poolRevision,
-            diagnostics);
+            diagnostics,
+            executionDiagnostics);
 
     internal static MenuPreviewMaterialResolution Resolved(
         MenuPreviewMaterialSnapshot snapshot,
@@ -57,7 +68,8 @@ public sealed class MenuPreviewMaterialResolution
             snapshot ?? throw new ArgumentNullException(nameof(snapshot)),
             null,
             poolRevision,
-            snapshot.Diagnostics);
+            snapshot.Diagnostics,
+            snapshot.ExecutionDiagnostics);
 
     public MenuPreviewMaterialStatus CreateStatus(string requestedName)
     {
@@ -67,6 +79,14 @@ public sealed class MenuPreviewMaterialResolution
                 UiMaterialPreviewDiagnosticSeverity.Warning or
                 UiMaterialPreviewDiagnosticSeverity.Blocker)
             .Select(diagnostic => diagnostic.Message)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        warnings = warnings
+            .Concat(ExecutionDiagnostics
+                .Where(diagnostic => diagnostic.Severity is
+                    UiMaterialExecutionDiagnosticSeverity.Warning or
+                    UiMaterialExecutionDiagnosticSeverity.Blocker)
+                .Select(diagnostic => diagnostic.Message))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         if (Snapshot is not { } snapshot)
@@ -121,6 +141,14 @@ public sealed class MenuPreviewMaterialResolution
             metadata.Add(
                 $"sampler {sampler.MinFilter}/{sampler.MagFilter}, " +
                 $"{sampler.AddressU}/{sampler.AddressV}");
+        }
+        if (snapshot.ExecutionTemplate is { } execution)
+        {
+            metadata.Add(
+                $"{execution.Identity.TechniqueSetName}" +
+                $"[{execution.Identity.TechniqueSlot}]/" +
+                execution.Identity.TechniqueName);
+            metadata.Add(execution.ShaderExecution.ProgramExecutionStatus);
         }
 
         string detail = $"{summary}; {string.Join("; ", metadata)}.";

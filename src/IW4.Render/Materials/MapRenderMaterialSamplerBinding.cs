@@ -19,4 +19,24 @@ public sealed record MapRenderMaterialSamplerBinding(
     MapRenderWorldRuntimeTextureIdentity? WorldRuntimeTextureIdentity = null,
     MapRenderEditorMaterialTextureRole EditorTextureRole =
         MapRenderEditorMaterialTextureRole.Unknown,
-    int TextureTableOrdinal = -1);
+    int TextureTableOrdinal = -1,
+    string? ExternalResourceIdentity = null)
+{
+    /// <summary>
+    /// True when the texture is either carried by the map scene or owned by a
+    /// host resource table under an immutable key. The latter lets UI packets
+    /// share translated shader contracts without embedding image bytes.
+    /// </summary>
+    public bool IsOperationallyResolved =>
+        UvRoute is not null &&
+        (Texture is not null ||
+         !string.IsNullOrWhiteSpace(ExternalResourceIdentity));
+
+    public string ResourceBindingIdentity =>
+        Texture?.BindingIdentity ??
+        ExternalResourceIdentity ??
+        "MISSING";
+
+    public string ShaderResourceIdentity =>
+        ExternalResourceIdentity ?? TextureName;
+}

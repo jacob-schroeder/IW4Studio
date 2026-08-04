@@ -3,6 +3,7 @@ using IW4.Assets.Assets;
 using IW4.Runtime.Assets;
 using IW4.Studio.Documents;
 using IW4.FastFiles.Zone;
+using IW4.Studio.Documents.MenuEditing.Debugging;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -30,18 +31,21 @@ public sealed class MenuEditorSnapshot
         MenuWindowSnapshot window,
         IEnumerable<MenuItemSnapshot> items,
         MenuBehaviorSummary behavior,
+        MenuDebugProgram debugProgram,
         bool isComplete)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(behavior);
+        ArgumentNullException.ThrowIfNull(debugProgram);
 
         Id = id;
         Settings = MenuSnapshotFactory.Copy(settings);
         Window = new MenuWindowSnapshot(window.Id, MenuSnapshotFactory.Copy(window.Value));
         _items = Array.AsReadOnly(items.Select(MenuSnapshotFactory.Copy).ToArray());
         Behavior = behavior;
+        DebugProgram = debugProgram;
         IsComplete = isComplete;
     }
 
@@ -52,6 +56,7 @@ public sealed class MenuEditorSnapshot
     public MenuWindowSnapshot Window { get; }
     public IReadOnlyList<MenuItemSnapshot> Items => _items;
     public MenuBehaviorSummary Behavior { get; }
+    public MenuDebugProgram DebugProgram { get; }
 }
 
 public sealed record MenuFileRegistrationSnapshot(
@@ -278,6 +283,7 @@ internal static class MenuSnapshotFactory
                 definition.RectWStatement is not null,
                 definition.RectHStatement is not null,
                 definition.ExpressionDataValue is not null),
+            MenuDebugProgramFactory.Create(definition, identity),
             data.IsComplete);
     }
 
@@ -512,7 +518,9 @@ internal static class MenuSnapshotFactory
         value.VertAlign);
 
     private static MenuColorValue Color(IW4.Assets.Math.Vec4 value) =>
-        new(value.A, value.R, value.G, value.B);
+        // The generic asset Vec4 names its four serialized slots A/R/G/B,
+        // while Window colors use the engine's R/G/B/A slot semantics.
+        new(value.B, value.A, value.R, value.G);
 
     private static MenuTransitionValue Transition(MenuTransition value) => new(
         value.TransitionType,

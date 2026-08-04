@@ -66,7 +66,7 @@ public static class UiMaterialPreviewPlanner
                 $"{atlas.AuthoredColumnCount} are incomplete; the full " +
                 "texture will be shown."));
         }
-        else if (atlas.IsEnabled)
+        else if (atlas.EffectiveCellCount > 1)
         {
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.TextureAtlasFrameNotEvaluated,

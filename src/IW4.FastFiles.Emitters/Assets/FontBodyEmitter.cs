@@ -55,7 +55,7 @@ public sealed class FontBodyEmitter : IXAssetBodyEmitter
             var glyphWriter = new XSourceWriter();
             foreach (FontGlyphBuildData glyph in data.Glyphs)
             {
-                glyphWriter.WriteUInt16(glyph.Letter); glyphWriter.WriteByte(glyph.X0); glyphWriter.WriteByte(glyph.Y0); glyphWriter.WriteByte(glyph.Dx); glyphWriter.WriteByte(glyph.PixelWidth); glyphWriter.WriteByte(glyph.PixelHeight); glyphWriter.WriteByte(glyph.Padding);
+                glyphWriter.WriteUInt16(glyph.Letter); glyphWriter.WriteByte(unchecked((byte)glyph.X0)); glyphWriter.WriteByte(unchecked((byte)glyph.Y0)); glyphWriter.WriteByte(glyph.Dx); glyphWriter.WriteByte(glyph.PixelWidth); glyphWriter.WriteByte(glyph.PixelHeight); glyphWriter.WriteByte(glyph.Padding);
                 glyphWriter.WriteSingle(glyph.S0); glyphWriter.WriteSingle(glyph.T0); glyphWriter.WriteSingle(glyph.S1); glyphWriter.WriteSingle(glyph.T1);
             }
             glyphSegment = new EmissionBlockSegment(glyphAddress.Value, glyphWriter.ToArray());

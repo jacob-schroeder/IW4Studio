@@ -5,10 +5,12 @@ namespace IW4.Render.Textures;
 
 /// <summary>
 /// Read-only decoded image payload suitable for editor and diagnostic
-/// previews. PNG ownership remains inside the snapshot.
+/// previews. Raw RGBA and PNG ownership remain inside the snapshot; callers
+/// receive copies so presentation backends cannot mutate decoder state.
 /// </summary>
 public sealed class GfxImagePreviewSnapshot
 {
+    private readonly byte[] _rgbaBytes;
     private readonly byte[] _pngBytes;
 
     internal GfxImagePreviewSnapshot(DecodedGfxImage decoded)
@@ -18,6 +20,7 @@ public sealed class GfxImagePreviewSnapshot
         Height = decoded.Height;
         Format = decoded.Format;
         HasTransparency = decoded.HasTransparency;
+        _rgbaBytes = decoded.RgbaBytes;
         _pngBytes = decoded.PngBytes;
     }
 
@@ -30,6 +33,8 @@ public sealed class GfxImagePreviewSnapshot
     public string Format { get; }
 
     public bool HasTransparency { get; }
+
+    public byte[] GetRgbaBytesCopy() => _rgbaBytes.ToArray();
 
     public byte[] GetPngBytesCopy() => _pngBytes.ToArray();
 }

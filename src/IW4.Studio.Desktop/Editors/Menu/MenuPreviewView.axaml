@@ -15,9 +15,9 @@
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid RowDefinitions="Auto,*">
+      <Grid RowDefinitions="Auto,Auto,*">
         <Grid Margin="11,8"
-              ColumnDefinitions="*,Auto"
+              ColumnDefinitions="*,Auto,Auto"
               ColumnSpacing="10">
           <StackPanel Orientation="Horizontal"
                       Spacing="7">
@@ -30,21 +30,197 @@
                     Background="{DynamicResource StudioWarningSurfaceBrush}"
                     BorderBrush="{DynamicResource StudioWarningBrush}"
                     BorderThickness="1">
-              <TextBlock Text="STATIC / APPROX"
+              <TextBlock Text="{Binding PreviewDebug.ModeBadge}"
                          FontSize="7"
                          FontWeight="Bold"
                          LetterSpacing="0.5"
                          Foreground="{DynamicResource StudioWarningBrush}" />
             </Border>
           </StackPanel>
-          <TextBlock Grid.Column="1"
+          <ComboBox Grid.Column="1"
+                    MinWidth="105"
+                    Height="25"
+                    ItemsSource="{Binding PreviewDebug.Modes}"
+                    SelectedItem="{Binding PreviewDebug.Mode, Mode=TwoWay}" />
+          <TextBlock Grid.Column="2"
                      Text="640 × 480"
                      FontSize="9"
                      FontFamily="Consolas"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
         </Grid>
 
-        <Grid Grid.Row="1"
+        <Border Grid.Row="1"
+                IsVisible="{Binding PreviewDebug.IsScenario}"
+                Margin="12,0,12,8"
+                Padding="9,6"
+                CornerRadius="5"
+                Background="{DynamicResource StudioSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <Grid RowDefinitions="Auto,Auto,Auto">
+            <WrapPanel Orientation="Horizontal"
+                       VerticalAlignment="Center">
+              <TextBlock Text="Time (ms)"
+                         Margin="0,0,5,0"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <NumericUpDown Width="105"
+                             Height="25"
+                             Margin="0,0,12,0"
+                             Minimum="0"
+                             Maximum="2147483647"
+                             Increment="100"
+                             FormatString="0"
+                             Value="{Binding PreviewDebug.Milliseconds, Mode=TwoWay}" />
+              <TextBlock Text="Focus"
+                         Margin="0,0,5,0"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <ComboBox Width="155"
+                        Height="25"
+                        Margin="0,0,12,0"
+                        ItemsSource="{Binding PreviewDebug.FocusItems}"
+                        SelectedItem="{Binding PreviewDebug.SelectedFocus, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="menuVm:MenuPreviewFocusOption">
+                    <TextBlock Text="{Binding Label}"
+                               TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{Binding PreviewDebug.DependencySummary}"
+                         Margin="0,0,12,0"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         ToolTip.Tip="{Binding PreviewDebug.DependencyDetails}"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Text="{Binding PreviewDebug.EvaluationSummary}"
+                         Margin="0,0,12,0"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         ToolTip.Tip="{Binding PreviewDebug.EvaluationDetails}"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+              <TextBlock Text="{Binding PreviewDebug.SelectedEvaluationSummary}"
+                         Margin="0,0,12,0"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Text="{Binding PreviewDebug.SelectedEventSummary}"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         ToolTip.Tip="{Binding PreviewDebug.SelectedEventDetails}"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </WrapPanel>
+
+            <Expander Grid.Row="1"
+                      Margin="0,5,0,0"
+                      Header="{Binding PreviewDebug.ScenarioInputHeading}"
+                      IsVisible="{Binding PreviewDebug.HasScenarioInputs}">
+              <ScrollViewer MaxHeight="92"
+                            VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding PreviewDebug.ScenarioInputs}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="menuVm:MenuPreviewScenarioInputViewModel">
+                      <Grid Margin="0,2"
+                            ColumnDefinitions="Auto,82,150,120,*"
+                            ColumnSpacing="7">
+                        <CheckBox IsChecked="{Binding IsSet, Mode=TwoWay}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding KindLabel}"
+                                   VerticalAlignment="Center"
+                                   FontSize="9"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding Name}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   FontFamily="Consolas"
+                                   FontSize="9"
+                                   Foreground="{DynamicResource StudioTextBrush}" />
+                        <TextBox Grid.Column="3"
+                                 Height="24"
+                                 IsEnabled="{Binding IsSet}"
+                                 Text="{Binding ValueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="{Binding ValueHint}" />
+                        <TextBlock Grid.Column="4"
+                                   IsVisible="{Binding HasValidationError}"
+                                   Text="{Binding ValidationMessage}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   FontSize="8"
+                                   Foreground="{DynamicResource StudioWarningBrush}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Expander>
+
+            <Border Grid.Row="2"
+                    Margin="0,6,0,0"
+                    Padding="7,5"
+                    CornerRadius="4"
+                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource StudioBorderBrush}"
+                    BorderThickness="1">
+              <Grid RowDefinitions="Auto,Auto">
+                <Grid ColumnDefinitions="Auto,260,Auto,Auto,*"
+                      ColumnSpacing="7">
+                  <TextBlock Text="{Binding PreviewDebug.Interaction.Heading}"
+                             VerticalAlignment="Center"
+                             FontSize="9"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <ComboBox Grid.Column="1"
+                            Height="25"
+                            ItemsSource="{Binding PreviewDebug.Interaction.Options}"
+                            SelectedItem="{Binding PreviewDebug.Interaction.SelectedOption, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="menuVm:MenuPreviewInteractionOption">
+                        <TextBlock Text="{Binding Label}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Grid.Column="2"
+                          Height="25"
+                          Padding="10,2"
+                          Content="Dispatch explicit hook"
+                          Command="{Binding PreviewDebug.Interaction.DispatchCommand}" />
+                  <Button Grid.Column="3"
+                          Height="25"
+                          Padding="10,2"
+                          Content="Reset interaction state"
+                          Command="{Binding PreviewDebug.Interaction.ResetCommand}" />
+                  <TextBlock Grid.Column="4"
+                             Text="{Binding PreviewDebug.Interaction.ResultSummary}"
+                             VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis"
+                             FontSize="9"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </Grid>
+
+                <Expander Grid.Row="1"
+                          Margin="0,4,0,0"
+                          Header="Last explicit dispatch: ordered trace, state changes, and queued scripts"
+                          IsVisible="{Binding PreviewDebug.Interaction.HasResult}">
+                  <TextBox MaxHeight="125"
+                           IsReadOnly="True"
+                           AcceptsReturn="True"
+                           TextWrapping="Wrap"
+                           ScrollViewer.VerticalScrollBarVisibility="Auto"
+                           FontFamily="Consolas"
+                           FontSize="9"
+                           Text="{Binding PreviewDebug.Interaction.ResultDetails}" />
+                </Expander>
+              </Grid>
+            </Border>
+          </Grid>
+        </Border>
+
+        <Grid Grid.Row="2"
               Margin="12"
               Background="{DynamicResource StudioBackgroundBrush}">
           <Viewbox Stretch="Uniform"
@@ -55,8 +231,10 @@
                                      Scene="{Binding PreviewScene}"
                                      SelectedNodeId="{Binding SelectedPreviewNodeId}"
                                      MaterialResolver="{Binding MaterialResolver}"
+                                     TextResourceResolver="{Binding TextResourceResolver}"
                                      NodeSelected="PreviewControl_NodeSelected"
-                                     MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted" />
+                                     MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted"
+                                     TextResolutionCompleted="PreviewControl_TextResolutionCompleted" />
           </Viewbox>
         </Grid>
       </Grid>

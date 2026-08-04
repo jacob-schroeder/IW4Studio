@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Menu;
+using IW4.Studio.Documents.MenuEditing.Debugging;
 
 namespace IW4.Studio.Documents.MenuEditing.Preview;
 
@@ -11,7 +12,28 @@ public static class MenuPreviewProjector
 {
     public static MenuPreviewScene Project(
         MenuEditorSnapshot menu,
+        MenuPreviewSettings? settings = null) =>
+        ProjectCore(menu, evaluatedState: null, settings);
+
+    /// <summary>
+    /// Projects a deterministic debug evaluation while retaining authored
+    /// values for fields whose expressions are unknown or invalid. Those
+    /// fallback decisions remain visible through the evaluation trace.
+    /// </summary>
+    public static MenuPreviewScene Project(
+        MenuEditorSnapshot menu,
+        MenuEvaluatedState evaluatedState,
         MenuPreviewSettings? settings = null)
+    {
+        ArgumentNullException.ThrowIfNull(evaluatedState);
+        ValidateEvaluation(menu, evaluatedState);
+        return ProjectCore(menu, evaluatedState, settings);
+    }
+
+    private static MenuPreviewScene ProjectCore(
+        MenuEditorSnapshot menu,
+        MenuEvaluatedState? evaluatedState,
+        MenuPreviewSettings? settings)
     {
         ArgumentNullException.ThrowIfNull(menu);
         settings ??= MenuPreviewSettings.Default;
@@ -21,10 +43,13 @@ public static class MenuPreviewProjector
         var hitRegions = new List<MenuPreviewHitRegion>();
         var issues = new List<MenuPreviewFidelityIssue>();
 
-        MenuPreviewRect rootBounds = MenuRectTransform.Resolve(
-            menu.Window.Value.Rect,
-            settings);
-        if (menu.Settings.Fullscreen != 0 &&
+        MenuRectangleValue rootRectangle = evaluatedState is null
+            ? menu.Window.Value.Rect
+            : Rectangle(evaluatedState.Window.Rectangle);
+        bool rootVisible = evaluatedState?.Window.IsVisible.Value ?? true;
+        MenuPreviewRect rootBounds = MenuRectTransform.Resolve(rootRectangle, settings);
+        if (rootVisible &&
+            menu.Settings.Fullscreen != 0 &&
             !string.IsNullOrWhiteSpace(menu.Window.Value.BackgroundMaterialName))
         {
             primitives.Add(new MenuPreviewMaterial(
@@ -34,17 +59,24 @@ public static class MenuPreviewProjector
                 menu.Window.Value.BackgroundMaterialName,
                 new MenuColorValue(1, 1, 1, 1)));
         }
-        ProjectWindow(
-            menu.Window.Id,
-            menu.Window.Value,
-            rootBounds,
-            0,
-            "window",
-            menu.Window.Value.Rect,
-            primitives,
-            hitRegions,
-            issues);
-        BehaviorIssues(menu, issues);
+        if (rootVisible)
+        {
+            ProjectWindow(
+                menu.Window.Id,
+                menu.Window.Value with { Rect = rootRectangle },
+                rootBounds,
+                0,
+                "window",
+                rootRectangle,
+                primitives,
+                hitRegions,
+                issues);
+        }
+        if (evaluatedState is null)
+            BehaviorIssues(menu, issues);
+
+        IReadOnlyDictionary<MenuNodeId, MenuEvaluatedItemState>? evaluatedItems =
+            evaluatedState?.Items.ToDictionary(item => item.Id);
 
         for (int index = 0; index < menu.Items.Count; index++)
         {
@@ -60,29 +92,62 @@ public static class MenuPreviewProjector
                 continue;
             }
 
+            MenuEvaluatedItemState? evaluatedItem = evaluatedItems?
+                .GetValueOrDefault(item.Id);
+            if (!rootVisible || evaluatedItem?.IsVisible.Value == false)
+                continue;
+
+            MenuRectangleValue itemRectangle = evaluatedItem is null
+                ? item.Value.Window.RectClient
+                : Rectangle(evaluatedItem.Rectangle);
+            float rootInset = menu.Window.Value.Border ==
+                WindowBorder.WINDOW_BORDER_NONE
+                    ? 0
+                    : menu.Window.Value.BorderSize;
             MenuPreviewRect bounds = MenuRectTransform.ResolveItem(
-                menu.Window.Value,
-                item.Value.Window,
+                rootRectangle,
+                rootInset,
+                itemRectangle,
                 settings);
+            MenuItemSnapshot projectedItem = evaluatedItem is null
+                ? item
+                : EvaluatedItem(item, evaluatedItem, itemRectangle);
             int z = checked(index * 10 + 10);
             ProjectWindow(
                 item.Id,
-                item.Value.Window,
+                projectedItem.Value.Window,
                 bounds,
                 z,
                 $"{path}.window",
-                item.Value.Window.RectClient,
+                itemRectangle,
                 primitives,
                 hitRegions,
                 issues);
-            ProjectItem(item, bounds, z + 4, path, primitives, issues);
+            ProjectItem(
+                projectedItem,
+                bounds,
+                z + 4,
+                path,
+                expressionsEvaluated: evaluatedState is not null,
+                primitives,
+                issues);
         }
 
         issues.Insert(0, new MenuPreviewFidelityIssue(
             null,
             "preview",
-            "Editor Preview renders authored static state and is not a runtime UI emulator.",
+            evaluatedState is null
+                ? "Editor Preview renders authored static state and is not a runtime UI emulator."
+                : "Scenario Preview renders a deterministic expression evaluation; game callbacks and script side effects are not executed.",
             MenuPreviewFidelitySeverity.Information));
+        if (evaluatedState is not null && !rootVisible)
+        {
+            issues.Add(new MenuPreviewFidelityIssue(
+                menu.Id,
+                "menu.visibility",
+                "The evaluated Menu visibility is false, so the scenario renders no Menu content.",
+                MenuPreviewFidelitySeverity.Information));
+        }
         if (settings.CanvasWidth != 640 || settings.CanvasHeight != 480)
         {
             issues.Add(new MenuPreviewFidelityIssue(
@@ -125,15 +190,6 @@ public static class MenuPreviewProjector
                         z,
                         window.BackgroundMaterialName,
                         ResolveShaderTint(window)));
-                    if (UsesForeColorTint(window) &&
-                        !IsWhiteRgb(window.ForeColor))
-                    {
-                        issues.Add(new MenuPreviewFidelityIssue(
-                            nodeId,
-                            $"{path}.foreColor",
-                            "Material foreground tint is approximated by the editor texture renderer.",
-                            MenuPreviewFidelitySeverity.Warning));
-                    }
                 }
                 else
                 {
@@ -229,6 +285,7 @@ public static class MenuPreviewProjector
         MenuPreviewRect bounds,
         int z,
         string path,
+        bool expressionsEvaluated,
         List<MenuPreviewPrimitive> primitives,
         List<MenuPreviewFidelityIssue> issues)
     {
@@ -241,26 +298,33 @@ public static class MenuPreviewProjector
             float textOffsetY = float.IsFinite(value.TextAlignY)
                 ? value.TextAlignY
                 : 0;
-            var textBounds = bounds with
-            {
-                X = bounds.X + textOffsetX,
-                Y = bounds.Y + textOffsetY
-            };
+            float borderInset = value.Window.Border ==
+                WindowBorder.WINDOW_BORDER_NONE
+                    ? 0
+                    : float.IsFinite(value.Window.BorderSize)
+                        ? value.Window.BorderSize
+                        : 0;
             primitives.Add(new MenuPreviewText(
                 item.Id,
-                textBounds,
+                bounds,
                 z,
                 value.Text,
                 value.Window.ForeColor,
                 value.TextScale,
                 value.FontEnum,
                 value.TextAlignMode,
-                value.TextStyle));
-            issues.Add(new MenuPreviewFidelityIssue(
-                item.Id,
-                $"{path}.text",
-                "Text uses editor metrics; exact game font metrics may differ.",
-                MenuPreviewFidelitySeverity.Information));
+                value.TextStyle,
+                textOffsetX,
+                textOffsetY,
+                borderInset));
+            if (value.TextStyle != 0)
+            {
+                issues.Add(new MenuPreviewFidelityIssue(
+                    item.Id,
+                    $"{path}.textStyle",
+                    $"Text style {value.TextStyle} is rendered as an unstyled glyph run.",
+                    MenuPreviewFidelitySeverity.Warning));
+            }
             if (!float.IsFinite(value.TextScale))
             {
                 issues.Add(new MenuPreviewFidelityIssue(
@@ -293,10 +357,11 @@ public static class MenuPreviewProjector
         {
             primitives.Add(new MenuPreviewPlaceholder(item.Id, bounds, z, "OwnerDraw Item"));
         }
-        if (value.Behavior.HasVisibleExpression ||
+        if (!expressionsEvaluated &&
+            (value.Behavior.HasVisibleExpression ||
             value.Behavior.HasDisabledExpression ||
             value.Behavior.HasTextExpression ||
-            value.Behavior.HasMaterialExpression)
+            value.Behavior.HasMaterialExpression))
         {
             issues.Add(new MenuPreviewFidelityIssue(
                 item.Id,
@@ -355,13 +420,63 @@ public static class MenuPreviewProjector
         }
     }
 
-    private static bool IsWhiteRgb(MenuColorValue color) =>
-        float.IsFinite(color.R) &&
-        float.IsFinite(color.G) &&
-        float.IsFinite(color.B) &&
-        Math.Abs(color.R - 1) < 0.0001f &&
-        Math.Abs(color.G - 1) < 0.0001f &&
-        Math.Abs(color.B - 1) < 0.0001f;
+    private static void ValidateEvaluation(
+        MenuEditorSnapshot menu,
+        MenuEvaluatedState evaluatedState)
+    {
+        ArgumentNullException.ThrowIfNull(menu);
+        if (evaluatedState.ProgramRevisionToken != menu.DebugProgram.RevisionToken ||
+            evaluatedState.MenuId != menu.Id ||
+            evaluatedState.Window.Id != menu.Window.Id)
+        {
+            throw new ArgumentException(
+                "The evaluated state does not belong to this Menu snapshot revision.",
+                nameof(evaluatedState));
+        }
+
+        MenuNodeId[] expected = menu.Items.Select(item => item.Id).ToArray();
+        MenuNodeId[] actual = evaluatedState.Items.Select(item => item.Id).ToArray();
+        if (expected.Length != actual.Length ||
+            !expected.SequenceEqual(actual))
+        {
+            throw new ArgumentException(
+                "The evaluated item table does not match this Menu snapshot revision.",
+                nameof(evaluatedState));
+        }
+    }
+
+    private static MenuItemSnapshot EvaluatedItem(
+        MenuItemSnapshot item,
+        MenuEvaluatedItemState evaluated,
+        MenuRectangleValue rectangle)
+    {
+        MenuWindowValue window = item.Value.Window with
+        {
+            RectClient = rectangle,
+            ForeColor = Color(evaluated.ForeColor),
+            BackColor = Color(evaluated.BackColor),
+            BackgroundMaterialName = evaluated.MaterialName.Value
+        };
+        MenuItemValue value = item.Value with
+        {
+            Window = window,
+            Text = evaluated.Text.Value,
+            GlowColor = Color(evaluated.GlowColor)
+        };
+        return item with { Value = value };
+    }
+
+    private static MenuRectangleValue Rectangle(MenuEvaluatedRectangle value) =>
+        new(
+            value.X.Value,
+            value.Y.Value,
+            value.Width.Value,
+            value.Height.Value,
+            value.HorizontalAlignment,
+            value.VerticalAlignment);
+
+    private static MenuColorValue Color(MenuEvaluatedColor value) =>
+        new(value.A.Value, value.R.Value, value.G.Value, value.B.Value);
 
     private static MenuColorValue ResolveShaderTint(MenuWindowValue window) =>
         UsesForeColorTint(window)

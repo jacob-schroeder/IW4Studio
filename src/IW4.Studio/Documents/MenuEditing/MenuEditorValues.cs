@@ -31,8 +31,9 @@ public readonly record struct MenuRectangleValue(
     VerticalAlign VerticalAlignment);
 
 /// <summary>
-/// Menu color in the engine's serialized A/R/G/B order. Keeping the channel
-/// names explicit avoids accidental RGBA/ARGB reinterpretation by a UI.
+/// Menu color with explicit semantic alpha, red, green, and blue channels.
+/// The serialized Menu Vec4 stores these as R/G/B/A; conversion at the
+/// document boundary keeps that raw layout out of editor and renderer code.
 /// </summary>
 public readonly record struct MenuColorValue(float A, float R, float G, float B);
 

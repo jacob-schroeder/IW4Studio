@@ -689,7 +689,7 @@ public interface IGfxImageBuildData : IXAssetBuildData
 }
 
 public readonly record struct FontGlyphBuildData(
-    ushort Letter, byte X0, byte Y0, byte Dx, byte PixelWidth, byte PixelHeight, byte Padding,
+    ushort Letter, sbyte X0, sbyte Y0, byte Dx, byte PixelWidth, byte PixelHeight, byte Padding,
     float S0, float T0, float S1, float T1);
 
 public interface IFontBuildData : IXAssetBuildData

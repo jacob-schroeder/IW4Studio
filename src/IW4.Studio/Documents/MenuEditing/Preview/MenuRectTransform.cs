@@ -59,12 +59,26 @@ public static class MenuRectTransform
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(item);
-        ArgumentNullException.ThrowIfNull(settings);
-
         float rootInset = root.Border == WindowBorder.WINDOW_BORDER_NONE
             ? 0
             : root.BorderSize;
-        MenuRectangleValue client = item.RectClient;
+        return ResolveItem(root.Rect, rootInset, item.RectClient, settings);
+    }
+
+    /// <summary>
+    /// Resolves evaluated root and item rectangles without reconstructing
+    /// mutable Window definitions. The caller supplies the authored root
+    /// border inset because expressions can replace geometry, not border
+    /// configuration.
+    /// </summary>
+    public static MenuPreviewRect ResolveItem(
+        MenuRectangleValue root,
+        float rootBorderInset,
+        MenuRectangleValue client,
+        MenuPreviewSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
         bool inheritsRootAlignment =
             client.HorizontalAlignment ==
                 HorizontalAlign.HORIZONTAL_ALIGN_SUBLEFT &&
@@ -72,13 +86,13 @@ public static class MenuRectTransform
                 VerticalAlign.VERTICAL_ALIGN_SUBTOP;
         var screen = client with
         {
-            X = client.X + root.Rect.X + rootInset,
-            Y = client.Y + root.Rect.Y + rootInset,
+            X = client.X + root.X + rootBorderInset,
+            Y = client.Y + root.Y + rootBorderInset,
             HorizontalAlignment = inheritsRootAlignment
-                ? root.Rect.HorizontalAlignment
+                ? root.HorizontalAlignment
                 : client.HorizontalAlignment,
             VerticalAlignment = inheritsRootAlignment
-                ? root.Rect.VerticalAlignment
+                ? root.VerticalAlignment
                 : client.VerticalAlignment
         };
         return Resolve(screen, settings);

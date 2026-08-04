@@ -95,7 +95,10 @@ public sealed record MenuPreviewText(
     float Scale,
     int Font,
     int Alignment,
-    int Style) : MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
+    int Style,
+    float OffsetX,
+    float OffsetY,
+    float BorderInset) : MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
 
 public sealed record MenuPreviewPlaceholder(
     MenuNodeId NodeId,

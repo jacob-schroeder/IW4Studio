@@ -1,6 +1,10 @@
+using System.Numerics;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.FastFiles.Zone;
+using IW4.Render;
+using IW4.Render.Assets;
+using IW4.Render.Execution;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Runtime.Assets;
@@ -10,22 +14,31 @@ using IW4.Studio.Documents;
 namespace IW4.Studio.Rendering;
 
 /// <summary>
-/// Resolves a Menu shader-window material to one deterministic editor image.
-/// Renderer-owned planning selects the canonical texture approximation;
-/// Studio binds that plan to the active workspace provider and its matching
-/// image-package resolver. It does not execute the PS3 material technique.
+/// Resolves a Menu material against the active canonical asset graph. The
+/// proven IW4 2d/slot-4 unlit path yields an exact renderer-neutral packet;
+/// unsupported graphs retain explicit execution diagnostics and fall back to
+/// the deterministic texture-only planner. Studio owns provider/image-package
+/// binding while IW4.Render owns material semantics.
 /// </summary>
 public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
 {
+    private const int MaxCompletedCacheEntries = 128;
+    private const long MaxCachedPayloadBytes = 64L * 1024 * 1024;
+
     private readonly FastFileWorkspace _workspace;
+    private readonly IMaterialExecutionLookup _materialExecution;
     private readonly Dictionary<MaterialCacheKey,
-        Lazy<Task<MenuPreviewMaterialResolution>>> _cache = [];
+        MaterialCacheEntry> _cache = [];
+    private readonly LinkedList<MaterialCacheKey> _completedLru = [];
     private readonly object _revisionGate = new();
+    private readonly object _renderPlanningGate = new();
     private long _cachedPoolRevision = -1;
+    private long _cachedPayloadBytes;
 
     public MenuPreviewMaterialResolver(FastFileWorkspace workspace)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        _materialExecution = CreateMaterialExecutionLookup(workspace);
     }
 
     public long Revision => _workspace.Runtime.AssetPool.Revision;
@@ -56,49 +69,177 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
 
     private CachedMaterialResolution GetCachedResolution(string materialName)
     {
+        MaterialCacheEntry entry;
+        Task<MenuPreviewMaterialResolution> task;
+        bool observeCompletion = false;
+        long poolRevision;
         lock (_revisionGate)
         {
-            long poolRevision = _workspace.Runtime.AssetPool.Revision;
+            poolRevision = _workspace.Runtime.AssetPool.Revision;
             if (_cachedPoolRevision != poolRevision)
             {
-                _cache.Clear();
+                ClearCacheNoLock();
                 _cachedPoolRevision = poolRevision;
             }
 
             var key = new MaterialCacheKey(
                 XAssetStableIdentity.NormalizeLookupName(materialName),
                 poolRevision);
-            if (!_cache.TryGetValue(
-                    key,
-                    out Lazy<Task<MenuPreviewMaterialResolution>>? lazy))
+            if (!_cache.TryGetValue(key, out MaterialCacheEntry? cached))
             {
-                lazy = new Lazy<Task<MenuPreviewMaterialResolution>>(
+                var work = new Lazy<Task<MenuPreviewMaterialResolution>>(
                     () => Task.Run(
                         () => ResolveAtStableRevision(
                             materialName,
                             poolRevision),
                         CancellationToken.None),
                     LazyThreadSafetyMode.ExecutionAndPublication);
-                _cache.Add(key, lazy);
+                entry = new MaterialCacheEntry(key, work);
+                _cache.Add(key, entry);
+            }
+            else
+            {
+                entry = cached;
+                TouchCompletedEntryNoLock(entry);
             }
 
-            return new CachedMaterialResolution(poolRevision, lazy.Value);
+            task = entry.Work.Value;
+            if (!entry.CompletionObservationStarted)
+            {
+                entry.CompletionObservationStarted = true;
+                observeCompletion = true;
+            }
         }
+
+        if (observeCompletion)
+            _ = ObserveCompletionAsync(entry, task);
+        return new CachedMaterialResolution(poolRevision, task);
+    }
+
+    private async Task ObserveCompletionAsync(
+        MaterialCacheEntry entry,
+        Task<MenuPreviewMaterialResolution> task)
+    {
+        MenuPreviewMaterialResolution? result = null;
+        try
+        {
+            result = await task.ConfigureAwait(false);
+        }
+        catch
+        {
+            // The awaiting caller retains the original task outcome. A faulted
+            // single-flight operation must not occupy completed-cache capacity.
+        }
+
+        lock (_revisionGate)
+        {
+            if (!_cache.TryGetValue(entry.Key, out MaterialCacheEntry? current) ||
+                !ReferenceEquals(current, entry))
+            {
+                return;
+            }
+
+            if (result is null)
+            {
+                RemoveCacheEntryNoLock(entry);
+                return;
+            }
+
+            long retainedBytes = result.Snapshot?.RetainedByteCount ?? 0;
+            if (retainedBytes > MaxCachedPayloadBytes)
+            {
+                RemoveCacheEntryNoLock(entry);
+                return;
+            }
+
+            entry.RetainedBytes = retainedBytes;
+            entry.LruNode = _completedLru.AddLast(entry.Key);
+            _cachedPayloadBytes = checked(
+                _cachedPayloadBytes + retainedBytes);
+            TrimCompletedCacheNoLock();
+        }
+    }
+
+    private void TouchCompletedEntryNoLock(MaterialCacheEntry entry)
+    {
+        if (entry.LruNode is not { } node)
+            return;
+
+        _completedLru.Remove(node);
+        _completedLru.AddLast(node);
+    }
+
+    private void TrimCompletedCacheNoLock()
+    {
+        while (_completedLru.Count > MaxCompletedCacheEntries ||
+               _cachedPayloadBytes > MaxCachedPayloadBytes)
+        {
+            LinkedListNode<MaterialCacheKey>? oldest = _completedLru.First;
+            if (oldest is null)
+                return;
+            if (!_cache.TryGetValue(
+                    oldest.Value,
+                    out MaterialCacheEntry? entry))
+            {
+                _completedLru.RemoveFirst();
+                continue;
+            }
+
+            RemoveCacheEntryNoLock(entry);
+        }
+    }
+
+    private void RemoveCacheEntryNoLock(MaterialCacheEntry entry)
+    {
+        if (_cache.TryGetValue(entry.Key, out MaterialCacheEntry? current) &&
+            ReferenceEquals(current, entry))
+        {
+            _cache.Remove(entry.Key);
+        }
+        if (entry.LruNode is { } node)
+        {
+            _completedLru.Remove(node);
+            entry.LruNode = null;
+        }
+
+        _cachedPayloadBytes = checked(
+            _cachedPayloadBytes - entry.RetainedBytes);
+        entry.RetainedBytes = 0;
+    }
+
+    private void ClearCacheNoLock()
+    {
+        _cache.Clear();
+        _completedLru.Clear();
+        _cachedPayloadBytes = 0;
     }
 
     private MenuPreviewMaterialResolution ResolveAtStableRevision(
         string materialName,
         long poolRevision)
     {
-        if (_workspace.Runtime.AssetPool.Revision != poolRevision)
-            return RevisionChanged(materialName, poolRevision);
+        try
+        {
+            if (_workspace.Runtime.AssetPool.Revision != poolRevision)
+                return RevisionChanged(materialName, poolRevision);
 
-        MenuPreviewMaterialResolution result = ResolveAtRevision(
-            materialName,
-            poolRevision);
-        return _workspace.Runtime.AssetPool.Revision == poolRevision
-            ? result
-            : RevisionChanged(materialName, poolRevision);
+            MenuPreviewMaterialResolution result = ResolveAtRevision(
+                materialName,
+                poolRevision);
+            return _workspace.Runtime.AssetPool.Revision == poolRevision
+                ? result
+                : RevisionChanged(materialName, poolRevision);
+        }
+        catch (Exception exception) when (
+            exception is not OutOfMemoryException)
+        {
+            return _workspace.Runtime.AssetPool.Revision != poolRevision
+                ? RevisionChanged(materialName, poolRevision)
+                : MenuPreviewMaterialResolution.Failed(
+                    $"Material '{materialName}' preview resolution failed " +
+                    $"closed: {exception.Message}",
+                    poolRevision);
+        }
     }
 
     private MenuPreviewMaterialResolution ResolveAtRevision(
@@ -118,6 +259,22 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 poolRevision);
         }
 
+        UiMaterialDrawPlan executionPlan;
+        lock (_renderPlanningGate)
+        {
+            executionPlan = UiMaterialDrawPlanner.Plan(
+                new UiMaterialDrawRequest(
+                    0,
+                    materialName,
+                    poolRevision,
+                    CreateUnitQuad()),
+                _materialExecution,
+                (_, row) => ResolveExactTextureResource(
+                    pool,
+                    row,
+                    poolRevision));
+        }
+
         UiMaterialPreviewPlan plan = UiMaterialPreviewPlanner.Plan(
             material,
             (_, row) => ResolveCanonicalImage(pool, row));
@@ -130,7 +287,8 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
             return MenuPreviewMaterialResolution.Failed(
                 $"Material '{materialName}' cannot be previewed: {blockers}",
                 poolRevision,
-                plan.Diagnostics);
+                plan.Diagnostics,
+                executionPlan.Diagnostics);
         }
 
         IGfxImagePayloadResolver payloadResolver =
@@ -147,12 +305,82 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 $"'{materialName}' could not be decoded from " +
                 $"{payloadSource}: {reason}",
                 poolRevision,
-                plan.Diagnostics);
+                plan.Diagnostics,
+                executionPlan.Diagnostics);
         }
 
         return MenuPreviewMaterialResolution.Resolved(
-            new MenuPreviewMaterialSnapshot(plan, preview),
+            new MenuPreviewMaterialSnapshot(plan, preview, executionPlan),
             poolRevision);
+    }
+
+    private static IMaterialExecutionLookup CreateMaterialExecutionLookup(
+        FastFileWorkspace workspace)
+    {
+        WorkspaceZone target = workspace.Document.TargetZone;
+        var source = new MapRenderAssetSource(
+            target.LoadResult.Header,
+            target.LoadResult.Context.Blocks,
+            workspace.Runtime.AssetPool,
+            workspace.Runtime.AssetRuntimeLifecycle.GfxWorld,
+            target.LoadResult.Context.GfxImagesByAddress,
+            target.LoadResult.LoadedAssets,
+            target.LoadResult.XAssetList.Assets);
+        return new RenderAssetLookup(source);
+    }
+
+    private static UiMaterialTextureResource? ResolveExactTextureResource(
+        XAssetPool pool,
+        MaterialTextureDef row,
+        long poolRevision)
+    {
+        UiMaterialPreviewImageResolution resolution =
+            ResolveCanonicalImage(pool, row);
+        if (resolution.Image is not { } image ||
+            image.RuntimeAddress?.AssetPoolAddress is not { } address ||
+            string.IsNullOrWhiteSpace(image.Name))
+        {
+            return null;
+        }
+
+        return new UiMaterialTextureResource(
+            $"ui:{poolRevision}:{address}",
+            image.Name,
+            poolRevision,
+            address,
+            image.Width,
+            image.Height,
+            image.Depth,
+            image.MapType,
+            image.DimensionCount,
+            image.MultiFaceControl,
+            image.Pad0F,
+            image.Pad1B);
+    }
+
+    private static UiMaterialQuad CreateUnitQuad()
+    {
+        var topLeft = new UiMaterialVertex(
+            new Vector4(0, 0, 0, 1),
+            new Vector2(0, 0),
+            Vector4.One);
+        var topRight = new UiMaterialVertex(
+            new Vector4(1, 0, 0, 1),
+            new Vector2(1, 0),
+            Vector4.One);
+        var bottomRight = new UiMaterialVertex(
+            new Vector4(1, 1, 0, 1),
+            new Vector2(1, 1),
+            Vector4.One);
+        var bottomLeft = new UiMaterialVertex(
+            new Vector4(0, 1, 0, 1),
+            new Vector2(0, 1),
+            Vector4.One);
+        return new UiMaterialQuad(
+            topLeft,
+            topRight,
+            bottomRight,
+            bottomLeft);
     }
 
     private static UiMaterialPreviewImageResolution ResolveCanonicalImage(
@@ -218,6 +446,21 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
     private readonly record struct CachedMaterialResolution(
         long PoolRevision,
         Task<MenuPreviewMaterialResolution> Task);
+
+    private sealed class MaterialCacheEntry(
+        MaterialCacheKey key,
+        Lazy<Task<MenuPreviewMaterialResolution>> work)
+    {
+        public MaterialCacheKey Key { get; } = key;
+
+        public Lazy<Task<MenuPreviewMaterialResolution>> Work { get; } = work;
+
+        public bool CompletionObservationStarted { get; set; }
+
+        public long RetainedBytes { get; set; }
+
+        public LinkedListNode<MaterialCacheKey>? LruNode { get; set; }
+    }
 
     private static MenuPreviewMaterialResolution RevisionChanged(
         string materialName,

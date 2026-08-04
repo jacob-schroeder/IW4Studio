@@ -29,6 +29,7 @@ public sealed class MenuFileEditorViewModel
     private readonly AssetEditorSession _session;
     private readonly MenuEditingCoordinator _coordinator;
     private readonly IMenuPreviewMaterialResolver _materialResolver;
+    private readonly IMenuTextResourceResolver _textResourceResolver;
     private readonly TargetZoneRowIdentity? _rowIdentity;
     private readonly bool _canSelectAssetReferences;
     private readonly Func<XAssetType, string?, bool>?
@@ -49,6 +50,7 @@ public sealed class MenuFileEditorViewModel
         AssetEditorSession session,
         MenuEditingCoordinator coordinator,
         IMenuPreviewMaterialResolver materialResolver,
+        IMenuTextResourceResolver textResourceResolver,
         bool canSelectAssetReferences = false,
         Func<XAssetType, string?, bool>? isAssetReferenceResolved = null)
     {
@@ -57,6 +59,8 @@ public sealed class MenuFileEditorViewModel
             throw new ArgumentNullException(nameof(coordinator));
         _materialResolver = materialResolver ??
             throw new ArgumentNullException(nameof(materialResolver));
+        _textResourceResolver = textResourceResolver ??
+            throw new ArgumentNullException(nameof(textResourceResolver));
         if (session.Entry.AssetType != XAssetType.MenuFile)
         {
             throw new InvalidDataException(
@@ -75,6 +79,7 @@ public sealed class MenuFileEditorViewModel
         _designer = new MenuDesignerViewModel(
             snapshot: null,
             materialResolver: _materialResolver,
+            textResourceResolver: _textResourceResolver,
             isAssetReferenceResolved: _isAssetReferenceResolved);
         _designer.PropertyChanged += Designer_PropertyChanged;
         if (Mode == AssetEditorMode.Editable)
@@ -474,6 +479,7 @@ public sealed class MenuFileEditorViewModel
                 ? RequestAssetReferenceSelection
                 : null,
             _materialResolver,
+            _textResourceResolver,
             apply is null
                 ? null
                 : () => _selectedResolution?.CanEdit == true,

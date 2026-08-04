@@ -91,6 +91,7 @@ internal static class GfxImageDecoder
             rgba.Height,
             rgba.Format,
             rgba.HasTransparency,
+            rgba.RgbaBytes,
             PngWriter.WriteRgba(rgba.Width, rgba.Height, rgba.RgbaBytes));
         return true;
     }

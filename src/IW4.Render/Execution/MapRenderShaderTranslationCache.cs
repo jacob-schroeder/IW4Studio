@@ -2,7 +2,7 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Shaders;
 
-namespace IW4.Render.SceneBuilding;
+namespace IW4.Render.Execution;
 
 /// <summary>
 /// Scene-local single-flight cache for immutable RSX program translation.
@@ -16,10 +16,6 @@ internal sealed class MapRenderShaderTranslationCache
         RsxShaderTranslationRequestKey,
         RsxShaderTranslationResult>
         _translations = [];
-
-    internal MapRenderShaderTranslationCache()
-    {
-    }
 
     internal RsxShaderTranslationResult Resolve(
         MaterialAsset? material,

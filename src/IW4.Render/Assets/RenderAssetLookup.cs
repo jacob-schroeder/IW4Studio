@@ -8,6 +8,7 @@ using IW4.FastFiles.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Assets.Lifecycle.State;
 using IW4.Runtime.Database;
+using IW4.Render.Execution;
 using IW4.Render.Materials;
 using IW4.Render.Shaders;
 using IW4.Runtime.Assets.Images;
@@ -16,10 +17,9 @@ namespace IW4.Render.Assets;
 
 public sealed partial class RenderAssetLookup :
     IMapRenderMaterialTechniqueBindingResolver,
-    IMapRenderStateLoadBitsResolver,
+    IMaterialExecutionLookup,
     IMapRenderWorldTextureBindingResolver,
     IMapRenderWorldTextureBindingSnapshotFactory,
-    IMapRenderSelectedPassProgramProvider,
     IMapRenderCanonicalRawFileProvider
 {
     private const int ShaderArgSize = 0x08;

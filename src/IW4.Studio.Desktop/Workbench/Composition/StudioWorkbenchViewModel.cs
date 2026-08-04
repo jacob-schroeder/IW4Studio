@@ -72,6 +72,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         var assetReferenceCatalog = new WorkspaceAssetReferenceCatalog(
             editingSession);
         var menuMaterialResolver = new MenuPreviewMaterialResolver(workspace);
+        var menuTextResourceResolver = new MenuTextResourceResolver(workspace);
         var assetReferencePicker = new AssetReferencePickerService(
             assetReferenceCatalog,
             menuMaterialResolver);
@@ -89,11 +90,13 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         editorViewRegistry.Register(new MenuEditorViewFactory(
             _menuEditingCoordinator,
             assetReferencePicker,
-            menuMaterialResolver));
+            menuMaterialResolver,
+            menuTextResourceResolver));
         editorViewRegistry.Register(new MenuFileEditorViewFactory(
             _menuEditingCoordinator,
             assetReferencePicker,
-            menuMaterialResolver));
+            menuMaterialResolver,
+            menuTextResourceResolver));
         Editor = new EditorViewModel(
             workspace,
             editingSession,

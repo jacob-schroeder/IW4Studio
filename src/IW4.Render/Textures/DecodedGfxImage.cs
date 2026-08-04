@@ -10,4 +10,5 @@ internal readonly record struct DecodedGfxImage(
     int Height,
     string Format,
     bool HasTransparency,
+    byte[] RgbaBytes,
     byte[] PngBytes);

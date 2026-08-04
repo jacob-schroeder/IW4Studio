@@ -13,11 +13,13 @@ public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
     private readonly MenuEditingCoordinator _coordinator;
     private readonly AssetReferencePickerService _assetReferencePicker;
     private readonly IMenuPreviewMaterialResolver _materialResolver;
+    private readonly IMenuTextResourceResolver _textResourceResolver;
 
     public MenuEditorViewFactory(
         MenuEditingCoordinator coordinator,
         AssetReferencePickerService assetReferencePicker,
-        IMenuPreviewMaterialResolver materialResolver)
+        IMenuPreviewMaterialResolver materialResolver,
+        IMenuTextResourceResolver textResourceResolver)
     {
         _coordinator = coordinator ??
             throw new ArgumentNullException(nameof(coordinator));
@@ -25,6 +27,8 @@ public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
             throw new ArgumentNullException(nameof(assetReferencePicker));
         _materialResolver = materialResolver ??
             throw new ArgumentNullException(nameof(materialResolver));
+        _textResourceResolver = textResourceResolver ??
+            throw new ArgumentNullException(nameof(textResourceResolver));
     }
 
     public XAssetType AssetType => XAssetType.Menu;
@@ -36,6 +40,7 @@ public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
             editorSession,
             _coordinator,
             _materialResolver,
+            _textResourceResolver,
             canSelectAssetReferences: true,
             isAssetReferenceResolved: _assetReferencePicker.IsResolved);
         var view = new MenuEditorView(viewModel, _assetReferencePicker);
@@ -49,11 +54,13 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
     private readonly MenuEditingCoordinator _coordinator;
     private readonly AssetReferencePickerService _assetReferencePicker;
     private readonly IMenuPreviewMaterialResolver _materialResolver;
+    private readonly IMenuTextResourceResolver _textResourceResolver;
 
     public MenuFileEditorViewFactory(
         MenuEditingCoordinator coordinator,
         AssetReferencePickerService assetReferencePicker,
-        IMenuPreviewMaterialResolver materialResolver)
+        IMenuPreviewMaterialResolver materialResolver,
+        IMenuTextResourceResolver textResourceResolver)
     {
         _coordinator = coordinator ??
             throw new ArgumentNullException(nameof(coordinator));
@@ -61,6 +68,8 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
             throw new ArgumentNullException(nameof(assetReferencePicker));
         _materialResolver = materialResolver ??
             throw new ArgumentNullException(nameof(materialResolver));
+        _textResourceResolver = textResourceResolver ??
+            throw new ArgumentNullException(nameof(textResourceResolver));
     }
 
     public XAssetType AssetType => XAssetType.MenuFile;
@@ -72,6 +81,7 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
             editorSession,
             _coordinator,
             _materialResolver,
+            _textResourceResolver,
             canSelectAssetReferences: true,
             isAssetReferenceResolved: _assetReferencePicker.IsResolved);
         var view = new MenuFileEditorView(viewModel, _assetReferencePicker);

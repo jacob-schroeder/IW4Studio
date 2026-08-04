@@ -193,8 +193,8 @@ public sealed class FontLoader
         int start = cursor.Offset;
         var glyph = new FontGlyph(
             cursor.ReadUInt16(),
-            cursor.ReadByte(),
-            cursor.ReadByte(),
+            unchecked((sbyte)cursor.ReadByte()),
+            unchecked((sbyte)cursor.ReadByte()),
             cursor.ReadByte(),
             cursor.ReadByte(),
             cursor.ReadByte(),

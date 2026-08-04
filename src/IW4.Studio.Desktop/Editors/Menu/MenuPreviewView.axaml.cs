@@ -23,4 +23,12 @@ public sealed partial class MenuPreviewView : UserControl
         if (DataContext is MenuDesignerViewModel viewModel)
             viewModel.ReportMaterialPreviewStatus(e.Status);
     }
+
+    private void PreviewControl_TextResolutionCompleted(
+        object? sender,
+        MenuPreviewTextResolutionCompletedEventArgs e)
+    {
+        if (DataContext is MenuDesignerViewModel viewModel)
+            viewModel.ReportTextPreviewStatus(e.Status);
+    }
 }
