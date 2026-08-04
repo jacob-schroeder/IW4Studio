@@ -9,6 +9,7 @@ internal static class Program
     public static void Main(string[] args) => BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
 
+    // entry
     public static AppBuilder BuildAvaloniaApp()
     {
         return AppBuilder
