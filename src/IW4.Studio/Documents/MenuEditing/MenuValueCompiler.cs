@@ -13,6 +13,36 @@ internal static partial class MenuDocumentCompiler
         int index) =>
         MenuSnapshotFactory.Create(data, identity).Items[index].Value;
 
+    private static IReadOnlyList<ItemDefReference> BuildItemsForImageTrack(
+        MenuBuildData source,
+        MenuDocumentIdentity identity,
+        int imageTrack)
+    {
+        MenuEditorSnapshot snapshot = MenuSnapshotFactory.Create(source, identity);
+        var items = source.Definition.Items.ToArray();
+        for (int index = 0; index < items.Length; index++)
+        {
+            ItemDefAsset? existing = source.Definition.Items[index].Item;
+            if (existing is null)
+                continue;
+
+            ItemDefAsset item = BuildItem(
+                existing,
+                snapshot.Items[index].Value,
+                rebuildPayload: false,
+                imageTrack: imageTrack);
+            ItemDefReference reference = items[index];
+            items[index] = new ItemDefReference(
+                reference.Index,
+                reference.Pointer.Raw == 0
+                    ? new XPointer<ItemDefAsset>(-1)
+                    : reference.Pointer,
+                item);
+        }
+
+        return Array.AsReadOnly(items);
+    }
+
     private static MenuDefAsset ReplaceItem(
         MenuDefAsset source,
         int index,
@@ -143,7 +173,8 @@ internal static partial class MenuDocumentCompiler
     private static ItemDefAsset BuildItem(
         ItemDefAsset? source,
         MenuItemValue value,
-        bool rebuildPayload)
+        bool rebuildPayload,
+        int imageTrack)
     {
         ArgumentNullException.ThrowIfNull(value);
         ItemPayloadBuildResult payload = rebuildPayload
@@ -210,7 +241,7 @@ internal static partial class MenuDocumentCompiler
             DvarEnumName = payload.DvarEnumName,
             NewsTicker = payload.NewsTicker,
             TextScroll = payload.TextScroll,
-            ImageTrack = value.ImageTrack,
+            ImageTrack = imageTrack,
             FloatExpressionCount = source?.LoadedFloatExpressions.Count ?? 0,
             FloatExpressions = source?.FloatExpressions ?? default,
             LoadedFloatExpressions = source?.LoadedFloatExpressions ?? [],

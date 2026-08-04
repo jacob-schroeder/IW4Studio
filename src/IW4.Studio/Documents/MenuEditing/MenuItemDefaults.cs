@@ -10,6 +10,7 @@ public static class MenuItemDefaults
 {
     public static MenuItemValue CreateValue(
         ItemDefType type,
+        int imageTrack,
         string? name = null)
     {
         var emptyRect = new MenuRectangleValue(
@@ -62,7 +63,7 @@ public static class MenuItemDefaults
             null,
             0,
             Array.AsReadOnly(new int[4]),
-            0,
+            imageTrack,
             new MenuColorValue(0, 0, 0, 0),
             0,
             CreatePayload(type),

@@ -47,9 +47,21 @@ internal static partial class MenuDocumentCompiler
         switch (edit)
         {
             case ReplaceMenuSettingsEdit replace:
+            {
                 ArgumentNullException.ThrowIfNull(replace.Value);
-                definition = BuildMenu(definition, settings: replace.Value);
+                IReadOnlyList<ItemDefReference>? items =
+                    replace.Value.ImageTrack == definition.ImageTrack
+                        ? null
+                        : BuildItemsForImageTrack(
+                            source,
+                            identity,
+                            replace.Value.ImageTrack);
+                definition = BuildMenu(
+                    definition,
+                    settings: replace.Value,
+                    items: items);
                 break;
+            }
 
             case ReplaceRootWindowEdit replace:
                 ArgumentNullException.ThrowIfNull(replace.Value);
@@ -70,7 +82,8 @@ internal static partial class MenuDocumentCompiler
                     BuildItem(
                         existing,
                         replace.Value,
-                        rebuildPayload: false));
+                        rebuildPayload: false,
+                        imageTrack: definition.ImageTrack));
                 break;
             }
 
@@ -85,7 +98,8 @@ internal static partial class MenuDocumentCompiler
                     BuildItem(
                         existing,
                         replace.Value,
-                        rebuildPayload: true));
+                        rebuildPayload: true,
+                        imageTrack: definition.ImageTrack));
                 break;
             }
 
@@ -104,7 +118,8 @@ internal static partial class MenuDocumentCompiler
                         {
                             Window = replace.Value
                         },
-                        rebuildPayload: false));
+                        rebuildPayload: false,
+                        imageTrack: definition.ImageTrack));
                 break;
             }
 
@@ -115,8 +130,12 @@ internal static partial class MenuDocumentCompiler
                 int index = InsertIndex(add.InsertIndex, definition.Items.Count);
                 var item = BuildItem(
                     null,
-                    MenuItemDefaults.CreateValue(add.Type, add.Name),
-                    rebuildPayload: true);
+                    MenuItemDefaults.CreateValue(
+                        add.Type,
+                        definition.ImageTrack,
+                        add.Name),
+                    rebuildPayload: true,
+                    imageTrack: definition.ImageTrack);
                 var items = definition.Items.ToList();
                 items.Insert(index, new ItemDefReference(index, new XPointer<ItemDefAsset>(-1), item));
                 definition = BuildMenu(definition, items: Reindex(items));
@@ -170,7 +189,7 @@ internal static partial class MenuDocumentCompiler
                 ItemDefAsset sourceItem = RequireItem(definition, sourceIndex);
                 ItemDefAsset copiedItem = new MenuGraphClone(
                         preserveSourceProvenance: false)
-                    .CloneItem(sourceItem)
+                    .CloneItem(sourceItem, definition.ImageTrack)
                     ?? throw new InvalidDataException("A resolved Menu item could not be duplicated.");
                 var items = definition.Items.ToList();
                 items.Insert(
@@ -200,7 +219,8 @@ internal static partial class MenuDocumentCompiler
                     BuildItem(
                         existing,
                         changed,
-                        rebuildPayload: true));
+                        rebuildPayload: true,
+                        imageTrack: definition.ImageTrack));
                 break;
             }
 

@@ -280,6 +280,9 @@ public static class NewAssetDefinitionFactory
 
         return new MenuDefAsset
         {
+            // Raw UI menu loading supplies IMAGE_TRACK_UI. HUD menus can be
+            // changed to IMAGE_TRACK_HUD in the Menu Properties inspector.
+            ImageTrack = (int)ImageTrackType.UI,
             Window = new WindowDef
             {
                 Name = name,

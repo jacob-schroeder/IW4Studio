@@ -80,7 +80,9 @@ internal sealed class MenuGraphClone
         return clone;
     }
 
-    internal ItemDefAsset? CloneItem(ItemDefAsset? value)
+    internal ItemDefAsset? CloneItem(
+        ItemDefAsset? value,
+        int? imageTrack = null)
     {
         if (value is null) return null;
         ProvenanceToken provenance = CloneProvenanceOf(value);
@@ -99,7 +101,7 @@ internal sealed class MenuGraphClone
             Dvar = Ptr(value.Dvar), DvarString = value.DvarString, DvarTest = Ptr(value.DvarTest), DvarTestString = value.DvarTestString,
             OnKey = Ptr(value.OnKey), EnableDvar = Ptr(value.EnableDvar), EnableDvarString = value.EnableDvarString, DvarFlags = value.DvarFlags,
             FocusSound = Ptr(value.FocusSound), FocusSoundName = value.FocusSoundName ?? value.FocusSoundAsset?.AliasName, Special = value.Special,
-            CursorPos = value.CursorPos.ToArray(), TypeData = CloneItemData(value.TypeData), ImageTrack = value.ImageTrack,
+            CursorPos = value.CursorPos.ToArray(), TypeData = CloneItemData(value.TypeData), ImageTrack = imageTrack ?? value.ImageTrack,
             FloatExpressionCount = value.FloatExpressionCount, FloatExpressions = Ptr(value.FloatExpressions), VisibleExpression = Ptr(value.VisibleExpression),
             DisabledExpression = Ptr(value.DisabledExpression), TextExpression = Ptr(value.TextExpression), MaterialExpression = Ptr(value.MaterialExpression),
             GlowColor = Vec(value.GlowColor), DecayActive = value.DecayActive, DecayActivePad0 = value.DecayActivePad0,

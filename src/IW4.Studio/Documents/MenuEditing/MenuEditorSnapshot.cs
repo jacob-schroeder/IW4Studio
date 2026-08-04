@@ -258,7 +258,7 @@ internal static class MenuSnapshotFactory
                     itemIdentity.Id,
                     itemIdentity.WindowId,
                     false,
-                    CreateMissingItem())
+                    CreateMissingItem(definition.ImageTrack))
                 : new MenuItemSnapshot(
                     itemIdentity.Id,
                     itemIdentity.WindowId,
@@ -506,8 +506,11 @@ internal static class MenuSnapshotFactory
                 $"Unsupported Menu item-data union arm '{value.TypeData.Value.GetType().Name}'.")
         };
 
-    private static MenuItemValue CreateMissingItem() =>
-        MenuItemDefaults.CreateValue(ItemDefType.Text, null);
+    private static MenuItemValue CreateMissingItem(int imageTrack) =>
+        MenuItemDefaults.CreateValue(
+            ItemDefType.Text,
+            imageTrack,
+            null);
 
     private static MenuRectangleValue Rectangle(RectangleDef value) => new(
         value.X,

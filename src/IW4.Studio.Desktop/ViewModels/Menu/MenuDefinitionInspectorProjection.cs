@@ -71,14 +71,21 @@ internal static partial class MenuInspectorProjection
                                 {
                                     FontIndex = value
                                 })),
-                        ReadOnly(
+                        IntegerChoice(
                             "Material track",
                             "menu.imageTrack",
-                            ImageTrack(settings.ImageTrack),
-                            "Engine-supplied int32 material-registration context. " +
-                            "Its known values match IMAGE_TRACK_* (commonly UI=3 " +
-                            "or HUD=7); it is loader provenance rather than an " +
-                            "authored setting, so it is preserved read-only."),
+                            settings.ImageTrack,
+                            ImageTrackChoices,
+                            update is null
+                                ? null
+                                : value => update(current => current with
+                                {
+                                    ImageTrack = value
+                                }),
+                            "Menu-level material-registration class supplied by " +
+                            "the raw-menu load context. UI menus normally use " +
+                            "UI (3) and HUD menus use HUD (7). Child Items inherit " +
+                            "this value; changing it updates every resolved Item."),
                         Text(
                             "Allowed bind",
                             "menu.allowedBinding",

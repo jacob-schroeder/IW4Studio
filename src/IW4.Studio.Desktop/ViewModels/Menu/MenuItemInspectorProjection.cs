@@ -105,7 +105,9 @@ internal static partial class MenuInspectorProjection
                         "Internal int32 discriminator for the allocated native " +
                         "type-data union. Runtime accessors use it to select the " +
                         "EditField, ListBox, Multi, or related payload. It may " +
-                        "differ from Type and is preserved rather than authored."),
+                        "differ from Type in existing assets. New items and type " +
+                        "changes derive it automatically; it is never authored " +
+                        "independently."),
                     Choice(
                         "Owner-draw alignment",
                         "item.align",
@@ -304,11 +306,9 @@ internal static partial class MenuInspectorProjection
                         "Material track",
                         "item.imageTrack",
                         ImageTrack(value.ImageTrack),
-                        "Engine-supplied int32 material-registration context " +
-                        "inherited from the menu during raw menu loading. Its " +
-                        "known values match the engine's IMAGE_TRACK_* table, " +
-                        "but it is provenance rather than an image selector or " +
-                        "an authored setting, so it is preserved read-only."),
+                        "Inherited from the parent Menu's material-registration " +
+                        "track. It controls dynamic material registration, not " +
+                        "which image is displayed, so it is read-only per Item."),
                     Color(
                         "Glow",
                         "item.glowColor",

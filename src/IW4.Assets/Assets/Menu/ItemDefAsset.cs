@@ -73,7 +73,7 @@ public sealed class ItemDefAsset : BaseAsset
     public string? DvarEnumName { get; set; }
     public NewsTickerDef? NewsTicker { get; set; }
     public TextScrollDef? TextScroll { get; set; }
-    /// <summary>Native IMAGE_TRACK_* material-registration context.</summary>
+    /// <summary>Native IMAGE_TRACK_* context inherited from the parent MenuDef.</summary>
     public int ImageTrack { get; init; }
     public int FloatExpressionCount { get; init; }
     public XPointer<ItemFloatExpression[]> FloatExpressions { get; init; }

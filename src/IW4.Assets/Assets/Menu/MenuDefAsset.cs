@@ -36,7 +36,7 @@ public sealed class MenuDefAsset : BaseAsset
     public string? AllowedBindingString { get; set; }
     public XString SoundName { get; init; }
     public string? SoundNameString { get; set; }
-    /// <summary>Native IMAGE_TRACK_* material-registration context.</summary>
+    /// <summary>Menu-level IMAGE_TRACK_* material-registration context.</summary>
     public int ImageTrack { get; init; }
     public Vec4 FocusColor { get; init; } = new();
     public XPointer<Statement> RectXExpression { get; init; }

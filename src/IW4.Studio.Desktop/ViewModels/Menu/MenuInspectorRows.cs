@@ -262,21 +262,20 @@ internal static partial class MenuInspectorProjection
             : $"Unknown ({number})";
     }
 
-    private static string ImageTrack(int value) => value switch
+    private static IReadOnlyList<InspectorChoice> ImageTrackChoices { get; } =
+        Array.AsReadOnly(Enum.GetValues<ImageTrackType>()
+            .Select(value => new InspectorChoice(
+                ((int)value).ToString(CultureInfo.InvariantCulture),
+                DisplayEnum(value)))
+            .ToArray());
+
+    private static string ImageTrack(int value)
     {
-        0 => "Misc (0)",
-        1 => "Debug (1)",
-        2 => "Texture name (2)",
-        3 => "UI (3)",
-        4 => "Lightmap (4)",
-        5 => "Light (5)",
-        6 => "FX (6)",
-        7 => "HUD (7)",
-        8 => "Model (8)",
-        9 => "World (9)",
-        10 => "Count sentinel (10)",
-        _ => $"Unknown ({value.ToString(CultureInfo.InvariantCulture)})"
-    };
+        ImageTrackType track = (ImageTrackType)value;
+        return Enum.IsDefined(track)
+            ? DisplayEnum(track)
+            : $"Unknown ({value.ToString(CultureInfo.InvariantCulture)})";
+    }
 
     private static string Count(params bool[] values) =>
         values.Count(value => value).ToString("N0");
