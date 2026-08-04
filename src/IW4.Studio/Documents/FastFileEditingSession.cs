@@ -23,6 +23,26 @@ public interface ITargetZoneDraftAdapter<TDraft>
 }
 
 /// <summary>
+/// One row-scoped authored mutation participating in an editing-session
+/// batch. Callers must combine every logical change for the same row into one
+/// mutation so the session can stage exactly one detached replacement per
+/// row.
+/// </summary>
+internal sealed record AuthoredDraftMutation(
+    TargetZoneRowIdentity RowIdentity,
+    IAssetAuthoringAdapter Adapter,
+    Action<object> Mutation);
+
+/// <summary>
+/// Detached saved baseline plus the document-wide Save acknowledgement that
+/// produced it. Revert preflights use both values so an asynchronous Save As
+/// acknowledgement cannot replace the baseline between validation and commit.
+/// </summary>
+internal sealed record SavedAuthoredDraftCapture(
+    long SavedRevision,
+    object Draft);
+
+/// <summary>
 /// Ordered target authoring state. It is keyed exclusively by Step 04's
 /// document-and-row identity and never by a pool address or active provider.
 /// </summary>
@@ -852,6 +872,43 @@ public sealed class FastFileEditingSession : IDisposable
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(mutation);
 
+        return MutateAuthoredDraftsAtRevision(
+            expectedRevision,
+            [new AuthoredDraftMutation(identity, adapter, mutation)]);
+    }
+
+    /// <summary>
+    /// Stages one detached replacement for every affected authored row and
+    /// commits all semantic changes at one revision. Draft creation or
+    /// mutation failure occurs before retained draft state is changed.
+    /// </summary>
+    internal bool MutateAuthoredDraftsAtRevision(
+        long expectedRevision,
+        IEnumerable<AuthoredDraftMutation> mutations)
+    {
+        if (expectedRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        ArgumentNullException.ThrowIfNull(mutations);
+        AuthoredDraftMutation[] requested = mutations.ToArray();
+        if (requested.Any(value => value is null))
+        {
+            throw new ArgumentException(
+                "An authored draft mutation batch cannot contain null entries.",
+                nameof(mutations));
+        }
+        TargetZoneRowIdentity? duplicate = requested
+            .GroupBy(value => value.RowIdentity)
+            .FirstOrDefault(group => group.Count() > 1)
+            ?.Key;
+        if (duplicate is { } duplicateIdentity)
+        {
+            throw new ArgumentException(
+                $"Authored draft mutations for target row " +
+                $"{duplicateIdentity.SerializedIndex} must be grouped into " +
+                "one row-scoped mutation.",
+                nameof(mutations));
+        }
+
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -863,52 +920,202 @@ public sealed class FastFileEditingSession : IDisposable
                     $"to {_revision}; discard the validated replacement and replan.");
             }
 
-            WorkspaceAssetCatalogEntry entry = RequireEditableRow(identity);
-            if (entry.AssetType != adapter.AssetType)
+            if (requested.Length == 0)
+                return false;
+
+            var staged = new List<(
+                AuthoredDraftMutation Request,
+                IEditingSessionDraftState State,
+                object Working,
+                bool IsRetained,
+                bool Changed)>(requested.Length);
+            foreach (AuthoredDraftMutation request in requested)
             {
-                throw new InvalidOperationException(
-                    $"Target row {identity.SerializedIndex} is {entry.AssetType}, " +
-                    $"not the supplied {adapter.AssetType} authoring type.");
+                ArgumentNullException.ThrowIfNull(request.Adapter);
+                ArgumentNullException.ThrowIfNull(request.Mutation);
+                WorkspaceAssetCatalogEntry entry = RequireEditableRow(
+                    request.RowIdentity);
+                if (entry.AssetType != request.Adapter.AssetType)
+                {
+                    throw new InvalidOperationException(
+                        $"Target row {request.RowIdentity.SerializedIndex} is " +
+                        $"{entry.AssetType}, not the supplied " +
+                        $"{request.Adapter.AssetType} authoring type.");
+                }
+
+                bool isRetained = _drafts.TryGetValue(
+                    request.RowIdentity,
+                    out IEditingSessionDraftState? state);
+                if (!isRetained)
+                {
+                    TargetZoneRowSource source = entry.TargetRow
+                        ?? throw new InvalidDataException(
+                            $"Editable target row " +
+                            $"{request.RowIdentity.SerializedIndex} has no " +
+                            "detached source row.");
+                    var sessionAdapter =
+                        new RegisteredAssetAuthoringAdapter(request.Adapter);
+                    object baseline = RequireDraftValue(
+                        sessionAdapter.CreateBaseline(source),
+                        "baseline",
+                        request.RowIdentity);
+                    state = new DraftState<object>(
+                        request.RowIdentity,
+                        entry,
+                        sessionAdapter,
+                        baseline);
+                }
+                if (state!.DraftType != request.Adapter.DraftType)
+                {
+                    throw new InvalidOperationException(
+                        $"Target row {request.RowIdentity.SerializedIndex} has " +
+                        $"detached draft type '{state.DraftType.FullName}', not " +
+                        $"the supplied '{request.Adapter.DraftType.FullName}'.");
+                }
+
+                object working = state.CloneCurrentObject();
+                request.Mutation(working);
+                if (!request.Adapter.DraftType.IsInstanceOfType(working))
+                {
+                    throw new InvalidDataException(
+                        $"The authored mutation for target row " +
+                        $"{request.RowIdentity.SerializedIndex} produced " +
+                        $"incompatible draft type " +
+                        $"'{working?.GetType().FullName ?? "null"}'.");
+                }
+                staged.Add((
+                    request,
+                    state,
+                    working,
+                    isRetained,
+                    !state.SemanticallyEqualsCurrentObject(working)));
             }
 
-            if (!_drafts.TryGetValue(
-                    identity,
-                    out IEditingSessionDraftState? state))
-            {
-                var sessionAdapter =
-                    new RegisteredAssetAuthoringAdapter(adapter);
-                state = GetOrCreateDraft<object>(
-                    identity,
-                    sessionAdapter);
-            }
-            if (state.DraftType != adapter.DraftType)
-            {
-                throw new InvalidOperationException(
-                    $"Target row {identity.SerializedIndex} has detached draft " +
-                    $"type '{state.DraftType.FullName}', not the supplied " +
-                    $"'{adapter.DraftType.FullName}'.");
-            }
-
-            object working = state.CloneCurrentObject();
-            mutation(working);
-            if (!adapter.DraftType.IsInstanceOfType(working))
-            {
-                throw new InvalidDataException(
-                    $"The authored mutation for target row " +
-                    $"{identity.SerializedIndex} produced incompatible draft " +
-                    $"type '{working?.GetType().FullName ?? "null"}'.");
-            }
-            if (state.SemanticallyEqualsCurrentObject(working))
+            if (!staged.Any(value => value.Changed))
                 return false;
 
             long revision = NextRevision();
-            state.SetCurrentObject(working, revision);
+            foreach (var replacement in staged.Where(value => value.Changed))
+            {
+                if (!replacement.IsRetained)
+                {
+                    _drafts.Add(
+                        replacement.Request.RowIdentity,
+                        replacement.State);
+                }
+                replacement.State.SetCurrentObject(
+                    replacement.Working,
+                    revision);
+            }
             RebuildChangeSet();
             return true;
         }
     }
 
-    public bool RevertOne(TargetZoneRowIdentity identity)
+    /// <summary>
+    /// Returns a detached clone of one row's actual saved baseline at an
+    /// exact revision. This is intentionally narrower than a public baseline
+    /// API: document coordinators use it only to preflight row-level reverts
+    /// whose effects depend on other authored rows.
+    /// </summary>
+    internal SavedAuthoredDraftCapture CaptureSavedAuthoredDraftAtRevision(
+        long expectedRevision,
+        TargetZoneRowIdentity identity,
+        IAssetAuthoringAdapter adapter)
+    {
+        if (expectedRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        ArgumentNullException.ThrowIfNull(adapter);
+
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_revision != expectedRevision)
+            {
+                throw new InvalidOperationException(
+                    $"Editing-session revision changed from " +
+                    $"{expectedRevision} to {_revision}; discard the saved " +
+                    "baseline preflight and replan.");
+            }
+
+            WorkspaceAssetCatalogEntry entry = RequireEditableRow(identity);
+            if (entry.AssetType != adapter.AssetType)
+            {
+                throw new InvalidOperationException(
+                    $"Target row {identity.SerializedIndex} is " +
+                    $"{entry.AssetType}, not the supplied " +
+                    $"{adapter.AssetType} authoring type.");
+            }
+
+            if (_drafts.TryGetValue(
+                    identity,
+                    out IEditingSessionDraftState? state))
+            {
+                if (state.DraftType != adapter.DraftType)
+                {
+                    throw new InvalidOperationException(
+                        $"Target row {identity.SerializedIndex} retains " +
+                        $"draft type '{state.DraftType.FullName}', not " +
+                        $"'{adapter.DraftType.FullName}'.");
+                }
+
+                return new SavedAuthoredDraftCapture(
+                    _lastSavedRevision,
+                    state.CloneSavedBaselineObject());
+            }
+
+            if (_pendingAdditions.ContainsKey(identity))
+            {
+                throw new InvalidDataException(
+                    $"New target row {identity.SerializedIndex} has no " +
+                    "retained saved baseline draft.");
+            }
+
+            TargetZoneRowSource source = entry.TargetRow
+                ?? throw new InvalidDataException(
+                    $"Editable target row {identity.SerializedIndex} has no " +
+                    "detached source row.");
+            return new SavedAuthoredDraftCapture(
+                _lastSavedRevision,
+                new RegisteredAssetAuthoringAdapter(adapter)
+                    .CreateBaseline(source));
+        }
+    }
+
+    public bool RevertOne(TargetZoneRowIdentity identity) =>
+        RevertOneCore(identity, expectedRevision: null);
+
+    internal bool RevertOneAtRevision(
+        long expectedRevision,
+        TargetZoneRowIdentity identity)
+    {
+        if (expectedRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        return RevertOneCore(
+            identity,
+            expectedRevision,
+            expectedSavedRevision: null);
+    }
+
+    internal bool RevertOneAtRevision(
+        long expectedRevision,
+        long expectedSavedRevision,
+        TargetZoneRowIdentity identity)
+    {
+        if (expectedRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        if (expectedSavedRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedSavedRevision));
+        return RevertOneCore(
+            identity,
+            expectedRevision,
+            expectedSavedRevision);
+    }
+
+    private bool RevertOneCore(
+        TargetZoneRowIdentity identity,
+        long? expectedRevision,
+        long? expectedSavedRevision = null)
     {
         bool targetRowsChanged = false;
         bool reverted;
@@ -916,6 +1123,22 @@ public sealed class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposed();
             RequireNoCompiledMapSave();
+            if (expectedRevision is { } requiredRevision &&
+                _revision != requiredRevision)
+            {
+                throw new InvalidOperationException(
+                    $"Editing-session revision changed from " +
+                    $"{requiredRevision} to {_revision}; discard the resolved " +
+                    "revert and replan.");
+            }
+            if (expectedSavedRevision is { } requiredSavedRevision &&
+                _lastSavedRevision != requiredSavedRevision)
+            {
+                throw new InvalidOperationException(
+                    $"The saved document baseline changed from revision " +
+                    $"{requiredSavedRevision} to {_lastSavedRevision}; " +
+                    "discard the validated revert and replan.");
+            }
             _ = RequireEditableRow(identity);
             if (_pendingAdditions.ContainsKey(identity) &&
                 _transactionalSaveProtectedAdditions.Contains(identity))
@@ -1254,13 +1477,30 @@ public sealed class FastFileEditingSession : IDisposable
         TargetZoneRowIdentity identity)
         where TDraft : notnull
     {
-        if (state is not DraftState<TDraft> typed || !ReferenceEquals(typed.Adapter, adapter))
+        if (state is not DraftState<TDraft> typed ||
+            !AreCompatibleAdapters(typed.Adapter, adapter))
         {
             throw new InvalidOperationException(
                 $"Target row {identity.SerializedIndex} already has a draft bound to a different adapter or draft type.");
         }
 
         return typed;
+    }
+
+    private static bool AreCompatibleAdapters<TDraft>(
+        ITargetZoneDraftAdapter<TDraft> left,
+        ITargetZoneDraftAdapter<TDraft> right)
+        where TDraft : notnull
+    {
+        if (ReferenceEquals(left, right))
+            return true;
+
+        return left is RegisteredAssetAuthoringAdapter leftAuthored &&
+            right is RegisteredAssetAuthoringAdapter rightAuthored &&
+            leftAuthored.AssetType == rightAuthored.AssetType &&
+            leftAuthored.SnapshotType == rightAuthored.SnapshotType &&
+            leftAuthored.DraftType == rightAuthored.DraftType &&
+            leftAuthored.BuildDataType == rightAuthored.BuildDataType;
     }
 
     private WorkspaceAssetCatalogEntry RequireEditableRow(TargetZoneRowIdentity identity)
@@ -1601,6 +1841,7 @@ public sealed class FastFileEditingSession : IDisposable
         Type DraftType { get; }
         bool IsChanged { get; }
         object CloneCurrentObject();
+        object CloneSavedBaselineObject();
         bool SemanticallyEqualsCurrentObject(object candidate);
         void SetCurrentObject(object current, long revision);
         void RestoreSavedBaseline(long revision);
@@ -1646,6 +1887,9 @@ public sealed class FastFileEditingSession : IDisposable
         public TDraft CloneCurrent() => CloneRequired(_current, "current draft");
 
         public object CloneCurrentObject() => CloneCurrent();
+
+        public object CloneSavedBaselineObject() =>
+            CloneRequired(_savedBaseline, "saved baseline");
 
         public bool SemanticallyEqualsCurrent(TDraft candidate) =>
             Adapter.SemanticallyEquals(_current, candidate);

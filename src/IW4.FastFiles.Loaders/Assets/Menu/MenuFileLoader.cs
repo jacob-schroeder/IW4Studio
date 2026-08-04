@@ -27,7 +27,8 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return ReadMenuDefPointer(cursor, pointer, context)
+        MenuDefLoadResult result = ReadMenuDefPointer(cursor, pointer, context);
+        return result.CanonicalMenu ?? result.IncomingDefinition
             ?? throw new InvalidDataException("Top-level Menu pointer resolved to null.");
     }
 
@@ -148,18 +149,34 @@ public sealed class MenuFileLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative MenuFile menu count {count}.");
 
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        if (pointer.Type == PointerType.Null)
         {
-            context.PointerReader.ValidateOffsetPointerRange<XPointer<MenuDefAsset>[]>(pointer, checked(count * sizeof(int)), "MenuDef*[]");
-            return [];
+            if (count == 0)
+                return [];
+            throw new InvalidDataException(
+                $"MenuDef*[] has count {count}, but its pointer is null.");
         }
 
+        if (pointer.Type == PointerType.Offset)
+        {
+            context.PointerReader.ValidateOffsetPointerRange<XPointer<MenuDefAsset>[]>(pointer, checked(count * sizeof(int)), "MenuDef*[]");
+            return context.ResolveMaterializedDirect<MenuDefReference[]>(
+                pointer,
+                "MenuDef*[]");
+        }
+
+        if (!context.PointerReader.HasInlinePayload(pointer))
+            throw UnsupportedDirectTablePointer(pointer, "MenuDef*[]");
+
         AlignStream(cursor, context, 4);
-        int tableOffset = cursor.Offset;
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
         ReadOnlyMemory<byte> pointerBytes = context.Blocks.LoadMemory(cursor, checked(count * sizeof(int)), out XBlockAddress pointerTableAddress);
         var pointerCursor = new FastFileCursor(pointerBytes, pointerTableAddress);
-        var menus = new List<MenuDefReference>(count);
+        var menus = new MenuDefReference[count];
+        context.RegisterMaterialized(
+            pointerTableAddress,
+            menus,
+            "MenuDef*[]");
 
         for (int i = 0; i < count; i++)
         {
@@ -170,20 +187,24 @@ public sealed class MenuFileLoader
                 XPointerOffsetMode.AliasCell,
                 XPointerNullability.Required);
             XPointerReference menuPointer = typedMenuPointer.Untyped;
-            MenuDefAsset? menu = ReadMenuDefPointer(cursor, menuPointer, context);
-            menus.Add(new MenuDefReference(i, typedMenuPointer, menu));
+            MenuDefLoadResult menu = ReadMenuDefPointer(cursor, menuPointer, context);
+            menus[i] = new MenuDefReference(
+                i,
+                typedMenuPointer,
+                menu.IncomingDefinition,
+                menu.CanonicalMenu);
         }
 
         return menus;
     }
 
-    private static MenuDefAsset? ReadMenuDefPointer(
+    private static MenuDefLoadResult ReadMenuDefPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
         if (pointer.Type == PointerType.Null)
-            return null;
+            return new MenuDefLoadResult(null, null);
 
         if (pointer.Type == PointerType.Offset)
         {
@@ -196,7 +217,7 @@ public sealed class MenuFileLoader
             int canonicalRaw = canonical.RuntimeAddress?.RawValue
                 ?? throw new InvalidDataException("Canonical MenuDef has no runtime address.");
             context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-            return canonical;
+            return new MenuDefLoadResult(null, canonical);
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
@@ -235,13 +256,17 @@ public sealed class MenuFileLoader
                 context.Blocks.WriteInt32(cell, canonicalRaw);
             }
 
-            return canonical;
+            return new MenuDefLoadResult(menu, canonical);
         }
         finally
         {
             context.Blocks.Pop();
         }
     }
+
+    private sealed record MenuDefLoadResult(
+        MenuDefAsset? IncomingDefinition,
+        MenuDefAsset? CanonicalMenu);
 
     private static MenuDefAsset ReadMenuDefRoot(
         FastFileCursor cursor,
@@ -379,18 +404,31 @@ public sealed class MenuFileLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative ItemDef count {count}.");
 
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        if (pointer.Type == PointerType.Null)
         {
-            context.PointerReader.ValidateOffsetPointerRange<XPointer<ItemDefAsset>[]>(pointer, checked(count * sizeof(int)), "ItemDef*[]");
-            return [];
+            if (count == 0)
+                return [];
+            throw new InvalidDataException(
+                $"ItemDef*[] has count {count}, but its pointer is null.");
         }
 
+        if (pointer.Type == PointerType.Offset)
+        {
+            context.PointerReader.ValidateOffsetPointerRange<XPointer<ItemDefAsset>[]>(pointer, checked(count * sizeof(int)), "ItemDef*[]");
+            return context.ResolveMaterializedDirect<ItemDefReference[]>(
+                pointer,
+                "ItemDef*[]");
+        }
+
+        if (!context.PointerReader.HasInlinePayload(pointer))
+            throw UnsupportedDirectTablePointer(pointer, "ItemDef*[]");
+
         AlignStream(cursor, context, 4);
-        int tableOffset = cursor.Offset;
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
         ReadOnlyMemory<byte> pointerBytes = context.Blocks.LoadMemory(cursor, checked(count * sizeof(int)), out XBlockAddress tableAddress);
         var pointerCursor = new FastFileCursor(pointerBytes, tableAddress);
         var items = new ItemDefReference[count];
+        context.RegisterMaterialized(tableAddress, items, "ItemDef*[]");
         ItemDefAsset? previousItem = null;
         int previousEndOffset = cursor.Offset;
         var recentItems = new Queue<(int Index, ItemDefAsset Item, int EndOffset)>();
@@ -437,13 +475,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out ItemDefAsset? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<ItemDefAsset>(pointer, ItemDefSize, "ItemDef");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                ItemDefSize,
+                "ItemDef",
+                out ItemDefAsset? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -693,13 +731,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out MenuEventHandlerSet? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<MenuEventHandlerSet>(pointer, MenuEventHandlerSet.SerializedSize, "MenuEventHandlerSet");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                MenuEventHandlerSet.SerializedSize,
+                "MenuEventHandlerSet",
+                out MenuEventHandlerSet? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -731,18 +769,34 @@ public sealed class MenuFileLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative MenuEventHandler count {count}.");
 
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        if (pointer.Type == PointerType.Null)
         {
-            context.PointerReader.ValidateOffsetPointerRange<XPointer<MenuEventHandler>[]>(pointer, checked(count * sizeof(int)), "MenuEventHandler*[]");
-            return [];
+            if (count == 0)
+                return [];
+            throw new InvalidDataException(
+                $"MenuEventHandler*[] has count {count}, but its pointer is null.");
         }
 
+        if (pointer.Type == PointerType.Offset)
+        {
+            context.PointerReader.ValidateOffsetPointerRange<XPointer<MenuEventHandler>[]>(pointer, checked(count * sizeof(int)), "MenuEventHandler*[]");
+            return context.ResolveMaterializedDirect<MenuEventHandlerReference[]>(
+                pointer,
+                "MenuEventHandler*[]");
+        }
+
+        if (!context.PointerReader.HasInlinePayload(pointer))
+            throw UnsupportedDirectTablePointer(pointer, "MenuEventHandler*[]");
+
         AlignStream(cursor, context, 4);
-        int tableOffset = cursor.Offset;
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
         ReadOnlyMemory<byte> pointerBytes = context.Blocks.LoadMemory(cursor, checked(count * sizeof(int)), out XBlockAddress tableAddress);
         var pointerCursor = new FastFileCursor(pointerBytes, tableAddress);
         var handlers = new MenuEventHandlerReference[count];
+        context.RegisterMaterialized(
+            tableAddress,
+            handlers,
+            "MenuEventHandler*[]");
 
         for (int i = 0; i < count; i++)
         {
@@ -759,13 +813,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out MenuEventHandler? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<MenuEventHandler>(pointer, MenuEventHandler.SerializedSize, "MenuEventHandler");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                MenuEventHandler.SerializedSize,
+                "MenuEventHandler",
+                out MenuEventHandler? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -879,13 +933,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out ConditionalScript? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<ConditionalScript>(pointer, ConditionalScript.SerializedSize, "ConditionalScript");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                ConditionalScript.SerializedSize,
+                "ConditionalScript",
+                out ConditionalScript? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -914,13 +968,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out SetLocalVarData? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<SetLocalVarData>(pointer, SetLocalVarData.SerializedSize, "SetLocalVarData");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                SetLocalVarData.SerializedSize,
+                "SetLocalVarData",
+                out SetLocalVarData? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -948,13 +1002,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out ItemKeyHandler? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<ItemKeyHandler>(pointer, ItemKeyHandler.SerializedSize, "ItemKeyHandler");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                ItemKeyHandler.SerializedSize,
+                "ItemKeyHandler",
+                out ItemKeyHandler? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -983,14 +1037,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out Statement? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<Statement>(pointer, Statement.SerializedSize, "Statement");
-            VerifyOffsetStatementPointer(pointer, context);
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                Statement.SerializedSize,
+                "Statement",
+                out Statement? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         int offset = cursor.Offset;
@@ -1027,35 +1080,6 @@ public sealed class MenuFileLoader
         return statement;
     }
 
-    private static void VerifyOffsetStatementPointer(
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        if (pointer.PackedAddress is not { } address)
-            return;
-
-        if (address.BlockType is not XFileBlockType.LARGE)
-        {
-            context.Diagnostics.Warn(
-                $"Statement* offset pointer 0x{pointer.Raw:X8} targets {address}; expected LARGE block for menu expression data.");
-            return;
-        }
-
-        // ValidateOffsetPointerRange immediately precedes this check, so read
-        // the three materialized header words in place. Copying the entire
-        // growing LARGE block here made packed Statement loading quadratic.
-        int numEntries = context.Blocks.ReadInt32(address);
-        int entriesRaw = context.Blocks.ReadInt32(address.Add(sizeof(int)));
-        int supportingDataRaw = context.Blocks.ReadInt32(address.Add(sizeof(int) * 2));
-
-        if (numEntries is < 0 or > 0x10000)
-        {
-            context.Diagnostics.Warn(
-                $"Statement* offset pointer 0x{pointer.Raw:X8} targets {address}, but Statement.NumEntries is implausible: 0x{numEntries:X8}; " +
-                $"entries=0x{entriesRaw:X8}, supportingData=0x{supportingDataRaw:X8}.");
-        }
-    }
-
     private static IReadOnlyList<ExpressionEntry> ReadExpressionEntries(
         FastFileCursor cursor,
         XPointerReference pointer,
@@ -1065,11 +1089,22 @@ public sealed class MenuFileLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative ExpressionEntry count {count}.");
 
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        if (pointer.Type == PointerType.Null)
+        {
+            if (count == 0)
+                return [];
+            throw new InvalidDataException(
+                $"ExpressionEntry[] has count {count}, but its pointer is null.");
+        }
+
+        if (pointer.Type == PointerType.Offset)
         {
             context.PointerReader.ValidateOffsetPointerRange<ExpressionEntry[]>(pointer, checked(count * ExpressionEntry.SerializedSize), "ExpressionEntry[]");
             return context.ResolveMaterializedDirect<ExpressionEntry[]>(pointer, "ExpressionEntry[]");
         }
+
+        if (!context.PointerReader.HasInlinePayload(pointer))
+            throw UnsupportedDirectTablePointer(pointer, "ExpressionEntry[]");
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1246,13 +1281,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out ExpressionSupportingData? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<ExpressionSupportingData>(pointer, ExpressionSupportingData.SerializedSize, "ExpressionSupportingData");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                ExpressionSupportingData.SerializedSize,
+                "ExpressionSupportingData",
+                out ExpressionSupportingData? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         int offset = cursor.Offset;
@@ -1347,13 +1382,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out StaticDvar? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<StaticDvar>(pointer, StaticDvar.SerializedSize, "StaticDvar");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                StaticDvar.SerializedSize,
+                "StaticDvar",
+                out StaticDvar? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1388,11 +1423,22 @@ public sealed class MenuFileLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative pointer-array count {count}.");
 
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        if (pointer.Type == PointerType.Null)
+        {
+            if (count == 0)
+                return [];
+            throw new InvalidDataException(
+                $"{name} has count {count}, but its pointer is null.");
+        }
+
+        if (pointer.Type == PointerType.Offset)
         {
             context.PointerReader.ValidateOffsetPointerRange(pointer, checked(count * sizeof(int)), name);
-            return [];
+            return context.ResolveMaterializedDirect<T[]>(pointer, name);
         }
+
+        if (!context.PointerReader.HasInlinePayload(pointer))
+            throw UnsupportedDirectTablePointer(pointer, name);
 
         AlignStream(cursor, context, 4);
         int tableOffset = cursor.Offset;
@@ -1400,6 +1446,7 @@ public sealed class MenuFileLoader
         ReadOnlyMemory<byte> pointerBytes = context.Blocks.LoadMemory(cursor, checked(count * sizeof(int)), out XBlockAddress tableAddress);
         var pointerCursor = new FastFileCursor(pointerBytes, tableAddress);
         var values = new T[count];
+        context.RegisterMaterialized(tableAddress, values, name);
 
         for (int i = 0; i < count; i++)
         {
@@ -1421,6 +1468,13 @@ public sealed class MenuFileLoader
 
         return values;
     }
+
+    private static InvalidDataException UnsupportedDirectTablePointer(
+        XPointerReference pointer,
+        string name) =>
+        new(
+            $"{name} pointer 0x{unchecked((uint)pointer.Raw):X8} has " +
+            $"unsupported direct-pointer source form {pointer.Type}.");
 
     private static void ReadItemTypeData(
         FastFileCursor cursor,
@@ -1476,13 +1530,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out EditFieldDef? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<EditFieldDef>(pointer, EditFieldDef.SerializedSize, "EditFieldDef");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                EditFieldDef.SerializedSize,
+                "EditFieldDef",
+                out EditFieldDef? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1514,13 +1568,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out ListBoxDef? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<ListBoxDef>(pointer, ListBoxDef.SerializedSize, "ListBoxDef");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                ListBoxDef.SerializedSize,
+                "ListBoxDef",
+                out ListBoxDef? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1579,13 +1633,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out MultiDef? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<MultiDef>(pointer, MultiDef.SerializedSize, "MultiDef");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                MultiDef.SerializedSize,
+                "MultiDef",
+                out MultiDef? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1646,13 +1700,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out NewsTickerDef? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<NewsTickerDef>(pointer, NewsTickerDef.SerializedSize, "NewsTickerDef");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                NewsTickerDef.SerializedSize,
+                "NewsTickerDef",
+                out NewsTickerDef? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1684,13 +1738,13 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            if (TryGetMenuObject(pointer, context, out TextScrollDef? existing))
-                return existing;
-            context.PointerReader.ValidateOffsetPointerRange<TextScrollDef>(pointer, TextScrollDef.SerializedSize, "TextScrollDef");
-            return null;
-        }
+        if (ResolveMenuObjectWithoutSource(
+                pointer,
+                context,
+                TextScrollDef.SerializedSize,
+                "TextScrollDef",
+                out TextScrollDef? existing))
+            return existing;
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1729,11 +1783,16 @@ public sealed class MenuFileLoader
                 $"ItemFloatExpression[] has count {count}, but its pointer is null.");
         }
 
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        if (pointer.Type == PointerType.Offset)
         {
             context.PointerReader.ValidateOffsetPointerRange<ItemFloatExpression[]>(pointer, checked(count * ItemFloatExpression.SerializedSize), "ItemFloatExpression[]");
             return context.ResolveMaterializedDirect<ItemFloatExpression[]>(pointer, "ItemFloatExpression[]");
         }
+
+        if (!context.PointerReader.HasInlinePayload(pointer))
+            throw UnsupportedDirectTablePointer(
+                pointer,
+                "ItemFloatExpression[]");
 
         AlignStream(cursor, context, 4);
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -1832,17 +1891,47 @@ public sealed class MenuFileLoader
         return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
     }
 
-    private static bool TryGetMenuObject<T>(
+    private static bool ResolveMenuObjectWithoutSource<T>(
         XPointerReference pointer,
         DbLoadExecutionContext context,
+        int serializedSize,
+        string targetName,
         out T? value)
         where T : class
     {
-        if (pointer.PackedAddress is { } address)
-            return context.TryGetMenuObject(address, out value);
+        if (pointer.Type == PointerType.Null)
+        {
+            value = null;
+            return true;
+        }
 
-        value = null;
-        return false;
+        if (context.PointerReader.HasInlinePayload(pointer))
+        {
+            value = null;
+            return false;
+        }
+
+        if (pointer.Type != PointerType.Offset)
+        {
+            throw new InvalidDataException(
+                $"{targetName} pointer 0x{unchecked((uint)pointer.Raw):X8} " +
+                $"has unsupported source form {pointer.Type}.");
+        }
+
+        context.PointerReader.ValidateOffsetPointerRange<T>(
+            pointer,
+            serializedSize,
+            targetName);
+        if (pointer.PackedAddress is { } address &&
+            context.TryGetMenuObject(address, out value))
+        {
+            return true;
+        }
+
+        throw new InvalidDataException(
+            $"Packed {targetName} pointer " +
+            $"0x{unchecked((uint)pointer.Raw):X8} has no earlier " +
+            "materialized Menu graph owner.");
     }
 
     private static void AlignStream(

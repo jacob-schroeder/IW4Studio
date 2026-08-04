@@ -6,10 +6,10 @@ using IW4.FastFiles.Emitters.Emission;
 namespace IW4.FastFiles.Emitters.Assets;
 
 /// <summary>
-/// Emits the fixed, self-contained MenuFile and Menu roots.  The deliberately
-/// strict child checks are important: the current loader has not yet captured
-/// symbolic identities for every material/sound child or all recursive UI
-/// payloads, so an old runtime pointer must never leak into an output zone.
+/// Emits a MenuFile root and its ordered nested Menu links. Inline and insert
+/// links own a detached incoming Menu body; packed links resolve through a
+/// previously published logical Menu owner or materialize an external Menu
+/// registration through the shared nested-XAsset path.
 /// </summary>
 public sealed class MenuFileBodyEmitter : IXAssetBodyEmitter
 {
@@ -24,20 +24,85 @@ public sealed class MenuFileBodyEmitter : IXAssetBodyEmitter
             return diagnostics;
         }
         ValidateString(data.Name, "name", diagnostics, rowIndex);
-        IReadOnlyList<IMenuBuildData> menus = data.Menus;
-        for (int index = 0; index < menus.Count; index++)
+        if (string.IsNullOrEmpty(data.Name))
         {
-            IMenuBuildData? menu = menus[index];
-            if (menu is null)
+            diagnostics.Add(Error(
+                "name",
+                "MenuFile requires a non-empty asset name.",
+                rowIndex));
+        }
+        IReadOnlyList<NestedXAssetBuildLink> links = data.MenuLinks;
+        for (int index = 0; index < links.Count; index++)
+        {
+            NestedXAssetBuildLink? link = links[index];
+            string path = $"menuLinks[{index}]";
+            if (link is null)
             {
-                diagnostics.Add(Error($"menus[{index}]", "MenuFile cannot contain a null menu entry.", rowIndex));
+                diagnostics.Add(Error(
+                    path,
+                    "MenuFile cannot contain a null Menu link.",
+                    rowIndex));
                 continue;
             }
-            if (menu.AssetType != XAssetType.Menu)
-                diagnostics.Add(Error($"menus[{index}].type", "Nested MenuFile entries must declare the Menu asset type.", rowIndex));
+
+            diagnostics.AddRange(NestedXAssetEmission.Validate(
+                link,
+                XAssetType.Menu,
+                path,
+                rowIndex,
+                AssetType));
+
+            string serializedName = link.Reference.OriginalSerializedName;
+            if (serializedName.Length == 0)
+            {
+                diagnostics.Add(Error(
+                    $"{path}.reference",
+                    "Nested Menu identity cannot be empty.",
+                    rowIndex));
+            }
+
+            if (link.IncomingDefinition is null)
+                continue;
+
+            if (link.IncomingDefinition is not IMenuBuildData menu)
+            {
+                diagnostics.Add(Error(
+                    $"{path}.incomingDefinition",
+                    "Nested Menu definition does not implement IMenuBuildData.",
+                    rowIndex));
+                continue;
+            }
+
             if (!menu.IsComplete)
-                diagnostics.Add(Error($"menus[{index}]", "Nested Menu registration was unresolved at capture time and cannot be emitted.", rowIndex));
-            diagnostics.AddRange(MenuBodyEmitter.ValidateDefinition(menu, $"menus[{index}]", rowIndex));
+            {
+                diagnostics.Add(Error(
+                    $"{path}.incomingDefinition",
+                    "Nested Menu definition is incomplete.",
+                    rowIndex));
+            }
+
+            string? definitionName = menu.Definition?.Window.Name;
+            if (link.Reference.IsExternalReference ||
+                definitionName?.StartsWith(",", StringComparison.Ordinal) == true)
+            {
+                diagnostics.Add(Error(
+                    $"{path}.reference",
+                    "An owned inline/insert Menu definition cannot use a comma-prefixed external-reference identity.",
+                    rowIndex));
+            }
+            if (definitionName is not null &&
+                !SameLogicalName(serializedName, definitionName))
+            {
+                diagnostics.Add(Error(
+                    $"{path}.reference",
+                    "Nested Menu reference does not match its incoming definition name.",
+                    rowIndex));
+            }
+
+            diagnostics.AddRange(MenuBodyEmitter.ValidateDefinition(
+                menu,
+                $"{path}.incomingDefinition",
+                rowIndex));
         }
         return diagnostics;
     }
@@ -47,40 +112,28 @@ public sealed class MenuFileBodyEmitter : IXAssetBodyEmitter
         ArgumentNullException.ThrowIfNull(plan);
         AssetBodyEmitterHelpers.RequireNoDiagnostics(Validate(buildData, rowIndex));
         IMenuFileBuildData data = (IMenuFileBuildData)buildData;
-        IReadOnlyList<IMenuBuildData> menuBuildData = data.Menus;
+        IReadOnlyList<NestedXAssetBuildLink> menuLinks = data.MenuLinks;
         var all = new List<EmissionBlockSegment>();
 
         plan.Push(XFileBlockType.TEMP);
         EmissionAddress rootAddress = plan.Allocate(MenuFileAsset.SerializedSize, 4);
         plan.Push(XFileBlockType.LARGE);
         PlannedString? name = AssetBodyEmitterHelpers.PlanString(data.Name, plan, all, plan.StringAliases);
-        EmissionAddress? menuTableAddress = menuBuildData.Count == 0 ? null : plan.Allocate(checked(menuBuildData.Count * sizeof(int)), 4);
-        // One identity planner spans the complete MenuFile graph.  A child
-        // shared by two nested menus is emitted once at its first source
-        // occurrence and referenced by its packed block address thereafter.
-        var menuPlanner = new MenuGraphPlanner(plan, all);
-        var menus = new MenuPlan[menuBuildData.Count];
-        for (int index = 0; index < menus.Length; index++)
+        EmissionAddress? menuTableAddress = menuLinks.Count == 0
+            ? null
+            : plan.Allocate(checked(menuLinks.Count * sizeof(int)), 4);
+        var menus = new NestedXAssetPlan[menuLinks.Count];
+        for (int index = 0; index < menuLinks.Count; index++)
         {
             EmissionAddress pointerCell = new(
                 menuTableAddress!.Value.Block,
                 checked(menuTableAddress.Value.Offset + index * sizeof(int)));
-            string? logicalName = menuBuildData[index].Definition.Window.Name;
-            string? aliasKey = logicalName is null
-                ? null
-                : $"{(int)XAssetType.Menu}\u0000{logicalName.TrimStart(',')}";
-            if (aliasKey is not null &&
-                plan.PersistentXAssetAliasCells.TryGetValue(aliasKey, out EmissionAddress existingCell))
-            {
-                menus[index] = new MenuPlan(null, [], existingCell.ToPackedPointer());
-                continue;
-            }
-
-            menus[index] = menuPlanner.PlanMenu(
-                menuBuildData[index].Definition,
-                menuBuildData[index].References);
-            if (aliasKey is not null)
-                plan.PersistentXAssetAliasCells.TryAdd(aliasKey, pointerCell);
+            menus[index] = NestedXAssetEmission.Plan(
+                menuLinks[index],
+                plan,
+                all,
+                pointerCell,
+                "MenuFile");
         }
         plan.Pop(XFileBlockType.LARGE);
         plan.Pop(XFileBlockType.TEMP);
@@ -88,14 +141,14 @@ public sealed class MenuFileBodyEmitter : IXAssetBodyEmitter
         if (menuTableAddress is { } tableAddress)
         {
             var tableWriter = new XSourceWriter();
-            foreach (MenuPlan menu in menus)
+            foreach (NestedXAssetPlan menu in menus)
                 tableWriter.WriteInt32(menu.PointerRaw);
             all.Add(new EmissionBlockSegment(tableAddress, tableWriter.ToArray()));
         }
 
         var rootWriter = new XSourceWriter();
         rootWriter.WriteInt32(AssetBodyEmitterHelpers.SourcePointer(name));
-        rootWriter.WriteInt32(menuBuildData.Count);
+        rootWriter.WriteInt32(menuLinks.Count);
         rootWriter.WriteInt32(menuTableAddress is null ? 0 : -1);
         Exact(rootWriter, MenuFileAsset.SerializedSize, "MenuFile");
         EmissionBlockSegment root = new(rootAddress, rootWriter.ToArray());
@@ -105,10 +158,19 @@ public sealed class MenuFileBodyEmitter : IXAssetBodyEmitter
         AddNewSegments(source, all, name);
         if (menuTableAddress is { } address)
             source.Add(all.Single(segment => segment.Address == address));
-        foreach (MenuPlan menu in menus)
+        foreach (NestedXAssetPlan menu in menus)
             source.AddRange(menu.Source);
         return new AssetBodyEmission(AssetType, rootAddress, all, source);
     }
+
+    private static bool SameLogicalName(string left, string right) =>
+        string.Equals(
+            NormalizeLogicalName(left),
+            NormalizeLogicalName(right),
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeLogicalName(string value) =>
+        value.TrimStart(',').Replace('\\', '/');
 
     private static void ValidateString(string? value, string path, List<EmissionError> diagnostics, int? rowIndex)
     {
@@ -159,16 +221,21 @@ public sealed class MenuBodyEmitter : IXAssetBodyEmitter
         AssetBodyEmitterHelpers.RequireNoDiagnostics(Validate(buildData, rowIndex));
         IMenuBuildData data = (IMenuBuildData)buildData;
         var all = new List<EmissionBlockSegment>();
-        MenuPlan menu = PlanDefinition(data.Definition, data.References, plan, all);
+        MenuPlan menu = PlanDefinition(data.Definition, plan, all);
         EmissionBlockSegment root = menu.Root
             ?? throw new InvalidDataException("A top-level Menu cannot be emitted as a nested alias cell.");
         return new AssetBodyEmission(AssetType, root.Address, all, menu.Source);
     }
 
     internal static IReadOnlyList<EmissionError> ValidateDefinition(IMenuBuildData? data, string path, int? rowIndex) =>
-        data is null ? [Error(path, "Menu definition is null.", rowIndex)] : ValidateDefinition(data.Definition, data.References, path, rowIndex);
+        data is null
+            ? [Error(path, "Menu definition is null.", rowIndex)]
+            : ValidateDefinition(data.Definition, path, rowIndex);
 
-    internal static IReadOnlyList<EmissionError> ValidateDefinition(MenuDefAsset? definition, MenuReferenceBuildData references, string path, int? rowIndex)
+    internal static IReadOnlyList<EmissionError> ValidateDefinition(
+        MenuDefAsset? definition,
+        string path,
+        int? rowIndex)
     {
         var diagnostics = new List<EmissionError>();
         if (definition is null)
@@ -176,10 +243,39 @@ public sealed class MenuBodyEmitter : IXAssetBodyEmitter
             diagnostics.Add(Error(path, "Menu definition is null.", rowIndex));
             return diagnostics;
         }
-        ValidateWindow(definition.Window, references, $"{path}.window", diagnostics, rowIndex);
+        ValidateWindow(
+            definition.Window,
+            $"{path}.window",
+            diagnostics,
+            rowIndex);
+        if (string.IsNullOrEmpty(definition.Window.Name))
+        {
+            diagnostics.Add(Error(
+                $"{path}.window.name",
+                "Menu requires a non-empty asset name.",
+                rowIndex));
+        }
         ValidateString(definition.Font, $"{path}.font", diagnostics, rowIndex);
         ValidateString(definition.AllowedBindingString, $"{path}.allowedBinding", diagnostics, rowIndex);
         ValidateString(definition.SoundNameString, $"{path}.soundName", diagnostics, rowIndex);
+        if (definition.Fullscreen is not 0 and not 1)
+            diagnostics.Add(Error($"{path}.fullscreen", "Value must be 0 or 1.", rowIndex));
+        if (definition.CursorItems.Count != 4)
+            diagnostics.Add(Error($"{path}.cursorItems", "Menu requires exactly four cursor items.", rowIndex));
+        foreach ((string member, float number) in new[]
+                 {
+                     ("fadeClamp", definition.FadeClamp),
+                     ("fadeAmount", definition.FadeAmount),
+                     ("fadeInAmount", definition.FadeInAmount),
+                     ("blurRadius", definition.BlurRadius)
+                 })
+        {
+            if (!float.IsFinite(number))
+                diagnostics.Add(Error($"{path}.{member}", "Value must be finite.", rowIndex));
+        }
+        if (definition.BlurRadius < 0)
+            diagnostics.Add(Error($"{path}.blurRadius", "Blur radius cannot be negative.", rowIndex));
+        ValidateVec4(definition.FocusColor, $"{path}.focusColor", diagnostics, rowIndex);
         ValidateTransitions(definition.ScaleTransitions, $"{path}.scaleTransitions", diagnostics, rowIndex);
         ValidateTransitions(definition.AlphaTransitions, $"{path}.alphaTransitions", diagnostics, rowIndex);
         ValidateTransitions(definition.XTransitions, $"{path}.xTransitions", diagnostics, rowIndex);
@@ -203,58 +299,27 @@ public sealed class MenuBodyEmitter : IXAssetBodyEmitter
         return diagnostics;
     }
 
-    internal static MenuPlan PlanDefinition(MenuDefAsset definition, MenuReferenceBuildData references, EmissionPlan plan, List<EmissionBlockSegment> all)
-        => new MenuGraphPlanner(plan, all).PlanMenu(definition, references);
+    internal static MenuPlan PlanDefinition(
+        MenuDefAsset definition,
+        EmissionPlan plan,
+        List<EmissionBlockSegment> all) =>
+        new MenuGraphPlanner(plan, all).PlanMenu(definition);
 
-    private static void WriteWindow(XSourceWriter writer, WindowDef window, PlannedString? name, PlannedString? group, ExternalPlan? background)
-    {
-        writer.WriteInt32(Pointer(name));
-        WriteRectangle(writer, window.Rect); WriteRectangle(writer, window.RectClient);
-        writer.WriteInt32(Pointer(group)); writer.WriteInt32((int)window.Style); writer.WriteInt32((int)window.Border); writer.WriteInt32((int)window.OwnerDraw); writer.WriteInt32(window.OwnerDrawFlags); writer.WriteSingle(window.BorderSize); writer.WriteInt32((int)window.StaticFlags);
-        WriteInts(writer, window.DynamicFlags.Select(value => (int)value).ToArray(), 4, "Window.dynamicFlags");
-        writer.WriteInt32(window.NextTime);
-        WriteVec4(writer, window.ForeColor); WriteVec4(writer, window.BackColor); WriteVec4(writer, window.BorderColor); WriteVec4(writer, window.OutlineColor); WriteVec4(writer, window.DisableColor);
-        writer.WriteInt32(Pointer(background));
-    }
-
-    private static void WriteRectangle(XSourceWriter writer, RectangleDef value)
-    {
-        writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.W); writer.WriteSingle(value.H); writer.WriteByte((byte)value.HorzAlign); writer.WriteByte((byte)value.VertAlign); writer.WriteUInt16(value.Pad12);
-    }
-
-    private static void WriteVec4(XSourceWriter writer, Vec4 value)
-    {
-        writer.WriteSingle(value.A); writer.WriteSingle(value.R); writer.WriteSingle(value.G); writer.WriteSingle(value.B);
-    }
-
-    private static void WriteInts(XSourceWriter writer, IReadOnlyList<int> values, int expected, string path)
-    {
-        if (values.Count != expected) throw new InvalidDataException($"{path} requires exactly {expected} values.");
-        foreach (int value in values) writer.WriteInt32(value);
-    }
-
-    private static void WriteTransitions(XSourceWriter writer, IReadOnlyList<MenuTransition> values)
-    {
-        if (values.Count != 4) throw new InvalidDataException("Menu transition groups require exactly four values.");
-        foreach (MenuTransition value in values)
-        {
-            writer.WriteInt32((int)value.TransitionType); writer.WriteInt32(value.TargetField); writer.WriteInt32(value.StartTime); writer.WriteSingle(value.StartValue); writer.WriteSingle(value.EndValue); writer.WriteSingle(value.Time); writer.WriteInt32((int)value.EndTriggerType);
-        }
-    }
-
-    private static PlannedString? PlanString(string? value, EmissionPlan plan, List<EmissionBlockSegment> all, List<EmissionBlockSegment> source)
-    {
-        int before = all.Count;
-        PlannedString? result = AssetBodyEmitterHelpers.PlanString(value, plan, all, plan.StringAliases);
-        source.AddRange(all.Skip(before));
-        return result;
-    }
-
-    private static void ValidateWindow(WindowDef value, MenuReferenceBuildData references, string path, List<EmissionError> diagnostics, int? rowIndex)
+    private static void ValidateWindow(
+        WindowDef value,
+        string path,
+        List<EmissionError> diagnostics,
+        int? rowIndex)
     {
         ValidateString(value.Name, $"{path}.name", diagnostics, rowIndex); ValidateString(value.Group, $"{path}.group", diagnostics, rowIndex);
-        ValidateReference(references.WindowBackgroundMaterial, XAssetType.Material, $"{path}.background", diagnostics, rowIndex);
-        if (value.Background.Raw != 0 && references.WindowBackgroundMaterial is null)
+        ValidateString(
+            value.BackgroundMaterialName,
+            $"{path}.background",
+            diagnostics,
+            rowIndex);
+        if (value.BackgroundMaterialName is { Length: 0 })
+            diagnostics.Add(Error($"{path}.background", "Material identity cannot be empty.", rowIndex));
+        if (value.Background.Raw != 0 && value.BackgroundMaterialName is null)
             diagnostics.Add(Error($"{path}.background", "Window background has no captured symbolic Material identity.", rowIndex));
         if (value.DynamicFlags.Count != 4)
             diagnostics.Add(Error($"{path}.dynamicFlags", "Window requires exactly four local-client dynamic flag values.", rowIndex));
@@ -302,38 +367,6 @@ public sealed class MenuBodyEmitter : IXAssetBodyEmitter
             diagnostics.Add(Error(path, "XString must be a Latin-1 C string.", rowIndex));
     }
 
-    private static int Pointer(PlannedString? value) => AssetBodyEmitterHelpers.SourcePointer(value);
-    private static int Pointer(ExternalPlan? value) => value?.PointerRaw ?? 0;
-
-    private static ExternalPlan? PlanExternal(SymbolicXAssetReference? reference, XAssetType type, int rootSize, EmissionPlan plan, List<EmissionBlockSegment> all)
-    {
-        if (reference is null) return null;
-        if (reference.AssetType != type || !reference.IsExternalReference || !AssetBodyEmitterHelpers.IsLatin1CString(reference.OriginalSerializedName))
-            throw new InvalidDataException($"Menu external {type} reference must retain a comma-prefixed Latin-1 serialized name.");
-        plan.Push(XFileBlockType.TEMP);
-        EmissionAddress rootAddress = plan.Allocate(rootSize, 4);
-        plan.Push(XFileBlockType.LARGE);
-        int before = all.Count;
-        PlannedString? name = AssetBodyEmitterHelpers.PlanString(reference.OriginalSerializedName, plan, all, plan.StringAliases);
-        EmissionBlockSegment[] names = all.Skip(before).ToArray();
-        plan.Pop(XFileBlockType.LARGE);
-        plan.Pop(XFileBlockType.TEMP);
-        var writer = new XSourceWriter(); writer.WriteInt32(AssetBodyEmitterHelpers.SourcePointer(name)); writer.Reserve(rootSize - sizeof(int));
-        EmissionBlockSegment root = new(rootAddress, writer.ToArray()); all.Add(root);
-        return new ExternalPlan(root, [root, .. names], -1);
-    }
-
-    private static void Add(List<EmissionBlockSegment> destination, ExternalPlan? value)
-    {
-        if (value is not null) destination.AddRange(value.Source);
-    }
-
-    private static void ValidateReference(SymbolicXAssetReference? value, XAssetType expected, string path, List<EmissionError> diagnostics, int? rowIndex)
-    {
-        if (value is null) return;
-        if (value.AssetType != expected || !value.IsExternalReference || !AssetBodyEmitterHelpers.IsLatin1CString(value.OriginalSerializedName))
-            diagnostics.Add(Error(path, $"Reference must be a comma-prefixed symbolic {expected} identity.", rowIndex));
-    }
     private static EmissionError Error(string path, string message, int? rowIndex) => new(path, message, rowIndex, XAssetType.Menu);
 }
 

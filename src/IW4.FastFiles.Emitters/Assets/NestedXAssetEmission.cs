@@ -9,10 +9,12 @@ internal sealed record NestedXAssetPlan(
     AssetBodyEmission? IncomingDefinition);
 
 /// <summary>
-/// Plans an imported nested XAsset pointer without replaying an imported
-/// address. Packed aliases resolve through an identity-bearing persistent
-/// pointer cell; inline definitions are emitted through the registered body
-/// emitter and register their owner cell for later alias conversion.
+/// Plans an imported nested XAsset pointer without blindly replaying an
+/// imported address. Compatibility replay is limited to an unchanged owner
+/// cell. Packed aliases otherwise resolve through an identity-bearing
+/// persistent pointer cell; inline definitions are emitted through the
+/// registered body emitter and register their owner cell for later alias
+/// conversion.
 /// </summary>
 internal static class NestedXAssetEmission
 {
@@ -50,6 +52,7 @@ internal static class NestedXAssetEmission
             }
 
             if (plan.PreserveImportedXAssetPointerValues &&
+                link.ImportedOwnerCellRaw == ownerCell.ToPackedPointer() &&
                 link.ImportedPackedRaw is { } importedRaw)
             {
                 if (IW4.FastFiles.Pointers.XPointerCodec.GetType(
@@ -193,6 +196,8 @@ internal static class NestedXAssetEmission
         XAssetType.LoadedSound => (0x1c, 0),
         XAssetType.Fx => (0x20, 0),
         XAssetType.MapEnts => (0x2c, 0),
+        XAssetType.Menu =>
+            (IW4.Assets.Assets.Menu.MenuDefAsset.SerializedSize, 0),
         _ => throw new InvalidDataException(
             $"No external reference layout is registered for nested {type}.")
     };

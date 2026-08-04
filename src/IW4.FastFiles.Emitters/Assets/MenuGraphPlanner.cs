@@ -18,7 +18,6 @@ internal sealed class MenuGraphPlanner
     private readonly EmissionPlan _plan;
     private readonly List<EmissionBlockSegment> _all;
     private readonly Dictionary<object, Node> _nodes = new(ReferenceEqualityComparer.Instance);
-    private string? _menuWindowBackgroundFallback;
 
     public MenuGraphPlanner(EmissionPlan plan, List<EmissionBlockSegment> all)
     {
@@ -26,9 +25,8 @@ internal sealed class MenuGraphPlanner
         _all = all ?? throw new ArgumentNullException(nameof(all));
     }
 
-    public MenuPlan PlanMenu(MenuDefAsset value, MenuReferenceBuildData? references = null)
+    public MenuPlan PlanMenu(MenuDefAsset value)
     {
-        _menuWindowBackgroundFallback = references?.WindowBackgroundMaterial?.OriginalSerializedName;
         PlannedNode planned = PlanMenuNode(value);
         return new MenuPlan(
             planned.Inline ? planned.Node.Root! : null,
@@ -49,7 +47,10 @@ internal sealed class MenuGraphPlanner
             {
                 var children = new List<EmissionBlockSegment>();
                 PlannedNode? supporting = Plan(value.ExpressionDataValue, PlanSupportingDataNode); Add(children, supporting);
-                WindowPlan window = PlanWindowChildren(value.Window, address, _menuWindowBackgroundFallback); children.AddRange(window.Source);
+                WindowPlan window = PlanWindowChildren(
+                    value.Window,
+                    address);
+                children.AddRange(window.Source);
                 StringPlan font = PlanString(value.Font); Add(children, font);
                 PlannedNode? onOpen = Plan(value.OnOpenSet, PlanEventSetNode); Add(children, onOpen);
                 PlannedNode? onClose = Plan(value.OnCloseSet, PlanEventSetNode); Add(children, onClose);
@@ -366,11 +367,20 @@ internal sealed class MenuGraphPlanner
 
     private WindowPlan PlanWindowChildren(
         WindowDef value,
-        EmissionAddress ownerAddress,
-        string? fallbackBackground = null)
+        EmissionAddress ownerAddress)
     {
-        StringPlan name = PlanString(value.Name); StringPlan group = PlanString(value.Group); ExternalPlan? background = PlanExternal(value.BackgroundMaterialName ?? fallbackBackground, XAssetType.Material, 0xa8, Offset(ownerAddress, 0xac));
-        var source = new List<EmissionBlockSegment>(); Add(source, name); Add(source, group); Add(source, background); return new WindowPlan(name, group, background, source);
+        StringPlan name = PlanString(value.Name);
+        StringPlan group = PlanString(value.Group);
+        ExternalPlan? background = PlanExternal(
+            value.BackgroundMaterialName,
+            XAssetType.Material,
+            0xa8,
+            Offset(ownerAddress, 0xac));
+        var source = new List<EmissionBlockSegment>();
+        Add(source, name);
+        Add(source, group);
+        Add(source, background);
+        return new WindowPlan(name, group, background, source);
     }
 
     private StringPlan PlanString(string? value)
@@ -393,7 +403,9 @@ internal sealed class MenuGraphPlanner
         if (name is null) return null;
         string serialized = name.StartsWith(",", StringComparison.Ordinal) ? name : $",{name}";
         if (!AssetBodyEmitterHelpers.IsLatin1CString(serialized)) throw new InvalidDataException($"Menu external {type} name is not a Latin-1 C string.");
-        string aliasKey = XAssetAliasKey(type, serialized);
+        string aliasKey = AssetBodyEmitterHelpers.XAssetAliasKey(
+            type,
+            serialized);
         if (_plan.PersistentXAssetAliasCells.TryGetValue(aliasKey, out EmissionAddress existingCell))
             return new ExternalPlan(null, [], existingCell.ToPackedPointer());
         _plan.Push(XFileBlockType.TEMP); EmissionAddress rootAddress = _plan.Allocate(rootSize, 4); _plan.Push(XFileBlockType.LARGE); StringPlan stringPlan = PlanString(serialized); _plan.Pop(XFileBlockType.LARGE); _plan.Pop(XFileBlockType.TEMP);
@@ -467,9 +479,6 @@ internal sealed class MenuGraphPlanner
     private sealed record WindowPlan(StringPlan Name, StringPlan Group, ExternalPlan? Background, IReadOnlyList<EmissionBlockSegment> Source);
     private static EmissionAddress Offset(EmissionAddress owner, int byteOffset) =>
         new(owner.Block, checked(owner.Offset + byteOffset));
-    private static string XAssetAliasKey(XAssetType type, string serializedName) =>
-        $"{(int)type}\u0000{serializedName.TrimStart(',')}";
-
     private sealed record PointerTablePlan(
         EmissionBlockSegment? Table,
         IReadOnlyList<EmissionBlockSegment> Source,

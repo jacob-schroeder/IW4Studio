@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:editors="using:IW4.Studio.Desktop.Editors"
+             xmlns:inspector="using:IW4.Studio.Desktop.Editors.Inspector"
              xmlns:imageFilePak="using:IW4.Studio.Desktop.Workbench.Tools.ImageFilePak"
              xmlns:properties="using:IW4.Studio.Desktop.Workbench.Tools.Properties"
              xmlns:avalonia="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
@@ -11,6 +12,341 @@
              mc:Ignorable="d"
              d:DesignWidth="360"
              d:DesignHeight="640">
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="{x:Type inspector:InspectorTextPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorTextPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*"
+              ColumnSpacing="8">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel"
+                     VerticalAlignment="Center" />
+          <TextBox Grid.Column="1"
+                   MinHeight="29"
+                   Padding="8,4"
+                   Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorIntegerPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorIntegerPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*"
+              ColumnSpacing="8">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel"
+                     VerticalAlignment="Center" />
+          <TextBox Grid.Column="1"
+                   MinHeight="29"
+                   Padding="8,4"
+                   Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorFloatPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorFloatPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*"
+              ColumnSpacing="8">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel"
+                     VerticalAlignment="Center" />
+          <TextBox Grid.Column="1"
+                   MinHeight="29"
+                   Padding="8,4"
+                   Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorBooleanPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorBooleanPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*"
+              ColumnSpacing="8">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel"
+                     VerticalAlignment="Center" />
+          <CheckBox Grid.Column="1"
+                    IsChecked="{Binding Value, Mode=TwoWay}"
+                    IsEnabled="{Binding IsEditable}"
+                    VerticalAlignment="Center" />
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorChoicePropertyRowViewModel}"
+                  x:DataType="inspector:InspectorChoicePropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*"
+              ColumnSpacing="8">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel"
+                     VerticalAlignment="Center" />
+          <ComboBox Grid.Column="1"
+                    MinHeight="29"
+                    Padding="8,3"
+                    ItemsSource="{Binding Choices}"
+                    SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
+                    IsEnabled="{Binding IsEditable}" />
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorFlagsPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorFlagsPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="5"
+                  ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <ItemsControl Margin="8,0,0,0"
+                      ItemsSource="{Binding Options}"
+                      IsEnabled="{Binding IsEditable}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="inspector:InspectorFlagOptionViewModel">
+              <CheckBox IsChecked="{Binding IsSet, Mode=TwoWay}"
+                        Content="{Binding Label}"
+                        Margin="0,0,0,3" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Margin="8,0,0,0"
+                   Text="{Binding UnknownBitsText}"
+                   IsVisible="{Binding HasUnknownBits}"
+                   FontSize="9"
+                   Foreground="{DynamicResource StudioWarningBrush}" />
+        <TextBlock Margin="8,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorColorPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorColorPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*"
+              ColumnSpacing="4">
+          <TextBlock Text="R" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="1" MinHeight="27" Padding="5,3"
+                   Text="{Binding RedInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+          <TextBlock Grid.Column="2" Text="G" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="3" MinHeight="27" Padding="5,3"
+                   Text="{Binding GreenInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+          <TextBlock Grid.Column="4" Text="B" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="5" MinHeight="27" Padding="5,3"
+                   Text="{Binding BlueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+          <TextBlock Grid.Column="6" Text="A" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="7" MinHeight="27" Padding="5,3"
+                   Text="{Binding AlphaInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+        </Grid>
+        <TextBlock Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorRectPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorRectPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*"
+              ColumnSpacing="4">
+          <TextBlock Text="X" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="1" MinHeight="27" Padding="5,3"
+                   Text="{Binding XInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+          <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="3" MinHeight="27" Padding="5,3"
+                   Text="{Binding YInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+          <TextBlock Grid.Column="4" Text="W" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="5" MinHeight="27" Padding="5,3"
+                   Text="{Binding WidthInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+          <TextBlock Grid.Column="6" Text="H" VerticalAlignment="Center" FontSize="9" />
+          <TextBox Grid.Column="7" MinHeight="27" Padding="5,3"
+                   Text="{Binding HeightInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   IsReadOnly="{Binding IsReadOnly}"
+                   IsEnabled="{Binding !IsInteractionBlocked}"
+                   LostFocus="StagedInput_LostFocus"
+                   KeyDown="StagedInput_KeyDown" />
+        </Grid>
+        <TextBlock Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorAssetReferencePropertyRowViewModel}"
+                  x:DataType="inspector:InspectorAssetReferencePropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*,Auto,Auto"
+              ColumnSpacing="5">
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="{Binding Label}"
+                       Classes="propertyLabel" />
+            <TextBlock Text="{Binding AssetTypeText}"
+                       FontSize="8"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+          <Border Grid.Column="1"
+                  Padding="7,5"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioInputBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="{Binding DisplayName}"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+          </Border>
+          <Button Grid.Column="2"
+                  MinWidth="29"
+                  MinHeight="29"
+                  Padding="5"
+                  Command="{Binding BrowseCommand}"
+                  ToolTip.Tip="Select an asset reference">
+            <avalonia:MaterialIcon Kind="FolderSearchOutline"
+                                   Width="14"
+                                   Height="14" />
+          </Button>
+          <Button Grid.Column="3"
+                  MinWidth="29"
+                  MinHeight="29"
+                  Padding="5"
+                  Command="{Binding ClearCommand}"
+                  ToolTip.Tip="Clear the asset reference">
+            <avalonia:MaterialIcon Kind="Close"
+                                   Width="14"
+                                   Height="14" />
+          </Button>
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="Reference is not resolved in the current asset pool."
+                   IsVisible="{Binding IsMissing}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioWarningBrush}" />
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorReadOnlyPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorReadOnlyPropertyRowViewModel">
+      <Grid Margin="0,0,0,9"
+            ColumnDefinitions="92,*"
+            ColumnSpacing="8"
+            ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding Value}"
+                   Classes="propertyValue"
+                   TextWrapping="Wrap" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
   <Grid>
     <StackPanel IsVisible="{Binding HasNoSelection}"
                 Margin="24"
@@ -109,6 +445,63 @@
             </StackPanel>
           </StackPanel>
         </Border>
+
+        <StackPanel IsVisible="{Binding HasInspector}"
+                    Spacing="10">
+          <Grid ColumnDefinitions="*,Auto"
+                ColumnSpacing="8">
+            <StackPanel Spacing="3">
+              <TextBlock Text="{Binding InspectorSelection.Title}"
+                         FontSize="13"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource StudioTextBrush}"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{Binding InspectorSelection.Description}"
+                         IsVisible="{Binding InspectorSelection.HasDescription}"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+            <Border Grid.Column="1"
+                    Padding="7,3"
+                    CornerRadius="4"
+                    VerticalAlignment="Top"
+                    Background="{DynamicResource StudioAccentSurfaceBrush}"
+                    BorderBrush="{DynamicResource StudioAccentBrush}"
+                    BorderThickness="1">
+              <TextBlock Text="{Binding InspectorSelection.Kind}"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         LetterSpacing="0.6"
+                         Foreground="{DynamicResource StudioAccentBrush}" />
+            </Border>
+          </Grid>
+
+          <ItemsControl ItemsSource="{Binding InspectorSelection.Sections}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="inspector:InspectorSectionViewModel">
+                <Border Margin="0,0,0,9"
+                        Padding="11"
+                        CornerRadius="7"
+                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <Expander IsExpanded="{Binding IsExpanded}">
+                    <Expander.Header>
+                      <TextBlock Text="{Binding Title}"
+                                 FontSize="9"
+                                 FontWeight="Bold"
+                                 LetterSpacing="0.7"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Expander.Header>
+                    <ItemsControl Margin="0,9,0,0"
+                                  ItemsSource="{Binding Rows}" />
+                  </Expander>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
 
         <StackPanel IsVisible="{Binding HasStreamedImageDetails}"
                     Spacing="10">

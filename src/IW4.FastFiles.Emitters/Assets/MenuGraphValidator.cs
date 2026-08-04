@@ -52,6 +52,15 @@ internal sealed class MenuGraphValidator
     {
         if (!Require(raw, value, path) || !Visit(value!)) return;
         if (!Enum.IsDefined(value!.Type)) Error($"{path}.type", "Unknown item type discriminator.");
+        if (value.DataType != (int)value.Type)
+            Error($"{path}.dataType", "Item data type must match the selected item type.");
+        if (unchecked((uint)value.TextAlignMode) >= 16u || (value.TextAlignMode & 3) == 3)
+            Error($"{path}.textAlignMode", "Invalid text alignment mode.");
+        if (value.Type == ItemDefType.GameMessageWindow)
+        {
+            Range(value.GameMsgWindowIndex, 0, 3, $"{path}.gameMsgWindowIndex", "Game-message window index");
+            Range(value.GameMsgWindowMode, 0, 3, $"{path}.gameMsgWindowMode", "Game-message window mode");
+        }
         if (value.TextRect.Count != 4) Error($"{path}.textRect", "Item requires exactly four text rectangles.");
         if (value.CursorPos.Count != 4) Error($"{path}.cursorPos", "Item requires exactly four cursor positions.");
         Window(value.Window, $"{path}.window");
@@ -68,7 +77,10 @@ internal sealed class MenuGraphValidator
         String(value.DvarTest.Raw, value.DvarTestString, $"{path}.dvarTest");
         KeyHandler(value.OnKey.Raw, value.OnKeyHandler, $"{path}.onKey");
         String(value.EnableDvar.Raw, value.EnableDvarString, $"{path}.enableDvar");
-        String(value.FocusSound.Raw, value.FocusSoundName, $"{path}.focusSound");
+        XAssetReference(
+            value.FocusSound.Raw,
+            value.FocusSoundName,
+            $"{path}.focusSound");
         ItemData(value, path);
         Count(value.FloatExpressions.Raw, value.FloatExpressionCount, value.LoadedFloatExpressions.Count, $"{path}.floatExpressions");
         for (int index = 0; index < value.LoadedFloatExpressions.Count; index++)
@@ -226,8 +238,12 @@ internal sealed class MenuGraphValidator
         if (value!.StartPos.Count != 4 || value.EndPos.Count != 4) Error(path, "ListBox requires exactly four start/end cursor positions.");
         if (value.ColumnInfo.Count != 16) Error($"{path}.columnInfo", "ListBox requires exactly sixteen columns.");
         if (value.NumColumns is < 0 or > 16) Error($"{path}.numColumns", "ListBox column count must be in [0,16].");
+        Binary(value.UsePaging, $"{path}.usePaging");
         EventSet(value.DoubleClick.Raw, value.DoubleClickSet, $"{path}.doubleClick");
-        String(value.SelectIcon.Raw, value.SelectIconMaterialName, $"{path}.selectIcon");
+        XAssetReference(
+            value.SelectIcon.Raw,
+            value.SelectIconMaterialName,
+            $"{path}.selectIcon");
         Finite(value.ElementWidth, $"{path}.elementWidth"); Finite(value.ElementHeight, $"{path}.elementHeight"); Vec(value.SelectBorder, $"{path}.selectBorder");
     }
 
@@ -237,6 +253,7 @@ internal sealed class MenuGraphValidator
         if (value!.DvarList.Count != MultiDef.EntryCapacity || value.DvarListStrings.Count != MultiDef.EntryCapacity || value.DvarStr.Count != MultiDef.EntryCapacity || value.DvarStrStrings.Count != MultiDef.EntryCapacity || value.DvarValue.Count != MultiDef.EntryCapacity)
             Error(path, "Multi payload requires all 32-entry fixed arrays.");
         if (value.Count is < 0 or > MultiDef.EntryCapacity) Error($"{path}.count", "Multi count must be in [0,32].");
+        Binary(value.StrDef, $"{path}.strDef");
         for (int index = 0; index < value.DvarList.Count && index < value.DvarListStrings.Count; index++) String(value.DvarList[index].Raw, value.DvarListStrings[index], $"{path}.dvarList[{index}]");
         for (int index = 0; index < value.DvarStr.Count && index < value.DvarStrStrings.Count; index++) String(value.DvarStr[index].Raw, value.DvarStrStrings[index], $"{path}.dvarStr[{index}]");
         foreach (float number in value.DvarValue) Finite(number, $"{path}.dvarValue");
@@ -246,6 +263,7 @@ internal sealed class MenuGraphValidator
     {
         if (!Require(raw, value, path) || !Visit(value!)) return;
         Finite(value!.MinVal, $"{path}.minVal"); Finite(value.MaxVal, $"{path}.maxVal"); Finite(value.DefVal, $"{path}.defVal"); Finite(value.Range, $"{path}.range");
+        Binary(value.MaxCharsGotoNext, $"{path}.maxCharsGotoNext");
     }
 
     private void NewsTicker(int raw, NewsTickerDef? value, string path)
@@ -259,7 +277,10 @@ internal sealed class MenuGraphValidator
     private void Window(WindowDef value, string path)
     {
         String(value.NamePointer.Raw, value.Name, $"{path}.name"); String(value.GroupPointer.Raw, value.Group, $"{path}.group");
-        String(value.Background.Raw, value.BackgroundMaterialName, $"{path}.background");
+        XAssetReference(
+            value.Background.Raw,
+            value.BackgroundMaterialName,
+            $"{path}.background");
         if (value.DynamicFlags.Count != 4) Error($"{path}.dynamicFlags", "Window requires exactly four dynamic flags.");
         Rect(value.Rect, $"{path}.rect"); Rect(value.RectClient, $"{path}.rectClient"); Vec(value.ForeColor, $"{path}.foreColor"); Vec(value.BackColor, $"{path}.backColor"); Vec(value.BorderColor, $"{path}.borderColor"); Vec(value.OutlineColor, $"{path}.outlineColor"); Vec(value.DisableColor, $"{path}.disableColor"); Finite(value.BorderSize, $"{path}.borderSize");
     }
@@ -268,6 +289,13 @@ internal sealed class MenuGraphValidator
     {
         if (raw != 0 && value is null) Error(path, "A non-null serialized XString has no detached text.");
         if (value is not null && !AssetBodyEmitterHelpers.IsLatin1CString(value)) Error(path, "XString must be a Latin-1 C string.");
+    }
+
+    private void XAssetReference(int raw, string? value, string path)
+    {
+        String(raw, value, path);
+        if (value is { Length: 0 })
+            Error(path, "XAsset identity cannot be empty.");
     }
 
     private bool Require<T>(int raw, T? value, string path) where T : class
@@ -285,6 +313,8 @@ internal sealed class MenuGraphValidator
     private bool Visit(object value) => _visited.Add(value);
     private void Error(string path, string message) => _diagnostics.Add(new EmissionError(path, message, _rowIndex, XAssetType.Menu));
     private void Finite(float value, string path) { if (!float.IsFinite(value)) Error(path, "Value must be finite."); }
+    private void Binary(int value, string path) { if (value is not 0 and not 1) Error(path, "Value must be 0 or 1."); }
+    private void Range(int value, int minimum, int maximum, string path, string label) { if (value < minimum || value > maximum) Error(path, $"{label} must be in [{minimum},{maximum}]."); }
     private void Vec(Vec4 value, string path) { Finite(value.A, $"{path}.a"); Finite(value.R, $"{path}.r"); Finite(value.G, $"{path}.g"); Finite(value.B, $"{path}.b"); }
     private void Rect(RectangleDef value, string path) { Finite(value.X, $"{path}.x"); Finite(value.Y, $"{path}.y"); Finite(value.W, $"{path}.w"); Finite(value.H, $"{path}.h"); if (!Enum.IsDefined(value.HorzAlign) || !Enum.IsDefined(value.VertAlign)) Error(path, "Invalid rectangle alignment discriminator."); }
     private static bool IsSpecialItemType(ItemDefType value) => value is ItemDefType.ListBox or ItemDefType.Multi or ItemDefType.DvarEnum or ItemDefType.NewsTicker or ItemDefType.TextScroll || IsEditFieldType(value);

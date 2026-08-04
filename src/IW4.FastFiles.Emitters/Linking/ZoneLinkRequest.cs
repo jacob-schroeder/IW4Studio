@@ -386,8 +386,6 @@ public sealed class ZoneLinkRequest
         ZoneAssetEntry[] copied = entries.ToArray();
         if (copied.Select(entry => entry.EntryId).Distinct(StringComparer.Ordinal).Count() != copied.Length)
             throw new InvalidDataException("Zone link entries require unique entry IDs.");
-        if (copied.Select(entry => entry.Key).Distinct().Count() != copied.Length)
-            throw new InvalidDataException("Zone link entries require unique logical type/name keys.");
 
         _entries = Array.AsReadOnly(copied);
         _scriptStrings = Array.AsReadOnly((scriptStrings ?? []).ToArray());
@@ -411,15 +409,23 @@ public sealed class ZoneLinkRequest
 
     private IReadOnlyList<ZoneAssetEntry> BuildDeterministicLinkOrder()
     {
-        var byKey = _entries.ToDictionary(entry => entry.Key);
-        ValidateAllRequiredTargets(byKey);
-        var completed = new HashSet<ZoneAssetKey>();
-        var active = new List<ZoneAssetKey>();
+        var stableComparer = Comparer<ZoneAssetEntry>.Create(StableOrder);
+        Dictionary<ZoneAssetKey, ZoneAssetEntry> byKey = _entries
+            .GroupBy(entry => entry.Key)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(entry => MaterializedProviderPreference(entry.Intent))
+                    .ThenBy(entry => entry, stableComparer)
+                    .First());
+        ValidateAllRequiredTargets(_entries, byKey);
+        var completed = new HashSet<string>(StringComparer.Ordinal);
+        var active = new List<ZoneAssetEntry>();
         var result = new List<ZoneAssetEntry>(_entries.Count);
 
         foreach (ZoneAssetEntry entry in _entries.OrderBy(
             entry => entry,
-            Comparer<ZoneAssetEntry>.Create(StableOrder)))
+            stableComparer))
             Visit(entry);
         if (!OutputPolicy.PreserveImportedAssetOrder)
             return Array.AsReadOnly(result.ToArray());
@@ -427,32 +433,48 @@ public sealed class ZoneLinkRequest
         ZoneAssetEntry[] importedOrder = _entries
             .OrderBy(entry => entry, Comparer<ZoneAssetEntry>.Create(ImportedCompatibilityOrder))
             .ToArray();
-        var preceding = new HashSet<ZoneAssetKey>();
+        var precedingProviders = new HashSet<ZoneAssetKey>();
         foreach (ZoneAssetEntry entry in importedOrder)
         {
             if (entry.Intent == ZoneAssetReferenceIntent.Alias &&
                 entry.AliasTarget is { } aliasTarget &&
-                !preceding.Contains(aliasTarget))
+                !precedingProviders.Contains(aliasTarget))
             {
                 throw new InvalidDataException(
-                    $"Imported alias '{entry.Key}' does not follow its target '{aliasTarget}'.");
+                    $"Imported alias '{entry.Key}' does not follow a materialized target '{aliasTarget}'.");
             }
-            preceding.Add(entry.Key);
+            if (entry.Intent is
+                    ZoneAssetReferenceIntent.Owned or
+                    ZoneAssetReferenceIntent.External or
+                    ZoneAssetReferenceIntent.Alias)
+            {
+                precedingProviders.Add(entry.Key);
+            }
         }
         return Array.AsReadOnly(importedOrder);
 
         void Visit(ZoneAssetEntry entry)
         {
-            if (completed.Contains(entry.Key))
+            if (completed.Contains(entry.EntryId))
                 return;
-            int cycleStart = active.IndexOf(entry.Key);
+            int cycleStart = active.FindIndex(candidate =>
+                string.Equals(
+                    candidate.EntryId,
+                    entry.EntryId,
+                    StringComparison.Ordinal));
             if (cycleStart >= 0)
             {
-                string cycle = string.Join(" -> ", active.Skip(cycleStart).Append(entry.Key));
+                string cycle = string.Join(
+                    " -> ",
+                    active
+                        .Skip(cycleStart)
+                        .Append(entry)
+                        .Select(candidate =>
+                            $"{candidate.Key} [{candidate.EntryId}]"));
                 throw new InvalidDataException($"Zone link dependency cycle: {cycle}.");
             }
 
-            active.Add(entry.Key);
+            active.Add(entry);
             foreach (ZoneAssetDependency dependency in entry.Dependencies
                          .OrderBy(value => value.Target.Type)
                          .ThenBy(value => value.Target.LogicalName, StringComparer.Ordinal)
@@ -472,10 +494,20 @@ public sealed class ZoneLinkRequest
                 Visit(target);
             }
             active.RemoveAt(active.Count - 1);
-            completed.Add(entry.Key);
+            completed.Add(entry.EntryId);
             result.Add(entry);
         }
     }
+
+    private static int MaterializedProviderPreference(
+        ZoneAssetReferenceIntent intent) =>
+        intent switch
+        {
+            ZoneAssetReferenceIntent.Owned or
+            ZoneAssetReferenceIntent.External => 0,
+            ZoneAssetReferenceIntent.Alias => 1,
+            _ => 2
+        };
 
     /// <summary>
     /// Compares frozen linker inputs as graph values without depending on
@@ -563,9 +595,10 @@ public sealed class ZoneLinkRequest
         string.IsNullOrWhiteSpace(dependency.OwnerPath) ? string.Empty : $" at {dependency.OwnerPath}";
 
     private static void ValidateAllRequiredTargets(
+        IReadOnlyList<ZoneAssetEntry> entries,
         IReadOnlyDictionary<ZoneAssetKey, ZoneAssetEntry> byKey)
     {
-        string[] missing = byKey.Values
+        string[] missing = entries
             .SelectMany(entry =>
                 entry.Dependencies
                     .Where(dependency => dependency.IsRequired && !byKey.ContainsKey(dependency.Target))
@@ -582,7 +615,7 @@ public sealed class ZoneLinkRequest
             .ToArray();
         if (missing.Length == 0)
         {
-            ValidateResolvedTargetIntents(byKey);
+            ValidateResolvedTargetIntents(entries, byKey);
             return;
         }
 
@@ -593,9 +626,10 @@ public sealed class ZoneLinkRequest
     }
 
     private static void ValidateResolvedTargetIntents(
+        IReadOnlyList<ZoneAssetEntry> entries,
         IReadOnlyDictionary<ZoneAssetKey, ZoneAssetEntry> byKey)
     {
-        string[] contradictions = byKey.Values
+        string[] contradictions = entries
             .SelectMany(owner => owner.Dependencies
                 .Where(dependency =>
                     dependency.Kind is ZoneAssetDependencyKind.Required or ZoneAssetDependencyKind.External &&
@@ -604,6 +638,17 @@ public sealed class ZoneLinkRequest
                 .Select(dependency =>
                     $"{owner.Key}{PathSuffix(dependency)} -> {dependency.Target} " +
                     $"({byKey[dependency.Target].Intent})"))
+            .Concat(entries
+                .Where(entry =>
+                    entry.Intent == ZoneAssetReferenceIntent.Alias &&
+                    entry.AliasTarget is { } aliasTarget &&
+                    byKey.TryGetValue(aliasTarget, out ZoneAssetEntry? target) &&
+                    target.Intent is
+                        ZoneAssetReferenceIntent.Null or
+                        ZoneAssetReferenceIntent.OpaqueNativeNoOp)
+                .Select(entry =>
+                    $"{entry.Key} at <aliasTarget> -> {entry.AliasTarget} " +
+                    $"({byKey[entry.AliasTarget!.Value].Intent})"))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(value => value, StringComparer.Ordinal)
             .ToArray();
@@ -639,7 +684,8 @@ public sealed class ZoneLinkRequest
 /// callers freeze it into <see cref="ZoneLinkRequest"/> before linking.</summary>
 public sealed class ZoneBuildGraphBuilder
 {
-    private readonly Dictionary<ZoneAssetKey, ZoneAssetEntry> _entries = [];
+    private readonly Dictionary<string, ZoneAssetEntry> _entries =
+        new(StringComparer.Ordinal);
 
     public ZoneBuildGraphBuilder AddOwned(
         ZoneAssetKey key,
@@ -729,9 +775,8 @@ public sealed class ZoneBuildGraphBuilder
         IXAssetBuildData buildData,
         IEnumerable<ZoneAssetDependency>? dependencies = null)
     {
-        if (!_entries.TryGetValue(key, out ZoneAssetEntry? existing))
-            throw new KeyNotFoundException($"Cannot replace missing zone entry '{key}'.");
-        _entries[key] = new ZoneAssetEntry(existing.EntryId, key, ZoneAssetReferenceIntent.Owned, buildData,
+        ZoneAssetEntry existing = RequireSingle(key, "replace");
+        _entries[existing.EntryId] = new ZoneAssetEntry(existing.EntryId, key, ZoneAssetReferenceIntent.Owned, buildData,
             importedOrder: existing.ImportedOrder,
             dependencies: dependencies ?? existing.DeclaredDependencies,
             originalSpelling: existing.OriginalSpelling);
@@ -740,8 +785,7 @@ public sealed class ZoneBuildGraphBuilder
 
     public ZoneBuildGraphBuilder Remove(ZoneAssetKey key, ZoneRemoveDanglingPolicy policy = ZoneRemoveDanglingPolicy.Reject)
     {
-        if (!_entries.TryGetValue(key, out ZoneAssetEntry? existing))
-            throw new KeyNotFoundException($"Cannot remove missing zone entry '{key}'.");
+        ZoneAssetEntry existing = RequireSingle(key, "remove");
 
         string[] dependents = _entries.Values
             .SelectMany(entry =>
@@ -763,13 +807,13 @@ public sealed class ZoneBuildGraphBuilder
 
         if (dependents.Length != 0)
         {
-            _entries[key] = new ZoneAssetEntry(existing.EntryId, key, ZoneAssetReferenceIntent.External,
+            _entries[existing.EntryId] = new ZoneAssetEntry(existing.EntryId, key, ZoneAssetReferenceIntent.External,
                 importedOrder: existing.ImportedOrder,
                 originalSpelling: existing.OriginalSpelling);
         }
         else
         {
-            _entries.Remove(key);
+            _entries.Remove(existing.EntryId);
         }
         return this;
     }
@@ -782,7 +826,26 @@ public sealed class ZoneBuildGraphBuilder
 
     private void Add(ZoneAssetEntry entry)
     {
-        if (!_entries.TryAdd(entry.Key, entry))
-            throw new InvalidDataException($"A zone entry with logical key '{entry.Key}' already exists.");
+        if (!_entries.TryAdd(entry.EntryId, entry))
+        {
+            throw new InvalidDataException(
+                $"A zone entry with ID '{entry.EntryId}' already exists.");
+        }
+    }
+
+    private ZoneAssetEntry RequireSingle(ZoneAssetKey key, string operation)
+    {
+        ZoneAssetEntry[] matches = _entries.Values
+            .Where(entry => entry.Key == key)
+            .ToArray();
+        return matches.Length switch
+        {
+            0 => throw new KeyNotFoundException(
+                $"Cannot {operation} missing zone entry '{key}'."),
+            1 => matches[0],
+            _ => throw new InvalidOperationException(
+                $"Cannot {operation} logical key '{key}' because it has " +
+                $"{matches.Length:N0} row occurrences; key-based mutation is ambiguous.")
+        };
     }
 }

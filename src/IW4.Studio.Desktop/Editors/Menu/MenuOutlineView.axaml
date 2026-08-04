@@ -1,0 +1,110 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.MenuOutlineView"
+             x:DataType="menuVm:MenuDesignerViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="980"
+             d:DesignHeight="250">
+  <Border Padding="8"
+          CornerRadius="7"
+          Background="{DynamicResource StudioSurfaceSunkenBrush}"
+          BorderBrush="{DynamicResource StudioBorderBrush}"
+          BorderThickness="1">
+    <Grid RowDefinitions="Auto,8,*,8,Auto,6,Auto">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="MENU OUTLINE"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.8"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding ItemCount, StringFormat='{}{0:N0} items'}"
+                   FontSize="9"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </Grid>
+
+      <TreeView Grid.Row="2"
+                ItemsSource="{Binding OutlineRoots}"
+                SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
+        <TreeView.ItemTemplate>
+          <TreeDataTemplate x:DataType="menuVm:MenuOutlineNodeViewModel"
+                            ItemsSource="{Binding Children}">
+            <Grid ColumnDefinitions="Auto,*"
+                  ColumnSpacing="6"
+                  MinHeight="24">
+              <materialIcons:MaterialIcon Kind="ViewDashboardOutline"
+                                           Width="14"
+                                           Height="14"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding Title}"
+                         VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+            </Grid>
+          </TreeDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+
+      <StackPanel Grid.Row="2"
+                  IsVisible="{Binding HasNoDocument}"
+                  Margin="14"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="6">
+        <materialIcons:MaterialIcon Kind="FileQuestionOutline"
+                                     Width="24"
+                                     Height="24"
+                                     HorizontalAlignment="Center"
+                                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="No Menu definition"
+                   TextAlignment="Center"
+                   FontSize="11"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+      </StackPanel>
+
+      <Grid Grid.Row="4"
+            ColumnDefinitions="*,*,*,*,*"
+            ColumnSpacing="4">
+        <Button Classes="ghost" MinHeight="29" Padding="5"
+                Command="{Binding AddItemCommand}"
+                ToolTip.Tip="Add a Text item">
+          <materialIcons:MaterialIcon Kind="Plus" Width="14" Height="14" />
+        </Button>
+        <Button Grid.Column="1" Classes="ghost" MinHeight="29" Padding="5"
+                Command="{Binding DuplicateItemCommand}"
+                ToolTip.Tip="Duplicate selected item">
+          <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14" />
+        </Button>
+        <Button Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
+                Command="{Binding MoveItemUpCommand}"
+                ToolTip.Tip="Move selected item up">
+          <materialIcons:MaterialIcon Kind="ArrowUp" Width="14" Height="14" />
+        </Button>
+        <Button Grid.Column="3" Classes="ghost" MinHeight="29" Padding="5"
+                Command="{Binding MoveItemDownCommand}"
+                ToolTip.Tip="Move selected item down">
+          <materialIcons:MaterialIcon Kind="ArrowDown" Width="14" Height="14" />
+        </Button>
+        <Button Grid.Column="4" Classes="ghost" MinHeight="29" Padding="5"
+                Command="{Binding RemoveItemCommand}"
+                ToolTip.Tip="Remove selected item">
+          <materialIcons:MaterialIcon Kind="DeleteOutline" Width="14" Height="14" />
+        </Button>
+      </Grid>
+
+      <Button Grid.Row="6"
+              Content="Change selected item type…"
+              IsEnabled="{Binding CanChangeSelectedItemType}"
+              Click="ChangeItemTypeButton_Click"
+              ToolTip.Tip="Choose another ItemDef type for the selected item." />
+    </Grid>
+  </Border>
+</UserControl>

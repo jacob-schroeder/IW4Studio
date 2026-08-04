@@ -3,7 +3,9 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
+using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.Gsc;
+using IW4.Studio.Desktop.Editors.Menu;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Docking;
 using IW4.Studio.Desktop.Workbench.Navigation;
@@ -23,6 +25,8 @@ using IW4.Studio.Desktop.Workbench.Tools.MapRender;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 using IW4.Studio.Documents;
+using IW4.Studio.Documents.AssetReferences;
+using IW4.Studio.Documents.MenuEditing;
 using IW4.Studio.Gsc;
 using IW4.Studio.Rendering;
 
@@ -47,6 +51,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private readonly GscUsagesPresenter _gscUsagesPresenter;
     private readonly IReadOnlyDictionary<string, StudioToolRegistration> _registrationsById;
     private readonly WorkbenchEditorDiagnosticsBridge _editorDiagnosticsBridge;
+    private readonly MenuEditingCoordinator _menuEditingCoordinator;
     private readonly ObservableCollection<WorkbenchEditorTabViewModel> _openEditorTabs = [];
     private readonly Dictionary<WorkbenchEditorTabKey, WorkbenchEditorTabViewModel>
         _editorTabsByKey = [];
@@ -59,6 +64,16 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         OpenEditorTabs = new ReadOnlyObservableCollection<WorkbenchEditorTabViewModel>(
             _openEditorTabs);
         var editingSession = new FastFileEditingSession(workspace);
+        AssetAuthoringAdapterRegistry authoringRegistry =
+            AssetAuthoringAdapterRegistry.CreateDefault();
+        _menuEditingCoordinator = new MenuEditingCoordinator(
+            editingSession,
+            authoringRegistry);
+        var assetReferenceCatalog = new WorkspaceAssetReferenceCatalog(
+            editingSession);
+        var assetReferencePicker = new AssetReferencePickerService(
+            assetReferenceCatalog);
+        var menuMaterialResolver = new MenuPreviewMaterialResolver(workspace);
         _gscWorkspace = new GscWorkspaceIndexService(editingSession);
         _gscSourceNavigation = new GscSourceNavigationBroker();
         GscUsages = new GscUsagesToolViewModel();
@@ -70,9 +85,18 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 _gscWorkspace,
                 _gscSourceNavigation,
                 _gscUsagesPresenter);
+        editorViewRegistry.Register(new MenuEditorViewFactory(
+            _menuEditingCoordinator,
+            assetReferencePicker,
+            menuMaterialResolver));
+        editorViewRegistry.Register(new MenuFileEditorViewFactory(
+            _menuEditingCoordinator,
+            assetReferencePicker,
+            menuMaterialResolver));
         Editor = new EditorViewModel(
             workspace,
             editingSession,
+            authoringRegistry,
             viewRegistry: editorViewRegistry);
         _selectionRouter = new WorkbenchAssetSelectionRouter(
             workspace.AssetCatalog,
@@ -617,6 +641,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             tab.Dispose();
         _openEditorTabs.Clear();
         _editorTabsByKey.Clear();
+        _menuEditingCoordinator.Dispose();
         Editor.Dispose();
         _gscWorkspaceWarmupCancellation.Dispose();
     }
@@ -892,9 +917,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         Properties.SetDocumentSelection(
             SelectedEditorTab?.Selection,
             SelectedEditorTab?.StreamedImage);
-        Properties.SetEditorPropertiesSource(
-            SelectedEditorTab?.CatalogEditor?.HostedViewModel
-                as IAssetEditorProperties);
+        Properties.SetEditorSource(
+            SelectedEditorTab?.CatalogEditor?.HostedViewModel);
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(HasEditorFallback));

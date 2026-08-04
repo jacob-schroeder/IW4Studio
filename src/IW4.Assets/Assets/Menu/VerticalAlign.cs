@@ -15,18 +15,19 @@ public enum VerticalAlign : byte
 
     /// <summary>
     /// Anchor Y to the vertical center of the screen.
+    /// The authored Y is offset from that origin; height is not subtracted.
     /// </summary>
     VERTICAL_ALIGN_CENTER = 2,
 
     /// <summary>
     /// Anchor Y to the bottom viewable safe-area edge.
-    /// The rect offset is applied from the bottom side, so preview code should subtract height and Y.
+    /// The authored Y is added to that origin and is commonly negative.
     /// </summary>
     VERTICAL_ALIGN_BOTTOM = 3,
 
     /// <summary>
-    /// Use the full vertical screen span, disregarding safe-area adjustment.
-    /// Preview code should treat the resulting Y as the screen top and height as the full available height.
+    /// Apply the full-screen placement scale without safe-area adjustment.
+    /// On the editor's canonical 480-high canvas, authored Y and height remain unchanged.
     /// </summary>
     VERTICAL_ALIGN_FULLSCREEN = 4,
 
@@ -42,6 +43,7 @@ public enum VerticalAlign : byte
 
     /// <summary>
     /// Anchor Y to the vertical center of the safe area.
+    /// The authored Y is offset from that origin; height is not subtracted.
     /// </summary>
     VERTICAL_ALIGN_CENTER_SAFEAREA = 7,
 

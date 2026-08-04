@@ -6,20 +6,6 @@ using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Editors;
 
-public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
-{
-    public XAssetType AssetType => XAssetType.Menu;
-    public AssetEditorViewHost Create(AssetEditorSession editorSession) => Summary(new MenuEditorViewModel(editorSession), ["Name", "ItemCount", "StatusMessage"]);
-    private static AssetEditorViewHost Summary(object viewModel, IEnumerable<string> paths) { var panel = new StackPanel { Spacing = 8 }; foreach (string path in paths) { var text = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; text.Bind(TextBlock.TextProperty, new Binding(path)); panel.Children.Add(text); } return new AssetEditorViewHost(new UserControl { Content = panel, DataContext = viewModel }, viewModel); }
-}
-
-public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
-{
-    public XAssetType AssetType => XAssetType.MenuFile;
-    public AssetEditorViewHost Create(AssetEditorSession editorSession) => Summary(new MenuFileEditorViewModel(editorSession), ["Name", "MenuCount", "StatusMessage"]);
-    private static AssetEditorViewHost Summary(object viewModel, IEnumerable<string> paths) { var panel = new StackPanel { Spacing = 8 }; foreach (string path in paths) { var text = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; text.Bind(TextBlock.TextProperty, new Binding(path)); panel.Children.Add(text); } return new AssetEditorViewHost(new UserControl { Content = panel, DataContext = viewModel }, viewModel); }
-}
-
 public sealed class StructuredDataEditorViewFactory : IAssetEditorViewFactory
 {
     public XAssetType AssetType => XAssetType.StructuredDataDef;

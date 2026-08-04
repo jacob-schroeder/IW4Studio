@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using IW4.Assets.Assets.Menu;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
@@ -14,20 +15,40 @@ namespace IW4.Studio.Documents;
 /// </summary>
 internal sealed class MenuGraphClone
 {
-    private readonly Dictionary<MenuDefAsset, MenuDefAsset> _menuDefinitions = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<MenuEventHandlerSet, MenuEventHandlerSet> _eventSets = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<MenuEventHandler, MenuEventHandler> _eventHandlers = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<Statement, Statement> _statements = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<ExpressionSupportingData, ExpressionSupportingData> _supportingData = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<ItemKeyHandler, ItemKeyHandler> _keyHandlers = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<ItemDefAsset, ItemDefAsset> _items = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<ConditionalScript, ConditionalScript> _conditionalScripts = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<SetLocalVarData, SetLocalVarData> _localVars = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<StaticDvar, StaticDvar> _staticDvars = new(ReferenceEqualityComparer.Instance);
+    // The table is process-local and thread-safe, while its weak keys avoid
+    // extending the lifetime of captured or draft graphs. Every clone carries
+    // its source token forward so a later shared clone context can re-intern
+    // equivalent occurrences without conflating distinct value-equal nodes.
+    private static readonly ConditionalWeakTable<object, ProvenanceToken> Provenance = new();
+    private readonly bool _preserveSourceProvenance;
+    private readonly Dictionary<object, ProvenanceToken>
+        _independentProvenance = new(ReferenceEqualityComparer.Instance);
+
+    private readonly Dictionary<ProvenanceToken, MenuDefAsset> _menuDefinitions = [];
+    private readonly Dictionary<ProvenanceToken, MenuEventHandlerSet> _eventSets = [];
+    private readonly Dictionary<ProvenanceToken, MenuEventHandler> _eventHandlers = [];
+    private readonly Dictionary<ProvenanceToken, Statement> _statements = [];
+    private readonly Dictionary<ProvenanceToken, ExpressionSupportingData> _supportingData = [];
+    private readonly Dictionary<ProvenanceToken, ItemKeyHandler> _keyHandlers = [];
+    private readonly Dictionary<ProvenanceToken, ItemDefAsset> _items = [];
+    private readonly Dictionary<ProvenanceToken, ConditionalScript> _conditionalScripts = [];
+    private readonly Dictionary<ProvenanceToken, SetLocalVarData> _localVars = [];
+    private readonly Dictionary<ProvenanceToken, StaticDvar> _staticDvars = [];
+    private readonly Dictionary<ProvenanceToken, EditFieldDef> _editFields = [];
+    private readonly Dictionary<ProvenanceToken, ListBoxDef> _listBoxes = [];
+    private readonly Dictionary<ProvenanceToken, MultiDef> _multiDefs = [];
+    private readonly Dictionary<ProvenanceToken, NewsTickerDef> _newsTickers = [];
+    private readonly Dictionary<ProvenanceToken, TextScrollDef> _textScrolls = [];
+
+    internal MenuGraphClone(bool preserveSourceProvenance = true)
+    {
+        _preserveSourceProvenance = preserveSourceProvenance;
+    }
 
     public MenuDefAsset CloneMenu(MenuDefAsset value)
     {
-        if (_menuDefinitions.TryGetValue(value, out MenuDefAsset? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_menuDefinitions.TryGetValue(provenance, out MenuDefAsset? existing)) return existing;
         var clone = new MenuDefAsset
         {
             Window = CloneWindow(value.Window), FontPointer = Ptr(value.FontPointer), Font = value.Font,
@@ -42,7 +63,8 @@ internal sealed class MenuGraphClone
             ItemsPointer = Ptr(value.ItemsPointer), ScaleTransitions = Transitions(value.ScaleTransitions), AlphaTransitions = Transitions(value.AlphaTransitions),
             XTransitions = Transitions(value.XTransitions), YTransitions = Transitions(value.YTransitions), ExpressionData = Ptr(value.ExpressionData)
         };
-        _menuDefinitions.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _menuDefinitions.Add(provenance, clone);
         clone.ExpressionDataValue = CloneSupporting(value.ExpressionDataValue);
         clone.OnOpenSet = CloneEventSet(value.OnOpenSet);
         clone.OnCloseRequestSet = CloneEventSet(value.OnCloseRequestSet);
@@ -58,10 +80,11 @@ internal sealed class MenuGraphClone
         return clone;
     }
 
-    private ItemDefAsset? CloneItem(ItemDefAsset? value)
+    internal ItemDefAsset? CloneItem(ItemDefAsset? value)
     {
         if (value is null) return null;
-        if (_items.TryGetValue(value, out ItemDefAsset? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_items.TryGetValue(provenance, out ItemDefAsset? existing)) return existing;
         var clone = new ItemDefAsset
         {
             Window = CloneWindow(value.Window), TextRect = value.TextRect.Select(Rect).ToArray(), Type = value.Type, DataType = value.DataType,
@@ -84,7 +107,8 @@ internal sealed class MenuGraphClone
             // FX timing fields are post-load animation/sound cache state.
             FxBirthTime = 0, FxLetterTime = 0, FxDecayStartTime = 0, FxDecayDuration = 0, LastSoundPlayedTime = 0
         };
-        _items.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _items.Add(provenance, clone);
         clone.MouseEnterTextSet = CloneEventSet(value.MouseEnterTextSet);
         clone.MouseExitTextSet = CloneEventSet(value.MouseExitTextSet);
         clone.MouseEnterSet = CloneEventSet(value.MouseEnterSet);
@@ -111,9 +135,11 @@ internal sealed class MenuGraphClone
     private MenuEventHandlerSet? CloneEventSet(MenuEventHandlerSet? value)
     {
         if (value is null) return null;
-        if (_eventSets.TryGetValue(value, out MenuEventHandlerSet? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_eventSets.TryGetValue(provenance, out MenuEventHandlerSet? existing)) return existing;
         var clone = new MenuEventHandlerSet { EventHandlerCount = value.EventHandlerCount, EventHandlers = Ptr(value.EventHandlers) };
-        _eventSets.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _eventSets.Add(provenance, clone);
         clone.Handlers = value.Handlers.Select(reference => new MenuEventHandlerReference(reference.Index, Ptr(reference.Pointer), CloneEventHandler(reference.Handler))).ToArray();
         return clone;
     }
@@ -121,9 +147,11 @@ internal sealed class MenuGraphClone
     private MenuEventHandler? CloneEventHandler(MenuEventHandler? value)
     {
         if (value is null) return null;
-        if (_eventHandlers.TryGetValue(value, out MenuEventHandler? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_eventHandlers.TryGetValue(provenance, out MenuEventHandler? existing)) return existing;
         var clone = new MenuEventHandler { EventData = CloneEventData(value.EventData), EventType = value.EventType, Pad05 = value.Pad05, Pad06 = value.Pad06, Pad07 = value.Pad07 };
-        _eventHandlers.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _eventHandlers.Add(provenance, clone);
         clone.UnconditionalScript = value.UnconditionalScript;
         clone.ConditionalScript = CloneConditional(value.ConditionalScript);
         clone.ElseScriptSet = CloneEventSet(value.ElseScriptSet);
@@ -144,9 +172,11 @@ internal sealed class MenuGraphClone
     private ConditionalScript? CloneConditional(ConditionalScript? value)
     {
         if (value is null) return null;
-        if (_conditionalScripts.TryGetValue(value, out ConditionalScript? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_conditionalScripts.TryGetValue(provenance, out ConditionalScript? existing)) return existing;
         var clone = new ConditionalScript { EventHandlerSet = Ptr(value.EventHandlerSet), EventExpression = Ptr(value.EventExpression) };
-        _conditionalScripts.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _conditionalScripts.Add(provenance, clone);
         clone.EventHandlers = CloneEventSet(value.EventHandlers);
         clone.EventStatement = CloneStatement(value.EventStatement);
         return clone;
@@ -155,9 +185,11 @@ internal sealed class MenuGraphClone
     private SetLocalVarData? CloneLocalVar(SetLocalVarData? value)
     {
         if (value is null) return null;
-        if (_localVars.TryGetValue(value, out SetLocalVarData? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_localVars.TryGetValue(provenance, out SetLocalVarData? existing)) return existing;
         var clone = new SetLocalVarData { LocalVarName = Ptr(value.LocalVarName), LocalVarNameString = value.LocalVarNameString, Expression = Ptr(value.Expression) };
-        _localVars.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _localVars.Add(provenance, clone);
         clone.ExpressionStatement = CloneStatement(value.ExpressionStatement);
         return clone;
     }
@@ -165,9 +197,11 @@ internal sealed class MenuGraphClone
     private ItemKeyHandler? CloneKeyHandler(ItemKeyHandler? value)
     {
         if (value is null) return null;
-        if (_keyHandlers.TryGetValue(value, out ItemKeyHandler? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_keyHandlers.TryGetValue(provenance, out ItemKeyHandler? existing)) return existing;
         var clone = new ItemKeyHandler { Key = value.Key, Action = Ptr(value.Action), Next = Ptr(value.Next) };
-        _keyHandlers.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _keyHandlers.Add(provenance, clone);
         clone.ActionSet = CloneEventSet(value.ActionSet);
         clone.NextHandler = CloneKeyHandler(value.NextHandler);
         return clone;
@@ -176,13 +210,15 @@ internal sealed class MenuGraphClone
     private Statement? CloneStatement(Statement? value)
     {
         if (value is null) return null;
-        if (_statements.TryGetValue(value, out Statement? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_statements.TryGetValue(provenance, out Statement? existing)) return existing;
         var clone = new Statement
         {
             NumEntries = value.NumEntries, Entries = Ptr(value.Entries), SupportingData = Ptr(value.SupportingData),
             LastExecuteTime = 0, LastResult = new Operand { DataType = ExpDataType.VAL_INT, Value = new IntOperandValue(0) }
         };
-        _statements.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _statements.Add(provenance, clone);
         clone.LoadedEntries = value.LoadedEntries.Select(CloneExpressionEntry).ToArray();
         clone.SupportingDataValue = CloneSupporting(value.SupportingDataValue);
         return clone;
@@ -215,14 +251,16 @@ internal sealed class MenuGraphClone
     private ExpressionSupportingData? CloneSupporting(ExpressionSupportingData? value)
     {
         if (value is null) return null;
-        if (_supportingData.TryGetValue(value, out ExpressionSupportingData? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_supportingData.TryGetValue(provenance, out ExpressionSupportingData? existing)) return existing;
         var clone = new ExpressionSupportingData
         {
             UiFunctions = new UIFunctionList { TotalFunctions = value.UiFunctions.TotalFunctions, Functions = Ptr(value.UiFunctions.Functions) },
             StaticDvarList = new StaticDvarList { NumStaticDvars = value.StaticDvarList.NumStaticDvars, StaticDvars = Ptr(value.StaticDvarList.StaticDvars) },
             UiStrings = new StringList { TotalStrings = value.UiStrings.TotalStrings, Strings = Ptr(value.UiStrings.Strings) }
         };
-        _supportingData.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _supportingData.Add(provenance, clone);
         clone.UiFunctions.LoadedFunctions = value.UiFunctions.LoadedFunctions.Select(reference => new StatementReference(reference.Index, Ptr(reference.Pointer), CloneStatement(reference.Statement))).ToArray();
         clone.StaticDvarList.LoadedStaticDvars = value.StaticDvarList.LoadedStaticDvars.Select(reference => new StaticDvarReference(reference.Index, Ptr(reference.Pointer), CloneStaticDvar(reference.StaticDvar))).ToArray();
         clone.UiStrings.LoadedStrings = value.UiStrings.LoadedStrings.Select(reference => new XStringReference(reference.Index, Ptr(reference.Pointer), reference.Value)).ToArray();
@@ -232,9 +270,11 @@ internal sealed class MenuGraphClone
     private StaticDvar? CloneStaticDvar(StaticDvar? value)
     {
         if (value is null) return null;
-        if (_staticDvars.TryGetValue(value, out StaticDvar? existing)) return existing;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_staticDvars.TryGetValue(provenance, out StaticDvar? existing)) return existing;
         var clone = new StaticDvar { Dvar = default, DvarName = Ptr(value.DvarName), DvarNameString = value.DvarNameString };
-        _staticDvars.Add(value, clone);
+        PropagateProvenance(clone, provenance);
+        _staticDvars.Add(provenance, clone);
         return clone;
     }
 
@@ -259,18 +299,97 @@ internal sealed class MenuGraphClone
         _ => throw new InvalidDataException($"Unsupported Menu item-data union arm '{value.Value.GetType().Name}'.")
     }};
 
-    private static EditFieldDef? CloneEditField(EditFieldDef? value) => value is null ? null : new EditFieldDef { MinVal = value.MinVal, MaxVal = value.MaxVal, DefVal = value.DefVal, Range = value.Range, MaxChars = value.MaxChars, MaxCharsGotoNext = value.MaxCharsGotoNext, MaxPaintChars = value.MaxPaintChars, PaintOffset = value.PaintOffset };
-    private ListBoxDef? CloneListBox(ListBoxDef? value) => value is null ? null : new ListBoxDef
+    private EditFieldDef? CloneEditField(EditFieldDef? value)
     {
-        StartPos = Enumerable.Repeat(0, value.StartPos.Count).ToArray(), EndPos = Enumerable.Repeat(0, value.EndPos.Count).ToArray(), DrawPadding = value.DrawPadding,
-        ElementWidth = value.ElementWidth, ElementHeight = value.ElementHeight, ElementStyle = value.ElementStyle, NumColumns = value.NumColumns,
-        ColumnInfo = value.ColumnInfo.Select(column => new ColumnInfo { Pos = column.Pos, Width = column.Width, MaxChars = column.MaxChars, Alignment = column.Alignment }).ToArray(),
-        DoubleClick = Ptr(value.DoubleClick), DoubleClickSet = CloneEventSet(value.DoubleClickSet), NotSelectable = value.NotSelectable, NoScrollbars = value.NoScrollbars, UsePaging = value.UsePaging,
-        SelectBorder = Vec(value.SelectBorder), SelectIcon = Ptr(value.SelectIcon), SelectIconMaterialName = value.SelectIconMaterialName ?? value.SelectIconMaterial?.Info.Name,
-    };
-    private static MultiDef? CloneMulti(MultiDef? value) => value is null ? null : new MultiDef { DvarList = value.DvarList.Select(Ptr).ToArray(), DvarListStrings = value.DvarListStrings.ToArray(), DvarStr = value.DvarStr.Select(Ptr).ToArray(), DvarStrStrings = value.DvarStrStrings.ToArray(), DvarValue = value.DvarValue.ToArray(), Count = value.Count, StrDef = value.StrDef };
-    private static NewsTickerDef? CloneNewsTicker(NewsTickerDef? value) => value is null ? null : new NewsTickerDef { FeedId = value.FeedId, Speed = value.Speed, Spacing = value.Spacing, LastTime = 0, Start = 0, End = 0, X = value.X };
-    private static TextScrollDef? CloneTextScroll(TextScrollDef? value) => value is null ? null : new TextScrollDef { StartTime = 0 };
+        if (value is null) return null;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_editFields.TryGetValue(provenance, out EditFieldDef? existing)) return existing;
+        var clone = new EditFieldDef { MinVal = value.MinVal, MaxVal = value.MaxVal, DefVal = value.DefVal, Range = value.Range, MaxChars = value.MaxChars, MaxCharsGotoNext = value.MaxCharsGotoNext, MaxPaintChars = value.MaxPaintChars, PaintOffset = value.PaintOffset };
+        PropagateProvenance(clone, provenance);
+        _editFields.Add(provenance, clone);
+        return clone;
+    }
+
+    private ListBoxDef? CloneListBox(ListBoxDef? value)
+    {
+        if (value is null) return null;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_listBoxes.TryGetValue(provenance, out ListBoxDef? existing)) return existing;
+        var clone = new ListBoxDef
+        {
+            StartPos = Enumerable.Repeat(0, value.StartPos.Count).ToArray(), EndPos = Enumerable.Repeat(0, value.EndPos.Count).ToArray(), DrawPadding = value.DrawPadding,
+            ElementWidth = value.ElementWidth, ElementHeight = value.ElementHeight, ElementStyle = value.ElementStyle, NumColumns = value.NumColumns,
+            ColumnInfo = value.ColumnInfo.Select(column => new ColumnInfo { Pos = column.Pos, Width = column.Width, MaxChars = column.MaxChars, Alignment = column.Alignment }).ToArray(),
+            DoubleClick = Ptr(value.DoubleClick), NotSelectable = value.NotSelectable, NoScrollbars = value.NoScrollbars, UsePaging = value.UsePaging,
+            SelectBorder = Vec(value.SelectBorder), SelectIcon = Ptr(value.SelectIcon), SelectIconMaterialName = value.SelectIconMaterialName ?? value.SelectIconMaterial?.Info.Name,
+        };
+        PropagateProvenance(clone, provenance);
+        _listBoxes.Add(provenance, clone);
+        clone.DoubleClickSet = CloneEventSet(value.DoubleClickSet);
+        return clone;
+    }
+
+    private MultiDef? CloneMulti(MultiDef? value)
+    {
+        if (value is null) return null;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_multiDefs.TryGetValue(provenance, out MultiDef? existing)) return existing;
+        var clone = new MultiDef { DvarList = value.DvarList.Select(Ptr).ToArray(), DvarListStrings = value.DvarListStrings.ToArray(), DvarStr = value.DvarStr.Select(Ptr).ToArray(), DvarStrStrings = value.DvarStrStrings.ToArray(), DvarValue = value.DvarValue.ToArray(), Count = value.Count, StrDef = value.StrDef };
+        PropagateProvenance(clone, provenance);
+        _multiDefs.Add(provenance, clone);
+        return clone;
+    }
+
+    private NewsTickerDef? CloneNewsTicker(NewsTickerDef? value)
+    {
+        if (value is null) return null;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_newsTickers.TryGetValue(provenance, out NewsTickerDef? existing)) return existing;
+        var clone = new NewsTickerDef { FeedId = value.FeedId, Speed = value.Speed, Spacing = value.Spacing, LastTime = 0, Start = 0, End = 0, X = value.X };
+        PropagateProvenance(clone, provenance);
+        _newsTickers.Add(provenance, clone);
+        return clone;
+    }
+
+    private TextScrollDef? CloneTextScroll(TextScrollDef? value)
+    {
+        if (value is null) return null;
+        ProvenanceToken provenance = CloneProvenanceOf(value);
+        if (_textScrolls.TryGetValue(provenance, out TextScrollDef? existing)) return existing;
+        var clone = new TextScrollDef { StartTime = 0 };
+        PropagateProvenance(clone, provenance);
+        _textScrolls.Add(provenance, clone);
+        return clone;
+    }
+
+    private static ProvenanceToken ProvenanceOf(object value) =>
+        Provenance.GetValue(value, static _ => new ProvenanceToken());
+
+    private ProvenanceToken CloneProvenanceOf(object value)
+    {
+        if (_preserveSourceProvenance)
+            return ProvenanceOf(value);
+        if (_independentProvenance.TryGetValue(
+                value,
+                out ProvenanceToken? provenance))
+        {
+            return provenance;
+        }
+
+        provenance = new ProvenanceToken();
+        _independentProvenance.Add(value, provenance);
+        return provenance;
+    }
+
+    private static void PropagateProvenance(
+        object clone,
+        ProvenanceToken provenance) =>
+        Provenance.Add(clone, provenance);
+
+    private sealed class ProvenanceToken
+    {
+    }
+
     private ItemFloatExpression CloneFloatExpression(ItemFloatExpression value) => new() { Target = value.Target, Expression = Ptr(value.Expression), Statement = CloneStatement(value.Statement) };
 
     private static RectangleDef Rect(RectangleDef value) => new() { X = value.X, Y = value.Y, W = value.W, H = value.H, HorzAlign = value.HorzAlign, VertAlign = value.VertAlign, Pad12 = value.Pad12 };

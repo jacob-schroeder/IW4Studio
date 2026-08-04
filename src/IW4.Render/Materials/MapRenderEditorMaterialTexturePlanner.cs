@@ -26,7 +26,9 @@ public static class MapRenderEditorMaterialTexturePlanner
                     nameof(textures));
             MapRenderEditorMaterialTextureResolution? resolution =
                 resolve?.Invoke(ordinal, row);
-            GfxImageAsset? image = resolution?.Image ?? row.Image;
+            GfxImageAsset? image = resolution is null
+                ? row.Image
+                : resolution.Image;
             MapRenderTexture? resolvedTexture = resolution?.Texture;
             MapRenderEditorMaterialTextureClassification classification =
                 MapRenderEditorMaterialTextureRoleClassifier.Classify(row);

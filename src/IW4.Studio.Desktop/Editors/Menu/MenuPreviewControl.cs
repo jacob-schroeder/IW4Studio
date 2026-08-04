@@ -1,0 +1,652 @@
+using System.Globalization;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using IW4.Studio.Documents.MenuEditing;
+using IW4.Studio.Documents.MenuEditing.Preview;
+using IW4.Studio.Rendering;
+
+namespace IW4.Studio.Desktop.Editors.Menu;
+
+public sealed class MenuPreviewNodeSelectedEventArgs(MenuNodeId nodeId)
+    : EventArgs
+{
+    public MenuNodeId NodeId { get; } = nodeId;
+}
+
+public sealed class MenuPreviewMaterialResolutionCompletedEventArgs(
+    MenuPreviewMaterialStatus status)
+    : EventArgs
+{
+    public MenuPreviewMaterialStatus Status { get; } =
+        status ?? throw new ArgumentNullException(nameof(status));
+}
+
+/// <summary>
+/// Avalonia renderer for the renderer-neutral Menu preview scene. It draws
+/// only authored static state and resolves Material images asynchronously;
+/// game expressions, owner-draw callbacks, models, and cinematics remain
+/// explicit placeholders from the core projector.
+/// </summary>
+public sealed class MenuPreviewControl : Control
+{
+    public static readonly StyledProperty<MenuPreviewScene?> SceneProperty =
+        AvaloniaProperty.Register<MenuPreviewControl, MenuPreviewScene?>(
+            nameof(Scene));
+
+    public static readonly StyledProperty<MenuNodeId?> SelectedNodeIdProperty =
+        AvaloniaProperty.Register<MenuPreviewControl, MenuNodeId?>(
+            nameof(SelectedNodeId));
+
+    public static readonly StyledProperty<IMenuPreviewMaterialResolver?>
+        MaterialResolverProperty =
+            AvaloniaProperty.Register<
+                MenuPreviewControl,
+                IMenuPreviewMaterialResolver?>(nameof(MaterialResolver));
+
+    private readonly Dictionary<string, Bitmap> _materialBitmaps =
+        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _materialFailures =
+        new(StringComparer.Ordinal);
+    private CancellationTokenSource? _materialCancellation;
+    private int _materialGeneration;
+
+    static MenuPreviewControl()
+    {
+        AffectsRender<MenuPreviewControl>(
+            SceneProperty,
+            SelectedNodeIdProperty,
+            MaterialResolverProperty);
+    }
+
+    public MenuPreviewControl()
+    {
+        ClipToBounds = true;
+        Focusable = true;
+    }
+
+    public MenuPreviewScene? Scene
+    {
+        get => GetValue(SceneProperty);
+        set => SetValue(SceneProperty, value);
+    }
+
+    public MenuNodeId? SelectedNodeId
+    {
+        get => GetValue(SelectedNodeIdProperty);
+        set => SetValue(SelectedNodeIdProperty, value);
+    }
+
+    public IMenuPreviewMaterialResolver? MaterialResolver
+    {
+        get => GetValue(MaterialResolverProperty);
+        set => SetValue(MaterialResolverProperty, value);
+    }
+
+    public event EventHandler<MenuPreviewNodeSelectedEventArgs>? NodeSelected;
+
+    public event EventHandler<
+        MenuPreviewMaterialResolutionCompletedEventArgs>?
+        MaterialResolutionCompleted;
+
+    public override void Render(DrawingContext context)
+    {
+        base.Render(context);
+        context.DrawRectangle(
+            new SolidColorBrush(Color.FromRgb(16, 19, 24)),
+            null,
+            Bounds);
+
+        if (Scene is not { } scene ||
+            scene.Settings.CanvasWidth <= 0 ||
+            scene.Settings.CanvasHeight <= 0)
+        {
+            DrawCenteredLabel(context, "No Menu preview available");
+            return;
+        }
+
+        PreviewTransform transform = CreateTransform(scene.Settings);
+        DrawStage(context, scene, transform);
+        foreach (MenuPreviewPrimitive primitive in scene.Primitives)
+            DrawPrimitive(context, primitive, transform);
+        DrawSelection(context, scene, transform);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == SceneProperty ||
+            change.Property == MaterialResolverProperty)
+        {
+            RefreshMaterials();
+        }
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (Scene is not { } scene ||
+            !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        PreviewTransform transform = CreateTransform(scene.Settings);
+        Point position = e.GetPosition(this);
+        float x = (float)((position.X - transform.Origin.X) / transform.Scale);
+        float y = (float)((position.Y - transform.Origin.Y) / transform.Scale);
+        if (scene.HitTest(x, y) is not { } nodeId)
+            return;
+
+        Focus();
+        NodeSelected?.Invoke(
+            this,
+            new MenuPreviewNodeSelectedEventArgs(nodeId));
+        e.Handled = true;
+    }
+
+    protected override void OnDetachedFromVisualTree(
+        Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        CancelMaterialLoads();
+        DisposeBitmaps();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnAttachedToVisualTree(
+        Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        RefreshMaterials();
+    }
+
+    private void RefreshMaterials()
+    {
+        CancelMaterialLoads();
+        DisposeBitmaps();
+        _materialFailures.Clear();
+
+        if (Scene is not { } scene || MaterialResolver is not { } resolver)
+        {
+            InvalidateVisual();
+            return;
+        }
+
+        string[] materialNames = scene.Primitives
+            .OfType<MenuPreviewMaterial>()
+            .Select(value => value.MaterialName)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (materialNames.Length == 0)
+        {
+            InvalidateVisual();
+            return;
+        }
+
+        _materialCancellation = new CancellationTokenSource();
+        int generation = ++_materialGeneration;
+        foreach (string materialName in materialNames)
+        {
+            _ = ResolveMaterialAsync(
+                materialName,
+                resolver,
+                generation,
+                _materialCancellation.Token);
+        }
+    }
+
+    private async Task ResolveMaterialAsync(
+        string materialName,
+        IMenuPreviewMaterialResolver resolver,
+        int generation,
+        CancellationToken cancellationToken)
+    {
+        MenuPreviewMaterialResolution resolution;
+        try
+        {
+            resolution = await resolver.ResolveAsync(
+                materialName,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            resolution = MenuPreviewMaterialResolution.Failed(
+                exception.Message);
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (cancellationToken.IsCancellationRequested ||
+                generation != _materialGeneration)
+            {
+                return;
+            }
+
+            MenuPreviewMaterialResolution presentedResolution = resolution;
+            if (resolution.Snapshot is { } snapshot)
+            {
+                try
+                {
+                    using var stream = new MemoryStream(
+                        snapshot.GetPngBytesCopy(),
+                        writable: false);
+                    _materialBitmaps[materialName] = new Bitmap(stream);
+                }
+                catch (Exception exception) when (
+                    exception is not OutOfMemoryException)
+                {
+                    string failure =
+                        $"Decoded image '{snapshot.ImageName}' for material " +
+                        $"'{materialName}' could not be opened by the " +
+                        $"preview surface: {exception.Message}";
+                    presentedResolution = MenuPreviewMaterialResolution.Failed(
+                        failure,
+                        resolution.PoolRevision,
+                        resolution.Diagnostics);
+                    _materialFailures[materialName] = failure;
+                }
+            }
+            else
+            {
+                _materialFailures[materialName] = resolution.Failure ??
+                    "Material preview is unavailable.";
+            }
+
+            InvalidateVisual();
+            MaterialResolutionCompleted?.Invoke(
+                this,
+                new MenuPreviewMaterialResolutionCompletedEventArgs(
+                    presentedResolution.CreateStatus(materialName)));
+        });
+    }
+
+    private void DrawStage(
+        DrawingContext context,
+        MenuPreviewScene scene,
+        PreviewTransform transform)
+    {
+        Rect stage = new(
+            transform.Origin.X,
+            transform.Origin.Y,
+            scene.Settings.CanvasWidth * transform.Scale,
+            scene.Settings.CanvasHeight * transform.Scale);
+        context.DrawRectangle(
+            new SolidColorBrush(Color.FromRgb(8, 10, 13)),
+            new Pen(new SolidColorBrush(Color.FromRgb(75, 82, 92)), 1),
+            stage);
+
+        double gridSize = 32 * transform.Scale;
+        if (gridSize >= 10)
+        {
+            var gridPen = new Pen(
+                new SolidColorBrush(Color.FromArgb(35, 154, 164, 178)),
+                1);
+            for (double x = stage.Left + gridSize; x < stage.Right; x += gridSize)
+                context.DrawLine(gridPen, new Point(x, stage.Top), new Point(x, stage.Bottom));
+            for (double y = stage.Top + gridSize; y < stage.Bottom; y += gridSize)
+                context.DrawLine(gridPen, new Point(stage.Left, y), new Point(stage.Right, y));
+        }
+
+        MenuPreviewInsets safe = scene.Settings.SafeArea;
+        if (safe.Left + safe.Top + safe.Right + safe.Bottom <= 0)
+            return;
+
+        var safeRect = new Rect(
+            stage.Left + safe.Left * transform.Scale,
+            stage.Top + safe.Top * transform.Scale,
+            stage.Width - (safe.Left + safe.Right) * transform.Scale,
+            stage.Height - (safe.Top + safe.Bottom) * transform.Scale);
+        context.DrawRectangle(
+            null,
+            new Pen(
+                new SolidColorBrush(Color.FromArgb(150, 103, 190, 255)),
+                1,
+                DashStyle.Dash),
+            safeRect);
+    }
+
+    private void DrawPrimitive(
+        DrawingContext context,
+        MenuPreviewPrimitive primitive,
+        PreviewTransform transform)
+    {
+        Rect bounds = transform.Map(primitive.Bounds);
+        switch (primitive)
+        {
+            case MenuPreviewFill fill:
+                context.DrawRectangle(Brush(fill.Color), null, bounds);
+                break;
+
+            case MenuPreviewBorder border:
+                DrawBorder(context, border, bounds, transform.Scale);
+                break;
+
+            case MenuPreviewMaterial material:
+                DrawMaterial(context, material, bounds);
+                break;
+
+            case MenuPreviewText text:
+                DrawText(context, text, bounds, transform.Scale);
+                break;
+
+            case MenuPreviewPlaceholder placeholder:
+                DrawPlaceholder(context, placeholder.Label, bounds);
+                break;
+        }
+    }
+
+    private void DrawMaterial(
+        DrawingContext context,
+        MenuPreviewMaterial material,
+        Rect bounds)
+    {
+        if (_materialBitmaps.TryGetValue(
+                material.MaterialName,
+                out Bitmap? bitmap))
+        {
+            using (context.PushOpacity(Clamp01(material.Tint.A)))
+                context.DrawImage(bitmap, bounds);
+            if (!IsWhiteRgb(material.Tint))
+            {
+                context.DrawRectangle(
+                    new SolidColorBrush(Color.FromArgb(
+                        Channel(material.Tint.A * 0.28f),
+                        Channel(material.Tint.R),
+                        Channel(material.Tint.G),
+                        Channel(material.Tint.B))),
+                    null,
+                    bounds);
+            }
+            return;
+        }
+
+        DrawCheckerboard(context, bounds, Bounds);
+        string label = _materialFailures.TryGetValue(
+            material.MaterialName,
+            out string? failure)
+                ? failure
+                : $"Loading: {material.MaterialName}";
+        DrawLabel(context, label, bounds, 10, Color.FromRgb(224, 229, 236));
+    }
+
+    private static void DrawText(
+        DrawingContext context,
+        MenuPreviewText text,
+        Rect bounds,
+        double scale)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            return;
+
+        double scaledFontSize = 24 * text.Scale * scale;
+        double fontSize = double.IsFinite(scaledFontSize)
+            ? Math.Clamp(scaledFontSize, 5, 96)
+            : 5;
+        var formatted = new FormattedText(
+            text.Text,
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            fontSize,
+            Brush(text.Color))
+        {
+            MaxTextWidth = bounds.Width,
+            MaxTextHeight = bounds.Height,
+            MaxLineCount = 1,
+            Trimming = TextTrimming.CharacterEllipsis,
+            TextAlignment = (text.Alignment & 3) switch
+            {
+                1 => TextAlignment.Center,
+                2 => TextAlignment.Right,
+                _ => TextAlignment.Left
+            }
+        };
+        double y = (text.Alignment & 0xC) switch
+        {
+            8 => bounds.Top + Math.Max(
+                0,
+                (bounds.Height - formatted.Height) * 0.5),
+            12 => bounds.Bottom - Math.Min(bounds.Height, formatted.Height),
+            _ => bounds.Top
+        };
+        using (context.PushClip(bounds))
+            context.DrawText(formatted, new Point(bounds.Left, y));
+    }
+
+    private static void DrawPlaceholder(
+        DrawingContext context,
+        string label,
+        Rect bounds)
+    {
+        context.DrawRectangle(
+            new SolidColorBrush(Color.FromArgb(90, 57, 65, 78)),
+            new Pen(
+                new SolidColorBrush(Color.FromArgb(210, 151, 161, 176)),
+                1,
+                DashStyle.Dash),
+            bounds);
+        DrawLabel(context, label, bounds, 11, Color.FromRgb(220, 225, 232));
+    }
+
+    private void DrawSelection(
+        DrawingContext context,
+        MenuPreviewScene scene,
+        PreviewTransform transform)
+    {
+        if (SelectedNodeId is not { } selected)
+            return;
+
+        MenuPreviewHitRegion? region = scene.HitRegions
+            .Where(value => value.NodeId == selected)
+            .OrderByDescending(value => value.ZIndex)
+            .FirstOrDefault();
+        if (region is null)
+            return;
+
+        context.DrawRectangle(
+            null,
+            new Pen(new SolidColorBrush(Color.FromRgb(74, 184, 255)), 2),
+            transform.Map(region.Bounds));
+    }
+
+    private static void DrawBorder(
+        DrawingContext context,
+        MenuPreviewBorder border,
+        Rect bounds,
+        double scale)
+    {
+        double scaledThickness = border.Thickness * scale;
+        double thickness = double.IsFinite(scaledThickness)
+            ? Math.Clamp(scaledThickness, 1, 64)
+            : 1;
+        var pen = new Pen(Brush(border.Color), thickness);
+        switch (border.Border)
+        {
+            case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_HORZ:
+            case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_KCGRADIENT:
+                context.DrawLine(
+                    pen,
+                    new Point(bounds.Left, bounds.Top),
+                    new Point(bounds.Right, bounds.Top));
+                context.DrawLine(
+                    pen,
+                    new Point(bounds.Left, bounds.Bottom),
+                    new Point(bounds.Right, bounds.Bottom));
+                break;
+            case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_VERT:
+                context.DrawLine(
+                    pen,
+                    new Point(bounds.Left, bounds.Top),
+                    new Point(bounds.Left, bounds.Bottom));
+                context.DrawLine(
+                    pen,
+                    new Point(bounds.Right, bounds.Top),
+                    new Point(bounds.Right, bounds.Bottom));
+                break;
+            default:
+                context.DrawRectangle(null, pen, bounds);
+                break;
+        }
+    }
+
+    private static void DrawCheckerboard(
+        DrawingContext context,
+        Rect bounds,
+        Rect visibleBounds)
+    {
+        const double cell = 12;
+        double left = Math.Max(bounds.Left, visibleBounds.Left);
+        double top = Math.Max(bounds.Top, visibleBounds.Top);
+        double right = Math.Min(bounds.Right, visibleBounds.Right);
+        double bottom = Math.Min(bounds.Bottom, visibleBounds.Bottom);
+        if (!double.IsFinite(left) ||
+            !double.IsFinite(top) ||
+            !double.IsFinite(right) ||
+            !double.IsFinite(bottom) ||
+            left >= right ||
+            top >= bottom)
+        {
+            return;
+        }
+
+        int row = 0;
+        for (double y = top; y < bottom; y += cell, row++)
+        {
+            int column = 0;
+            for (double x = left; x < right; x += cell, column++)
+            {
+                bool alternate = (column + row) % 2 == 0;
+                context.DrawRectangle(
+                    new SolidColorBrush(alternate
+                        ? Color.FromRgb(47, 52, 61)
+                        : Color.FromRgb(34, 38, 45)),
+                    null,
+                    new Rect(
+                        x,
+                        y,
+                        Math.Min(cell, right - x),
+                        Math.Min(cell, bottom - y)));
+            }
+        }
+    }
+
+    private static void DrawLabel(
+        DrawingContext context,
+        string text,
+        Rect bounds,
+        double fontSize,
+        Color color)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            return;
+
+        var formatted = new FormattedText(
+            text,
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            fontSize,
+            new SolidColorBrush(color))
+        {
+            MaxTextWidth = Math.Max(1, bounds.Width - 8),
+            MaxTextHeight = bounds.Height,
+            MaxLineCount = 1,
+            Trimming = TextTrimming.CharacterEllipsis,
+            TextAlignment = TextAlignment.Center
+        };
+        Point origin = new(
+            bounds.Left + 4,
+            bounds.Top + Math.Max(0, (bounds.Height - formatted.Height) * 0.5));
+        using (context.PushClip(bounds))
+            context.DrawText(formatted, origin);
+    }
+
+    private void DrawCenteredLabel(DrawingContext context, string text) =>
+        DrawLabel(
+            context,
+            text,
+            Bounds,
+            13,
+            Color.FromRgb(170, 178, 190));
+
+    private PreviewTransform CreateTransform(MenuPreviewSettings settings)
+    {
+        double scale = Math.Min(
+            Bounds.Width / settings.CanvasWidth,
+            Bounds.Height / settings.CanvasHeight);
+        if (!double.IsFinite(scale) || scale <= 0)
+            scale = 1;
+        return new PreviewTransform(
+            scale,
+            new Point(
+                (Bounds.Width - settings.CanvasWidth * scale) * 0.5,
+                (Bounds.Height - settings.CanvasHeight * scale) * 0.5));
+    }
+
+    private void CancelMaterialLoads()
+    {
+        _materialGeneration++;
+        _materialCancellation?.Cancel();
+        _materialCancellation?.Dispose();
+        _materialCancellation = null;
+    }
+
+    private void DisposeBitmaps()
+    {
+        foreach (Bitmap bitmap in _materialBitmaps.Values)
+            bitmap.Dispose();
+        _materialBitmaps.Clear();
+    }
+
+    private static IBrush Brush(MenuColorValue value) =>
+        new SolidColorBrush(Color.FromArgb(
+            Channel(value.A),
+            Channel(value.R),
+            Channel(value.G),
+            Channel(value.B)));
+
+    private static byte Channel(float value) =>
+        (byte)Math.Round(Clamp01(value) * byte.MaxValue);
+
+    private static double Clamp01(float value) =>
+        float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    private static bool IsWhiteRgb(MenuColorValue color) =>
+        float.IsFinite(color.R) &&
+        float.IsFinite(color.G) &&
+        float.IsFinite(color.B) &&
+        Math.Abs(color.R - 1) < 0.0001f &&
+        Math.Abs(color.G - 1) < 0.0001f &&
+        Math.Abs(color.B - 1) < 0.0001f;
+
+    private readonly record struct PreviewTransform(double Scale, Point Origin)
+    {
+        public Rect Map(MenuPreviewRect value)
+        {
+            double firstX = Origin.X + value.X * Scale;
+            double firstY = Origin.Y + value.Y * Scale;
+            double secondX = firstX + value.Width * Scale;
+            double secondY = firstY + value.Height * Scale;
+            if (!double.IsFinite(firstX) ||
+                !double.IsFinite(firstY) ||
+                !double.IsFinite(secondX) ||
+                !double.IsFinite(secondY))
+            {
+                return default;
+            }
+            return new Rect(
+                Math.Min(firstX, secondX),
+                Math.Min(firstY, secondY),
+                Math.Abs(secondX - firstX),
+                Math.Abs(secondY - firstY));
+        }
+    }
+}

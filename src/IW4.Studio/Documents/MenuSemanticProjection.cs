@@ -96,7 +96,13 @@ internal static class MenuSemanticProjection
         type == typeof(ItemKeyHandler) ||
         type == typeof(ItemDefAsset) ||
         type == typeof(ConditionalScript) ||
-        type == typeof(SetLocalVarData);
+        type == typeof(SetLocalVarData) ||
+        type == typeof(StaticDvar) ||
+        type == typeof(EditFieldDef) ||
+        type == typeof(ListBoxDef) ||
+        type == typeof(MultiDef) ||
+        type == typeof(NewsTickerDef) ||
+        type == typeof(TextScrollDef);
 
     // These managed fields retain an imported wire spelling for the legacy
     // bridge.  A leading comma denotes an external XAsset only on the wire;

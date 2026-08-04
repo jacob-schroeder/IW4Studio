@@ -536,7 +536,7 @@ public sealed class ZoneAssetDependencyCollectorRegistry
 
         var result = new List<ZoneAssetDependency>();
         CollectMenuDefinition(
-            menu,
+            menu.Definition,
             "definition",
             result);
         return result;
@@ -549,32 +549,71 @@ public sealed class ZoneAssetDependencyCollectorRegistry
             throw WrongBuildData(buildData, nameof(IMenuFileBuildData));
 
         var result = new List<ZoneAssetDependency>();
-        IReadOnlyList<IMenuBuildData> menus = menuFile.Menus ??
-            throw new InvalidDataException("MenuFile dependency discovery requires a non-null menu table.");
-        for (int menuIndex = 0; menuIndex < menus.Count; menuIndex++)
+        IReadOnlyList<NestedXAssetBuildLink> links = menuFile.MenuLinks ??
+            throw new InvalidDataException(
+                "MenuFile dependency discovery requires a non-null Menu-link table.");
+        for (int menuIndex = 0; menuIndex < links.Count; menuIndex++)
         {
-            IMenuBuildData menu = menus[menuIndex] ??
+            NestedXAssetBuildLink link = links[menuIndex] ??
                 throw new InvalidDataException(
-                    $"MenuFile dependency discovery found a null menu at menus[{menuIndex}].");
-            CollectMenuDefinition(
-                menu,
-                $"menus[{menuIndex}].definition",
-                result);
+                    $"MenuFile dependency discovery found a null link at menuLinks[{menuIndex}].");
+            string path = $"menuLinks[{menuIndex}]";
+            if (link.Reference.AssetType != XAssetType.Menu)
+            {
+                throw new InvalidDataException(
+                    $"{path} declares '{link.Reference.AssetType}' but MenuFile entries require Menu.");
+            }
+
+            if (link.SourceForm is
+                NestedXAssetPointerSourceForm.Inline or
+                NestedXAssetPointerSourceForm.Insert)
+            {
+                if (link.IncomingDefinition is not IMenuBuildData menu)
+                {
+                    throw new InvalidDataException(
+                        $"{path} inline ownership requires an IMenuBuildData definition.");
+                }
+
+                CollectMenuDefinition(
+                    menu.Definition,
+                    $"{path}.incomingDefinition",
+                    result);
+                continue;
+            }
+
+            if (link.SourceForm != NestedXAssetPointerSourceForm.PackedAlias)
+            {
+                throw new InvalidDataException(
+                    $"{path} has unsupported source form '{link.SourceForm}'.");
+            }
+
+            if (link.Reference.IsExternalReference)
+            {
+                Add(
+                    result,
+                    link.Reference,
+                    XAssetType.Menu,
+                    $"{path}.reference");
+            }
         }
         return result;
     }
 
     private static void CollectMenuDefinition(
-        IMenuBuildData menu,
+        MenuDefAsset definition,
         string path,
         List<ZoneAssetDependency> result)
     {
-        MenuDefAsset definition = menu.Definition ??
+        if (definition is null)
+        {
             throw new InvalidDataException(
                 $"Menu dependency discovery requires a non-null definition at {path}.");
-        string? background = definition.Window.BackgroundMaterialName ??
-            menu.References?.WindowBackgroundMaterial?.OriginalSerializedName;
-        Add(result, background, XAssetType.Material, $"{path}.window.background");
+        }
+        Add(
+            result,
+            definition.Window.BackgroundMaterialName,
+            XAssetType.Material,
+            $"{path}.window.background");
 
         for (int itemIndex = 0; itemIndex < definition.Items.Count; itemIndex++)
         {

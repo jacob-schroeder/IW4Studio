@@ -1,8 +1,9 @@
 using IW4.Assets.Assets.Menu;
-using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.FastFiles.Emitters.Assets;
+using IW4.Runtime.Assets;
+using IW4.Studio.Documents.MenuEditing;
 
 namespace IW4.Studio.Documents;
 
@@ -31,11 +32,15 @@ public sealed class MenuAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
 
 public sealed class MenuBuildData : IMenuBuildData
 {
-    private MenuBuildData(MenuDefAsset definition, MenuReferenceBuildData references, bool isComplete) { Definition = definition; References = references; IsComplete = isComplete; }
+    private MenuBuildData(MenuDefAsset definition, bool isComplete)
+    {
+        Definition = definition ?? throw new ArgumentNullException(nameof(definition));
+        IsComplete = isComplete;
+    }
+
     public XAssetType AssetType => XAssetType.Menu;
     public bool IsComplete { get; }
     public MenuDefAsset Definition { get; }
-    public MenuReferenceBuildData References { get; }
 
     internal static MenuBuildData FromLoaded(MenuDefAsset value) => FromLoaded(value, new MenuGraphClone());
 
@@ -43,47 +48,20 @@ public sealed class MenuBuildData : IMenuBuildData
     {
         ArgumentNullException.ThrowIfNull(graph);
         MenuDefAsset definition = graph.CloneMenu(value);
-        return new(definition, new MenuReferenceBuildData
-        {
-            WindowBackgroundMaterial = Reference(definition.Window.BackgroundMaterialName)
-        }, true);
+        return new(definition, true);
     }
-    internal static MenuBuildData Unresolved() => new(new MenuDefAsset(), new MenuReferenceBuildData(), false);
+
+    internal static MenuBuildData CreateOwned(MenuDefAsset definition, bool isComplete = true) =>
+        new(definition, isComplete);
+
     internal MenuBuildData Copy() => Copy(new MenuGraphClone());
 
     internal MenuBuildData Copy(MenuGraphClone graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
         MenuDefAsset definition = graph.CloneMenu(Definition);
-        return new(definition, new MenuReferenceBuildData { WindowBackgroundMaterial = References.WindowBackgroundMaterial }, IsComplete);
+        return new(definition, IsComplete);
     }
-
-    private static MenuDefAsset Clone(MenuDefAsset value) => new()
-    {
-        Window = Window(value.Window), FontPointer = Ptr(value.FontPointer), Font = value.Font, Fullscreen = value.Fullscreen, ItemCount = value.ItemCount,
-        FontIndex = value.FontIndex, CursorItems = value.CursorItems.ToArray(), FadeCycle = value.FadeCycle, FadeClamp = value.FadeClamp,
-        FadeAmount = value.FadeAmount, FadeInAmount = value.FadeInAmount, BlurRadius = value.BlurRadius,
-        OnOpen = Ptr(value.OnOpen), OnCloseRequest = Ptr(value.OnCloseRequest), OnClose = Ptr(value.OnClose), OnEsc = Ptr(value.OnEsc),
-        ExecKeys = Ptr(value.ExecKeys), VisibleExpression = Ptr(value.VisibleExpression), AllowedBinding = Ptr(value.AllowedBinding),
-        AllowedBindingString = value.AllowedBindingString, SoundName = Ptr(value.SoundName), SoundNameString = value.SoundNameString,
-        ImageTrack = value.ImageTrack, FocusColor = Vec(value.FocusColor), RectXExpression = Ptr(value.RectXExpression),
-        RectYExpression = Ptr(value.RectYExpression), RectWExpression = Ptr(value.RectWExpression), RectHExpression = Ptr(value.RectHExpression),
-        ItemsPointer = Ptr(value.ItemsPointer), ScaleTransitions = Transitions(value.ScaleTransitions), AlphaTransitions = Transitions(value.AlphaTransitions),
-        XTransitions = Transitions(value.XTransitions), YTransitions = Transitions(value.YTransitions), ExpressionData = Ptr(value.ExpressionData)
-    };
-
-    private static WindowDef Window(WindowDef value) => new()
-    {
-        NamePointer = Ptr(value.NamePointer), Name = value.Name, Rect = Rect(value.Rect), RectClient = Rect(value.RectClient), GroupPointer = Ptr(value.GroupPointer), Group = value.Group,
-        Style = value.Style, Border = value.Border, OwnerDraw = value.OwnerDraw, OwnerDrawFlags = value.OwnerDrawFlags, BorderSize = value.BorderSize,
-        StaticFlags = value.StaticFlags, DynamicFlags = value.DynamicFlags.ToArray(), NextTime = value.NextTime, ForeColor = Vec(value.ForeColor),
-        BackColor = Vec(value.BackColor), BorderColor = Vec(value.BorderColor), OutlineColor = Vec(value.OutlineColor), DisableColor = Vec(value.DisableColor), Background = Ptr(value.Background)
-    };
-    private static RectangleDef Rect(RectangleDef value) => new() { X = value.X, Y = value.Y, W = value.W, H = value.H, HorzAlign = value.HorzAlign, VertAlign = value.VertAlign, Pad12 = value.Pad12 };
-    private static Vec4 Vec(Vec4 value) => new() { A = value.A, R = value.R, G = value.G, B = value.B };
-    private static IReadOnlyList<MenuTransition> Transitions(IReadOnlyList<MenuTransition> values) => values.Select(value => new MenuTransition { TransitionType = value.TransitionType, TargetField = value.TargetField, StartTime = value.StartTime, StartValue = value.StartValue, EndValue = value.EndValue, Time = value.Time, EndTriggerType = value.EndTriggerType }).ToArray();
-    private static XPointer<T> Ptr<T>(XPointer<T> value) => new(value.Raw, value.ResolutionMode);
-    private static SymbolicXAssetReference? Reference(string? value) => value is null ? null : new(XAssetType.Material, value.StartsWith(",", StringComparison.Ordinal) ? value : $",{value}");
 }
 
 public sealed class MenuFileAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
@@ -106,28 +84,43 @@ public sealed class MenuFileAuthoredSnapshot : ITargetZoneDetachedSemanticSnapsh
 
 public sealed class MenuFileBuildData : IMenuFileBuildData
 {
-    private readonly MenuBuildData[] _menus;
-    private readonly IReadOnlyList<IMenuBuildData> _menuView;
-    internal MenuFileBuildData(string? name, IEnumerable<MenuBuildData> menus)
-        : this(name, CloneMenus(menus, new MenuGraphClone()), takeOwnership: true)
+    private readonly NestedXAssetBuildLink[] _menuLinks;
+    private readonly IReadOnlyList<NestedXAssetBuildLink> _menuLinkView;
+
+    internal MenuFileBuildData(
+        string? name,
+        IEnumerable<NestedXAssetBuildLink> menuLinks)
+        : this(
+            name,
+            CloneLinks(menuLinks, new MenuGraphClone()),
+            takeOwnership: true)
     {
     }
 
-    private MenuFileBuildData(string? name, MenuBuildData[] menus, bool takeOwnership)
+    private MenuFileBuildData(
+        string? name,
+        NestedXAssetBuildLink[] menuLinks,
+        bool takeOwnership)
     {
         if (!takeOwnership)
             throw new ArgumentException("Detached MenuFile build-data ownership must be explicit.", nameof(takeOwnership));
         Name = name;
-        _menus = menus ?? throw new ArgumentNullException(nameof(menus));
-        _menuView = Array.AsReadOnly(_menus.Select(value => (IMenuBuildData)value).ToArray());
+        _menuLinks = menuLinks ?? throw new ArgumentNullException(nameof(menuLinks));
+        _menuLinkView = Array.AsReadOnly(_menuLinks);
     }
 
     public XAssetType AssetType => XAssetType.MenuFile;
     public string? Name { get; }
-    public IReadOnlyList<IMenuBuildData> Menus => _menuView;
+    public IReadOnlyList<NestedXAssetBuildLink> MenuLinks => _menuLinkView;
+
+    internal static MenuFileBuildData CreateOwned(
+        string? name,
+        IEnumerable<NestedXAssetBuildLink> menuLinks) =>
+        new(name, menuLinks.ToArray(), takeOwnership: true);
+
     internal MenuFileBuildData Copy() => Copy(new MenuGraphClone());
     internal MenuFileBuildData Copy(MenuGraphClone graph) =>
-        new(Name, CloneMenus(_menus, graph), takeOwnership: true);
+        new(Name, CloneLinks(_menuLinks, graph), takeOwnership: true);
 
     internal static MenuFileBuildData FromLoaded(MenuFileAsset value, MenuGraphClone graph)
     {
@@ -135,30 +128,91 @@ public sealed class MenuFileBuildData : IMenuFileBuildData
         ArgumentNullException.ThrowIfNull(graph);
         return new MenuFileBuildData(
             value.Name,
-            value.Menus.Select(entry => entry.Menu is null
-                    ? MenuBuildData.Unresolved()
-                    : MenuBuildData.FromLoaded(entry.Menu, graph))
+            value.Menus.Select(entry => Link(entry, graph))
                 .ToArray(),
             takeOwnership: true);
     }
 
-    private static MenuBuildData[] CloneMenus(
-        IEnumerable<MenuBuildData> menus,
+    internal IReadOnlyList<MenuBuildData?> GetRegistrationDefinitions() =>
+        Array.AsReadOnly(_menuLinks
+            .Select(link => link.IncomingDefinition as MenuBuildData)
+            .ToArray());
+
+    private static NestedXAssetBuildLink Link(
+        MenuDefReference entry,
         MenuGraphClone graph)
     {
-        ArgumentNullException.ThrowIfNull(menus);
+        MenuDefAsset? identitySource = entry.IncomingDefinition ?? entry.CanonicalMenu;
+        string name = identitySource?.Window.Name
+            ?? throw new InvalidDataException(
+                $"MenuFile registration {entry.Index} has no logical Menu identity.");
+        bool isExternalReferenceStub = entry.IncomingDefinition?.Window.Name is { } incomingName &&
+            XAssetStableIdentity.IsReferenceName(incomingName);
+        NestedXAssetPointerSourceForm sourceForm = entry.Pointer.Type switch
+        {
+            PointerType.Inline => NestedXAssetPointerSourceForm.Inline,
+            PointerType.Insert => NestedXAssetPointerSourceForm.Insert,
+            PointerType.Offset => NestedXAssetPointerSourceForm.PackedAlias,
+            _ => throw new InvalidDataException(
+                $"MenuFile registration {entry.Index} has unsupported pointer form '{entry.Pointer.Type}'.")
+        };
+        if (isExternalReferenceStub)
+            sourceForm = NestedXAssetPointerSourceForm.PackedAlias;
+        MenuBuildData? incoming = entry.IncomingDefinition is null || isExternalReferenceStub
+            ? null
+            : MenuBuildData.FromLoaded(entry.IncomingDefinition, graph);
+        return new NestedXAssetBuildLink(
+            new SymbolicXAssetReference(XAssetType.Menu, name),
+            sourceForm,
+            incoming,
+            sourceForm == NestedXAssetPointerSourceForm.PackedAlias &&
+            entry.Pointer.Type == PointerType.Offset
+                ? entry.Pointer.Raw
+                : null,
+            entry.Pointer.CellAddress is { } ownerCell
+                ? XPointerCodec.Encode(ownerCell)
+                : null);
+    }
+
+    private static NestedXAssetBuildLink[] CloneLinks(
+        IEnumerable<NestedXAssetBuildLink> links,
+        MenuGraphClone graph)
+    {
+        ArgumentNullException.ThrowIfNull(links);
         ArgumentNullException.ThrowIfNull(graph);
-        return menus.Select(value => value.Copy(graph)).ToArray();
+        return links.Select(link =>
+        {
+            ArgumentNullException.ThrowIfNull(link);
+            IXAssetBuildData? incoming = link.IncomingDefinition switch
+            {
+                null => null,
+                MenuBuildData menu => menu.Copy(graph),
+                _ => throw new InvalidDataException(
+                    $"MenuFile link contains non-Menu definition '{link.IncomingDefinition.AssetType}'.")
+            };
+            return link with { IncomingDefinition = incoming };
+        }).ToArray();
     }
 }
 
 public sealed class MenuFileDraft
 {
-    private MenuFileBuildData _data;
-    internal MenuFileDraft(MenuFileBuildData data) => _data = data.Copy();
-    public MenuFileBuildData Data => _data.Copy();
-    public void Replace(MenuFileBuildData value) { ArgumentNullException.ThrowIfNull(value); _data = value.Copy(); }
-    internal MenuFileDraft Clone() => new(_data);
+    private readonly MenuFileWorkingDocument _document;
+
+    internal MenuFileDraft(MenuFileBuildData data) =>
+        _document = new MenuFileWorkingDocument(data);
+
+    private MenuFileDraft(MenuFileWorkingDocument document) =>
+        _document = document;
+
+    internal MenuFileBuildData Data => _document.Export();
+    public MenuFileEditorSnapshot Snapshot => _document.Snapshot;
+
+    public void Apply(MenuFileEdit edit) => _document.Apply(edit);
+
+    internal void Replace(MenuFileBuildData value) => _document.Replace(value);
+
+    internal MenuFileDraft Clone() => new(_document.Clone());
 }
 
 public sealed class MenuFileAuthoringAdapter : AssetAuthoringAdapter<MenuFileAuthoredSnapshot, MenuFileDraft, MenuFileBuildData>
@@ -168,24 +222,65 @@ public sealed class MenuFileAuthoringAdapter : AssetAuthoringAdapter<MenuFileAut
     public override MenuFileAuthoredSnapshot ImportAuthoredSnapshot(TargetZoneRowSource source) => MenuFileAuthoredSnapshot.Import(source);
     public override MenuFileDraft CreateDraft(MenuFileAuthoredSnapshot snapshot) => new(snapshot.Data);
     public override MenuFileDraft CloneDraft(MenuFileDraft draft) => draft.Clone();
-    public override IReadOnlyList<AssetValidationIssue> ValidateDraft(MenuFileDraft draft) => Validator.Validate(draft.Data).Select(value => new AssetValidationIssue(value.Path, value.Message, AssetValidationSeverity.Error)).ToArray();
+    public override IReadOnlyList<AssetValidationIssue> ValidateDraft(MenuFileDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        MenuFileBuildData data = draft.Data;
+        return MenuEditorValidation.Combine(
+            MenuEditorValidation.Validate(draft.Snapshot),
+            Validator.Validate(data));
+    }
+
     public override bool SemanticallyEquals(MenuFileDraft left, MenuFileDraft right)
     {
         MenuFileBuildData a = left.Data, b = right.Data;
-        return a.Name == b.Name && a.Menus.Count == b.Menus.Count &&
-            a.Menus.Zip(b.Menus).All(pair =>
-                MenuSemanticProjection.Serialize(pair.First.Definition) == MenuSemanticProjection.Serialize(pair.Second.Definition));
+        return a.Name == b.Name &&
+            a.MenuLinks.Count == b.MenuLinks.Count &&
+            a.MenuLinks.Zip(b.MenuLinks).All(pair =>
+                SameLink(pair.First, pair.Second));
     }
-    public override MenuFileBuildData ExportBuildData(MenuFileDraft draft) { MenuFileBuildData data = draft.Data; if (Validator.Validate(data).Count != 0) throw new InvalidOperationException("MenuFile draft has validation errors and cannot produce build data."); return data; }
+
+    public override MenuFileBuildData ExportBuildData(MenuFileDraft draft)
+    {
+        MenuFileBuildData data = draft.Data;
+        if (ValidateDraft(draft).Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            throw new InvalidOperationException("MenuFile draft has validation errors and cannot produce build data.");
+        return data;
+    }
+
+    private static bool SameLink(
+        NestedXAssetBuildLink left,
+        NestedXAssetBuildLink right)
+    {
+        if (left.Reference != right.Reference || left.SourceForm != right.SourceForm)
+            return false;
+        if (left.IncomingDefinition is null || right.IncomingDefinition is null)
+            return left.IncomingDefinition is null && right.IncomingDefinition is null;
+        return left.IncomingDefinition is MenuBuildData leftMenu &&
+            right.IncomingDefinition is MenuBuildData rightMenu &&
+            MenuSemanticProjection.Serialize(leftMenu.Definition) ==
+            MenuSemanticProjection.Serialize(rightMenu.Definition);
+    }
 }
 
 public sealed class MenuDraft
 {
-    private MenuBuildData _data;
-    internal MenuDraft(MenuBuildData data) => _data = data.Copy();
-    public MenuBuildData Data => _data.Copy();
-    public void Replace(MenuBuildData value) { ArgumentNullException.ThrowIfNull(value); _data = value.Copy(); }
-    internal MenuDraft Clone() => new(_data);
+    private readonly MenuWorkingDocument _document;
+
+    internal MenuDraft(MenuBuildData data) =>
+        _document = new MenuWorkingDocument(data);
+
+    private MenuDraft(MenuWorkingDocument document) =>
+        _document = document;
+
+    internal MenuBuildData Data => _document.Export();
+    public MenuEditorSnapshot Snapshot => _document.Snapshot;
+
+    public void Apply(MenuEdit edit) => _document.Apply(edit);
+
+    internal void Replace(MenuBuildData value) => _document.Replace(value);
+
+    internal MenuDraft Clone() => new(_document.Clone());
 }
 
 public sealed class MenuAuthoringAdapter : AssetAuthoringAdapter<MenuAuthoredSnapshot, MenuDraft, MenuBuildData>
@@ -195,7 +290,22 @@ public sealed class MenuAuthoringAdapter : AssetAuthoringAdapter<MenuAuthoredSna
     public override MenuAuthoredSnapshot ImportAuthoredSnapshot(TargetZoneRowSource source) => MenuAuthoredSnapshot.Import(source);
     public override MenuDraft CreateDraft(MenuAuthoredSnapshot snapshot) => new(snapshot.Data);
     public override MenuDraft CloneDraft(MenuDraft draft) => draft.Clone();
-    public override IReadOnlyList<AssetValidationIssue> ValidateDraft(MenuDraft draft) => Validator.Validate(draft.Data).Select(value => new AssetValidationIssue(value.Path, value.Message, AssetValidationSeverity.Error)).ToArray();
+    public override IReadOnlyList<AssetValidationIssue> ValidateDraft(MenuDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        MenuBuildData data = draft.Data;
+        return MenuEditorValidation.Combine(
+            MenuEditorValidation.Validate(draft.Snapshot),
+            Validator.Validate(data));
+    }
+
     public override bool SemanticallyEquals(MenuDraft left, MenuDraft right) => MenuSemanticProjection.Serialize(left.Data.Definition) == MenuSemanticProjection.Serialize(right.Data.Definition);
-    public override MenuBuildData ExportBuildData(MenuDraft draft) { MenuBuildData data = draft.Data; if (Validator.Validate(data).Count != 0) throw new InvalidOperationException("Menu draft has validation errors and cannot produce build data."); return data; }
+
+    public override MenuBuildData ExportBuildData(MenuDraft draft)
+    {
+        MenuBuildData data = draft.Data;
+        if (ValidateDraft(draft).Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            throw new InvalidOperationException("Menu draft has validation errors and cannot produce build data.");
+        return data;
+    }
 }

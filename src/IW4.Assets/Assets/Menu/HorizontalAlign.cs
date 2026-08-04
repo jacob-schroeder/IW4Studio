@@ -15,18 +15,19 @@ public enum HorizontalAlign : byte
 
     /// <summary>
     /// Anchor X to the horizontal center of the screen.
+    /// The authored X is offset from that origin; width is not subtracted.
     /// </summary>
     HORIZONTAL_ALIGN_CENTER = 2,
 
     /// <summary>
     /// Anchor X to the right viewable safe-area edge.
-    /// The rect offset is applied from the right side, so preview code should subtract width and X.
+    /// The authored X is added to that origin and is commonly negative.
     /// </summary>
     HORIZONTAL_ALIGN_RIGHT = 3,
 
     /// <summary>
-    /// Use the full horizontal screen span, disregarding safe-area adjustment.
-    /// Preview code should treat the resulting X as the screen left and width as the full available width.
+    /// Apply the full-screen placement scale without safe-area adjustment.
+    /// On the editor's canonical 640-wide canvas, authored X and width remain unchanged.
     /// </summary>
     HORIZONTAL_ALIGN_FULLSCREEN = 4,
 
@@ -42,6 +43,7 @@ public enum HorizontalAlign : byte
 
     /// <summary>
     /// Anchor X to the horizontal center of the safe area.
+    /// The authored X is offset from that origin; width is not subtracted.
     /// </summary>
     HORIZONTAL_ALIGN_CENTER_SAFEAREA = 7,
 

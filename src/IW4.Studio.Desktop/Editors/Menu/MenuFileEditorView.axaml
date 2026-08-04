@@ -1,0 +1,152 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:menu="using:IW4.Studio.Desktop.Editors.Menu"
+             xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.MenuFileEditorView"
+             x:DataType="menuVm:MenuFileEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1240"
+             d:DesignHeight="720">
+  <Grid RowDefinitions="Auto,10,*">
+    <Border Padding="12,9"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="12">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding StatusMessage}"
+                     FontSize="9"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+
+        <Button Grid.Column="1"
+                Classes="ghost"
+                MinHeight="30"
+                Padding="7,4"
+                Command="{Binding RevertCommand}"
+                ToolTip.Tip="Revert MenuFile draft">
+          <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+        </Button>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="2"
+          RowDefinitions="3*,10,2*">
+      <menu:MenuPreviewView DataContext="{Binding Designer}" />
+
+      <Grid Grid.Row="2"
+            ColumnDefinitions="225,10,*">
+        <Border Padding="8"
+                CornerRadius="7"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <Grid RowDefinitions="Auto,8,*,8,Auto">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="REGISTRATIONS"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding MenuCount}"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </Grid>
+
+            <ListBox Grid.Row="2"
+                     ItemsSource="{Binding Registrations}"
+                     SelectedItem="{Binding SelectedRegistration, Mode=TwoWay}"
+                     Background="Transparent"
+                     BorderThickness="0">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="menuVm:MenuFileRegistrationViewModel">
+                  <Grid ColumnDefinitions="*,Auto"
+                        ColumnSpacing="6"
+                        MinHeight="30"
+                        Margin="2">
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Name}"
+                                 TextTrimming="CharacterEllipsis"
+                                 FontSize="10"
+                                 Foreground="{DynamicResource StudioTextBrush}" />
+                      <TextBlock Text="{Binding Index, StringFormat='Registration {0:N0}'}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    </StackPanel>
+                    <Border Grid.Column="1"
+                            Padding="5,2"
+                            CornerRadius="3"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource StudioControlBrush}">
+                      <TextBlock Text="{Binding Status}"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Border>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Grid Grid.Row="4"
+                  RowDefinitions="Auto,4,Auto"
+                  ColumnDefinitions="*,*,*"
+                  ColumnSpacing="4">
+              <Button Classes="ghost" MinHeight="29" Padding="5"
+                      IsEnabled="{Binding CanAddRegistration}"
+                      Click="AddExistingMenu_Click"
+                      ToolTip.Tip="Add an existing Menu asset">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <materialIcons:MaterialIcon Kind="Plus" Width="13" Height="13" />
+                  <TextBlock Text="Add" FontSize="9" />
+                </StackPanel>
+              </Button>
+              <Button Grid.Column="1" Classes="ghost" MinHeight="29" Padding="5"
+                      IsEnabled="{Binding CanRetargetRegistration}"
+                      Click="RetargetRegistration_Click"
+                      ToolTip.Tip="Retarget the selected registration">
+                <TextBlock Text="Retarget" FontSize="9" />
+              </Button>
+              <Button Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
+                      Command="{Binding DuplicateRegistrationCommand}"
+                      ToolTip.Tip="Duplicate selected registration">
+                <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14" />
+              </Button>
+              <Button Grid.Row="2" Classes="ghost" MinHeight="29" Padding="5"
+                      Command="{Binding MoveRegistrationUpCommand}"
+                      ToolTip.Tip="Move registration up">
+                <materialIcons:MaterialIcon Kind="ArrowUp" Width="14" Height="14" />
+              </Button>
+              <Button Grid.Row="2" Grid.Column="1" Classes="ghost" MinHeight="29" Padding="5"
+                      Command="{Binding MoveRegistrationDownCommand}"
+                      ToolTip.Tip="Move registration down">
+                <materialIcons:MaterialIcon Kind="ArrowDown" Width="14" Height="14" />
+              </Button>
+              <Button Grid.Row="2" Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
+                      Command="{Binding RemoveRegistrationCommand}"
+                      ToolTip.Tip="Remove selected registration">
+                <materialIcons:MaterialIcon Kind="DeleteOutline" Width="14" Height="14" />
+              </Button>
+            </Grid>
+          </Grid>
+        </Border>
+
+        <menu:MenuOutlineView Grid.Column="2"
+                              DataContext="{Binding Designer}" />
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

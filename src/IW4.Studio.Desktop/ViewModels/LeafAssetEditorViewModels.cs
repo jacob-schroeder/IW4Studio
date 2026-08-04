@@ -4,42 +4,6 @@ using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
-public sealed class MenuEditorViewModel : ObservableObject
-{
-    private readonly AssetEditorSession _session;
-    private MenuDraft? _draft;
-    public MenuEditorViewModel(AssetEditorSession session)
-    {
-        _session = session ?? throw new ArgumentNullException(nameof(session));
-        if (session.Entry.AssetType != IW4.FastFiles.Zone.XAssetType.Menu)
-            throw new InvalidDataException("The Menu view model can host only Menu sessions.");
-        if (IsEditable) _draft = session.OpenDraft<MenuDraft>();
-    }
-    public bool IsEditable => _session.Mode == AssetEditorMode.Editable;
-    public string Name => _draft?.Data.Definition.Window.Name ?? _session.Entry.OriginalName ?? string.Empty;
-    public int ItemCount => _draft?.Data.Definition.ItemCount ?? 0;
-    public string StatusMessage => IsEditable
-        ? "Detached Menu root draft. Window and transition fields are captured; recursive item, event, and expression payloads remain blocked until their complete graph emitter is available."
-        : "Menu content is read-only or unavailable.";
-    public IReadOnlyList<AssetValidationIssue> Diagnostics => _session.Validation.Issues;
-    public void Replace(MenuBuildData value) { if (!IsEditable) return; _session.Apply<MenuDraft>(draft => draft.Replace(value)); _draft = _session.ReadDraft<MenuDraft>(); OnPropertyChanged(nameof(Name)); OnPropertyChanged(nameof(ItemCount)); OnPropertyChanged(nameof(Diagnostics)); }
-    public void RevertDraft() { if (!IsEditable) return; _session.Revert(); _draft = _session.ReadDraft<MenuDraft>(); OnPropertyChanged(nameof(Name)); OnPropertyChanged(nameof(ItemCount)); OnPropertyChanged(nameof(Diagnostics)); }
-}
-
-public sealed class MenuFileEditorViewModel : ObservableObject
-{
-    private readonly AssetEditorSession _session;
-    private MenuFileDraft? _draft;
-    public MenuFileEditorViewModel(AssetEditorSession session) { _session = session ?? throw new ArgumentNullException(nameof(session)); if (session.Entry.AssetType != IW4.FastFiles.Zone.XAssetType.MenuFile) throw new InvalidDataException("The MenuFile view model can host only MenuFile sessions."); if (IsEditable) _draft = session.OpenDraft<MenuFileDraft>(); }
-    public bool IsEditable => _session.Mode == AssetEditorMode.Editable;
-    public string Name => _draft?.Data.Name ?? _session.Entry.OriginalName ?? string.Empty;
-    public int MenuCount => _draft?.Data.Menus.Count ?? 0;
-    public string StatusMessage => IsEditable ? "Detached MenuFile registration draft. Nested Menu entries retain their captured provider identity; unresolved registrations block Save." : "MenuFile content is read-only or unavailable.";
-    public IReadOnlyList<AssetValidationIssue> Diagnostics => _session.Validation.Issues;
-    public void Replace(MenuFileBuildData value) { if (!IsEditable) return; _session.Apply<MenuFileDraft>(draft => draft.Replace(value)); _draft = _session.ReadDraft<MenuFileDraft>(); OnPropertyChanged(nameof(Name)); OnPropertyChanged(nameof(MenuCount)); OnPropertyChanged(nameof(Diagnostics)); }
-    public void RevertDraft() { if (!IsEditable) return; _session.Revert(); _draft = _session.ReadDraft<MenuFileDraft>(); OnPropertyChanged(nameof(Name)); OnPropertyChanged(nameof(MenuCount)); OnPropertyChanged(nameof(Diagnostics)); }
-}
-
 public sealed class ComWorldEditorViewModel : ObservableObject
 {
     private readonly AssetEditorSession _session;

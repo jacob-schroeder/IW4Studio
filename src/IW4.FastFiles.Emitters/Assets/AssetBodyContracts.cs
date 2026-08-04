@@ -33,22 +33,21 @@ public interface IRawFileBuildData : IXAssetBuildData
 }
 
 /// <summary>
-/// Detached Menu registration graph.  The definition retains every
-/// loader-visible item/event/expression union and symbolic external
-/// material/sound identity; the emitter uses graph identity to select inline
-/// source for first use and packed addresses for later uses.
+/// Detached ordered Menu registrations. Each nested link retains whether its
+/// source pointer owned an inline/insert definition or aliased a previously
+/// materialized Menu. Owned definitions retain the complete detached recursive
+/// Menu graph through <see cref="NestedXAssetBuildLink.IncomingDefinition"/>.
 /// </summary>
 public interface IMenuFileBuildData : IXAssetBuildData
 {
     string? Name { get; }
-    IReadOnlyList<IMenuBuildData> Menus { get; }
+    IReadOnlyList<NestedXAssetBuildLink> MenuLinks { get; }
 }
 
 public interface IMenuBuildData : IXAssetBuildData
 {
     bool IsComplete { get; }
     MenuDefAsset Definition { get; }
-    MenuReferenceBuildData References { get; }
 }
 
 /// <summary>Typed GameMapSp hand-off.  The eventual emitter consumes detached
@@ -289,11 +288,6 @@ public sealed record FxGlassDefReferenceBuildData(
     [property: System.Text.Json.Serialization.JsonIgnore]
     NestedXAssetBuildLink? PhysPresetLink = null);
 
-public sealed class MenuReferenceBuildData
-{
-    public SymbolicXAssetReference? WindowBackgroundMaterial { get; init; }
-}
-
 public interface ILocalizeBuildData : IXAssetBuildData
 {
     string? Name { get; }
@@ -363,8 +357,9 @@ public interface ILeaderboardBuildData : IXAssetBuildData
     IReadOnlyList<ILeaderboardColumnBuildData> Columns { get; }
 }
 
-/// <summary>Symbolic identity for a nested XAsset reference.  Names retain
-/// their comma prefix so reference rows are never confused with owned bodies.</summary>
+/// <summary>Symbolic identity for a nested XAsset. The original wire name is
+/// retained, including a comma prefix when the source names an external
+/// reference provider rather than an owned body.</summary>
 public sealed record SymbolicXAssetReference(XAssetType AssetType, string OriginalSerializedName)
 {
     public bool IsExternalReference =>

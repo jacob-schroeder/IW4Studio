@@ -15,5 +15,7 @@ public sealed class MenuFileAsset : BaseAsset
 
     // 0x08: direct pointer to MenuCount type-0x19 Menu pointer cells.
     public XPointer<XPointer<MenuDefAsset>[]> MenusPointer { get; init; }
+    // Each registration retains both its incoming body, when present, and
+    // the canonical Menu selected by DB_AddXAsset.
     public IReadOnlyList<MenuDefReference> Menus { get; init; } = [];
 }

@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:menu="using:IW4.Studio.Desktop.Editors.Menu"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="IW4.Studio.Desktop.Editors.Menu.MenuItemTypePickerWindow"
+        x:DataType="menu:MenuItemTypePickerViewModel"
+        Title="Change Item Type"
+        Width="500"
+        Height="390"
+        MinWidth="440"
+        MinHeight="360"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        mc:Ignorable="d"
+        d:DesignWidth="500"
+        d:DesignHeight="390">
+  <Border Padding="22,18"
+          Background="{DynamicResource StudioBackgroundBrush}">
+    <Grid RowDefinitions="Auto,18,Auto,14,Auto,*,Auto">
+      <StackPanel Spacing="3">
+        <TextBlock Text="Change selected item type"
+                   FontSize="19"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="Select the ItemDef union arm the editor should author."
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+
+      <Grid Grid.Row="2"
+            ColumnDefinitions="Auto,12,*"
+            VerticalAlignment="Center">
+        <TextBlock Text="Current type"
+                   VerticalAlignment="Center"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <Border Grid.Column="2"
+                Padding="8,4"
+                HorizontalAlignment="Left"
+                CornerRadius="4"
+                Background="{DynamicResource StudioControlBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <TextBlock Text="{Binding CurrentItemType}"
+                     FontSize="10"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+        </Border>
+      </Grid>
+
+      <StackPanel Grid.Row="4"
+                  Spacing="6">
+        <TextBlock Text="New type"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <ComboBox ItemsSource="{Binding ItemTypes}"
+                  SelectedItem="{Binding SelectedItemType, Mode=TwoWay}"
+                  MinHeight="34" />
+      </StackPanel>
+
+      <Border Grid.Row="5"
+              Margin="0,16,0,0"
+              Padding="12"
+              VerticalAlignment="Top"
+              CornerRadius="6"
+              Background="{DynamicResource StudioWarningSurfaceBrush}"
+              BorderBrush="{DynamicResource StudioWarningBrush}"
+              BorderThickness="1">
+        <Grid ColumnDefinitions="Auto,10,*">
+          <materialIcons:MaterialIcon Kind="AlertCircleOutline"
+                                       Width="18"
+                                       Height="18"
+                                       Foreground="{DynamicResource StudioWarningBrush}" />
+          <StackPanel Grid.Column="2"
+                      Spacing="3">
+            <TextBlock Text="Type-specific data will be reset"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioWarningBrush}" />
+            <TextBlock Text="Common item and window properties are retained. The current type-specific payload is discarded and the new type receives valid defaults. You can still Revert the asset before saving."
+                       TextWrapping="Wrap"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <StackPanel Grid.Row="6"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8">
+        <Button MinWidth="88"
+                Content="Cancel"
+                IsCancel="True"
+                Click="CancelButton_Click" />
+        <Button Classes="primary"
+                MinWidth="120"
+                Content="Change type"
+                IsDefault="True"
+                IsEnabled="{Binding CanConfirm}"
+                Click="ConfirmButton_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

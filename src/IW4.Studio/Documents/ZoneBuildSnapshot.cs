@@ -5,6 +5,7 @@ using IW4.Runtime.Assets;
 using System.Security.Cryptography;
 using IW4.FastFiles.Emitters.Assets;
 using IW4.FastFiles.Emitters.Linking;
+using IW4.Studio.Documents.MenuEditing;
 
 namespace IW4.Studio.Documents;
 
@@ -164,6 +165,9 @@ public sealed class ZoneBuildSnapshotBuilder
         ArgumentNullException.ThrowIfNull(save);
         ValidateSaveCapture(editingSession, save);
         TargetZoneSourceSnapshot source = editingSession.Workspace.TargetSource;
+        MenuCompilationBatch menuBatch = MenuCompilationBatch.Compile(
+            save,
+            _adapters);
         var rows = new List<ZoneBuildRow>(save.TargetRows.Count);
         var errors = new List<ZoneBuildError>();
         for (int outputIndex = 0; outputIndex < save.TargetRows.Count; outputIndex++)
@@ -172,6 +176,7 @@ public sealed class ZoneBuildSnapshotBuilder
                 outputIndex,
                 save.TargetRows[outputIndex],
                 save,
+                menuBatch,
                 errors));
         }
         PreserveDetachedSemanticGraphIdentity(rows);
@@ -192,6 +197,7 @@ public sealed class ZoneBuildSnapshotBuilder
         int outputIndex,
         TargetZoneRowSource row,
         FastFileEditingSaveSnapshot save,
+        MenuCompilationBatch menuBatch,
         List<ZoneBuildError> errors)
     {
         int index = outputIndex;
@@ -202,6 +208,7 @@ public sealed class ZoneBuildSnapshotBuilder
                     outputIndex,
                     row,
                     save,
+                    menuBatch,
                     errors);
             case TargetZoneRowSourceState.ResolvedReference:
             case TargetZoneRowSourceState.UnresolvedReference:
@@ -261,6 +268,7 @@ public sealed class ZoneBuildSnapshotBuilder
         int outputIndex,
         TargetZoneRowSource row,
         FastFileEditingSaveSnapshot save,
+        MenuCompilationBatch menuBatch,
         List<ZoneBuildError> errors)
     {
         int index = outputIndex;
@@ -291,6 +299,42 @@ public sealed class ZoneBuildSnapshotBuilder
             return new UnsupportedBuildRow(index, row.SerializedType, row.RawHeader, reason, row.OriginalSerializedName);
         }
 
+        if (menuBatch.TryGet(
+                row.Identity,
+                out IXAssetBuildData? menuBuildData,
+                out IReadOnlyList<AssetValidationIssue> menuValidation,
+                out string? menuFailure))
+        {
+            foreach (AssetValidationIssue issue in menuValidation.Where(
+                         issue => issue.Severity == AssetValidationSeverity.Error))
+            {
+                errors.Add(new ZoneBuildError(
+                    index,
+                    issue.FieldPath,
+                    issue.Message));
+            }
+
+            if (menuBuildData is null || menuBuildData.AssetType != row.SerializedType)
+            {
+                string reason = menuFailure ??
+                    "Menu compilation did not produce a matching emitter build model.";
+                errors.Add(new ZoneBuildError(index, "buildData", reason));
+                return new UnsupportedBuildRow(
+                    index,
+                    row.SerializedType,
+                    row.RawHeader,
+                    reason,
+                    row.OriginalSerializedName);
+            }
+
+            return new OwnedDefinitionBuildRow(
+                index,
+                row.SerializedType,
+                row.RawHeader,
+                menuBuildData,
+                row.OriginalSerializedName);
+        }
+
         try
         {
             object? capturedDraft;
@@ -302,14 +346,11 @@ public sealed class ZoneBuildSnapshotBuilder
                 authoredBaseline = adapter.ImportAuthoredSnapshot(row);
                 object draft = adapter.CreateDraft(authoredBaseline);
                 validation = adapter.ValidateDraft(draft);
-                // Preserve the capture-wide identity graph until the complete
-                // row set can be detached in one batch. Per-row draft cloning
-                // would otherwise turn one native Menu Statement into a
-                // separate object for every MenuFile that aliases it.
+                // Weapon definitions retain their capture-wide identity graph
+                // until the complete row set is detached below. Menu and
+                // MenuFile rows were already normalized by MenuCompilationBatch.
                 buildData = authoredBaseline switch
                 {
-                    MenuAuthoredSnapshot menu => menu.Data,
-                    MenuFileAuthoredSnapshot menuFile => menuFile.Data,
                     WeaponAuthoredSnapshot weapon => weapon.Data,
                     _ => adapter.ExportBuildData(draft)
                 };
@@ -340,7 +381,6 @@ public sealed class ZoneBuildSnapshotBuilder
 
     private static void PreserveDetachedSemanticGraphIdentity(IList<ZoneBuildRow> rows)
     {
-        var menuGraph = new MenuGraphClone();
         var weaponGraph = new WeaponGraphClone();
         for (int index = 0; index < rows.Count; index++)
         {
@@ -349,8 +389,6 @@ public sealed class ZoneBuildSnapshotBuilder
 
             IXAssetBuildData? detached = owned.BuildData switch
             {
-                MenuBuildData menu => menu.Copy(menuGraph),
-                MenuFileBuildData menuFile => menuFile.Copy(menuGraph),
                 WeaponBuildData weapon => weapon.Copy(weaponGraph),
                 _ => null
             };

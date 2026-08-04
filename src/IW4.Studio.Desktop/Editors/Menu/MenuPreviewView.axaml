@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:menu="using:IW4.Studio.Desktop.Editors.Menu"
+             xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.MenuPreviewView"
+             x:DataType="menuVm:MenuDesignerViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="980"
+             d:DesignHeight="390">
+  <Grid RowDefinitions="*,8,Auto">
+    <Border CornerRadius="7"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,*">
+        <Grid Margin="11,8"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="10">
+          <StackPanel Orientation="Horizontal"
+                      Spacing="7">
+            <TextBlock Text="{Binding PreviewHeading}"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+            <Border Padding="6,2"
+                    CornerRadius="3"
+                    Background="{DynamicResource StudioWarningSurfaceBrush}"
+                    BorderBrush="{DynamicResource StudioWarningBrush}"
+                    BorderThickness="1">
+              <TextBlock Text="STATIC / APPROX"
+                         FontSize="7"
+                         FontWeight="Bold"
+                         LetterSpacing="0.5"
+                         Foreground="{DynamicResource StudioWarningBrush}" />
+            </Border>
+          </StackPanel>
+          <TextBlock Grid.Column="1"
+                     Text="640 × 480"
+                     FontSize="9"
+                     FontFamily="Consolas"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Grid>
+
+        <Grid Grid.Row="1"
+              Margin="12"
+              Background="{DynamicResource StudioBackgroundBrush}">
+          <Viewbox Stretch="Uniform"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch">
+            <menu:MenuPreviewControl Width="640"
+                                     Height="480"
+                                     Scene="{Binding PreviewScene}"
+                                     SelectedNodeId="{Binding SelectedPreviewNodeId}"
+                                     MaterialResolver="{Binding MaterialResolver}"
+                                     NodeSelected="PreviewControl_NodeSelected"
+                                     MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted" />
+          </Viewbox>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="2"
+          ColumnDefinitions="*,Auto"
+          ColumnSpacing="10">
+      <TextBlock Text="{Binding SelectionBreadcrumb}"
+                 FontSize="9"
+                 TextTrimming="CharacterEllipsis"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+      <TextBlock Grid.Column="1"
+                 Text="{Binding PreviewStatus}"
+                 ToolTip.Tip="{Binding PreviewDetails}"
+                 FontSize="9"
+                 TextTrimming="CharacterEllipsis"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </Grid>
+  </Grid>
+</UserControl>

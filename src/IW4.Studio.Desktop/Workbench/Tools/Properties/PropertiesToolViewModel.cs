@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using IW4.Studio.Desktop.Editors;
+using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
@@ -18,6 +19,7 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
     private WorkbenchAssetSelection? _selection;
     private ImageFilePakEntryViewModel? _streamedImage;
     private IAssetEditorProperties? _editorPropertiesSource;
+    private IAssetEditorInspectorSource? _editorInspectorSource;
     private bool _disposed;
 
     public PropertiesToolViewModel(
@@ -100,6 +102,22 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
     public IReadOnlyList<AssetEditorProperty> EditorProperties =>
         _editorPropertiesSource?.EditorProperties ?? [];
 
+    public bool HasInspector =>
+        HasSelection && InspectorSelection is not null;
+
+    public InspectorSelectionViewModel? InspectorSelection =>
+        _editorInspectorSource?.InspectorSelection;
+
+    /// <summary>
+    /// Attaches all explicit Properties projections supplied by one hosted
+    /// editor. This is the preferred composition seam for new editors.
+    /// </summary>
+    public void SetEditorSource(object? source)
+    {
+        SetEditorPropertiesSource(source as IAssetEditorProperties);
+        SetEditorInspectorSource(source as IAssetEditorInspectorSource);
+    }
+
     public void SetEditorPropertiesSource(IAssetEditorProperties? source)
     {
         if (ReferenceEquals(_editorPropertiesSource, source))
@@ -121,6 +139,27 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         NotifyEditorPropertiesChanged();
     }
 
+    public void SetEditorInspectorSource(IAssetEditorInspectorSource? source)
+    {
+        if (ReferenceEquals(_editorInspectorSource, source))
+            return;
+
+        if (_editorInspectorSource is not null)
+        {
+            _editorInspectorSource.PropertyChanged -=
+                EditorInspectorSource_PropertyChanged;
+        }
+
+        _editorInspectorSource = source;
+        if (_editorInspectorSource is not null)
+        {
+            _editorInspectorSource.PropertyChanged +=
+                EditorInspectorSource_PropertyChanged;
+        }
+
+        NotifyEditorInspectorChanged();
+    }
+
     internal void SetDocumentSelection(
         WorkbenchAssetSelection? selection,
         ImageFilePakEntryViewModel? streamedImage)
@@ -134,6 +173,7 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         _selection = selection;
         _streamedImage = streamedImage;
         SetEditorPropertiesSource(null);
+        SetEditorInspectorSource(null);
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(Name));
@@ -161,6 +201,12 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
                 EditorPropertiesSource_PropertyChanged;
             _editorPropertiesSource = null;
         }
+        if (_editorInspectorSource is not null)
+        {
+            _editorInspectorSource.PropertyChanged -=
+                EditorInspectorSource_PropertyChanged;
+            _editorInspectorSource = null;
+        }
     }
 
     private void SelectionContext_SelectionChanged(
@@ -179,10 +225,21 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         PropertyChangedEventArgs args) =>
         NotifyEditorPropertiesChanged();
 
+    private void EditorInspectorSource_PropertyChanged(
+        object? sender,
+        PropertyChangedEventArgs args) =>
+        NotifyEditorInspectorChanged();
+
     private void NotifyEditorPropertiesChanged()
     {
         OnPropertyChanged(nameof(HasEditorProperties));
         OnPropertyChanged(nameof(EditorPropertySectionName));
         OnPropertyChanged(nameof(EditorProperties));
+    }
+
+    private void NotifyEditorInspectorChanged()
+    {
+        OnPropertyChanged(nameof(HasInspector));
+        OnPropertyChanged(nameof(InspectorSelection));
     }
 }

@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Database.Streaming;
 using IW4.FastFiles.Zone;
@@ -102,6 +103,24 @@ public sealed class AssetReferenceShapeRegistry
             4,
             XFileBlockType.TEMP,
             0x4c,
+            XPointerResolutionMode.Direct,
+            XFileBlockType.LARGE,
+            wrapperForms));
+        result.Register(new(
+            XAssetType.MenuFile,
+            MenuFileAsset.SerializedSize,
+            4,
+            XFileBlockType.TEMP,
+            0x00,
+            XPointerResolutionMode.Direct,
+            XFileBlockType.LARGE,
+            wrapperForms));
+        result.Register(new(
+            XAssetType.Menu,
+            MenuDefAsset.SerializedSize,
+            4,
+            XFileBlockType.TEMP,
+            0x00,
             XPointerResolutionMode.Direct,
             XFileBlockType.LARGE,
             wrapperForms));
@@ -283,7 +302,9 @@ public sealed class ZoneLinker
             plan.Pop(XFileBlockType.LARGE);
         }
 
-        var emitted = new Dictionary<ZoneAssetKey, AssetBodyEmission>();
+        var emittedByEntryId = new Dictionary<string, AssetBodyEmission>(
+            StringComparer.Ordinal);
+        var firstEmittedByKey = new Dictionary<ZoneAssetKey, AssetBodyEmission>();
         for (int index = 0; index < entries.Count; index++)
         {
             ZoneAssetEntry entry = entries[index];
@@ -311,17 +332,32 @@ public sealed class ZoneLinker
             switch (entry.Intent)
             {
                 case ZoneAssetReferenceIntent.Owned:
-                    emitted.Add(entry.Key, PlanOwned(entry, plan, scriptStringResolver));
+                {
+                    AssetBodyEmission body = PlanOwned(
+                        entry,
+                        plan,
+                        scriptStringResolver);
+                    emittedByEntryId.Add(entry.EntryId, body);
+                    firstEmittedByKey.TryAdd(entry.Key, body);
                     break;
+                }
                 case ZoneAssetReferenceIntent.External:
-                    emitted.Add(entry.Key, PlanExternal(entry.Key, plan));
+                {
+                    AssetBodyEmission body = PlanExternal(entry.Key, plan);
+                    emittedByEntryId.Add(entry.EntryId, body);
+                    firstEmittedByKey.TryAdd(entry.Key, body);
                     break;
+                }
                 case ZoneAssetReferenceIntent.Null:
                 case ZoneAssetReferenceIntent.OpaqueNativeNoOp:
                     break;
                 case ZoneAssetReferenceIntent.Alias:
-                    if (entry.AliasTarget is not { } target || !emitted.ContainsKey(target))
+                    if (entry.AliasTarget is not { } target ||
+                        !firstEmittedByKey.TryGetValue(
+                            target,
+                            out AssetBodyEmission? targetBody))
                         throw new InvalidDataException($"Alias '{entry.Key}' does not follow an emitted target '{entry.AliasTarget}'.");
+                    firstEmittedByKey.TryAdd(entry.Key, targetBody);
                     break;
                 default:
                     throw new InvalidDataException($"Unsupported link intent '{entry.Intent}'.");
@@ -346,7 +382,9 @@ public sealed class ZoneLinker
                 stream.Append(segment.Bytes.Span);
         }
 
-        int[] rowHeaders = entries.Select(entry => HeaderFor(entry, emitted)).ToArray();
+        int[] rowHeaders = entries
+            .Select(entry => HeaderFor(entry, firstEmittedByKey))
+            .ToArray();
         if (assetTable is not null)
         {
             var assetTableWriter = new XSourceWriter();
@@ -359,10 +397,10 @@ public sealed class ZoneLinker
         }
 
         stream.AppendLegacyBodies(entries
-            .Where(entry => emitted.ContainsKey(entry.Key))
+            .Where(entry => emittedByEntryId.ContainsKey(entry.EntryId))
             .Select(entry => new KeyValuePair<ZoneAssetKey, AssetBodyEmission>(
                 entry.Key,
-                emitted[entry.Key])));
+                emittedByEntryId[entry.EntryId])));
 
         int meaningfulLength = stream.SourcePosition.Value;
         int decodedLength = AlignUp(meaningfulLength, request.LayoutPolicy.DecodedAlignment);
@@ -395,11 +433,13 @@ public sealed class ZoneLinker
         (ZoneAssetKey Key, EmissionAddress? RootAddress)[] symbols = entries
             .Select(entry => (
                 entry.Key,
-                emitted.TryGetValue(entry.Key, out AssetBodyEmission? body)
+                emittedByEntryId.TryGetValue(
+                    entry.EntryId,
+                    out AssetBodyEmission? body)
                     ? (EmissionAddress?)body.RootAddress
                     : entry.Intent == ZoneAssetReferenceIntent.Alias &&
                       entry.AliasTarget is { } alias
-                        ? emitted[alias].RootAddress
+                        ? firstEmittedByKey[alias].RootAddress
                         : null))
             .ToArray();
         ValidateSymbolAddresses(symbols, highWater);
@@ -476,12 +516,18 @@ public sealed class ZoneLinker
             [rootSegment, .. segments]);
     }
 
-    private static int HeaderFor(ZoneAssetEntry entry, IReadOnlyDictionary<ZoneAssetKey, AssetBodyEmission> emitted) => entry.Intent switch
+    private static int HeaderFor(
+        ZoneAssetEntry entry,
+        IReadOnlyDictionary<ZoneAssetKey, AssetBodyEmission> firstEmittedByKey) =>
+        entry.Intent switch
     {
         ZoneAssetReferenceIntent.Owned or ZoneAssetReferenceIntent.External => -1,
         ZoneAssetReferenceIntent.Null => 0,
         ZoneAssetReferenceIntent.OpaqueNativeNoOp => entry.OpaqueHeader,
-        ZoneAssetReferenceIntent.Alias when entry.AliasTarget is { } target && emitted.TryGetValue(target, out AssetBodyEmission? body) => body.RootAddress.ToPackedPointer(),
+        ZoneAssetReferenceIntent.Alias when
+            entry.AliasTarget is { } target &&
+            firstEmittedByKey.TryGetValue(target, out AssetBodyEmission? body) =>
+            body.RootAddress.ToPackedPointer(),
         ZoneAssetReferenceIntent.Alias => throw new InvalidDataException($"Alias '{entry.Key}' has no emitted target."),
         _ => throw new InvalidDataException($"Unsupported header intent '{entry.Intent}'.")
     };

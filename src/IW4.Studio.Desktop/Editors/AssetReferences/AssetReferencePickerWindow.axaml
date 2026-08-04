@@ -1,0 +1,178 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:picker="using:IW4.Studio.Desktop.Editors.AssetReferences"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="IW4.Studio.Desktop.Editors.AssetReferences.AssetReferencePickerWindow"
+        x:DataType="picker:AssetReferencePickerViewModel"
+        Title="Select Asset Reference"
+        Width="700"
+        Height="560"
+        MinWidth="560"
+        MinHeight="420"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        mc:Ignorable="d"
+        d:DesignWidth="700"
+        d:DesignHeight="560">
+  <Border Padding="22,18"
+          Background="{DynamicResource StudioBackgroundBrush}">
+    <Grid RowDefinitions="Auto,14,Auto,10,*,14,Auto">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="12">
+        <StackPanel Spacing="3">
+          <TextBlock Text="Select asset reference"
+                     FontSize="19"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="Choose an existing workspace asset. Only its logical name is stored."
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+        <Border Grid.Column="1"
+                Padding="8,3"
+                CornerRadius="4"
+                VerticalAlignment="Top"
+                Background="{DynamicResource StudioAccentSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioAccentBrush}"
+                BorderThickness="1">
+          <TextBlock Text="{Binding AssetTypeText}"
+                     FontSize="8"
+                     FontWeight="Bold"
+                     LetterSpacing="0.6"
+                     Foreground="{DynamicResource StudioAccentBrush}" />
+        </Border>
+      </Grid>
+
+      <TextBox x:Name="SearchTextBox"
+               Grid.Row="2"
+               Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+               PlaceholderText="Search by name, origin, or provider zone"
+               MinHeight="34">
+        <TextBox.InnerLeftContent>
+          <materialIcons:MaterialIcon Kind="Magnify"
+                                       Width="16"
+                                       Height="16"
+                                       Margin="0,0,7,0"
+                                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </TextBox.InnerLeftContent>
+      </TextBox>
+
+      <Border Grid.Row="4"
+              CornerRadius="7"
+              ClipToBounds="True"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid>
+          <ListBox ItemsSource="{Binding Candidates}"
+                   SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   DoubleTapped="CandidateList_DoubleTapped">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="picker:AssetReferenceCandidateViewModel">
+                <Grid Margin="5,4"
+                      MinHeight="42"
+                      ColumnDefinitions="*,Auto"
+                      ColumnSpacing="12">
+                  <StackPanel VerticalAlignment="Center"
+                              Spacing="2">
+                    <TextBlock Text="{Binding Name}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="5">
+                      <TextBlock Text="{Binding Origin}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      <TextBlock Text="·"
+                                 IsVisible="{Binding HasProviderZone}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                      <TextBlock Text="{Binding ProviderZone}"
+                                 IsVisible="{Binding HasProviderZone}"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="1"
+                              Orientation="Horizontal"
+                              VerticalAlignment="Center"
+                              Spacing="5">
+                    <Border Padding="6,2"
+                            CornerRadius="3"
+                            IsVisible="{Binding IsCurrent}"
+                            Background="{DynamicResource StudioInfoSurfaceBrush}"
+                            BorderBrush="{DynamicResource StudioInfoBorderBrush}"
+                            BorderThickness="1">
+                      <TextBlock Text="{Binding CurrentText}"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioInfoBrush}" />
+                    </Border>
+                    <Border Padding="6,2"
+                            CornerRadius="3"
+                            Background="{DynamicResource StudioControlBrush}"
+                            BorderBrush="{DynamicResource StudioBorderBrush}"
+                            BorderThickness="1">
+                      <TextBlock Text="{Binding AccessText}"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Border>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <StackPanel IsVisible="{Binding !HasCandidates}"
+                      Width="320"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Spacing="8">
+            <materialIcons:MaterialIcon Kind="DatabaseSearchOutline"
+                                         Width="28"
+                                         Height="28"
+                                         HorizontalAlignment="Center"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding EmptyMessage}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Grid Grid.Row="6"
+            ColumnDefinitions="*,Auto"
+            ColumnSpacing="12">
+        <TextBlock Text="Unresolved entries remain selectable so an existing authored name can be preserved."
+                   VerticalAlignment="Center"
+                   FontSize="8"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8">
+          <Button MinWidth="88"
+                  Content="Cancel"
+                  IsCancel="True"
+                  Click="CancelButton_Click" />
+          <Button Classes="primary"
+                  MinWidth="88"
+                  Content="Select"
+                  IsDefault="True"
+                  IsEnabled="{Binding CanSelect}"
+                  Click="SelectButton_Click" />
+        </StackPanel>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>
