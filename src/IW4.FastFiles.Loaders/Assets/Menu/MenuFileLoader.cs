@@ -495,7 +495,7 @@ public sealed class MenuFileLoader
         {
             throw new InvalidDataException(
                 $"ItemDef root at source 0x{item.Offset:X} parsed before child failure at cursor 0x{cursor.Offset:X}: " +
-                $"type={item.Type} dataType=0x{item.DataType:X8} text=0x{item.Text.Raw:X8} textSaveGameInfo=0x{item.TextSaveGameInfo:X8} " +
+                $"type={item.Type} dataType=0x{item.DataType:X8} text=0x{item.Text.Raw:X8} itemFlags=0x{(int)item.ItemFlags:X8} " +
                 $"runtimeParent=0x{item.RuntimeParentPointer:X8} mouseEnterText=0x{item.MouseEnterText.Raw:X8} " +
                 $"typeData=0x{GetItemTypeDataRaw(item.TypeData):X8} floatCount=0x{item.FloatExpressionCount:X8} " +
                 $"floatExpressions=0x{item.FloatExpressions.Raw:X8} visible=0x{item.VisibleExpression.Raw:X8} " +
@@ -527,17 +527,17 @@ public sealed class MenuFileLoader
             TextRect = ReadRectangles(rootCursor, 4),
             Type = (ItemDefType)rootCursor.ReadInt32(),
             DataType = rootCursor.ReadInt32(),
-            Align = rootCursor.ReadInt32(),
-            FontEnum = rootCursor.ReadInt32(),
+            Align = (ItemHorizontalAlignment)rootCursor.ReadInt32(),
+            FontEnum = (ItemFont)rootCursor.ReadInt32(),
             TextAlignMode = rootCursor.ReadInt32(),
             TextAlignX = ReadSingle(rootCursor),
             TextAlignY = ReadSingle(rootCursor),
             TextScale = ReadSingle(rootCursor),
-            TextStyle = rootCursor.ReadInt32(),
+            TextStyle = (ItemTextStyle)rootCursor.ReadInt32(),
             GameMsgWindowIndex = rootCursor.ReadInt32(),
             GameMsgWindowMode = rootCursor.ReadInt32(),
             Text = ReadXStringPointer(rootCursor, context),
-            TextSaveGameInfo = rootCursor.ReadInt32(),
+            ItemFlags = (ItemFlags)rootCursor.ReadInt32(),
             RuntimeParentPointer = rootCursor.ReadInt32(),
             MouseEnterText = ReadNullablePointer<MenuEventHandlerSet>(rootCursor, context, XPointerResolutionMode.Direct),
             MouseExitText = ReadNullablePointer<MenuEventHandlerSet>(rootCursor, context, XPointerResolutionMode.Direct),
@@ -551,7 +551,7 @@ public sealed class MenuFileLoader
             DvarTest = ReadXStringPointer(rootCursor, context),
             OnKey = ReadNullablePointer<ItemKeyHandler>(rootCursor, context, XPointerResolutionMode.Direct),
             EnableDvar = ReadXStringPointer(rootCursor, context),
-            DvarFlags = rootCursor.ReadInt32(),
+            DvarFlags = (ItemDvarFlags)rootCursor.ReadInt32(),
             FocusSound = ReadNullablePointer<SoundAliasListAssetModel>(rootCursor, context, XPointerResolutionMode.AliasCell),
             Special = ReadSingle(rootCursor),
             CursorPos = ReadInt32Array(rootCursor, 4),

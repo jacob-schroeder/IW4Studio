@@ -8,7 +8,9 @@ public enum MenuFontRole
     ExtraBig = 3,
     Bold = 4,
     Console = 5,
-    Objective = 6
+    Objective = 6,
+    HudBig = 7,
+    HudSmall = 8
 }
 
 public enum MenuFontEnumResolutionStatus
@@ -133,8 +135,9 @@ public sealed record MenuFontEnumResolution
 }
 
 /// <summary>
-/// Resolves only font-enum behavior established by IW4 UI_GetFontHandle.
-/// Values outside the observed 0-6 range remain explicitly unknown.
+/// Resolves the font-enum behavior established by IW4 UI_GetFontHandle.
+/// Named selectors 2 through 10 resolve directly; every other value follows
+/// the native scale-adaptive fallback used by selectors 0 and 1.
 /// </summary>
 public static class MenuFontEnumMapper
 {
@@ -146,21 +149,20 @@ public static class MenuFontEnumMapper
         {
             2 => Known(fontEnum, MenuFontRole.Big),
             3 => Known(fontEnum, MenuFontRole.Small),
+            4 => Known(fontEnum, MenuFontRole.Bold),
             5 => Known(fontEnum, MenuFontRole.Console),
             6 => Known(fontEnum, MenuFontRole.Objective),
-            0 or 1 or 4 when context is null =>
+            7 => Known(fontEnum, MenuFontRole.Normal),
+            8 => Known(fontEnum, MenuFontRole.ExtraBig),
+            9 => Known(fontEnum, MenuFontRole.HudBig),
+            10 => Known(fontEnum, MenuFontRole.HudSmall),
+            _ when context is null =>
                 MenuFontEnumResolution.Unknown(
                     fontEnum,
-                    $"Font enum {fontEnum} is scale-dependent and requires an explicit MenuFontSelectionContext."),
-            0 or 1 => Known(
+                    $"Font enum {fontEnum} uses IW4's scale-adaptive fallback and requires an explicit MenuFontSelectionContext."),
+            _ => Known(
                 fontEnum,
-                SelectDefault(context!)),
-            4 => Known(
-                fontEnum,
-                SelectBold(context!)),
-            _ => MenuFontEnumResolution.Unknown(
-                fontEnum,
-                $"Font enum {fontEnum} has no proven IW4 mapping.")
+                SelectDefault(context!))
         };
     }
 
@@ -179,6 +181,8 @@ public static class MenuFontEnumMapper
                 MenuFontRole.Bold => "fonts/boldFont",
                 MenuFontRole.Console => "fonts/consoleFont",
                 MenuFontRole.Objective => "fonts/objectiveFont",
+                MenuFontRole.HudBig => "fonts/hudBigFont",
+                MenuFontRole.HudSmall => "fonts/hudSmallFont",
                 _ => throw new ArgumentOutOfRangeException(nameof(role))
             });
 
@@ -193,16 +197,5 @@ public static class MenuFontEnumMapper
         return context.BigFontThreshold > scale
             ? MenuFontRole.Normal
             : MenuFontRole.Big;
-    }
-
-    private static MenuFontRole SelectBold(
-        MenuFontSelectionContext context)
-    {
-        float scale = context.EffectiveTextScale;
-        if (context.SmallFontThreshold >= scale)
-            return MenuFontRole.Small;
-        return context.BigFontThreshold > scale
-            ? MenuFontRole.Normal
-            : MenuFontRole.Bold;
     }
 }

@@ -21,6 +21,16 @@ public interface IAssetEditorProperties : INotifyPropertyChanged
 }
 
 /// <summary>
+/// Optional editor-to-workbench intent for revealing the shared Properties
+/// tool after a deliberate local selection gesture. The workbench owns the
+/// dock mutation; an editor only requests it.
+/// </summary>
+public interface IAssetEditorPropertiesRevealSource
+{
+    event EventHandler? PropertiesRevealRequested;
+}
+
+/// <summary>
 /// Opt-in validation contract for hosted editors. The workbench diagnostics
 /// pane can observe this without knowing each concrete editor view model.
 /// </summary>

@@ -15,7 +15,10 @@ public sealed partial class MenuPreviewView : UserControl
         MenuPreviewNodeSelectedEventArgs e)
     {
         if (DataContext is MenuDesignerViewModel viewModel)
+        {
             viewModel.SelectPreviewNode(e.NodeId);
+            viewModel.RequestPropertiesReveal();
+        }
     }
 
     private void PreviewControl_MaterialResolutionCompleted(

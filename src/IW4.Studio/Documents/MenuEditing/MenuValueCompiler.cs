@@ -170,7 +170,7 @@ internal static partial class MenuDocumentCompiler
             GameMsgWindowMode = value.GameMessageWindowMode,
             Text = StringPointer(source?.Text ?? default, value.Text),
             TextString = value.Text,
-            TextSaveGameInfo = value.TextSaveGameInfo,
+            ItemFlags = value.ItemFlags,
             RuntimeParentPointer = source?.RuntimeParentPointer ?? 0,
             MouseEnterText = source?.MouseEnterText ?? default,
             MouseEnterTextSet = source?.MouseEnterTextSet,

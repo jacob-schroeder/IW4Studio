@@ -361,13 +361,17 @@ public static class MenuPreviewProjector
                 value.Text,
                 value.Window.ForeColor,
                 value.TextScale,
-                value.FontEnum,
+                (int)value.FontEnum,
                 value.TextAlignMode,
-                value.TextStyle,
+                (int)value.TextStyle,
                 textOffsetX,
                 textOffsetY,
                 borderInset));
-            if (value.TextStyle != 0)
+            if (value.TextStyle is not (
+                ItemTextStyle.Normal or
+                ItemTextStyle.LegacyStyle2 or
+                ItemTextStyle.LegacyStyle4 or
+                ItemTextStyle.LegacyStyle5))
             {
                 issues.Add(new MenuPreviewFidelityIssue(
                     item.Id,

@@ -60,8 +60,12 @@
     <ScrollViewer Grid.Row="2"
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto">
-      <Grid MinHeight="880"
-            RowDefinitions="4*,10,2*">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" MinHeight="480" />
+          <RowDefinition Height="10" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <menu:MenuPreviewView DataContext="{Binding Designer}" />
 
         <Grid Grid.Row="2"
@@ -89,13 +93,16 @@
                        ItemsSource="{Binding Registrations}"
                        SelectedItem="{Binding SelectedRegistration, Mode=TwoWay}"
                        Background="Transparent"
-                       BorderThickness="0">
+                       BorderThickness="0"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="menuVm:MenuFileRegistrationViewModel">
                     <Grid ColumnDefinitions="*,Auto"
                           ColumnSpacing="6"
                           MinHeight="30"
-                          Margin="2">
+                          Margin="2"
+                          PointerReleased="RegistrationRow_PointerReleased">
                       <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}"
                                    TextTrimming="CharacterEllipsis"

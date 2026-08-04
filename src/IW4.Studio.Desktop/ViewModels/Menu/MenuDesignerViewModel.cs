@@ -180,6 +180,12 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     public ViewModelCommand MoveItemUpCommand { get; }
     public ViewModelCommand MoveItemDownCommand { get; }
 
+    /// <summary>
+    /// Raised by a view only after the user deliberately selects a Menu node.
+    /// The hosting editor forwards this intent to the workbench.
+    /// </summary>
+    internal event EventHandler? PropertiesRevealRequested;
+
     public InspectorSelectionViewModel? InspectorSelection
     {
         get => _inspectorSelection;
@@ -322,6 +328,9 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         if (node is not null)
             SelectedNode = node;
     }
+
+    internal void RequestPropertiesReveal() =>
+        PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
 
     internal void ReportMaterialPreviewStatus(
         MenuPreviewMaterialStatus status)

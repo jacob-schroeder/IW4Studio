@@ -90,7 +90,7 @@ internal sealed class MenuGraphClone
             Window = CloneWindow(value.Window), TextRect = value.TextRect.Select(Rect).ToArray(), Type = value.Type, DataType = value.DataType,
             Align = value.Align, FontEnum = value.FontEnum, TextAlignMode = value.TextAlignMode, TextAlignX = value.TextAlignX,
             TextAlignY = value.TextAlignY, TextScale = value.TextScale, TextStyle = value.TextStyle, GameMsgWindowIndex = value.GameMsgWindowIndex,
-            GameMsgWindowMode = value.GameMsgWindowMode, Text = Ptr(value.Text), TextString = value.TextString, TextSaveGameInfo = value.TextSaveGameInfo,
+            GameMsgWindowMode = value.GameMsgWindowMode, Text = Ptr(value.Text), TextString = value.TextString, ItemFlags = value.ItemFlags,
             // Preserve the serialized source value. DB_AddXAsset patches only
             // the runtime destination cell; this field remains linker input.
             RuntimeParentPointer = value.RuntimeParentPointer,

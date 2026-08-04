@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using IW4.FastFiles.Zone;
@@ -18,6 +19,17 @@ public sealed partial class MenuFileEditorView : UserControl
         RoutedEventArgs e) =>
         _ = (DataContext as MenuFileEditorViewModel)?
             .Designer.ApplyStagedInput();
+
+    private void RegistrationRow_PointerReleased(
+        object? sender,
+        PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton == MouseButton.Left &&
+            DataContext is MenuFileEditorViewModel viewModel)
+        {
+            viewModel.RequestPropertiesReveal();
+        }
+    }
 
     internal MenuFileEditorView(
         MenuFileEditorViewModel viewModel,

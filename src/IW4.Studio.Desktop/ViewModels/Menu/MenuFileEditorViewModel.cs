@@ -21,6 +21,7 @@ namespace IW4.Studio.Desktop.ViewModels.Menu;
 public sealed class MenuFileEditorViewModel
     : ObservableObject,
       IAssetEditorProperties,
+      IAssetEditorPropertiesRevealSource,
       IAssetEditorInspectorSource,
       IAssetEditorDiagnostics,
       IAssetEditorStagingState,
@@ -82,6 +83,7 @@ public sealed class MenuFileEditorViewModel
             textResourceResolver: _textResourceResolver,
             isAssetReferenceResolved: _isAssetReferenceResolved);
         _designer.PropertyChanged += Designer_PropertyChanged;
+        _designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
         if (Mode == AssetEditorMode.Editable)
             _coordinator.Changed += Coordinator_Changed;
 
@@ -196,6 +198,11 @@ public sealed class MenuFileEditorViewModel
     public event EventHandler<AssetReferenceSelectionRequestedEventArgs>?
         AssetReferenceSelectionRequested;
 
+    public event EventHandler? PropertiesRevealRequested;
+
+    internal void RequestPropertiesReveal() =>
+        PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
+
     public void AddExistingMenu(string menuName, int? insertIndex = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(menuName);
@@ -285,6 +292,7 @@ public sealed class MenuFileEditorViewModel
         _disposed = true;
         _coordinator.Changed -= Coordinator_Changed;
         Designer.PropertyChanged -= Designer_PropertyChanged;
+        Designer.PropertiesRevealRequested -= Designer_PropertiesRevealRequested;
         Designer.Dispose();
     }
 
@@ -450,6 +458,7 @@ public sealed class MenuFileEditorViewModel
             ? Designer.SelectedNode?.ItemIndex
             : null;
         Designer.PropertyChanged -= Designer_PropertyChanged;
+        Designer.PropertiesRevealRequested -= Designer_PropertiesRevealRequested;
         Designer.Dispose();
         _selectedResolution = null;
         MenuEditorSnapshot? menu = null;
@@ -489,6 +498,7 @@ public sealed class MenuFileEditorViewModel
             selectedKind,
             selectedItemIndex);
         Designer.PropertyChanged += Designer_PropertyChanged;
+        Designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
         RefreshValidation();
         OnPropertyChanged(nameof(InspectorSelection));
         OnPropertyChanged(nameof(HasUnappliedChanges));
@@ -500,6 +510,11 @@ public sealed class MenuFileEditorViewModel
         AssetReferenceSelectionRequested?.Invoke(
             this,
             new AssetReferenceSelectionRequestedEventArgs(row));
+
+    private void Designer_PropertiesRevealRequested(
+        object? sender,
+        EventArgs e) =>
+        RequestPropertiesReveal();
 
     private void Coordinator_Changed(
         object? sender,

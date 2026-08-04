@@ -14,18 +14,18 @@ public sealed class ItemDefAsset : BaseAsset
     public IReadOnlyList<RectangleDef> TextRect { get; init; } = [];
     public ItemDefType Type { get; init; }
     public int DataType { get; init; }
-    public int Align { get; init; }
-    public int FontEnum { get; init; }
+    public ItemHorizontalAlignment Align { get; init; }
+    public ItemFont FontEnum { get; init; }
     public int TextAlignMode { get; init; }
     public float TextAlignX { get; init; }
     public float TextAlignY { get; init; }
     public float TextScale { get; init; }
-    public int TextStyle { get; init; }
+    public ItemTextStyle TextStyle { get; init; }
     public int GameMsgWindowIndex { get; init; }
     public int GameMsgWindowMode { get; init; }
     public XString Text { get; init; }
     public string? TextString { get; set; }
-    public int TextSaveGameInfo { get; init; }
+    public ItemFlags ItemFlags { get; init; }
     // 0x134: raw serialized parent value. DB_AddXAsset overwrites the runtime
     // destination cell with the registered Menu pointer, so the serialized
     // value remains separate from effective runtime identity.
@@ -55,7 +55,7 @@ public sealed class ItemDefAsset : BaseAsset
     public ItemKeyHandler? OnKeyHandler { get; set; }
     public XString EnableDvar { get; init; }
     public string? EnableDvarString { get; set; }
-    public int DvarFlags { get; init; }
+    public ItemDvarFlags DvarFlags { get; init; }
     public XPointer<SoundAliasListAssetModel> FocusSound { get; init; }
     /// <summary>Resolved only for inspection/detached authoring capture.
     /// The serialized form is a symbolic Sound XAsset reference.</summary>

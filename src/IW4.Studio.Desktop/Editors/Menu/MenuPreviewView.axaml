@@ -6,6 +6,7 @@
              xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
              x:Class="IW4.Studio.Desktop.Editors.Menu.MenuPreviewView"
              x:DataType="menuVm:MenuDesignerViewModel"
+             MinHeight="360"
              mc:Ignorable="d"
              d:DesignWidth="980"
              d:DesignHeight="560">

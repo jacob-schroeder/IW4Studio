@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Globalization;
+using System.Reflection;
 using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors.Inspector;
@@ -230,6 +232,12 @@ internal static partial class MenuInspectorProjection
         where TEnum : struct, Enum
     {
         string text = value.ToString();
+        DescriptionAttribute? description = typeof(TEnum)
+            .GetField(text, BindingFlags.Public | BindingFlags.Static)?
+            .GetCustomAttribute<DescriptionAttribute>();
+        if (description is not null)
+            return description.Description;
+
         int separator = text.LastIndexOf('_');
         return separator >= 0 && separator + 1 < text.Length
             ? text[(separator + 1)..]

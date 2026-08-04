@@ -30,13 +30,16 @@
 
       <TreeView Grid.Row="2"
                 ItemsSource="{Binding OutlineRoots}"
-                SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
+                SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                ScrollViewer.VerticalScrollBarVisibility="Auto">
         <TreeView.ItemTemplate>
           <TreeDataTemplate x:DataType="menuVm:MenuOutlineNodeViewModel"
                             ItemsSource="{Binding Children}">
             <Grid ColumnDefinitions="Auto,*"
                   ColumnSpacing="6"
-                  MinHeight="24">
+                  MinHeight="24"
+                  PointerReleased="OutlineRow_PointerReleased">
               <materialIcons:MaterialIcon Kind="ViewDashboardOutline"
                                            Width="14"
                                            Height="14"

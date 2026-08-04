@@ -53,6 +53,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private readonly WorkbenchEditorDiagnosticsBridge _editorDiagnosticsBridge;
     private readonly MenuEditingCoordinator _menuEditingCoordinator;
     private readonly MenuTextResourceResolver _menuTextResourceResolver;
+    private IAssetEditorPropertiesRevealSource? _propertiesRevealSource;
     private readonly ObservableCollection<WorkbenchEditorTabViewModel> _openEditorTabs = [];
     private readonly Dictionary<WorkbenchEditorTabKey, WorkbenchEditorTabViewModel>
         _editorTabsByKey = [];
@@ -641,6 +642,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         ImageFilePak.Dispose();
         MapEditor.Dispose();
         LivePreview.Dispose();
+        SetPropertiesRevealSource(null);
         Properties.Dispose();
         Diagnostics.Dispose();
         foreach (WorkbenchEditorTabViewModel tab in _openEditorTabs)
@@ -926,6 +928,9 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             SelectedEditorTab?.StreamedImage);
         Properties.SetEditorSource(
             SelectedEditorTab?.CatalogEditor?.HostedViewModel);
+        SetPropertiesRevealSource(
+            SelectedEditorTab?.CatalogEditor?.HostedViewModel as
+            IAssetEditorPropertiesRevealSource);
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(HasEditorFallback));
@@ -937,6 +942,40 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedProviderZone));
         OnPropertyChanged(nameof(EditorFallbackHeading));
         OnPropertyChanged(nameof(EditorFallbackMessage));
+    }
+
+    private void SetPropertiesRevealSource(
+        IAssetEditorPropertiesRevealSource? source)
+    {
+        if (ReferenceEquals(_propertiesRevealSource, source))
+            return;
+
+        if (_propertiesRevealSource is not null)
+        {
+            _propertiesRevealSource.PropertiesRevealRequested -=
+                PropertiesRevealSource_PropertiesRevealRequested;
+        }
+
+        _propertiesRevealSource = source;
+        if (_propertiesRevealSource is not null)
+        {
+            _propertiesRevealSource.PropertiesRevealRequested +=
+                PropertiesRevealSource_PropertiesRevealRequested;
+        }
+    }
+
+    private void PropertiesRevealSource_PropertiesRevealRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_disposed ||
+            !ReferenceEquals(sender, _propertiesRevealSource) ||
+            DockLayout.State.Right.ActiveToolId == StudioToolIds.Properties)
+        {
+            return;
+        }
+
+        _ = ActivateTool(StudioToolIds.Properties);
     }
 
     private void DockRegion_PropertyChanged(

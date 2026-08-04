@@ -62,6 +62,8 @@ internal static partial class MenuInspectorProjection
         }
 
         MenuItemValue value = item.Value;
+        (string specialLabel, string specialDescription) =
+            SpecialPresentation(value.Type);
         Action<Func<MenuItemValue, MenuItemValue>>? update = designer.IsEditable
             ? change => designer.UpdateItem(item.Id, change)
             : null;
@@ -105,26 +107,28 @@ internal static partial class MenuInspectorProjection
                         "Native type-data accessor and allocation tag. It may " +
                         "legitimately differ from Type and is preserved rather " +
                         "than authored directly."),
-                    new InspectorIntegerPropertyRowViewModel(
-                        "Alignment",
+                    Choice(
+                        "Owner-draw alignment",
                         "item.align",
                         value.Align,
                         update is null
                             ? null
-                            : number => update(current => current with
+                            : alignment => update(current => current with
                             {
-                                Align = number
-                            })),
-                    new InspectorIntegerPropertyRowViewModel(
+                                Align = alignment
+                            }),
+                        "Horizontal alignment passed to owner-draw handlers. It does not control ordinary item text; use Text align for that."),
+                    Choice(
                         "Font",
                         "item.fontEnum",
                         value.FontEnum,
                         update is null
                             ? null
-                            : number => update(current => current with
+                            : font => update(current => current with
                             {
-                                FontEnum = number
-                            })),
+                                FontEnum = font
+                            }),
+                        "IW4 font role. Default and Normal select a concrete font from the effective text scale."),
                     IntegerChoice(
                         "Text align",
                         "item.textAlignMode",
@@ -167,16 +171,17 @@ internal static partial class MenuInspectorProjection
                             {
                                 TextScale = number
                             })),
-                    new InspectorIntegerPropertyRowViewModel(
+                    Choice(
                         "Text style",
                         "item.textStyle",
                         value.TextStyle,
                         update is null
                             ? null
-                            : number => update(current => current with
+                            : style => update(current => current with
                             {
-                                TextStyle = number
-                            })),
+                                TextStyle = style
+                            }),
+                        "Text rendering effect passed to IW4's text-draw helpers."),
                     IntegerChoice(
                         "Game message window",
                         "item.gameMessageWindowIndex",
@@ -207,11 +212,17 @@ internal static partial class MenuInspectorProjection
                                 GameMessageWindowMode = number
                             }),
                         "Used only by GameMessageWindow items; the runtime accepts modes 0 through 3."),
-                    ReadOnly(
+                    Flags(
                         "Item flags",
-                        "item.textSaveGameInfo",
-                        $"0x{value.TextSaveGameInfo:X8}",
-                        "The exact PS3 semantics of this serialized field are not established, so it is preserved read-only.")
+                        "item.itemFlags",
+                        value.ItemFlags,
+                        update is null
+                            ? null
+                            : flags => update(current => current with
+                            {
+                                ItemFlags = flags
+                            }),
+                        "Special text-source flags. Unknown serialized bits are preserved.")
                 ]),
             .. WindowSections(designer, value.Window, isRoot: false, updateWindow),
             new InspectorSectionViewModel(
@@ -247,16 +258,17 @@ internal static partial class MenuInspectorProjection
                             {
                                 EnableDvar = EmptyToNull(text)
                             })),
-                    new InspectorIntegerPropertyRowViewModel(
+                    Flags(
                         "Dvar flags",
                         "item.dvarFlags",
                         value.DvarFlags,
                         update is null
                             ? null
-                            : number => update(current => current with
+                            : flags => update(current => current with
                             {
-                                DvarFlags = number
-                            })),
+                                DvarFlags = flags
+                            }),
+                        "Controls how Enable dvar and Dvar test affect input, visibility, and focus. Unknown serialized bits are preserved."),
                     new InspectorAssetReferencePropertyRowViewModel(
                         "Focus sound",
                         "item.focusSound",
@@ -276,7 +288,7 @@ internal static partial class MenuInspectorProjection
                             value.FocusSoundName),
                         description: "Selection is enabled when the shared asset picker is attached."),
                     new InspectorFloatPropertyRowViewModel(
-                        "Special",
+                        specialLabel,
                         "item.special",
                         value.Special,
                         update is null
@@ -284,7 +296,8 @@ internal static partial class MenuInspectorProjection
                             : number => update(current => current with
                             {
                                 Special = number
-                            }))
+                            }),
+                        specialDescription)
                 ]),
             new InspectorSectionViewModel(
                 "EFFECT",
@@ -322,6 +335,20 @@ internal static partial class MenuInspectorProjection
             sections,
             "Item and Window fields are presented together to avoid a second nested selection level.");
     }
+
+    private static (string Label, string Description) SpecialPresentation(
+        ItemDefType type) => type switch
+        {
+            ItemDefType.ListBox => (
+                "Feeder ID",
+                "Numeric UI feeder identifier used to query rows, content, and selection for this ListBox."),
+            ItemDefType.OwnerDraw => (
+                "Owner-draw special",
+                "Owner-draw-specific numeric argument; its meaning depends on the selected Owner draw handler."),
+            _ => (
+                "Special",
+                "Contextual ItemDef argument with no type-independent meaning in the MW2 runtime.")
+        };
 
 
 

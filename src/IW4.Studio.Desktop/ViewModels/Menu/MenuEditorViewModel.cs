@@ -20,6 +20,7 @@ namespace IW4.Studio.Desktop.ViewModels.Menu;
 public sealed class MenuEditorViewModel
     : ObservableObject,
       IAssetEditorProperties,
+      IAssetEditorPropertiesRevealSource,
       IAssetEditorInspectorSource,
       IAssetEditorDiagnostics,
       IAssetEditorStagingState,
@@ -72,6 +73,7 @@ public sealed class MenuEditorViewModel
             () => IsEditable,
             isAssetReferenceResolved);
         Designer.PropertyChanged += Designer_PropertyChanged;
+        Designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
         _coordinator.Changed += Coordinator_Changed;
 
         RevertCommand = new ViewModelCommand(RevertDraft, CanRevert);
@@ -129,6 +131,8 @@ public sealed class MenuEditorViewModel
     public event EventHandler<AssetReferenceSelectionRequestedEventArgs>?
         AssetReferenceSelectionRequested;
 
+    public event EventHandler? PropertiesRevealRequested;
+
     public void RevertDraft()
     {
         if (!CanRevert() || _rowIdentity is not { } rowIdentity)
@@ -163,6 +167,7 @@ public sealed class MenuEditorViewModel
         _disposed = true;
         _coordinator.Changed -= Coordinator_Changed;
         Designer.PropertyChanged -= Designer_PropertyChanged;
+        Designer.PropertiesRevealRequested -= Designer_PropertiesRevealRequested;
         Designer.Dispose();
     }
 
@@ -231,6 +236,11 @@ public sealed class MenuEditorViewModel
         AssetReferenceSelectionRequested?.Invoke(
             this,
             new AssetReferenceSelectionRequestedEventArgs(row));
+
+    private void Designer_PropertiesRevealRequested(
+        object? sender,
+        EventArgs e) =>
+        PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
 
     private bool CanRevert() =>
         Mode == AssetEditorMode.Editable &&

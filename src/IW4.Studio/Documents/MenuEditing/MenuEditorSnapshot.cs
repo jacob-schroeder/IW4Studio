@@ -416,7 +416,7 @@ internal static class MenuSnapshotFactory
         value.GameMsgWindowIndex,
         value.GameMsgWindowMode,
         value.TextString,
-        value.TextSaveGameInfo,
+        value.ItemFlags,
         value.DvarString,
         value.DvarTestString,
         value.EnableDvarString,

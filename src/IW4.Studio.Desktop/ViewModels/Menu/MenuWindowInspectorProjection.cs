@@ -254,16 +254,11 @@ internal static partial class MenuInspectorProjection
                             {
                                 OwnerDraw = value
                             })),
-                    new InspectorIntegerPropertyRowViewModel(
-                        "Owner flags",
+                    ReadOnly(
+                        "Owner-draw flags (raw)",
                         "window.ownerDrawFlags",
-                        window.OwnerDrawFlags,
-                        update is null
-                            ? null
-                            : value => update(current => current with
-                            {
-                                OwnerDrawFlags = value
-                            })),
+                        $"0x{window.OwnerDrawFlags:X8}",
+                        "Legacy owner-draw visibility selector. The PS3 and Xbox 360 MW2 helpers ignore it, so no per-bit authoring semantics are established."),
                     Flags(
                         "Static flags",
                         "window.staticFlags",

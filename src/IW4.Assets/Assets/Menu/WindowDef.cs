@@ -24,7 +24,9 @@ public sealed class WindowDef
     public WindowOwnerDraw OwnerDraw { get; init; }
 
     /// <summary>
-    /// Numeric owner-draw visibility selector. PS3 item visibility passes this to its owner-draw visibility helper when non-zero.
+    /// Serialized owner-draw visibility compatibility mask. The checked PS3
+    /// and Xbox 360 MW2 helpers accept every value, so individual bit meanings
+    /// are not established.
     /// </summary>
     public int OwnerDrawFlags { get; init; }
 

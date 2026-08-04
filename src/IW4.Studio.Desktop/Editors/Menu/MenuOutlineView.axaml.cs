@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using IW4.Assets.Assets.Menu;
@@ -9,6 +10,17 @@ namespace IW4.Studio.Desktop.Editors.Menu;
 public sealed partial class MenuOutlineView : UserControl
 {
     public MenuOutlineView() => AvaloniaXamlLoader.Load(this);
+
+    private void OutlineRow_PointerReleased(
+        object? sender,
+        PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton == MouseButton.Left &&
+            DataContext is MenuDesignerViewModel viewModel)
+        {
+            viewModel.RequestPropertiesReveal();
+        }
+    }
 
     private async void ChangeItemTypeButton_Click(
         object? sender,
