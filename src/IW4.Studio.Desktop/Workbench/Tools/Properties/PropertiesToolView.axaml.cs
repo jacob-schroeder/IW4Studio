@@ -41,4 +41,27 @@ public sealed partial class PropertiesToolView : UserControl
             e.Handled = true;
         }
     }
+
+    private async void ColorPreview_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Control
+            {
+                DataContext: InspectorColorPropertyRowViewModel row
+            } ||
+            !row.IsEditable ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+
+        var dialog = new InspectorColorPickerWindow(
+            row.Label,
+            row.CurrentValue);
+        InspectorColorValue? selection =
+            await dialog.ShowDialog<InspectorColorValue?>(owner);
+        if (selection is { } color)
+            _ = row.SetValue(color);
+    }
 }

@@ -1,0 +1,60 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:colorPicker="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+        x:Class="IW4.Studio.Desktop.Editors.Inspector.InspectorColorPickerWindow"
+        Title="Select color"
+        Width="640"
+        Height="700"
+        MinWidth="560"
+        MinHeight="600"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        mc:Ignorable="d"
+        d:DesignWidth="640"
+        d:DesignHeight="700">
+  <Border Padding="22,18"
+          Background="{DynamicResource StudioBackgroundBrush}">
+    <Grid RowDefinitions="Auto,14,*,14,Auto">
+      <StackPanel Spacing="3">
+        <TextBlock x:Name="ColorTitle"
+                   Text="Select color"
+                   FontSize="19"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="Choose a color, enter RGBA values or a hex code, and adjust alpha from 0 to 100%."
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+
+      <colorPicker:ColorView x:Name="ColorView"
+                             Grid.Row="2"
+                             IsAlphaEnabled="True"
+                             IsAlphaVisible="True"
+                             IsColorComponentsVisible="True"
+                             IsColorPaletteVisible="True"
+                             IsColorPreviewVisible="True"
+                             IsColorSpectrumVisible="True"
+                             IsColorSpectrumSliderVisible="True"
+                             IsComponentSliderVisible="True"
+                             IsComponentTextInputVisible="True"
+                             IsHexInputVisible="True" />
+
+      <StackPanel Grid.Row="4"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8">
+        <Button MinWidth="88"
+                Content="Cancel"
+                IsCancel="True"
+                Click="CancelButton_Click" />
+        <Button Classes="primary"
+                MinWidth="88"
+                Content="Set"
+                IsDefault="True"
+                Click="SetButton_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Avalonia.Media;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.ViewModels;
 
@@ -605,29 +606,43 @@ public sealed class InspectorColorPropertyRowViewModel
     public bool CanCommit =>
         IsEditable && HasStagedValue && !HasValidationError;
 
+    public InspectorColorValue CurrentValue =>
+        TryReadValue(out InspectorColorValue value) ? value : _appliedValue;
+
+    public IBrush PreviewBrush =>
+        new SolidColorBrush(ToAvaloniaColor(CurrentValue));
+
     public bool CommitInput()
     {
-        if (!CanCommit || _apply is null || !TryReadValue(out InspectorColorValue value))
+        if (!CanCommit || !TryReadValue(out InspectorColorValue value))
             return false;
+
+        return SetValue(value);
+    }
+
+    public bool SetValue(InspectorColorValue value)
+    {
+        if (!IsEditable || _apply is null)
+            return false;
+
+        if (!IsFinite(value))
+        {
+            SetValidationMessage("Color components must be finite numbers.");
+            return false;
+        }
+
         if (!TryApply(() => _apply(value)))
             return false;
 
         _appliedValue = value;
+        SetInputs(value);
         NotifyInputStateChanged();
         return true;
     }
 
     public void ResetInput()
     {
-        _redInput = Format(_appliedValue.Red);
-        _greenInput = Format(_appliedValue.Green);
-        _blueInput = Format(_appliedValue.Blue);
-        _alphaInput = Format(_appliedValue.Alpha);
-        OnPropertyChanged(nameof(RedInput));
-        OnPropertyChanged(nameof(GreenInput));
-        OnPropertyChanged(nameof(BlueInput));
-        OnPropertyChanged(nameof(AlphaInput));
-        ValidateInput();
+        SetInputs(_appliedValue);
         NotifyInputStateChanged();
     }
 
@@ -660,6 +675,19 @@ public sealed class InspectorColorPropertyRowViewModel
         string.Equals(BlueInput, Format(value.Blue), StringComparison.Ordinal) &&
         string.Equals(AlphaInput, Format(value.Alpha), StringComparison.Ordinal);
 
+    private void SetInputs(InspectorColorValue value)
+    {
+        _redInput = Format(value.Red);
+        _greenInput = Format(value.Green);
+        _blueInput = Format(value.Blue);
+        _alphaInput = Format(value.Alpha);
+        OnPropertyChanged(nameof(RedInput));
+        OnPropertyChanged(nameof(GreenInput));
+        OnPropertyChanged(nameof(BlueInput));
+        OnPropertyChanged(nameof(AlphaInput));
+        ValidateInput();
+    }
+
     private void ValidateInput()
     {
         SetValidationMessage(
@@ -672,7 +700,28 @@ public sealed class InspectorColorPropertyRowViewModel
     {
         OnPropertyChanged(nameof(HasStagedValue));
         OnPropertyChanged(nameof(CanCommit));
+        OnPropertyChanged(nameof(CurrentValue));
+        OnPropertyChanged(nameof(PreviewBrush));
     }
+
+    private static bool IsFinite(InspectorColorValue value) =>
+        float.IsFinite(value.Red) &&
+        float.IsFinite(value.Green) &&
+        float.IsFinite(value.Blue) &&
+        float.IsFinite(value.Alpha);
+
+    private static Color ToAvaloniaColor(InspectorColorValue value) =>
+        Color.FromRgb(
+            ToColorComponent(value.Red),
+            ToColorComponent(value.Green),
+            ToColorComponent(value.Blue));
+
+    private static byte ToColorComponent(float value) =>
+        !float.IsFinite(value)
+            ? (byte)0
+            : (byte)Math.Round(
+                Math.Clamp(value, 0f, 1f) * byte.MaxValue,
+                MidpointRounding.AwayFromZero);
 
     private static bool TryParseFloat(string input, out float value) =>
         float.TryParse(

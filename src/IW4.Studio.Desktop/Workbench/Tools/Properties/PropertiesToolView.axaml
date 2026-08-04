@@ -187,36 +187,51 @@
                   ToolTip.Tip="{Binding Description}">
         <TextBlock Text="{Binding Label}"
                    Classes="propertyLabel" />
-        <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*"
-              ColumnSpacing="4">
-          <TextBlock Text="R" VerticalAlignment="Center" FontSize="9" />
-          <TextBox Grid.Column="1" MinWidth="0" MinHeight="27" Padding="5,3"
-                   Text="{Binding RedInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
-          <TextBlock Grid.Column="2" Text="G" VerticalAlignment="Center" FontSize="9" />
-          <TextBox Grid.Column="3" MinWidth="0" MinHeight="27" Padding="5,3"
-                   Text="{Binding GreenInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
-          <TextBlock Grid.Column="4" Text="B" VerticalAlignment="Center" FontSize="9" />
-          <TextBox Grid.Column="5" MinWidth="0" MinHeight="27" Padding="5,3"
-                   Text="{Binding BlueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
-          <TextBlock Grid.Column="6" Text="A" VerticalAlignment="Center" FontSize="9" />
-          <TextBox Grid.Column="7" MinWidth="0" MinHeight="27" Padding="5,3"
-                   Text="{Binding AlphaInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
+        <Grid ColumnDefinitions="*,29"
+              ColumnSpacing="7">
+          <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*"
+                ColumnSpacing="4">
+            <TextBlock Text="R" VerticalAlignment="Center" FontSize="9" />
+            <TextBox Grid.Column="1" MinWidth="0" MinHeight="27" Padding="5,3"
+                     Text="{Binding RedInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="{Binding IsReadOnly}"
+                     IsEnabled="{Binding !IsInteractionBlocked}"
+                     LostFocus="StagedInput_LostFocus"
+                     KeyDown="StagedInput_KeyDown" />
+            <TextBlock Grid.Column="2" Text="G" VerticalAlignment="Center" FontSize="9" />
+            <TextBox Grid.Column="3" MinWidth="0" MinHeight="27" Padding="5,3"
+                     Text="{Binding GreenInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="{Binding IsReadOnly}"
+                     IsEnabled="{Binding !IsInteractionBlocked}"
+                     LostFocus="StagedInput_LostFocus"
+                     KeyDown="StagedInput_KeyDown" />
+            <TextBlock Grid.Column="4" Text="B" VerticalAlignment="Center" FontSize="9" />
+            <TextBox Grid.Column="5" MinWidth="0" MinHeight="27" Padding="5,3"
+                     Text="{Binding BlueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="{Binding IsReadOnly}"
+                     IsEnabled="{Binding !IsInteractionBlocked}"
+                     LostFocus="StagedInput_LostFocus"
+                     KeyDown="StagedInput_KeyDown" />
+            <TextBlock Grid.Column="6" Text="A" VerticalAlignment="Center" FontSize="9" />
+            <TextBox Grid.Column="7" MinWidth="0" MinHeight="27" Padding="5,3"
+                     Text="{Binding AlphaInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="{Binding IsReadOnly}"
+                     IsEnabled="{Binding !IsInteractionBlocked}"
+                     LostFocus="StagedInput_LostFocus"
+                     KeyDown="StagedInput_KeyDown" />
+          </Grid>
+          <Button Grid.Column="1"
+                  Width="29"
+                  Height="29"
+                  MinWidth="29"
+                  MinHeight="29"
+                  Padding="2"
+                  IsEnabled="{Binding IsEditable}"
+                  Background="{Binding PreviewBrush}"
+                  BorderBrush="{DynamicResource StudioBorderStrongBrush}"
+                  BorderThickness="1"
+                  Click="ColorPreview_Click"
+                  ToolTip.Tip="Select color" />
         </Grid>
         <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
