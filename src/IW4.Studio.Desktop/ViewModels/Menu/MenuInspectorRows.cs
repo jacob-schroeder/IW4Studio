@@ -78,7 +78,8 @@ internal static partial class MenuInspectorProjection
         string label,
         string fieldPath,
         TEnum value,
-        Action<TEnum>? apply = null)
+        Action<TEnum>? apply = null,
+        string? description = null)
         where TEnum : struct, Enum =>
         new(
             label,
@@ -91,7 +92,8 @@ internal static partial class MenuInspectorProjection
                     EnumBits(option))),
             apply is null
                 ? null
-                : bits => apply(EnumFromBits<TEnum>(bits)));
+                : bits => apply(EnumFromBits<TEnum>(bits)),
+            description);
 
     private static InspectorChoicePropertyRowViewModel BinaryChoice(
         string label,

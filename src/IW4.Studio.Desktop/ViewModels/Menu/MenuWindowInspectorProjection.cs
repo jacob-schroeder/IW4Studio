@@ -274,11 +274,12 @@ internal static partial class MenuInspectorProjection
                             {
                                 StaticFlags = value
                             })),
-                    ReadOnly(
-                        "Dynamic flags",
-                        "window.dynamicFlags",
-                        string.Join(", ", window.DynamicFlags.Select(value => value.ToString())),
-                        "Per-client dynamic flags are runtime state and are not editable.")
+                    .. window.DynamicFlags.Select((value, clientIndex) =>
+                        Flags(
+                            $"Dynamic flags · Client {clientIndex}",
+                            $"window.dynamicFlags[{clientIndex}]",
+                            value,
+                            description: "Per-client dynamic flags are runtime state and are not editable."))
                 ])
         ];
     }
