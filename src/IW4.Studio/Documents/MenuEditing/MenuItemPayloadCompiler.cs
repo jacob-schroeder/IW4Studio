@@ -28,19 +28,11 @@ internal static partial class MenuDocumentCompiler
 
     private static ItemPayloadBuildResult BuildPayload(
         ItemDefAsset? source,
+        ItemDefType type,
         MenuItemPayloadValue payload) =>
         payload switch
         {
-            MenuNoItemPayloadValue => new ItemPayloadBuildResult(
-                new ItemDefData
-                {
-                    Value = new NoItemDefData
-                    {
-                        Reserved = source?.TypeData.Value is NoItemDefData existing
-                            ? existing.Reserved
-                            : 0
-                    }
-                }),
+            MenuNoItemPayloadValue => BuildNullPayload(source, type),
             MenuEditFieldPayloadValue edit => new ItemPayloadBuildResult(
                 new ItemDefData
                 {
@@ -111,6 +103,41 @@ internal static partial class MenuDocumentCompiler
             _ => throw new InvalidDataException(
                 $"Unsupported Menu editor payload '{payload.GetType().Name}'.")
         };
+
+    private static ItemPayloadBuildResult BuildNullPayload(
+        ItemDefAsset? source,
+        ItemDefType type)
+    {
+        ItemDefDataValue value = type switch
+        {
+            ItemDefType.Text
+                or ItemDefType.EditField
+                or ItemDefType.NumericField
+                or ItemDefType.Slider
+                or ItemDefType.YesNo
+                or ItemDefType.Bind
+                or ItemDefType.Validation
+                or ItemDefType.DecimalField
+                or ItemDefType.UpDown
+                or ItemDefType.EmailField
+                or ItemDefType.PassWordField => new EditFieldItemDefData(),
+            ItemDefType.ListBox => new ListBoxItemDefData(),
+            ItemDefType.Multi => new MultiItemDefData(),
+            ItemDefType.DvarEnum => new DvarEnumItemDefData(),
+            ItemDefType.NewsTicker => new NewsTickerItemDefData(),
+            ItemDefType.TextScroll => new TextScrollItemDefData(),
+            _ when Enum.IsDefined(type) => new NoItemDefData
+            {
+                Reserved = source?.TypeData.Value is NoItemDefData existing
+                    ? existing.Reserved
+                    : 0
+            },
+            _ => throw new InvalidDataException(
+                $"Unsupported Menu item type '{type}'.")
+        };
+
+        return new ItemPayloadBuildResult(new ItemDefData { Value = value });
+    }
 
     private static ItemPayloadBuildResult BuildListBox(
         ItemDefAsset? source,

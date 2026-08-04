@@ -147,7 +147,7 @@ internal static partial class MenuDocumentCompiler
     {
         ArgumentNullException.ThrowIfNull(value);
         ItemPayloadBuildResult payload = rebuildPayload
-            ? BuildPayload(source, value.Payload)
+            ? BuildPayload(source, value.Type, value.Payload)
             : PreservePayload(source);
         return new ItemDefAsset
         {

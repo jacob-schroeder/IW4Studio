@@ -482,7 +482,9 @@ internal static class MenuSnapshotFactory
                             ValueAt(multi.DvarStrStrings, index),
                             ValueAt(multi.DvarValue, index)))))
                 : MenuNoItemPayloadValue.Instance,
-            DvarEnumItemDefData => new MenuDvarEnumPayloadValue(value.DvarEnumName),
+            DvarEnumItemDefData => value.DvarEnumName is { } dvarName
+                ? new MenuDvarEnumPayloadValue(dvarName)
+                : MenuNoItemPayloadValue.Instance,
             NewsTickerItemDefData => value.NewsTicker is { } ticker
                 ? new MenuNewsTickerPayloadValue(
                     ticker.FeedId,
@@ -490,7 +492,9 @@ internal static class MenuSnapshotFactory
                     ticker.Spacing,
                     ticker.X)
                 : MenuNoItemPayloadValue.Instance,
-            TextScrollItemDefData => MenuTextScrollPayloadValue.Instance,
+            TextScrollItemDefData => value.TextScroll is not null
+                ? MenuTextScrollPayloadValue.Instance
+                : MenuNoItemPayloadValue.Instance,
             NoItemDefData => MenuNoItemPayloadValue.Instance,
             _ => throw new InvalidDataException(
                 $"Unsupported Menu item-data union arm '{value.TypeData.Value.GetType().Name}'.")

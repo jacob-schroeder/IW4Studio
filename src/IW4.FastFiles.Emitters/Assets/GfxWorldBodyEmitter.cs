@@ -422,7 +422,7 @@ public sealed class GfxWorldBodyEmitter : IXAssetBodyEmitter
             all);
         NestedPlan? cells = PlanCells(value.Cells, plan, all);
         WorldDrawPlan worldDraw = PlanWorldDraw(value.WorldDraw, references, root, plan, all);
-        EmissionBlockSegment? lightGridRows = Array(value.LightGrid.RowDataStart, sizeof(ushort), 4, plan, all, static (writer, item) => writer.WriteUInt16(item));
+        EmissionBlockSegment? lightGridRows = Array(value.LightGrid.RowDataStart, sizeof(ushort), sizeof(ushort), plan, all, static (writer, item) => writer.WriteUInt16(item));
         EmissionBlockSegment? lightGridRaw = Array(value.LightGrid.RawRowData, 1, 1, plan, all, static (writer, item) => writer.WriteByte(item));
         EmissionBlockSegment? lightGridEntries = Array(value.LightGrid.Entries, GfxLightGridEntry.SerializedSize, 4, plan, all, static (writer, item) => { writer.WriteUInt16(item.ColorsIndex); writer.WriteByte(item.PrimaryLightIndex); writer.WriteByte(item.NeedsTrace); });
         EmissionBlockSegment? lightGridColors = Array(value.LightGrid.Colors, GfxLightGridColors.SerializedSize, 4, plan, all, static (writer, item) => writer.WriteBytes(item.RgbBytes.ToArray()));

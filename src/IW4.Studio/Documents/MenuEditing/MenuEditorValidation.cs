@@ -213,12 +213,7 @@ internal static class MenuEditorValidation
             MenuDvarEnumPayloadValue => type == ItemDefType.DvarEnum,
             MenuNewsTickerPayloadValue => type == ItemDefType.NewsTicker,
             MenuTextScrollPayloadValue => type == ItemDefType.TextScroll,
-            MenuNoItemPayloadValue => !editType && type is not
-                ItemDefType.ListBox and not
-                ItemDefType.Multi and not
-                ItemDefType.DvarEnum and not
-                ItemDefType.NewsTicker and not
-                ItemDefType.TextScroll,
+            MenuNoItemPayloadValue => Enum.IsDefined(type),
             _ => false
         };
         if (!matches)

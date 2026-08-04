@@ -87,6 +87,11 @@ public sealed record MenuSettingsValue(
 
 public abstract record MenuItemPayloadValue;
 
+/// <summary>
+/// The item has no serialized type-specific payload. The selected
+/// <see cref="ItemDefType"/> still determines the native union arm; for a
+/// pointer-bearing type this represents that arm with a null pointer.
+/// </summary>
 public sealed record MenuNoItemPayloadValue : MenuItemPayloadValue
 {
     public static MenuNoItemPayloadValue Instance { get; } = new();
