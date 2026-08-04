@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents.AssetReferences;
+using IW4.Studio.Rendering;
 
 namespace IW4.Studio.Desktop.Editors.AssetReferences;
 
@@ -13,11 +14,15 @@ namespace IW4.Studio.Desktop.Editors.AssetReferences;
 public sealed class AssetReferencePickerService
 {
     private readonly WorkspaceAssetReferenceCatalog _catalog;
+    private readonly IMenuPreviewMaterialResolver _materialResolver;
 
     public AssetReferencePickerService(
-        WorkspaceAssetReferenceCatalog catalog)
+        WorkspaceAssetReferenceCatalog catalog,
+        IMenuPreviewMaterialResolver materialResolver)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _materialResolver = materialResolver ??
+            throw new ArgumentNullException(nameof(materialResolver));
     }
 
     public bool IsResolved(XAssetType assetType, string? assetName) =>
@@ -60,7 +65,8 @@ public sealed class AssetReferencePickerService
         var viewModel = new AssetReferencePickerViewModel(
             _catalog,
             assetType,
-            currentName);
+            currentName,
+            _materialResolver);
         var dialog = new AssetReferencePickerWindow(viewModel);
         return await dialog.ShowDialog<AssetReferencePickerResult?>(owner);
     }

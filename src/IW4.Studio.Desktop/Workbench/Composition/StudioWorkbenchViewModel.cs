@@ -71,9 +71,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             authoringRegistry);
         var assetReferenceCatalog = new WorkspaceAssetReferenceCatalog(
             editingSession);
-        var assetReferencePicker = new AssetReferencePickerService(
-            assetReferenceCatalog);
         var menuMaterialResolver = new MenuPreviewMaterialResolver(workspace);
+        var assetReferencePicker = new AssetReferencePickerService(
+            assetReferenceCatalog,
+            menuMaterialResolver);
         _gscWorkspace = new GscWorkspaceIndexService(editingSession);
         _gscSourceNavigation = new GscSourceNavigationBroker();
         GscUsages = new GscUsagesToolViewModel();

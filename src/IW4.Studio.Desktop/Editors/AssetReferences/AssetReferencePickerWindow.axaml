@@ -74,10 +74,36 @@
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="picker:AssetReferenceCandidateViewModel">
                 <Grid Margin="5,4"
-                      MinHeight="42"
-                      ColumnDefinitions="*,Auto"
-                      ColumnSpacing="12">
-                  <StackPanel VerticalAlignment="Center"
+                      MinHeight="50"
+                      ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="10"
+                      AttachedToVisualTree="CandidateRow_AttachedToVisualTree">
+                  <Border Width="64"
+                          Height="42"
+                          CornerRadius="4"
+                          ClipToBounds="True"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding ShowsMaterialPreview}"
+                          ToolTip.Tip="{Binding MaterialPreviewMessage}"
+                          Background="{DynamicResource StudioInputBrush}"
+                          BorderBrush="{DynamicResource StudioBorderBrush}"
+                          BorderThickness="1">
+                    <Grid>
+                      <Image Source="{Binding MaterialPreview}"
+                             IsVisible="{Binding HasMaterialPreview}"
+                             Stretch="UniformToFill" />
+                      <materialIcons:MaterialIcon Kind="ImageOutline"
+                                                   Width="17"
+                                                   Height="17"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   IsVisible="{Binding !HasMaterialPreview}"
+                                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Grid>
+                  </Border>
+
+                  <StackPanel Grid.Column="1"
+                              VerticalAlignment="Center"
                               Spacing="2">
                     <TextBlock Text="{Binding Name}"
                                FontSize="11"
@@ -100,7 +126,7 @@
                     </StackPanel>
                   </StackPanel>
 
-                  <StackPanel Grid.Column="1"
+                  <StackPanel Grid.Column="2"
                               Orientation="Horizontal"
                               VerticalAlignment="Center"
                               Spacing="5">

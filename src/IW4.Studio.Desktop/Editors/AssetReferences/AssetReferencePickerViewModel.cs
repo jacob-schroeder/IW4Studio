@@ -1,19 +1,33 @@
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 using IW4.Studio.Documents.AssetReferences;
+using IW4.Studio.Rendering;
 
 namespace IW4.Studio.Desktop.Editors.AssetReferences;
 
 public sealed class AssetReferenceCandidateViewModel
+    : ObservableObject,
+      IDisposable
 {
+    private readonly AssetReferenceMaterialPreviewLoader?
+        _materialPreviewLoader;
+    private Bitmap? _materialPreview;
+    private string _materialPreviewMessage =
+        "Material preview will load when this candidate is visible.";
+    private Task? _materialPreviewTask;
+    private bool _disposed;
+
     internal AssetReferenceCandidateViewModel(
         string name,
         string origin,
         string? providerZone,
         bool isResolved,
         bool isEditableTarget,
-        bool isCurrent)
+        bool isCurrent,
+        AssetReferenceMaterialPreviewLoader? materialPreviewLoader = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(origin);
@@ -24,6 +38,7 @@ public sealed class AssetReferenceCandidateViewModel
         IsResolved = isResolved;
         IsEditableTarget = isEditableTarget;
         IsCurrent = isCurrent;
+        _materialPreviewLoader = materialPreviewLoader;
     }
 
     public string Name { get; }
@@ -43,6 +58,98 @@ public sealed class AssetReferenceCandidateViewModel
     public string AccessText => IsResolved ? "RESOLVED" : "UNRESOLVED";
 
     public string CurrentText => IsCurrent ? "CURRENT" : string.Empty;
+
+    public bool ShowsMaterialPreview => _materialPreviewLoader is not null;
+
+    public Bitmap? MaterialPreview
+    {
+        get => _materialPreview;
+        private set
+        {
+            if (ReferenceEquals(_materialPreview, value))
+                return;
+
+            Bitmap? previous = _materialPreview;
+            if (!SetProperty(ref _materialPreview, value))
+                return;
+
+            previous?.Dispose();
+            OnPropertyChanged(nameof(HasMaterialPreview));
+        }
+    }
+
+    public bool HasMaterialPreview => MaterialPreview is not null;
+
+    public string MaterialPreviewMessage
+    {
+        get => _materialPreviewMessage;
+        private set => SetProperty(ref _materialPreviewMessage, value);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        MaterialPreview = null;
+    }
+
+    internal void EnsureMaterialPreview()
+    {
+        if (_disposed ||
+            _materialPreviewLoader is null ||
+            _materialPreviewTask is not null)
+        {
+            return;
+        }
+
+        _materialPreviewTask = LoadMaterialPreviewAsync(
+            _materialPreviewLoader);
+    }
+
+    private async Task LoadMaterialPreviewAsync(
+        AssetReferenceMaterialPreviewLoader loader)
+    {
+        AssetReferenceMaterialPreviewLoadResult result;
+        try
+        {
+            result = await loader.LoadAsync(Name);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            result = AssetReferenceMaterialPreviewLoadResult.Failed(
+                $"Material preview could not be loaded: {exception.Message}");
+        }
+
+        if (_disposed || result.IsCanceled)
+            return;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            MaterialPreviewMessage = result.Message;
+            if (result.PngBytes is null)
+                return;
+
+            try
+            {
+                using var stream = new MemoryStream(
+                    result.PngBytes,
+                    writable: false);
+                MaterialPreview = new Bitmap(stream);
+            }
+            catch (Exception exception) when (
+                exception is not OutOfMemoryException)
+            {
+                MaterialPreviewMessage =
+                    $"Material preview could not be displayed: " +
+                    exception.Message;
+            }
+        });
+    }
 }
 
 /// <summary>
@@ -50,17 +157,23 @@ public sealed class AssetReferenceCandidateViewModel
 /// current unresolved spelling is inserted as a synthetic row so opening the
 /// picker can never erase or normalize it implicitly.
 /// </summary>
-public sealed class AssetReferencePickerViewModel : ObservableObject
+public sealed class AssetReferencePickerViewModel
+    : ObservableObject,
+      IDisposable
 {
     private readonly AssetReferenceCandidateViewModel[] _allCandidates;
+    private readonly AssetReferenceMaterialPreviewLoader?
+        _materialPreviewLoader;
     private string _searchText = string.Empty;
     private IReadOnlyList<AssetReferenceCandidateViewModel> _candidates = [];
     private AssetReferenceCandidateViewModel? _selectedCandidate;
+    private bool _disposed;
 
     public AssetReferencePickerViewModel(
         WorkspaceAssetReferenceCatalog catalog,
         XAssetType assetType,
-        string? currentName)
+        string? currentName,
+        IMenuPreviewMaterialResolver? materialResolver = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         if (assetType is not (
@@ -75,6 +188,10 @@ public sealed class AssetReferencePickerViewModel : ObservableObject
         }
 
         AssetType = assetType;
+        _materialPreviewLoader =
+            assetType == XAssetType.Material && materialResolver is not null
+                ? new AssetReferenceMaterialPreviewLoader(materialResolver)
+                : null;
         CurrentName = LogicalName(currentName);
         WorkspaceAssetReferenceCandidate? current = catalog.Find(
             assetType,
@@ -99,7 +216,8 @@ public sealed class AssetReferencePickerViewModel : ObservableObject
                     providerZone: null,
                     isResolved: false,
                     isEditableTarget: false,
-                    isCurrent: true));
+                    isCurrent: true,
+                    materialPreviewLoader: _materialPreviewLoader));
         }
 
         _allCandidates = candidates.ToArray();
@@ -158,6 +276,17 @@ public sealed class AssetReferencePickerViewModel : ObservableObject
 
     public bool CanSelect => SelectedCandidate is not null;
 
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _materialPreviewLoader?.Dispose();
+        foreach (AssetReferenceCandidateViewModel candidate in _allCandidates)
+            candidate.Dispose();
+    }
+
     private void RefreshFilter(bool selectCurrent)
     {
         string search = SearchText.Trim();
@@ -188,7 +317,7 @@ public sealed class AssetReferencePickerViewModel : ObservableObject
             candidate.ProviderZone.Contains(search, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static AssetReferenceCandidateViewModel Candidate(
+    private AssetReferenceCandidateViewModel Candidate(
         WorkspaceAssetReferenceCandidate value,
         bool isCurrent) =>
         new(
@@ -197,7 +326,8 @@ public sealed class AssetReferencePickerViewModel : ObservableObject
             value.ProviderZone,
             value.IsResolved,
             value.IsEditableTarget,
-            isCurrent);
+            isCurrent,
+            _materialPreviewLoader);
 
     private static string Origin(WorkspaceAssetOrigin value) => value switch
     {

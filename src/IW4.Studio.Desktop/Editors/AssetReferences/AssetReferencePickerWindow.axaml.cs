@@ -15,6 +15,8 @@ public sealed partial class AssetReferencePickerWindow : Window
         InitializeComponent();
         Icon = AppIcon.Create();
         Opened += (_, _) => SearchTextBox.Focus();
+        Closed += (_, _) =>
+            (DataContext as AssetReferencePickerViewModel)?.Dispose();
     }
 
     internal AssetReferencePickerWindow(AssetReferencePickerViewModel viewModel)
@@ -37,6 +39,19 @@ public sealed partial class AssetReferencePickerWindow : Window
         object? sender,
         RoutedEventArgs e) =>
         Close((AssetReferencePickerResult?)null);
+
+    private static void CandidateRow_AttachedToVisualTree(
+        object? sender,
+        Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Control
+            {
+                DataContext: AssetReferenceCandidateViewModel candidate
+            })
+        {
+            candidate.EnsureMaterialPreview();
+        }
+    }
 
     private void AcceptSelection()
     {
