@@ -982,6 +982,70 @@ public sealed class InspectorAssetReferencePropertyRowViewModel
     }
 }
 
+/// <summary>
+/// A compact, generic inspector row that presents a read-only summary with
+/// one optional action. The workbench supplies the visual treatment; editors
+/// supply only the label, summary, and action callback.
+/// </summary>
+public sealed class InspectorActionPropertyRowViewModel
+    : InspectorPropertyRowViewModel
+{
+    private readonly Action? _invoke;
+
+    public InspectorActionPropertyRowViewModel(
+        string label,
+        string fieldPath,
+        string? value,
+        Action? invoke = null,
+        string? actionToolTip = null,
+        string? actionAutomationName = null,
+        string? description = null,
+        bool isReadOnly = false)
+        : base(
+            label,
+            fieldPath,
+            description,
+            isReadOnly || invoke is null)
+    {
+        Value = value ?? "—";
+        _invoke = invoke;
+        ActionToolTip = string.IsNullOrWhiteSpace(actionToolTip)
+            ? $"Edit {label}"
+            : actionToolTip;
+        ActionAutomationName = string.IsNullOrWhiteSpace(
+            actionAutomationName)
+            ? ActionToolTip
+            : actionAutomationName;
+        InvokeCommand = new ViewModelCommand(Invoke, () => CanInvoke);
+    }
+
+    public string Value { get; }
+
+    public string ActionToolTip { get; }
+
+    public string ActionAutomationName { get; }
+
+    public bool HasAction => _invoke is not null;
+
+    public bool CanInvoke => IsEditable && HasAction;
+
+    public ViewModelCommand InvokeCommand { get; }
+
+    private void Invoke()
+    {
+        if (_invoke is null || !CanInvoke)
+            return;
+
+        _ = TryApply(_invoke);
+    }
+
+    protected override void OnInteractionStateChanged()
+    {
+        OnPropertyChanged(nameof(CanInvoke));
+        InvokeCommand.RaiseCanExecuteChanged();
+    }
+}
+
 public sealed class InspectorReadOnlyPropertyRowViewModel
     : InspectorPropertyRowViewModel
 {

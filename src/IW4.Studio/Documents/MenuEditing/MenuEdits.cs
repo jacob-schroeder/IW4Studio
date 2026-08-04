@@ -1,5 +1,6 @@
 using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Emitters.Assets;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -21,6 +22,14 @@ public sealed record ReplaceItemPayloadEdit(
 public sealed record ReplaceItemWindowEdit(
     MenuNodeId ItemId,
     MenuWindowValue Value) : MenuEdit;
+
+/// <summary>
+/// Atomically replaces only the selected ItemDef's event, key, and expression
+/// behavior. Scalar ItemDef and payload edits deliberately use separate edits.
+/// </summary>
+public sealed record ReplaceItemBehaviorEdit(
+    MenuNodeId ItemId,
+    MenuItemBehaviorBindings Value) : MenuEdit;
 
 public sealed record AddMenuItemEdit(
     ItemDefType Type,

@@ -71,7 +71,8 @@ public sealed class MenuEditorViewModel
             materialResolver,
             textResourceResolver,
             () => IsEditable,
-            isAssetReferenceResolved);
+            isAssetReferenceResolved,
+            RequestItemBehaviorEdit);
         Designer.PropertyChanged += Designer_PropertyChanged;
         Designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
         _coordinator.Changed += Coordinator_Changed;
@@ -130,6 +131,9 @@ public sealed class MenuEditorViewModel
 
     public event EventHandler<AssetReferenceSelectionRequestedEventArgs>?
         AssetReferenceSelectionRequested;
+
+    public event EventHandler<MenuItemBehaviorEditRequestedEventArgs>?
+        ItemBehaviorEditRequested;
 
     public event EventHandler? PropertiesRevealRequested;
 
@@ -236,6 +240,10 @@ public sealed class MenuEditorViewModel
         AssetReferenceSelectionRequested?.Invoke(
             this,
             new AssetReferenceSelectionRequestedEventArgs(row));
+
+    private void RequestItemBehaviorEdit(
+        MenuItemBehaviorEditRequestedEventArgs args) =>
+        ItemBehaviorEditRequested?.Invoke(this, args);
 
     private void Designer_PropertiesRevealRequested(
         object? sender,

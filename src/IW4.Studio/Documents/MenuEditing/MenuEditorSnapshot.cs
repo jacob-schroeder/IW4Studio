@@ -3,6 +3,8 @@ using IW4.Assets.Assets;
 using IW4.Runtime.Assets;
 using IW4.Studio.Documents;
 using IW4.FastFiles.Zone;
+using IW4.Studio.Documents.MenuEditing.Behavior;
+using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 using IW4.Studio.Documents.MenuEditing.Debugging;
 
 namespace IW4.Studio.Documents.MenuEditing;
@@ -15,7 +17,8 @@ public sealed record MenuItemSnapshot(
     MenuNodeId Id,
     MenuNodeId WindowId,
     bool IsResolved,
-    MenuItemValue Value);
+    MenuItemValue Value,
+    MenuItemBehaviorBindings Behavior);
 
 /// <summary>
 /// Detached, immutable Menu view consumed by Desktop and preview projection.
@@ -31,6 +34,7 @@ public sealed class MenuEditorSnapshot
         MenuWindowSnapshot window,
         IEnumerable<MenuItemSnapshot> items,
         MenuBehaviorSummary behavior,
+        BehaviorExpressionSupport expressionSupport,
         MenuDebugProgram debugProgram,
         bool isComplete)
     {
@@ -38,6 +42,7 @@ public sealed class MenuEditorSnapshot
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(behavior);
+        ArgumentNullException.ThrowIfNull(expressionSupport);
         ArgumentNullException.ThrowIfNull(debugProgram);
 
         Id = id;
@@ -45,6 +50,7 @@ public sealed class MenuEditorSnapshot
         Window = new MenuWindowSnapshot(window.Id, MenuSnapshotFactory.Copy(window.Value));
         _items = Array.AsReadOnly(items.Select(MenuSnapshotFactory.Copy).ToArray());
         Behavior = behavior;
+        ExpressionSupport = expressionSupport;
         DebugProgram = debugProgram;
         IsComplete = isComplete;
     }
@@ -56,6 +62,7 @@ public sealed class MenuEditorSnapshot
     public MenuWindowSnapshot Window { get; }
     public IReadOnlyList<MenuItemSnapshot> Items => _items;
     public MenuBehaviorSummary Behavior { get; }
+    public BehaviorExpressionSupport ExpressionSupport { get; }
     public MenuDebugProgram DebugProgram { get; }
 }
 
@@ -248,6 +255,9 @@ internal static class MenuSnapshotFactory
             throw new InvalidDataException(
                 "Menu editor item identity count does not match the detached item table.");
 
+        var expressionCodec = new MenuBehaviorExpressionCodec(
+            definition.ExpressionDataValue);
+        var behaviorCodec = new MenuItemBehaviorCodec(expressionCodec);
         var items = new MenuItemSnapshot[definition.Items.Count];
         for (int index = 0; index < items.Length; index++)
         {
@@ -258,12 +268,14 @@ internal static class MenuSnapshotFactory
                     itemIdentity.Id,
                     itemIdentity.WindowId,
                     false,
-                    CreateMissingItem(definition.ImageTrack))
+                    CreateMissingItem(definition.ImageTrack),
+                    MenuItemBehaviorBindings.Empty)
                 : new MenuItemSnapshot(
                     itemIdentity.Id,
                     itemIdentity.WindowId,
                     true,
-                    Item(item));
+                    Item(item),
+                    behaviorCodec.Import(item));
         }
 
         return new MenuEditorSnapshot(
@@ -283,6 +295,7 @@ internal static class MenuSnapshotFactory
                 definition.RectWStatement is not null,
                 definition.RectHStatement is not null,
                 definition.ExpressionDataValue is not null),
+            expressionCodec.Support,
             MenuDebugProgramFactory.Create(definition, identity),
             data.IsComplete);
     }
@@ -332,7 +345,10 @@ internal static class MenuSnapshotFactory
 
     public static MenuItemSnapshot Copy(MenuItemSnapshot value) => value with
     {
-        Value = Copy(value.Value)
+        Value = Copy(value.Value),
+        // Menu behavior values are deeply immutable; preserving this identity
+        // also retains imported Statement sharing for copy-on-write edits.
+        Behavior = value.Behavior
     };
 
     public static MenuItemValue Copy(MenuItemValue value) => value with

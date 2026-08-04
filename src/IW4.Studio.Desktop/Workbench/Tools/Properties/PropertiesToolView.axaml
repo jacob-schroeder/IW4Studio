@@ -372,6 +372,59 @@
                    TextWrapping="Wrap" />
       </Grid>
     </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorActionPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorActionPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
+        <Grid ColumnDefinitions="92,*,Auto"
+              ColumnSpacing="8">
+          <StackPanel Orientation="Horizontal"
+                      Spacing="4"
+                      VerticalAlignment="Center">
+            <TextBlock Text="{Binding Label}"
+                       Classes="propertyLabel"
+                       VerticalAlignment="Center" />
+            <avalonia:MaterialIcon Kind="InformationOutline"
+                                   Width="12"
+                                   Height="12"
+                                   IsVisible="{Binding HasInfoIcon}"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}"
+                                   ToolTip.Tip="{Binding Description}" />
+          </StackPanel>
+          <TextBlock Grid.Column="1"
+                     Text="{Binding Value}"
+                     Classes="propertyValue"
+                     VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis"
+                     TextWrapping="Wrap" />
+          <Button Grid.Column="2"
+                  Width="29"
+                  Height="29"
+                  MinWidth="29"
+                  MinHeight="29"
+                  Padding="0,0,0,3"
+                  Command="{Binding InvokeCommand}"
+                  IsVisible="{Binding HasAction}"
+                  IsEnabled="{Binding CanInvoke}"
+                  FontSize="17"
+                  FontWeight="SemiBold"
+                  ToolTip.Tip="{Binding ActionToolTip}"
+                  AutomationProperties.Name="{Binding ActionAutomationName}">
+            <TextBlock Text="…"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center" />
+          </Button>
+        </Grid>
+        <TextBlock Margin="100,0,0,0"
+                   Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}"
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
   </UserControl.DataTemplates>
 
   <Grid>

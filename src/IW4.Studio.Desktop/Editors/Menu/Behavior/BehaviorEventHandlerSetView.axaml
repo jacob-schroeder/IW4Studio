@@ -1,0 +1,209 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:behavior="using:IW4.Studio.Desktop.Editors.Menu.Behavior"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.BehaviorEventHandlerSetView"
+             x:DataType="behavior:BehaviorEventHandlerSetDraftViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="560"
+             d:DesignHeight="300">
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="behavior:BehaviorScriptEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7"
+              Padding="9"
+              CornerRadius="5"
+              Background="{DynamicResource StudioControlBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,6,Auto"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="7">
+          <TextBlock Text="SCRIPT"
+                     FontSize="9"
+                     FontWeight="Bold"
+                     LetterSpacing="0.7"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move handler up"><TextBlock Text="↑" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move handler down"><TextBlock Text="↓" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button>
+          </StackPanel>
+          <TextBox Grid.Row="2"
+                   Grid.ColumnSpan="2"
+                   MinHeight="43"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   Text="{Binding Script, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   PlaceholderText="Raw game script text"
+                   AutomationProperties.Name="Event script" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:DataType="behavior:BehaviorConditionalEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7"
+              Padding="9"
+              CornerRadius="5"
+              Background="{DynamicResource StudioControlBrush}"
+              BorderBrush="{DynamicResource StudioAccentBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,6,Auto,Auto,8,Auto,8,Auto,8,Auto"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="7">
+          <TextBlock Text="IF"
+                     FontSize="9"
+                     FontWeight="Bold"
+                     LetterSpacing="0.7"
+                     Foreground="{DynamicResource StudioAccentBrush}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move handler up"><TextBlock Text="↑" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move handler down"><TextBlock Text="↓" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button>
+          </StackPanel>
+          <StackPanel Grid.Row="2" Grid.ColumnSpan="2">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Text="{Binding Condition.Formula, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       IsEnabled="{Binding Condition.IsFormulaEditable}"
+                       PlaceholderText="Boolean condition formula"
+                       AutomationProperties.Name="Conditional event formula" />
+              <Button Grid.Column="1"
+                      IsVisible="{Binding Condition.IsOpaqueImported}"
+                      Command="{Binding Condition.BeginReplacementCommand}"
+                      Content="Replace"
+                      ToolTip.Tip="Replace unsupported imported expression" />
+            </Grid>
+            <behavior:BehaviorExpressionOperationPickerView
+                DataContext="{Binding Condition}" />
+          </StackPanel>
+          <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Spacing="1">
+            <TextBlock Text="{Binding Condition.ResultKindText}"
+                       FontSize="8" Foreground="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Text="{Binding Condition.DiagnosticsText}"
+                       IsVisible="{Binding Condition.HasDiagnostics}"
+                       FontSize="8" TextWrapping="Wrap"
+                       Foreground="{DynamicResource StudioErrorBrush}" />
+          </StackPanel>
+          <TextBlock Grid.Row="5" Grid.ColumnSpan="2"
+                     Text="THEN"
+                     FontSize="8" FontWeight="Bold" LetterSpacing="0.6"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <behavior:BehaviorEventHandlerSetView Grid.Row="7"
+                                                Grid.ColumnSpan="2"
+                                                DataContext="{Binding Then}" />
+          <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Spacing="5" IsVisible="{Binding HasOtherwise}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBlock Text="OTHERWISE" FontSize="8" FontWeight="Bold" LetterSpacing="0.6" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <Button Grid.Column="1" Command="{Binding RemoveOtherwiseCommand}" Content="Remove otherwise" />
+            </Grid>
+            <behavior:BehaviorEventHandlerSetView DataContext="{Binding Otherwise}" />
+          </StackPanel>
+          <Button Grid.Row="9" Grid.ColumnSpan="2"
+                  HorizontalAlignment="Left"
+                  IsVisible="{Binding !HasOtherwise}"
+                  Command="{Binding AddOtherwiseCommand}"
+                  Content="Add otherwise" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:DataType="behavior:BehaviorElseEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7" Padding="9" CornerRadius="5"
+              Background="{DynamicResource StudioControlBrush}"
+              BorderBrush="{DynamicResource StudioWarningBrush}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,6,*" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+          <TextBlock Text="ORPHAN OTHERWISE" FontSize="9" FontWeight="Bold" LetterSpacing="0.7" Foreground="{DynamicResource StudioWarningBrush}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move handler up"><TextBlock Text="↑" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move handler down"><TextBlock Text="↓" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button>
+          </StackPanel>
+          <behavior:BehaviorEventHandlerSetView Grid.Row="2" Grid.ColumnSpan="2" DataContext="{Binding Handlers}" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:DataType="behavior:BehaviorSetLocalEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7" Padding="9" CornerRadius="5"
+              Background="{DynamicResource StudioControlBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,7,Auto,6,Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+          <TextBlock Text="SET LOCAL" FontSize="9" FontWeight="Bold" LetterSpacing="0.7" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move handler up"><TextBlock Text="↑" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move handler down"><TextBlock Text="↓" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button>
+          </StackPanel>
+          <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="120,*" ColumnSpacing="6">
+            <ComboBox ItemsSource="{Binding ValueTypes}"
+                      SelectedItem="{Binding ValueType, Mode=TwoWay}"
+                      AutomationProperties.Name="Local variable value type" />
+            <TextBox Grid.Column="1"
+                     Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="Local variable name"
+                     AutomationProperties.Name="Local variable name" />
+          </Grid>
+          <StackPanel Grid.Row="4" Grid.ColumnSpan="2">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Text="{Binding Expression.Formula, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       IsEnabled="{Binding Expression.IsFormulaEditable}"
+                       PlaceholderText="{Binding ExpectedResultKindText}"
+                       AutomationProperties.Name="Set local formula" />
+              <Button Grid.Column="1" IsVisible="{Binding Expression.IsOpaqueImported}"
+                      Command="{Binding Expression.BeginReplacementCommand}" Content="Replace" />
+            </Grid>
+            <behavior:BehaviorExpressionOperationPickerView
+                DataContext="{Binding Expression}" />
+          </StackPanel>
+          <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Spacing="1">
+            <TextBlock Text="{Binding Expression.ResultKindText}"
+                       FontSize="8" Foreground="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Text="{Binding Expression.DiagnosticsText}"
+                       IsVisible="{Binding Expression.HasDiagnostics}"
+                       FontSize="8" TextWrapping="Wrap"
+                       Foreground="{DynamicResource StudioErrorBrush}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:DataType="behavior:BehaviorOpaqueEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7" Padding="9" CornerRadius="5"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioWarningBrush}" BorderThickness="1">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+          <StackPanel Spacing="2">
+            <TextBlock Text="UNSUPPORTED IMPORT" FontSize="9" FontWeight="Bold" LetterSpacing="0.7" Foreground="{DynamicResource StudioWarningBrush}" />
+            <TextBlock Text="{Binding Description}" FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move handler up"><TextBlock Text="↑" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move handler down"><TextBlock Text="↓" /></Button>
+            <Button Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:DataType="behavior:BehaviorMissingEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7" Padding="9" CornerRadius="5" Background="{DynamicResource StudioSurfaceSunkenBrush}" BorderBrush="{DynamicResource StudioWarningBrush}" BorderThickness="1">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7"><TextBlock Text="{Binding Description}" FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}" /><Button Grid.Column="1" Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button></Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:DataType="behavior:BehaviorUnsupportedEventHandlerDraftViewModel">
+      <Border Margin="0,0,0,7" Padding="9" CornerRadius="5" Background="{DynamicResource StudioSurfaceSunkenBrush}" BorderBrush="{DynamicResource StudioWarningBrush}" BorderThickness="1">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7"><TextBlock Text="{Binding Description}" FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}" /><Button Grid.Column="1" Width="25" Height="24" Padding="2" Command="{Binding DeleteCommand}" ToolTip.Tip="Delete handler"><TextBlock Text="×" FontSize="14" /></Button></Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid RowDefinitions="Auto,7,*">
+    <StackPanel Orientation="Horizontal" Spacing="5">
+      <Button Content="Add script" Command="{Binding AddScriptCommand}" ToolTip.Tip="Add a raw game-script handler" />
+      <Button Content="Add if" Command="{Binding AddConditionalCommand}" ToolTip.Tip="Add a conditional handler" />
+      <Button Content="Add set local" Command="{Binding AddSetLocalCommand}" ToolTip.Tip="Set a typed local variable" />
+    </StackPanel>
+    <ItemsControl Grid.Row="2" ItemsSource="{Binding Handlers}" />
+  </Grid>
+</UserControl>

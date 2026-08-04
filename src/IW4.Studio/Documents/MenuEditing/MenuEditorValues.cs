@@ -164,8 +164,8 @@ public sealed record MenuTextScrollPayloadValue : MenuItemPayloadValue
 }
 
 /// <summary>
-/// Read-only summary of recursive behavior preserved by the detached source
-/// graph. A dedicated behavior editor can replace this projection later.
+/// Compact inspector summary of recursive behavior. The detached semantic
+/// behavior graph is exposed separately to the dedicated ItemDef builder.
 /// </summary>
 public sealed record MenuItemBehaviorSummary(
     bool HasMouseEnterText,

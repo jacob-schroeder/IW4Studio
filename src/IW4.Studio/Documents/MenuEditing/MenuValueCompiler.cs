@@ -2,6 +2,7 @@ using IW4.Assets.Assets.Menu;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 using IW4.Studio.Documents;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -174,12 +175,16 @@ internal static partial class MenuDocumentCompiler
         ItemDefAsset? source,
         MenuItemValue value,
         bool rebuildPayload,
-        int imageTrack)
+        int imageTrack,
+        MenuItemBehaviorAssetBindings? behavior = null)
     {
         ArgumentNullException.ThrowIfNull(value);
         ItemPayloadBuildResult payload = rebuildPayload
             ? BuildPayload(source, value.Type, value.Payload)
             : PreservePayload(source);
+        ListBoxDef? listBox = behavior is null
+            ? payload.ListBox
+            : WithDoubleClick(payload.ListBox, behavior.ListBoxDoubleClick);
         return new ItemDefAsset
         {
             Window = BuildWindow(source?.Window ?? new WindowDef(), value.Window),
@@ -203,28 +208,64 @@ internal static partial class MenuDocumentCompiler
             TextString = value.Text,
             ItemFlags = value.ItemFlags,
             RuntimeParentPointer = source?.RuntimeParentPointer ?? 0,
-            MouseEnterText = source?.MouseEnterText ?? default,
-            MouseEnterTextSet = source?.MouseEnterTextSet,
-            MouseExitText = source?.MouseExitText ?? default,
-            MouseExitTextSet = source?.MouseExitTextSet,
-            MouseEnter = source?.MouseEnter ?? default,
-            MouseEnterSet = source?.MouseEnterSet,
-            MouseExit = source?.MouseExit ?? default,
-            MouseExitSet = source?.MouseExitSet,
-            Action = source?.Action ?? default,
-            ActionSet = source?.ActionSet,
-            Accept = source?.Accept ?? default,
-            AcceptSet = source?.AcceptSet,
-            OnFocus = source?.OnFocus ?? default,
-            OnFocusSet = source?.OnFocusSet,
-            LeaveFocus = source?.LeaveFocus ?? default,
-            LeaveFocusSet = source?.LeaveFocusSet,
+            MouseEnterText = behavior is null
+                ? source?.MouseEnterText ?? default
+                : behavior.MouseEnterText.Pointer,
+            MouseEnterTextSet = behavior is null
+                ? source?.MouseEnterTextSet
+                : behavior.MouseEnterText.Handlers,
+            MouseExitText = behavior is null
+                ? source?.MouseExitText ?? default
+                : behavior.MouseExitText.Pointer,
+            MouseExitTextSet = behavior is null
+                ? source?.MouseExitTextSet
+                : behavior.MouseExitText.Handlers,
+            MouseEnter = behavior is null
+                ? source?.MouseEnter ?? default
+                : behavior.MouseEnter.Pointer,
+            MouseEnterSet = behavior is null
+                ? source?.MouseEnterSet
+                : behavior.MouseEnter.Handlers,
+            MouseExit = behavior is null
+                ? source?.MouseExit ?? default
+                : behavior.MouseExit.Pointer,
+            MouseExitSet = behavior is null
+                ? source?.MouseExitSet
+                : behavior.MouseExit.Handlers,
+            Action = behavior is null
+                ? source?.Action ?? default
+                : behavior.Action.Pointer,
+            ActionSet = behavior is null
+                ? source?.ActionSet
+                : behavior.Action.Handlers,
+            Accept = behavior is null
+                ? source?.Accept ?? default
+                : behavior.Accept.Pointer,
+            AcceptSet = behavior is null
+                ? source?.AcceptSet
+                : behavior.Accept.Handlers,
+            OnFocus = behavior is null
+                ? source?.OnFocus ?? default
+                : behavior.OnFocus.Pointer,
+            OnFocusSet = behavior is null
+                ? source?.OnFocusSet
+                : behavior.OnFocus.Handlers,
+            LeaveFocus = behavior is null
+                ? source?.LeaveFocus ?? default
+                : behavior.LeaveFocus.Pointer,
+            LeaveFocusSet = behavior is null
+                ? source?.LeaveFocusSet
+                : behavior.LeaveFocus.Handlers,
             Dvar = StringPointer(source?.Dvar ?? default, value.Dvar),
             DvarString = value.Dvar,
             DvarTest = StringPointer(source?.DvarTest ?? default, value.DvarTest),
             DvarTestString = value.DvarTest,
-            OnKey = source?.OnKey ?? default,
-            OnKeyHandler = source?.OnKeyHandler,
+            OnKey = behavior is null
+                ? source?.OnKey ?? default
+                : behavior.OnKeyPointer,
+            OnKeyHandler = behavior is null
+                ? source?.OnKeyHandler
+                : behavior.OnKeyHandler,
             EnableDvar = StringPointer(source?.EnableDvar ?? default, value.EnableDvar),
             EnableDvarString = value.EnableDvar,
             DvarFlags = value.DvarFlags,
@@ -236,23 +277,45 @@ internal static partial class MenuDocumentCompiler
             CursorPos = value.CursorPositions.ToArray(),
             TypeData = payload.TypeData,
             EditField = payload.EditField,
-            ListBox = payload.ListBox,
+            ListBox = listBox,
             Multi = payload.Multi,
             DvarEnumName = payload.DvarEnumName,
             NewsTicker = payload.NewsTicker,
             TextScroll = payload.TextScroll,
             ImageTrack = imageTrack,
-            FloatExpressionCount = source?.LoadedFloatExpressions.Count ?? 0,
-            FloatExpressions = source?.FloatExpressions ?? default,
-            LoadedFloatExpressions = source?.LoadedFloatExpressions ?? [],
-            VisibleExpression = source?.VisibleExpression ?? default,
-            VisibleStatement = source?.VisibleStatement,
-            DisabledExpression = source?.DisabledExpression ?? default,
-            DisabledStatement = source?.DisabledStatement,
-            TextExpression = source?.TextExpression ?? default,
-            TextStatement = source?.TextStatement,
-            MaterialExpression = source?.MaterialExpression ?? default,
-            MaterialStatement = source?.MaterialStatement,
+            FloatExpressionCount = behavior is null
+                ? source?.LoadedFloatExpressions.Count ?? 0
+                : behavior.FloatExpressions.Count,
+            FloatExpressions = behavior is null
+                ? source?.FloatExpressions ?? default
+                : behavior.FloatExpressionsPointer,
+            LoadedFloatExpressions = behavior is null
+                ? source?.LoadedFloatExpressions ?? []
+                : behavior.FloatExpressions,
+            VisibleExpression = behavior is null
+                ? source?.VisibleExpression ?? default
+                : behavior.Visible.Pointer,
+            VisibleStatement = behavior is null
+                ? source?.VisibleStatement
+                : behavior.Visible.Statement,
+            DisabledExpression = behavior is null
+                ? source?.DisabledExpression ?? default
+                : behavior.Disabled.Pointer,
+            DisabledStatement = behavior is null
+                ? source?.DisabledStatement
+                : behavior.Disabled.Statement,
+            TextExpression = behavior is null
+                ? source?.TextExpression ?? default
+                : behavior.Text.Pointer,
+            TextStatement = behavior is null
+                ? source?.TextStatement
+                : behavior.Text.Statement,
+            MaterialExpression = behavior is null
+                ? source?.MaterialExpression ?? default
+                : behavior.Material.Pointer,
+            MaterialStatement = behavior is null
+                ? source?.MaterialStatement
+                : behavior.Material.Statement,
             GlowColor = Vec(value.GlowColor),
             DecayActive = value.DecayActive,
             DecayActivePad0 = source?.DecayActivePad0 ?? 0,
@@ -265,6 +328,41 @@ internal static partial class MenuDocumentCompiler
             FxDecayStartTime = source?.FxDecayStartTime ?? 0,
             FxDecayDuration = source?.FxDecayDuration ?? 0,
             LastSoundPlayedTime = 0
+        };
+    }
+
+    private static ListBoxDef? WithDoubleClick(
+        ListBoxDef? source,
+        MenuBehaviorNativeEventBinding doubleClick)
+    {
+        if (source is null)
+            return null;
+
+        return new ListBoxDef
+        {
+            StartPos = source.StartPos.ToArray(),
+            EndPos = source.EndPos.ToArray(),
+            DrawPadding = source.DrawPadding,
+            ElementWidth = source.ElementWidth,
+            ElementHeight = source.ElementHeight,
+            ElementStyle = source.ElementStyle,
+            NumColumns = source.NumColumns,
+            ColumnInfo = source.ColumnInfo.Select(column => new ColumnInfo
+            {
+                Pos = column.Pos,
+                Width = column.Width,
+                MaxChars = column.MaxChars,
+                Alignment = column.Alignment
+            }).ToArray(),
+            DoubleClick = doubleClick.Pointer,
+            DoubleClickSet = doubleClick.Handlers,
+            NotSelectable = source.NotSelectable,
+            NoScrollbars = source.NoScrollbars,
+            UsePaging = source.UsePaging,
+            SelectBorder = Copy(source.SelectBorder),
+            SelectIcon = source.SelectIcon,
+            SelectIconMaterial = source.SelectIconMaterial,
+            SelectIconMaterialName = source.SelectIconMaterialName
         };
     }
 }

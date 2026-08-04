@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:behavior="using:IW4.Studio.Desktop.Editors.Menu.Behavior"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.BehaviorEventHooksView"
+             x:DataType="behavior:BehaviorEventHooksViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="680"
+             d:DesignHeight="500">
+  <Grid RowDefinitions="Auto,12,*">
+    <StackPanel Spacing="3">
+      <TextBlock Text="EVENT HOOKS"
+                 FontSize="10"
+                 FontWeight="Bold"
+                 LetterSpacing="0.8"
+                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      <TextBlock Text="{Binding Summary}"
+                 FontSize="10"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="2"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="8">
+        <ItemsControl ItemsSource="{Binding Slots}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="behavior:BehaviorEventSlotViewModel">
+              <Border Margin="0,0,0,8"
+                      Padding="11"
+                      CornerRadius="6"
+                      Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="1">
+                <Grid RowDefinitions="Auto,3,Auto,8,*">
+                  <TextBlock Text="{Binding Title}"
+                             FontSize="12"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource StudioTextBrush}" />
+                  <TextBlock Grid.Row="2"
+                             Text="{Binding Description}"
+                             FontSize="9"
+                             TextWrapping="Wrap"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <behavior:BehaviorEventHandlerSetView Grid.Row="4"
+                                                        DataContext="{Binding Handlers}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Border Padding="11"
+                CornerRadius="6"
+                IsVisible="{Binding SupportsListBoxDoubleClick}"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <Grid RowDefinitions="Auto,3,Auto,8,*">
+            <TextBlock Text="{Binding ListBoxDoubleClick.Title}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+            <TextBlock Grid.Row="2"
+                       Text="{Binding ListBoxDoubleClick.Description}"
+                       FontSize="9"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <behavior:BehaviorEventHandlerSetView Grid.Row="4"
+                                                  DataContext="{Binding ListBoxDoubleClick.Handlers}" />
+          </Grid>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

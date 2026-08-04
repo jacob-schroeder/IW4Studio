@@ -2,6 +2,7 @@ using IW4.Assets.Assets.Menu;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 using IW4.Studio.Documents;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -123,6 +124,55 @@ internal static partial class MenuDocumentCompiler
                 break;
             }
 
+            case ReplaceItemBehaviorEdit replace:
+            {
+                ArgumentNullException.ThrowIfNull(replace.Value);
+                int index = ItemIndex(identity, replace.ItemId);
+                ItemDefAsset existing = RequireItem(definition, index);
+                if (existing.Type != ItemDefType.ListBox &&
+                    replace.Value.ListBoxDoubleClick.Handlers is not null)
+                {
+                    throw new InvalidDataException(
+                        "List-box double-click behavior can be authored only " +
+                        "for a ListBox item.");
+                }
+                ApplyExpressionSupportDelta(
+                    definition.ExpressionDataValue,
+                    replace.Value.ExpressionSupportDelta);
+                var expressionCodec = new MenuBehaviorExpressionCodec(
+                    definition.ExpressionDataValue);
+                var behaviorCodec = new MenuItemBehaviorCodec(expressionCodec);
+                var validator = new MenuItemBehaviorValidator(expressionCodec);
+                MenuItemBehaviorBindings currentBaseline =
+                    behaviorCodec.Import(existing);
+                expressionCodec.UseCurrentBaseline(currentBaseline);
+                MenuBehaviorValidationIssue[] errors = validator
+                    .Validate(replace.Value, MenuBehaviorValidationMode.Authored)
+                    .Where(issue =>
+                        issue.Severity == MenuBehaviorValidationSeverity.Error)
+                    .ToArray();
+                if (errors.Length != 0)
+                {
+                    throw new InvalidDataException(string.Join(
+                        Environment.NewLine,
+                        errors.Select(error => $"{error.Path}: {error.Message}")));
+                }
+
+                MenuItemBehaviorAssetBindings behavior =
+                    behaviorCodec.Export(replace.Value);
+                MenuItemValue current = SnapshotItem(source, identity, index);
+                definition = ReplaceItem(
+                    definition,
+                    index,
+                    BuildItem(
+                        existing,
+                        current,
+                        rebuildPayload: false,
+                        imageTrack: definition.ImageTrack,
+                        behavior: behavior));
+                break;
+            }
+
             case AddMenuItemEdit add:
             {
                 if (!Enum.IsDefined(add.Type))
@@ -232,5 +282,76 @@ internal static partial class MenuDocumentCompiler
         return new MenuEditResult(
             MenuBuildData.CreateOwned(definition, source.IsComplete),
             nextIdentity);
+    }
+
+    /// <summary>
+    /// Materializes the one support-table mutation currently owned by the
+    /// ItemDef behavior builder. This runs only on the compiler's detached
+    /// graph clone: Desktop carries names and an expected row count, never
+    /// native pointers, table cells, or runtime dvar handles.
+    /// </summary>
+    private static void ApplyExpressionSupportDelta(
+        ExpressionSupportingData? support,
+        MenuBehaviorExpressionSupportDelta delta)
+    {
+        ArgumentNullException.ThrowIfNull(delta);
+        if (delta.IsEmpty)
+            return;
+        if (support is null)
+        {
+            throw new InvalidDataException(
+                "A Menu without expression support data cannot append static dvars.");
+        }
+
+        StaticDvarList current = support.StaticDvarList;
+        IReadOnlyList<StaticDvarReference> existing =
+            current.LoadedStaticDvars;
+        if (current.NumStaticDvars != existing.Count ||
+            existing.Count != delta.ExpectedStaticDvarCount)
+        {
+            throw new InvalidDataException(
+                "The Menu static-dvar support table changed while the behavior " +
+                "editor was open. Reopen the editor before applying this change.");
+        }
+        if (existing.Select(row => row.Index)
+            .Where((index, position) => index != position)
+            .Any())
+        {
+            throw new InvalidDataException(
+                "The Menu static-dvar support table has non-sequential row indexes.");
+        }
+
+        var names = new HashSet<string>(
+            existing
+                .Select(row => row.StaticDvar?.DvarNameString)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!),
+            StringComparer.OrdinalIgnoreCase);
+        var rows = existing.ToList();
+        foreach (string name in delta.StaticDvarNames)
+        {
+            if (!names.Add(name))
+            {
+                throw new InvalidDataException(
+                    $"The static-dvar support table already contains '{name}'.");
+            }
+
+            rows.Add(new StaticDvarReference(
+                rows.Count,
+                new XPointer<StaticDvar>(-1),
+                new StaticDvar
+                {
+                    Dvar = default,
+                    DvarName = new XPointer<string>(-1),
+                    DvarNameString = name
+                }));
+        }
+
+        support.StaticDvarList = new StaticDvarList
+        {
+            NumStaticDvars = rows.Count,
+            StaticDvars = new XPointer<XPointer<StaticDvar>[]>(-1),
+            LoadedStaticDvars = rows.ToArray()
+        };
     }
 }

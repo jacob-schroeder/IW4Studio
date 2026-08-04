@@ -198,6 +198,9 @@ public sealed class MenuFileEditorViewModel
     public event EventHandler<AssetReferenceSelectionRequestedEventArgs>?
         AssetReferenceSelectionRequested;
 
+    public event EventHandler<MenuItemBehaviorEditRequestedEventArgs>?
+        ItemBehaviorEditRequested;
+
     public event EventHandler? PropertiesRevealRequested;
 
     internal void RequestPropertiesReveal() =>
@@ -492,7 +495,8 @@ public sealed class MenuFileEditorViewModel
             apply is null
                 ? null
                 : () => _selectedResolution?.CanEdit == true,
-            _isAssetReferenceResolved);
+            _isAssetReferenceResolved,
+            RequestItemBehaviorEdit);
         Designer.RestoreSelection(
             selectedNodeId,
             selectedKind,
@@ -510,6 +514,10 @@ public sealed class MenuFileEditorViewModel
         AssetReferenceSelectionRequested?.Invoke(
             this,
             new AssetReferenceSelectionRequestedEventArgs(row));
+
+    private void RequestItemBehaviorEdit(
+        MenuItemBehaviorEditRequestedEventArgs args) =>
+        ItemBehaviorEditRequested?.Invoke(this, args);
 
     private void Designer_PropertiesRevealRequested(
         object? sender,

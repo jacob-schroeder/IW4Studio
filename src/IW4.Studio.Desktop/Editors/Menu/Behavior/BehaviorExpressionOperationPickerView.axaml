@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:behavior="using:IW4.Studio.Desktop.Editors.Menu.Behavior"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.BehaviorExpressionOperationPickerView"
+             x:DataType="behavior:BehaviorExpressionDraftViewModel"
+             mc:Ignorable="d">
+  <Grid Margin="0,4,0,0"
+        RowDefinitions="Auto,5,Auto,5,Auto">
+    <Grid ColumnDefinitions="*,Auto"
+          ColumnSpacing="5">
+      <ComboBox ItemsSource="{Binding OperationOptions}"
+                SelectedItem="{Binding SelectedOperation, Mode=TwoWay}"
+                PlaceholderText="Browse expression functions"
+                ToolTip.Tip="Observed functions appear first; advanced functions have unverified runtime result types."
+                AutomationProperties.Name="Expression operation catalog" />
+      <Button Grid.Column="1"
+              Content="{Binding TemplateActionText}"
+              Command="{Binding UseOperationTemplateCommand}"
+              ToolTip.Tip="{Binding TemplateActionToolTip}"
+              AutomationProperties.Name="Use expression operation template" />
+    </Grid>
+
+    <Grid Grid.Row="2"
+          IsVisible="{Binding HasStaticDvars}"
+          ColumnDefinitions="*,*,Auto"
+          ColumnSpacing="5">
+      <ComboBox ItemsSource="{Binding StaticDvarOperationOptions}"
+                SelectedItem="{Binding SelectedStaticDvarOperation, Mode=TwoWay}"
+                PlaceholderText="Static dvar operation"
+                ToolTip.Tip="Choose how this static dvar is read."
+                AutomationProperties.Name="Static dvar operation" />
+      <ComboBox Grid.Column="1"
+                ItemsSource="{Binding StaticDvars}"
+                SelectedItem="{Binding SelectedStaticDvar, Mode=TwoWay}"
+                PlaceholderText="Static dvar"
+                ToolTip.Tip="Choose an existing Menu static-dvar support row."
+                AutomationProperties.Name="Static dvar support row" />
+      <Button Grid.Column="2"
+              Content="{Binding TemplateActionText}"
+              Command="{Binding UseStaticDvarTemplateCommand}"
+              ToolTip.Tip="{Binding TemplateActionToolTip}"
+              AutomationProperties.Name="Use static dvar formula" />
+    </Grid>
+
+    <Grid Grid.Row="4"
+          IsVisible="{Binding HasReusableExpressions}"
+          ColumnDefinitions="*,Auto"
+          ColumnSpacing="5">
+      <ComboBox ItemsSource="{Binding ReusableExpressions}"
+                SelectedItem="{Binding SelectedReusableExpression, Mode=TwoWay}"
+                PlaceholderText="Reusable expression"
+                ToolTip.Tip="Choose an existing reusable expression definition. Referencing it does not create or redefine a support row."
+                AutomationProperties.Name="Reusable expression support row" />
+      <Button Grid.Column="1"
+              Content="{Binding TemplateActionText}"
+              Command="{Binding UseReusableExpressionTemplateCommand}"
+              ToolTip.Tip="{Binding TemplateActionToolTip}"
+              AutomationProperties.Name="Use reusable expression formula" />
+    </Grid>
+  </Grid>
+</UserControl>

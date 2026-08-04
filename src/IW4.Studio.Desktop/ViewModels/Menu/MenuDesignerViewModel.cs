@@ -7,6 +7,7 @@ using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.Editors.Menu;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents.MenuEditing;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 using IW4.Studio.Documents.MenuEditing.Preview;
 using IW4.Studio.Rendering;
 
@@ -23,6 +24,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     private readonly Func<bool>? _isEditAllowed;
     private readonly Action<InspectorAssetReferencePropertyRowViewModel>?
         _requestAssetReferenceSelection;
+    private readonly Action<MenuItemBehaviorEditRequestedEventArgs>?
+        _requestItemBehaviorEdit;
     private readonly IMenuPreviewMaterialResolver? _materialResolver;
     private readonly IMenuTextResourceResolver? _textResourceResolver;
     private readonly MenuPreviewDebugViewModel _previewDebug;
@@ -49,11 +52,14 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         IMenuPreviewMaterialResolver? materialResolver = null,
         IMenuTextResourceResolver? textResourceResolver = null,
         Func<bool>? isEditAllowed = null,
-        Func<XAssetType, string?, bool>? isAssetReferenceResolved = null)
+        Func<XAssetType, string?, bool>? isAssetReferenceResolved = null,
+        Action<MenuItemBehaviorEditRequestedEventArgs>?
+            requestItemBehaviorEdit = null)
     {
         _applyEdit = applyEdit;
         _isEditAllowed = isEditAllowed;
         _requestAssetReferenceSelection = requestAssetReferenceSelection;
+        _requestItemBehaviorEdit = requestItemBehaviorEdit;
         _materialResolver = materialResolver;
         _textResourceResolver = textResourceResolver;
         _previewDebug = new MenuPreviewDebugViewModel(textResourceResolver);
@@ -289,6 +295,29 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
 
     internal Action<InspectorAssetReferencePropertyRowViewModel>?
         RequestAssetReferenceSelection => _requestAssetReferenceSelection;
+
+    internal void RequestItemBehaviorEdit(MenuNodeId itemId)
+    {
+        if (!IsEditable || HasStagedInput ||
+            _requestItemBehaviorEdit is null ||
+            _snapshot is not { } snapshot)
+        {
+            return;
+        }
+
+        MenuItemSnapshot item = RequireItem(snapshot, itemId);
+        if (!item.IsResolved)
+            return;
+
+        _requestItemBehaviorEdit(new MenuItemBehaviorEditRequestedEventArgs(
+            item.Id,
+            MenuPresentationText.ItemTitle(item.Value),
+            item.Behavior,
+            snapshot.ExpressionSupport,
+            item.Value.Type == ItemDefType.ListBox,
+            value => ApplyStructuralEdit(
+                new ReplaceItemBehaviorEdit(item.Id, value))));
+    }
 
     internal bool IsAssetReferenceMissing(
         XAssetType assetType,

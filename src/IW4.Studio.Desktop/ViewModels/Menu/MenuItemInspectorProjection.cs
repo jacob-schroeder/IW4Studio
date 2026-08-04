@@ -3,6 +3,7 @@ using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents.MenuEditing;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 
 namespace IW4.Studio.Desktop.ViewModels.Menu;
 
@@ -335,7 +336,7 @@ internal static partial class MenuInspectorProjection
                         "and last-sound cache fields, not this toggle.")
                 ]),
             Payload(designer, value, updatePayload),
-            ItemBehavior(value.Behavior)
+            ItemBehavior(designer, item, value.Behavior)
         ];
 
         return new InspectorSelectionViewModel(
@@ -346,10 +347,23 @@ internal static partial class MenuInspectorProjection
     }
 
     private static InspectorSectionViewModel ItemBehavior(
+        MenuDesignerViewModel designer,
+        MenuItemSnapshot item,
         MenuItemBehaviorSummary value) =>
         new(
             "BEHAVIOR",
             [
+                new InspectorActionPropertyRowViewModel(
+                    "Builder",
+                    "item.behavior",
+                    BehaviorSummary(item.Behavior),
+                    designer.IsEditable && !designer.HasStagedInput
+                        ? () => designer.RequestItemBehaviorEdit(item.Id)
+                        : null,
+                    "Open the event-handler and expression builder",
+                    "Open Item behavior builder",
+                    "Edit event hooks, key handlers, fixed expressions, and " +
+                    "float-expression bindings in one atomic modal."),
                 ReadOnly("Mouse enter text", "item.mouseEnterText", Bool(value.HasMouseEnterText)),
                 ReadOnly("Mouse exit text", "item.mouseExitText", Bool(value.HasMouseExitText)),
                 ReadOnly("Mouse enter", "item.mouseEnter", Bool(value.HasMouseEnter)),
@@ -372,4 +386,33 @@ internal static partial class MenuInspectorProjection
                     "item.floatExpressions",
                     value.FloatExpressionCount.ToString("N0"))
             ]);
+
+    private static string BehaviorSummary(
+        MenuItemBehaviorBindings value)
+    {
+        int eventSets = new[]
+        {
+            value.MouseEnterText,
+            value.MouseExitText,
+            value.MouseEnter,
+            value.MouseExit,
+            value.Action,
+            value.Accept,
+            value.OnFocus,
+            value.LeaveFocus,
+            value.ListBoxDoubleClick
+        }.Count(binding => binding.Handlers is not null);
+        int expressions = new[]
+        {
+            value.Expressions.Visible,
+            value.Expressions.Disabled,
+            value.Expressions.Text,
+            value.Expressions.Material
+        }.Count(binding => binding.Value is not null) +
+            value.Expressions.FloatExpressions.Entries.Length;
+
+        return $"{eventSets} events · " +
+            $"{value.KeyHandlers.Handlers.Length} keys · " +
+            $"{expressions} expressions";
+    }
 }

@@ -370,6 +370,17 @@ internal sealed class MenuGraphClone
     private static ProvenanceToken ProvenanceOf(object value) =>
         Provenance.GetValue(value, static _ => new ProvenanceToken());
 
+    /// <summary>
+    /// Stable process-local identity shared by a graph node and every clone
+    /// produced with source provenance enabled. This never leaves Documents;
+    /// it lets a compiler rebind snapshot-owned nodes to its fresh clone.
+    /// </summary>
+    internal static object ProvenanceIdentity(object value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return ProvenanceOf(value);
+    }
+
     private ProvenanceToken CloneProvenanceOf(object value)
     {
         if (_preserveSourceProvenance)

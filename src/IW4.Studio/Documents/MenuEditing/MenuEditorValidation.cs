@@ -1,6 +1,7 @@
 using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Emitters.Emission;
 using IW4.Studio.Documents;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -22,6 +23,8 @@ internal static class MenuEditorValidation
 
         ValidateSettings(menu.Settings, $"{menuPath}.settings", issues);
         ValidateWindow(menu.Window.Value, $"{menuPath}.window", issues);
+        var behaviorValidator = new MenuItemBehaviorValidator(
+            new MenuBehaviorExpressionCodec(menu.ExpressionSupport.Source));
         for (int index = 0; index < menu.Items.Count; index++)
         {
             MenuItemSnapshot item = menu.Items[index];
@@ -33,6 +36,23 @@ internal static class MenuEditorValidation
             }
 
             ValidateItem(item.Value, path, issues);
+            foreach (MenuBehaviorValidationIssue issue in
+                     behaviorValidator.Validate(
+                         item.Behavior,
+                         MenuBehaviorValidationMode.Imported))
+            {
+                string behaviorPath = issue.Path.StartsWith(
+                    "item",
+                    StringComparison.Ordinal)
+                        ? path + issue.Path[4..]
+                        : $"{path}.behavior.{issue.Path}";
+                issues.Add(new AssetValidationIssue(
+                    behaviorPath,
+                    issue.Message,
+                    issue.Severity == MenuBehaviorValidationSeverity.Error
+                        ? AssetValidationSeverity.Error
+                        : AssetValidationSeverity.Warning));
+            }
         }
 
         return Array.AsReadOnly(issues.ToArray());

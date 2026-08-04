@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors.AssetReferences;
+using IW4.Studio.Desktop.Editors.Menu.Behavior;
 using IW4.Studio.Desktop.ViewModels.Menu;
 
 namespace IW4.Studio.Desktop.Editors.Menu;
@@ -45,6 +46,16 @@ public sealed partial class MenuFileEditorView : UserControl
             {
                 if (TopLevel.GetTopLevel(this) is Window owner)
                     await assetReferencePicker.ShowAsync(owner, args.Row);
+            };
+        viewModel.ItemBehaviorEditRequested +=
+            async (_, args) =>
+            {
+                if (TopLevel.GetTopLevel(this) is Window owner)
+                {
+                    await MenuItemBehaviorBuilderService.ShowAsync(
+                        owner,
+                        args);
+                }
             };
     }
 

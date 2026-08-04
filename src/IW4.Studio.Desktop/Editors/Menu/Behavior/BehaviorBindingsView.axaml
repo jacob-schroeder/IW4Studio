@@ -1,0 +1,165 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:behavior="using:IW4.Studio.Desktop.Editors.Menu.Behavior"
+             x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.BehaviorBindingsView"
+             x:DataType="behavior:BehaviorBindingsViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="680"
+             d:DesignHeight="500">
+  <Grid RowDefinitions="Auto,10,Auto,10,Auto,12,*,10,Auto">
+    <StackPanel Spacing="3">
+      <TextBlock Text="BINDINGS"
+                 FontSize="10"
+                 FontWeight="Bold"
+                 LetterSpacing="0.8"
+                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      <TextBlock Text="{Binding Summary}"
+                 FontSize="10"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+
+    <Border Grid.Row="2"
+            Padding="9,7"
+            CornerRadius="5"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1"
+            IsVisible="{Binding ExpressionSupport.CanAppendStaticDvar}">
+      <StackPanel Spacing="5">
+        <TextBlock Text="STATIC-DVAR SUPPORT"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.7"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="Append a named row to this Menu's shared static-dvar table. Existing rows, including unused rows, stay in order. Reusable expression references select existing definitions only."
+                   FontSize="8"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBox Width="260"
+                   Text="{Binding ExpressionSupport.NewStaticDvarName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   PlaceholderText="New static dvar name"
+                   AutomationProperties.Name="New static dvar name" />
+          <Button Content="Add static dvar"
+                  Command="{Binding ExpressionSupport.AddStaticDvarCommand}"
+                  AutomationProperties.Name="Add static dvar support row" />
+          <TextBlock Text="{Binding ExpressionSupport.Summary}"
+                     VerticalAlignment="Center"
+                     FontSize="8"
+                     Foreground="{DynamicResource StudioAccentBrush}" />
+        </StackPanel>
+        <TextBlock Text="{Binding ExpressionSupport.StaticDvarError}"
+                   IsVisible="{Binding ExpressionSupport.HasStaticDvarError}"
+                   FontSize="8"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </Border>
+
+    <ItemsControl Grid.Row="4" ItemsSource="{Binding FixedBindings}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="behavior:BehaviorFixedBindingViewModel">
+          <Grid Margin="0,0,0,7" RowDefinitions="Auto,3,Auto" ColumnDefinitions="120,*,Auto" ColumnSpacing="7">
+            <StackPanel>
+              <TextBlock Text="{Binding Title}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource StudioTextBrush}" />
+              <TextBlock Text="{Binding ExpectedType}" FontSize="8" Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Text="{Binding Expression.ResultKindText}" FontSize="8" Foreground="{DynamicResource StudioAccentBrush}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+              <TextBox Text="{Binding Expression.Formula, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       IsEnabled="{Binding Expression.IsFormulaEditable}"
+                       PlaceholderText="Formula (optional)"
+                       AutomationProperties.Name="Fixed binding formula" />
+              <behavior:BehaviorExpressionOperationPickerView
+                  DataContext="{Binding Expression}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="3">
+              <Button IsVisible="{Binding Expression.IsOpaqueImported}"
+                      Command="{Binding Expression.BeginReplacementCommand}"
+                      Content="Replace" ToolTip.Tip="Replace unsupported imported expression" />
+              <Button Width="28" Height="27" Padding="3" Command="{Binding ClearExpressionCommand}" ToolTip.Tip="Clear expression"><TextBlock Text="×" FontSize="14" /></Button>
+            </StackPanel>
+            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                       Text="{Binding Expression.DiagnosticsText}"
+                       IsVisible="{Binding Expression.HasDiagnostics}"
+                       FontSize="8" TextWrapping="Wrap"
+                       Foreground="{DynamicResource StudioErrorBrush}" />
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <Border Grid.Row="6"
+            Padding="10"
+            CornerRadius="6"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding FloatBindings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="behavior:BehaviorFloatBindingDraftViewModel">
+              <Grid Margin="0,0,0,8" RowDefinitions="Auto,3,Auto" ColumnDefinitions="160,*,Auto" ColumnSpacing="7">
+                <ComboBox ItemsSource="{Binding Targets}"
+                          SelectedItem="{Binding SelectedTarget, Mode=TwoWay}"
+                          IsEnabled="{Binding IsTargetEditable}"
+                          AutomationProperties.Name="Float expression target" />
+                <StackPanel Grid.Column="1"
+                            IsEnabled="{Binding IsTargetEditable}">
+                  <TextBox Text="{Binding Expression.Formula, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                           IsEnabled="{Binding Expression.IsFormulaEditable}"
+                           PlaceholderText="Float formula"
+                           AutomationProperties.Name="Float binding formula" />
+                  <behavior:BehaviorExpressionOperationPickerView
+                      DataContext="{Binding Expression}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="3">
+                  <Button Width="25" Height="26" Padding="2"
+                          IsEnabled="{Binding IsTargetEditable}"
+                          Command="{Binding MoveUpCommand}"
+                          ToolTip.Tip="Move float binding up"><TextBlock Text="↑" /></Button>
+                  <Button Width="25" Height="26" Padding="2"
+                          IsEnabled="{Binding IsTargetEditable}"
+                          Command="{Binding MoveDownCommand}"
+                          ToolTip.Tip="Move float binding down"><TextBlock Text="↓" /></Button>
+                  <Button Width="25" Height="26" Padding="2" Command="{Binding RemoveCommand}" ToolTip.Tip="Delete float binding"><TextBlock Text="×" FontSize="14" /></Button>
+                </StackPanel>
+                <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBlock Text="{Binding Expression.DiagnosticsText}"
+                             IsVisible="{Binding Expression.HasDiagnostics}"
+                             FontSize="8" TextWrapping="Wrap"
+                             Foreground="{DynamicResource StudioErrorBrush}" />
+                  <Button Grid.Column="1"
+                          IsVisible="{Binding Expression.IsOpaqueImported}"
+                          IsEnabled="{Binding IsTargetEditable}"
+                          Command="{Binding Expression.BeginReplacementCommand}"
+                          Content="Replace" />
+                </Grid>
+                <StackPanel Grid.Row="2" Grid.Column="0" Spacing="2">
+                  <TextBlock Text="{Binding ImportedTargetText}"
+                             IsVisible="{Binding IsReadOnlyImportedTarget}"
+                             FontSize="8" TextWrapping="Wrap"
+                             Foreground="{DynamicResource StudioWarningBrush}" />
+                  <TextBlock Text="{Binding TargetErrorText}"
+                             IsVisible="{Binding HasTargetError}"
+                             FontSize="8" TextWrapping="Wrap"
+                             Foreground="{DynamicResource StudioErrorBrush}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+    <Button Grid.Row="8"
+            MinWidth="132"
+            HorizontalAlignment="Left"
+            Classes="primary"
+            Content="Add float binding"
+            Command="{Binding AddFloatBindingCommand}"
+            AutomationProperties.Name="Add float binding" />
+  </Grid>
+</UserControl>
