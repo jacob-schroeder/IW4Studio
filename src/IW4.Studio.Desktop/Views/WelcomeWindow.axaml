@@ -264,16 +264,8 @@
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
-                </StackPanel>
-              </Border>
 
-              <Border Padding="16"
-                      CornerRadius="8"
-                      Background="{DynamicResource StudioSurfaceRaisedBrush}"
-                      BorderBrush="{DynamicResource StudioBorderBrush}"
-                      BorderThickness="1">
-                <StackPanel Spacing="10">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
                     <StackPanel Spacing="2">
                       <TextBlock Text="RECENT"
                                  FontSize="10"
