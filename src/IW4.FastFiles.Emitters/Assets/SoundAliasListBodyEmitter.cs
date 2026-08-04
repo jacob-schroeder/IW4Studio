@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Sound;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.FastFiles.Emitters.Emission;
@@ -5,8 +6,8 @@ using IW4.FastFiles.Emitters.Emission;
 namespace IW4.FastFiles.Emitters.Assets;
 
 /// <summary>
-/// Emitter for the one-SoundFile SndAlias layout. Imported nested LoadedSound
-/// and SndCurve pointers retain ownership provenance.
+/// Emitter for the language-counted SoundFile array in each SndAlias. Imported
+/// nested LoadedSound and SndCurve pointers retain ownership provenance.
 /// Exact imported linking may also retain dependency-owned packed direct
 /// SoundFile/SpeakerMap values; canonical linking requires a local provider.
 /// </summary>
@@ -34,6 +35,18 @@ public sealed class SoundAliasListBodyEmitter : IXAssetBodyEmitter
         CheckString(data.AliasName, "aliasName", errors, rowIndex);
         for (int index = 0; index < data.Aliases.Count; index++)
             CheckAlias(data.Aliases[index], index, errors, rowIndex);
+        if (data.Aliases
+                .Select(alias => alias.SoundFiles.Count)
+                .Where(count => count != 0)
+                .Distinct()
+                .Take(2)
+                .Count() > 1)
+        {
+            errors.Add(Error(
+                "aliases",
+                "Every non-empty SoundFile array must use the same language count.",
+                rowIndex));
+        }
         return errors;
     }
 
@@ -111,109 +124,12 @@ public sealed class SoundAliasListBodyEmitter : IXAssetBodyEmitter
         source.AddRange(chain.Source);
         source.AddRange(mixer.Source);
 
-        DirectPointerPlan soundFilePointer = PlanDirectPointer(
-            data.SoundFilesPointerProvenance,
-            data.SoundFile is not null,
+        SoundFileArrayPlan soundFiles = PlanSoundFiles(
+            data,
+            aliasIndex,
             plan,
-            $"aliases[{aliasIndex}].soundFiles");
-        int soundFileRaw = soundFilePointer.Raw;
-        if (soundFilePointer.EmitPayload &&
-            data.SoundFile is { } soundFile)
-        {
-            if (soundFilePointer.SourceForm ==
-                SoundDirectPointerSourceForm.Insert)
-            {
-                plan.AllocateInsertPointerCell(
-                    "Sound",
-                    $"aliases[{aliasIndex}].soundFiles.insert");
-            }
-
-            plan.Push(XFileBlockType.TEMP);
-            EmissionAddress soundFileAddress = plan.Allocate(0x10, 4);
-            RequirePackedPayloadAtCurrentAddress(
-                soundFilePointer,
-                soundFileAddress,
-                $"aliases[{aliasIndex}].soundFiles");
-            plan.Push(XFileBlockType.LARGE);
-            var childSource = new List<EmissionBlockSegment>();
-            int unionRaw0;
-            int unionRaw1;
-            int unionRaw2;
-            if (soundFile.Kind == SndAliasTypeBuildKind.Loaded)
-            {
-                EmissionAddress ownerCell = new(
-                    soundFileAddress.Block,
-                    checked(soundFileAddress.Offset + 4));
-                if (soundFile.LoadedSoundLink is { } link)
-                {
-                    NestedXAssetPlan child = NestedXAssetEmission.Plan(
-                        link,
-                        plan,
-                        all,
-                        ownerCell,
-                        owner: "Sound.LoadedSound");
-                    unionRaw0 = child.PointerRaw;
-                    childSource.AddRange(child.Source);
-                }
-                else if (soundFile.LoadedSoundReference is { } loaded)
-                {
-                    AssetBodyEmission child = PlanExternal(
-                        loaded,
-                        XAssetType.LoadedSound,
-                        0x1c,
-                        plan,
-                        all);
-                    unionRaw0 = -1;
-                    childSource.AddRange(child.SourceSegments);
-                }
-                else
-                {
-                    unionRaw0 = 0;
-                }
-                unionRaw1 = 0;
-                unionRaw2 = 0;
-            }
-            else
-            {
-                unionRaw0 = unchecked((int)soundFile.StreamedFileIndex);
-                if (soundFile.StreamedFileIndex == 0)
-                {
-                    StringPlan directory = PlanString(
-                        soundFile.ExternalDirectory,
-                        plan,
-                        all);
-                    StringPlan filename = PlanString(
-                        soundFile.ExternalFilename,
-                        plan,
-                        all);
-                    unionRaw1 = directory.Raw;
-                    unionRaw2 = filename.Raw;
-                    childSource.AddRange(directory.Source);
-                    childSource.AddRange(filename.Source);
-                }
-                else
-                {
-                    unionRaw1 = soundFile.StreamFileOffset;
-                    unionRaw2 = soundFile.StreamFileLength;
-                }
-            }
-            plan.Pop(XFileBlockType.LARGE);
-            plan.Pop(XFileBlockType.TEMP);
-
-            var soundFileWriter = new XSourceWriter();
-            soundFileWriter.WriteByte((byte)soundFile.Kind);
-            soundFileWriter.WriteByte(soundFile.Exists);
-            soundFileWriter.WriteUInt16(soundFile.Padding);
-            soundFileWriter.WriteInt32(unionRaw0);
-            soundFileWriter.WriteInt32(unionRaw1);
-            soundFileWriter.WriteInt32(unionRaw2);
-            var soundFileRoot = new EmissionBlockSegment(
-                soundFileAddress,
-                soundFileWriter.ToArray());
-            all.Add(soundFileRoot);
-            source.Add(soundFileRoot);
-            source.AddRange(childSource);
-        }
+            all);
+        source.AddRange(soundFiles.Source);
 
         int curveRaw = 0;
         EmissionAddress curveOwnerCell = new(
@@ -277,10 +193,126 @@ public sealed class SoundAliasListBodyEmitter : IXAssetBodyEmitter
             secondary.Raw,
             chain.Raw,
             mixer.Raw,
-            soundFileRaw,
+            soundFiles.Raw,
             curveRaw,
             speakerRaw,
             source);
+    }
+
+    private static SoundFileArrayPlan PlanSoundFiles(
+        SoundAliasBuildData data,
+        int aliasIndex,
+        EmissionPlan plan,
+        List<EmissionBlockSegment> all)
+    {
+        string path = $"aliases[{aliasIndex}].soundFiles";
+        DirectPointerPlan pointer = PlanDirectPointer(
+            data.SoundFilesPointerProvenance,
+            data.SoundFiles.Count != 0,
+            plan,
+            path);
+        if (!pointer.EmitPayload)
+            return new SoundFileArrayPlan(pointer.Raw, []);
+
+        if (pointer.SourceForm == SoundDirectPointerSourceForm.Insert)
+        {
+            plan.AllocateInsertPointerCell(
+                "Sound",
+                $"{path}.insert");
+        }
+
+        plan.Push(XFileBlockType.TEMP);
+        EmissionAddress address = plan.Allocate(
+            checked(data.SoundFiles.Count * SoundFile.SerializedSize),
+            4);
+        RequirePackedPayloadAtCurrentAddress(pointer, address, path);
+        plan.Push(XFileBlockType.LARGE);
+
+        var childSource = new List<EmissionBlockSegment>();
+        var writer = new XSourceWriter();
+        for (int index = 0; index < data.SoundFiles.Count; index++)
+        {
+            SoundFileBuildData soundFile = data.SoundFiles[index];
+            int unionRaw0;
+            int unionRaw1;
+            int unionRaw2;
+            if (soundFile.Kind == SndAliasTypeBuildKind.Loaded)
+            {
+                EmissionAddress ownerCell = new(
+                    address.Block,
+                    checked(address.Offset +
+                            index * SoundFile.SerializedSize +
+                            sizeof(int)));
+                if (soundFile.LoadedSoundLink is { } link)
+                {
+                    NestedXAssetPlan child = NestedXAssetEmission.Plan(
+                        link,
+                        plan,
+                        all,
+                        ownerCell,
+                        owner: "Sound.LoadedSound");
+                    unionRaw0 = child.PointerRaw;
+                    childSource.AddRange(child.Source);
+                }
+                else if (soundFile.LoadedSoundReference is { } loaded)
+                {
+                    AssetBodyEmission child = PlanExternal(
+                        loaded,
+                        XAssetType.LoadedSound,
+                        0x1c,
+                        plan,
+                        all);
+                    unionRaw0 = -1;
+                    childSource.AddRange(child.SourceSegments);
+                }
+                else
+                {
+                    unionRaw0 = 0;
+                }
+                unionRaw1 = 0;
+                unionRaw2 = 0;
+            }
+            else
+            {
+                unionRaw0 = unchecked((int)soundFile.StreamedFileIndex);
+                if (soundFile.StreamedFileIndex == 0)
+                {
+                    StringPlan directory = PlanString(
+                        soundFile.ExternalDirectory,
+                        plan,
+                        all);
+                    StringPlan filename = PlanString(
+                        soundFile.ExternalFilename,
+                        plan,
+                        all);
+                    unionRaw1 = directory.Raw;
+                    unionRaw2 = filename.Raw;
+                    childSource.AddRange(directory.Source);
+                    childSource.AddRange(filename.Source);
+                }
+                else
+                {
+                    unionRaw1 = soundFile.StreamFileOffset;
+                    unionRaw2 = soundFile.StreamFileLength;
+                }
+            }
+
+            writer.WriteByte((byte)soundFile.Kind);
+            writer.WriteByte(soundFile.Exists);
+            writer.WriteUInt16(soundFile.Padding);
+            writer.WriteInt32(unionRaw0);
+            writer.WriteInt32(unionRaw1);
+            writer.WriteInt32(unionRaw2);
+        }
+
+        plan.Pop(XFileBlockType.LARGE);
+        plan.Pop(XFileBlockType.TEMP);
+
+        var roots = new EmissionBlockSegment(address, writer.ToArray());
+        all.Add(roots);
+        return new SoundFileArrayPlan(
+            pointer.Raw,
+            [roots, .. childSource]);
     }
 
     private static DirectPointerPlan PlanDirectPointer(
@@ -496,11 +528,17 @@ public sealed class SoundAliasListBodyEmitter : IXAssetBodyEmitter
             if (!float.IsFinite(value))
                 errors.Add(Error(path, "Alias ranges must be finite.", rowIndex));
         }
-        if (data.SoundFile is { } file)
-            CheckFile(file, $"{path}.soundFile", errors, rowIndex);
+        for (int fileIndex = 0; fileIndex < data.SoundFiles.Count; fileIndex++)
+        {
+            CheckFile(
+                data.SoundFiles[fileIndex],
+                $"{path}.soundFiles[{fileIndex}]",
+                errors,
+                rowIndex);
+        }
         CheckDirectPointer(
             data.SoundFilesPointerProvenance,
-            data.SoundFile is not null,
+            data.SoundFiles.Count != 0,
             $"{path}.soundFiles",
             errors,
             rowIndex);
@@ -720,6 +758,10 @@ public sealed class SoundAliasListBodyEmitter : IXAssetBodyEmitter
         int Raw,
         bool EmitPayload,
         SoundDirectPointerSourceForm SourceForm);
+
+    private sealed record SoundFileArrayPlan(
+        int Raw,
+        IReadOnlyList<EmissionBlockSegment> Source);
 
     private sealed record AliasPlan(
         SoundAliasBuildData Data,

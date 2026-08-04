@@ -1012,7 +1012,7 @@ public sealed class SoundAliasBuildData
         string? secondaryAliasName,
         string? chainAliasName,
         string? mixerGroup,
-        SoundFileBuildData? soundFile,
+        IReadOnlyList<SoundFileBuildData> soundFiles,
         int sequence,
         float volumeMin,
         float volumeMax,
@@ -1036,12 +1036,14 @@ public sealed class SoundAliasBuildData
         SoundDirectPointerBuildProvenance? soundFilesPointerProvenance = null,
         SoundDirectPointerBuildProvenance? speakerMapPointerProvenance = null)
     {
+        ArgumentNullException.ThrowIfNull(soundFiles);
+
         AliasName = aliasName;
         Subtitle = subtitle;
         SecondaryAliasName = secondaryAliasName;
         ChainAliasName = chainAliasName;
         MixerGroup = mixerGroup;
-        SoundFile = soundFile;
+        SoundFiles = Array.AsReadOnly(soundFiles.ToArray());
         Sequence = sequence;
         VolumeMin = volumeMin;
         VolumeMax = volumeMax;
@@ -1071,7 +1073,7 @@ public sealed class SoundAliasBuildData
     public string? SecondaryAliasName { get; }
     public string? ChainAliasName { get; }
     public string? MixerGroup { get; }
-    public SoundFileBuildData? SoundFile { get; }
+    public IReadOnlyList<SoundFileBuildData> SoundFiles { get; }
     public int Sequence { get; }
     public float VolumeMin { get; }
     public float VolumeMax { get; }

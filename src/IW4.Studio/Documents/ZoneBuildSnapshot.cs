@@ -180,6 +180,10 @@ public sealed class ZoneBuildSnapshotBuilder
                 errors));
         }
         PreserveDetachedSemanticGraphIdentity(rows);
+        ValidateSoundLanguageCounts(
+            source.ContainerEnvelope,
+            rows,
+            errors);
         ResourceOutputPlan[] resourceOutputs = CreateResourceOutputPlans(source, rows, errors);
         var validation = new ZoneBuildValidation(errors);
         return new ZoneBuildSnapshot(source.DocumentId, save.Revision, source.ContainerEnvelope, source.DecodedMetadata, source.ScriptStrings, rows, validation, resourceOutputs, source.PhysicalPath);
@@ -400,6 +404,35 @@ public sealed class ZoneBuildSnapshotBuilder
                     owned.RawHeader,
                     detached,
                     owned.OriginalSerializedName);
+            }
+        }
+    }
+
+    private static void ValidateSoundLanguageCounts(
+        DbHeader containerEnvelope,
+        IEnumerable<ZoneBuildRow> rows,
+        ICollection<ZoneBuildError> errors)
+    {
+        int expectedCount = checked((int)containerEnvelope.LanguageCount);
+        foreach (OwnedDefinitionBuildRow row in rows
+                     .OfType<OwnedDefinitionBuildRow>())
+        {
+            if (row.BuildData is not ISoundAliasListBuildData sound)
+                continue;
+
+            for (int aliasIndex = 0;
+                 aliasIndex < sound.Aliases.Count;
+                 aliasIndex++)
+            {
+                int actualCount = sound.Aliases[aliasIndex].SoundFiles.Count;
+                if (actualCount == 0 || actualCount == expectedCount)
+                    continue;
+
+                errors.Add(new ZoneBuildError(
+                    row.Index,
+                    $"aliases[{aliasIndex}].soundFiles",
+                    $"SoundFile array has {actualCount} records, but the " +
+                    $"container language mask requires {expectedCount}."));
             }
         }
     }

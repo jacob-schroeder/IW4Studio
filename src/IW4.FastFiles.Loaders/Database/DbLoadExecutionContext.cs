@@ -1077,6 +1077,13 @@ public class DbLoadExecutionContext
         int? imageIndex) =>
         throw MissingGfxImageExecutionCapability();
 
+    /// <summary>
+    /// Number of language-specific SoundFile records serialized behind each
+    /// non-null snd_alias_t sound-file pointer. Contexts without a DB header
+    /// retain the native single-language default.
+    /// </summary>
+    public virtual int SoundFileCount => 1;
+
     public virtual GfxImageAsset DB_AddXAsset(
         GfxImageAsset image,
         XBlockAddress pointerCellAddress) =>

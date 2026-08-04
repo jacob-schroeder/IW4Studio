@@ -251,11 +251,16 @@ public sealed class SoundAliasListLoader
         string? chainAliasName = LoadSoundXString(cursor, root.ChainAliasNamePointer, context);
         string? mixerGroup = LoadSoundXString(cursor, root.MixerGroupPointer, context);
 
+        int soundFileCount = context.SoundFileCount;
         IReadOnlyList<SoundFile> soundFiles;
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
-            soundFiles = ReadSoundFileArray(cursor, root.SoundFilesPointer.Untyped, soundFileCount: 1, context);
+            soundFiles = ReadSoundFileArray(
+                cursor,
+                root.SoundFilesPointer.Untyped,
+                soundFileCount,
+                context);
         }
         finally
         {
@@ -283,7 +288,7 @@ public sealed class SoundAliasListLoader
             MixerGroupPointer = root.MixerGroupPointer,
             MixerGroup = mixerGroup,
             SoundFilesPointer = root.SoundFilesPointer,
-            SoundFileCount = 1,
+            SoundFileCount = soundFileCount,
             SoundFiles = soundFiles,
             Sequence = root.Sequence,
             VolumeMin = root.VolumeMin,

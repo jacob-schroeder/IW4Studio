@@ -14,6 +14,12 @@ namespace IW4.Studio.Documents;
 /// </summary>
 public sealed class FastFileDocumentService
 {
+    private static readonly string[] AdditionalDependencyDirectoryNames =
+    [
+        "mappack1",
+        "mappack2"
+    ];
+
     private readonly FastFileDocumentServiceOptions _options;
     private readonly Action<XAssetLoadProgress>? _assetProgress;
 
@@ -88,7 +94,9 @@ public sealed class FastFileDocumentService
         }
 
         string dependencyDirectory = ResolveDependencyDirectory(request.Path);
-        var catalog = new DbZoneCatalog(dependencyDirectory);
+        var catalog = new DbZoneCatalog(
+            dependencyDirectory,
+            ResolveAdditionalDependencyDirectories(dependencyDirectory));
         DbZoneLoadPlan activePlan = selectedPlan.ProfileName switch
         {
             FastFileOpenProfiles.DefaultMp => new DefaultMpZoneLoadPlanner(catalog).Build(
@@ -154,10 +162,28 @@ public sealed class FastFileDocumentService
         if (_options.DependencyDirectory is not null)
             return _options.DependencyDirectory;
 
-        return Path.GetDirectoryName(Path.GetFullPath(targetPath))
+        string containingDirectory =
+            Path.GetDirectoryName(Path.GetFullPath(targetPath))
             ?? throw new InvalidDataException(
                 $"Fastfile path '{targetPath}' has no containing directory.");
+
+        if (!AdditionalDependencyDirectoryNames.Contains(
+                Path.GetFileName(containingDirectory),
+                StringComparer.OrdinalIgnoreCase))
+        {
+            return containingDirectory;
+        }
+
+        return Directory.GetParent(containingDirectory)?.FullName
+            ?? throw new InvalidDataException(
+                $"Map-pack fastfile path '{targetPath}' has no dependency root.");
     }
+
+    private static IEnumerable<string> ResolveAdditionalDependencyDirectories(
+        string dependencyDirectory) =>
+        AdditionalDependencyDirectoryNames
+            .Select(name => Path.Combine(dependencyDirectory, name))
+            .Where(Directory.Exists);
 
     private static FastFileWorkspace CreateWorkspace(
         FastFileDocumentOpenRequest request,

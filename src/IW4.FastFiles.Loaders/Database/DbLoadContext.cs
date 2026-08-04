@@ -129,6 +129,9 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
         return header.ImageStreamEntries.Slice(firstEntry, endEntry - firstEntry);
     }
 
+    public override int SoundFileCount =>
+        Math.Max(1, checked((int)(Header?.LanguageCount ?? 1)));
+
     // Canonicalize the GfxImage root as XAsset type 9. Streamed mip bytes
     // remain runtime data referenced by the canonical image; they are not
     // separate XAssets.

@@ -18,7 +18,7 @@ public sealed class SoundAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
         value.SecondaryAliasName,
         value.ChainAliasName,
         value.MixerGroup,
-        value.SoundFiles.Count == 0 ? null : File(value.SoundFiles[0]),
+        value.SoundFiles.Select(File).ToArray(),
         value.Sequence,
         value.VolumeMin,
         value.VolumeMax,
@@ -112,7 +112,7 @@ public sealed class SoundAliasListBuildData : ISoundAliasListBuildData
         value.SecondaryAliasName,
         value.ChainAliasName,
         value.MixerGroup,
-        Copy(value.SoundFile),
+        value.SoundFiles.Select(Copy).ToArray(),
         value.Sequence,
         value.VolumeMin,
         value.VolumeMax,
@@ -135,7 +135,7 @@ public sealed class SoundAliasListBuildData : ISoundAliasListBuildData
         value.VolumeFalloffCurveLink,
         value.SoundFilesPointerProvenance,
         value.SpeakerMapPointerProvenance);
-    private static SoundFileBuildData? Copy(SoundFileBuildData? value) => value is null ? null : new(value.Kind, value.Exists, value.Padding, value.LoadedSoundReference, value.StreamedFileIndex, value.StreamFileOffset, value.StreamFileLength, value.ExternalDirectory, value.ExternalFilename, value.LoadedSoundLink);
+    private static SoundFileBuildData Copy(SoundFileBuildData value) => new(value.Kind, value.Exists, value.Padding, value.LoadedSoundReference, value.StreamedFileIndex, value.StreamFileOffset, value.StreamFileLength, value.ExternalDirectory, value.ExternalFilename, value.LoadedSoundLink);
     private static SoundSpeakerMapBuildData? Copy(SoundSpeakerMapBuildData? value) => value is null ? null : new(value.IsDefault, value.Padding, value.Name, value.ChannelMaps.Select(map => new SoundChannelMapBuildData(map.EntryCount, map.Speakers.Select(level => new SoundSpeakerLevelBuildData(level.Speaker, level.NumLevels, level.Level0, level.Level1)).ToArray())).ToArray());
 }
 

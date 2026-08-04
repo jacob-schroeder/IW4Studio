@@ -180,17 +180,20 @@ public sealed class ZoneAssetDependencyCollectorRegistry
             SoundAliasBuildData alias = aliases[index] ??
                 throw new InvalidDataException(
                     $"Sound dependency discovery found a null alias at aliases[{index}].");
-            if (alias.SoundFile is
-                {
-                    Kind: SndAliasTypeBuildKind.Loaded,
-                    LoadedSoundReference: { } loaded
-                })
+            for (int fileIndex = 0; fileIndex < alias.SoundFiles.Count; fileIndex++)
             {
-                Add(
-                    result,
-                    loaded,
-                    XAssetType.LoadedSound,
-                    $"aliases[{index}].soundFile.loadedSound");
+                if (alias.SoundFiles[fileIndex] is
+                    {
+                        Kind: SndAliasTypeBuildKind.Loaded,
+                        LoadedSoundReference: { } loaded
+                    })
+                {
+                    Add(
+                        result,
+                        loaded,
+                        XAssetType.LoadedSound,
+                        $"aliases[{index}].soundFiles[{fileIndex}].loadedSound");
+                }
             }
             Add(
                 result,

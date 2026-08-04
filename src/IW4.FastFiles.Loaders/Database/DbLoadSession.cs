@@ -21,7 +21,7 @@ public sealed class DbLoadSession
     private readonly List<LoadedXZone> _zones = [];
     private readonly IReadOnlyList<LoadedXZone> _zoneView;
     private readonly Action<XAssetLoadProgress>? _assetProgress;
-    private readonly uint _selectedLanguageMask;
+    private uint _selectedLanguageMask;
     private readonly DbZoneLoader _loader;
     private readonly SysFileSystem _fileSystem = new();
 
@@ -30,6 +30,14 @@ public sealed class DbLoadSession
         DbRuntime? runtime = null,
         uint selectedLanguageMask = 0)
     {
+        if (selectedLanguageMask != 0 &&
+            (selectedLanguageMask & (selectedLanguageMask - 1)) != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(selectedLanguageMask),
+                "A selected language must be zero for automatic selection or contain exactly one bit.");
+        }
+
         _assetProgress = assetProgress;
         _selectedLanguageMask = selectedLanguageMask;
         Runtime = runtime ?? new DbRuntime();
@@ -150,6 +158,9 @@ public sealed class DbLoadSession
 
     private LoadedXZone Register(LoadedXZone loaded)
     {
+        if (_selectedLanguageMask == 0)
+            _selectedLanguageMask = loaded.Context.SelectedLanguageMask;
+
         _zones.Add(loaded);
         return loaded;
     }

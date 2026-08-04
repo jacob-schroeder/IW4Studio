@@ -11,19 +11,56 @@ public sealed class DbZoneCatalog
     private readonly Dictionary<string, DbZoneCatalogEntry> _entries;
 
     public DbZoneCatalog(string directory)
+        : this(directory, [])
+    {
+    }
+
+    public DbZoneCatalog(
+        string directory,
+        IEnumerable<string> additionalDirectories)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        ArgumentNullException.ThrowIfNull(additionalDirectories);
+
         RootDirectory = Path.GetFullPath(directory);
         if (!Directory.Exists(RootDirectory))
             throw new DirectoryNotFoundException($"Fastfile directory '{RootDirectory}' does not exist.");
 
         _entries = new Dictionary<string, DbZoneCatalogEntry>(StringComparer.OrdinalIgnoreCase);
-        foreach (string path in Directory.EnumerateFiles(RootDirectory, "*.ff", SearchOption.TopDirectoryOnly))
+        string[] catalogDirectories =
+        [
+            RootDirectory,
+            .. additionalDirectories
+                .Select(Path.GetFullPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(path => !string.Equals(
+                    path,
+                    RootDirectory,
+                    StringComparison.OrdinalIgnoreCase))
+        ];
+
+        foreach (string catalogDirectory in catalogDirectories)
         {
-            string fullPath = Path.GetFullPath(path);
-            string zoneName = Path.GetFileNameWithoutExtension(fullPath);
-            if (!_entries.TryAdd(zoneName, new DbZoneCatalogEntry(zoneName, fullPath)))
-                throw new InvalidDataException($"Fastfile directory contains duplicate logical zone '{zoneName}'.");
+            if (!Directory.Exists(catalogDirectory))
+            {
+                throw new DirectoryNotFoundException(
+                    $"Fastfile directory '{catalogDirectory}' does not exist.");
+            }
+
+            foreach (string path in Directory.EnumerateFiles(
+                         catalogDirectory,
+                         "*.ff",
+                         SearchOption.TopDirectoryOnly))
+            {
+                string fullPath = Path.GetFullPath(path);
+                string zoneName = Path.GetFileNameWithoutExtension(fullPath);
+                var entry = new DbZoneCatalogEntry(zoneName, fullPath);
+                if (_entries.TryAdd(zoneName, entry))
+                    continue;
+
+                throw new InvalidDataException(
+                    $"Fastfile catalog contains duplicate logical zone '{zoneName}'.");
+            }
         }
 
         Entries = new ReadOnlyCollection<DbZoneCatalogEntry>(

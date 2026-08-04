@@ -1,3 +1,4 @@
+using System.Numerics;
 using IW4.FastFiles.Database;
 using IW4.FastFiles.Database.Streaming;
 using IW4.Runtime.Database;
@@ -72,9 +73,21 @@ public sealed class DbHeaderReader
 
     private static void ResolveSelectedLanguage(uint headerLanguageMask, DbLoadContext context)
     {
+        if (headerLanguageMask == 0)
+            throw new InvalidDataException("Fastfile language mask cannot be zero.");
+
+        if (context.SelectedLanguageMask != 0 &&
+            (context.SelectedLanguageMask &
+             (context.SelectedLanguageMask - 1)) != 0)
+        {
+            throw new InvalidDataException(
+                "A selected language must contain exactly one bit.");
+        }
+
         if (context.SelectedLanguageMask == 0)
         {
-            context.SelectedLanguageMask = headerLanguageMask;
+            context.SelectedLanguageMask =
+                1u << BitOperations.TrailingZeroCount(headerLanguageMask);
             return;
         }
 
