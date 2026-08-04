@@ -9,7 +9,7 @@
              mc:Ignorable="d"
              d:DesignWidth="980"
              d:DesignHeight="650">
-  <Grid RowDefinitions="3*,10,2*">
+  <Grid RowDefinitions="4*,10,2*">
     <menu:MenuPreviewView />
     <menu:MenuOutlineView Grid.Row="2" />
   </Grid>
