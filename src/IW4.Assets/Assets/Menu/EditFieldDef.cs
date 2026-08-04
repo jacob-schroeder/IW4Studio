@@ -11,5 +11,6 @@ public sealed class EditFieldDef
     public int MaxChars { get; init; }
     public int MaxCharsGotoNext { get; init; }
     public int MaxPaintChars { get; init; }
+    /// <summary>Runtime index of the first character visible while editing.</summary>
     public int PaintOffset { get; init; }
 }

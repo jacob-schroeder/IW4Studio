@@ -48,6 +48,14 @@ public abstract class InspectorPropertyRowViewModel : ObservableObject
 
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
 
+    /// <summary>
+    /// Requests a visible information affordance beside the row label. The
+    /// view uses <see cref="Description"/> as its tooltip content.
+    /// </summary>
+    public bool ShowInfoIcon { get; init; }
+
+    public bool HasInfoIcon => ShowInfoIcon && HasDescription;
+
     public bool IsReadOnly { get; }
 
     public bool IsInteractionBlocked => _isInteractionBlocked;

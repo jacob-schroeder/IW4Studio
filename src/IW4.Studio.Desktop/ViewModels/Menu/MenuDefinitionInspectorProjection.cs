@@ -72,11 +72,13 @@ internal static partial class MenuInspectorProjection
                                     FontIndex = value
                                 })),
                         ReadOnly(
-                            "Image track",
+                            "Material track",
                             "menu.imageTrack",
-                            settings.ImageTrack.ToString(
-                                CultureInfo.InvariantCulture),
-                            "Preserved read-only until its PS3 authoring semantics are established."),
+                            ImageTrack(settings.ImageTrack),
+                            "Engine-supplied int32 material-registration context. " +
+                            "Its known values match IMAGE_TRACK_* (commonly UI=3 " +
+                            "or HUD=7); it is loader provenance rather than an " +
+                            "authored setting, so it is preserved read-only."),
                         Text(
                             "Allowed bind",
                             "menu.allowedBinding",

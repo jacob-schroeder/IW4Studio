@@ -17,7 +17,12 @@ internal static partial class MenuInspectorProjection
         new(
             title,
             "WINDOW",
-            WindowSections(designer, window, isRoot, update),
+            WindowSections(
+                designer,
+                window,
+                isRoot,
+                supportsOwnerDraw: true,
+                update: update),
             isRoot
                 ? "The root Window Rect defines the Menu canvas. RectClient is preserved runtime state."
                 : "The Item RectClient is authored local geometry. Rect is recomputed from it at runtime and shown read-only.");
@@ -26,6 +31,7 @@ internal static partial class MenuInspectorProjection
         MenuDesignerViewModel designer,
         MenuWindowValue window,
         bool isRoot,
+        bool supportsOwnerDraw,
         Action<Func<MenuWindowValue, MenuWindowValue>>? update)
     {
         return
@@ -244,21 +250,7 @@ internal static partial class MenuInspectorProjection
             new InspectorSectionViewModel(
                 "ADVANCED",
                 [
-                    Choice(
-                        "Owner draw",
-                        "window.ownerDraw",
-                        window.OwnerDraw,
-                        update is null
-                            ? null
-                            : value => update(current => current with
-                            {
-                                OwnerDraw = value
-                            })),
-                    ReadOnly(
-                        "Owner-draw flags (raw)",
-                        "window.ownerDrawFlags",
-                        $"0x{window.OwnerDrawFlags:X8}",
-                        "Legacy owner-draw visibility selector. The PS3 and Xbox 360 MW2 helpers ignore it, so no per-bit authoring semantics are established."),
+                    .. OwnerDrawRows(window, supportsOwnerDraw, update),
                     Flags(
                         "Static flags",
                         "window.staticFlags",
@@ -287,6 +279,84 @@ internal static partial class MenuInspectorProjection
                 ])
         ];
     }
+
+    private static IReadOnlyList<InspectorPropertyRowViewModel> OwnerDrawRows(
+        MenuWindowValue window,
+        bool isSupported,
+        Action<Func<MenuWindowValue, MenuWindowValue>>? update)
+    {
+        List<InspectorPropertyRowViewModel> rows = [];
+        if (isSupported)
+        {
+            rows.Add(OwnerDrawChoice(
+                window.OwnerDraw,
+                update is null
+                    ? null
+                    : value => update(current => current with
+                    {
+                        OwnerDraw = value
+                    }),
+                "Numeric runtime callback selector. Each named choice identifies the HUD or UI content drawn by that handler."));
+        }
+        else if (window.OwnerDraw is not WindowOwnerDraw.None)
+        {
+            rows.Add(ReadOnly(
+                "Owner draw (inactive)",
+                "window.ownerDraw",
+                OwnerDrawDisplay(window.OwnerDraw),
+                "Preserved selector on an Item type that does not execute the owner-draw paint path."));
+        }
+
+        if (window.OwnerDrawFlags != 0)
+        {
+            rows.Add(ReadOnly(
+                "Owner-draw flags (raw)",
+                "window.ownerDrawFlags",
+                $"0x{window.OwnerDrawFlags:X8}",
+                "Legacy owner-draw visibility selector. The PS3 and Xbox 360 MW2 helpers ignore it, so no per-bit authoring semantics are established."));
+        }
+
+        return rows;
+    }
+
+    private static InspectorChoicePropertyRowViewModel OwnerDrawChoice(
+        WindowOwnerDraw value,
+        Action<WindowOwnerDraw>? apply,
+        string description)
+    {
+        List<InspectorChoice> choices = Enum.GetValues<WindowOwnerDraw>()
+            .Select(option => new InspectorChoice(
+                ((int)option).ToString(CultureInfo.InvariantCulture),
+                OwnerDrawDisplay(option)))
+            .ToList();
+        int rawValue = (int)value;
+        if (IsNoOpOwnerDraw(rawValue))
+        {
+            choices.Add(new InspectorChoice(
+                rawValue.ToString(CultureInfo.InvariantCulture),
+                $"{rawValue} · No runtime handler"));
+        }
+
+        return new InspectorChoicePropertyRowViewModel(
+            "Owner draw",
+            "window.ownerDraw",
+            choices,
+            rawValue.ToString(CultureInfo.InvariantCulture),
+            apply is null
+                ? null
+                : selected => apply((WindowOwnerDraw)int.Parse(
+                    selected,
+                    CultureInfo.InvariantCulture)),
+            description);
+    }
+
+    private static bool IsNoOpOwnerDraw(int value) =>
+        !Enum.IsDefined(typeof(WindowOwnerDraw), value);
+
+    private static string OwnerDrawDisplay(WindowOwnerDraw value) =>
+        IsNoOpOwnerDraw((int)value)
+            ? $"{(int)value} · No runtime handler"
+            : DisplayEnum(value);
 
     private static IReadOnlyList<WindowDynamicFlags> ReplaceDynamicFlag(
         IReadOnlyList<WindowDynamicFlags> current,

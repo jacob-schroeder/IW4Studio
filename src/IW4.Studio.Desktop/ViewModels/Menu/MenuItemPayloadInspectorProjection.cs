@@ -13,7 +13,10 @@ internal static partial class MenuInspectorProjection
         MenuItemValue item,
         Action<Func<MenuItemValue, MenuItemValue>>? update)
     {
-        List<InspectorPropertyRowViewModel> rows = [];
+        List<InspectorPropertyRowViewModel> rows =
+        [
+            .. SpecialRows(item, update)
+        ];
         switch (item.Payload)
         {
             case MenuEditFieldPayloadValue edit:
@@ -41,10 +44,12 @@ internal static partial class MenuInspectorProjection
                     PayloadInteger("Paint chars", "item.payload.maxPaintChars", edit.MaxPaintChars, update,
                         payload => payload.Payload with { MaxPaintChars = payload.Value }),
                     ReadOnly(
-                        "Paint offset",
+                        "Visible text start",
                         "item.payload.paintOffset",
                         edit.PaintOffset.ToString(CultureInfo.InvariantCulture),
-                        "Runtime text-scroll cursor state is preserved read-only.")
+                        "Internal int32 index of the first character drawn in an " +
+                        "edit field. The runtime resets and moves it to keep the " +
+                        "cursor visible, so it is preserved read-only.")
                 ]);
                 break;
 
@@ -276,4 +281,41 @@ internal static partial class MenuInspectorProjection
             isExpanded: item.Payload is not (
                 MenuListBoxPayloadValue or MenuMultiPayloadValue));
     }
+
+    private static IReadOnlyList<InspectorPropertyRowViewModel> SpecialRows(
+        MenuItemValue item,
+        Action<Func<MenuItemValue, MenuItemValue>>? update) => item.Type switch
+        {
+            ItemDefType.ListBox =>
+            [
+                new InspectorFloatPropertyRowViewModel(
+                    "Feeder ID",
+                    "item.special",
+                    item.Special,
+                    update is null
+                        ? null
+                        : number => update(current => current with
+                        {
+                            Special = number
+                        }),
+                    "UI feeder identifier used to query ListBox rows, content, and selection. The runtime stores feeder IDs as floats, although authored values are commonly whole numbers.")
+            ],
+            ItemDefType.OwnerDraw =>
+            [
+                ReadOnly(
+                    "Special (unused)",
+                    "item.special",
+                    item.Special.ToString("R", CultureInfo.InvariantCulture),
+                    "Legacy float passed through the owner-draw API. The checked PS3 and Xbox 360 MW2 dispatchers never consume it, so it is preserved read-only.")
+            ],
+            _ when item.Special != 0f =>
+            [
+                ReadOnly(
+                    "Special (raw)",
+                    "item.special",
+                    item.Special.ToString("R", CultureInfo.InvariantCulture),
+                    "Preserved nonzero value with no proven meaning for this Item type.")
+            ],
+            _ => []
+        };
 }

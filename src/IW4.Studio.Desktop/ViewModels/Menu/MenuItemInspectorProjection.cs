@@ -62,8 +62,6 @@ internal static partial class MenuInspectorProjection
         }
 
         MenuItemValue value = item.Value;
-        (string specialLabel, string specialDescription) =
-            SpecialPresentation(value.Type);
         Action<Func<MenuItemValue, MenuItemValue>>? update = designer.IsEditable
             ? change => designer.UpdateItem(item.Id, change)
             : null;
@@ -101,12 +99,13 @@ internal static partial class MenuInspectorProjection
                                 Text = EmptyToNull(text)
                             })),
                     ReadOnly(
-                        "Native data tag",
+                        "Payload type tag",
                         "item.dataType",
-                        value.DataType.ToString(CultureInfo.InvariantCulture),
-                        "Native type-data accessor and allocation tag. It may " +
-                        "legitimately differ from Type and is preserved rather " +
-                        "than authored directly."),
+                        PayloadTypeTag(value.DataType),
+                        "Internal int32 discriminator for the allocated native " +
+                        "type-data union. Runtime accessors use it to select the " +
+                        "EditField, ListBox, Multi, or related payload. It may " +
+                        "differ from Type and is preserved rather than authored."),
                     Choice(
                         "Owner-draw alignment",
                         "item.align",
@@ -224,12 +223,17 @@ internal static partial class MenuInspectorProjection
                             }),
                         "Special text-source flags. Unknown serialized bits are preserved.")
                 ]),
-            .. WindowSections(designer, value.Window, isRoot: false, updateWindow),
+            .. WindowSections(
+                designer,
+                value.Window,
+                isRoot: false,
+                supportsOwnerDraw: value.Type is ItemDefType.OwnerDraw,
+                update: updateWindow),
             new InspectorSectionViewModel(
-                "DVAR AND INPUT",
+                "DVAR BINDING AND CONDITIONS",
                 [
                     Text(
-                        "Dvar",
+                        "Bound dvar",
                         "item.dvar",
                         value.Dvar,
                         update is null
@@ -237,27 +241,8 @@ internal static partial class MenuInspectorProjection
                             : text => update(current => current with
                             {
                                 Dvar = EmptyToNull(text)
-                            })),
-                    Text(
-                        "Dvar test",
-                        "item.dvarTest",
-                        value.DvarTest,
-                        update is null
-                            ? null
-                            : text => update(current => current with
-                            {
-                                DvarTest = EmptyToNull(text)
-                            })),
-                    Text(
-                        "Enable dvar",
-                        "item.enableDvar",
-                        value.EnableDvar,
-                        update is null
-                            ? null
-                            : text => update(current => current with
-                            {
-                                EnableDvar = EmptyToNull(text)
-                            })),
+                            }),
+                        "Dvar read or written by the item's value control. This is separate from the conditional dvar below."),
                     Flags(
                         "Dvar flags",
                         "item.dvarFlags",
@@ -268,7 +253,31 @@ internal static partial class MenuInspectorProjection
                             {
                                 DvarFlags = flags
                             }),
-                        "Controls how Enable dvar and Dvar test affect input, visibility, and focus. Unknown serialized bits are preserved."),
+                        "Chooses what a match does: enable, disable, show, hide, or permit scripted focus. Unknown serialized bits are preserved."),
+                    Text(
+                        "Condition dvar",
+                        "item.dvarTest",
+                        value.DvarTest,
+                        update is null
+                            ? null
+                            : text => update(current => current with
+                            {
+                                DvarTest = EmptyToNull(text)
+                            }),
+                        "Name of the dvar whose current value is read as text and compared case-insensitively against Match values. If either condition field is empty, the runtime treats the condition as true.",
+                        showInfoIcon: true),
+                    Text(
+                        "Match values",
+                        "item.enableDvar",
+                        value.EnableDvar,
+                        update is null
+                            ? null
+                            : text => update(current => current with
+                            {
+                                EnableDvar = EmptyToNull(text)
+                            }),
+                        "Text is correct here: this is a case-insensitive OR-list, not a dvar name. Whitespace or semicolons separate values, quotes preserve spaces, and comparison is textual rather than numeric. Example: \"war\"; \"dom\".",
+                        showInfoIcon: true),
                     new InspectorAssetReferencePropertyRowViewModel(
                         "Focus sound",
                         "item.focusSound",
@@ -286,28 +295,20 @@ internal static partial class MenuInspectorProjection
                         isMissing: designer.IsAssetReferenceMissing(
                             XAssetType.Sound,
                             value.FocusSoundName),
-                        description: "Selection is enabled when the shared asset picker is attached."),
-                    new InspectorFloatPropertyRowViewModel(
-                        specialLabel,
-                        "item.special",
-                        value.Special,
-                        update is null
-                            ? null
-                            : number => update(current => current with
-                            {
-                                Special = number
-                            }),
-                        specialDescription)
+                        description: "Selection is enabled when the shared asset picker is attached.")
                 ]),
             new InspectorSectionViewModel(
                 "EFFECT",
                 [
                     ReadOnly(
-                        "Image track",
+                        "Material track",
                         "item.imageTrack",
-                        value.ImageTrack.ToString(
-                            CultureInfo.InvariantCulture),
-                        "Preserved read-only until its PS3 authoring semantics are established."),
+                        ImageTrack(value.ImageTrack),
+                        "Engine-supplied int32 material-registration context " +
+                        "inherited from the menu during raw menu loading. Its " +
+                        "known values match the engine's IMAGE_TRACK_* table, " +
+                        "but it is provenance rather than an image selector or " +
+                        "an authored setting, so it is preserved read-only."),
                     Color(
                         "Glow",
                         "item.glowColor",
@@ -318,12 +319,20 @@ internal static partial class MenuInspectorProjection
                             {
                                 GlowColor = Color(color)
                             })),
-                    ReadOnly(
-                        "Decay active",
+                    new InspectorBooleanPropertyRowViewModel(
+                        "Text FX active",
                         "item.decayActive",
-                        value.DecayActive.ToString(
-                            CultureInfo.InvariantCulture),
-                        "FX decay state is runtime-managed and preserved read-only.")
+                        value.DecayActive != 0,
+                        update is null
+                            ? null
+                            : enabled => update(current => current with
+                            {
+                                DecayActive = enabled ? (byte)1 : (byte)0
+                            }),
+                        "Native one-byte boolean. When enabled, text painting " +
+                        "runs the configured text-FX timing lifecycle and pulse " +
+                        "sounds. The runtime mutates the neighboring birth-time " +
+                        "and last-sound cache fields, not this toggle.")
                 ]),
             Payload(designer, value, updatePayload),
             ItemBehavior(value.Behavior)
@@ -335,22 +344,6 @@ internal static partial class MenuInspectorProjection
             sections,
             "Item and Window fields are presented together to avoid a second nested selection level.");
     }
-
-    private static (string Label, string Description) SpecialPresentation(
-        ItemDefType type) => type switch
-        {
-            ItemDefType.ListBox => (
-                "Feeder ID",
-                "Numeric UI feeder identifier used to query rows, content, and selection for this ListBox."),
-            ItemDefType.OwnerDraw => (
-                "Owner-draw special",
-                "Owner-draw-specific numeric argument; its meaning depends on the selected Owner draw handler."),
-            _ => (
-                "Special",
-                "Contextual ItemDef argument with no type-independent meaning in the MW2 runtime.")
-        };
-
-
 
     private static InspectorSectionViewModel ItemBehavior(
         MenuItemBehaviorSummary value) =>

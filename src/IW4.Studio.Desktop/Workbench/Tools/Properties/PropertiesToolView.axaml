@@ -20,9 +20,19 @@
                   ToolTip.Tip="{Binding Description}">
         <Grid ColumnDefinitions="92,*"
               ColumnSpacing="8">
-          <TextBlock Text="{Binding Label}"
-                     Classes="propertyLabel"
-                     VerticalAlignment="Center" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="4"
+                      VerticalAlignment="Center">
+            <TextBlock Text="{Binding Label}"
+                       Classes="propertyLabel"
+                       VerticalAlignment="Center" />
+            <avalonia:MaterialIcon Kind="InformationOutline"
+                                   Width="12"
+                                   Height="12"
+                                   IsVisible="{Binding HasInfoIcon}"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}"
+                                   ToolTip.Tip="{Binding Description}" />
+          </StackPanel>
           <TextBox Grid.Column="1"
                    MinHeight="29"
                    Padding="8,4"

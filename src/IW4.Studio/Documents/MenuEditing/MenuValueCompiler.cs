@@ -227,10 +227,12 @@ internal static partial class MenuDocumentCompiler
             DecayActivePad0 = source?.DecayActivePad0 ?? 0,
             DecayActivePad1 = source?.DecayActivePad1 ?? 0,
             DecayActivePad2 = source?.DecayActivePad2 ?? 0,
+            // Birth time and last sound are runtime caches. The remaining
+            // values are serialized text-FX configuration consumed by paint.
             FxBirthTime = 0,
-            FxLetterTime = 0,
-            FxDecayStartTime = 0,
-            FxDecayDuration = 0,
+            FxLetterTime = source?.FxLetterTime ?? 0,
+            FxDecayStartTime = source?.FxDecayStartTime ?? 0,
+            FxDecayDuration = source?.FxDecayDuration ?? 0,
             LastSoundPlayedTime = 0
         };
     }

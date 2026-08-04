@@ -21,5 +21,9 @@ public enum ItemDvarFlags : int
 
     /// <summary>Hide the item when the dvar test matches.</summary>
     [Description("Hide on match")]
-    Hide = 0x00000008
+    Hide = 0x00000008,
+
+    /// <summary>Permit scripted focus when the dvar test matches.</summary>
+    [Description("Focus on match")]
+    Focus = 0x00000010
 }

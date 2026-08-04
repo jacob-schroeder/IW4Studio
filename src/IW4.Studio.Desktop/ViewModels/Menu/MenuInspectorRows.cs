@@ -15,14 +15,18 @@ internal static partial class MenuInspectorProjection
         string fieldPath,
         string? value,
         Action<string>? apply,
-        string? description = null) =>
+        string? description = null,
+        bool showInfoIcon = false) =>
         new(
             label,
             fieldPath,
             value,
             apply,
             ValidateLatin1,
-            description);
+            description)
+        {
+            ShowInfoIcon = showInfoIcon
+        };
 
     private static InspectorReadOnlyPropertyRowViewModel ReadOnly(
         string label,
@@ -248,6 +252,31 @@ internal static partial class MenuInspectorProjection
         value.Length == 0 ? null : value;
 
     private static string Bool(bool value) => value ? "Yes" : "No";
+
+    private static string PayloadTypeTag(int value)
+    {
+        ItemDefType type = (ItemDefType)value;
+        string number = value.ToString(CultureInfo.InvariantCulture);
+        return Enum.IsDefined(type)
+            ? $"{DisplayEnum(type)} ({number})"
+            : $"Unknown ({number})";
+    }
+
+    private static string ImageTrack(int value) => value switch
+    {
+        0 => "Misc (0)",
+        1 => "Debug (1)",
+        2 => "Texture name (2)",
+        3 => "UI (3)",
+        4 => "Lightmap (4)",
+        5 => "Light (5)",
+        6 => "FX (6)",
+        7 => "HUD (7)",
+        8 => "Model (8)",
+        9 => "World (9)",
+        10 => "Count sentinel (10)",
+        _ => $"Unknown ({value.ToString(CultureInfo.InvariantCulture)})"
+    };
 
     private static string Count(params bool[] values) =>
         values.Count(value => value).ToString("N0");

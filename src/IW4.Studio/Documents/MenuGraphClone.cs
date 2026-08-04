@@ -104,8 +104,11 @@ internal sealed class MenuGraphClone
             DisabledExpression = Ptr(value.DisabledExpression), TextExpression = Ptr(value.TextExpression), MaterialExpression = Ptr(value.MaterialExpression),
             GlowColor = Vec(value.GlowColor), DecayActive = value.DecayActive, DecayActivePad0 = value.DecayActivePad0,
             DecayActivePad1 = value.DecayActivePad1, DecayActivePad2 = value.DecayActivePad2,
-            // FX timing fields are post-load animation/sound cache state.
-            FxBirthTime = 0, FxLetterTime = 0, FxDecayStartTime = 0, FxDecayDuration = 0, LastSoundPlayedTime = 0
+            // Birth time and last sound are runtime caches. Letter and decay
+            // timings are serialized text-FX configuration.
+            FxBirthTime = 0, FxLetterTime = value.FxLetterTime,
+            FxDecayStartTime = value.FxDecayStartTime, FxDecayDuration = value.FxDecayDuration,
+            LastSoundPlayedTime = 0
         };
         PropagateProvenance(clone, provenance);
         _items.Add(provenance, clone);
