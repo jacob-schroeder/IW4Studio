@@ -26,8 +26,8 @@ public enum HorizontalAlign : byte
     HORIZONTAL_ALIGN_RIGHT = 3,
 
     /// <summary>
-    /// Apply the full-screen placement scale without safe-area adjustment.
-    /// On the editor's canonical 640-wide canvas, authored X and width remain unchanged.
+    /// Apply the full output-width scale without safe-area or 4:3 sub-screen
+    /// adjustment.
     /// </summary>
     HORIZONTAL_ALIGN_FULLSCREEN = 4,
 
@@ -47,8 +47,12 @@ public enum HorizontalAlign : byte
     /// </summary>
     HORIZONTAL_ALIGN_CENTER_SAFEAREA = 7,
 
-    // Unnamed wire values are preserved without assigning another alignment.
-    HORIZONTAL_ALIGN_PS3_RAW_8 = 8,
-    HORIZONTAL_ALIGN_PS3_RAW_9 = 9,
-    HORIZONTAL_ALIGN_PS3_RAW_10 = 10
+    /// <summary>Anchor X to the adjustable safe-area left edge.</summary>
+    HORIZONTAL_ALIGN_LEFT_ADJUSTABLE = 8,
+
+    /// <summary>Anchor X to the adjustable safe-area horizontal center.</summary>
+    HORIZONTAL_ALIGN_CENTER_ADJUSTABLE = 9,
+
+    /// <summary>Anchor X to the adjustable safe-area right edge.</summary>
+    HORIZONTAL_ALIGN_RIGHT_ADJUSTABLE = 10
 }

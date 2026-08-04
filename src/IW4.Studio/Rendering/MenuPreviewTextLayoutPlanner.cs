@@ -73,12 +73,13 @@ public static class MenuPreviewTextLayoutPlanner
         float textWidth = MathF.Truncate(measurement.MaxLineAdvance);
         float textHeight = MathF.Truncate(
             measurement.PixelHeight * measurement.NormalizedScale);
-        float baselineX = text.Bounds.X + text.BorderInset + text.OffsetX +
-            HorizontalAdjustment(text.Alignment & 3, text.Bounds.Width, textWidth);
-        float baselineY = text.Bounds.Y + text.BorderInset + text.OffsetY +
+        MenuRectangleValue bounds = text.Placement.VirtualRectangle;
+        float baselineX = bounds.X + text.BorderInset + text.OffsetX +
+            HorizontalAdjustment(text.Alignment & 3, bounds.Width, textWidth);
+        float baselineY = bounds.Y + text.BorderInset + text.OffsetY +
             VerticalAdjustment(
                 text.Alignment & 0xC,
-                text.Bounds.Height,
+                bounds.Height,
                 textHeight);
 
         if ((text.Alignment & 3) is not (0 or 1 or 2))
@@ -112,6 +113,8 @@ public static class MenuPreviewTextLayoutPlanner
             text,
             localized.DisplayText,
             glyphRun,
+            baselineX,
+            baselineY,
             diagnostics.Distinct(StringComparer.Ordinal),
             revision);
     }
@@ -170,12 +173,16 @@ public sealed class MenuPreviewTextLayout
         MenuPreviewText source,
         string displayText,
         UiGlyphRunPlan? glyphRun,
+        float baselineX,
+        float baselineY,
         IEnumerable<string> diagnostics,
         MenuTextResourceRevision resourceRevision)
     {
         Source = source;
         DisplayText = displayText;
         GlyphRun = glyphRun;
+        BaselineX = baselineX;
+        BaselineY = baselineY;
         _diagnostics = diagnostics.ToArray();
         Diagnostics = Array.AsReadOnly(_diagnostics);
         ResourceRevision = resourceRevision;
@@ -187,6 +194,10 @@ public sealed class MenuPreviewTextLayout
 
     public UiGlyphRunPlan? GlyphRun { get; }
 
+    public float BaselineX { get; }
+
+    public float BaselineY { get; }
+
     public IReadOnlyList<string> Diagnostics { get; }
 
     public MenuTextResourceRevision ResourceRevision { get; }
@@ -197,14 +208,23 @@ public sealed class MenuPreviewTextLayout
         MenuPreviewText source,
         string displayText,
         UiGlyphRunPlan glyphRun,
+        float baselineX,
+        float baselineY,
         IEnumerable<string> diagnostics,
         MenuTextResourceRevision resourceRevision) =>
-        new(source, displayText, glyphRun, diagnostics, resourceRevision);
+        new(
+            source,
+            displayText,
+            glyphRun,
+            baselineX,
+            baselineY,
+            diagnostics,
+            resourceRevision);
 
     internal static MenuPreviewTextLayout Fallback(
         MenuPreviewText source,
         string displayText,
         IEnumerable<string> diagnostics,
         MenuTextResourceRevision resourceRevision) =>
-        new(source, displayText, null, diagnostics, resourceRevision);
+        new(source, displayText, null, 0, 0, diagnostics, resourceRevision);
 }

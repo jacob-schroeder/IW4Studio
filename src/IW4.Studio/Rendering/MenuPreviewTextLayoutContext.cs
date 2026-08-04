@@ -1,3 +1,5 @@
+using IW4.Render.UI.ScreenPlacement;
+
 namespace IW4.Studio.Rendering;
 
 /// <summary>
@@ -72,19 +74,19 @@ public sealed class MenuPreviewTextLayoutContext
     public float VirtualToPhysicalScaleY =>
         TargetViewportHeight / VirtualCanvasHeight;
 
-    /// <summary>
-    /// Creates the profile used by IW4 on a PS3 720p output: a 640x480
-    /// authored canvas placed into a 1280x720 target viewport, with the
-    /// registered UI font thresholds.
-    /// </summary>
-    public static MenuPreviewTextLayoutContext CreateIw4Ps3Hd() => new(
-        virtualCanvasWidth: 640f,
-        virtualCanvasHeight: 480f,
-        targetViewportWidth: 1280f,
-        targetViewportHeight: 720f,
-        smallFontThreshold: 0.25f,
-        bigFontThreshold: 0.4f,
-        extraBigFontThreshold: 0.55f);
+    public static MenuPreviewTextLayoutContext FromScreenPlacement(
+        UiScreenPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return new MenuPreviewTextLayoutContext(
+            placement.VirtualWidth,
+            placement.VirtualHeight,
+            placement.OutputWidth,
+            placement.OutputHeight,
+            smallFontThreshold: 0.25f,
+            bigFontThreshold: 0.4f,
+            extraBigFontThreshold: 0.55f);
+    }
 
     public MenuFontSelectionContext CreateFontSelectionContext(
         float textScale) => new(

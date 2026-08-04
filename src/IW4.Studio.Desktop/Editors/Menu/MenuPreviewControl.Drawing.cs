@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using IW4.Render.UI.ScreenPlacement;
 using IW4.Render.UI.Text;
 using IW4.Studio.Documents.MenuEditing;
 using IW4.Studio.Documents.MenuEditing.Preview;
@@ -24,16 +25,31 @@ public sealed partial class MenuPreviewControl
             new Pen(new SolidColorBrush(Color.FromRgb(75, 82, 92)), 1),
             stage);
 
-        double gridSize = 32 * transform.Scale;
-        if (gridSize >= 10)
+        UiScreenPlacement placement = scene.Settings.ScreenPlacement;
+        double gridSizeX = 32 * placement.VirtualToRealX * transform.Scale;
+        double gridSizeY = 32 * placement.VirtualToRealY * transform.Scale;
+        if (Math.Min(gridSizeX, gridSizeY) >= 10)
         {
             var gridPen = new Pen(
                 new SolidColorBrush(Color.FromArgb(35, 154, 164, 178)),
                 1);
-            for (double x = stage.Left + gridSize; x < stage.Right; x += gridSize)
+            double subScreenLeft = stage.Left +
+                placement.SubScreenLeft * transform.Scale;
+            double subScreenRight = subScreenLeft +
+                placement.VirtualWidth * placement.VirtualToRealX *
+                transform.Scale;
+            for (double x = subScreenLeft + gridSizeX;
+                 x < subScreenRight;
+                 x += gridSizeX)
+            {
                 context.DrawLine(gridPen, new Point(x, stage.Top), new Point(x, stage.Bottom));
-            for (double y = stage.Top + gridSize; y < stage.Bottom; y += gridSize)
+            }
+            for (double y = stage.Top + gridSizeY;
+                 y < stage.Bottom;
+                 y += gridSizeY)
+            {
                 context.DrawLine(gridPen, new Point(stage.Left, y), new Point(stage.Right, y));
+            }
         }
 
         MenuPreviewInsets safe = scene.Settings.SafeArea;
@@ -56,10 +72,14 @@ public sealed partial class MenuPreviewControl
 
     private void DrawPrimitive(
         DrawingContext context,
+        MenuPreviewScene scene,
         MenuPreviewPrimitive primitive,
         PreviewTransform transform)
     {
-        Rect bounds = transform.Map(EffectiveBounds(primitive));
+        MenuPreviewPlacement placement = EffectivePlacement(
+            primitive,
+            scene.Settings);
+        Rect bounds = transform.Map(placement.OutputBounds);
         bool isManipulated = _geometryManipulation is
             {
                 IsActivated: true
@@ -80,11 +100,15 @@ public sealed partial class MenuPreviewControl
                 break;
 
             case MenuPreviewText text:
+                MenuPreviewText effectiveText = placement == text.Placement
+                    ? text
+                    : text with { Placement = placement };
                 DrawText(
                     context,
-                    text,
+                    effectiveText,
                     bounds,
                     transform,
+                    scene,
                     useCachedLayout: !isManipulated);
                 break;
 
@@ -122,26 +146,58 @@ public sealed partial class MenuPreviewControl
         MenuPreviewText text,
         Rect bounds,
         PreviewTransform transform,
+        MenuPreviewScene scene,
         bool useCachedLayout)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0)
             return;
 
-        _textLayouts.TryGetValue(text, out MenuPreviewTextLayout? layout);
-        if (useCachedLayout && layout is not null &&
-            DrawGlyphRun(context, text, layout, transform))
+        MenuPreviewTextLayout? layout;
+        if (useCachedLayout)
+        {
+            _textLayouts.TryGetValue(text, out layout);
+        }
+        else if (TextResourceResolver is { } resolver)
+        {
+            layout = MenuPreviewTextLayoutPlanner.Plan(
+                text,
+                resolver,
+                MenuPreviewTextLayoutContext.FromScreenPlacement(
+                    scene.Settings.ScreenPlacement));
+        }
+        else
+        {
+            layout = null;
+        }
+
+        if (layout is not null &&
+            DrawGlyphRun(
+                context,
+                text,
+                layout,
+                transform,
+                scene.Settings.ScreenPlacement))
         {
             return;
         }
 
-        double scaledFontSize = 24 * text.Scale * transform.Scale;
+        UiScreenAxisPlacement horizontal =
+            scene.Settings.ScreenPlacement.Resolve(
+                text.Placement.VirtualRectangle.HorizontalAlignment);
+        UiScreenAxisPlacement vertical =
+            scene.Settings.ScreenPlacement.Resolve(
+                text.Placement.VirtualRectangle.VerticalAlignment);
+        double scaledFontSize = 24 * text.Scale * vertical.Scale *
+            transform.Scale;
         double fontSize = double.IsFinite(scaledFontSize)
             ? Math.Clamp(scaledFontSize, 5, 96)
             : 5;
         string displayText = layout?.DisplayText ?? TextResourceResolver?
             .ResolveText(text.Text).DisplayText ?? text.Text;
-        double insetX = (text.BorderInset + text.OffsetX) * transform.Scale;
-        double insetY = (text.BorderInset + text.OffsetY) * transform.Scale;
+        double insetX = (text.BorderInset + text.OffsetX) *
+            horizontal.Scale * transform.Scale;
+        double insetY = (text.BorderInset + text.OffsetY) *
+            vertical.Scale * transform.Scale;
         var textBounds = new Rect(
             bounds.Left + insetX,
             bounds.Top + insetY,
@@ -184,7 +240,8 @@ public sealed partial class MenuPreviewControl
         DrawingContext context,
         MenuPreviewText text,
         MenuPreviewTextLayout layout,
-        PreviewTransform transform)
+        PreviewTransform transform,
+        UiScreenPlacement placement)
     {
         if (layout.GlyphRun is not { CanRender: true } glyphRun ||
             string.IsNullOrWhiteSpace(glyphRun.MaterialName) ||
@@ -194,6 +251,17 @@ public sealed partial class MenuPreviewControl
         {
             return false;
         }
+
+        UiScreenAxisPlacement horizontal = placement.Resolve(
+            text.Placement.VirtualRectangle.HorizontalAlignment);
+        UiScreenAxisPlacement vertical = placement.Resolve(
+            text.Placement.VirtualRectangle.VerticalAlignment);
+        float appliedBaselineX = horizontal.ApplyPosition(layout.BaselineX);
+        float appliedBaselineY = vertical.ApplyPosition(layout.BaselineY);
+        float snapX = MathF.Floor(appliedBaselineX + 0.5f) -
+            appliedBaselineX;
+        float snapY = MathF.Floor(appliedBaselineY + 0.5f) -
+            appliedBaselineY;
 
         foreach (UiGlyphQuad glyph in glyphRun.Quads)
         {
@@ -224,10 +292,10 @@ public sealed partial class MenuPreviewControl
                 (uv.T1 - uv.T0) * snapshot.Height);
             UiGlyphRect glyphBounds = glyph.Bounds;
             Rect destination = transform.Map(new MenuPreviewRect(
-                glyphBounds.X,
-                glyphBounds.Y,
-                glyphBounds.Width,
-                glyphBounds.Height));
+                horizontal.ApplyPosition(glyphBounds.X) + snapX,
+                vertical.ApplyPosition(glyphBounds.Y) + snapY,
+                horizontal.ApplyLength(glyphBounds.Width),
+                vertical.ApplyLength(glyphBounds.Height)));
             if (source.Width > 0 &&
                 source.Height > 0 &&
                 destination.Width > 0 &&
@@ -284,38 +352,97 @@ public sealed partial class MenuPreviewControl
         Rect bounds,
         double scale)
     {
-        double scaledThickness = border.Thickness * scale;
-        double thickness = double.IsFinite(scaledThickness)
-            ? Math.Clamp(scaledThickness, 1, 64)
-            : 1;
-        var pen = new Pen(Brush(border.Color), thickness);
+        double horizontalThickness = Math.Clamp(
+            border.ThicknessX * scale,
+            0,
+            Math.Max(0, bounds.Width));
+        double verticalThickness = Math.Clamp(
+            border.ThicknessY * scale,
+            0,
+            Math.Max(0, bounds.Height));
+        if (!double.IsFinite(horizontalThickness) ||
+            !double.IsFinite(verticalThickness) ||
+            horizontalThickness <= 0 ||
+            verticalThickness <= 0)
+        {
+            return;
+        }
+
+        IBrush brush = Brush(border.Color);
         switch (border.Border)
         {
             case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_HORZ:
             case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_KCGRADIENT:
-                context.DrawLine(
-                    pen,
-                    new Point(bounds.Left, bounds.Top),
-                    new Point(bounds.Right, bounds.Top));
-                context.DrawLine(
-                    pen,
-                    new Point(bounds.Left, bounds.Bottom),
-                    new Point(bounds.Right, bounds.Bottom));
+                DrawHorizontalBorder(
+                    context,
+                    brush,
+                    bounds,
+                    verticalThickness);
                 break;
             case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_VERT:
-                context.DrawLine(
-                    pen,
-                    new Point(bounds.Left, bounds.Top),
-                    new Point(bounds.Left, bounds.Bottom));
-                context.DrawLine(
-                    pen,
-                    new Point(bounds.Right, bounds.Top),
-                    new Point(bounds.Right, bounds.Bottom));
+                DrawVerticalBorder(
+                    context,
+                    brush,
+                    bounds,
+                    horizontalThickness,
+                    insetY: 0);
                 break;
             default:
-                context.DrawRectangle(null, pen, bounds);
+                DrawHorizontalBorder(
+                    context,
+                    brush,
+                    bounds,
+                    verticalThickness);
+                DrawVerticalBorder(
+                    context,
+                    brush,
+                    bounds,
+                    horizontalThickness,
+                    verticalThickness);
                 break;
         }
+    }
+
+    private static void DrawHorizontalBorder(
+        DrawingContext context,
+        IBrush brush,
+        Rect bounds,
+        double thickness)
+    {
+        context.DrawRectangle(
+            brush,
+            null,
+            new Rect(bounds.Left, bounds.Top, bounds.Width, thickness));
+        context.DrawRectangle(
+            brush,
+            null,
+            new Rect(
+                bounds.Left,
+                bounds.Bottom - thickness,
+                bounds.Width,
+                thickness));
+    }
+
+    private static void DrawVerticalBorder(
+        DrawingContext context,
+        IBrush brush,
+        Rect bounds,
+        double thickness,
+        double insetY)
+    {
+        double height = Math.Max(0, bounds.Height - insetY * 2);
+        context.DrawRectangle(
+            brush,
+            null,
+            new Rect(bounds.Left, bounds.Top + insetY, thickness, height));
+        context.DrawRectangle(
+            brush,
+            null,
+            new Rect(
+                bounds.Right - thickness,
+                bounds.Top + insetY,
+                thickness,
+                height));
     }
 
     private static void DrawCheckerboard(

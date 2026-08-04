@@ -70,7 +70,7 @@
                     ItemsSource="{Binding PreviewDebug.Modes}"
                     SelectedItem="{Binding PreviewDebug.Mode, Mode=TwoWay}" />
           <TextBlock Grid.Column="4"
-                     Text="640 × 480 virtual · PS3 720p"
+                     Text="1280 × 720 output · PS3 safe area"
                      FontSize="9"
                      FontFamily="Consolas"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />

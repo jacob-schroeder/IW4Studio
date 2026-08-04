@@ -8,10 +8,6 @@ namespace IW4.Studio.Desktop.Editors.Menu;
 
 public sealed partial class MenuPreviewControl
 {
-    private static readonly MenuPreviewTextLayoutContext
-        Iw4Ps3TextLayoutContext =
-            MenuPreviewTextLayoutContext.CreateIw4Ps3Hd();
-
     private readonly Dictionary<string, MenuPreviewMaterialSnapshot>
         _materialSnapshots = new(StringComparer.Ordinal);
     private readonly Dictionary<MaterialBitmapKey, Bitmap> _materialBitmaps = [];
@@ -56,6 +52,9 @@ public sealed partial class MenuPreviewControl
         _activeTextRevision = revision;
         if (scene is not null && resolver is not null)
         {
+            MenuPreviewTextLayoutContext context =
+                MenuPreviewTextLayoutContext.FromScreenPlacement(
+                    scene.Settings.ScreenPlacement);
             foreach (MenuPreviewText text in scene.Primitives
                          .OfType<MenuPreviewText>())
             {
@@ -64,7 +63,7 @@ public sealed partial class MenuPreviewControl
                     MenuPreviewTextLayoutPlanner.Plan(
                         text,
                         resolver,
-                        Iw4Ps3TextLayoutContext));
+                        context));
             }
         }
 

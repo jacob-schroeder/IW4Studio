@@ -26,8 +26,7 @@ public enum VerticalAlign : byte
     VERTICAL_ALIGN_BOTTOM = 3,
 
     /// <summary>
-    /// Apply the full-screen placement scale without safe-area adjustment.
-    /// On the editor's canonical 480-high canvas, authored Y and height remain unchanged.
+    /// Apply the full output-height scale without safe-area adjustment.
     /// </summary>
     VERTICAL_ALIGN_FULLSCREEN = 4,
 
@@ -47,8 +46,12 @@ public enum VerticalAlign : byte
     /// </summary>
     VERTICAL_ALIGN_CENTER_SAFEAREA = 7,
 
-    // Unnamed wire values are preserved without assigning another alignment.
-    VERTICAL_ALIGN_PS3_RAW_8 = 8,
-    VERTICAL_ALIGN_PS3_RAW_9 = 9,
-    VERTICAL_ALIGN_PS3_RAW_10 = 10
+    /// <summary>Anchor Y to the adjustable safe-area top edge.</summary>
+    VERTICAL_ALIGN_TOP_ADJUSTABLE = 8,
+
+    /// <summary>Anchor Y to the adjustable safe-area vertical center.</summary>
+    VERTICAL_ALIGN_MIDDLE_ADJUSTABLE = 9,
+
+    /// <summary>Anchor Y to the adjustable safe-area bottom edge.</summary>
+    VERTICAL_ALIGN_BOTTOM_ADJUSTABLE = 10
 }

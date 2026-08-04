@@ -188,7 +188,7 @@ public sealed partial class MenuPreviewControl
 
         _geometryManipulation = new GeometryManipulation(
             region.NodeId,
-            region.Bounds,
+            region.Placement,
             operation,
             localPosition,
             virtualPosition,
@@ -286,14 +286,33 @@ public sealed partial class MenuPreviewControl
         return region is not null;
     }
 
-    private MenuPreviewRect EffectiveBounds(MenuPreviewPrimitive primitive)
+    private MenuPreviewPlacement EffectivePlacement(
+        MenuPreviewPrimitive primitive,
+        MenuPreviewSettings settings)
     {
         if (_geometryManipulation is { IsActivated: true } state &&
             IsManipulatedPrimitive(primitive, state))
         {
-            return state.CandidateBounds;
+            MenuRectangleValue outerSource =
+                state.OriginalPlacement.VirtualRectangle;
+            MenuPreviewRect outerVirtualBounds = MenuRectTransform.Unresolve(
+                state.CandidateBounds,
+                outerSource.HorizontalAlignment,
+                outerSource.VerticalAlignment,
+                settings);
+            MenuRectangleValue source = primitive.Placement.VirtualRectangle;
+            MenuRectangleValue effective = source with
+            {
+                X = outerVirtualBounds.X + source.X - outerSource.X,
+                Y = outerVirtualBounds.Y + source.Y - outerSource.Y,
+                Width = outerVirtualBounds.Width +
+                    source.Width - outerSource.Width,
+                Height = outerVirtualBounds.Height +
+                    source.Height - outerSource.Height
+            };
+            return MenuRectTransform.Place(effective, settings);
         }
-        return primitive.Bounds;
+        return primitive.Placement;
     }
 
     private MenuPreviewRect EffectiveSelectionBounds(MenuPreviewHitRegion region) =>
@@ -310,7 +329,6 @@ public sealed partial class MenuPreviewControl
         MenuPreviewPrimitive primitive,
         GeometryManipulation state) =>
             state.NodeId == primitive.NodeId &&
-            state.OriginalBounds == primitive.Bounds &&
             state.CandidateBounds != state.OriginalBounds;
 
     private void DrawResizeHandles(DrawingContext context, Rect bounds)
@@ -498,19 +516,23 @@ public sealed partial class MenuPreviewControl
 
     private sealed class GeometryManipulation(
         MenuNodeId nodeId,
-        MenuPreviewRect originalBounds,
+        MenuPreviewPlacement originalPlacement,
         GeometryOperation operation,
         Point pressLocal,
         Point pressVirtual,
         PreviewTransform transform)
     {
         public MenuNodeId NodeId { get; } = nodeId;
-        public MenuPreviewRect OriginalBounds { get; } = originalBounds;
+        public MenuPreviewPlacement OriginalPlacement { get; } =
+            originalPlacement;
+        public MenuPreviewRect OriginalBounds =>
+            OriginalPlacement.OutputBounds;
         public GeometryOperation Operation { get; } = operation;
         public Point PressLocal { get; } = pressLocal;
         public Point PressVirtual { get; } = pressVirtual;
         public PreviewTransform Transform { get; } = transform;
         public bool IsActivated { get; set; }
-        public MenuPreviewRect CandidateBounds { get; set; } = originalBounds;
+        public MenuPreviewRect CandidateBounds { get; set; } =
+            originalPlacement.OutputBounds;
     }
 }

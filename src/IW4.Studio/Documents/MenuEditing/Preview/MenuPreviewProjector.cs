@@ -47,14 +47,25 @@ public static class MenuPreviewProjector
             ? menu.Window.Value.Rect
             : Rectangle(evaluatedState.Window.Rectangle);
         bool rootVisible = evaluatedState?.Window.IsVisible.Value ?? true;
-        MenuPreviewRect rootBounds = MenuRectTransform.Resolve(rootRectangle, settings);
+        MenuPreviewPlacement rootPlacement = MenuRectTransform.Place(
+            rootRectangle,
+            settings);
         if (rootVisible &&
             menu.Settings.Fullscreen != 0 &&
             !string.IsNullOrWhiteSpace(menu.Window.Value.BackgroundMaterialName))
         {
+            MenuPreviewPlacement fullscreenPlacement = MenuRectTransform.Place(
+                rootRectangle with
+                {
+                    X = 0,
+                    Y = 0,
+                    Width = settings.ScreenPlacement.VirtualWidth,
+                    Height = settings.ScreenPlacement.VirtualHeight
+                },
+                settings);
             primitives.Add(new MenuPreviewMaterial(
                 menu.Window.Id,
-                new MenuPreviewRect(0, 0, settings.CanvasWidth, settings.CanvasHeight),
+                fullscreenPlacement,
                 -10,
                 menu.Window.Value.BackgroundMaterialName,
                 new MenuColorValue(1, 1, 1, 1)));
@@ -64,10 +75,11 @@ public static class MenuPreviewProjector
             ProjectWindow(
                 menu.Window.Id,
                 menu.Window.Value with { Rect = rootRectangle },
-                rootBounds,
+                rootPlacement,
                 0,
                 "window",
                 rootRectangle,
+                settings,
                 primitives,
                 hitRegions,
                 issues);
@@ -108,7 +120,7 @@ public static class MenuPreviewProjector
                 WindowBorder.WINDOW_BORDER_NONE
                     ? 0
                     : item.Value.Window.BorderSize;
-            MenuPreviewRect bounds = MenuRectTransform.ResolveItem(
+            MenuPreviewPlacement placement = MenuRectTransform.PlaceItem(
                 rootRectangle,
                 rootInset,
                 itemInset,
@@ -121,16 +133,17 @@ public static class MenuPreviewProjector
             ProjectWindow(
                 item.Id,
                 projectedItem.Value.Window,
-                bounds,
+                placement,
                 z,
                 $"{path}.window",
                 itemRectangle,
+                settings,
                 primitives,
                 hitRegions,
                 issues);
             ProjectItem(
                 projectedItem,
-                bounds,
+                placement,
                 z + 4,
                 path,
                 expressionsEvaluated: evaluatedState is not null,
@@ -155,28 +168,25 @@ public static class MenuPreviewProjector
                 "The evaluated Menu visibility is false, so the scenario renders no Menu content.",
                 MenuPreviewFidelitySeverity.Information));
         }
-        if (settings.CanvasWidth != 640 || settings.CanvasHeight != 480)
-        {
-            issues.Add(new MenuPreviewFidelityIssue(
-                null,
-                "preview.canvas",
-                "PS3 alignment is defined in 640x480 virtual space; noncanonical dimensions are an editor visualization only.",
-                MenuPreviewFidelitySeverity.Information));
-        }
         return new MenuPreviewScene(settings, primitives, hitRegions, issues);
     }
 
     private static void ProjectWindow(
         MenuNodeId nodeId,
         MenuWindowValue window,
-        MenuPreviewRect bounds,
+        MenuPreviewPlacement placement,
         int z,
         string path,
         MenuRectangleValue authoredRect,
+        MenuPreviewSettings settings,
         List<MenuPreviewPrimitive> primitives,
         List<MenuPreviewHitRegion> hitRegions,
         List<MenuPreviewFidelityIssue> issues)
     {
+        MenuPreviewPlacement fillPlacement = WindowFillPlacement(
+            window,
+            placement,
+            settings);
         switch (window.Style)
         {
             case WindowStyle.WINDOW_STYLE_EMPTY:
@@ -186,7 +196,7 @@ public static class MenuPreviewProjector
                 {
                     primitives.Add(new MenuPreviewMaterial(
                         nodeId,
-                        bounds,
+                        fillPlacement,
                         z,
                         window.BackgroundMaterialName,
                         window.BackColor));
@@ -195,7 +205,7 @@ public static class MenuPreviewProjector
                 {
                     primitives.Add(new MenuPreviewFill(
                         nodeId,
-                        bounds,
+                        fillPlacement,
                         z,
                         window.BackColor));
                 }
@@ -205,7 +215,7 @@ public static class MenuPreviewProjector
                 {
                     primitives.Add(new MenuPreviewMaterial(
                         nodeId,
-                        bounds,
+                        fillPlacement,
                         z,
                         window.BackgroundMaterialName,
                         ResolveShaderTint(window)));
@@ -214,13 +224,17 @@ public static class MenuPreviewProjector
                 {
                     primitives.Add(new MenuPreviewPlaceholder(
                         nodeId,
-                        bounds,
+                        fillPlacement,
                         z,
                         "Missing Material"));
                 }
                 break;
             case WindowStyle.WINDOW_STYLE_GRADIENT:
-                primitives.Add(new MenuPreviewFill(nodeId, bounds, z, window.BackColor));
+                primitives.Add(new MenuPreviewFill(
+                    nodeId,
+                    fillPlacement,
+                    z,
+                    window.BackColor));
                 issues.Add(new MenuPreviewFidelityIssue(
                     nodeId,
                     $"{path}.style",
@@ -228,7 +242,11 @@ public static class MenuPreviewProjector
                     MenuPreviewFidelitySeverity.Warning));
                 break;
             case WindowStyle.WINDOW_STYLE_TEAMCOLOR:
-                primitives.Add(new MenuPreviewPlaceholder(nodeId, bounds, z, "Team Color"));
+                primitives.Add(new MenuPreviewPlaceholder(
+                    nodeId,
+                    fillPlacement,
+                    z,
+                    "Team Color"));
                 issues.Add(new MenuPreviewFidelityIssue(
                     nodeId,
                     $"{path}.style",
@@ -236,7 +254,11 @@ public static class MenuPreviewProjector
                     MenuPreviewFidelitySeverity.Warning));
                 break;
             case WindowStyle.WINDOW_STYLE_CINEMATIC:
-                primitives.Add(new MenuPreviewPlaceholder(nodeId, bounds, z, "Cinematic"));
+                primitives.Add(new MenuPreviewPlaceholder(
+                    nodeId,
+                    fillPlacement,
+                    z,
+                    "Cinematic"));
                 issues.Add(new MenuPreviewFidelityIssue(
                     nodeId,
                     $"{path}.style",
@@ -256,10 +278,15 @@ public static class MenuPreviewProjector
         {
             primitives.Add(new MenuPreviewBorder(
                 nodeId,
-                bounds,
+                placement,
                 z + 2,
                 window.BorderColor,
-                window.BorderSize,
+                settings.ScreenPlacement.Resolve(
+                    placement.VirtualRectangle.HorizontalAlignment)
+                    .ApplyLength(window.BorderSize),
+                settings.ScreenPlacement.Resolve(
+                    placement.VirtualRectangle.VerticalAlignment)
+                    .ApplyLength(window.BorderSize),
                 window.Border));
             if (window.Border == WindowBorder.WINDOW_BORDER_KCGRADIENT)
             {
@@ -288,7 +315,11 @@ public static class MenuPreviewProjector
         }
         if ((int)window.OwnerDraw != 0)
         {
-            primitives.Add(new MenuPreviewPlaceholder(nodeId, bounds, z + 3, "OwnerDraw"));
+            primitives.Add(new MenuPreviewPlaceholder(
+                nodeId,
+                placement,
+                z + 3,
+                "OwnerDraw"));
             issues.Add(new MenuPreviewFidelityIssue(
                 nodeId,
                 $"{path}.ownerDraw",
@@ -296,12 +327,12 @@ public static class MenuPreviewProjector
                 MenuPreviewFidelitySeverity.Warning));
         }
         AddAlignmentIssue(nodeId, authoredRect, path, issues);
-        hitRegions.Add(new MenuPreviewHitRegion(nodeId, bounds, z + 9));
+        hitRegions.Add(new MenuPreviewHitRegion(nodeId, placement, z + 9));
     }
 
     private static void ProjectItem(
         MenuItemSnapshot item,
-        MenuPreviewRect bounds,
+        MenuPreviewPlacement placement,
         int z,
         string path,
         bool expressionsEvaluated,
@@ -325,7 +356,7 @@ public static class MenuPreviewProjector
                         : 0;
             primitives.Add(new MenuPreviewText(
                 item.Id,
-                bounds,
+                placement,
                 z,
                 value.Text,
                 value.Window.ForeColor,
@@ -365,7 +396,11 @@ public static class MenuPreviewProjector
 
         if (value.Type is ItemDefType.Model)
         {
-            primitives.Add(new MenuPreviewPlaceholder(item.Id, bounds, z, "Model"));
+            primitives.Add(new MenuPreviewPlaceholder(
+                item.Id,
+                placement,
+                z,
+                "Model"));
             issues.Add(new MenuPreviewFidelityIssue(
                 item.Id,
                 $"{path}.type",
@@ -374,7 +409,11 @@ public static class MenuPreviewProjector
         }
         if (value.Type is ItemDefType.OwnerDraw)
         {
-            primitives.Add(new MenuPreviewPlaceholder(item.Id, bounds, z, "OwnerDraw Item"));
+            primitives.Add(new MenuPreviewPlaceholder(
+                item.Id,
+                placement,
+                z,
+                "OwnerDraw Item"));
         }
         if (!expressionsEvaluated &&
             (value.Behavior.HasVisibleExpression ||
@@ -388,6 +427,28 @@ public static class MenuPreviewProjector
                 "Expression-controlled item state is shown using its static authored values.",
                 MenuPreviewFidelitySeverity.Warning));
         }
+    }
+
+    private static MenuPreviewPlacement WindowFillPlacement(
+        MenuWindowValue window,
+        MenuPreviewPlacement placement,
+        MenuPreviewSettings settings)
+    {
+        if (window.Border == WindowBorder.WINDOW_BORDER_NONE ||
+            !float.IsFinite(window.BorderSize))
+        {
+            return placement;
+        }
+
+        float inset = window.BorderSize;
+        MenuRectangleValue rectangle = placement.VirtualRectangle with
+        {
+            X = placement.VirtualRectangle.X + inset,
+            Y = placement.VirtualRectangle.Y + inset,
+            Width = placement.VirtualRectangle.Width - (inset + 1f),
+            Height = placement.VirtualRectangle.Height - (inset + 1f)
+        };
+        return MenuRectTransform.Place(rectangle, settings);
     }
 
     private static void BehaviorIssues(
@@ -414,18 +475,20 @@ public static class MenuPreviewProjector
         string path,
         List<MenuPreviewFidelityIssue> issues)
     {
-        if ((byte)rect.HorizontalAlignment >= 8 || (byte)rect.VerticalAlignment >= 8)
+        if ((byte)rect.HorizontalAlignment > 10 ||
+            (byte)rect.VerticalAlignment > 10)
         {
             issues.Add(new MenuPreviewFidelityIssue(
                 nodeId,
                 $"{path}.rect",
-                "Raw PS3 alignment values are shown as direct virtual coordinates.",
+                "Unknown alignment values use the native default sub-screen transform.",
                 MenuPreviewFidelitySeverity.Warning));
         }
     }
 
     private static void ValidateSettings(MenuPreviewSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings.ScreenPlacement);
         if (!float.IsFinite(settings.CanvasWidth) || settings.CanvasWidth <= 0)
             throw new ArgumentOutOfRangeException(nameof(settings), "Canvas width must be finite and positive.");
         if (!float.IsFinite(settings.CanvasHeight) || settings.CanvasHeight <= 0)

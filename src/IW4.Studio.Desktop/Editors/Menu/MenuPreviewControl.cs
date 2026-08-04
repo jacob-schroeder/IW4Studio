@@ -183,7 +183,7 @@ public sealed partial class MenuPreviewControl : Control
         using (context.PushClip(StageBounds(scene.Settings, transform)))
         {
             foreach (MenuPreviewPrimitive primitive in scene.Primitives)
-                DrawPrimitive(context, primitive, transform);
+                DrawPrimitive(context, scene, primitive, transform);
             DrawSelection(context, scene, transform);
         }
     }

@@ -1,3 +1,5 @@
+using IW4.Render.UI.ScreenPlacement;
+
 namespace IW4.Studio.Documents.MenuEditing.Preview;
 
 public readonly record struct MenuPreviewRect(
@@ -23,72 +25,72 @@ public readonly record struct MenuPreviewInsets(
     float Right,
     float Bottom);
 
-public sealed record MenuPreviewSettings(
-    float CanvasWidth,
-    float CanvasHeight,
-    MenuPreviewInsets SafeArea)
-{
-    /// <summary>
-    /// The PS3 Menu coordinate system is a canonical 640x480 virtual canvas.
-    /// Rendering surfaces should scale this scene after projection rather than
-    /// substituting physical display dimensions here.
-    /// </summary>
-    public static MenuPreviewSettings Default { get; } = new(
-        640,
-        480,
-        new MenuPreviewInsets(0, 0, 0, 0));
+/// <summary>
+/// Retains the native pre-ScreenPlacement rectangle beside its physical PS3
+/// output bounds. Renderers use output pixels; text and editing use the
+/// authored coordinate system and effective alignment.
+/// </summary>
+public readonly record struct MenuPreviewPlacement(
+    MenuRectangleValue VirtualRectangle,
+    MenuPreviewRect OutputBounds);
 
-    public static MenuPreviewSettings WithSafeArea(
-        float horizontalPercent,
-        float verticalPercent,
-        float canvasWidth = 640,
-        float canvasHeight = 480)
+public sealed record MenuPreviewSettings(UiScreenPlacement ScreenPlacement)
+{
+    public static MenuPreviewSettings Default { get; } = new(
+        UiScreenPlacement.Iw4Ps3Hd);
+
+    public float CanvasWidth => ScreenPlacement.OutputWidth;
+
+    public float CanvasHeight => ScreenPlacement.OutputHeight;
+
+    public MenuPreviewInsets SafeArea
     {
-        if (horizontalPercent is < 0 or >= 0.5f)
-            throw new ArgumentOutOfRangeException(nameof(horizontalPercent));
-        if (verticalPercent is < 0 or >= 0.5f)
-            throw new ArgumentOutOfRangeException(nameof(verticalPercent));
-        return new MenuPreviewSettings(
-            canvasWidth,
-            canvasHeight,
-            new MenuPreviewInsets(
-                canvasWidth * horizontalPercent,
-                canvasHeight * verticalPercent,
-                canvasWidth * horizontalPercent,
-                canvasHeight * verticalPercent));
+        get
+        {
+            UiScreenInsets value = ScreenPlacement.ViewableInsets;
+            return new MenuPreviewInsets(
+                value.Left,
+                value.Top,
+                value.Right,
+                value.Bottom);
+        }
     }
 }
 
 public abstract record MenuPreviewPrimitive(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
-    int ZIndex);
+    MenuPreviewPlacement Placement,
+    int ZIndex)
+{
+    public MenuPreviewRect Bounds => Placement.OutputBounds;
+}
 
 public sealed record MenuPreviewFill(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
+    MenuPreviewPlacement Placement,
     int ZIndex,
-    MenuColorValue Color) : MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
+    MenuColorValue Color) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewBorder(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
+    MenuPreviewPlacement Placement,
     int ZIndex,
     MenuColorValue Color,
-    float Thickness,
+    float ThicknessX,
+    float ThicknessY,
     IW4.Assets.Assets.Menu.WindowBorder Border) :
-    MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
+    MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewMaterial(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
+    MenuPreviewPlacement Placement,
     int ZIndex,
     string MaterialName,
-    MenuColorValue Tint) : MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
+    MenuColorValue Tint) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewText(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
+    MenuPreviewPlacement Placement,
     int ZIndex,
     string Text,
     MenuColorValue Color,
@@ -98,18 +100,21 @@ public sealed record MenuPreviewText(
     int Style,
     float OffsetX,
     float OffsetY,
-    float BorderInset) : MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
+    float BorderInset) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewPlaceholder(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
+    MenuPreviewPlacement Placement,
     int ZIndex,
-    string Label) : MenuPreviewPrimitive(NodeId, Bounds, ZIndex);
+    string Label) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewHitRegion(
     MenuNodeId NodeId,
-    MenuPreviewRect Bounds,
-    int ZIndex);
+    MenuPreviewPlacement Placement,
+    int ZIndex)
+{
+    public MenuPreviewRect Bounds => Placement.OutputBounds;
+}
 
 public enum MenuPreviewFidelitySeverity
 {

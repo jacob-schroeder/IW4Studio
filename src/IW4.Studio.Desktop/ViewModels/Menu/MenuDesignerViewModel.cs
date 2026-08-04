@@ -506,9 +506,21 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             return false;
         }
 
-        MenuPreviewRect currentBounds = MenuRectTransform.ResolveItem(
-            _snapshot!.Window.Value,
-            item.Value.Window,
+        MenuWindowValue rootWindow = _snapshot!.Window.Value;
+        float rootInset = rootWindow.Border == WindowBorder.WINDOW_BORDER_NONE
+            ? 0
+            : rootWindow.BorderSize;
+        float itemInset = item.Value.Window.Border ==
+            WindowBorder.WINDOW_BORDER_NONE
+                ? 0
+                : item.Value.Window.BorderSize;
+        MenuRectangleValue screenRectangle = MenuRectTransform.ComposeItem(
+            rootWindow.Rect,
+            rootInset,
+            itemInset,
+            item.Value.Window.RectClient);
+        MenuPreviewRect currentBounds = MenuRectTransform.Resolve(
+            screenRectangle,
             scene.Settings);
         if (currentBounds != originalBounds ||
             candidateBounds == originalBounds)
@@ -516,15 +528,20 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             return false;
         }
 
+        MenuPreviewRect candidateVirtual = MenuRectTransform.Unresolve(
+            candidateBounds,
+            screenRectangle.HorizontalAlignment,
+            screenRectangle.VerticalAlignment,
+            scene.Settings);
         MenuRectangleValue current = item.Value.Window.RectClient;
         var replacement = current with
         {
-            X = current.X + candidateBounds.X - originalBounds.X,
-            Y = current.Y + candidateBounds.Y - originalBounds.Y,
+            X = current.X + candidateVirtual.X - screenRectangle.X,
+            Y = current.Y + candidateVirtual.Y - screenRectangle.Y,
             Width = current.Width +
-                candidateBounds.Width - originalBounds.Width,
+                candidateVirtual.Width - screenRectangle.Width,
             Height = current.Height +
-                candidateBounds.Height - originalBounds.Height
+                candidateVirtual.Height - screenRectangle.Height
         };
         if (!IsFinite(replacement) || replacement == current)
             return false;
@@ -854,20 +871,12 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     }
 
     private static bool SupportsDirectManipulation(HorizontalAlign value) =>
-        value is
-            HorizontalAlign.HORIZONTAL_ALIGN_SUBLEFT or
-            HorizontalAlign.HORIZONTAL_ALIGN_LEFT or
-            HorizontalAlign.HORIZONTAL_ALIGN_CENTER or
-            HorizontalAlign.HORIZONTAL_ALIGN_RIGHT or
-            HorizontalAlign.HORIZONTAL_ALIGN_CENTER_SAFEAREA;
+        (byte)value <=
+        (byte)HorizontalAlign.HORIZONTAL_ALIGN_RIGHT_ADJUSTABLE;
 
     private static bool SupportsDirectManipulation(VerticalAlign value) =>
-        value is
-            VerticalAlign.VERTICAL_ALIGN_SUBTOP or
-            VerticalAlign.VERTICAL_ALIGN_TOP or
-            VerticalAlign.VERTICAL_ALIGN_CENTER or
-            VerticalAlign.VERTICAL_ALIGN_BOTTOM or
-            VerticalAlign.VERTICAL_ALIGN_CENTER_SAFEAREA;
+        (byte)value <=
+        (byte)VerticalAlign.VERTICAL_ALIGN_BOTTOM_ADJUSTABLE;
 
     private static bool SupportsDirectManipulation(
         MenuRectangleValue root,
