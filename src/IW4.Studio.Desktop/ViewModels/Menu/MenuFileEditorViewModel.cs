@@ -510,50 +510,24 @@ public sealed class MenuFileEditorViewModel
             Dispatcher.UIThread.Post(() => Coordinator_Changed(sender, args));
             return;
         }
+        // Both the MenuFile and selected Menu authority carry the document-
+        // wide editing revision; every coordinator mutation rebases them.
         if (
             _disposed ||
             Mode != AssetEditorMode.Editable ||
             _rowIdentity is null ||
-            _coordinatorMutationDepth != 0 ||
-            !IsCoordinatorChangeRelevant(args))
+            _coordinatorMutationDepth != 0)
             return;
         if (Designer.HasStagedInput)
         {
             _pendingCoordinatorRefresh = true;
             StatusMessage =
-                "Menu authority changed in another editor; commit or reset the staged Properties value to refresh.";
+                "The document changed in another editor; reset the staged " +
+                "Properties value to refresh before applying it again.";
             return;
         }
 
         RefreshFromCoordinator();
-    }
-
-    private bool IsCoordinatorChangeRelevant(
-        MenuEditingCoordinatorChangedEventArgs args)
-    {
-        if (args.Kind == MenuEditingCoordinatorChangeKind.TargetRowsChanged ||
-            args.RowIdentity == _rowIdentity)
-        {
-            return true;
-        }
-
-        if (args.NormalizedMenuName is not { } changedName)
-        {
-            // A structural edit in another MenuFile can change document-wide
-            // ownership. Those comparatively rare changes require a refresh.
-            return args.Kind is
-                MenuEditingCoordinatorChangeKind.MenuFileEdited or
-                MenuEditingCoordinatorChangeKind.MenuFileReverted;
-        }
-
-        return Registrations.Any(registration =>
-            registration.MenuName is { } menuName &&
-            !string.IsNullOrWhiteSpace(menuName) &&
-            string.Equals(
-                XAssetStableIdentity.NormalizeLookupName(
-                    menuName),
-                changedName,
-                StringComparison.Ordinal));
     }
 
     private void RefreshFromCoordinator()

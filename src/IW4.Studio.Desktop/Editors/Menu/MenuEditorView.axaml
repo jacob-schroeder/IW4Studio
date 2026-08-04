@@ -30,14 +30,30 @@
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
 
-        <Button Grid.Column="1"
-                Classes="ghost"
-                MinHeight="30"
-                Padding="7,4"
-                Command="{Binding RevertCommand}"
-                ToolTip.Tip="Revert this top-level Menu row">
-          <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
-        </Button>
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Spacing="7">
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="7,4"
+                  Command="{Binding RevertCommand}"
+                  ToolTip.Tip="Revert this top-level Menu row">
+            <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+          </Button>
+          <Button Classes="primary"
+                  MinHeight="30"
+                  Padding="12,5"
+                  IsEnabled="{Binding Designer.HasStagedInput}"
+                  ToolTip.Tip="Apply the staged Properties value to the Menu draft; use Save As to write the fastfile"
+                  Click="ApplyChangesButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
       </Grid>
     </Border>
 

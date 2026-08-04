@@ -14,6 +14,18 @@ public sealed class MenuPreviewNodeSelectedEventArgs(MenuNodeId nodeId)
     public MenuNodeId NodeId { get; } = nodeId;
 }
 
+public sealed class MenuPreviewGeometryCommittedEventArgs(
+    MenuNodeId nodeId,
+    MenuPreviewRect originalBounds,
+    MenuPreviewRect candidateBounds) : EventArgs
+{
+    public MenuNodeId NodeId { get; } = nodeId;
+
+    public MenuPreviewRect OriginalBounds { get; } = originalBounds;
+
+    public MenuPreviewRect CandidateBounds { get; } = candidateBounds;
+}
+
 public sealed class MenuPreviewMaterialResolutionCompletedEventArgs(
     MenuPreviewMaterialStatus status)
     : EventArgs
@@ -69,6 +81,11 @@ public sealed partial class MenuPreviewControl : Control
         AvaloniaProperty.Register<MenuPreviewControl, MenuNodeId?>(
             nameof(SelectedNodeId));
 
+    public static readonly StyledProperty<bool>
+        IsDirectManipulationEnabledProperty =
+            AvaloniaProperty.Register<MenuPreviewControl, bool>(
+                nameof(IsDirectManipulationEnabled));
+
     public static readonly StyledProperty<IMenuPreviewMaterialResolver?>
         MaterialResolverProperty =
             AvaloniaProperty.Register<
@@ -88,6 +105,7 @@ public sealed partial class MenuPreviewControl : Control
         AffectsRender<MenuPreviewControl>(
             SceneProperty,
             SelectedNodeIdProperty,
+            IsDirectManipulationEnabledProperty,
             MaterialResolverProperty,
             TextResourceResolverProperty);
     }
@@ -96,6 +114,7 @@ public sealed partial class MenuPreviewControl : Control
     {
         ClipToBounds = true;
         Focusable = true;
+        PointerCaptureLost += MenuPreviewControl_PointerCaptureLost;
     }
 
     public MenuPreviewScene? Scene
@@ -108,6 +127,12 @@ public sealed partial class MenuPreviewControl : Control
     {
         get => GetValue(SelectedNodeIdProperty);
         set => SetValue(SelectedNodeIdProperty, value);
+    }
+
+    public bool IsDirectManipulationEnabled
+    {
+        get => GetValue(IsDirectManipulationEnabledProperty);
+        set => SetValue(IsDirectManipulationEnabledProperty, value);
     }
 
     public IMenuPreviewMaterialResolver? MaterialResolver
@@ -123,6 +148,9 @@ public sealed partial class MenuPreviewControl : Control
     }
 
     public event EventHandler<MenuPreviewNodeSelectedEventArgs>? NodeSelected;
+
+    public event EventHandler<MenuPreviewGeometryCommittedEventArgs>?
+        GeometryCommitted;
 
     public event EventHandler<
         MenuPreviewMaterialResolutionCompletedEventArgs>?
@@ -152,9 +180,12 @@ public sealed partial class MenuPreviewControl : Control
 
         PreviewTransform transform = CreateTransform(scene.Settings);
         DrawStage(context, scene, transform);
-        foreach (MenuPreviewPrimitive primitive in scene.Primitives)
-            DrawPrimitive(context, primitive, transform);
-        DrawSelection(context, scene, transform);
+        using (context.PushClip(StageBounds(scene.Settings, transform)))
+        {
+            foreach (MenuPreviewPrimitive primitive in scene.Primitives)
+                DrawPrimitive(context, primitive, transform);
+            DrawSelection(context, scene, transform);
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -163,8 +194,15 @@ public sealed partial class MenuPreviewControl : Control
         if (change.Property == SceneProperty ||
             change.Property == TextResourceResolverProperty)
         {
+            if (change.Property == SceneProperty)
+                CancelGeometryManipulation();
             RefreshTextLayouts(reportStatuses: true);
             RefreshMaterials(change.Property == SceneProperty);
+        }
+        else if (change.Property == SelectedNodeIdProperty ||
+                 change.Property == IsDirectManipulationEnabledProperty)
+        {
+            CancelGeometryManipulation();
         }
         else if (change.Property == MaterialResolverProperty)
         {
@@ -172,32 +210,10 @@ public sealed partial class MenuPreviewControl : Control
         }
     }
 
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        if (Scene is not { } scene ||
-            !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-        {
-            return;
-        }
-
-        PreviewTransform transform = CreateTransform(scene.Settings);
-        Point position = e.GetPosition(this);
-        float x = (float)((position.X - transform.Origin.X) / transform.Scale);
-        float y = (float)((position.Y - transform.Origin.Y) / transform.Scale);
-        if (scene.HitTest(x, y) is not { } nodeId)
-            return;
-
-        Focus();
-        NodeSelected?.Invoke(
-            this,
-            new MenuPreviewNodeSelectedEventArgs(nodeId));
-        e.Handled = true;
-    }
-
     protected override void OnDetachedFromVisualTree(
         Avalonia.VisualTreeAttachmentEventArgs e)
     {
+        CancelGeometryManipulation();
         _isAttached = false;
         ResetMaterialState();
         ResetTextState();

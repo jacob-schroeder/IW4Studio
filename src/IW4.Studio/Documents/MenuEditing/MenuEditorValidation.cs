@@ -142,13 +142,6 @@ internal static class MenuEditorValidation
         Fixed(value.CursorPositions, 4, $"{path}.cursorPositions", issues);
         if (!Enum.IsDefined(value.Type))
             Error($"{path}.type", "Unknown item type discriminator.", issues);
-        if (value.DataType != (int)value.Type)
-        {
-            Error(
-                $"{path}.dataType",
-                "Item data type must match the selected item type.",
-                issues);
-        }
         if (unchecked((uint)value.TextAlignMode) >= 16u ||
             (value.TextAlignMode & 3) == 3)
         {

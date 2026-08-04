@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Avalonia.Threading;
 using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Assets;
@@ -32,6 +33,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         _materialPreviewStatuses = new(StringComparer.Ordinal);
     private readonly Dictionary<MenuNodeId, MenuPreviewTextStatus>
         _textPreviewStatuses = [];
+    private string? _directManipulationError;
     private MenuEditorSnapshot? _snapshot;
     private IReadOnlyList<MenuOutlineNodeViewModel> _outlineRoots = [];
     private MenuOutlineNodeViewModel? _selectedNode;
@@ -56,6 +58,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         _textResourceResolver = textResourceResolver;
         _previewDebug = new MenuPreviewDebugViewModel(textResourceResolver);
         _previewDebug.PreviewChanged += PreviewDebug_PreviewChanged;
+        if (_textResourceResolver is not null)
+            _textResourceResolver.Changed += TextResourceResolver_Changed;
         _isAssetReferenceResolved = isAssetReferenceResolved;
         AddItemCommand = new ViewModelCommand(
             AddItem,
@@ -130,10 +134,12 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             if (!SetProperty(ref _selectedNode, value))
                 return;
 
+            SetDirectManipulationError(null);
             SetInspectorSelection(BuildInspectorSelection(value));
             OnPropertyChanged(nameof(SelectionBreadcrumb));
             OnPropertyChanged(nameof(SelectedPreviewNodeId));
             OnPropertyChanged(nameof(CanChangeSelectedItemType));
+            OnPropertyChanged(nameof(CanDirectManipulateSelectedItem));
             OnPropertyChanged(nameof(SelectedItemType));
             PreviewDebug.SelectNode(value?.Kind, value?.NodeId);
             NotifyItemCommandsChanged();
@@ -154,6 +160,16 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         !HasStagedInput &&
         SelectedNode is { Kind: MenuOutlineNodeKind.Item } &&
         SelectedItem() is { IsResolved: true };
+
+    public bool CanDirectManipulateSelectedItem =>
+        IsEditable &&
+        !HasStagedInput &&
+        PreviewDebug.IsAuthored &&
+        _snapshot is { } snapshot &&
+        SelectedItem() is { IsResolved: true } item &&
+        SupportsDirectManipulation(
+            snapshot.Window.Value.Rect,
+            item.Value.Window.RectClient);
 
     public ItemDefType? SelectedItemType =>
         SelectedItem()?.Value.Type;
@@ -186,6 +202,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     {
         get
         {
+            if (_directManipulationError is not null)
+                return _directManipulationError;
             if (!HasDocument)
                 return "No complete Menu definition is available to preview.";
 
@@ -235,6 +253,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     {
         get
         {
+            if (_directManipulationError is not null)
+                return _directManipulationError;
             if (!HasDocument)
                 return PreviewStatus;
 
@@ -277,6 +297,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     /// </summary>
     public void ReplaceDocument(MenuEditorSnapshot? snapshot)
     {
+        SetDirectManipulationError(null);
         MenuOutlineNodeKind? selectedKind = _selectedNode?.Kind;
         int? selectedItemIndex = _selectedNode?.ItemIndex;
         _snapshot = snapshot;
@@ -343,13 +364,19 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Applies a caller-confirmed union-arm change. Common Item/Window fields
-    /// survive; type-specific payload fields are reset to valid defaults.
+    /// Applies one atomic union-arm change. Common Item/Window fields survive;
+    /// type-specific payload fields are reset to valid defaults.
     /// </summary>
     public void ChangeSelectedItemType(ItemDefType type)
     {
         if (!Enum.IsDefined(type))
             throw new ArgumentOutOfRangeException(nameof(type));
+        if (!CanChangeSelectedItemType)
+        {
+            throw new InvalidOperationException(
+                "Item Type cannot be changed until the selected item is " +
+                "editable and any staged Properties value is resolved.");
+        }
         MenuItemSnapshot item = SelectedItem() is { IsResolved: true } selected
             ? selected
             : throw new InvalidOperationException(
@@ -459,11 +486,88 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             return new ReplaceItemWindowEdit(itemId, update(item.Value.Window));
         });
 
+    /// <summary>
+    /// Commits one completed preview gesture through the same typed Menu
+    /// authority used by Properties. Pointer-move candidates remain visual;
+    /// only this gesture boundary creates a semantic document revision.
+    /// </summary>
+    public bool CommitPreviewItemGeometry(
+        MenuNodeId itemId,
+        MenuPreviewRect originalBounds,
+        MenuPreviewRect candidateBounds)
+    {
+        if (!CanDirectManipulateSelectedItem ||
+            SelectedItem() is not { IsResolved: true } item ||
+            item.Id != itemId ||
+            PreviewScene is not { } scene ||
+            !IsFinite(originalBounds) ||
+            !IsFinite(candidateBounds))
+        {
+            return false;
+        }
+
+        MenuPreviewRect currentBounds = MenuRectTransform.ResolveItem(
+            _snapshot!.Window.Value,
+            item.Value.Window,
+            scene.Settings);
+        if (currentBounds != originalBounds ||
+            candidateBounds == originalBounds)
+        {
+            return false;
+        }
+
+        MenuRectangleValue current = item.Value.Window.RectClient;
+        var replacement = current with
+        {
+            X = current.X + candidateBounds.X - originalBounds.X,
+            Y = current.Y + candidateBounds.Y - originalBounds.Y,
+            Width = current.Width +
+                candidateBounds.Width - originalBounds.Width,
+            Height = current.Height +
+                candidateBounds.Height - originalBounds.Height
+        };
+        if (!IsFinite(replacement) || replacement == current)
+            return false;
+
+        MenuEditorSnapshot next;
+        try
+        {
+            next = ApplyCore(new ReplaceItemWindowEdit(
+                itemId,
+                item.Value.Window with { RectClient = replacement }));
+        }
+        catch (Exception exception) when (exception is
+                   ArgumentException or
+                   InvalidOperationException or
+                   InvalidDataException or
+                   OverflowException)
+        {
+            SetDirectManipulationError(
+                $"Geometry change was not applied: {exception.Message}");
+            return false;
+        }
+
+        // Unlike a Properties-originated scalar edit, direct manipulation
+        // must rebuild the active rows so their RectClient inputs immediately
+        // reflect the committed geometry.
+        ReplaceDocument(next);
+        return true;
+    }
+
     public void ApplyStructuralEdit(MenuEdit edit)
     {
         ArgumentNullException.ThrowIfNull(edit);
         MenuEditorSnapshot next = ApplyCore(edit);
         ReplaceDocument(next);
+    }
+
+    public bool ApplyStagedInput()
+    {
+        IInspectorStagedPropertyRow[] stagedRows = _observedRows
+            .OfType<IInspectorStagedPropertyRow>()
+            .Where(row => row.HasStagedValue)
+            .ToArray();
+        return stagedRows.Length == 1 && stagedRows[0].CommitInput();
     }
 
     public void Dispose()
@@ -472,6 +576,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             return;
 
         _disposed = true;
+        if (_textResourceResolver is not null)
+            _textResourceResolver.Changed -= TextResourceResolver_Changed;
         PreviewDebug.PreviewChanged -= PreviewDebug_PreviewChanged;
         StopObservingRows();
     }
@@ -547,6 +653,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PreviewScene));
         OnPropertyChanged(nameof(SelectedPreviewNodeId));
         OnPropertyChanged(nameof(CanChangeSelectedItemType));
+        OnPropertyChanged(nameof(CanDirectManipulateSelectedItem));
         OnPropertyChanged(nameof(SelectedItemType));
         OnPropertyChanged(nameof(SelectionBreadcrumb));
         OnPropertyChanged(nameof(PreviewStatus));
@@ -561,6 +668,20 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PreviewScene));
         OnPropertyChanged(nameof(PreviewStatus));
         OnPropertyChanged(nameof(PreviewDetails));
+        OnPropertyChanged(nameof(CanDirectManipulateSelectedItem));
+    }
+
+    private void TextResourceResolver_Changed(object? sender, EventArgs args)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() =>
+                TextResourceResolver_Changed(sender, args));
+            return;
+        }
+
+        if (!_disposed)
+            PreviewDebug.RefreshTextResources();
     }
 
     private void SetInspectorSelection(InspectorSelectionViewModel? value)
@@ -619,6 +740,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     {
         HasStagedInput = value;
         OnPropertyChanged(nameof(CanChangeSelectedItemType));
+        OnPropertyChanged(nameof(CanDirectManipulateSelectedItem));
         NotifyItemCommandsChanged();
     }
 
@@ -729,5 +851,65 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         RemoveItemCommand.RaiseCanExecuteChanged();
         MoveItemUpCommand.RaiseCanExecuteChanged();
         MoveItemDownCommand.RaiseCanExecuteChanged();
+    }
+
+    private static bool SupportsDirectManipulation(HorizontalAlign value) =>
+        value is
+            HorizontalAlign.HORIZONTAL_ALIGN_SUBLEFT or
+            HorizontalAlign.HORIZONTAL_ALIGN_LEFT or
+            HorizontalAlign.HORIZONTAL_ALIGN_CENTER or
+            HorizontalAlign.HORIZONTAL_ALIGN_RIGHT or
+            HorizontalAlign.HORIZONTAL_ALIGN_CENTER_SAFEAREA;
+
+    private static bool SupportsDirectManipulation(VerticalAlign value) =>
+        value is
+            VerticalAlign.VERTICAL_ALIGN_SUBTOP or
+            VerticalAlign.VERTICAL_ALIGN_TOP or
+            VerticalAlign.VERTICAL_ALIGN_CENTER or
+            VerticalAlign.VERTICAL_ALIGN_BOTTOM or
+            VerticalAlign.VERTICAL_ALIGN_CENTER_SAFEAREA;
+
+    private static bool SupportsDirectManipulation(
+        MenuRectangleValue root,
+        MenuRectangleValue client)
+    {
+        bool inheritsRootAlignment =
+            client.HorizontalAlignment ==
+                HorizontalAlign.HORIZONTAL_ALIGN_SUBLEFT &&
+            client.VerticalAlignment ==
+                VerticalAlign.VERTICAL_ALIGN_SUBTOP;
+        return SupportsDirectManipulation(inheritsRootAlignment
+                ? root.HorizontalAlignment
+                : client.HorizontalAlignment) &&
+            SupportsDirectManipulation(inheritsRootAlignment
+                ? root.VerticalAlignment
+                : client.VerticalAlignment);
+    }
+
+    private static bool IsFinite(MenuPreviewRect value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Width) &&
+        float.IsFinite(value.Height);
+
+    private static bool IsFinite(MenuRectangleValue value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Width) &&
+        float.IsFinite(value.Height);
+
+    private void SetDirectManipulationError(string? value)
+    {
+        if (string.Equals(
+                _directManipulationError,
+                value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _directManipulationError = value;
+        OnPropertyChanged(nameof(PreviewStatus));
+        OnPropertyChanged(nameof(PreviewDetails));
     }
 }

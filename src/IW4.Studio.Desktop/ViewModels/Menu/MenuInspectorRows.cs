@@ -57,7 +57,8 @@ internal static partial class MenuInspectorProjection
         string label,
         string fieldPath,
         TEnum value,
-        Action<TEnum>? apply = null)
+        Action<TEnum>? apply = null,
+        string? description = null)
         where TEnum : struct, Enum =>
         new(
             label,
@@ -72,7 +73,8 @@ internal static partial class MenuInspectorProjection
                 ? null
                 : selected => apply((TEnum)Enum.ToObject(
                     typeof(TEnum),
-                    long.Parse(selected, CultureInfo.InvariantCulture))));
+                    long.Parse(selected, CultureInfo.InvariantCulture))),
+            description);
 
     private static InspectorFlagsPropertyRowViewModel Flags<TEnum>(
         string label,

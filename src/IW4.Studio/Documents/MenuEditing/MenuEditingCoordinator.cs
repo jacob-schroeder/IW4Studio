@@ -18,6 +18,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
     private readonly AssetAuthoringAdapterRegistry _adapters;
     private readonly MenuAuthorityCapture _capture;
     private readonly object _captureGate = new();
+    private readonly AsyncLocal<int> _sessionMutationDepth = new();
     private CapturedMenuAuthorityState? _cachedAuthorityState;
     private int _disposed;
 
@@ -31,7 +32,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         _capture = new MenuAuthorityCapture(_editingSession, _adapters);
         RequireMenuAdapter<MenuDraft>(XAssetType.Menu);
         RequireMenuAdapter<MenuFileDraft>(XAssetType.MenuFile);
-        _editingSession.TargetRowsChanged += OnTargetRowsChanged;
+        _editingSession.SemanticChanged += OnEditingSessionChanged;
     }
 
     public event EventHandler<MenuEditingCoordinatorChangedEventArgs>? Changed;
@@ -167,18 +168,19 @@ public sealed partial class MenuEditingCoordinator : IDisposable
             edit);
         IAssetAuthoringAdapter adapter = _adapters.RequireAdapter(
             XAssetType.MenuFile);
-        bool changed = _editingSession.MutateAuthoredDraftAtRevision(
-            state.Revision,
-            rowIdentity,
-            adapter,
-            draft =>
-            {
-                var menuFile = (MenuFileDraft)draft;
-                menuFile.Apply(RebindRegistrationEdit(
-                    menuFile.Snapshot,
-                    edit,
-                    targetRegistrationIndex));
-            });
+        bool changed = RunSessionMutation(() =>
+            _editingSession.MutateAuthoredDraftAtRevision(
+                state.Revision,
+                rowIdentity,
+                adapter,
+                draft =>
+                {
+                    var menuFile = (MenuFileDraft)draft;
+                    menuFile.Apply(RebindRegistrationEdit(
+                        menuFile.Snapshot,
+                        edit,
+                        targetRegistrationIndex));
+                }));
         MenuFileEditorSnapshot snapshot = CaptureAuthorityState()
             .RequireMenuFileRow(rowIdentity)
             .Snapshot;
@@ -223,6 +225,6 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        _editingSession.TargetRowsChanged -= OnTargetRowsChanged;
+        _editingSession.SemanticChanged -= OnEditingSessionChanged;
     }
 }

@@ -52,8 +52,6 @@ internal sealed class MenuGraphValidator
     {
         if (!Require(raw, value, path) || !Visit(value!)) return;
         if (!Enum.IsDefined(value!.Type)) Error($"{path}.type", "Unknown item type discriminator.");
-        if (value.DataType != (int)value.Type)
-            Error($"{path}.dataType", "Item data type must match the selected item type.");
         if (unchecked((uint)value.TextAlignMode) >= 16u || (value.TextAlignMode & 3) == 3)
             Error($"{path}.textAlignMode", "Invalid text alignment mode.");
         if (value.Type == ItemDefType.GameMessageWindow)

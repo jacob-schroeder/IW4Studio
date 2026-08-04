@@ -383,6 +383,43 @@ internal readonly record struct FastFileEditingCaptureVersion(
     int RetainedDraftCount);
 
 /// <summary>
+/// One committed semantic authoring revision. Asset types identify the
+/// detached resources whose values may have changed; target-row manifest
+/// notifications remain available separately through TargetRowsChanged.
+/// </summary>
+internal sealed class FastFileEditingSessionChangedEventArgs : EventArgs
+{
+    internal FastFileEditingSessionChangedEventArgs(
+        long revision,
+        IEnumerable<XAssetType> assetTypes)
+    {
+        if (revision < 0)
+            throw new ArgumentOutOfRangeException(nameof(revision));
+        ArgumentNullException.ThrowIfNull(assetTypes);
+        XAssetType[] distinctTypes = assetTypes
+            .Distinct()
+            .ToArray();
+        if (distinctTypes.Length == 0 ||
+            distinctTypes.Any(type => !Enum.IsDefined(type)))
+        {
+            throw new ArgumentException(
+                "A semantic editing change requires at least one valid asset type.",
+                nameof(assetTypes));
+        }
+
+        Revision = revision;
+        AssetTypes = Array.AsReadOnly(distinctTypes);
+    }
+
+    public long Revision { get; }
+
+    public IReadOnlyList<XAssetType> AssetTypes { get; }
+
+    public bool Affects(XAssetType assetType) =>
+        AssetTypes.Contains(assetType);
+}
+
+/// <summary>
 /// Revision-consistent input for coordinators that need only a small subset
 /// of the authored document. Unlike a save snapshot, this does not clone
 /// drafts for unrelated asset types or construct a document-wide change set.
@@ -596,6 +633,9 @@ public sealed class FastFileEditingSession : IDisposable
 
     public event EventHandler? TargetRowsChanged;
 
+    internal event EventHandler<FastFileEditingSessionChangedEventArgs>?
+        SemanticChanged;
+
     public IReadOnlyList<XAssetType> AddableAssetTypes =>
         NewAssetDefinitionFactory.SupportedAssetTypes;
 
@@ -719,6 +759,7 @@ public sealed class FastFileEditingSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(adapter);
         WorkspaceAssetCatalogEntry entry;
+        long revision;
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -757,7 +798,7 @@ public sealed class FastFileEditingSession : IDisposable
                     entry,
                     adapter,
                     baseline);
-                long revision = NextRevision();
+                revision = NextRevision();
                 _drafts.Add(identity, state);
                 _pendingAdditions.Add(identity, revision);
                 RebuildChangeSet();
@@ -771,6 +812,7 @@ public sealed class FastFileEditingSession : IDisposable
             }
         }
 
+        RaiseSemanticChanged(revision, [assetType]);
         TargetRowsChanged?.Invoke(this, EventArgs.Empty);
         return entry;
     }
@@ -849,6 +891,8 @@ public sealed class FastFileEditingSession : IDisposable
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(mutation);
 
+        long changedRevision;
+        XAssetType changedType;
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -862,8 +906,12 @@ public sealed class FastFileEditingSession : IDisposable
             long revision = NextRevision();
             state.SetCurrent(working, revision);
             RebuildChangeSet();
-            return true;
+            changedRevision = revision;
+            changedType = Document.GetRow(identity).AssetType;
         }
+
+        RaiseSemanticChanged(changedRevision, [changedType]);
+        return true;
     }
 
     /// <summary>
@@ -884,6 +932,8 @@ public sealed class FastFileEditingSession : IDisposable
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(mutation);
 
+        long changedRevision;
+        XAssetType changedType;
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -904,8 +954,12 @@ public sealed class FastFileEditingSession : IDisposable
             long revision = NextRevision();
             state.SetCurrent(working, revision);
             RebuildChangeSet();
-            return true;
+            changedRevision = revision;
+            changedType = Document.GetRow(identity).AssetType;
         }
+
+        RaiseSemanticChanged(changedRevision, [changedType]);
+        return true;
     }
 
     /// <summary>
@@ -963,6 +1017,8 @@ public sealed class FastFileEditingSession : IDisposable
                 nameof(mutations));
         }
 
+        long changedRevision;
+        XAssetType[] changedTypes;
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -1062,8 +1118,16 @@ public sealed class FastFileEditingSession : IDisposable
                     revision);
             }
             RebuildChangeSet();
-            return true;
+            changedRevision = revision;
+            changedTypes = staged
+                .Where(value => value.Changed)
+                .Select(value => value.Request.Adapter.AssetType)
+                .Distinct()
+                .ToArray();
         }
+
+        RaiseSemanticChanged(changedRevision, changedTypes);
+        return true;
     }
 
     /// <summary>
@@ -1173,6 +1237,8 @@ public sealed class FastFileEditingSession : IDisposable
     {
         bool targetRowsChanged = false;
         bool reverted;
+        long? changedRevision = null;
+        XAssetType? changedType = null;
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -1193,7 +1259,8 @@ public sealed class FastFileEditingSession : IDisposable
                     $"{requiredSavedRevision} to {_lastSavedRevision}; " +
                     "discard the validated revert and replan.");
             }
-            _ = RequireEditableRow(identity);
+            WorkspaceAssetCatalogEntry entry = RequireEditableRow(identity);
+            changedType = entry.AssetType;
             if (_pendingAdditions.ContainsKey(identity) &&
                 _transactionalSaveProtectedAdditions.Contains(identity))
             {
@@ -1203,6 +1270,7 @@ public sealed class FastFileEditingSession : IDisposable
             if (_pendingAdditions.Remove(identity))
             {
                 long revision = NextRevision();
+                changedRevision = revision;
                 if (_drafts.Remove(identity, out IEditingSessionDraftState? retired))
                 {
                     retired.RestoreSavedBaseline(revision);
@@ -1224,12 +1292,19 @@ public sealed class FastFileEditingSession : IDisposable
             else
             {
                 long revision = NextRevision();
+                changedRevision = revision;
                 state.RestoreSavedBaseline(revision);
                 RebuildChangeSet();
                 reverted = true;
             }
         }
 
+        if (reverted)
+        {
+            RaiseSemanticChanged(
+                changedRevision!.Value,
+                [changedType!.Value]);
+        }
         if (targetRowsChanged)
             TargetRowsChanged?.Invoke(this, EventArgs.Empty);
         return reverted;
@@ -1239,6 +1314,8 @@ public sealed class FastFileEditingSession : IDisposable
     {
         bool targetRowsChanged = false;
         bool reverted;
+        long? changedRevision = null;
+        XAssetType[] changedTypes = [];
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -1269,7 +1346,14 @@ public sealed class FastFileEditingSession : IDisposable
                 foreach (TargetZoneRowIdentity identity in pendingAdditions)
                     _ = RequireEditableRow(identity);
 
+                changedTypes = changed
+                    .Select(state => Document.GetRow(state.Identity).AssetType)
+                    .Concat(pendingAdditions.Select(identity =>
+                        Document.GetRow(identity).AssetType))
+                    .Distinct()
+                    .ToArray();
                 long revision = NextRevision();
+                changedRevision = revision;
                 foreach (IEditingSessionDraftState state in changed)
                     state.RestoreSavedBaseline(revision);
                 foreach (TargetZoneRowIdentity identity in pendingAdditions)
@@ -1292,6 +1376,8 @@ public sealed class FastFileEditingSession : IDisposable
             }
         }
 
+        if (reverted)
+            RaiseSemanticChanged(changedRevision!.Value, changedTypes);
         if (targetRowsChanged)
             TargetRowsChanged?.Invoke(this, EventArgs.Empty);
         return reverted;
@@ -1689,6 +1775,15 @@ public sealed class FastFileEditingSession : IDisposable
         return ++_revision;
     }
 
+    private void RaiseSemanticChanged(
+        long revision,
+        IEnumerable<XAssetType> assetTypes) =>
+        SemanticChanged?.Invoke(
+            this,
+            new FastFileEditingSessionChangedEventArgs(
+                revision,
+                assetTypes));
+
     private void RebuildChangeSet()
     {
         IEnumerable<AssetRowChange> modified = _drafts.Values
@@ -1713,6 +1808,8 @@ public sealed class FastFileEditingSession : IDisposable
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(capturedDraft);
 
+        long? changedRevision = null;
+        XAssetType? changedType = null;
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -1736,13 +1833,18 @@ public sealed class FastFileEditingSession : IDisposable
                 baseline);
             if (!state.SemanticallyEqualsCurrent(capturedDraft))
             {
-                long revision = NextRevision();
-                state.SetCurrent(capturedDraft, revision);
+                long mutationRevision = NextRevision();
+                state.SetCurrent(capturedDraft, mutationRevision);
+                changedRevision = mutationRevision;
+                changedType = entry.AssetType;
             }
 
             _drafts.Add(identity, state);
             RebuildChangeSet();
         }
+
+        if (changedRevision is { } revision)
+            RaiseSemanticChanged(revision, [changedType!.Value]);
     }
 
     internal FastFileEditingSaveSnapshot CaptureForCompiledMapSave(

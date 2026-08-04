@@ -43,9 +43,10 @@ public sealed partial class MenuEditingCoordinator
                 "so this shared Menu must be edited forward instead.");
         }
 
-        bool changed = _editingSession.RevertOneAtRevision(
-            state.Revision,
-            rowIdentity);
+        bool changed = RunSessionMutation(() =>
+            _editingSession.RevertOneAtRevision(
+                state.Revision,
+                rowIdentity));
         MenuAuthorityResolutionSnapshot updated = Resolve(
             CaptureAuthorityState(),
             expectedResolution.RequestedName);
@@ -108,10 +109,11 @@ public sealed partial class MenuEditingCoordinator
                 "row-only revert would split their synchronized authority.");
         }
 
-        bool changed = _editingSession.RevertOneAtRevision(
-            state.Revision,
-            baseline.SavedRevision,
-            rowIdentity);
+        bool changed = RunSessionMutation(() =>
+            _editingSession.RevertOneAtRevision(
+                state.Revision,
+                baseline.SavedRevision,
+                rowIdentity));
         bool removed = !_editingSession.Document.TryGetRow(rowIdentity, out _);
         MenuFileEditorSnapshot? snapshot = removed
             ? null

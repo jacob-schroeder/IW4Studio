@@ -11,7 +11,7 @@ public enum UiTextDiagnosticCode
 {
     UnknownFontEnum = 0,
     FontAssetNotFound = 1,
-    AssetPoolChanged = 2,
+    TextResourcesChanged = 2,
     InvalidTextScale = 3,
     InvalidFontPixelHeight = 4,
     FontGlyphTableEmpty = 5,

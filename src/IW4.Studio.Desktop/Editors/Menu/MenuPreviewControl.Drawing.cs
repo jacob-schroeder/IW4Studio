@@ -18,11 +18,7 @@ public sealed partial class MenuPreviewControl
         MenuPreviewScene scene,
         PreviewTransform transform)
     {
-        Rect stage = new(
-            transform.Origin.X,
-            transform.Origin.Y,
-            scene.Settings.CanvasWidth * transform.Scale,
-            scene.Settings.CanvasHeight * transform.Scale);
+        Rect stage = StageBounds(scene.Settings, transform);
         context.DrawRectangle(
             new SolidColorBrush(Color.FromRgb(8, 10, 13)),
             new Pen(new SolidColorBrush(Color.FromRgb(75, 82, 92)), 1),
@@ -63,7 +59,12 @@ public sealed partial class MenuPreviewControl
         MenuPreviewPrimitive primitive,
         PreviewTransform transform)
     {
-        Rect bounds = transform.Map(primitive.Bounds);
+        Rect bounds = transform.Map(EffectiveBounds(primitive));
+        bool isManipulated = _geometryManipulation is
+            {
+                IsActivated: true
+            } state &&
+            IsManipulatedPrimitive(primitive, state);
         switch (primitive)
         {
             case MenuPreviewFill fill:
@@ -79,7 +80,12 @@ public sealed partial class MenuPreviewControl
                 break;
 
             case MenuPreviewText text:
-                DrawText(context, text, bounds, transform);
+                DrawText(
+                    context,
+                    text,
+                    bounds,
+                    transform,
+                    useCachedLayout: !isManipulated);
                 break;
 
             case MenuPreviewPlaceholder placeholder:
@@ -115,14 +121,14 @@ public sealed partial class MenuPreviewControl
         DrawingContext context,
         MenuPreviewText text,
         Rect bounds,
-        PreviewTransform transform)
+        PreviewTransform transform,
+        bool useCachedLayout)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0)
             return;
 
-        if (_textLayouts.TryGetValue(
-                text,
-                out MenuPreviewTextLayout? layout) &&
+        _textLayouts.TryGetValue(text, out MenuPreviewTextLayout? layout);
+        if (useCachedLayout && layout is not null &&
             DrawGlyphRun(context, text, layout, transform))
         {
             return;
@@ -263,10 +269,13 @@ public sealed partial class MenuPreviewControl
         if (region is null)
             return;
 
+        Rect selectionBounds = transform.Map(
+            EffectiveSelectionBounds(region));
         context.DrawRectangle(
             null,
             new Pen(new SolidColorBrush(Color.FromRgb(74, 184, 255)), 2),
-            transform.Map(region.Bounds));
+            selectionBounds);
+        DrawResizeHandles(context, selectionBounds);
     }
 
     private static void DrawBorder(
@@ -403,6 +412,15 @@ public sealed partial class MenuPreviewControl
                 (Bounds.Height - settings.CanvasHeight * scale) * 0.5));
     }
 
+    private static Rect StageBounds(
+        MenuPreviewSettings settings,
+        PreviewTransform transform) =>
+        transform.Map(new MenuPreviewRect(
+            0,
+            0,
+            settings.CanvasWidth,
+            settings.CanvasHeight));
+
     private static IBrush Brush(MenuColorValue value) =>
         new SolidColorBrush(Color.FromArgb(
             Channel(value.A),
@@ -485,6 +503,17 @@ public sealed partial class MenuPreviewControl
 
     private readonly record struct PreviewTransform(double Scale, Point Origin)
     {
+        public bool TryUnmap(Point value, out Point result)
+        {
+            double x = (value.X - Origin.X) / Scale;
+            double y = (value.Y - Origin.Y) / Scale;
+            result = new Point(x, y);
+            return double.IsFinite(x) &&
+                double.IsFinite(y) &&
+                x is >= float.MinValue and <= float.MaxValue &&
+                y is >= float.MinValue and <= float.MaxValue;
+        }
+
         public Rect Map(MenuPreviewRect value)
         {
             double firstX = Origin.X + value.X * Scale;

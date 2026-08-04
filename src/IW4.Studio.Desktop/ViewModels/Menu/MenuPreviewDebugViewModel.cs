@@ -256,6 +256,13 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelectedAuthoredVisibilityExpression));
     }
 
+    /// <summary>
+    /// Reevaluates the current authored or simulated scene after an external
+    /// text resource changes. Interaction state remains intact; only values
+    /// resolved from localization are read again.
+    /// </summary>
+    internal void RefreshTextResources() => Refresh();
+
     private void Refresh()
     {
         _evaluatedState = null;

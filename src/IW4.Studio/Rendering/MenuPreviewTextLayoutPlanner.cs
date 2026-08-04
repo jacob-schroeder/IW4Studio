@@ -21,7 +21,7 @@ public static class MenuPreviewTextLayoutPlanner
         ArgumentNullException.ThrowIfNull(resolver);
         ArgumentNullException.ThrowIfNull(context);
 
-        long revision = resolver.Revision;
+        MenuTextResourceRevision revision = resolver.Revision;
         MenuLocalizedTextResolution localized = resolver.ResolveText(text.Text);
         MenuFontAssetResolution font = resolver.ResolveFont(
             text.Font,
@@ -35,12 +35,12 @@ public static class MenuPreviewTextLayoutPlanner
         }
         diagnostics.AddRange(font.Diagnostics.Select(value => value.Message));
 
-        if (localized.PoolRevision != revision ||
-            font.PoolRevision != revision ||
+        if (localized.ResourceRevision != revision ||
+            font.ResourceRevision != revision ||
             resolver.Revision != revision)
         {
             diagnostics.Add(
-                "The asset pool changed while Menu text resources were being resolved.");
+                "Menu text resources changed while they were being resolved.");
             return MenuPreviewTextLayout.Fallback(
                 text,
                 localized.DisplayText,
@@ -171,14 +171,14 @@ public sealed class MenuPreviewTextLayout
         string displayText,
         UiGlyphRunPlan? glyphRun,
         IEnumerable<string> diagnostics,
-        long poolRevision)
+        MenuTextResourceRevision resourceRevision)
     {
         Source = source;
         DisplayText = displayText;
         GlyphRun = glyphRun;
         _diagnostics = diagnostics.ToArray();
         Diagnostics = Array.AsReadOnly(_diagnostics);
-        PoolRevision = poolRevision;
+        ResourceRevision = resourceRevision;
     }
 
     public MenuPreviewText Source { get; }
@@ -189,7 +189,7 @@ public sealed class MenuPreviewTextLayout
 
     public IReadOnlyList<string> Diagnostics { get; }
 
-    public long PoolRevision { get; }
+    public MenuTextResourceRevision ResourceRevision { get; }
 
     public bool UsesGameGlyphs => GlyphRun?.CanRender == true;
 
@@ -198,13 +198,13 @@ public sealed class MenuPreviewTextLayout
         string displayText,
         UiGlyphRunPlan glyphRun,
         IEnumerable<string> diagnostics,
-        long poolRevision) =>
-        new(source, displayText, glyphRun, diagnostics, poolRevision);
+        MenuTextResourceRevision resourceRevision) =>
+        new(source, displayText, glyphRun, diagnostics, resourceRevision);
 
     internal static MenuPreviewTextLayout Fallback(
         MenuPreviewText source,
         string displayText,
         IEnumerable<string> diagnostics,
-        long poolRevision) =>
-        new(source, displayText, null, diagnostics, poolRevision);
+        MenuTextResourceRevision resourceRevision) =>
+        new(source, displayText, null, diagnostics, resourceRevision);
 }

@@ -34,16 +34,34 @@ public sealed partial class MenuEditingCoordinator
                 resolution));
     }
 
-    private void OnTargetRowsChanged(object? sender, EventArgs eventArgs)
+    private void OnEditingSessionChanged(
+        object? sender,
+        FastFileEditingSessionChangedEventArgs eventArgs)
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _disposed) != 0 ||
+            _sessionMutationDepth.Value != 0)
             return;
 
         RaiseChanged(
-            MenuEditingCoordinatorChangeKind.TargetRowsChanged,
+            MenuEditingCoordinatorChangeKind.EditingSessionChanged,
             rowIdentity: null,
             normalizedMenuName: null,
             resolution: null);
+    }
+
+    private T RunSessionMutation<T>(Func<T> mutation)
+    {
+        ArgumentNullException.ThrowIfNull(mutation);
+        int previousDepth = _sessionMutationDepth.Value;
+        _sessionMutationDepth.Value = checked(previousDepth + 1);
+        try
+        {
+            return mutation();
+        }
+        finally
+        {
+            _sessionMutationDepth.Value = previousDepth;
+        }
     }
 
     private void ThrowIfDisposed()

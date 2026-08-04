@@ -13,6 +13,12 @@ public sealed partial class MenuFileEditorView : UserControl
 
     public MenuFileEditorView() => AvaloniaXamlLoader.Load(this);
 
+    private void ApplyChangesButton_Click(
+        object? sender,
+        RoutedEventArgs e) =>
+        _ = (DataContext as MenuFileEditorViewModel)?
+            .Designer.ApplyStagedInput();
+
     internal MenuFileEditorView(
         MenuFileEditorViewModel viewModel,
         AssetReferencePickerService assetReferencePicker)

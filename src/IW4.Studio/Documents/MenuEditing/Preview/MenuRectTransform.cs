@@ -62,18 +62,27 @@ public static class MenuRectTransform
         float rootInset = root.Border == WindowBorder.WINDOW_BORDER_NONE
             ? 0
             : root.BorderSize;
-        return ResolveItem(root.Rect, rootInset, item.RectClient, settings);
+        float itemInset = item.Border == WindowBorder.WINDOW_BORDER_NONE
+            ? 0
+            : item.BorderSize;
+        return ResolveItem(
+            root.Rect,
+            rootInset,
+            itemInset,
+            item.RectClient,
+            settings);
     }
 
     /// <summary>
     /// Resolves evaluated root and item rectangles without reconstructing
-    /// mutable Window definitions. The caller supplies the authored root
-    /// border inset because expressions can replace geometry, not border
-    /// configuration.
+    /// mutable Window definitions. The caller supplies the authored root and
+    /// item border insets because expressions can replace geometry, not
+    /// border configuration.
     /// </summary>
     public static MenuPreviewRect ResolveItem(
         MenuRectangleValue root,
         float rootBorderInset,
+        float itemBorderInset,
         MenuRectangleValue client,
         MenuPreviewSettings settings)
     {
@@ -86,8 +95,8 @@ public static class MenuRectTransform
                 VerticalAlign.VERTICAL_ALIGN_SUBTOP;
         var screen = client with
         {
-            X = client.X + root.X + rootBorderInset,
-            Y = client.Y + root.Y + rootBorderInset,
+            X = client.X + root.X + rootBorderInset + itemBorderInset,
+            Y = client.Y + root.Y + rootBorderInset + itemBorderInset,
             HorizontalAlignment = inheritsRootAlignment
                 ? root.HorizontalAlignment
                 : client.HorizontalAlignment,

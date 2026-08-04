@@ -23,9 +23,10 @@ public sealed partial class MenuEditingCoordinator
             currentResolution,
             edit,
             targetItemIndex);
-        bool changed = _editingSession.MutateAuthoredDraftsAtRevision(
-            state.Revision,
-            mutations);
+        bool changed = RunSessionMutation(() =>
+            _editingSession.MutateAuthoredDraftsAtRevision(
+                state.Revision,
+                mutations));
         MenuAuthorityResolutionSnapshot updated = Resolve(
             CaptureAuthorityState(),
             expectedResolution.RequestedName);

@@ -254,42 +254,23 @@ public sealed class MenuEditorViewModel
             Dispatcher.UIThread.Post(() => Coordinator_Changed(sender, args));
             return;
         }
+        // Authority resolutions carry the document-wide editing revision, so
+        // even an edit to another logical Menu invalidates this snapshot.
         if (
             _disposed ||
             _rowIdentity is null ||
-            _coordinatorMutationDepth != 0 ||
-            !IsCoordinatorChangeRelevant(args))
+            _coordinatorMutationDepth != 0)
             return;
         if (Designer.HasStagedInput)
         {
             _pendingCoordinatorRefresh = true;
             StatusMessage =
-                "The Menu authority changed in another editor; commit or reset the staged Properties value to refresh.";
+                "The document changed in another editor; reset the staged " +
+                "Properties value to refresh before applying it again.";
             return;
         }
 
         RefreshFromCoordinator();
-    }
-
-    private bool IsCoordinatorChangeRelevant(
-        MenuEditingCoordinatorChangedEventArgs args)
-    {
-        if (args.Kind == MenuEditingCoordinatorChangeKind.TargetRowsChanged)
-            return true;
-
-        if (args.NormalizedMenuName is not { } changedName)
-        {
-            // Registration-list edits can add, remove, or retarget an authority
-            // occurrence. Without a logical-name payload they remain a
-            // document-wide authority change.
-            return true;
-        }
-
-        string? currentName = _resolution?.NormalizedName;
-        return currentName is not null && string.Equals(
-            currentName,
-            changedName,
-            StringComparison.Ordinal);
     }
 
     private void RefreshFromCoordinator()

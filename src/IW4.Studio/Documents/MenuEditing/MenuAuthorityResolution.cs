@@ -156,10 +156,10 @@ public enum MenuEditingCoordinatorChangeKind
     MenuFileEdited,
     MenuReverted,
     MenuFileReverted,
-    TargetRowsChanged
+    EditingSessionChanged
 }
 
-/// <summary>One coordinator-owned semantic or target-manifest change.</summary>
+/// <summary>One document authoring change observed by the coordinator.</summary>
 public sealed class MenuEditingCoordinatorChangedEventArgs : EventArgs
 {
     internal MenuEditingCoordinatorChangedEventArgs(

@@ -79,7 +79,15 @@ internal static partial class MenuInspectorProjection
                 "ITEM",
                 [
                     ReadOnly("Identity", "item.id", item.Id.ToString()),
-                    Choice("Type", "item.type", value.Type),
+                    Choice(
+                        "Type",
+                        "item.type",
+                        value.Type,
+                        designer.CanChangeSelectedItemType
+                            ? designer.ChangeSelectedItemType
+                            : null,
+                        "Changing Type rebuilds the type-specific payload with " +
+                        "safe defaults; common Item and Window fields remain."),
                     Text(
                         "Text",
                         "item.text",
@@ -91,10 +99,12 @@ internal static partial class MenuInspectorProjection
                                 Text = EmptyToNull(text)
                             })),
                     ReadOnly(
-                        "Data type",
+                        "Native data tag",
                         "item.dataType",
                         value.DataType.ToString(CultureInfo.InvariantCulture),
-                        "The engine owns this item-union allocation discriminator."),
+                        "Native type-data accessor and allocation tag. It may " +
+                        "legitimately differ from Type and is preserved rather " +
+                        "than authored directly."),
                     new InspectorIntegerPropertyRowViewModel(
                         "Alignment",
                         "item.align",

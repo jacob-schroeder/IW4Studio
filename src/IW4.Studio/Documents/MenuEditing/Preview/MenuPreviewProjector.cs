@@ -104,9 +104,14 @@ public static class MenuPreviewProjector
                 WindowBorder.WINDOW_BORDER_NONE
                     ? 0
                     : menu.Window.Value.BorderSize;
+            float itemInset = item.Value.Window.Border ==
+                WindowBorder.WINDOW_BORDER_NONE
+                    ? 0
+                    : item.Value.Window.BorderSize;
             MenuPreviewRect bounds = MenuRectTransform.ResolveItem(
                 rootRectangle,
                 rootInset,
+                itemInset,
                 itemRectangle,
                 settings);
             MenuItemSnapshot projectedItem = evaluatedItem is null

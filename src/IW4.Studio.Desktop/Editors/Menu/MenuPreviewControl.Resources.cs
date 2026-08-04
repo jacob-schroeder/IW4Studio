@@ -29,7 +29,7 @@ public sealed partial class MenuPreviewControl
     private long _activeMaterialRevision = -1;
     private IMenuTextResourceResolver? _activeTextResourceResolver;
     private MenuPreviewScene? _activeTextScene;
-    private long _activeTextRevision = -1;
+    private MenuTextResourceRevision? _activeTextRevision;
 
     private bool RefreshTextLayouts(bool reportStatuses = false)
     {
@@ -38,7 +38,7 @@ public sealed partial class MenuPreviewControl
 
         MenuPreviewScene? scene = Scene;
         IMenuTextResourceResolver? resolver = TextResourceResolver;
-        long revision = resolver?.Revision ?? -1;
+        MenuTextResourceRevision? revision = resolver?.Revision;
         bool contextChanged =
             !ReferenceEquals(_activeTextScene, scene) ||
             !ReferenceEquals(_activeTextResourceResolver, resolver) ||
@@ -347,7 +347,7 @@ public sealed partial class MenuPreviewControl
         _textLayouts.Clear();
         _activeTextResourceResolver = null;
         _activeTextScene = null;
-        _activeTextRevision = -1;
+        _activeTextRevision = null;
     }
 
     private void RefreshMaterialBitmaps()

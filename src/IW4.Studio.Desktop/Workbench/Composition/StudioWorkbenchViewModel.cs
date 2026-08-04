@@ -52,6 +52,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private readonly IReadOnlyDictionary<string, StudioToolRegistration> _registrationsById;
     private readonly WorkbenchEditorDiagnosticsBridge _editorDiagnosticsBridge;
     private readonly MenuEditingCoordinator _menuEditingCoordinator;
+    private readonly MenuTextResourceResolver _menuTextResourceResolver;
     private readonly ObservableCollection<WorkbenchEditorTabViewModel> _openEditorTabs = [];
     private readonly Dictionary<WorkbenchEditorTabKey, WorkbenchEditorTabViewModel>
         _editorTabsByKey = [];
@@ -72,7 +73,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         var assetReferenceCatalog = new WorkspaceAssetReferenceCatalog(
             editingSession);
         var menuMaterialResolver = new MenuPreviewMaterialResolver(workspace);
-        var menuTextResourceResolver = new MenuTextResourceResolver(workspace);
+        _menuTextResourceResolver = new MenuTextResourceResolver(
+            editingSession);
         var assetReferencePicker = new AssetReferencePickerService(
             assetReferenceCatalog,
             menuMaterialResolver);
@@ -91,12 +93,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             _menuEditingCoordinator,
             assetReferencePicker,
             menuMaterialResolver,
-            menuTextResourceResolver));
+            _menuTextResourceResolver));
         editorViewRegistry.Register(new MenuFileEditorViewFactory(
             _menuEditingCoordinator,
             assetReferencePicker,
             menuMaterialResolver,
-            menuTextResourceResolver));
+            _menuTextResourceResolver));
         Editor = new EditorViewModel(
             workspace,
             editingSession,
@@ -646,6 +648,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _openEditorTabs.Clear();
         _editorTabsByKey.Clear();
         _menuEditingCoordinator.Dispose();
+        _menuTextResourceResolver.Dispose();
         Editor.Dispose();
         _gscWorkspaceWarmupCancellation.Dispose();
     }

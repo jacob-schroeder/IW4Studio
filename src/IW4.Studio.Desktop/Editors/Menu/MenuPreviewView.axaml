@@ -422,19 +422,30 @@
         <Grid Grid.Row="2"
               Margin="12"
               Background="{DynamicResource StudioBackgroundBrush}">
-          <Viewbox Stretch="Uniform"
-                   HorizontalAlignment="Stretch"
-                   VerticalAlignment="Stretch">
-            <menu:MenuPreviewControl Width="640"
-                                     Height="480"
-                                     Scene="{Binding PreviewScene}"
-                                     SelectedNodeId="{Binding SelectedPreviewNodeId}"
-                                     MaterialResolver="{Binding MaterialResolver}"
-                                     TextResourceResolver="{Binding TextResourceResolver}"
-                                     NodeSelected="PreviewControl_NodeSelected"
-                                     MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted"
-                                     TextResolutionCompleted="PreviewControl_TextResolutionCompleted" />
-          </Viewbox>
+          <menu:MenuPreviewControl Scene="{Binding PreviewScene}"
+                                   SelectedNodeId="{Binding SelectedPreviewNodeId}"
+                                   IsDirectManipulationEnabled="{Binding CanDirectManipulateSelectedItem}"
+                                   MaterialResolver="{Binding MaterialResolver}"
+                                   TextResourceResolver="{Binding TextResourceResolver}"
+                                   NodeSelected="PreviewControl_NodeSelected"
+                                   GeometryCommitted="PreviewControl_GeometryCommitted"
+                                   MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted"
+                                   TextResolutionCompleted="PreviewControl_TextResolutionCompleted" />
+
+          <Border IsVisible="{Binding CanDirectManipulateSelectedItem}"
+                  IsHitTestVisible="False"
+                  Margin="8"
+                  Padding="7,4"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Bottom"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="Drag to move · use handles to resize · Esc cancels"
+                       FontSize="8"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
         </Grid>
       </Grid>
     </Border>

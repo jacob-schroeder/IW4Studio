@@ -10,7 +10,8 @@ public enum MenuLocalizationStatus
 /// <summary>
 /// Immutable localization decision. AuthoredText is never normalized or
 /// replaced, so an editor can display and serialize the original @KEY while
-/// rendering DisplayText from the active canonical Localize provider.
+/// rendering DisplayText from target authoring or the active canonical
+/// Localize provider.
 /// </summary>
 public sealed class MenuLocalizedTextResolution
 {
@@ -21,7 +22,7 @@ public sealed class MenuLocalizedTextResolution
         string? lookupName,
         string? resolvedAssetName,
         string? failure,
-        long poolRevision)
+        MenuTextResourceRevision resourceRevision)
     {
         Status = status;
         AuthoredText = authoredText;
@@ -29,7 +30,7 @@ public sealed class MenuLocalizedTextResolution
         LookupName = lookupName;
         ResolvedAssetName = resolvedAssetName;
         Failure = failure;
-        PoolRevision = poolRevision;
+        ResourceRevision = resourceRevision;
     }
 
     public MenuLocalizationStatus Status { get; }
@@ -45,13 +46,13 @@ public sealed class MenuLocalizedTextResolution
 
     public string? Failure { get; }
 
-    public long PoolRevision { get; }
+    public MenuTextResourceRevision ResourceRevision { get; }
 
     public bool IsResolved => Status == MenuLocalizationStatus.Resolved;
 
     internal static MenuLocalizedTextResolution Literal(
         string authoredText,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
             MenuLocalizationStatus.Literal,
             authoredText,
@@ -59,14 +60,14 @@ public sealed class MenuLocalizedTextResolution
             null,
             null,
             null,
-            poolRevision);
+            resourceRevision);
 
     internal static MenuLocalizedTextResolution Resolved(
         string authoredText,
         string lookupName,
         string resolvedAssetName,
         string value,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
             MenuLocalizationStatus.Resolved,
             authoredText,
@@ -74,13 +75,13 @@ public sealed class MenuLocalizedTextResolution
             lookupName,
             resolvedAssetName,
             null,
-            poolRevision);
+            resourceRevision);
 
     internal static MenuLocalizedTextResolution Missing(
         string authoredText,
         string lookupName,
         string failure,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
             MenuLocalizationStatus.Missing,
             authoredText,
@@ -88,5 +89,5 @@ public sealed class MenuLocalizedTextResolution
             lookupName,
             null,
             failure,
-            poolRevision);
+            resourceRevision);
 }

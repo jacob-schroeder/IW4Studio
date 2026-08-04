@@ -26,6 +26,19 @@ public sealed partial class MenuPreviewView : UserControl
             viewModel.ReportMaterialPreviewStatus(e.Status);
     }
 
+    private void PreviewControl_GeometryCommitted(
+        object? sender,
+        MenuPreviewGeometryCommittedEventArgs e)
+    {
+        if (DataContext is MenuDesignerViewModel viewModel)
+        {
+            _ = viewModel.CommitPreviewItemGeometry(
+                e.NodeId,
+                e.OriginalBounds,
+                e.CandidateBounds);
+        }
+    }
+
     private void PreviewControl_TextResolutionCompleted(
         object? sender,
         MenuPreviewTextResolutionCompletedEventArgs e)

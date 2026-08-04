@@ -8,7 +8,7 @@ public enum MenuFontAssetResolutionStatus
     Resolved = 0,
     UnknownFontEnum = 1,
     MissingFontAsset = 2,
-    AssetPoolChanged = 3
+    ResourceRevisionChanged = 3
 }
 
 /// <summary>
@@ -24,13 +24,13 @@ public sealed class MenuFontAssetResolution
         MenuFontAssetResolutionStatus status,
         MenuFontEnumResolution mapping,
         FontAsset? font,
-        long poolRevision,
+        MenuTextResourceRevision resourceRevision,
         IEnumerable<UiTextDiagnostic> diagnostics)
     {
         Status = status;
         Mapping = mapping;
         Font = font;
-        PoolRevision = poolRevision;
+        ResourceRevision = resourceRevision;
         _diagnostics = diagnostics.ToArray();
         Diagnostics = Array.AsReadOnly(_diagnostics);
     }
@@ -41,7 +41,7 @@ public sealed class MenuFontAssetResolution
 
     public FontAsset? Font { get; }
 
-    public long PoolRevision { get; }
+    public MenuTextResourceRevision ResourceRevision { get; }
 
     public IReadOnlyList<UiTextDiagnostic> Diagnostics { get; }
 
@@ -51,22 +51,22 @@ public sealed class MenuFontAssetResolution
     internal static MenuFontAssetResolution Resolved(
         MenuFontEnumResolution mapping,
         FontAsset font,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
             MenuFontAssetResolutionStatus.Resolved,
             mapping,
             font,
-            poolRevision,
+            resourceRevision,
             []);
 
     internal static MenuFontAssetResolution Unknown(
         MenuFontEnumResolution mapping,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
             MenuFontAssetResolutionStatus.UnknownFontEnum,
             mapping,
             null,
-            poolRevision,
+            resourceRevision,
             [
                 new UiTextDiagnostic(
                     UiTextDiagnosticCode.UnknownFontEnum,
@@ -77,12 +77,12 @@ public sealed class MenuFontAssetResolution
 
     internal static MenuFontAssetResolution Missing(
         MenuFontEnumResolution mapping,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
             MenuFontAssetResolutionStatus.MissingFontAsset,
             mapping,
             null,
-            poolRevision,
+            resourceRevision,
             [
                 new UiTextDiagnostic(
                     UiTextDiagnosticCode.FontAssetNotFound,
@@ -92,16 +92,17 @@ public sealed class MenuFontAssetResolution
 
     internal static MenuFontAssetResolution RevisionChanged(
         MenuFontEnumResolution mapping,
-        long poolRevision) =>
+        MenuTextResourceRevision resourceRevision) =>
         new(
-            MenuFontAssetResolutionStatus.AssetPoolChanged,
+            MenuFontAssetResolutionStatus.ResourceRevisionChanged,
             mapping,
             null,
-            poolRevision,
+            resourceRevision,
             [
                 new UiTextDiagnostic(
-                    UiTextDiagnosticCode.AssetPoolChanged,
+                    UiTextDiagnosticCode.TextResourcesChanged,
                     UiTextDiagnosticSeverity.Blocker,
-                    $"Font '{mapping.LookupName}' changed providers while it was being resolved.")
+                    $"Menu text resources changed while Font " +
+                    $"'{mapping.LookupName}' was being resolved.")
             ]);
 }
