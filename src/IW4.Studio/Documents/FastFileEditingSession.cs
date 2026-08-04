@@ -367,6 +367,60 @@ public sealed class FastFileEditingSaveSnapshot
     }
 }
 
+/// <summary>
+/// One row in a race-safe, type-filtered editing-session capture. Draft is a
+/// detached current copy when the row is retained by the session; unopened
+/// rows intentionally carry no draft and can be imported from <see cref="Row"/>
+/// by the consuming authoring adapter.
+/// </summary>
+internal sealed record FastFileEditingCapturedRow(
+    int TraversalIndex,
+    TargetZoneRowSource Row,
+    object? Draft);
+
+internal readonly record struct FastFileEditingCaptureVersion(
+    long Revision,
+    int RetainedDraftCount);
+
+/// <summary>
+/// Revision-consistent input for coordinators that need only a small subset
+/// of the authored document. Unlike a save snapshot, this does not clone
+/// drafts for unrelated asset types or construct a document-wide change set.
+/// </summary>
+internal sealed class FastFileEditingRowsSnapshot
+{
+    public FastFileEditingRowsSnapshot(
+        long revision,
+        int retainedDraftCount,
+        IEnumerable<FastFileEditingCapturedRow> rows)
+    {
+        if (revision < 0)
+            throw new ArgumentOutOfRangeException(nameof(revision));
+        if (retainedDraftCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(retainedDraftCount));
+        ArgumentNullException.ThrowIfNull(rows);
+
+        FastFileEditingCapturedRow[] captured = rows.ToArray();
+        if (captured.Any(row => row.TraversalIndex < 0) ||
+            captured.Select(row => row.TraversalIndex).Distinct().Count() !=
+            captured.Length)
+        {
+            throw new InvalidDataException(
+                "A filtered editing capture requires unique non-negative traversal indices.");
+        }
+
+        Revision = revision;
+        RetainedDraftCount = retainedDraftCount;
+        Rows = Array.AsReadOnly(captured);
+    }
+
+    public long Revision { get; }
+
+    public int RetainedDraftCount { get; }
+
+    public IReadOnlyList<FastFileEditingCapturedRow> Rows { get; }
+}
+
 /// <summary>The last committed Save As baseline. It is kept
 /// separate from the immutable opened-source workspace so an N+1 edit can
 /// survive acknowledgement of an N snapshot without replacing its runtime.</summary>
@@ -1253,6 +1307,81 @@ public sealed class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposed();
             return CaptureForSaveUnsafe();
+        }
+    }
+
+    /// <summary>
+    /// Creates a race-safe, type-filtered authoring input. Rows and detached
+    /// current drafts are captured under the same session lock, but only for
+    /// the requested serialized types. This is intended for document-scoped
+    /// coordinators whose interactive reads must not pay the cost of a full
+    /// save capture.
+    /// </summary>
+    internal FastFileEditingRowsSnapshot CaptureRows(
+        IReadOnlyCollection<XAssetType> serializedTypes)
+    {
+        ArgumentNullException.ThrowIfNull(serializedTypes);
+        HashSet<XAssetType> requestedTypes = serializedTypes.ToHashSet();
+        if (requestedTypes.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one serialized asset type must be requested.",
+                nameof(serializedTypes));
+        }
+
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            var rows = new List<FastFileEditingCapturedRow>();
+            int retainedDraftCount = 0;
+            for (int index = 0; index < Document.Rows.Count; index++)
+            {
+                TargetZoneRowSource row = Document.Rows[index].TargetRow
+                    ?? throw new InvalidDataException(
+                        "A live authoring target entry has no detached source row.");
+                if (!requestedTypes.Contains(row.SerializedType))
+                    continue;
+
+                object? draft = null;
+                if (_drafts.TryGetValue(
+                        row.Identity,
+                        out IEditingSessionDraftState? state))
+                {
+                    retainedDraftCount++;
+                    draft = state.CloneCurrentObject();
+                }
+                rows.Add(new FastFileEditingCapturedRow(
+                    index,
+                    row,
+                    draft));
+            }
+
+            return new FastFileEditingRowsSnapshot(
+                _revision,
+                retainedDraftCount,
+                rows);
+        }
+    }
+
+    internal FastFileEditingCaptureVersion GetCaptureVersion(
+        IReadOnlyCollection<XAssetType> serializedTypes)
+    {
+        ArgumentNullException.ThrowIfNull(serializedTypes);
+        HashSet<XAssetType> requestedTypes = serializedTypes.ToHashSet();
+        if (requestedTypes.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one serialized asset type must be requested.",
+                nameof(serializedTypes));
+        }
+
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return new FastFileEditingCaptureVersion(
+                _revision,
+                _drafts.Keys.Count(identity => requestedTypes.Contains(
+                    Document.GetRow(identity).AssetType)));
         }
     }
 

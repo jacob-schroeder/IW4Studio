@@ -27,7 +27,7 @@ public sealed partial class MenuEditingCoordinator
             state.Revision,
             mutations);
         MenuAuthorityResolutionSnapshot updated = Resolve(
-            _capture.Capture(),
+            CaptureAuthorityState(),
             expectedResolution.RequestedName);
         if (updated.Kind == MenuAuthorityResolutionKind.Conflict)
         {

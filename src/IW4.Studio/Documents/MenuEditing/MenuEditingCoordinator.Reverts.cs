@@ -13,7 +13,7 @@ public sealed partial class MenuEditingCoordinator
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(expectedResolution);
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         RequireExpectedRevision(state, expectedResolution);
         string currentName = TopLevelMenuName(state, rowIdentity);
         MenuAuthorityResolutionSnapshot current = RequireCurrentResolution(
@@ -47,7 +47,7 @@ public sealed partial class MenuEditingCoordinator
             state.Revision,
             rowIdentity);
         MenuAuthorityResolutionSnapshot updated = Resolve(
-            _capture.Capture(),
+            CaptureAuthorityState(),
             expectedResolution.RequestedName);
         if (changed)
         {
@@ -69,7 +69,7 @@ public sealed partial class MenuEditingCoordinator
     public bool CanRevertMenuFile(TargetZoneRowIdentity rowIdentity)
     {
         ThrowIfDisposed();
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         _ = state.RequireMenuFileRow(rowIdentity);
         SavedMenuFileBaseline baseline = CaptureSavedMenuFileBaseline(
             state.Revision,
@@ -90,7 +90,7 @@ public sealed partial class MenuEditingCoordinator
         TargetZoneRowIdentity rowIdentity)
     {
         ThrowIfDisposed();
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         _ = state.RequireMenuFileRow(rowIdentity);
         SavedMenuFileBaseline baseline = CaptureSavedMenuFileBaseline(
             state.Revision,
@@ -115,7 +115,7 @@ public sealed partial class MenuEditingCoordinator
         bool removed = !_editingSession.Document.TryGetRow(rowIdentity, out _);
         MenuFileEditorSnapshot? snapshot = removed
             ? null
-            : _capture.Capture().RequireMenuFileRow(rowIdentity).Snapshot;
+            : CaptureAuthorityState().RequireMenuFileRow(rowIdentity).Snapshot;
         if (changed)
         {
             RaiseChanged(
@@ -155,6 +155,14 @@ public sealed partial class MenuEditingCoordinator
         TargetZoneRowIdentity rowIdentity,
         MenuFileBuildData baseline)
     {
+        ILookup<string, MenuAuthorityOccurrence> externalDefinitions =
+            state.Occurrences
+                .Where(occurrence =>
+                    occurrence.RowIdentity != rowIdentity &&
+                    occurrence.MaterializesDefinition)
+                .ToLookup(
+                    occurrence => occurrence.NormalizedName,
+                    StringComparer.Ordinal);
         foreach (NestedXAssetBuildLink link in baseline.MenuLinks)
         {
             if (link.IncomingDefinition is not MenuBuildData savedMenu)
@@ -162,23 +170,15 @@ public sealed partial class MenuEditingCoordinator
 
             string normalizedName = XAssetStableIdentity.NormalizeLookupName(
                 link.Reference.OriginalSerializedName);
-            string savedProjection = MenuSemanticProjection.Serialize(
-                savedMenu.Definition);
-            foreach (MenuAuthorityOccurrence current in state.Occurrences.Where(
-                         occurrence =>
-                             occurrence.RowIdentity != rowIdentity &&
-                             occurrence.MaterializesDefinition &&
-                             string.Equals(
-                                 occurrence.NormalizedName,
-                                 normalizedName,
-                                 StringComparison.Ordinal)))
+            if (!externalDefinitions.Contains(normalizedName))
+                continue;
+
+            foreach (MenuAuthorityOccurrence current in
+                     externalDefinitions[normalizedName])
             {
-                string currentProjection = MenuSemanticProjection.Serialize(
-                    current.Definition!.Definition);
-                if (!string.Equals(
-                        savedProjection,
-                        currentProjection,
-                        StringComparison.Ordinal))
+                if (!MenuSemanticProjection.SemanticallyEquals(
+                        savedMenu.Definition,
+                        current.Definition!.Definition))
                 {
                     return new MenuFileRevertConflict(
                         XAssetStableIdentity.GetLookupSpelling(

@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Emitters.Assets;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Assets;
@@ -13,18 +14,24 @@ internal sealed class MenuWorkingDocument
 {
     private MenuBuildData _data;
     private MenuDocumentIdentity _identity;
+    private Lazy<MenuSemanticState> _semanticState;
 
     public MenuWorkingDocument(MenuBuildData data)
-        : this(data.Copy(), MenuDocumentIdentity.Create(data))
+        : this(
+            data.Copy(),
+            MenuDocumentIdentity.Create(data),
+            semanticState: null)
     {
     }
 
     private MenuWorkingDocument(
         MenuBuildData data,
-        MenuDocumentIdentity identity)
+        MenuDocumentIdentity identity,
+        Lazy<MenuSemanticState>? semanticState)
     {
         _data = data;
         _identity = identity;
+        _semanticState = semanticState ?? CreateSemanticState(data);
     }
 
     public MenuEditorSnapshot Snapshot =>
@@ -32,12 +39,15 @@ internal sealed class MenuWorkingDocument
 
     public MenuBuildData Export() => _data.Copy();
 
+    public MenuSemanticState SemanticState => _semanticState.Value;
+
     public void Apply(MenuEdit edit)
     {
         MenuDocumentCompiler.MenuEditResult result =
             MenuDocumentCompiler.Apply(_data, _identity, edit);
         _data = result.Data;
         _identity = result.Identity;
+        _semanticState = CreateSemanticState(_data);
     }
 
     public void Replace(MenuBuildData value)
@@ -45,10 +55,18 @@ internal sealed class MenuWorkingDocument
         ArgumentNullException.ThrowIfNull(value);
         _data = value.Copy();
         _identity = MenuDocumentIdentity.Create(_data);
+        _semanticState = CreateSemanticState(_data);
     }
 
-    public MenuWorkingDocument Clone() =>
-        new(_data.Copy(), _identity.Clone());
+    public MenuWorkingDocument Clone()
+        => new(
+            _data.Copy(),
+            _identity.Clone(),
+            _semanticState);
+
+    private static Lazy<MenuSemanticState> CreateSemanticState(
+        MenuBuildData data) =>
+        new(() => MenuSemanticState.Capture(data));
 }
 
 /// <summary>
@@ -59,24 +77,32 @@ internal sealed class MenuFileWorkingDocument
 {
     private MenuFileBuildData _data;
     private MenuFileDocumentIdentity _identity;
+    private Lazy<MenuFileSemanticState> _semanticState;
 
     public MenuFileWorkingDocument(MenuFileBuildData data)
-        : this(data.Copy(), MenuFileDocumentIdentity.Create(data))
+        : this(
+            data.Copy(),
+            MenuFileDocumentIdentity.Create(data),
+            semanticState: null)
     {
     }
 
     private MenuFileWorkingDocument(
         MenuFileBuildData data,
-        MenuFileDocumentIdentity identity)
+        MenuFileDocumentIdentity identity,
+        Lazy<MenuFileSemanticState>? semanticState)
     {
         _data = data;
         _identity = identity;
+        _semanticState = semanticState ?? CreateSemanticState(data);
     }
 
     public MenuFileEditorSnapshot Snapshot =>
         MenuSnapshotFactory.Create(_data, _identity);
 
     public MenuFileBuildData Export() => _data.Copy();
+
+    public MenuFileSemanticState SemanticState => _semanticState.Value;
 
     public void Apply(MenuFileEdit edit)
     {
@@ -213,6 +239,7 @@ internal sealed class MenuFileWorkingDocument
 
         _data = MenuFileBuildData.CreateOwned(detached.Name, links);
         _identity = identity.WithRegistrations(identities);
+        _semanticState = CreateSemanticState(_data);
     }
 
     public void Replace(MenuFileBuildData value)
@@ -220,10 +247,18 @@ internal sealed class MenuFileWorkingDocument
         ArgumentNullException.ThrowIfNull(value);
         _data = value.Copy();
         _identity = MenuFileDocumentIdentity.Create(_data);
+        _semanticState = CreateSemanticState(_data);
     }
 
-    public MenuFileWorkingDocument Clone() =>
-        new(_data.Copy(), _identity.Clone());
+    public MenuFileWorkingDocument Clone()
+        => new(
+            _data.Copy(),
+            _identity.Clone(),
+            _semanticState);
+
+    private static Lazy<MenuFileSemanticState> CreateSemanticState(
+        MenuFileBuildData data) =>
+        new(() => MenuFileSemanticState.Capture(data));
 
     private static NestedXAssetBuildLink CloneAndValidate(
         NestedXAssetBuildLink link)
@@ -316,5 +351,130 @@ internal sealed class MenuFileWorkingDocument
         if (requested < 0 || requested >= count)
             throw new ArgumentOutOfRangeException(nameof(requested));
         return requested;
+    }
+}
+
+/// <summary>
+/// Authored-semantic root shared by detached clones of one immutable Menu
+/// revision. Equality walks this retained revision directly, so it does not
+/// need to export, deep-clone, or serialize the graph.
+/// </summary>
+internal sealed class MenuSemanticState
+{
+    private readonly MenuDefAsset _definition;
+
+    private MenuSemanticState(MenuDefAsset definition) =>
+        _definition = definition;
+
+    public static MenuSemanticState Capture(MenuBuildData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return new MenuSemanticState(data.Definition);
+    }
+
+    public bool SemanticallyEquals(MenuSemanticState other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return ReferenceEquals(this, other) ||
+            MenuSemanticProjection.SemanticallyEquals(
+                _definition,
+                other._definition);
+    }
+}
+
+/// <summary>
+/// Immutable authored-semantic projection shared by detached clones of one
+/// MenuFile revision. Imported packed-pointer provenance is deliberately not
+/// represented because it is not part of MenuFile authored semantics.
+/// </summary>
+internal sealed class MenuFileSemanticState
+{
+    private readonly string? _name;
+    private readonly LinkState[] _links;
+
+    private MenuFileSemanticState(
+        string? name,
+        LinkState[] links)
+    {
+        _name = name;
+        _links = links;
+    }
+
+    public static MenuFileSemanticState Capture(MenuFileBuildData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return new MenuFileSemanticState(
+            data.Name,
+            data.MenuLinks.Select(LinkState.Capture).ToArray());
+    }
+
+    public bool SemanticallyEquals(MenuFileSemanticState other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(this, other))
+            return true;
+        if (_name != other._name || _links.Length != other._links.Length)
+            return false;
+
+        for (int index = 0; index < _links.Length; index++)
+        {
+            if (!_links[index].SemanticallyEquals(other._links[index]))
+                return false;
+        }
+
+        return true;
+    }
+
+    private enum DefinitionKind
+    {
+        None,
+        Menu,
+        Unsupported
+    }
+
+    private readonly record struct LinkState(
+        SymbolicXAssetReference Reference,
+        NestedXAssetPointerSourceForm SourceForm,
+        DefinitionKind Kind,
+        MenuSemanticState? Menu)
+    {
+        public static LinkState Capture(NestedXAssetBuildLink link)
+        {
+            ArgumentNullException.ThrowIfNull(link);
+            return link.IncomingDefinition switch
+            {
+                null => new LinkState(
+                    link.Reference,
+                    link.SourceForm,
+                    DefinitionKind.None,
+                    Menu: null),
+                MenuBuildData menu => new LinkState(
+                    link.Reference,
+                    link.SourceForm,
+                    DefinitionKind.Menu,
+                    MenuSemanticState.Capture(menu)),
+                _ => new LinkState(
+                    link.Reference,
+                    link.SourceForm,
+                    DefinitionKind.Unsupported,
+                    Menu: null)
+            };
+        }
+
+        public bool SemanticallyEquals(LinkState other)
+        {
+            if (Reference != other.Reference || SourceForm != other.SourceForm)
+                return false;
+            if (Kind == DefinitionKind.None ||
+                other.Kind == DefinitionKind.None)
+            {
+                return Kind == DefinitionKind.None &&
+                    other.Kind == DefinitionKind.None;
+            }
+
+            return Kind == DefinitionKind.Menu &&
+                other.Kind == DefinitionKind.Menu &&
+                Menu!.SemanticallyEquals(other.Menu!);
+        }
     }
 }

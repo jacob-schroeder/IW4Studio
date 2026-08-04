@@ -206,6 +206,7 @@ public sealed class MenuFileDraft
         _document = document;
 
     internal MenuFileBuildData Data => _document.Export();
+    internal MenuFileSemanticState SemanticState => _document.SemanticState;
     public MenuFileEditorSnapshot Snapshot => _document.Snapshot;
 
     public void Apply(MenuFileEdit edit) => _document.Apply(edit);
@@ -232,13 +233,7 @@ public sealed class MenuFileAuthoringAdapter : AssetAuthoringAdapter<MenuFileAut
     }
 
     public override bool SemanticallyEquals(MenuFileDraft left, MenuFileDraft right)
-    {
-        MenuFileBuildData a = left.Data, b = right.Data;
-        return a.Name == b.Name &&
-            a.MenuLinks.Count == b.MenuLinks.Count &&
-            a.MenuLinks.Zip(b.MenuLinks).All(pair =>
-                SameLink(pair.First, pair.Second));
-    }
+        => left.SemanticState.SemanticallyEquals(right.SemanticState);
 
     public override MenuFileBuildData ExportBuildData(MenuFileDraft draft)
     {
@@ -246,20 +241,6 @@ public sealed class MenuFileAuthoringAdapter : AssetAuthoringAdapter<MenuFileAut
         if (ValidateDraft(draft).Any(issue => issue.Severity == AssetValidationSeverity.Error))
             throw new InvalidOperationException("MenuFile draft has validation errors and cannot produce build data.");
         return data;
-    }
-
-    private static bool SameLink(
-        NestedXAssetBuildLink left,
-        NestedXAssetBuildLink right)
-    {
-        if (left.Reference != right.Reference || left.SourceForm != right.SourceForm)
-            return false;
-        if (left.IncomingDefinition is null || right.IncomingDefinition is null)
-            return left.IncomingDefinition is null && right.IncomingDefinition is null;
-        return left.IncomingDefinition is MenuBuildData leftMenu &&
-            right.IncomingDefinition is MenuBuildData rightMenu &&
-            MenuSemanticProjection.Serialize(leftMenu.Definition) ==
-            MenuSemanticProjection.Serialize(rightMenu.Definition);
     }
 }
 
@@ -274,6 +255,7 @@ public sealed class MenuDraft
         _document = document;
 
     internal MenuBuildData Data => _document.Export();
+    internal MenuSemanticState SemanticState => _document.SemanticState;
     public MenuEditorSnapshot Snapshot => _document.Snapshot;
 
     public void Apply(MenuEdit edit) => _document.Apply(edit);
@@ -299,7 +281,8 @@ public sealed class MenuAuthoringAdapter : AssetAuthoringAdapter<MenuAuthoredSna
             Validator.Validate(data));
     }
 
-    public override bool SemanticallyEquals(MenuDraft left, MenuDraft right) => MenuSemanticProjection.Serialize(left.Data.Definition) == MenuSemanticProjection.Serialize(right.Data.Definition);
+    public override bool SemanticallyEquals(MenuDraft left, MenuDraft right) =>
+        left.SemanticState.SemanticallyEquals(right.SemanticState);
 
     public override MenuBuildData ExportBuildData(MenuDraft draft)
     {

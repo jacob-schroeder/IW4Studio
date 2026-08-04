@@ -12,8 +12,21 @@ namespace IW4.Studio.Documents.MenuEditing;
 /// </summary>
 internal sealed class MenuAuthorityCapture
 {
+    private static readonly XAssetType[] CapturedAssetTypes =
+    [
+        XAssetType.Menu,
+        XAssetType.MenuFile
+    ];
+
     private readonly FastFileEditingSession _editingSession;
     private readonly AssetAuthoringAdapterRegistry _adapters;
+    // Capture is serialized by MenuEditingCoordinator._captureGate. These
+    // fragments belong only to immutable source rows; retained drafts always
+    // bypass and evict them.
+    private readonly Dictionary<TargetZoneRowIdentity, MenuRowFragment>
+        _sourceMenus = [];
+    private readonly Dictionary<TargetZoneRowIdentity, MenuFileRowFragment>
+        _sourceMenuFiles = [];
 
     public MenuAuthorityCapture(
         FastFileEditingSession editingSession,
@@ -25,52 +38,59 @@ internal sealed class MenuAuthorityCapture
 
     public CapturedMenuAuthorityState Capture()
     {
-        // The save capture supplies retained current drafts. Rows that have
-        // never been opened are imported into short-lived local drafts below;
-        // authority discovery must not create hidden document-wide editors.
-        FastFileEditingSaveSnapshot save = _editingSession.CaptureForSave();
+        // The filtered capture supplies retained current Menu drafts without
+        // cloning unrelated document state. Source rows that have never been
+        // opened are imported once into immutable cached fragments; authority
+        // discovery must not create hidden document-wide editors.
+        FastFileEditingRowsSnapshot capture = _editingSession.CaptureRows(
+            CapturedAssetTypes);
         var targetRows = new Dictionary<TargetZoneRowIdentity, TargetZoneRowSource>();
         var menuRows = new Dictionary<TargetZoneRowIdentity, CapturedMenuRow>();
         var menuFileRows = new Dictionary<TargetZoneRowIdentity, CapturedMenuFileRow>();
         var occurrences = new List<MenuAuthorityOccurrence>();
 
-        for (int rowIndex = 0; rowIndex < save.TargetRows.Count; rowIndex++)
+        foreach (FastFileEditingCapturedRow capturedRow in capture.Rows)
         {
-            TargetZoneRowSource row = save.TargetRows[rowIndex];
+            TargetZoneRowSource row = capturedRow.Row;
             targetRows.Add(row.Identity, row);
             if (row.State != TargetZoneRowSourceState.Definition)
+            {
+                EvictSourceFragment(row.Identity);
                 continue;
+            }
 
             switch (row.SerializedType)
             {
                 case XAssetType.Menu:
                     CaptureMenu(
-                        save,
-                        row,
-                        rowIndex,
+                        capturedRow,
                         menuRows,
                         occurrences);
                     break;
 
                 case XAssetType.MenuFile:
                     CaptureMenuFile(
-                        save,
-                        row,
-                        rowIndex,
+                        capturedRow,
                         menuFileRows,
                         occurrences);
                     break;
             }
         }
 
+        PruneSourceFragments(targetRows.Keys);
+
         return new CapturedMenuAuthorityState(
-            save.Revision,
+            capture.Revision,
+            capture.RetainedDraftCount,
             targetRows,
             menuRows,
             menuFileRows,
             occurrences,
             MenuAuthorityIndex.Build(occurrences));
     }
+
+    public FastFileEditingCaptureVersion GetCaptureVersion() =>
+        _editingSession.GetCaptureVersion(CapturedAssetTypes);
 
     public MenuEditorSnapshot? CaptureReadOnlyProvider(string normalizedName)
     {
@@ -119,48 +139,58 @@ internal sealed class MenuAuthorityCapture
     }
 
     private void CaptureMenu(
-        FastFileEditingSaveSnapshot save,
-        TargetZoneRowSource row,
-        int rowIndex,
+        FastFileEditingCapturedRow capturedRow,
         Dictionary<TargetZoneRowIdentity, CapturedMenuRow> menuRows,
         List<MenuAuthorityOccurrence> occurrences)
     {
-        MenuDraft draft = RequireDraft<MenuDraft>(save, row);
-        MenuBuildData data = draft.Data;
-        MenuEditorSnapshot snapshot = draft.Snapshot;
-        string name = snapshot.Name
-            ?? row.OriginalSerializedName
-            ?? throw new InvalidDataException(
-                $"Target Menu row {row.SerializedIndex} has no logical identity.");
-        menuRows.Add(row.Identity, new CapturedMenuRow(snapshot));
+        TargetZoneRowSource row = capturedRow.Row;
+        MenuRowFragment fragment;
+        if (capturedRow.Draft is { } capturedDraft)
+        {
+            EvictSourceFragment(row.Identity);
+            fragment = CreateMenuFragment(
+                row,
+                RequireDraft<MenuDraft>(row, capturedDraft));
+        }
+        else
+        {
+            fragment = GetSourceMenuFragment(row);
+        }
+
+        menuRows.Add(row.Identity, fragment.Row);
         occurrences.Add(new MenuAuthorityOccurrence(
             row.Identity,
-            rowIndex,
+            capturedRow.TraversalIndex,
             -1,
             null,
             MenuAuthorityOccurrenceKind.TopLevelDefinition,
-            name,
-            data,
+            fragment.Name,
+            fragment.Data,
             null));
     }
 
     private void CaptureMenuFile(
-        FastFileEditingSaveSnapshot save,
-        TargetZoneRowSource row,
-        int rowIndex,
+        FastFileEditingCapturedRow capturedRow,
         Dictionary<TargetZoneRowIdentity, CapturedMenuFileRow> menuFileRows,
         List<MenuAuthorityOccurrence> occurrences)
     {
-        MenuFileDraft draft = RequireDraft<MenuFileDraft>(save, row);
-        MenuFileBuildData data = draft.Data;
-        MenuFileEditorSnapshot snapshot = draft.Snapshot;
-        if (data.MenuLinks.Count != snapshot.Registrations.Count)
+        TargetZoneRowSource row = capturedRow.Row;
+        MenuFileRowFragment fragment;
+        if (capturedRow.Draft is { } capturedDraft)
         {
-            throw new InvalidDataException(
-                $"Target MenuFile row {row.SerializedIndex} has mismatched registration data and identities.");
+            EvictSourceFragment(row.Identity);
+            fragment = CreateMenuFileFragment(
+                row,
+                RequireDraft<MenuFileDraft>(row, capturedDraft));
+        }
+        else
+        {
+            fragment = GetSourceMenuFileFragment(row);
         }
 
-        menuFileRows.Add(row.Identity, new CapturedMenuFileRow(snapshot));
+        MenuFileBuildData data = fragment.Data;
+        MenuFileEditorSnapshot snapshot = fragment.Row.Snapshot;
+        menuFileRows.Add(row.Identity, fragment.Row);
         for (int registrationIndex = 0;
              registrationIndex < data.MenuLinks.Count;
              registrationIndex++)
@@ -171,7 +201,7 @@ internal sealed class MenuAuthorityCapture
             MenuBuildData? definition = link.IncomingDefinition as MenuBuildData;
             occurrences.Add(new MenuAuthorityOccurrence(
                 row.Identity,
-                rowIndex,
+                capturedRow.TraversalIndex,
                 registrationIndex,
                 registration.Id,
                 definition is null
@@ -180,6 +210,100 @@ internal sealed class MenuAuthorityCapture
                 link.Reference.OriginalSerializedName,
                 definition,
                 link.SourceForm));
+        }
+    }
+
+    private MenuRowFragment GetSourceMenuFragment(TargetZoneRowSource row)
+    {
+        if (_sourceMenus.TryGetValue(
+                row.Identity,
+                out MenuRowFragment? cached) &&
+            ReferenceEquals(cached.Source, row))
+        {
+            return cached;
+        }
+
+        EvictSourceFragment(row.Identity);
+        MenuRowFragment fragment = CreateMenuFragment(
+            row,
+            CreateSourceDraft<MenuDraft>(row));
+        _sourceMenus.Add(row.Identity, fragment);
+        return fragment;
+    }
+
+    private MenuFileRowFragment GetSourceMenuFileFragment(
+        TargetZoneRowSource row)
+    {
+        if (_sourceMenuFiles.TryGetValue(
+                row.Identity,
+                out MenuFileRowFragment? cached) &&
+            ReferenceEquals(cached.Source, row))
+        {
+            return cached;
+        }
+
+        EvictSourceFragment(row.Identity);
+        MenuFileRowFragment fragment = CreateMenuFileFragment(
+            row,
+            CreateSourceDraft<MenuFileDraft>(row));
+        _sourceMenuFiles.Add(row.Identity, fragment);
+        return fragment;
+    }
+
+    private static MenuRowFragment CreateMenuFragment(
+        TargetZoneRowSource row,
+        MenuDraft draft)
+    {
+        MenuBuildData data = draft.Data;
+        MenuEditorSnapshot snapshot = draft.Snapshot;
+        string name = snapshot.Name
+            ?? row.OriginalSerializedName
+            ?? throw new InvalidDataException(
+                $"Target Menu row {row.SerializedIndex} has no logical identity.");
+        return new MenuRowFragment(
+            row,
+            new CapturedMenuRow(snapshot),
+            name,
+            data);
+    }
+
+    private static MenuFileRowFragment CreateMenuFileFragment(
+        TargetZoneRowSource row,
+        MenuFileDraft draft)
+    {
+        MenuFileBuildData data = draft.Data;
+        MenuFileEditorSnapshot snapshot = draft.Snapshot;
+        if (data.MenuLinks.Count != snapshot.Registrations.Count)
+        {
+            throw new InvalidDataException(
+                $"Target MenuFile row {row.SerializedIndex} has mismatched registration data and identities.");
+        }
+
+        return new MenuFileRowFragment(
+            row,
+            new CapturedMenuFileRow(snapshot),
+            data);
+    }
+
+    private void EvictSourceFragment(TargetZoneRowIdentity identity)
+    {
+        _sourceMenus.Remove(identity);
+        _sourceMenuFiles.Remove(identity);
+    }
+
+    private void PruneSourceFragments(
+        IEnumerable<TargetZoneRowIdentity> liveRows)
+    {
+        HashSet<TargetZoneRowIdentity> live = liveRows.ToHashSet();
+        foreach (TargetZoneRowIdentity identity in
+                 _sourceMenus.Keys.Where(identity => !live.Contains(identity)).ToArray())
+        {
+            _sourceMenus.Remove(identity);
+        }
+        foreach (TargetZoneRowIdentity identity in
+                 _sourceMenuFiles.Keys.Where(identity => !live.Contains(identity)).ToArray())
+        {
+            _sourceMenuFiles.Remove(identity);
         }
     }
 
@@ -207,19 +331,20 @@ internal sealed class MenuAuthorityCapture
                 "The inline Menu authority has no detached editor snapshot.");
     }
 
-    private T RequireDraft<T>(
-        FastFileEditingSaveSnapshot save,
-        TargetZoneRowSource row)
+    private static T RequireDraft<T>(
+        TargetZoneRowSource row,
+        object captured)
         where T : notnull
     {
-        if (save.TryGetDraftObject(row.Identity, out object? captured))
-        {
-            return captured is T typed
-                ? typed
-                : throw new InvalidDataException(
-                    $"Target {row.SerializedType} row {row.SerializedIndex} captured '{captured?.GetType().Name ?? "null"}', not {typeof(T).Name}.");
-        }
+        return captured is T typed
+            ? typed
+            : throw new InvalidDataException(
+                $"Target {row.SerializedType} row {row.SerializedIndex} captured '{captured?.GetType().Name ?? "null"}', not {typeof(T).Name}.");
+    }
 
+    private T CreateSourceDraft<T>(TargetZoneRowSource row)
+        where T : notnull
+    {
         IAssetAuthoringAdapter adapter = _adapters.RequireAdapter(
             row.SerializedType);
         object authored = adapter.ImportAuthoredSnapshot(row);
@@ -229,6 +354,17 @@ internal sealed class MenuAuthorityCapture
             : throw new InvalidDataException(
                 $"The {row.SerializedType} adapter created '{draft?.GetType().Name ?? "null"}', not {typeof(T).Name}.");
     }
+
+    private sealed record MenuRowFragment(
+        TargetZoneRowSource Source,
+        CapturedMenuRow Row,
+        string Name,
+        MenuBuildData Data);
+
+    private sealed record MenuFileRowFragment(
+        TargetZoneRowSource Source,
+        CapturedMenuFileRow Row,
+        MenuFileBuildData Data);
 }
 
 internal sealed record CapturedMenuRow(MenuEditorSnapshot Snapshot);
@@ -239,6 +375,7 @@ internal sealed class CapturedMenuAuthorityState
 {
     public CapturedMenuAuthorityState(
         long revision,
+        int retainedDraftCount,
         IReadOnlyDictionary<TargetZoneRowIdentity, TargetZoneRowSource>
             targetRows,
         IReadOnlyDictionary<TargetZoneRowIdentity, CapturedMenuRow>
@@ -249,6 +386,7 @@ internal sealed class CapturedMenuAuthorityState
         MenuAuthorityIndex authorities)
     {
         Revision = revision;
+        RetainedDraftCount = retainedDraftCount;
         TargetRows = targetRows;
         MenuRows = menuRows;
         MenuFileRows = menuFileRows;
@@ -257,6 +395,8 @@ internal sealed class CapturedMenuAuthorityState
     }
 
     public long Revision { get; }
+
+    internal int RetainedDraftCount { get; }
 
     public IReadOnlyDictionary<TargetZoneRowIdentity, TargetZoneRowSource>
         TargetRows { get; }

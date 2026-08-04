@@ -102,34 +102,32 @@ public sealed class MenuAuthorityIndex
                      .GroupBy(value => value.NormalizedName, StringComparer.Ordinal))
         {
             MenuAuthorityOccurrence[] groupOccurrences = group.ToArray();
-            MenuAuthorityOccurrence? owner = groupOccurrences
-                .FirstOrDefault(value => value.MaterializesDefinition);
-            if (owner is null)
+            MenuAuthorityOccurrence[] definitions = groupOccurrences
+                .Where(value => value.MaterializesDefinition)
+                .ToArray();
+            if (definitions.Length == 0)
                 continue;
 
-            string authorityProjection = MenuSemanticProjection.Serialize(
-                owner.Definition!.Definition);
-            foreach (MenuAuthorityOccurrence candidate in groupOccurrences.Where(
-                         value => value.MaterializesDefinition &&
-                                  !ReferenceEquals(value, owner)))
+            MenuAuthorityOccurrence owner = definitions[0];
+            if (definitions.Length > 1)
             {
-                string candidateProjection = MenuSemanticProjection.Serialize(
-                    candidate.Definition!.Definition);
-                if (string.Equals(
-                        authorityProjection,
-                        candidateProjection,
-                        StringComparison.Ordinal))
+                foreach (MenuAuthorityOccurrence candidate in definitions.Skip(1))
                 {
-                    continue;
-                }
+                    if (MenuSemanticProjection.SemanticallyEquals(
+                            owner.Definition!.Definition,
+                            candidate.Definition!.Definition))
+                    {
+                        continue;
+                    }
 
-                issues.Add(new MenuAuthorityIssue(
-                    group.Key,
-                    candidate.RowIdentity,
-                    candidate.RegistrationIndex >= 0
-                        ? candidate.RegistrationIndex
-                        : null,
-                    $"Menu '{owner.OriginalName}' has a later complete definition that differs from its first serialized authority."));
+                    issues.Add(new MenuAuthorityIssue(
+                        group.Key,
+                        candidate.RowIdentity,
+                        candidate.RegistrationIndex >= 0
+                            ? candidate.RegistrationIndex
+                            : null,
+                        $"Menu '{owner.OriginalName}' has a later complete definition that differs from its first serialized authority."));
+                }
             }
 
             authorities.Add(

@@ -1,9 +1,9 @@
-using IW4.FastFiles.Zone;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
 using IW4.Assets.Assets.Menu;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Studio.Documents;
 
@@ -17,12 +17,28 @@ namespace IW4.Studio.Documents;
 internal static class MenuSemanticProjection
 {
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]>
-        PropertiesByType = new();
+        ProjectedPropertiesByType = new();
 
     public static string Serialize(MenuDefAsset value)
     {
         ArgumentNullException.ThrowIfNull(value);
         return Serialize((object)value);
+    }
+
+    /// <summary>
+    /// Compares the canonical authored relation directly. This is equivalent
+    /// to comparing <see cref="Serialize(MenuDefAsset)"/> results, but exits at
+    /// the first difference without allocating projected dictionaries, lists,
+    /// or JSON.
+    /// </summary>
+    public static bool SemanticallyEquals(
+        MenuDefAsset left,
+        MenuDefAsset right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        return ReferenceEquals(left, right) ||
+            SemanticallyEquals(left, right, new ComparisonContext());
     }
 
     /// <summary>Same relocation-free projection for another detached graph.
@@ -41,9 +57,9 @@ internal static class MenuSemanticProjection
         if (value is byte[] bytes)
             return Convert.ToHexString(bytes);
         if (value is IEnumerable<byte> byteSequence)
-            return Convert.ToHexString(byteSequence.ToArray());
-        if (value is float number) return $"f:{BitConverter.SingleToInt32Bits(number):X8}";
-        if (value is double number64) return $"d:{BitConverter.DoubleToInt64Bits(number64):X16}";
+            return ProjectByteSequence(byteSequence);
+        if (value is float number) return ProjectFloat(number);
+        if (value is double number64) return ProjectDouble(number64);
         if (value is string or char or bool || type.IsEnum || type.IsPrimitive || value is decimal)
             return ProjectScalar(value);
         if (value is IEnumerable enumerable)
@@ -64,24 +80,254 @@ internal static class MenuSemanticProjection
         var result = new SortedDictionary<string, object?> { ["$type"] = type.FullName };
         if (preserveIdentity)
             result.Add("$id", id);
-        foreach (PropertyInfo property in PropertiesByType.GetOrAdd(
-                     type,
-                     static value => value
-                         .GetProperties(
-                             BindingFlags.Instance |
-                             BindingFlags.Public)
-                         .OrderBy(
-                             property => property.Name,
-                             StringComparer.Ordinal)
-                         .ToArray()))
+        foreach (PropertyInfo property in GetProjectedProperties(type))
         {
-            if (!property.CanRead || property.GetIndexParameters().Length != 0 || Skip(property)) continue;
-            object? propertyValue = property.GetValue(value);
-            if (propertyValue is string text && IsWireOnlyReferenceName(property))
-                propertyValue = text.TrimStart(',');
-            result.Add(property.Name, Project(propertyValue, context));
+            result.Add(
+                property.Name,
+                Project(GetProjectedPropertyValue(property, value), context));
         }
         return result;
+    }
+
+    private static bool SemanticallyEquals(
+        object? left,
+        object? right,
+        ComparisonContext context)
+    {
+        if (left is null || right is null)
+            return left is null && right is null;
+
+        if (left is IEnumerable<byte> leftBytes)
+        {
+            return right switch
+            {
+                IEnumerable<byte> comparedBytes =>
+                    leftBytes.SequenceEqual(comparedBytes),
+                string rightText =>
+                    string.Equals(
+                        ProjectByteSequence(leftBytes),
+                        rightText,
+                        StringComparison.Ordinal),
+                _ => false
+            };
+        }
+        if (right is IEnumerable<byte> rightBytes)
+        {
+            return left is string leftText &&
+                string.Equals(
+                    leftText,
+                    ProjectByteSequence(rightBytes),
+                    StringComparison.Ordinal);
+        }
+
+        if (left is float leftFloat)
+        {
+            return right switch
+            {
+                float comparedFloat =>
+                    BitConverter.SingleToInt32Bits(leftFloat) ==
+                    BitConverter.SingleToInt32Bits(comparedFloat),
+                string rightText =>
+                    string.Equals(
+                        ProjectFloat(leftFloat),
+                        rightText,
+                        StringComparison.Ordinal),
+                _ => false
+            };
+        }
+        if (right is float rightFloat)
+        {
+            return left is string leftText &&
+                string.Equals(
+                    leftText,
+                    ProjectFloat(rightFloat),
+                    StringComparison.Ordinal);
+        }
+        if (left is double leftDouble)
+        {
+            return right switch
+            {
+                double comparedDouble =>
+                    BitConverter.DoubleToInt64Bits(leftDouble) ==
+                    BitConverter.DoubleToInt64Bits(comparedDouble),
+                string rightText =>
+                    string.Equals(
+                        ProjectDouble(leftDouble),
+                        rightText,
+                        StringComparison.Ordinal),
+                _ => false
+            };
+        }
+        if (right is double rightDouble)
+        {
+            return left is string leftText &&
+                string.Equals(
+                    leftText,
+                    ProjectDouble(rightDouble),
+                    StringComparison.Ordinal);
+        }
+
+        Type leftType = left.GetType();
+        Type rightType = right.GetType();
+        bool leftScalar = IsScalar(left, leftType);
+        bool rightScalar = IsScalar(right, rightType);
+        if (leftScalar || rightScalar)
+        {
+            return leftScalar &&
+                rightScalar &&
+                ScalarsSemanticallyEqual(left, right, leftType, rightType);
+        }
+
+        if (left is IEnumerable || right is IEnumerable)
+        {
+            return left is IEnumerable leftValues &&
+                right is IEnumerable rightValues &&
+                EnumerablesSemanticallyEqual(
+                    leftValues,
+                    rightValues,
+                    context);
+        }
+
+        if (!string.Equals(
+                leftType.FullName,
+                rightType.FullName,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        bool leftPreservesIdentity = PreservesAuthoredIdentity(leftType);
+        bool rightPreservesIdentity = PreservesAuthoredIdentity(rightType);
+        if (leftPreservesIdentity != rightPreservesIdentity)
+            return false;
+        if (leftPreservesIdentity)
+        {
+            bool leftSeen = context.LeftIds.TryGetValue(left, out int leftId);
+            bool rightSeen = context.RightIds.TryGetValue(right, out int rightId);
+            if (leftSeen || rightSeen)
+                return leftSeen && rightSeen && leftId == rightId;
+
+            int id = context.LeftIds.Count + 1;
+            context.LeftIds.Add(left, id);
+            context.RightIds.Add(right, id);
+        }
+
+        PropertyInfo[] leftProperties = GetProjectedProperties(leftType);
+        PropertyInfo[] rightProperties = GetProjectedProperties(rightType);
+        if (leftProperties.Length != rightProperties.Length)
+            return false;
+        for (int index = 0; index < leftProperties.Length; index++)
+        {
+            PropertyInfo leftProperty = leftProperties[index];
+            PropertyInfo rightProperty = rightProperties[index];
+            if (!string.Equals(
+                    leftProperty.Name,
+                    rightProperty.Name,
+                    StringComparison.Ordinal) ||
+                !SemanticallyEquals(
+                    GetProjectedPropertyValue(leftProperty, left),
+                    GetProjectedPropertyValue(rightProperty, right),
+                    context))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool EnumerablesSemanticallyEqual(
+        IEnumerable left,
+        IEnumerable right,
+        ComparisonContext context)
+    {
+        IEnumerator leftEnumerator = left.GetEnumerator();
+        IEnumerator rightEnumerator = right.GetEnumerator();
+        try
+        {
+            while (true)
+            {
+                bool hasLeft = leftEnumerator.MoveNext();
+                bool hasRight = rightEnumerator.MoveNext();
+                if (hasLeft != hasRight)
+                    return false;
+                if (!hasLeft)
+                    return true;
+                if (!SemanticallyEquals(
+                        leftEnumerator.Current,
+                        rightEnumerator.Current,
+                        context))
+                {
+                    return false;
+                }
+            }
+        }
+        finally
+        {
+            (leftEnumerator as IDisposable)?.Dispose();
+            (rightEnumerator as IDisposable)?.Dispose();
+        }
+    }
+
+    private static bool ScalarsSemanticallyEqual(
+        object left,
+        object right,
+        Type leftType,
+        Type rightType)
+    {
+        if (leftType == rightType && left is not decimal)
+            return left.Equals(right);
+
+        // Scalar projections omit runtime type. The uncommon cross-type case
+        // (for example char versus a one-character string) therefore compares
+        // the exact JSON scalar spelling used by Project.
+        return string.Equals(
+            JsonSerializer.Serialize(ProjectScalar(left)),
+            JsonSerializer.Serialize(ProjectScalar(right)),
+            StringComparison.Ordinal);
+    }
+
+    private static bool IsScalar(object value, Type type) =>
+        value is string or char or bool ||
+        type.IsEnum ||
+        type.IsPrimitive ||
+        value is decimal;
+
+    private static string ProjectByteSequence(IEnumerable<byte> value) =>
+        value is byte[] bytes
+            ? Convert.ToHexString(bytes)
+            : Convert.ToHexString(value.ToArray());
+
+    private static string ProjectFloat(float value) =>
+        $"f:{BitConverter.SingleToInt32Bits(value):X8}";
+
+    private static string ProjectDouble(double value) =>
+        $"d:{BitConverter.DoubleToInt64Bits(value):X16}";
+
+    private static PropertyInfo[] GetProjectedProperties(Type type) =>
+        ProjectedPropertiesByType.GetOrAdd(
+            type,
+            static value => value
+                .GetProperties(
+                    BindingFlags.Instance |
+                    BindingFlags.Public)
+                .Where(property =>
+                    property.CanRead &&
+                    property.GetIndexParameters().Length == 0 &&
+                    !Skip(property))
+                .OrderBy(
+                    property => property.Name,
+                    StringComparer.Ordinal)
+                .ToArray());
+
+    private static object? GetProjectedPropertyValue(
+        PropertyInfo property,
+        object instance)
+    {
+        object? value = property.GetValue(instance);
+        return value is string text && IsWireOnlyReferenceName(property)
+            ? text.TrimStart(',')
+            : value;
     }
 
     // These nodes may be recursive, and their sharing can carry Menu graph
@@ -174,5 +420,14 @@ internal static class MenuSemanticProjection
     private sealed class Context
     {
         public Dictionary<object, int> Ids { get; } = new(ReferenceEqualityComparer.Instance);
+    }
+
+    private sealed class ComparisonContext
+    {
+        public Dictionary<object, int> LeftIds { get; } =
+            new(ReferenceEqualityComparer.Instance);
+
+        public Dictionary<object, int> RightIds { get; } =
+            new(ReferenceEqualityComparer.Instance);
     }
 }

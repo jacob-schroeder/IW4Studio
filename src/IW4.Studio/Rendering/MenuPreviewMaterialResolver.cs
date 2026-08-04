@@ -28,6 +28,8 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
     }
 
+    public long Revision => _workspace.Runtime.AssetPool.Revision;
+
     public async Task<MenuPreviewMaterialResolution> ResolveAsync(
         string materialName,
         CancellationToken cancellationToken = default)

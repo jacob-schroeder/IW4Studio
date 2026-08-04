@@ -246,16 +246,17 @@ public sealed class MenuEditorViewModel
         object? sender,
         MenuEditingCoordinatorChangedEventArgs args)
     {
-        if (
-            _disposed ||
-            _rowIdentity is null ||
-            _coordinatorMutationDepth != 0)
-            return;
         if (!Dispatcher.UIThread.CheckAccess())
         {
             Dispatcher.UIThread.Post(() => Coordinator_Changed(sender, args));
             return;
         }
+        if (
+            _disposed ||
+            _rowIdentity is null ||
+            _coordinatorMutationDepth != 0 ||
+            !IsCoordinatorChangeRelevant(args))
+            return;
         if (Designer.HasStagedInput)
         {
             _pendingCoordinatorRefresh = true;
@@ -265,6 +266,27 @@ public sealed class MenuEditorViewModel
         }
 
         RefreshFromCoordinator();
+    }
+
+    private bool IsCoordinatorChangeRelevant(
+        MenuEditingCoordinatorChangedEventArgs args)
+    {
+        if (args.Kind == MenuEditingCoordinatorChangeKind.TargetRowsChanged)
+            return true;
+
+        if (args.NormalizedMenuName is not { } changedName)
+        {
+            // Registration-list edits can add, remove, or retarget an authority
+            // occurrence. Without a logical-name payload they remain a
+            // document-wide authority change.
+            return true;
+        }
+
+        string? currentName = _resolution?.NormalizedName;
+        return currentName is not null && string.Equals(
+            currentName,
+            changedName,
+            StringComparison.Ordinal);
     }
 
     private void RefreshFromCoordinator()

@@ -51,8 +51,15 @@ public sealed class MenuPreviewControl : Control
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _materialFailures =
         new(StringComparer.Ordinal);
-    private CancellationTokenSource? _materialCancellation;
-    private int _materialGeneration;
+    private readonly Dictionary<string, MenuPreviewMaterialStatus>
+        _materialStatuses = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CancellationTokenSource>
+        _pendingMaterialLoads = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _materialNames =
+        new(StringComparer.Ordinal);
+    private IMenuPreviewMaterialResolver? _activeMaterialResolver;
+    private long _activeMaterialRevision = -1;
+    private bool _isAttached;
 
     static MenuPreviewControl()
     {
@@ -121,7 +128,7 @@ public sealed class MenuPreviewControl : Control
         if (change.Property == SceneProperty ||
             change.Property == MaterialResolverProperty)
         {
-            RefreshMaterials();
+            RefreshMaterials(change.Property == SceneProperty);
         }
     }
 
@@ -151,8 +158,8 @@ public sealed class MenuPreviewControl : Control
     protected override void OnDetachedFromVisualTree(
         Avalonia.VisualTreeAttachmentEventArgs e)
     {
-        CancelMaterialLoads();
-        DisposeBitmaps();
+        _isAttached = false;
+        ResetMaterialState();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -160,19 +167,31 @@ public sealed class MenuPreviewControl : Control
         Avalonia.VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _isAttached = true;
         RefreshMaterials();
     }
 
-    private void RefreshMaterials()
+    private void RefreshMaterials(bool reportRetainedStatuses = false)
     {
-        CancelMaterialLoads();
-        DisposeBitmaps();
-        _materialFailures.Clear();
+        if (!_isAttached)
+            return;
 
         if (Scene is not { } scene || MaterialResolver is not { } resolver)
         {
+            ResetMaterialState();
             InvalidateVisual();
             return;
+        }
+
+        long revision = resolver.Revision;
+        bool contextChanged =
+            !ReferenceEquals(_activeMaterialResolver, resolver) ||
+            _activeMaterialRevision != revision;
+        if (contextChanged)
+        {
+            ResetMaterialState();
+            _activeMaterialResolver = resolver;
+            _activeMaterialRevision = revision;
         }
 
         string[] materialNames = scene.Primitives
@@ -181,36 +200,67 @@ public sealed class MenuPreviewControl : Control
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        if (materialNames.Length == 0)
+        var requestedNames = materialNames.ToHashSet(StringComparer.Ordinal);
+        foreach (string removedName in _materialNames
+                     .Where(name => !requestedNames.Contains(name))
+                     .ToArray())
         {
-            InvalidateVisual();
-            return;
+            RemoveMaterial(removedName);
         }
 
-        _materialCancellation = new CancellationTokenSource();
-        int generation = ++_materialGeneration;
         foreach (string materialName in materialNames)
         {
-            _ = ResolveMaterialAsync(
-                materialName,
-                resolver,
-                generation,
-                _materialCancellation.Token);
+            _materialNames.Add(materialName);
+            if (!_materialStatuses.ContainsKey(materialName) &&
+                !_pendingMaterialLoads.ContainsKey(materialName))
+            {
+                StartMaterialLoad(materialName, resolver, revision);
+            }
         }
+
+        if (reportRetainedStatuses && !contextChanged)
+        {
+            foreach (string materialName in materialNames)
+            {
+                if (_materialStatuses.TryGetValue(
+                        materialName,
+                        out MenuPreviewMaterialStatus? status))
+                {
+                    ReportMaterialStatus(status);
+                }
+            }
+        }
+
+        InvalidateVisual();
+    }
+
+    private void StartMaterialLoad(
+        string materialName,
+        IMenuPreviewMaterialResolver resolver,
+        long revision)
+    {
+        var cancellation = new CancellationTokenSource();
+        _pendingMaterialLoads.Add(materialName, cancellation);
+        _ = ResolveMaterialAsync(
+            materialName,
+            resolver,
+            revision,
+            cancellation);
     }
 
     private async Task ResolveMaterialAsync(
         string materialName,
         IMenuPreviewMaterialResolver resolver,
-        int generation,
-        CancellationToken cancellationToken)
+        long revision,
+        CancellationTokenSource cancellation)
     {
+        CancellationToken cancellationToken = cancellation.Token;
         MenuPreviewMaterialResolution resolution;
         try
         {
             resolution = await resolver.ResolveAsync(
                 materialName,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -224,13 +274,24 @@ public sealed class MenuPreviewControl : Control
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (cancellationToken.IsCancellationRequested ||
-                generation != _materialGeneration)
+            if (!IsCurrentMaterialLoad(
+                    materialName,
+                    resolver,
+                    revision,
+                    cancellation))
             {
                 return;
             }
 
+            if (resolver.Revision != revision)
+            {
+                RefreshMaterials();
+                return;
+            }
+
             MenuPreviewMaterialResolution presentedResolution = resolution;
+            Bitmap? bitmap = null;
+            string? failure = null;
             if (resolution.Snapshot is { } snapshot)
             {
                 try
@@ -238,12 +299,12 @@ public sealed class MenuPreviewControl : Control
                     using var stream = new MemoryStream(
                         snapshot.GetPngBytesCopy(),
                         writable: false);
-                    _materialBitmaps[materialName] = new Bitmap(stream);
+                    bitmap = new Bitmap(stream);
                 }
                 catch (Exception exception) when (
                     exception is not OutOfMemoryException)
                 {
-                    string failure =
+                    failure =
                         $"Decoded image '{snapshot.ImageName}' for material " +
                         $"'{materialName}' could not be opened by the " +
                         $"preview surface: {exception.Message}";
@@ -251,22 +312,66 @@ public sealed class MenuPreviewControl : Control
                         failure,
                         resolution.PoolRevision,
                         resolution.Diagnostics);
-                    _materialFailures[materialName] = failure;
                 }
             }
             else
             {
-                _materialFailures[materialName] = resolution.Failure ??
+                failure = resolution.Failure ??
                     "Material preview is unavailable.";
             }
 
+            if (!IsCurrentMaterialLoad(
+                    materialName,
+                    resolver,
+                    revision,
+                    cancellation))
+            {
+                bitmap?.Dispose();
+                return;
+            }
+
+            if (resolver.Revision != revision)
+            {
+                bitmap?.Dispose();
+                RefreshMaterials();
+                return;
+            }
+
+            _pendingMaterialLoads.Remove(materialName);
+            cancellation.Dispose();
+            if (bitmap is not null)
+                _materialBitmaps.Add(materialName, bitmap);
+            else
+                _materialFailures.Add(materialName, failure!);
+
+            MenuPreviewMaterialStatus status =
+                presentedResolution.CreateStatus(materialName);
+            _materialStatuses.Add(materialName, status);
             InvalidateVisual();
-            MaterialResolutionCompleted?.Invoke(
-                this,
-                new MenuPreviewMaterialResolutionCompletedEventArgs(
-                    presentedResolution.CreateStatus(materialName)));
+            ReportMaterialStatus(status);
         });
     }
+
+    private bool IsCurrentMaterialLoad(
+        string materialName,
+        IMenuPreviewMaterialResolver resolver,
+        long revision,
+        CancellationTokenSource cancellation) =>
+        _isAttached &&
+        !cancellation.IsCancellationRequested &&
+        ReferenceEquals(MaterialResolver, resolver) &&
+        ReferenceEquals(_activeMaterialResolver, resolver) &&
+        _activeMaterialRevision == revision &&
+        _materialNames.Contains(materialName) &&
+        _pendingMaterialLoads.TryGetValue(
+            materialName,
+            out CancellationTokenSource? currentCancellation) &&
+        ReferenceEquals(currentCancellation, cancellation);
+
+    private void ReportMaterialStatus(MenuPreviewMaterialStatus status) =>
+        MaterialResolutionCompleted?.Invoke(
+            this,
+            new MenuPreviewMaterialResolutionCompletedEventArgs(status));
 
     private void DrawStage(
         DrawingContext context,
@@ -591,19 +696,41 @@ public sealed class MenuPreviewControl : Control
                 (Bounds.Height - settings.CanvasHeight * scale) * 0.5));
     }
 
-    private void CancelMaterialLoads()
+    private void RemoveMaterial(string materialName)
     {
-        _materialGeneration++;
-        _materialCancellation?.Cancel();
-        _materialCancellation?.Dispose();
-        _materialCancellation = null;
+        _materialNames.Remove(materialName);
+        if (_pendingMaterialLoads.Remove(
+                materialName,
+                out CancellationTokenSource? cancellation))
+        {
+            cancellation.Cancel();
+            cancellation.Dispose();
+        }
+
+        if (_materialBitmaps.Remove(materialName, out Bitmap? bitmap))
+            bitmap.Dispose();
+        _materialFailures.Remove(materialName);
+        _materialStatuses.Remove(materialName);
     }
 
-    private void DisposeBitmaps()
+    private void ResetMaterialState()
     {
+        foreach (CancellationTokenSource cancellation in
+                 _pendingMaterialLoads.Values)
+        {
+            cancellation.Cancel();
+            cancellation.Dispose();
+        }
+        _pendingMaterialLoads.Clear();
+
         foreach (Bitmap bitmap in _materialBitmaps.Values)
             bitmap.Dispose();
         _materialBitmaps.Clear();
+        _materialFailures.Clear();
+        _materialStatuses.Clear();
+        _materialNames.Clear();
+        _activeMaterialResolver = null;
+        _activeMaterialRevision = -1;
     }
 
     private static IBrush Brush(MenuColorValue value) =>

@@ -6,10 +6,10 @@ using IW4.Studio.Documents;
 namespace IW4.Studio.Documents.MenuEditing;
 
 /// <summary>
-/// Document-scoped Menu authority and edit router. It rebuilds all target
-/// occurrences from a race-safe editing-session capture whenever resolution
-/// matters and retains no visual selection, property staging, or mutable Menu
-/// graph of its own.
+/// Document-scoped Menu authority and edit router. It resolves target
+/// occurrences from a race-safe editing-session capture and reuses that
+/// immutable authority state until the relevant document version changes. It
+/// retains no visual selection, property staging, or mutable Menu graph.
 /// </summary>
 public sealed partial class MenuEditingCoordinator : IDisposable
 {
@@ -17,6 +17,8 @@ public sealed partial class MenuEditingCoordinator : IDisposable
     private readonly FastFileEditingSession _editingSession;
     private readonly AssetAuthoringAdapterRegistry _adapters;
     private readonly MenuAuthorityCapture _capture;
+    private readonly object _captureGate = new();
+    private CapturedMenuAuthorityState? _cachedAuthorityState;
     private int _disposed;
 
     public MenuEditingCoordinator(
@@ -40,7 +42,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
     {
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrWhiteSpace(menuName);
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         return Resolve(state, menuName);
     }
 
@@ -53,7 +55,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         TargetZoneRowIdentity rowIdentity)
     {
         ThrowIfDisposed();
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         return Resolve(state, TopLevelMenuName(state, rowIdentity));
     }
 
@@ -66,7 +68,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         MenuRegistrationId registrationId)
     {
         ThrowIfDisposed();
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         return Resolve(
             state,
             MenuFileRegistrationName(
@@ -79,7 +81,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         TargetZoneRowIdentity rowIdentity)
     {
         ThrowIfDisposed();
-        return _capture.Capture().RequireMenuFileRow(rowIdentity).Snapshot;
+        return CaptureAuthorityState().RequireMenuFileRow(rowIdentity).Snapshot;
     }
 
     public MenuAuthorityEditResult ApplyMenuEdit(
@@ -89,7 +91,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(expectedResolution);
         ArgumentNullException.ThrowIfNull(edit);
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         MenuAuthorityResolutionSnapshot current =
             RequireCurrentEditableResolution(
                 state,
@@ -106,7 +108,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(expectedResolution);
         ArgumentNullException.ThrowIfNull(edit);
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         RequireExpectedRevision(state, expectedResolution);
         string currentName = TopLevelMenuName(state, rowIdentity);
         MenuAuthorityResolutionSnapshot current =
@@ -126,7 +128,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(expectedResolution);
         ArgumentNullException.ThrowIfNull(edit);
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         RequireExpectedRevision(state, expectedResolution);
         string currentName = RequireCurrentRegistrationName(
             state,
@@ -158,7 +160,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
                 "Nested Menu edits must use ApplyMenuFileRegistrationEdit so the document authority is respected.");
         }
 
-        CapturedMenuAuthorityState state = _capture.Capture();
+        CapturedMenuAuthorityState state = CaptureAuthorityState();
         CapturedMenuFileRow capturedRow = state.RequireMenuFileRow(rowIdentity);
         int? targetRegistrationIndex = RegistrationIndex(
             capturedRow.Snapshot,
@@ -177,7 +179,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
                     edit,
                     targetRegistrationIndex));
             });
-        MenuFileEditorSnapshot snapshot = _capture.Capture()
+        MenuFileEditorSnapshot snapshot = CaptureAuthorityState()
             .RequireMenuFileRow(rowIdentity)
             .Snapshot;
         if (changed)
@@ -190,6 +192,30 @@ public sealed partial class MenuEditingCoordinator : IDisposable
         }
 
         return new MenuFileEditResult(changed, snapshot);
+    }
+
+    private CapturedMenuAuthorityState CaptureAuthorityState()
+    {
+        lock (_captureGate)
+        {
+            // Revision is the semantic cache key. The matching retained-draft
+            // count also protects editor-only MenuFile registration identities:
+            // opening a previously local row retains those identities without
+            // advancing the semantic document revision.
+            FastFileEditingCaptureVersion version =
+                _capture.GetCaptureVersion();
+            CapturedMenuAuthorityState? cached = _cachedAuthorityState;
+            if (cached is not null &&
+                cached.Revision == version.Revision &&
+                cached.RetainedDraftCount == version.RetainedDraftCount)
+            {
+                return cached;
+            }
+
+            CapturedMenuAuthorityState captured = _capture.Capture();
+            _cachedAuthorityState = captured;
+            return captured;
+        }
     }
 
     public void Dispose()

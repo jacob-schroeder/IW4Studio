@@ -7,6 +7,12 @@ namespace IW4.Studio.Rendering;
 /// </summary>
 public interface IMenuPreviewMaterialResolver
 {
+    /// <summary>
+    /// Changes whenever resolving the same material names may produce
+    /// different results.
+    /// </summary>
+    long Revision { get; }
+
     Task<MenuPreviewMaterialResolution> ResolveAsync(
         string materialName,
         CancellationToken cancellationToken = default);

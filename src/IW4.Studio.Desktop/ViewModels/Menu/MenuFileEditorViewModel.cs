@@ -499,17 +499,18 @@ public sealed class MenuFileEditorViewModel
         object? sender,
         MenuEditingCoordinatorChangedEventArgs args)
     {
-        if (
-            _disposed ||
-            Mode != AssetEditorMode.Editable ||
-            _rowIdentity is null ||
-            _coordinatorMutationDepth != 0)
-            return;
         if (!Dispatcher.UIThread.CheckAccess())
         {
             Dispatcher.UIThread.Post(() => Coordinator_Changed(sender, args));
             return;
         }
+        if (
+            _disposed ||
+            Mode != AssetEditorMode.Editable ||
+            _rowIdentity is null ||
+            _coordinatorMutationDepth != 0 ||
+            !IsCoordinatorChangeRelevant(args))
+            return;
         if (Designer.HasStagedInput)
         {
             _pendingCoordinatorRefresh = true;
@@ -519,6 +520,34 @@ public sealed class MenuFileEditorViewModel
         }
 
         RefreshFromCoordinator();
+    }
+
+    private bool IsCoordinatorChangeRelevant(
+        MenuEditingCoordinatorChangedEventArgs args)
+    {
+        if (args.Kind == MenuEditingCoordinatorChangeKind.TargetRowsChanged ||
+            args.RowIdentity == _rowIdentity)
+        {
+            return true;
+        }
+
+        if (args.NormalizedMenuName is not { } changedName)
+        {
+            // A structural edit in another MenuFile can change document-wide
+            // ownership. Those comparatively rare changes require a refresh.
+            return args.Kind is
+                MenuEditingCoordinatorChangeKind.MenuFileEdited or
+                MenuEditingCoordinatorChangeKind.MenuFileReverted;
+        }
+
+        return Registrations.Any(registration =>
+            registration.MenuName is { } menuName &&
+            !string.IsNullOrWhiteSpace(menuName) &&
+            string.Equals(
+                XAssetStableIdentity.NormalizeLookupName(
+                    menuName),
+                changedName,
+                StringComparison.Ordinal));
     }
 
     private void RefreshFromCoordinator()
