@@ -279,8 +279,27 @@ internal static partial class MenuInspectorProjection
                             $"Dynamic flags · Client {clientIndex}",
                             $"window.dynamicFlags[{clientIndex}]",
                             value,
-                            description: "Per-client dynamic flags are runtime state and are not editable."))
+                            apply: update is null
+                                ? null
+                                : replacement => update(current => current with
+                                {
+                                    DynamicFlags = ReplaceDynamicFlag(
+                                        current.DynamicFlags,
+                                        clientIndex,
+                                        replacement)
+                                }),
+                            description: "Serialized per-client initial state; the game may update these flags at runtime."))
                 ])
         ];
+    }
+
+    private static IReadOnlyList<WindowDynamicFlags> ReplaceDynamicFlag(
+        IReadOnlyList<WindowDynamicFlags> current,
+        int clientIndex,
+        WindowDynamicFlags replacement)
+    {
+        WindowDynamicFlags[] values = current.ToArray();
+        values[clientIndex] = replacement;
+        return Array.AsReadOnly(values);
     }
 }
