@@ -98,7 +98,11 @@ public sealed partial class MenuEditingCoordinator
             MoveMenuItemEdit value =>
                 new MoveMenuItemEdit(currentId, value.DestinationIndex),
             DuplicateMenuItemEdit value =>
-                new DuplicateMenuItemEdit(currentId, value.InsertIndex),
+                new DuplicateMenuItemEdit(
+                    currentId,
+                    value.InsertIndex,
+                    value.OffsetX,
+                    value.OffsetY),
             ChangeMenuItemTypeEdit value =>
                 new ChangeMenuItemTypeEdit(currentId, value.Type),
             _ => throw new InvalidDataException(

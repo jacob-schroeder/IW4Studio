@@ -123,12 +123,35 @@ public sealed partial class MenuPreviewControl
         MenuPreviewMaterial material,
         Rect bounds)
     {
+        if (_materialSnapshots.TryGetValue(
+                material.MaterialName,
+                out MenuPreviewMaterialSnapshot? snapshot) &&
+            snapshot.CpuPreviewCompositeState is { } compositeState &&
+            IsMaterialCulled(material, compositeState.CullMode))
+        {
+            return;
+        }
+
         MaterialBitmapKey bitmapKey = MaterialBitmapKey.Create(
             material.MaterialName,
             material.Tint);
         if (_materialBitmaps.TryGetValue(bitmapKey, out Bitmap? bitmap))
         {
-            context.DrawImage(bitmap, bounds);
+            if (!material.FlipHorizontal && !material.FlipVertical)
+            {
+                context.DrawImage(bitmap, bounds);
+                return;
+            }
+
+            var transform = new Matrix(
+                material.FlipHorizontal ? -1 : 1,
+                0,
+                0,
+                material.FlipVertical ? -1 : 1,
+                material.FlipHorizontal ? bounds.Left + bounds.Right : 0,
+                material.FlipVertical ? bounds.Top + bounds.Bottom : 0);
+            using (context.PushTransform(transform))
+                context.DrawImage(bitmap, bounds);
             return;
         }
 
@@ -139,6 +162,21 @@ public sealed partial class MenuPreviewControl
                 ? failure
                 : $"Loading: {material.MaterialName}";
         DrawLabel(context, label, bounds, 10, Color.FromRgb(224, 229, 236));
+    }
+
+    private static bool IsMaterialCulled(
+        MenuPreviewMaterial material,
+        IW4.Render.Materials.MapRenderCullMode cullMode)
+    {
+        if (cullMode == IW4.Render.Materials.MapRenderCullMode.Disabled)
+            return false;
+
+        // The native UI quad is back-facing under the established projection.
+        // Exactly one signed dimension reverses its winding as well as its UVs.
+        bool frontFacing = material.FlipHorizontal ^ material.FlipVertical;
+        return cullMode == IW4.Render.Materials.MapRenderCullMode.Front
+            ? frontFacing
+            : !frontFacing;
     }
 
     private void DrawText(
@@ -572,6 +610,14 @@ public sealed partial class MenuPreviewControl
             rgba[offset + 1] = MultiplyChannel(rgba[offset + 1], key.G);
             rgba[offset + 2] = MultiplyChannel(rgba[offset + 2], key.B);
             rgba[offset + 3] = MultiplyChannel(rgba[offset + 3], key.A);
+            if (snapshot.CpuPreviewCompositeState is { } state &&
+                !PassesAlphaTest(rgba[offset + 3] / 255f, state.AlphaTest))
+            {
+                rgba[offset] = 0;
+                rgba[offset + 1] = 0;
+                rgba[offset + 2] = 0;
+                rgba[offset + 3] = 0;
+            }
         }
 
         var bitmap = new WriteableBitmap(

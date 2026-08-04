@@ -39,13 +39,23 @@ public sealed partial class MenuPreviewControl
     {
         base.OnPointerPressed(e);
         if (_geometryManipulation is not null ||
-            Scene is not { } scene ||
-            !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            Scene is not { } scene)
+        {
+            return;
+        }
+
+        PointerPointProperties properties =
+            e.GetCurrentPoint(this).Properties;
+        if (!properties.IsLeftButtonPressed &&
+            !properties.IsRightButtonPressed)
         {
             return;
         }
 
         Focus(NavigationMethod.Pointer, e.KeyModifiers);
+        if (!properties.IsLeftButtonPressed)
+            return;
+
         PreviewTransform transform = CreateTransform(scene.Settings);
         Point localPosition = e.GetPosition(this);
         if (!StageBounds(scene.Settings, transform).Contains(localPosition))
@@ -67,10 +77,7 @@ public sealed partial class MenuPreviewControl
             return;
         }
 
-        if (!transform.TryUnmap(localPosition, out Point virtualPosition) ||
-            scene.HitTest(
-                (float)virtualPosition.X,
-                (float)virtualPosition.Y) is not { } nodeId)
+        if (HitTestNode(scene, transform, localPosition) is not { } nodeId)
         {
             return;
         }
@@ -97,6 +104,31 @@ public sealed partial class MenuPreviewControl
         }
 
         e.Handled = true;
+    }
+
+    internal MenuNodeId? HitTestNode(Point localPosition)
+    {
+        if (Scene is not { } scene)
+            return null;
+
+        PreviewTransform transform = CreateTransform(scene.Settings);
+        return HitTestNode(scene, transform, localPosition);
+    }
+
+    private static MenuNodeId? HitTestNode(
+        MenuPreviewScene scene,
+        PreviewTransform transform,
+        Point localPosition)
+    {
+        if (!StageBounds(scene.Settings, transform).Contains(localPosition) ||
+            !transform.TryUnmap(localPosition, out Point virtualPosition))
+        {
+            return null;
+        }
+
+        return scene.HitTest(
+            (float)virtualPosition.X,
+            (float)virtualPosition.Y);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)

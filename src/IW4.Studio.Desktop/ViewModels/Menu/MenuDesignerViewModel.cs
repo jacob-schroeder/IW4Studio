@@ -20,6 +20,8 @@ namespace IW4.Studio.Desktop.ViewModels.Menu;
 /// </summary>
 public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
 {
+    private const float DuplicateItemOffset = 8f;
+
     private readonly Func<MenuEdit, MenuEditorSnapshot>? _applyEdit;
     private readonly Func<bool>? _isEditAllowed;
     private readonly Action<InspectorAssetReferencePropertyRowViewModel>?
@@ -36,6 +38,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         _materialPreviewStatuses = new(StringComparer.Ordinal);
     private readonly Dictionary<MenuNodeId, MenuPreviewTextStatus>
         _textPreviewStatuses = [];
+    private PreviewMaterialResourceKey[] _previewMaterialResources = [];
+    private PreviewTextResourceKey[] _previewTextResources = [];
     private string? _directManipulationError;
     private MenuEditorSnapshot? _snapshot;
     private IReadOnlyList<MenuOutlineNodeViewModel> _outlineRoots = [];
@@ -113,6 +117,10 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         _textResourceResolver;
 
     public MenuPreviewDebugViewModel PreviewDebug => _previewDebug;
+
+    internal bool IsDisposed => _disposed;
+
+    internal event EventHandler? Disposed;
 
     public IReadOnlyList<MenuOutlineNodeViewModel> OutlineRoots
     {
@@ -367,6 +375,14 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(status);
         string key = XAssetStableIdentity.NormalizeLookupName(
             status.MaterialName);
+        if (_materialPreviewStatuses.TryGetValue(
+                key,
+                out MenuPreviewMaterialStatus? current) &&
+            current == status)
+        {
+            return;
+        }
+
         _materialPreviewStatuses[key] = status;
         OnPropertyChanged(nameof(PreviewStatus));
         OnPropertyChanged(nameof(PreviewDetails));
@@ -375,6 +391,18 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     internal void ReportTextPreviewStatus(MenuPreviewTextStatus status)
     {
         ArgumentNullException.ThrowIfNull(status);
+        if (_textPreviewStatuses.TryGetValue(
+                status.NodeId,
+                out MenuPreviewTextStatus? current) &&
+            current.AuthoredText == status.AuthoredText &&
+            current.UsesGameGlyphs == status.UsesGameGlyphs &&
+            current.Diagnostics.SequenceEqual(
+                status.Diagnostics,
+                StringComparer.Ordinal))
+        {
+            return;
+        }
+
         _textPreviewStatuses[status.NodeId] = status;
         OnPropertyChanged(nameof(PreviewStatus));
         OnPropertyChanged(nameof(PreviewDetails));
@@ -436,9 +464,16 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     {
         if (SelectedItemWithIndex() is not { Item.IsResolved: true } selected)
             return;
-        ApplyStructuralEdit(new DuplicateMenuItemEdit(
+
+        int insertionIndex = selected.Index + 1;
+        MenuEditorSnapshot next = ApplyCore(new DuplicateMenuItemEdit(
             selected.Item.Id,
-            selected.Index + 1));
+            insertionIndex,
+            DuplicateItemOffset,
+            DuplicateItemOffset));
+        MenuNodeId duplicateId = next.Items[insertionIndex].Id;
+        ReplaceDocument(next);
+        SelectPreviewNode(duplicateId);
     }
 
     private void RemoveSelectedItem()
@@ -571,6 +606,15 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             screenRectangle.HorizontalAlignment,
             screenRectangle.VerticalAlignment,
             scene.Settings);
+        candidateVirtual = candidateVirtual with
+        {
+            Width = screenRectangle.Width < 0
+                ? -candidateVirtual.Width
+                : candidateVirtual.Width,
+            Height = screenRectangle.Height < 0
+                ? -candidateVirtual.Height
+                : candidateVirtual.Height
+        };
         MenuRectangleValue current = item.Value.Window.RectClient;
         var replacement = current with
         {
@@ -635,6 +679,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             _textResourceResolver.Changed -= TextResourceResolver_Changed;
         PreviewDebug.PreviewChanged -= PreviewDebug_PreviewChanged;
         StopObservingRows();
+        Disposed?.Invoke(this, EventArgs.Empty);
     }
 
     private void ApplyValue(Func<MenuEditorSnapshot, MenuEdit> createEdit)
@@ -718,13 +763,83 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
 
     private void PreviewDebug_PreviewChanged(object? sender, EventArgs args)
     {
-        _materialPreviewStatuses.Clear();
-        _textPreviewStatuses.Clear();
+        RefreshPreviewResourceIdentity();
         OnPropertyChanged(nameof(PreviewScene));
         OnPropertyChanged(nameof(PreviewStatus));
         OnPropertyChanged(nameof(PreviewDetails));
         OnPropertyChanged(nameof(CanDirectManipulateSelectedItem));
     }
+
+    private void RefreshPreviewResourceIdentity()
+    {
+        MenuPreviewScene? scene = PreviewScene;
+        PreviewMaterialResourceKey[] materials = scene is null
+            ? []
+            : scene.Primitives
+                .SelectMany(PreviewMaterialResources)
+                .Distinct()
+                .OrderBy(value => value.Kind)
+                .ThenBy(value => value.Name, StringComparer.Ordinal)
+                .ThenBy(value => value.Font)
+                .ThenBy(value => value.Scale)
+                .ToArray();
+        PreviewTextResourceKey[] texts = scene is null
+            ? []
+            : scene.Primitives
+                .OfType<MenuPreviewText>()
+                .Select(value => new PreviewTextResourceKey(
+                    value.NodeId,
+                    value.Text,
+                    value.Font,
+                    value.Scale,
+                    value.Alignment,
+                    value.Style))
+                .ToArray();
+
+        if (!_previewMaterialResources.SequenceEqual(materials))
+            _materialPreviewStatuses.Clear();
+        if (!_previewTextResources.SequenceEqual(texts))
+            _textPreviewStatuses.Clear();
+
+        _previewMaterialResources = materials;
+        _previewTextResources = texts;
+    }
+
+    private static IEnumerable<PreviewMaterialResourceKey>
+        PreviewMaterialResources(MenuPreviewPrimitive primitive)
+    {
+        if (primitive is MenuPreviewMaterial material)
+        {
+            yield return new PreviewMaterialResourceKey(
+                0,
+                XAssetStableIdentity.NormalizeLookupName(
+                    material.MaterialName),
+                0,
+                0);
+        }
+        else if (primitive is MenuPreviewText text)
+        {
+            yield return new PreviewMaterialResourceKey(
+                1,
+                string.Empty,
+                text.Font,
+                text.Scale);
+        }
+    }
+
+    private readonly record struct PreviewMaterialResourceKey(
+        int Kind,
+        string Name,
+        int Font,
+        float Scale);
+
+    private readonly record struct PreviewTextResourceKey(
+        MenuNodeId NodeId,
+        string Text,
+        int Font,
+        float Scale,
+        int Alignment,
+        int Style);
 
     private void TextResourceResolver_Changed(object? sender, EventArgs args)
     {
@@ -736,7 +851,14 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         }
 
         if (!_disposed)
+        {
+            // A font provider revision can remap the same Font/scale request
+            // to a different glyph-atlas material without changing the Menu
+            // scene's authored text identity.
+            _materialPreviewStatuses.Clear();
+            _textPreviewStatuses.Clear();
             PreviewDebug.RefreshTextResources();
+        }
     }
 
     private void SetInspectorSelection(InspectorSelectionViewModel? value)

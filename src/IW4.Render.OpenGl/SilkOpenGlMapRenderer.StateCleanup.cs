@@ -356,14 +356,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 "Stencil state reached the OpenGL preview backend without supported MRT resources, write-mask ownership, and face convention.");
         }
         _state.SetEnabled(EnableCap.StencilTest, false);
-        if (state.CullEnabled)
+        switch (MapRenderCull.Resolve(state))
         {
-            _state.SetEnabled(EnableCap.CullFace, true);
-            _state.CullFace(state.CullFace == 0x0404 ? TriangleFace.Front : TriangleFace.Back);
-        }
-        else
-        {
-            _state.SetEnabled(EnableCap.CullFace, false);
+            case MapRenderCullMode.Disabled:
+                _state.SetEnabled(EnableCap.CullFace, false);
+                break;
+            case MapRenderCullMode.Front:
+                _state.SetEnabled(EnableCap.CullFace, true);
+                _state.CullFace(TriangleFace.Front);
+                break;
+            case MapRenderCullMode.Back:
+                _state.SetEnabled(EnableCap.CullFace, true);
+                _state.CullFace(TriangleFace.Back);
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported authored cull tuple " +
+                    $"{state.CullEnabled}/0x{state.CullFace:X4} reached " +
+                    "the OpenGL backend.");
         }
         _state.PolygonMode(
             state.PolygonMode == 0x1B01 ? PolygonMode.Line : PolygonMode.Fill);

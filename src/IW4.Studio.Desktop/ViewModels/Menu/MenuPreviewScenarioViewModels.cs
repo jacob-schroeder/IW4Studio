@@ -367,16 +367,22 @@ public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
 /// </summary>
 public sealed class MenuPreviewSimulationViewModel : ObservableObject
 {
-    private readonly Action _changed;
+    private readonly Action _inputsChanged;
+    private readonly Action _timeChanged;
     private IReadOnlyList<MenuPreviewScenarioInputViewModel> _inputs = [];
     private IReadOnlyList<string> _unsupportedInputLines = [];
     private int _milliseconds;
     private bool _isBatching;
     private bool _isConfigurationOpen;
 
-    internal MenuPreviewSimulationViewModel(Action changed)
+    internal MenuPreviewSimulationViewModel(
+        Action inputsChanged,
+        Action timeChanged)
     {
-        _changed = changed ?? throw new ArgumentNullException(nameof(changed));
+        _inputsChanged = inputsChanged ??
+            throw new ArgumentNullException(nameof(inputsChanged));
+        _timeChanged = timeChanged ??
+            throw new ArgumentNullException(nameof(timeChanged));
         ClearOverridesCommand = new ViewModelCommand(
             ClearOverrides,
             () => HasOverrides);
@@ -427,7 +433,7 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
         {
             if (!SetProperty(ref _milliseconds, value))
                 return;
-            RaiseChanged();
+            RaiseTimeChanged();
         }
     }
 
@@ -560,20 +566,20 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
             _isBatching = false;
         }
         NotifyInputCollectionsChanged();
-        _changed();
+        _inputsChanged();
     }
 
     private void InputChanged()
     {
         NotifyInputCollectionsChanged();
         if (!_isBatching)
-            _changed();
+            _inputsChanged();
     }
 
-    private void RaiseChanged()
+    private void RaiseTimeChanged()
     {
         if (!_isBatching)
-            _changed();
+            _timeChanged();
     }
 
     private void NotifyStateChanged()

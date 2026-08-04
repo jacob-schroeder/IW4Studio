@@ -86,7 +86,9 @@ public sealed record MenuPreviewMaterial(
     MenuPreviewPlacement Placement,
     int ZIndex,
     string MaterialName,
-    MenuColorValue Tint) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
+    MenuColorValue Tint,
+    bool FlipHorizontal,
+    bool FlipVertical) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewText(
     MenuNodeId NodeId,

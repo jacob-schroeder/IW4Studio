@@ -32,10 +32,12 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         IMenuTextResourceResolver? textResourceResolver)
     {
         _textResourceResolver = textResourceResolver;
-        Simulation = new MenuPreviewSimulationViewModel(BaseSimulationChanged);
+        Simulation = new MenuPreviewSimulationViewModel(
+            BaseSimulationChanged,
+            SimulationTimeChanged);
         Interaction = new MenuPreviewInteractionViewModel(DispatchInteraction);
         ResetSimulatedStateCommand = new ViewModelCommand(
-            ResetInteractionState,
+            RestartSimulation,
             () => IsSimulating && _snapshot?.IsComplete == true);
     }
 
@@ -63,12 +65,6 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             OnPropertyChanged(nameof(HasSelectedAuthoredVisibilityExpression));
             OnPropertyChanged(nameof(ModeBadge));
             ResetSimulatedStateCommand.RaiseCanExecuteChanged();
-            if (IsSimulating)
-            {
-                ResetInteractionState();
-                return;
-            }
-
             ClearInteractionState();
             Refresh();
         }
@@ -373,6 +369,27 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             Refresh();
     }
 
+    private void SimulationTimeChanged()
+    {
+        if (!IsSimulating)
+            return;
+
+        if (_interactionScenario is { } scenario)
+        {
+            _interactionScenario = new MenuDebugScenario(
+                Simulation.Milliseconds,
+                scenario.Dvars,
+                scenario.LocalVariables,
+                scenario.Environment,
+                scenario.OpenMenus,
+                scenario.FocusedItemId,
+                scenario.LocalizationResolver,
+                scenario.ItemRuntimeStates);
+        }
+
+        Refresh();
+    }
+
     private void DispatchInteraction(MenuDebugInput input)
     {
         if (_snapshot is not { IsComplete: true } snapshot)
@@ -388,11 +405,19 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         Refresh();
     }
 
-    private void ResetInteractionState()
+    private void RestartSimulation()
     {
         ClearInteractionState();
-        if (IsSimulating)
+        if (!IsSimulating)
+            return;
+
+        if (Simulation.Milliseconds == 0)
+        {
             Refresh();
+            return;
+        }
+
+        Simulation.Milliseconds = 0;
     }
 
     private void ClearInteractionState()

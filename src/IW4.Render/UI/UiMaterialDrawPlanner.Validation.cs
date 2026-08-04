@@ -94,15 +94,13 @@ public static partial class UiMaterialDrawPlanner
             yield return "shader-packer sRGB enabled";
         if (state.ColorMask != 0x01010101)
             yield return $"color mask 0x{state.ColorMask:X8}";
-        if (!state.AlphaTestEnabled ||
-            state.AlphaFunc != 0x0204 ||
-            state.AlphaRef != 0)
+        if (MapRenderAlphaTest.Resolve(state) is null)
         {
             yield return
                 $"alpha test {state.AlphaTestEnabled}/" +
                 $"0x{state.AlphaFunc:X4}/{state.AlphaRef}";
         }
-        if (!state.CullEnabled || state.CullFace != 0x0404)
+        if (MapRenderCull.Resolve(state) is null)
         {
             yield return
                 $"cull tuple {state.CullEnabled}/0x{state.CullFace:X4}";

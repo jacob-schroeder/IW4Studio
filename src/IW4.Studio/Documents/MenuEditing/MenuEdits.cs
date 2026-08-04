@@ -44,7 +44,9 @@ public sealed record MoveMenuItemEdit(
 
 public sealed record DuplicateMenuItemEdit(
     MenuNodeId ItemId,
-    int? InsertIndex = null) : MenuEdit;
+    int? InsertIndex,
+    float OffsetX,
+    float OffsetY) : MenuEdit;
 
 public sealed record ChangeMenuItemTypeEdit(
     MenuNodeId ItemId,

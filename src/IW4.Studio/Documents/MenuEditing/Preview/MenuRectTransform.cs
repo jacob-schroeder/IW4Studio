@@ -26,8 +26,8 @@ public static class MenuRectTransform
         return new MenuPreviewRect(
             horizontal.ApplyPosition(value.X),
             vertical.ApplyPosition(value.Y),
-            horizontal.ApplyLength(value.Width),
-            vertical.ApplyLength(value.Height));
+            horizontal.ApplyLength(MathF.Abs(value.Width)),
+            vertical.ApplyLength(MathF.Abs(value.Height)));
     }
 
     public static MenuPreviewRect Unresolve(

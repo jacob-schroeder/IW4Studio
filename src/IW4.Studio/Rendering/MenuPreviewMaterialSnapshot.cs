@@ -16,11 +16,14 @@ public sealed class MenuPreviewMaterialSnapshot
     private readonly IReadOnlyList<UiMaterialPreviewDiagnostic> _diagnostics;
     private readonly IReadOnlyList<UiMaterialExecutionDiagnostic>
         _executionDiagnostics;
+    private readonly IReadOnlyList<UiMaterialExecutionDiagnostic>
+        _cpuPreviewDiagnostics;
 
     internal MenuPreviewMaterialSnapshot(
         UiMaterialPreviewPlan plan,
         GfxImagePreviewSnapshot preview,
-        UiMaterialDrawPlan? executionPlan = null)
+        UiMaterialDrawPlan? executionPlan = null,
+        UiMaterialCpuPreviewPlan? cpuPreviewPlan = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(preview);
@@ -34,12 +37,15 @@ public sealed class MenuPreviewMaterialSnapshot
         Format = preview.Format;
         HasTransparency = preview.HasTransparency;
         ExecutionTemplate = executionPlan?.Packet;
+        CpuPreviewCompositeState = cpuPreviewPlan?.CompositeState;
         Fidelity = plan.Fidelity;
         Atlas = plan.Atlas;
         SamplerState = plan.SelectedSamplerState;
         _diagnostics = Array.AsReadOnly(plan.Diagnostics.ToArray());
         _executionDiagnostics = Array.AsReadOnly(
             executionPlan?.Diagnostics.ToArray() ?? []);
+        _cpuPreviewDiagnostics = Array.AsReadOnly(
+            cpuPreviewPlan?.Diagnostics.ToArray() ?? []);
         _rgbaBytes = preview.GetRgbaBytesCopy();
         _pngBytes = preview.GetPngBytesCopy();
     }
@@ -73,6 +79,13 @@ public sealed class MenuPreviewMaterialSnapshot
     /// </summary>
     public UiMaterialDrawPacket? ExecutionTemplate { get; }
 
+    /// <summary>
+    /// Fixed-function state that the Menu preview can composite with its CPU
+    /// target. This remains distinct from <see cref="ExecutionTemplate"/>,
+    /// which is reserved for generic renderer execution.
+    /// </summary>
+    public UiMaterialCpuPreviewCompositeState? CpuPreviewCompositeState { get; }
+
     public UiMaterialPreviewAtlasMetadata Atlas { get; }
 
     public MapRenderSamplerState? SamplerState { get; }
@@ -82,6 +95,15 @@ public sealed class MenuPreviewMaterialSnapshot
 
     public IReadOnlyList<UiMaterialExecutionDiagnostic>
         ExecutionDiagnostics => _executionDiagnostics;
+
+    public IReadOnlyList<UiMaterialExecutionDiagnostic>
+        CpuPreviewDiagnostics => _cpuPreviewDiagnostics;
+
+    /// <summary>
+    /// Read-only decoded RGBA storage shared with presentation backends that
+    /// need to sample the material.
+    /// </summary>
+    public ReadOnlyMemory<byte> RgbaBytes => _rgbaBytes;
 
     public byte[] GetRgbaBytesCopy() => _rgbaBytes.ToArray();
 

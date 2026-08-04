@@ -69,7 +69,22 @@ public sealed class MenuPreviewMaterialResolution
             null,
             poolRevision,
             snapshot.Diagnostics,
-            snapshot.ExecutionDiagnostics);
+            ActiveExecutionDiagnostics(snapshot));
+
+    private static IEnumerable<UiMaterialExecutionDiagnostic>
+        ActiveExecutionDiagnostics(MenuPreviewMaterialSnapshot snapshot)
+    {
+        IEnumerable<UiMaterialExecutionDiagnostic> generic =
+            snapshot.ExecutionDiagnostics;
+        if (snapshot.CpuPreviewCompositeState is not null)
+        {
+            generic = generic.Where(diagnostic =>
+                diagnostic.Code !=
+                UiMaterialExecutionDiagnosticCode.UnsupportedMaterialState);
+        }
+
+        return generic.Concat(snapshot.CpuPreviewDiagnostics);
+    }
 
     public MenuPreviewMaterialStatus CreateStatus(string requestedName)
     {
@@ -123,12 +138,14 @@ public sealed class MenuPreviewMaterialResolution
         {
             $"{snapshot.Width:N0}×{snapshot.Height:N0} {snapshot.Format}",
             snapshot.HasTransparency ? "alpha" : "opaque",
-            snapshot.Fidelity switch
-            {
-                UiMaterialPreviewFidelity.TextureApproximation =>
-                    "texture approximation",
-                _ => "unavailable"
-            }
+            snapshot.CpuPreviewCompositeState is not null
+                ? "texture approximation with decoded fixed-function state"
+                : snapshot.Fidelity switch
+                {
+                    UiMaterialPreviewFidelity.TextureApproximation =>
+                        "texture approximation",
+                    _ => "unavailable"
+                }
         };
         if (snapshot.Atlas.IsEnabled)
         {

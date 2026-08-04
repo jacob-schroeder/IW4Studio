@@ -26,7 +26,8 @@ public enum UiMaterialExecutionDiagnosticCode
     InvalidTextureAtlas = 14,
     TextureAtlasEvaluationRequired = 15,
     ShaderExecutionBlocked = 16,
-    UnsupportedTextureTarget = 17
+    UnsupportedTextureTarget = 17,
+    UnsupportedCpuPreviewCompositeState = 18
 }
 
 public sealed record UiMaterialExecutionDiagnostic(

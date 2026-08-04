@@ -10,6 +10,19 @@
              mc:Ignorable="d"
              d:DesignWidth="980"
              d:DesignHeight="560">
+  <UserControl.Resources>
+    <ContextMenu x:Key="PreviewItemContextMenu"
+                 x:DataType="menuVm:MenuDesignerViewModel"
+                 Placement="Pointer">
+      <MenuItem Header="New"
+                Command="{Binding AddItemCommand}" />
+      <MenuItem Header="Duplicate"
+                Command="{Binding DuplicateItemCommand}" />
+      <MenuItem Header="Delete"
+                Command="{Binding RemoveItemCommand}" />
+    </ContextMenu>
+  </UserControl.Resources>
+
   <Grid RowDefinitions="*,8,Auto">
     <Border CornerRadius="7"
             ClipToBounds="True"
@@ -114,7 +127,7 @@
           <Grid RowDefinitions="Auto,Auto,Auto">
             <WrapPanel Orientation="Horizontal"
                        VerticalAlignment="Center">
-              <TextBlock Text="Time"
+              <TextBlock Text="Time (auto)"
                          Margin="0,0,5,0"
                          VerticalAlignment="Center"
                          FontSize="9"
@@ -126,6 +139,7 @@
                              Maximum="2147483647"
                              Increment="100"
                              FormatString="0"
+                             ToolTip.Tip="Advances in real time while Simulate is active; enter a value to seek."
                              Value="{Binding PreviewDebug.Simulation.Milliseconds, Mode=TwoWay}" />
               <TextBlock Text="ms"
                          Margin="-10,0,14,0"
@@ -429,6 +443,7 @@
                                    MaterialResolver="{Binding MaterialResolver}"
                                    TextResourceResolver="{Binding TextResourceResolver}"
                                    NodeSelected="PreviewControl_NodeSelected"
+                                   ContextRequested="PreviewControl_ContextRequested"
                                    GeometryCommitted="PreviewControl_GeometryCommitted"
                                    MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted"
                                    TextResolutionCompleted="PreviewControl_TextResolutionCompleted" />

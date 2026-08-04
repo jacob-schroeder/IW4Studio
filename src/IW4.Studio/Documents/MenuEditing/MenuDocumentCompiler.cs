@@ -232,6 +232,14 @@ internal static partial class MenuDocumentCompiler
 
             case DuplicateMenuItemEdit duplicate:
             {
+                if (!float.IsFinite(duplicate.OffsetX) ||
+                    !float.IsFinite(duplicate.OffsetY))
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(duplicate),
+                        "Duplicate offsets must be finite.");
+                }
+
                 int sourceIndex = ItemIndex(identity, duplicate.ItemId);
                 int insertIndex = InsertIndex(
                     duplicate.InsertIndex ?? sourceIndex + 1,
@@ -241,6 +249,35 @@ internal static partial class MenuDocumentCompiler
                         preserveSourceProvenance: false)
                     .CloneItem(sourceItem, definition.ImageTrack)
                     ?? throw new InvalidDataException("A resolved Menu item could not be duplicated.");
+                MenuItemValue copiedValue = SnapshotItem(
+                    source,
+                    identity,
+                    sourceIndex);
+                MenuRectangleValue copiedRectangle =
+                    copiedValue.Window.RectClient;
+                float copiedX = copiedRectangle.X + duplicate.OffsetX;
+                float copiedY = copiedRectangle.Y + duplicate.OffsetY;
+                if (!float.IsFinite(copiedX) || !float.IsFinite(copiedY))
+                {
+                    throw new OverflowException(
+                        "Duplicate offsets produced non-finite Item geometry.");
+                }
+
+                copiedItem = BuildItem(
+                    copiedItem,
+                    copiedValue with
+                    {
+                        Window = copiedValue.Window with
+                        {
+                            RectClient = copiedRectangle with
+                            {
+                                X = copiedX,
+                                Y = copiedY
+                            }
+                        }
+                    },
+                    rebuildPayload: false,
+                    imageTrack: definition.ImageTrack);
                 var items = definition.Items.ToList();
                 items.Insert(
                     insertIndex,

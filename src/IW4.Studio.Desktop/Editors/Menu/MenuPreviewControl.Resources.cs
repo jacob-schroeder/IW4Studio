@@ -10,6 +10,8 @@ public sealed partial class MenuPreviewControl
 {
     private readonly Dictionary<string, MenuPreviewMaterialSnapshot>
         _materialSnapshots = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ReadOnlyMemory<byte>> _materialPixels =
+        new(StringComparer.Ordinal);
     private readonly Dictionary<MaterialBitmapKey, Bitmap> _materialBitmaps = [];
     private readonly Dictionary<string, string> _materialFailures =
         new(StringComparer.Ordinal);
@@ -212,13 +214,14 @@ public sealed partial class MenuPreviewControl
 
             MenuPreviewMaterialResolution presentedResolution = resolution;
             MenuPreviewMaterialSnapshot? materialSnapshot = null;
+            ReadOnlyMemory<byte> materialPixels = default;
             string? failure = null;
             if (resolution.Snapshot is { } snapshot)
             {
                 try
                 {
                     materialSnapshot = snapshot;
-                    ValidateMaterialPayload(snapshot);
+                    materialPixels = ValidateMaterialPayload(snapshot);
                 }
                 catch (Exception exception) when (
                     exception is not OutOfMemoryException)
@@ -260,6 +263,7 @@ public sealed partial class MenuPreviewControl
             if (materialSnapshot is not null)
             {
                 _materialSnapshots.Add(materialName, materialSnapshot);
+                _materialPixels.Add(materialName, materialPixels);
                 RefreshMaterialBitmaps();
             }
             else
@@ -306,6 +310,7 @@ public sealed partial class MenuPreviewControl
         }
 
         _materialSnapshots.Remove(materialName);
+        _materialPixels.Remove(materialName);
         foreach (MaterialBitmapKey key in _materialBitmaps.Keys
                      .Where(key => string.Equals(
                          key.MaterialName,
@@ -333,7 +338,9 @@ public sealed partial class MenuPreviewControl
         foreach (Bitmap bitmap in _materialBitmaps.Values)
             bitmap.Dispose();
         _materialBitmaps.Clear();
+        ReleaseCpuCompositeSurface();
         _materialSnapshots.Clear();
+        _materialPixels.Clear();
         _materialFailures.Clear();
         _materialStatuses.Clear();
         _materialNames.Clear();
@@ -404,7 +411,7 @@ public sealed partial class MenuPreviewControl
         }
     }
 
-    private static void ValidateMaterialPayload(
+    private static ReadOnlyMemory<byte> ValidateMaterialPayload(
         MenuPreviewMaterialSnapshot snapshot)
     {
         if (snapshot.Width <= 0 || snapshot.Height <= 0)
@@ -419,5 +426,7 @@ public sealed partial class MenuPreviewControl
             throw new InvalidDataException(
                 "Decoded material image does not contain a complete RGBA payload.");
         }
+
+        return snapshot.RgbaBytes;
     }
 }

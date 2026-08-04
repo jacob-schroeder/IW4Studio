@@ -63,7 +63,7 @@ public static class MenuPreviewProjector
                     Height = settings.ScreenPlacement.VirtualHeight
                 },
                 settings);
-            primitives.Add(new MenuPreviewMaterial(
+            primitives.Add(Material(
                 menu.Window.Id,
                 fullscreenPlacement,
                 -10,
@@ -194,7 +194,7 @@ public static class MenuPreviewProjector
             case WindowStyle.WINDOW_STYLE_FILLED:
                 if (!string.IsNullOrWhiteSpace(window.BackgroundMaterialName))
                 {
-                    primitives.Add(new MenuPreviewMaterial(
+                    primitives.Add(Material(
                         nodeId,
                         fillPlacement,
                         z,
@@ -213,7 +213,7 @@ public static class MenuPreviewProjector
             case WindowStyle.WINDOW_STYLE_SHADER:
                 if (!string.IsNullOrWhiteSpace(window.BackgroundMaterialName))
                 {
-                    primitives.Add(new MenuPreviewMaterial(
+                    primitives.Add(Material(
                         nodeId,
                         fillPlacement,
                         z,
@@ -419,16 +419,23 @@ public static class MenuPreviewProjector
                 z,
                 "OwnerDraw Item"));
         }
-        if (!expressionsEvaluated &&
-            (value.Behavior.HasVisibleExpression ||
+        bool hasStateExpressions = value.Behavior.HasVisibleExpression ||
             value.Behavior.HasDisabledExpression ||
             value.Behavior.HasTextExpression ||
-            value.Behavior.HasMaterialExpression))
+            value.Behavior.HasMaterialExpression;
+        bool hasFloatExpressions = value.Behavior.FloatExpressionCount > 0;
+        if (!expressionsEvaluated &&
+            (hasStateExpressions || hasFloatExpressions))
         {
+            string expressionKind = hasFloatExpressions
+                ? hasStateExpressions
+                    ? "Item-state and float geometry or color expressions"
+                    : "Float geometry or color expressions"
+                : "Item-state expressions";
             issues.Add(new MenuPreviewFidelityIssue(
                 item.Id,
                 $"{path}.expressions",
-                "Expression-controlled item state is shown using its static authored values.",
+                $"{expressionKind} are not evaluated; static authored values are shown.",
                 MenuPreviewFidelitySeverity.Warning));
         }
     }
@@ -561,6 +568,21 @@ public static class MenuPreviewProjector
             value.Height.Value,
             value.HorizontalAlignment,
             value.VerticalAlignment);
+
+    private static MenuPreviewMaterial Material(
+        MenuNodeId nodeId,
+        MenuPreviewPlacement placement,
+        int zIndex,
+        string materialName,
+        MenuColorValue tint) =>
+        new(
+            nodeId,
+            placement,
+            zIndex,
+            materialName,
+            tint,
+            placement.VirtualRectangle.Width < 0,
+            placement.VirtualRectangle.Height < 0);
 
     private static MenuColorValue Color(MenuEvaluatedColor value) =>
         new(value.A.Value, value.R.Value, value.G.Value, value.B.Value);

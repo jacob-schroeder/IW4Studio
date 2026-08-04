@@ -5,6 +5,7 @@ using IW4.FastFiles.Zone;
 using IW4.Render;
 using IW4.Render.Assets;
 using IW4.Render.Execution;
+using IW4.Render.Materials;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Runtime.Assets;
@@ -291,6 +292,10 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 executionPlan.Diagnostics);
         }
 
+        UiMaterialCpuPreviewPlan? cpuPreviewPlan = PlanCpuPreview(
+            material,
+            plan,
+            executionPlan);
         IGfxImagePayloadResolver payloadResolver =
             ResolvePayloadResolver(pool, image, out string payloadSource);
         if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(
@@ -310,9 +315,66 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
         }
 
         return MenuPreviewMaterialResolution.Resolved(
-            new MenuPreviewMaterialSnapshot(plan, preview, executionPlan),
+            new MenuPreviewMaterialSnapshot(
+                plan,
+                preview,
+                executionPlan,
+                cpuPreviewPlan),
             poolRevision);
     }
+
+    private UiMaterialCpuPreviewPlan? PlanCpuPreview(
+        MaterialAsset material,
+        UiMaterialPreviewPlan previewPlan,
+        UiMaterialDrawPlan executionPlan)
+    {
+        if (executionPlan.Packet is null &&
+            !HasOnlyMaterialStateBlocker(executionPlan))
+        {
+            return null;
+        }
+        if (!previewPlan.Atlas.IsValid ||
+            previewPlan.Atlas.EffectiveCellCount != 1)
+        {
+            return UiMaterialCpuPreviewPlan.Blocked(
+                "The Menu CPU compositor requires a full-texture material; " +
+                "this material's atlas frame has not been evaluated.");
+        }
+        if (previewPlan.SelectedSamplerState is not { } sampler ||
+            sampler.MipFilter != MapRenderTextureFilter.None ||
+            sampler.MinFilter is not (
+                MapRenderTextureFilter.Point or
+                MapRenderTextureFilter.Linear) ||
+            sampler.MagFilter is not (
+                MapRenderTextureFilter.Point or
+                MapRenderTextureFilter.Linear))
+        {
+            return UiMaterialCpuPreviewPlan.Blocked(
+                "The Menu CPU compositor supports only decoded point or " +
+                "linear base-level sampler filtering.");
+        }
+        if (!MapRenderStateDecoder.TryDecode(
+                material,
+                UiMaterialDrawPlanner.TechniqueSlot,
+                UiMaterialDrawPlanner.PassIndex,
+                _materialExecution,
+                out MapRenderState state))
+        {
+            return UiMaterialCpuPreviewPlan.Blocked(
+                "The selected material pass has no decodable PS3 state bits.");
+        }
+
+        return UiMaterialCpuPreviewPlan.Plan(state);
+    }
+
+    private static bool HasOnlyMaterialStateBlocker(
+        UiMaterialDrawPlan plan) =>
+        plan.Packet is null &&
+        plan.Diagnostics.Count == 1 &&
+        plan.Diagnostics[0].Code ==
+            UiMaterialExecutionDiagnosticCode.UnsupportedMaterialState &&
+        plan.Diagnostics[0].Severity ==
+            UiMaterialExecutionDiagnosticSeverity.Blocker;
 
     private static IMaterialExecutionLookup CreateMaterialExecutionLookup(
         FastFileWorkspace workspace)

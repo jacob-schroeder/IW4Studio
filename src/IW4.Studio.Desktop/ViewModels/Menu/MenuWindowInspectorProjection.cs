@@ -25,7 +25,7 @@ internal static partial class MenuInspectorProjection
                 update: update),
             isRoot
                 ? "The root Window Rect defines the Menu canvas. RectClient is preserved runtime state."
-                : "The Item RectClient is authored local geometry. Rect is recomputed from it at runtime and shown read-only.");
+                : "Rect edits the Item's authored local geometry. Resolved rect shows the derived runtime geometry.");
 
     private static IReadOnlyList<InspectorSectionViewModel> WindowSections(
         MenuDesignerViewModel designer,
@@ -68,82 +68,82 @@ internal static partial class MenuInspectorProjection
                 [
                     Rect(
                         "Rect",
-                        "window.rect",
-                        window.Rect,
-                        update is null || !isRoot
+                        isRoot ? "window.rect" : "window.rectClient",
+                        isRoot ? window.Rect : window.RectClient,
+                        update is null
                             ? null
-                            : value => update(current => current with
-                            {
-                                Rect = Rect(current.Rect, value)
-                            }),
+                            : value => update(current => isRoot
+                                ? current with
+                                {
+                                    Rect = Rect(current.Rect, value)
+                                }
+                                : current with
+                                {
+                                    RectClient = Rect(
+                                        current.RectClient,
+                                        value)
+                                }),
                         isRoot
                             ? "Authored Menu screen geometry."
-                            : "Runtime screen geometry derived from RectClient and the root Menu."),
-                    Choice(
-                        "Horizontal",
-                        "window.rect.horizontalAlignment",
-                        window.Rect.HorizontalAlignment,
-                        update is null || !isRoot
-                            ? null
-                            : value => update(current => current with
-                            {
-                                Rect = current.Rect with
-                                {
-                                    HorizontalAlignment = value
-                                }
-                            })),
-                    Choice(
-                        "Vertical",
-                        "window.rect.verticalAlignment",
-                        window.Rect.VerticalAlignment,
-                        update is null || !isRoot
-                            ? null
-                            : value => update(current => current with
-                            {
-                                Rect = current.Rect with
-                                {
-                                    VerticalAlignment = value
-                                }
-                            })),
-                    Rect(
-                        "Client rect",
-                        "window.rectClient",
-                        window.RectClient,
-                        update is null || isRoot
-                            ? null
-                            : value => update(current => current with
-                            {
-                                RectClient = Rect(current.RectClient, value)
-                            }),
-                        isRoot
-                            ? "Runtime client geometry is preserved read-only for the root Menu."
                             : "Authored Item geometry relative to the root Menu."),
                     Choice(
-                        "Client H",
-                        "window.rectClient.horizontalAlignment",
-                        window.RectClient.HorizontalAlignment,
-                        update is null || isRoot
+                        "Horizontal",
+                        isRoot
+                            ? "window.rect.horizontalAlignment"
+                            : "window.rectClient.horizontalAlignment",
+                        isRoot
+                            ? window.Rect.HorizontalAlignment
+                            : window.RectClient.HorizontalAlignment,
+                        update is null
                             ? null
-                            : value => update(current => current with
-                            {
-                                RectClient = current.RectClient with
+                            : value => update(current => isRoot
+                                ? current with
                                 {
-                                    HorizontalAlignment = value
+                                    Rect = current.Rect with
+                                    {
+                                        HorizontalAlignment = value
+                                    }
                                 }
-                            })),
+                                : current with
+                                {
+                                    RectClient = current.RectClient with
+                                    {
+                                        HorizontalAlignment = value
+                                    }
+                                })),
                     Choice(
-                        "Client V",
-                        "window.rectClient.verticalAlignment",
-                        window.RectClient.VerticalAlignment,
-                        update is null || isRoot
+                        "Vertical",
+                        isRoot
+                            ? "window.rect.verticalAlignment"
+                            : "window.rectClient.verticalAlignment",
+                        isRoot
+                            ? window.Rect.VerticalAlignment
+                            : window.RectClient.VerticalAlignment,
+                        update is null
                             ? null
-                            : value => update(current => current with
-                            {
-                                RectClient = current.RectClient with
+                            : value => update(current => isRoot
+                                ? current with
                                 {
-                                    VerticalAlignment = value
+                                    Rect = current.Rect with
+                                    {
+                                        VerticalAlignment = value
+                                    }
                                 }
-                            }))
+                                : current with
+                                {
+                                    RectClient = current.RectClient with
+                                    {
+                                        VerticalAlignment = value
+                                    }
+                                })),
+                    Rect(
+                        isRoot ? "Client rect" : "Resolved rect",
+                        isRoot ? "window.rectClient" : "window.rect",
+                        isRoot ? window.RectClient : window.Rect,
+                        apply: null,
+                        isRoot
+                            ? "Runtime client geometry is preserved read-only for the root Menu."
+                            : "Preserved runtime screen geometry; the game derives it from the authored Item rectangle and root Menu.")
                 ]),
             new InspectorSectionViewModel(
                 "APPEARANCE",

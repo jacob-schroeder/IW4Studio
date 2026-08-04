@@ -223,7 +223,9 @@ internal static class MenuDebugProgramFactory
             true,
             (item.Window.StaticFlags &
              WindowStaticFlags.WINDOW_STATIC_DECORATION) == 0,
-            Rectangle(item.Window.Rect),
+            // Item_SetScreenCoords starts with the client rectangle and
+            // composes the Menu origin exactly once at projection time.
+            Rectangle(item.Window.RectClient),
             IsAuthoredVisible(item.Window),
             Color(item.Window.ForeColor),
             Color(item.GlowColor),

@@ -13,9 +13,9 @@ public enum MapRenderAlphaTestMode
 /// Canonical classification of the PS3 alpha-function/reference tuples the
 /// renderer can emulate. Backend code owns the resulting shader expression.
 /// </summary>
-internal static class MapRenderAlphaTest
+public static class MapRenderAlphaTest
 {
-    internal static MapRenderAlphaTestMode? Resolve(MapRenderState state)
+    public static MapRenderAlphaTestMode? Resolve(MapRenderState state)
     {
         if (!state.AlphaTestEnabled)
             return MapRenderAlphaTestMode.Disabled;
