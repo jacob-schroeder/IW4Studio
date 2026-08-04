@@ -8,10 +8,26 @@ public sealed class MenuDebugEventDispatcher
 {
     public static MenuDebugEventDispatcher Default { get; } = new();
 
+    public MenuDebugDispatchResult Activate(
+        MenuDebugProgram program,
+        MenuDebugScenario scenario) =>
+        Dispatch(
+            program,
+            new MenuDebugMenuHookInput(MenuDebugMenuHook.Open),
+            scenario,
+            opensMenu: true);
+
     public MenuDebugDispatchResult Dispatch(
         MenuDebugProgram program,
         MenuDebugInput input,
-        MenuDebugScenario scenario)
+        MenuDebugScenario scenario) =>
+        Dispatch(program, input, scenario, opensMenu: false);
+
+    private static MenuDebugDispatchResult Dispatch(
+        MenuDebugProgram program,
+        MenuDebugInput input,
+        MenuDebugScenario scenario,
+        bool opensMenu)
     {
         ArgumentNullException.ThrowIfNull(program);
         ArgumentNullException.ThrowIfNull(input);
@@ -19,12 +35,23 @@ public sealed class MenuDebugEventDispatcher
 
         var trace = new MenuDebugDispatchTraceBuilder();
         var state = new MenuDebugDispatchState(scenario);
+        if (opensMenu)
+            state.OpenMenu(program.Name);
         MenuDebugSelectedHook? selected = SelectHook(program, input, trace);
         if (selected is not null)
         {
             var executor = new MenuDebugEventExecutor(program, state, trace);
-            if (executor.ApplyFocus(selected))
-                executor.Execute(selected.EventSet, selected.Path);
+            if (selected.FocusTransition == MenuDebugFocusTransition.None)
+            {
+                executor.Execute(
+                    selected.EventSet,
+                    selected.Path,
+                    selected.ItemId);
+            }
+            else
+            {
+                executor.ApplyFocus(selected);
+            }
         }
 
         return new MenuDebugDispatchResult(

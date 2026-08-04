@@ -8,12 +8,14 @@ public sealed class MenuDebugItemProgram
         MenuNodeId id,
         MenuNodeId windowId,
         string? name,
+        string? group,
         MenuDebugItemHooks hooks,
         DebugItemDefinition definition)
     {
         Id = id;
         WindowId = windowId;
         Name = name;
+        Group = group;
         Hooks = hooks;
         Definition = definition;
     }
@@ -21,6 +23,7 @@ public sealed class MenuDebugItemProgram
     public MenuNodeId Id { get; }
     public MenuNodeId WindowId { get; }
     public string? Name { get; }
+    public string? Group { get; }
     public MenuDebugItemHooks Hooks { get; }
     internal DebugItemDefinition Definition { get; }
 }
@@ -73,6 +76,14 @@ public sealed class MenuDebugProgram
         MenuDebugInput input,
         MenuDebugScenario scenario) =>
         MenuDebugEventDispatcher.Default.Dispatch(this, input, scenario);
+
+    /// <summary>
+    /// Applies the authored Menu open lifecycle to an immutable scenario.
+    /// Only debugger-safe event and script behavior is executed; unsupported
+    /// commands remain queued in the returned trace.
+    /// </summary>
+    public MenuDebugDispatchResult Activate(MenuDebugScenario scenario) =>
+        MenuDebugEventDispatcher.Default.Activate(this, scenario);
 }
 
 internal sealed record DebugMenuDefinition(
@@ -87,11 +98,13 @@ internal sealed record DebugMenuDefinition(
 
 internal sealed record DebugItemDefinition(
     bool IsResolved,
+    bool CanAcceptFocus,
     DebugRectangleDefinition Rectangle,
     bool AuthoredVisible,
     DebugColorDefinition ForeColor,
     DebugColorDefinition GlowColor,
     DebugColorDefinition BackColor,
+    DebugColorDefinition BorderColor,
     string? AuthoredText,
     string? AuthoredMaterial,
     MenuDebugExpression? Visible,
@@ -208,11 +221,14 @@ internal static class MenuDebugProgramFactory
 
         var definition = new DebugItemDefinition(
             true,
+            (item.Window.StaticFlags &
+             WindowStaticFlags.WINDOW_STATIC_DECORATION) == 0,
             Rectangle(item.Window.Rect),
             IsAuthoredVisible(item.Window),
             Color(item.Window.ForeColor),
             Color(item.GlowColor),
             Color(item.Window.BackColor),
+            Color(item.Window.BorderColor),
             item.TextString,
             LogicalReferenceName(item.Window.BackgroundMaterialName),
             visible,
@@ -235,6 +251,7 @@ internal static class MenuDebugProgramFactory
             identity.Id,
             identity.WindowId,
             item.Window.Name,
+            item.Window.Group,
             hooks,
             definition);
     }
@@ -243,6 +260,7 @@ internal static class MenuDebugProgramFactory
         new(
             identity.Id,
             identity.WindowId,
+            null,
             null,
             new MenuDebugItemHooks(
                 MenuDebugEventSet.Empty,
@@ -257,6 +275,7 @@ internal static class MenuDebugProgramFactory
                 []),
             new DebugItemDefinition(
                 false,
+                false,
                 new DebugRectangleDefinition(
                     0,
                     0,
@@ -266,6 +285,7 @@ internal static class MenuDebugProgramFactory
                     VerticalAlign.VERTICAL_ALIGN_SUBTOP),
                 false,
                 new DebugColorDefinition(1, 1, 1, 1),
+                new DebugColorDefinition(0, 0, 0, 0),
                 new DebugColorDefinition(0, 0, 0, 0),
                 new DebugColorDefinition(0, 0, 0, 0),
                 null,

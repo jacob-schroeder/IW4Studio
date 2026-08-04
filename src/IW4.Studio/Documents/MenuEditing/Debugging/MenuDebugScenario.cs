@@ -36,6 +36,15 @@ public readonly struct MenuDebugEnvironmentKey : IEquatable<MenuDebugEnvironment
 public delegate string? MenuDebugLocalizationResolver(string reference);
 
 /// <summary>
+/// Runtime-only Window color overrides produced by debugger-safe Menu script
+/// commands. Null channels continue to use the authored value.
+/// </summary>
+public sealed record MenuDebugItemRuntimeState(
+    MenuColorValue? ForeColor = null,
+    MenuColorValue? BackColor = null,
+    MenuColorValue? BorderColor = null);
+
+/// <summary>
 /// Immutable input snapshot for one deterministic menu evaluation. Scenario
 /// state is editor-only and never mutates the authored Menu graph.
 /// </summary>
@@ -45,6 +54,8 @@ public sealed class MenuDebugScenario
     private readonly IReadOnlyDictionary<string, MenuDebugValue> _localVariables;
     private readonly IReadOnlyDictionary<MenuDebugEnvironmentKey, MenuDebugValue> _environment;
     private readonly IReadOnlySet<string> _openMenus;
+    private readonly IReadOnlyDictionary<MenuNodeId, MenuDebugItemRuntimeState>
+        _itemRuntimeStates;
 
     public MenuDebugScenario(
         int milliseconds = 0,
@@ -53,7 +64,9 @@ public sealed class MenuDebugScenario
         IReadOnlyDictionary<MenuDebugEnvironmentKey, MenuDebugValue>? environment = null,
         IEnumerable<string>? openMenus = null,
         MenuNodeId? focusedItemId = null,
-        MenuDebugLocalizationResolver? localizationResolver = null)
+        MenuDebugLocalizationResolver? localizationResolver = null,
+        IReadOnlyDictionary<MenuNodeId, MenuDebugItemRuntimeState>?
+            itemRuntimeStates = null)
     {
         Milliseconds = milliseconds;
         _dvars = CopyNamedValues(dvars);
@@ -63,6 +76,13 @@ public sealed class MenuDebugScenario
                 ? new Dictionary<MenuDebugEnvironmentKey, MenuDebugValue>()
                 : new Dictionary<MenuDebugEnvironmentKey, MenuDebugValue>(environment));
         _openMenus = (openMenus ?? []).ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        _itemRuntimeStates = new ReadOnlyDictionary<
+            MenuNodeId,
+            MenuDebugItemRuntimeState>(
+                itemRuntimeStates is null
+                    ? new Dictionary<MenuNodeId, MenuDebugItemRuntimeState>()
+                    : new Dictionary<MenuNodeId, MenuDebugItemRuntimeState>(
+                        itemRuntimeStates));
         FocusedItemId = focusedItemId;
         LocalizationResolver = localizationResolver;
     }
@@ -74,6 +94,8 @@ public sealed class MenuDebugScenario
     public IReadOnlyDictionary<string, MenuDebugValue> LocalVariables => _localVariables;
     public IReadOnlyDictionary<MenuDebugEnvironmentKey, MenuDebugValue> Environment => _environment;
     public IReadOnlySet<string> OpenMenus => _openMenus;
+    public IReadOnlyDictionary<MenuNodeId, MenuDebugItemRuntimeState>
+        ItemRuntimeStates => _itemRuntimeStates;
     public MenuNodeId? FocusedItemId { get; }
     public MenuDebugLocalizationResolver? LocalizationResolver { get; }
 

@@ -403,7 +403,13 @@ public sealed partial class MenuExpressionEvaluator
         string? qualifier = arguments.Count == 0
             ? null
             : string.Join(",", arguments.Select(value => value.Value.AsString()));
-        var dependency = EnvironmentDependency(expression.Operation, qualifier, valueKind: null);
+        MenuDebugValueKind? resultKind =
+            MenuExpressionOperationMetadata.EnvironmentResultKind(
+                expression.Operation);
+        var dependency = EnvironmentDependency(
+            expression.Operation,
+            qualifier,
+            resultKind);
         if (!context.Scenario.Environment.TryGetValue(
                 new MenuDebugEnvironmentKey(expression.Operation, qualifier),
                 out MenuDebugValue value) &&
@@ -415,6 +421,16 @@ public sealed partial class MenuExpressionEvaluator
                 $"No simulated environment value was supplied for '{new MenuDebugEnvironmentKey(expression.Operation, qualifier)}'.",
                 expression.Operation,
                 arguments.SelectMany(item => item.Dependencies).Append(dependency),
+                arguments);
+        }
+
+        if (resultKind is { } expectedKind)
+        {
+            return Convert(
+                value,
+                expectedKind,
+                expression.Operation,
+                [dependency],
                 arguments);
         }
 

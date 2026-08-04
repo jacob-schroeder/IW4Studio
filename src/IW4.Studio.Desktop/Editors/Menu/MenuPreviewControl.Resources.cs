@@ -8,6 +8,10 @@ namespace IW4.Studio.Desktop.Editors.Menu;
 
 public sealed partial class MenuPreviewControl
 {
+    private static readonly MenuPreviewTextLayoutContext
+        Iw4Ps3TextLayoutContext =
+            MenuPreviewTextLayoutContext.CreateIw4Ps3Hd();
+
     private readonly Dictionary<string, MenuPreviewMaterialSnapshot>
         _materialSnapshots = new(StringComparer.Ordinal);
     private readonly Dictionary<MaterialBitmapKey, Bitmap> _materialBitmaps = [];
@@ -57,7 +61,10 @@ public sealed partial class MenuPreviewControl
             {
                 _textLayouts.Add(
                     text,
-                    MenuPreviewTextLayoutPlanner.Plan(text, resolver));
+                    MenuPreviewTextLayoutPlanner.Plan(
+                        text,
+                        resolver,
+                        Iw4Ps3TextLayoutContext));
             }
         }
 

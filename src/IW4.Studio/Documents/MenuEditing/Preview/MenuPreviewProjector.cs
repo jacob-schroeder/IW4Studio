@@ -138,7 +138,9 @@ public static class MenuPreviewProjector
             "preview",
             evaluatedState is null
                 ? "Editor Preview renders authored static state and is not a runtime UI emulator."
-                : "Scenario Preview renders a deterministic expression evaluation; game callbacks and script side effects are not executed.",
+                : "Simulation Preview applies deterministic expression " +
+                  "evaluation and the debugger-safe script subset; other " +
+                  "engine callbacks and scripts remain unavailable.",
             MenuPreviewFidelitySeverity.Information));
         if (evaluatedState is not null && !rootVisible)
         {
@@ -175,11 +177,23 @@ public static class MenuPreviewProjector
             case WindowStyle.WINDOW_STYLE_EMPTY:
                 break;
             case WindowStyle.WINDOW_STYLE_FILLED:
-                primitives.Add(new MenuPreviewFill(
-                    nodeId,
-                    bounds,
-                    z,
-                    window.BackColor));
+                if (!string.IsNullOrWhiteSpace(window.BackgroundMaterialName))
+                {
+                    primitives.Add(new MenuPreviewMaterial(
+                        nodeId,
+                        bounds,
+                        z,
+                        window.BackgroundMaterialName,
+                        window.BackColor));
+                }
+                else
+                {
+                    primitives.Add(new MenuPreviewFill(
+                        nodeId,
+                        bounds,
+                        z,
+                        window.BackColor));
+                }
                 break;
             case WindowStyle.WINDOW_STYLE_SHADER:
                 if (!string.IsNullOrWhiteSpace(window.BackgroundMaterialName))
@@ -455,6 +469,7 @@ public static class MenuPreviewProjector
             RectClient = rectangle,
             ForeColor = Color(evaluated.ForeColor),
             BackColor = Color(evaluated.BackColor),
+            BorderColor = Color(evaluated.BorderColor),
             BackgroundMaterialName = evaluated.MaterialName.Value
         };
         MenuItemValue value = item.Value with

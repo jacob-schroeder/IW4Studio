@@ -31,6 +31,7 @@ public sealed record MenuEvaluatedItemState(
     MenuEvaluatedColor ForeColor,
     MenuEvaluatedColor GlowColor,
     MenuEvaluatedColor BackColor,
+    MenuEvaluatedColor BorderColor,
     MenuEvaluation<string?> Text,
     MenuEvaluation<string?> MaterialName,
     IReadOnlyDictionary<ItemFloatExpressionTarget, MenuEvaluation<float>> FloatExpressions);

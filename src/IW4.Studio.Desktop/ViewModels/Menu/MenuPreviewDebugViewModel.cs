@@ -7,9 +7,9 @@ using IW4.Studio.Rendering;
 namespace IW4.Studio.Desktop.ViewModels.Menu;
 
 /// <summary>
-/// Owns editor-only scenario state and deterministic Menu evaluation. It is
-/// deliberately separate from authored document editing and never executes
-/// scripts or mutates the serialized Menu graph.
+/// Owns editor-only simulation state and deterministic Menu evaluation. It is
+/// deliberately separate from authored document editing, invokes no game
+/// runtime, and never mutates the serialized Menu graph.
 /// </summary>
 public sealed class MenuPreviewDebugViewModel : ObservableObject
 {
@@ -21,21 +21,22 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     private MenuPreviewScene? _scene;
     private MenuEvaluatedState? _evaluatedState;
     private IReadOnlyList<MenuEvaluationTraceEntry> _diagnostics = [];
-    private IReadOnlyList<MenuPreviewScenarioInputViewModel> _scenarioInputs = [];
-    private IReadOnlyList<MenuPreviewFocusOption> _scenarioFocusItems = [];
-    private MenuPreviewFocusOption? _selectedScenarioFocus;
+    private IReadOnlyList<MenuEvaluationTraceEntry> _dormantDiagnostics = [];
+    private IReadOnlyList<MenuDebugDependency> _activationRequirements = [];
+    private IReadOnlyList<MenuDebugDependency> _eventRequirements = [];
     private MenuOutlineNodeKind? _selectedKind;
     private MenuNodeId? _selectedNodeId;
     private MenuPreviewMode _mode;
-    private int _milliseconds;
 
     public MenuPreviewDebugViewModel(
         IMenuTextResourceResolver? textResourceResolver)
     {
         _textResourceResolver = textResourceResolver;
-        Interaction = new MenuPreviewInteractionViewModel(
-            DispatchInteraction,
-            ResetInteractionState);
+        Simulation = new MenuPreviewSimulationViewModel(BaseSimulationChanged);
+        Interaction = new MenuPreviewInteractionViewModel(DispatchInteraction);
+        ResetSimulatedStateCommand = new ViewModelCommand(
+            ResetInteractionState,
+            () => IsSimulating && _snapshot?.IsComplete == true);
     }
 
     public event EventHandler? PreviewChanged;
@@ -43,6 +44,10 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     public MenuPreviewScene? Scene => _scene;
 
     public MenuPreviewInteractionViewModel Interaction { get; }
+
+    public MenuPreviewSimulationViewModel Simulation { get; }
+
+    public ViewModelCommand ResetSimulatedStateCommand { get; }
 
     public IReadOnlyList<MenuPreviewMode> Modes => PreviewModeValues;
 
@@ -53,71 +58,39 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         {
             if (!SetProperty(ref _mode, value))
                 return;
-            OnPropertyChanged(nameof(IsScenario));
+            OnPropertyChanged(nameof(IsSimulating));
+            OnPropertyChanged(nameof(IsAuthored));
+            OnPropertyChanged(nameof(HasSelectedAuthoredVisibilityExpression));
             OnPropertyChanged(nameof(ModeBadge));
+            ResetSimulatedStateCommand.RaiseCanExecuteChanged();
+            if (IsSimulating)
+            {
+                ResetInteractionState();
+                return;
+            }
+
+            ClearInteractionState();
             Refresh();
         }
     }
 
-    public bool IsScenario => Mode == MenuPreviewMode.Scenario;
+    public bool IsSimulating => Mode == MenuPreviewMode.Simulate;
 
-    public string ModeBadge => IsScenario
-        ? "SCENARIO / EVALUATED"
+    public bool IsAuthored => !IsSimulating;
+
+    public bool HasSelectedAuthoredVisibilityExpression =>
+        IsAuthored && SelectedHasVisibilityExpression();
+
+    public string ModeBadge => IsSimulating
+        ? "SIMULATED / EVALUATED"
         : "AUTHORED / STATIC";
-
-    public int Milliseconds
-    {
-        get => _milliseconds;
-        set
-        {
-            if (!SetProperty(ref _milliseconds, value))
-                return;
-            ClearInteractionState();
-            if (IsScenario)
-                Refresh();
-        }
-    }
-
-    public IReadOnlyList<MenuPreviewScenarioInputViewModel> ScenarioInputs =>
-        _scenarioInputs;
-
-    public bool HasScenarioInputs => ScenarioInputs.Count > 0;
-
-    public string ScenarioInputHeading =>
-        $"Scenario inputs ({ScenarioInputs.Count:N0})";
-
-    public IReadOnlyList<MenuPreviewFocusOption> FocusItems =>
-        _scenarioFocusItems;
-
-    public MenuPreviewFocusOption? SelectedFocus
-    {
-        get => _selectedScenarioFocus;
-        set
-        {
-            if (!SetProperty(ref _selectedScenarioFocus, value))
-                return;
-            ClearInteractionState();
-            if (IsScenario)
-                Refresh();
-        }
-    }
 
     public int DiagnosticCount => _diagnostics.Count;
 
+    public int DormantDiagnosticCount => _dormantDiagnostics.Count;
+
     public IReadOnlyList<string> DiagnosticLines => Array.AsReadOnly(
         _diagnostics.Select(FormatDiagnostic).ToArray());
-
-    public string DependencySummary
-    {
-        get
-        {
-            int count = _snapshot?.DebugProgram.Dependencies.Count ?? 0;
-            return count == 0
-                ? "No expression dependencies"
-                : $"{count:N0} expression " +
-                  $"dependenc{(count == 1 ? "y" : "ies")}";
-        }
-    }
 
     public string DependencyDetails
     {
@@ -129,7 +102,7 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
                 .ThenBy(value => value.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray() ?? [];
             return dependencies.Length == 0
-                ? DependencySummary
+                ? "No expression dependencies"
                 : string.Join(
                     Environment.NewLine,
                     dependencies.Select(FormatDependency));
@@ -140,22 +113,37 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     {
         get
         {
-            if (!IsScenario)
+            if (!IsSimulating)
                 return "Expressions use authored values";
             int errors = _diagnostics.Count(value =>
                 value.Status == MenuEvaluationStatus.Error);
             int unknown = _diagnostics.Count(value =>
                 value.Status == MenuEvaluationStatus.Unknown);
-            if (errors == 0 && unknown == 0)
-                return "Evaluation complete";
-            var parts = new List<string>(2);
+            int missingInputs = Simulation.MissingInputCount;
+            int runtimeIssues = Interaction.ActivationIssueCount +
+                Interaction.ResultIssueCount;
+            if (errors == 0 && unknown == 0 && runtimeIssues == 0)
+                return "Simulation ready";
+            var parts = new List<string>(3);
             if (errors > 0)
                 parts.Add($"{errors:N0} error{(errors == 1 ? string.Empty : "s")}");
-            if (unknown > 0)
+            if (missingInputs > 0)
             {
                 parts.Add(
-                    $"{unknown:N0} unknown" +
+                    $"Needs {missingInputs:N0} value" +
+                    (missingInputs == 1 ? string.Empty : "s"));
+            }
+            else if (unknown > 0)
+            {
+                parts.Add(
+                    $"{unknown:N0} unresolved runtime result" +
                     (unknown == 1 ? string.Empty : "s"));
+            }
+            if (runtimeIssues > 0)
+            {
+                parts.Add(
+                    $"{runtimeIssues:N0} event issue" +
+                    (runtimeIssues == 1 ? string.Empty : "s"));
             }
             return string.Join(" · ", parts);
         }
@@ -165,11 +153,57 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         ? EvaluationSummary
         : string.Join(Environment.NewLine, DiagnosticLines);
 
+    public string AdvancedEvaluationHeading => DormantDiagnosticCount == 0
+        ? "Advanced evaluation details"
+        : $"Advanced evaluation details · {DormantDiagnosticCount:N0} dormant";
+
+    public string AdvancedEvaluationDetails
+    {
+        get
+        {
+            if (_dormantDiagnostics.Count == 0)
+                return EvaluationDetails;
+
+            string active = _diagnostics.Count == 0
+                ? EvaluationSummary
+                : string.Join(Environment.NewLine, DiagnosticLines);
+            string dormant = string.Join(
+                Environment.NewLine,
+                _dormantDiagnostics.Select(FormatDiagnostic));
+            return "Current rendered path" + Environment.NewLine +
+                active + Environment.NewLine + Environment.NewLine +
+                "Dormant/non-rendered expressions (not required)" +
+                Environment.NewLine + dormant;
+        }
+    }
+
+    public bool HasEvaluationIssues => IsSimulating &&
+        (DiagnosticCount > 0 ||
+         Interaction.ActivationIssueCount > 0 ||
+         Interaction.ResultIssueCount > 0);
+
+    public bool IsEvaluationReady => IsSimulating && !HasEvaluationIssues;
+
+    public string FocusedItemSummary
+    {
+        get
+        {
+            MenuNodeId? focusedItemId = _interactionScenario?.FocusedItemId;
+            if (focusedItemId is null)
+                return "Focused: none";
+            MenuDebugItemProgram? item = _snapshot?.DebugProgram.Items
+                .FirstOrDefault(value => value.Id == focusedItemId);
+            return "Focused: " + (string.IsNullOrWhiteSpace(item?.Name)
+                ? focusedItemId.Value.ToString()
+                : item.Name);
+        }
+    }
+
     public string SelectedEvaluationSummary
     {
         get
         {
-            if (!IsScenario || _evaluatedState is null)
+            if (!IsSimulating || _evaluatedState is null)
                 return string.Empty;
             if (_selectedKind == MenuOutlineNodeKind.Item &&
                 _selectedNodeId is { } itemId)
@@ -178,13 +212,13 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
                     .FirstOrDefault(value => value.Id == itemId);
                 if (item is null)
                     return string.Empty;
-                return $"Selected: {EvaluationValue(item.IsVisible, "visible", "hidden")}" +
+                return $"State: {EvaluationValue(item.IsVisible, "visible", "hidden")}" +
                     $" · {EvaluationValue(item.IsDisabled, "disabled", "enabled")}";
             }
 
             return _selectedKind is MenuOutlineNodeKind.Menu or
                 MenuOutlineNodeKind.Window
-                    ? $"Selected: {EvaluationValue(
+                    ? $"State: {EvaluationValue(
                         _evaluatedState.Window.IsVisible,
                         "visible",
                         "hidden")}"
@@ -192,53 +226,18 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         }
     }
 
-    public string SelectedEventSummary
-    {
-        get
-        {
-            (int hookCount, int keyCount) = SelectedEventCounts();
-            return hookCount == 0 && keyCount == 0
-                ? "No authored event hooks"
-                : $"Events: {hookCount:N0} hook" +
-                  $"{(hookCount == 1 ? string.Empty : "s")} · " +
-                  $"{keyCount:N0} key" +
-                  $"{(keyCount == 1 ? string.Empty : "s")}";
-        }
-    }
-
-    public string SelectedEventDetails
-    {
-        get
-        {
-            string[] details = SelectedEvents().ToArray();
-            return details.Length == 0
-                ? "The selected entity has no authored hooks. Explicit " +
-                  "focus transitions remain available for Item selections."
-                : string.Join(Environment.NewLine, details) +
-                  Environment.NewLine +
-                  "Use Explicit interactions to dispatch one authored hook. " +
-                  "Debugger-safe focus and local-variable changes are applied; " +
-                  "authored scripts are queued for inspection only.";
-        }
-    }
-
     public void ReplaceDocument(MenuEditorSnapshot? snapshot)
     {
         _snapshot = snapshot;
         ClearInteractionState();
-        RebuildScenarioSources(snapshot);
+        Simulation.ReplaceDocument(snapshot);
         Interaction.ReplaceOptions(
             snapshot?.DebugProgram,
             _selectedKind,
             _selectedNodeId);
         Refresh();
-        OnPropertyChanged(nameof(ScenarioInputs));
-        OnPropertyChanged(nameof(HasScenarioInputs));
-        OnPropertyChanged(nameof(ScenarioInputHeading));
-        OnPropertyChanged(nameof(FocusItems));
-        OnPropertyChanged(nameof(SelectedFocus));
-        OnPropertyChanged(nameof(DependencySummary));
         OnPropertyChanged(nameof(DependencyDetails));
+        ResetSimulatedStateCommand.RaiseCanExecuteChanged();
     }
 
     public void SelectNode(MenuOutlineNodeKind? kind, MenuNodeId? nodeId)
@@ -247,16 +246,21 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             return;
         _selectedKind = kind;
         _selectedNodeId = nodeId;
+        _eventRequirements = [];
         Interaction.ReplaceOptions(_snapshot?.DebugProgram, kind, nodeId);
+        UpdateRequiredInputs();
+        OnPropertyChanged(nameof(EvaluationSummary));
+        OnPropertyChanged(nameof(HasEvaluationIssues));
+        OnPropertyChanged(nameof(IsEvaluationReady));
         OnPropertyChanged(nameof(SelectedEvaluationSummary));
-        OnPropertyChanged(nameof(SelectedEventSummary));
-        OnPropertyChanged(nameof(SelectedEventDetails));
+        OnPropertyChanged(nameof(HasSelectedAuthoredVisibilityExpression));
     }
 
     private void Refresh()
     {
         _evaluatedState = null;
         _diagnostics = [];
+        _dormantDiagnostics = [];
         if (_snapshot is not { IsComplete: true } snapshot)
         {
             _scene = null;
@@ -264,17 +268,21 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             return;
         }
 
-        if (!IsScenario)
+        if (!IsSimulating)
         {
+            Simulation.SetRequiredDependencies([]);
             _scene = MenuPreviewProjector.Project(snapshot);
             NotifyEvaluationChanged();
             return;
         }
 
-        MenuDebugScenario scenario = _interactionScenario ?? BuildBaseScenario();
+        MenuDebugScenario scenario = EnsureSimulatedScenario(snapshot);
         _evaluatedState = snapshot.DebugProgram.Evaluate(scenario);
+        _scene = MenuPreviewProjector.Project(snapshot, _evaluatedState);
+        MenuPreviewEvaluationDiagnostics relevance =
+            MenuPreviewEvaluationRelevance.Classify(_evaluatedState, _scene);
         _diagnostics = Array.AsReadOnly(
-            _evaluatedState.Trace
+            relevance.Active
                 .Concat(ScenarioValidationDiagnostics())
                 .Where(value => value.Status != MenuEvaluationStatus.Known)
                 .DistinctBy(value => new
@@ -285,69 +293,53 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
                     value.Dependency
                 })
                 .ToArray());
-        _scene = MenuPreviewProjector.Project(snapshot, _evaluatedState);
+        _dormantDiagnostics = relevance.Dormant;
+        UpdateRequiredInputs();
         NotifyEvaluationChanged();
     }
+
+    private void UpdateRequiredInputs() =>
+        Simulation.SetRequiredDependencies(_diagnostics
+            .Where(value => value.Status == MenuEvaluationStatus.Unknown)
+            .Select(value => value.Dependency)
+            .OfType<MenuDebugDependency>()
+            .Concat(_activationRequirements)
+            .Concat(_eventRequirements));
 
     private void NotifyEvaluationChanged()
     {
         OnPropertyChanged(nameof(Scene));
         OnPropertyChanged(nameof(DiagnosticCount));
+        OnPropertyChanged(nameof(DormantDiagnosticCount));
         OnPropertyChanged(nameof(DiagnosticLines));
         OnPropertyChanged(nameof(EvaluationSummary));
         OnPropertyChanged(nameof(EvaluationDetails));
+        OnPropertyChanged(nameof(AdvancedEvaluationHeading));
+        OnPropertyChanged(nameof(AdvancedEvaluationDetails));
+        OnPropertyChanged(nameof(HasEvaluationIssues));
+        OnPropertyChanged(nameof(IsEvaluationReady));
+        OnPropertyChanged(nameof(FocusedItemSummary));
         OnPropertyChanged(nameof(SelectedEvaluationSummary));
+        OnPropertyChanged(nameof(HasSelectedAuthoredVisibilityExpression));
         PreviewChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private MenuDebugScenario BuildBaseScenario()
+    private MenuDebugScenario BuildBaseScenario() => Simulation.BuildScenario(
+        _textResourceResolver is null ? null : ResolveLocalization);
+
+    private MenuDebugScenario EnsureSimulatedScenario(
+        MenuEditorSnapshot snapshot)
     {
-        var dvars = new Dictionary<string, MenuDebugValue>(
-            StringComparer.OrdinalIgnoreCase);
-        var locals = new Dictionary<string, MenuDebugValue>(
-            StringComparer.OrdinalIgnoreCase);
-        var environment = new Dictionary<
-            MenuDebugEnvironmentKey,
-            MenuDebugValue>();
-        var openMenus = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (MenuPreviewScenarioInputViewModel input in ScenarioInputs)
-        {
-            if (!input.IsSet ||
-                !input.TryGetValue(out MenuDebugValue value, out _))
-            {
-                continue;
-            }
+        if (_interactionScenario is not null)
+            return _interactionScenario;
 
-            MenuDebugDependency dependency = input.Dependency;
-            switch (dependency.Kind)
-            {
-                case MenuDebugDependencyKind.Dvar:
-                    dvars[dependency.Name] = value;
-                    break;
-                case MenuDebugDependencyKind.LocalVariable:
-                    locals[dependency.Name] = value;
-                    break;
-                case MenuDebugDependencyKind.Environment when
-                    dependency.Operation is { } operation:
-                    environment[new MenuDebugEnvironmentKey(
-                        operation,
-                        EnvironmentQualifier(dependency))] = value;
-                    break;
-                case MenuDebugDependencyKind.Menu when
-                    value.TryGetBoolean(out bool isOpen) && isOpen:
-                    openMenus.Add(dependency.Name);
-                    break;
-            }
-        }
-
-        return new MenuDebugScenario(
-            Milliseconds,
-            dvars,
-            locals,
-            environment,
-            openMenus,
-            SelectedFocus?.ItemId,
-            _textResourceResolver is null ? null : ResolveLocalization);
+        MenuDebugDispatchResult activation = snapshot.DebugProgram.Activate(
+            BuildBaseScenario());
+        _interactionScenario = activation.NextScenario;
+        _activationRequirements = MissingRuntimeDependencies(activation);
+        _eventRequirements = [];
+        Interaction.ShowActivation(activation);
+        return _interactionScenario;
     }
 
     private string? ResolveLocalization(string key)
@@ -358,66 +350,19 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     }
 
     private IEnumerable<MenuEvaluationTraceEntry> ScenarioValidationDiagnostics() =>
-        ScenarioInputs
+        Simulation.Inputs
             .Where(input => input.HasValidationError)
             .Select(input => new MenuEvaluationTraceEntry(
                 MenuEvaluationStatus.Error,
-                $"Scenario input '{input.KindLabel} {input.Name}': " +
+                $"Simulation value '{input.KindLabel} {input.Name}': " +
                 input.ValidationMessage,
                 input.Dependency.Operation,
                 input.Dependency));
 
-    private void RebuildScenarioSources(MenuEditorSnapshot? snapshot)
-    {
-        var previous = ScenarioInputs.ToDictionary(
-            value => value.Identity,
-            value => (value.IsSet, value.ValueInput),
-            StringComparer.OrdinalIgnoreCase);
-        MenuDebugDependency[] dependencies = snapshot?.DebugProgram.Dependencies
-            .Where(IsScenarioInput)
-            .GroupBy(ScenarioStorageKey, StringComparer.OrdinalIgnoreCase)
-            .Select(CollapseScenarioDependency)
-            .OrderBy(value => value.Kind)
-            .ThenBy(value => value.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray() ?? [];
-        _scenarioInputs = Array.AsReadOnly(dependencies.Select(dependency =>
-        {
-            var probe = new MenuPreviewScenarioInputViewModel(
-                dependency,
-                ScenarioInputChanged);
-            return previous.TryGetValue(probe.Identity, out var state)
-                ? new MenuPreviewScenarioInputViewModel(
-                    dependency,
-                    ScenarioInputChanged,
-                    state.IsSet,
-                    state.ValueInput)
-                : probe;
-        }).ToArray());
-
-        MenuNodeId? previousFocus = _selectedScenarioFocus?.ItemId;
-        var focusItems = new List<MenuPreviewFocusOption>
-        {
-            new(null, "No focused item")
-        };
-        if (snapshot is not null)
-        {
-            focusItems.AddRange(snapshot.DebugProgram.Items
-                .Select((item, index) => new MenuPreviewFocusOption(
-                    item.Id,
-                    string.IsNullOrWhiteSpace(item.Name)
-                        ? $"Item {index + 1:N0}"
-                        : item.Name)));
-        }
-        _scenarioFocusItems = Array.AsReadOnly(focusItems.ToArray());
-        _selectedScenarioFocus = _scenarioFocusItems.FirstOrDefault(value =>
-                value.ItemId == previousFocus) ??
-            _scenarioFocusItems[0];
-    }
-
-    private void ScenarioInputChanged()
+    private void BaseSimulationChanged()
     {
         ClearInteractionState();
-        if (IsScenario)
+        if (IsSimulating)
             Refresh();
     }
 
@@ -425,11 +370,13 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     {
         if (_snapshot is not { IsComplete: true } snapshot)
             return;
-        MenuDebugScenario scenario = _interactionScenario ?? BuildBaseScenario();
+        MenuDebugScenario scenario = _interactionScenario ??
+            EnsureSimulatedScenario(snapshot);
         MenuDebugDispatchResult result = snapshot.DebugProgram.Dispatch(
             input,
             scenario);
         _interactionScenario = result.NextScenario;
+        _eventRequirements = MissingRuntimeDependencies(result);
         Interaction.ShowResult(result);
         Refresh();
     }
@@ -437,56 +384,32 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     private void ResetInteractionState()
     {
         ClearInteractionState();
-        if (IsScenario)
+        if (IsSimulating)
             Refresh();
     }
 
     private void ClearInteractionState()
     {
         _interactionScenario = null;
+        _activationRequirements = [];
+        _eventRequirements = [];
         Interaction.ClearInteractionState();
     }
 
-    private static bool IsScenarioInput(MenuDebugDependency dependency) =>
-        !string.Equals(
-            dependency.Name,
-            "<dynamic>",
-            StringComparison.OrdinalIgnoreCase) &&
-        (dependency.Kind is
-            MenuDebugDependencyKind.Dvar or
-            MenuDebugDependencyKind.LocalVariable or
-            MenuDebugDependencyKind.Menu ||
-         dependency.Kind == MenuDebugDependencyKind.Environment &&
-         dependency.Operation is not null &&
-         dependency.Operation != OperationEnum.OP_MILLISECONDS);
-
-    private static string ScenarioStorageKey(MenuDebugDependency dependency) =>
-        dependency.Kind == MenuDebugDependencyKind.Environment
-            ? $"{dependency.Kind}:{dependency.Operation}:{dependency.Name}"
-            : $"{dependency.Kind}:{dependency.Name}";
-
-    private static MenuDebugDependency CollapseScenarioDependency(
-        IGrouping<string, MenuDebugDependency> group)
-    {
-        MenuDebugDependency first = group.First();
-        MenuDebugValueKind?[] kinds = group
-            .Select(value => value.ValueKind)
-            .Distinct()
-            .ToArray();
-        return kinds.Length <= 1
-            ? first
-            : first with { ValueKind = MenuDebugValueKind.String };
-    }
-
-    private static string? EnvironmentQualifier(
-        MenuDebugDependency dependency) =>
-        dependency.Operation is { } operation &&
-        !string.Equals(
-            dependency.Name,
-            operation.ToString(),
-            StringComparison.OrdinalIgnoreCase)
-                ? dependency.Name
-                : null;
+    private static IReadOnlyList<MenuDebugDependency> MissingRuntimeDependencies(
+        MenuDebugDispatchResult result) => Array.AsReadOnly(result.Trace
+        .SelectMany(value => value switch
+        {
+            MenuDebugDecisionTraceEntry decision when
+                decision.Status == MenuEvaluationStatus.Unknown =>
+                decision.Dependencies,
+            MenuDebugLocalVariableTraceEntry local when
+                local.Status == MenuEvaluationStatus.Unknown =>
+                local.Dependencies,
+            _ => []
+        })
+        .Distinct()
+        .ToArray());
 
     private static string FormatDependency(MenuDebugDependency value)
     {
@@ -515,95 +438,23 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             : $"{result} ({value.Status.ToString().ToLowerInvariant()} fallback)";
     }
 
-    private (int HookCount, int KeyCount) SelectedEventCounts()
+    private bool SelectedHasVisibilityExpression()
     {
-        if (_snapshot is null)
-            return default;
-        if (_selectedKind == MenuOutlineNodeKind.Item &&
-            _selectedNodeId is { } itemId)
-        {
-            MenuDebugItemHooks? hooks = _snapshot.DebugProgram.Items
-                .FirstOrDefault(value => value.Id == itemId)?.Hooks;
-            return hooks is null
-                ? default
-                : (
-                    ItemEventSets(hooks).Sum(value => value.Set.Handlers.Count),
-                    hooks.KeyHandlers.Count);
-        }
+        if (_snapshot is not { } snapshot)
+            return false;
         if (_selectedKind is MenuOutlineNodeKind.Menu or
             MenuOutlineNodeKind.Window)
         {
-            MenuDebugMenuHooks hooks = _snapshot.DebugProgram.Hooks;
-            return (
-                MenuEventSets(hooks).Sum(value => value.Set.Handlers.Count),
-                hooks.KeyHandlers.Count);
+            return snapshot.Behavior.HasVisibleExpression;
         }
-        return default;
-    }
-
-    private IEnumerable<string> SelectedEvents()
-    {
-        if (_snapshot is null)
-            yield break;
-        if (_selectedKind == MenuOutlineNodeKind.Item &&
-            _selectedNodeId is { } itemId)
+        if (_selectedKind != MenuOutlineNodeKind.Item ||
+            _selectedNodeId is not { } itemId)
         {
-            MenuDebugItemHooks? hooks = _snapshot.DebugProgram.Items
-                .FirstOrDefault(value => value.Id == itemId)?.Hooks;
-            if (hooks is null)
-                yield break;
-            foreach ((string label, MenuDebugEventSet set) in ItemEventSets(hooks))
-            {
-                if (set.Handlers.Count > 0)
-                    yield return $"{label}: {set.Handlers.Count:N0} handler(s)";
-            }
-            if (hooks.KeyHandlers.Count > 0)
-            {
-                yield return "Keys: " + string.Join(
-                    ", ",
-                    hooks.KeyHandlers.Select(value => value.Key));
-            }
-            yield break;
+            return false;
         }
 
-        if (_selectedKind is MenuOutlineNodeKind.Menu or
-            MenuOutlineNodeKind.Window)
-        {
-            MenuDebugMenuHooks hooks = _snapshot.DebugProgram.Hooks;
-            foreach ((string label, MenuDebugEventSet set) in MenuEventSets(hooks))
-            {
-                if (set.Handlers.Count > 0)
-                    yield return $"{label}: {set.Handlers.Count:N0} handler(s)";
-            }
-            if (hooks.KeyHandlers.Count > 0)
-            {
-                yield return "Keys: " + string.Join(
-                    ", ",
-                    hooks.KeyHandlers.Select(value => value.Key));
-            }
-        }
-    }
-
-    private static IEnumerable<(string Label, MenuDebugEventSet Set)>
-        MenuEventSets(MenuDebugMenuHooks hooks)
-    {
-        yield return ("On open", hooks.OnOpen);
-        yield return ("On close request", hooks.OnCloseRequest);
-        yield return ("On close", hooks.OnClose);
-        yield return ("On escape", hooks.OnEscape);
-    }
-
-    private static IEnumerable<(string Label, MenuDebugEventSet Set)>
-        ItemEventSets(MenuDebugItemHooks hooks)
-    {
-        yield return ("Mouse enter text", hooks.MouseEnterText);
-        yield return ("Mouse exit text", hooks.MouseExitText);
-        yield return ("Mouse enter", hooks.MouseEnter);
-        yield return ("Mouse exit", hooks.MouseExit);
-        yield return ("Action", hooks.Action);
-        yield return ("Accept", hooks.Accept);
-        yield return ("On focus", hooks.OnFocus);
-        yield return ("Leave focus", hooks.LeaveFocus);
-        yield return ("Double click", hooks.DoubleClick);
+        MenuItemSnapshot? item = snapshot.Items
+            .FirstOrDefault(value => value.Id == itemId);
+        return item?.Value.Behavior.HasVisibleExpression == true;
     }
 }

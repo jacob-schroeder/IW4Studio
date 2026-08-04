@@ -14,14 +14,18 @@ public static class MenuPreviewTextLayoutPlanner
 {
     public static MenuPreviewTextLayout Plan(
         MenuPreviewText text,
-        IMenuTextResourceResolver resolver)
+        IMenuTextResourceResolver resolver,
+        MenuPreviewTextLayoutContext context)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(context);
 
         long revision = resolver.Revision;
         MenuLocalizedTextResolution localized = resolver.ResolveText(text.Text);
-        MenuFontAssetResolution font = resolver.ResolveFont(text.Font);
+        MenuFontAssetResolution font = resolver.ResolveFont(
+            text.Font,
+            context.CreateFontSelectionContext(text.Scale));
         var diagnostics = new List<string>();
         if (localized.Status == MenuLocalizationStatus.Missing)
         {

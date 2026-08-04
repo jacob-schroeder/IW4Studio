@@ -17,6 +17,9 @@ internal sealed class MenuDebugDispatchState
 {
     private readonly MenuDebugScenario _original;
     private readonly Dictionary<string, MenuDebugValue> _localVariables;
+    private readonly HashSet<string> _openMenus;
+    private readonly Dictionary<MenuNodeId, MenuDebugItemRuntimeState>
+        _itemRuntimeStates;
     private bool _changed;
 
     public MenuDebugDispatchState(MenuDebugScenario original)
@@ -25,6 +28,12 @@ internal sealed class MenuDebugDispatchState
         _localVariables = new Dictionary<string, MenuDebugValue>(
             original.LocalVariables,
             StringComparer.OrdinalIgnoreCase);
+        _openMenus = new HashSet<string>(
+            original.OpenMenus,
+            StringComparer.OrdinalIgnoreCase);
+        _itemRuntimeStates = new Dictionary<
+            MenuNodeId,
+            MenuDebugItemRuntimeState>(original.ItemRuntimeStates);
         FocusedItemId = original.FocusedItemId;
     }
 
@@ -50,15 +59,40 @@ internal sealed class MenuDebugDispatchState
         FocusedItemId = itemId;
     }
 
+    public void OpenMenu(string? name)
+    {
+        if (!string.IsNullOrWhiteSpace(name) && _openMenus.Add(name))
+            _changed = true;
+    }
+
+    public MenuDebugItemRuntimeState ItemRuntimeState(MenuNodeId itemId) =>
+        _itemRuntimeStates.GetValueOrDefault(itemId) ?? new();
+
+    public void SetItemRuntimeState(
+        MenuNodeId itemId,
+        MenuDebugItemRuntimeState value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (!_itemRuntimeStates.TryGetValue(
+                itemId,
+                out MenuDebugItemRuntimeState? previous) ||
+            previous != value)
+        {
+            _changed = true;
+        }
+        _itemRuntimeStates[itemId] = value;
+    }
+
     public MenuDebugScenario ToScenario() => _changed
         ? new MenuDebugScenario(
             _original.Milliseconds,
             _original.Dvars,
             _localVariables,
             _original.Environment,
-            _original.OpenMenus,
+            _openMenus,
             FocusedItemId,
-            _original.LocalizationResolver)
+            _original.LocalizationResolver,
+            _itemRuntimeStates)
         : _original;
 }
 
@@ -118,6 +152,20 @@ internal sealed class MenuDebugDispatchTraceBuilder
             path,
             previousItemId,
             itemId));
+
+    public void AddItemColor(
+        string path,
+        MenuNodeId itemId,
+        MenuDebugItemColorTarget target,
+        MenuColorValue? previousValue,
+        MenuColorValue value) => _entries.Add(
+        new MenuDebugItemColorTraceEntry(
+            _entries.Count,
+            path,
+            itemId,
+            target,
+            previousValue,
+            value));
 
     public void AddDiagnostic(
         string path,

@@ -35,8 +35,11 @@ internal sealed class MenuEvaluationSession
             root.RectY,
             root.RectWidth,
             root.RectHeight);
+        bool isCurrentMenuOpen =
+            !string.IsNullOrWhiteSpace(_program.Name) &&
+            _context.Scenario.OpenMenus.Contains(_program.Name);
         MenuEvaluation<bool> rootVisible = EvaluateVisibility(
-            root.AuthoredVisible,
+            root.AuthoredVisible || isCurrentMenuOpen,
             root.Visible);
         var window = new MenuEvaluatedWindowState(
             root.WindowId,
@@ -76,9 +79,18 @@ internal sealed class MenuEvaluationSession
             localize: false);
 
         var floatResults = new Dictionary<ItemFloatExpressionTarget, MenuEvaluation<float>>();
-        MenuEvaluatedColor foreColor = Color(definition.ForeColor);
+        MenuDebugItemRuntimeState? runtime = _context.Scenario.ItemRuntimeStates
+            .GetValueOrDefault(item.Id);
+        MenuEvaluatedColor foreColor = runtime?.ForeColor is { } runtimeFore
+            ? Color(runtimeFore)
+            : Color(definition.ForeColor);
         MenuEvaluatedColor glowColor = Color(definition.GlowColor);
-        MenuEvaluatedColor backColor = Color(definition.BackColor);
+        MenuEvaluatedColor backColor = runtime?.BackColor is { } runtimeBack
+            ? Color(runtimeBack)
+            : Color(definition.BackColor);
+        MenuEvaluatedColor borderColor = runtime?.BorderColor is { } runtimeBorder
+            ? Color(runtimeBorder)
+            : Color(definition.BorderColor);
         foreach (DebugFloatExpression expression in definition.FloatExpressions)
         {
             MenuEvaluation<float> value = expression.Target switch
@@ -103,6 +115,7 @@ internal sealed class MenuEvaluationSession
             foreColor,
             glowColor,
             backColor,
+            borderColor,
             text,
             material,
             new ReadOnlyDictionary<ItemFloatExpressionTarget, MenuEvaluation<float>>(floatResults));
@@ -314,6 +327,13 @@ internal sealed class MenuEvaluationSession
     }
 
     private static MenuEvaluatedColor Color(DebugColorDefinition value) =>
+        new(
+            MenuEvaluation<float>.Known(value.A),
+            MenuEvaluation<float>.Known(value.R),
+            MenuEvaluation<float>.Known(value.G),
+            MenuEvaluation<float>.Known(value.B));
+
+    private static MenuEvaluatedColor Color(MenuColorValue value) =>
         new(
             MenuEvaluation<float>.Known(value.A),
             MenuEvaluation<float>.Known(value.R),

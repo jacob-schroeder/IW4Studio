@@ -11,6 +11,7 @@ internal sealed class MenuDebugEventExecutor
     private readonly MenuDebugProgram _program;
     private readonly MenuDebugDispatchState _state;
     private readonly MenuDebugDispatchTraceBuilder _trace;
+    private readonly MenuDebugRuntimeController _runtime;
 
     public MenuDebugEventExecutor(
         MenuDebugProgram program,
@@ -20,37 +21,20 @@ internal sealed class MenuDebugEventExecutor
         _program = program;
         _state = state;
         _trace = trace;
+        _runtime = new MenuDebugRuntimeController(
+            program,
+            state,
+            trace,
+            Execute);
     }
 
-    public bool ApplyFocus(MenuDebugSelectedHook hook)
-    {
-        if (hook.FocusTransition == MenuDebugFocusTransition.None)
-            return true;
+    public bool ApplyFocus(MenuDebugSelectedHook hook) =>
+        _runtime.ApplyFocus(hook);
 
-        MenuNodeId? previous = _state.FocusedItemId;
-        if (hook.FocusTransition == MenuDebugFocusTransition.Clear &&
-            previous != hook.ItemId)
-        {
-            _trace.AddDiagnostic(
-                hook.Path,
-                MenuDebugDiagnosticKind.Blocker,
-                MenuEvaluationStatus.Error,
-                "leave-focus-target-mismatch",
-                previous is null
-                    ? $"Item '{hook.ItemId}' cannot leave focus because no item is focused."
-                    : $"Item '{hook.ItemId}' cannot leave focus while item '{previous}' is focused.");
-            return false;
-        }
-
-        MenuNodeId? next = hook.FocusTransition == MenuDebugFocusTransition.Set
-            ? hook.ItemId
-            : null;
-        _state.SetFocus(next);
-        _trace.AddFocus(hook.Path, previous, next);
-        return true;
-    }
-
-    public void Execute(MenuDebugEventSet set, string path)
+    public void Execute(
+        MenuDebugEventSet set,
+        string path,
+        MenuNodeId? contextItemId = null)
     {
         MenuEvaluation<bool>? pendingConditional = null;
         for (int index = 0; index < set.Handlers.Count; index++)
@@ -69,7 +53,8 @@ internal sealed class MenuDebugEventExecutor
                         conditional.Handlers,
                         $"{handlerPath}.then",
                         handlerPath,
-                        pendingConditional);
+                        pendingConditional,
+                        contextItemId);
                     break;
 
                 case MenuDebugElseEventHandler @else:
@@ -82,13 +67,17 @@ internal sealed class MenuDebugEventExecutor
                         @else.Handlers,
                         $"{handlerPath}.else",
                         handlerPath,
-                        elseDecision);
+                        elseDecision,
+                        contextItemId);
                     pendingConditional = null;
                     break;
 
                 case MenuDebugScriptEventHandler script:
                     pendingConditional = null;
-                    _trace.AddScript(handlerPath, script.Script);
+                    _runtime.ExecuteScript(
+                        script.Script,
+                        handlerPath,
+                        contextItemId);
                     break;
 
                 case MenuDebugSetLocalVariableEventHandler setLocal:
@@ -113,12 +102,13 @@ internal sealed class MenuDebugEventExecutor
         MenuDebugEventSet handlers,
         string selectedPath,
         string decisionPath,
-        MenuEvaluation<bool> decision)
+        MenuEvaluation<bool> decision,
+        MenuNodeId? contextItemId)
     {
         if (decision.IsKnown)
         {
             if (decision.Value)
-                Execute(handlers, selectedPath);
+                Execute(handlers, selectedPath, contextItemId);
             return;
         }
 

@@ -94,10 +94,40 @@ public sealed class MenuDebugQueuedScriptTraceEntry : MenuDebugDispatchTraceEntr
         : base(sequence, handlerPath) => Script = script;
 
     /// <summary>
-    /// Authored script text queued for inspection or an external runtime. The
-    /// menu debugger never parses or executes this text.
+    /// Authored command text that is outside the debugger-safe runtime subset
+    /// and remains queued for inspection or an external runtime.
     /// </summary>
     public string Script { get; }
+}
+
+public enum MenuDebugItemColorTarget
+{
+    ForeColor,
+    BackColor,
+    BorderColor
+}
+
+public sealed class MenuDebugItemColorTraceEntry : MenuDebugDispatchTraceEntry
+{
+    internal MenuDebugItemColorTraceEntry(
+        int sequence,
+        string handlerPath,
+        MenuNodeId itemId,
+        MenuDebugItemColorTarget target,
+        MenuColorValue? previousValue,
+        MenuColorValue value)
+        : base(sequence, handlerPath)
+    {
+        ItemId = itemId;
+        Target = target;
+        PreviousValue = previousValue;
+        Value = value;
+    }
+
+    public MenuNodeId ItemId { get; }
+    public MenuDebugItemColorTarget Target { get; }
+    public MenuColorValue? PreviousValue { get; }
+    public MenuColorValue Value { get; }
 }
 
 public sealed class MenuDebugFocusTraceEntry : MenuDebugDispatchTraceEntry
@@ -148,7 +178,8 @@ public sealed class MenuDebugDiagnosticTraceEntry : MenuDebugDispatchTraceEntry
 
 /// <summary>
 /// Immutable result of applying one explicit input to one debugger scenario.
-/// Only local-variable and explicit focus changes can alter NextScenario.
+/// Debugger-safe local-variable, focus, and Window color changes can alter
+/// NextScenario.
 /// </summary>
 public sealed class MenuDebugDispatchResult
 {
@@ -156,6 +187,7 @@ public sealed class MenuDebugDispatchResult
     private readonly IReadOnlyList<MenuDebugQueuedScriptTraceEntry> _queuedScripts;
     private readonly IReadOnlyList<MenuDebugLocalVariableTraceEntry> _localVariableEvaluations;
     private readonly IReadOnlyList<MenuDebugLocalVariableTraceEntry> _localVariableChanges;
+    private readonly IReadOnlyList<MenuDebugItemColorTraceEntry> _itemColorChanges;
     private readonly IReadOnlyList<MenuDebugDiagnosticTraceEntry> _diagnostics;
 
     internal MenuDebugDispatchResult(
@@ -176,6 +208,8 @@ public sealed class MenuDebugDispatchResult
         _localVariableEvaluations = Array.AsReadOnly(localVariables);
         _localVariableChanges = Array.AsReadOnly(
             localVariables.Where(value => value.IsApplied).ToArray());
+        _itemColorChanges = Array.AsReadOnly(
+            entries.OfType<MenuDebugItemColorTraceEntry>().ToArray());
         _diagnostics = Array.AsReadOnly(
             entries.OfType<MenuDebugDiagnosticTraceEntry>().ToArray());
     }
@@ -189,6 +223,8 @@ public sealed class MenuDebugDispatchResult
         _localVariableEvaluations;
     public IReadOnlyList<MenuDebugLocalVariableTraceEntry> LocalVariableChanges =>
         _localVariableChanges;
+    public IReadOnlyList<MenuDebugItemColorTraceEntry> ItemColorChanges =>
+        _itemColorChanges;
     public IReadOnlyList<MenuDebugDiagnosticTraceEntry> Diagnostics => _diagnostics;
     public bool HasBlockers =>
         _diagnostics.Any(value => value.Kind == MenuDebugDiagnosticKind.Blocker);

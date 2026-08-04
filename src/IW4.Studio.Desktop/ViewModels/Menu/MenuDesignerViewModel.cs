@@ -201,11 +201,11 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                 status => !status.UsesGameGlyphs);
             var parts = new List<string>
             {
-                PreviewDebug.IsScenario
-                    ? $"Scenario at {PreviewDebug.Milliseconds:N0} ms"
+                PreviewDebug.IsSimulating
+                    ? $"Simulation at {PreviewDebug.Simulation.Milliseconds:N0} ms"
                     : "Static authored preview"
             };
-            if (PreviewDebug.IsScenario && PreviewDebug.DiagnosticCount > 0)
+            if (PreviewDebug.IsSimulating && PreviewDebug.DiagnosticCount > 0)
                 parts.Add(PreviewDebug.EvaluationSummary);
             if (unavailableCount > 0)
             {
@@ -251,7 +251,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                         status.Diagnostics.Count > 0)
                     .OrderBy(status => status.NodeId.ToString(), StringComparer.Ordinal)
                     .Select(status => status.Detail))
-                .Concat(PreviewDebug.IsScenario
+                .Concat(PreviewDebug.IsSimulating
                     ? PreviewDebug.DiagnosticLines
                     : [])
                 .ToArray();

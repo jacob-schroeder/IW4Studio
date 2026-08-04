@@ -152,7 +152,8 @@ internal sealed class DebugExpressionCompiler
             _ => new MenuDebugDependency(
                 MenuDebugDependencyKind.Environment,
                 qualifier ?? call.Operation.ToString(),
-                null,
+                MenuExpressionOperationMetadata.EnvironmentResultKind(
+                    call.Operation),
                 call.Operation)
         };
     }
