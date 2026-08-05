@@ -25,6 +25,7 @@ public sealed partial class MenuPreviewView : UserControl
     private long _simulationClockStartTimestamp;
     private int _simulationClockStartMilliseconds;
     private bool _isAttached;
+    private bool _isEditingSimulationTime;
     private bool _isUpdatingSimulationTime;
 
     public MenuPreviewView()
@@ -49,6 +50,7 @@ public sealed partial class MenuPreviewView : UserControl
         VisualTreeAttachmentEventArgs e)
     {
         _isAttached = false;
+        _isEditingSimulationTime = false;
         _previewItemContextMenu.Close();
         StopSimulationClock();
         DetachViewModel();
@@ -152,6 +154,31 @@ public sealed partial class MenuPreviewView : UserControl
             input.ResetPendingValue();
             e.Handled = true;
         }
+    }
+
+    private void SimulationTime_GotFocus(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        _isEditingSimulationTime = true;
+        StopSimulationClock();
+    }
+
+    private void SimulationTime_LostFocus(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Control editor)
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (editor.IsKeyboardFocusWithin)
+                return;
+
+            _isEditingSimulationTime = false;
+            UpdateSimulationClock();
+        });
     }
 
     private void MenuPreviewView_DataContextChanged(object? sender, EventArgs e) =>
@@ -295,6 +322,7 @@ public sealed partial class MenuPreviewView : UserControl
     {
         MenuDesignerViewModel? viewModel = _viewModel;
         return _isAttached &&
+            !_isEditingSimulationTime &&
             viewModel is { HasDocument: true, IsComplete: true } &&
             viewModel.PreviewDebug.IsSimulating;
     }

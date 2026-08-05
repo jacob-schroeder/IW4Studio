@@ -392,12 +392,13 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
 
     public IReadOnlyList<MenuPreviewScenarioInputViewModel> Inputs => _inputs;
 
+    /// <summary>
+    /// Stable dependency order for the ItemsControl. Required markers change
+    /// in place while the simulation clock advances; replacing or reordering
+    /// this source would discard focused editors and open ComboBox popups.
+    /// </summary>
     public IReadOnlyList<MenuPreviewScenarioInputViewModel> OrderedInputs =>
-        Array.AsReadOnly(Inputs
-            .OrderByDescending(value => value.IsRequired)
-            .ThenBy(value => value.Dependency.Kind)
-            .ThenBy(value => value.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray());
+        Inputs;
 
     public IReadOnlyList<MenuPreviewScenarioInputViewModel> MissingInputs =>
         Array.AsReadOnly(Inputs
@@ -486,7 +487,7 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
                 .Order(StringComparer.OrdinalIgnoreCase)
                 .ToArray());
 
-        NotifyStateChanged();
+        NotifyInputMembershipChanged();
     }
 
     internal void SetRequiredDependencies(
@@ -495,9 +496,20 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
         HashSet<string> required = dependencies
             .Select(MenuPreviewScenarioInputViewModel.StorageKey)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool stateChanged = false;
         foreach (MenuPreviewScenarioInputViewModel input in Inputs)
-            input.IsRequired = !input.IsSet && required.Contains(input.Identity);
-        NotifyInputCollectionsChanged();
+        {
+            bool isRequired =
+                !input.IsSet && required.Contains(input.Identity);
+            if (input.IsRequired == isRequired)
+                continue;
+
+            input.IsRequired = isRequired;
+            stateChanged = true;
+        }
+
+        if (stateChanged)
+            NotifyInputStateChanged();
     }
 
     internal MenuDebugScenario BuildScenario(
@@ -565,15 +577,17 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
         {
             _isBatching = false;
         }
-        NotifyInputCollectionsChanged();
+        NotifyInputStateChanged();
         _inputsChanged();
     }
 
     private void InputChanged()
     {
-        NotifyInputCollectionsChanged();
-        if (!_isBatching)
-            _inputsChanged();
+        if (_isBatching)
+            return;
+
+        NotifyInputStateChanged();
+        _inputsChanged();
     }
 
     private void RaiseTimeChanged()
@@ -582,19 +596,19 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
             _timeChanged();
     }
 
-    private void NotifyStateChanged()
+    private void NotifyInputMembershipChanged()
     {
         OnPropertyChanged(nameof(Inputs));
-        NotifyInputCollectionsChanged();
+        OnPropertyChanged(nameof(OrderedInputs));
+        OnPropertyChanged(nameof(HasInputs));
+        NotifyInputStateChanged();
         OnPropertyChanged(nameof(UnsupportedInputLines));
         OnPropertyChanged(nameof(HasUnsupportedInputs));
     }
 
-    private void NotifyInputCollectionsChanged()
+    private void NotifyInputStateChanged()
     {
-        OnPropertyChanged(nameof(OrderedInputs));
         OnPropertyChanged(nameof(MissingInputs));
-        OnPropertyChanged(nameof(HasInputs));
         OnPropertyChanged(nameof(HasMissingInputs));
         OnPropertyChanged(nameof(MissingInputCount));
         OnPropertyChanged(nameof(MissingInputSummary));

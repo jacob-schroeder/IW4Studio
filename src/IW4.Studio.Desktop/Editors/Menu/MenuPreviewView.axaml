@@ -6,7 +6,6 @@
              xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
              x:Class="IW4.Studio.Desktop.Editors.Menu.MenuPreviewView"
              x:DataType="menuVm:MenuDesignerViewModel"
-             MinHeight="360"
              mc:Ignorable="d"
              d:DesignWidth="980"
              d:DesignHeight="560">
@@ -23,13 +22,14 @@
     </ContextMenu>
   </UserControl.Resources>
 
-  <Grid RowDefinitions="*,8,Auto">
-    <Border CornerRadius="7"
+  <Grid RowDefinitions="Auto,8,Auto,8,Auto">
+    <Border MinHeight="360"
+            CornerRadius="7"
             ClipToBounds="True"
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid RowDefinitions="Auto,Auto,*">
+      <Grid RowDefinitions="Auto,*">
         <Grid Margin="11,8"
               ColumnDefinitions="*,Auto,Auto,Auto,Auto"
               ColumnSpacing="9">
@@ -90,351 +90,7 @@
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
         </Grid>
 
-        <Border Grid.Row="1"
-                IsVisible="{Binding PreviewDebug.IsAuthored}"
-                Margin="12,0,12,8"
-                Padding="9,7"
-                CornerRadius="5"
-                Background="{DynamicResource StudioInfoSurfaceBrush}"
-                BorderBrush="{DynamicResource StudioInfoBorderBrush}"
-                BorderThickness="1">
-          <StackPanel Spacing="2">
-            <TextBlock Text="Authored mode keeps conditional items visible so they can be selected and edited."
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioInfoBrush}" />
-            <TextBlock Text="Runtime visibility, text, material, and geometry expressions are not evaluated here. Choose Simulate to inspect game-state visibility."
-                       TextWrapping="Wrap"
-                       FontSize="8"
-                       Foreground="{DynamicResource StudioTextMutedBrush}" />
-            <TextBlock IsVisible="{Binding PreviewDebug.HasSelectedAuthoredVisibilityExpression}"
-                       Text="The selected node has a visibility expression; appearing here does not mean the game will draw it."
-                       TextWrapping="Wrap"
-                       FontSize="8"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioInfoBrush}" />
-          </StackPanel>
-        </Border>
-
-        <Border Grid.Row="1"
-                IsVisible="{Binding PreviewDebug.IsSimulating}"
-                Margin="12,0,12,8"
-                Padding="9,7"
-                CornerRadius="5"
-                Background="{DynamicResource StudioSurfaceBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="1">
-          <Grid RowDefinitions="Auto,Auto,Auto">
-            <WrapPanel Orientation="Horizontal"
-                       VerticalAlignment="Center">
-              <TextBlock Text="Time (auto)"
-                         Margin="0,0,5,0"
-                         VerticalAlignment="Center"
-                         FontSize="9"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-              <NumericUpDown Width="92"
-                             Height="25"
-                             Margin="0,0,13,0"
-                             Minimum="0"
-                             Maximum="2147483647"
-                             Increment="100"
-                             FormatString="0"
-                             ToolTip.Tip="Advances in real time while Simulate is active; enter a value to seek."
-                             Value="{Binding PreviewDebug.Simulation.Milliseconds, Mode=TwoWay}" />
-              <TextBlock Text="ms"
-                         Margin="-10,0,14,0"
-                         VerticalAlignment="Center"
-                         FontSize="8"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-
-              <TextBlock Text="{Binding PreviewDebug.Interaction.SelectionSummary}"
-                         Margin="0,0,13,0"
-                         VerticalAlignment="Center"
-                         FontSize="9"
-                         FontWeight="SemiBold"
-                         Foreground="{DynamicResource StudioTextBrush}" />
-              <TextBlock Text="{Binding PreviewDebug.FocusedItemSummary}"
-                         Margin="0,0,13,0"
-                         VerticalAlignment="Center"
-                         FontSize="9"
-                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
-              <TextBlock Text="{Binding PreviewDebug.SelectedEvaluationSummary}"
-                         Margin="0,0,13,0"
-                         VerticalAlignment="Center"
-                         FontSize="9"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-
-              <Button Height="25"
-                      Margin="0,0,7,0"
-                      Padding="9,2"
-                      Content="Focus selected"
-                      Command="{Binding PreviewDebug.Interaction.FocusSelectedCommand}"
-                      ToolTip.Tip="Runs the selected item's authored focus lifecycle." />
-              <ComboBox Width="190"
-                        Height="25"
-                        Margin="0,0,7,0"
-                        ItemsSource="{Binding PreviewDebug.Interaction.Options}"
-                        SelectedItem="{Binding PreviewDebug.Interaction.SelectedOption, Mode=TwoWay}"
-                        PlaceholderText="No event for selection">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate x:DataType="menuVm:MenuPreviewInteractionOption">
-                    <TextBlock Text="{Binding Label}"
-                               TextTrimming="CharacterEllipsis" />
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
-              <Button Height="25"
-                      Margin="0,0,7,0"
-                      Padding="9,2"
-                      Content="Run event"
-                      Command="{Binding PreviewDebug.Interaction.DispatchCommand}" />
-              <Button Height="25"
-                      Padding="9,2"
-                      Content="Restart simulation"
-                      Command="{Binding PreviewDebug.ResetSimulatedStateCommand}"
-                      ToolTip.Tip="Returns to the current inputs, then runs the menu's authored On open lifecycle once." />
-            </WrapPanel>
-
-            <Border Grid.Row="1"
-                    IsVisible="{Binding PreviewDebug.HasEvaluationIssues}"
-                    Margin="0,7,0,0"
-                    Padding="8,6"
-                    CornerRadius="4"
-                    Background="{DynamicResource StudioWarningSurfaceBrush}"
-                    BorderBrush="{DynamicResource StudioWarningBorderBrush}"
-                    BorderThickness="1">
-              <Grid ColumnDefinitions="Auto,*,Auto"
-                    ColumnSpacing="8">
-                <TextBlock Text="{Binding PreviewDebug.EvaluationSummary}"
-                           VerticalAlignment="Center"
-                           FontSize="9"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource StudioWarningBrush}" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding PreviewDebug.Simulation.MissingInputSummary}"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           FontSize="9"
-                           Foreground="{DynamicResource StudioTextBrush}" />
-                <Button Grid.Column="2"
-                        Height="24"
-                        Padding="9,2"
-                        Content="Review setup"
-                        Command="{Binding PreviewDebug.Simulation.OpenConfigurationCommand}" />
-              </Grid>
-            </Border>
-
-            <Expander Grid.Row="2"
-                      Margin="0,6,0,0"
-                      Header="{Binding PreviewDebug.Simulation.ValuesHeading}"
-                      IsExpanded="{Binding PreviewDebug.Simulation.IsConfigurationOpen, Mode=TwoWay}">
-              <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-                <Grid ColumnDefinitions="*,Auto"
-                      Margin="0,4,0,5">
-                  <TextBlock Text="Only values used by the current rendered or event path are marked Needed. Other discovered values remain optional for testing."
-                             VerticalAlignment="Center"
-                             TextWrapping="Wrap"
-                             FontSize="8"
-                             Foreground="{DynamicResource StudioTextMutedBrush}" />
-                  <Button Grid.Column="1"
-                          Height="24"
-                          Margin="8,0,0,0"
-                          Padding="9,2"
-                          Content="Clear overrides"
-                          Command="{Binding PreviewDebug.Simulation.ClearOverridesCommand}" />
-                </Grid>
-
-                <ScrollViewer Grid.Row="1"
-                              IsVisible="{Binding PreviewDebug.Simulation.HasInputs}"
-                              MaxHeight="150"
-                              VerticalScrollBarVisibility="Auto">
-                  <ItemsControl ItemsSource="{Binding PreviewDebug.Simulation.OrderedInputs}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="menuVm:MenuPreviewScenarioInputViewModel">
-                        <Border Margin="0,2"
-                                Padding="7,5"
-                                CornerRadius="4"
-                                Background="{DynamicResource StudioSurfaceSunkenBrush}">
-                          <Grid ColumnDefinitions="180,70,170,Auto,*"
-                                ColumnSpacing="8">
-                            <StackPanel VerticalAlignment="Center"
-                                        Spacing="1">
-                              <TextBlock Text="{Binding Name}"
-                                         TextTrimming="CharacterEllipsis"
-                                         FontFamily="Consolas"
-                                         FontSize="9"
-                                         Foreground="{DynamicResource StudioTextBrush}" />
-                              <TextBlock Text="{Binding Detail}"
-                                         TextTrimming="CharacterEllipsis"
-                                         FontSize="8"
-                                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-                            </StackPanel>
-
-                            <Border Grid.Column="1"
-                                    IsVisible="{Binding IsRequired}"
-                                    Padding="5,2"
-                                    HorizontalAlignment="Left"
-                                    VerticalAlignment="Center"
-                                    CornerRadius="3"
-                                    Background="{DynamicResource StudioWarningSurfaceBrush}"
-                                    BorderBrush="{DynamicResource StudioWarningBorderBrush}"
-                                    BorderThickness="1">
-                              <TextBlock Text="NEEDED"
-                                         FontSize="7"
-                                         FontWeight="Bold"
-                                         Foreground="{DynamicResource StudioWarningBrush}" />
-                            </Border>
-
-                            <ComboBox Grid.Column="2"
-                                      IsVisible="{Binding IsBoolean}"
-                                      Height="25"
-                                      ItemsSource="{Binding BooleanOptions}"
-                                      SelectedItem="{Binding SelectedBoolean, Mode=TwoWay}" />
-                            <NumericUpDown Grid.Column="2"
-                                           IsVisible="{Binding IsInteger}"
-                                           Height="25"
-                                           Minimum="-2147483648"
-                                           Maximum="2147483647"
-                                           Increment="1"
-                                           FormatString="0"
-                                           Value="{Binding NumericValue, Mode=TwoWay}"
-                                           ToolTip.Tip="Press Enter or leave the field to apply; Escape cancels."
-                                           LostFocus="ScenarioStagedInput_LostFocus"
-                                           KeyDown="ScenarioStagedInput_KeyDown" />
-                            <NumericUpDown Grid.Column="2"
-                                           IsVisible="{Binding IsFloat}"
-                                           Height="25"
-                                           Minimum="-79228162514264337593543950335"
-                                           Maximum="79228162514264337593543950335"
-                                           Increment="0.1"
-                                           FormatString="0.######"
-                                           Value="{Binding NumericValue, Mode=TwoWay}"
-                                           ToolTip.Tip="Press Enter or leave the field to apply; Escape cancels."
-                                           LostFocus="ScenarioStagedInput_LostFocus"
-                                           KeyDown="ScenarioStagedInput_KeyDown" />
-                            <TextBox Grid.Column="2"
-                                     IsVisible="{Binding IsText}"
-                                     Height="25"
-                                     Text="{Binding TextValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     PlaceholderText="{Binding ValueState}"
-                                     ToolTip.Tip="Press Enter or leave the field to apply; Escape cancels."
-                                     LostFocus="ScenarioStagedInput_LostFocus"
-                                     KeyDown="ScenarioStagedInput_KeyDown" />
-
-                            <StackPanel Grid.Column="3"
-                                        Orientation="Horizontal"
-                                        Spacing="5">
-                              <Button IsVisible="{Binding IsText}"
-                                      Height="24"
-                                      Padding="8,2"
-                                      Content="Set empty"
-                                      Command="{Binding SetEmptyCommand}"
-                                      ToolTip.Tip="Supplies an explicit empty string; this is different from leaving the value unknown." />
-                              <Button Height="24"
-                                      Padding="8,2"
-                                      Content="Unset"
-                                      Command="{Binding ClearCommand}" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="4"
-                                        VerticalAlignment="Center"
-                                        Spacing="1">
-                              <TextBlock IsVisible="{Binding HasPendingValue}"
-                                         Text="Pending · Enter to apply"
-                                         TextTrimming="CharacterEllipsis"
-                                         FontSize="8"
-                                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
-                              <TextBlock IsVisible="{Binding HasValidationError}"
-                                         Text="{Binding ValidationMessage}"
-                                         TextTrimming="CharacterEllipsis"
-                                         FontSize="8"
-                                         Foreground="{DynamicResource StudioErrorBrush}" />
-                            </StackPanel>
-                          </Grid>
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </ScrollViewer>
-
-                <Border Grid.Row="2"
-                        IsVisible="{Binding PreviewDebug.Simulation.HasUnsupportedInputs}"
-                        Margin="0,5,0,0"
-                        Padding="7,5"
-                        CornerRadius="4"
-                        Background="{DynamicResource StudioWarningSurfaceBrush}">
-                  <StackPanel Spacing="3">
-                    <TextBlock Text="Runtime-computed inputs"
-                               FontSize="8"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource StudioWarningBrush}" />
-                    <ItemsControl ItemsSource="{Binding PreviewDebug.Simulation.UnsupportedInputLines}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <TextBlock Text="{Binding}"
-                                     FontFamily="Consolas"
-                                     FontSize="8"
-                                     Foreground="{DynamicResource StudioTextMutedBrush}" />
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
-
-                <Expander Grid.Row="3"
-                          Margin="0,5,0,0"
-                          Header="{Binding PreviewDebug.AdvancedEvaluationHeading}">
-                  <StackPanel Spacing="5">
-                    <TextBox MaxHeight="110"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             FontFamily="Consolas"
-                             FontSize="8"
-                             Text="{Binding PreviewDebug.AdvancedEvaluationDetails}" />
-                    <TextBox MaxHeight="100"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             FontFamily="Consolas"
-                             FontSize="8"
-                             Text="{Binding PreviewDebug.DependencyDetails}" />
-                  </StackPanel>
-                </Expander>
-
-                <StackPanel Grid.Row="4"
-                            Margin="0,4,0,0"
-                            Spacing="4">
-                  <Expander Header="{Binding PreviewDebug.Interaction.ActivationSummary}"
-                            IsVisible="{Binding PreviewDebug.Interaction.HasActivationDetails}">
-                    <TextBox MaxHeight="125"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             FontFamily="Consolas"
-                             FontSize="8"
-                             Text="{Binding PreviewDebug.Interaction.ActivationDetails}" />
-                  </Expander>
-                  <Expander Header="{Binding PreviewDebug.Interaction.ResultSummary}"
-                            IsVisible="{Binding PreviewDebug.Interaction.HasResult}">
-                    <TextBox MaxHeight="125"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             FontFamily="Consolas"
-                             FontSize="8"
-                             Text="{Binding PreviewDebug.Interaction.ResultDetails}" />
-                  </Expander>
-                </StackPanel>
-              </Grid>
-            </Expander>
-          </Grid>
-        </Border>
-
-        <Grid Grid.Row="2"
+        <Grid Grid.Row="1"
               Margin="12"
               Background="{DynamicResource StudioBackgroundBrush}">
           <menu:MenuPreviewControl Scene="{Binding PreviewScene}"
@@ -480,5 +136,357 @@
                  TextTrimming="CharacterEllipsis"
                  Foreground="{DynamicResource StudioTextMutedBrush}" />
     </Grid>
+
+    <Border Grid.Row="4"
+            IsVisible="{Binding PreviewDebug.IsAuthored}"
+            Padding="9,7"
+            CornerRadius="7"
+            Background="{DynamicResource StudioInfoSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioInfoBorderBrush}"
+            BorderThickness="1">
+      <StackPanel Spacing="2">
+        <TextBlock Text="Authored mode keeps conditional items visible so they can be selected and edited."
+                   FontSize="9"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioInfoBrush}" />
+        <TextBlock Text="Runtime visibility, text, material, and geometry expressions are not evaluated here. Choose Simulate to inspect game-state visibility."
+                   TextWrapping="Wrap"
+                   FontSize="8"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <TextBlock IsVisible="{Binding PreviewDebug.HasSelectedAuthoredVisibilityExpression}"
+                   Text="The selected node has a visibility expression; appearing here does not mean the game will draw it."
+                   TextWrapping="Wrap"
+                   FontSize="8"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioInfoBrush}" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="4"
+            IsVisible="{Binding PreviewDebug.IsSimulating}"
+            Padding="9,7"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,Auto,Auto">
+        <WrapPanel Orientation="Horizontal"
+                   VerticalAlignment="Center">
+          <TextBlock Text="SIMULATION CONTROLS"
+                     Margin="0,0,14,0"
+                     VerticalAlignment="Center"
+                     FontSize="8"
+                     FontWeight="Bold"
+                     LetterSpacing="0.7"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Text="Time (auto)"
+                     Margin="0,0,5,0"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+          <NumericUpDown Width="92"
+                         Height="25"
+                         Margin="0,0,13,0"
+                         Minimum="0"
+                         Maximum="2147483647"
+                         Increment="100"
+                         FormatString="0"
+                         ToolTip.Tip="Advances in real time while Simulate is active; enter a value to seek."
+                         GotFocus="SimulationTime_GotFocus"
+                         LostFocus="SimulationTime_LostFocus"
+                         Value="{Binding PreviewDebug.Simulation.Milliseconds, Mode=TwoWay}" />
+          <TextBlock Text="ms"
+                     Margin="-10,0,14,0"
+                     VerticalAlignment="Center"
+                     FontSize="8"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+          <TextBlock Text="{Binding PreviewDebug.Interaction.SelectionSummary}"
+                     Margin="0,0,13,0"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding PreviewDebug.FocusedItemSummary}"
+                     Margin="0,0,13,0"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+          <TextBlock Text="{Binding PreviewDebug.SelectedEvaluationSummary}"
+                     Margin="0,0,13,0"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+          <Button Height="25"
+                  Margin="0,0,7,0"
+                  Padding="9,2"
+                  Content="Focus selected"
+                  Command="{Binding PreviewDebug.Interaction.FocusSelectedCommand}"
+                  ToolTip.Tip="Runs the selected item's authored focus lifecycle." />
+          <ComboBox Width="190"
+                    Height="25"
+                    Margin="0,0,7,0"
+                    ItemsSource="{Binding PreviewDebug.Interaction.Options}"
+                    SelectedItem="{Binding PreviewDebug.Interaction.SelectedOption, Mode=TwoWay}"
+                    PlaceholderText="No event for selection">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="menuVm:MenuPreviewInteractionOption">
+                <TextBlock Text="{Binding Label}"
+                           TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Height="25"
+                  Margin="0,0,7,0"
+                  Padding="9,2"
+                  Content="Run event"
+                  Command="{Binding PreviewDebug.Interaction.DispatchCommand}" />
+          <Button Height="25"
+                  Padding="9,2"
+                  Content="Restart simulation"
+                  Command="{Binding PreviewDebug.ResetSimulatedStateCommand}"
+                  ToolTip.Tip="Returns to the current inputs, then runs the menu's authored On open lifecycle once." />
+        </WrapPanel>
+
+        <Border Grid.Row="1"
+                IsVisible="{Binding PreviewDebug.HasEvaluationIssues}"
+                Margin="0,7,0,0"
+                Padding="8,6"
+                CornerRadius="4"
+                Background="{DynamicResource StudioWarningSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioWarningBorderBrush}"
+                BorderThickness="1">
+          <Grid ColumnDefinitions="Auto,*,Auto"
+                ColumnSpacing="8">
+            <TextBlock Text="{Binding PreviewDebug.EvaluationSummary}"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioWarningBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding PreviewDebug.Simulation.MissingInputSummary}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+            <Button Grid.Column="2"
+                    Height="24"
+                    Padding="9,2"
+                    Content="Review setup"
+                    Command="{Binding PreviewDebug.Simulation.OpenConfigurationCommand}" />
+          </Grid>
+        </Border>
+
+        <Expander Grid.Row="2"
+                  Margin="0,6,0,0"
+                  Header="{Binding PreviewDebug.Simulation.ValuesHeading}"
+                  IsExpanded="{Binding PreviewDebug.Simulation.IsConfigurationOpen, Mode=TwoWay}">
+          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto"
+                  Margin="0,4,0,5">
+              <TextBlock Text="Only values used by the current rendered or event path are marked Needed. Other discovered values remain optional for testing."
+                         VerticalAlignment="Center"
+                         TextWrapping="Wrap"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <Button Grid.Column="1"
+                      Height="24"
+                      Margin="8,0,0,0"
+                      Padding="9,2"
+                      Content="Clear overrides"
+                      Command="{Binding PreviewDebug.Simulation.ClearOverridesCommand}" />
+            </Grid>
+
+            <ScrollViewer Grid.Row="1"
+                          IsVisible="{Binding PreviewDebug.Simulation.HasInputs}"
+                          MaxHeight="150"
+                          VerticalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding PreviewDebug.Simulation.OrderedInputs}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="menuVm:MenuPreviewScenarioInputViewModel">
+                    <Border Margin="0,2"
+                            Padding="7,5"
+                            CornerRadius="4"
+                            Background="{DynamicResource StudioSurfaceSunkenBrush}">
+                      <Grid ColumnDefinitions="180,70,170,Auto,*"
+                            ColumnSpacing="8">
+                        <StackPanel VerticalAlignment="Center"
+                                    Spacing="1">
+                          <TextBlock Text="{Binding Name}"
+                                     TextTrimming="CharacterEllipsis"
+                                     FontFamily="Consolas"
+                                     FontSize="9"
+                                     Foreground="{DynamicResource StudioTextBrush}" />
+                          <TextBlock Text="{Binding Detail}"
+                                     TextTrimming="CharacterEllipsis"
+                                     FontSize="8"
+                                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        </StackPanel>
+
+                        <Border Grid.Column="1"
+                                IsVisible="{Binding IsRequired}"
+                                Padding="5,2"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                CornerRadius="3"
+                                Background="{DynamicResource StudioWarningSurfaceBrush}"
+                                BorderBrush="{DynamicResource StudioWarningBorderBrush}"
+                                BorderThickness="1">
+                          <TextBlock Text="NEEDED"
+                                     FontSize="7"
+                                     FontWeight="Bold"
+                                     Foreground="{DynamicResource StudioWarningBrush}" />
+                        </Border>
+
+                        <ComboBox Grid.Column="2"
+                                  IsVisible="{Binding IsBoolean}"
+                                  Height="25"
+                                  ItemsSource="{Binding BooleanOptions}"
+                                  SelectedItem="{Binding SelectedBoolean, Mode=TwoWay}" />
+                        <NumericUpDown Grid.Column="2"
+                                       IsVisible="{Binding IsInteger}"
+                                       Height="25"
+                                       Minimum="-2147483648"
+                                       Maximum="2147483647"
+                                       Increment="1"
+                                       FormatString="0"
+                                       Value="{Binding NumericValue, Mode=TwoWay}"
+                                       ToolTip.Tip="Press Enter or leave the field to apply; Escape cancels."
+                                       LostFocus="ScenarioStagedInput_LostFocus"
+                                       KeyDown="ScenarioStagedInput_KeyDown" />
+                        <NumericUpDown Grid.Column="2"
+                                       IsVisible="{Binding IsFloat}"
+                                       Height="25"
+                                       Minimum="-79228162514264337593543950335"
+                                       Maximum="79228162514264337593543950335"
+                                       Increment="0.1"
+                                       FormatString="0.######"
+                                       Value="{Binding NumericValue, Mode=TwoWay}"
+                                       ToolTip.Tip="Press Enter or leave the field to apply; Escape cancels."
+                                       LostFocus="ScenarioStagedInput_LostFocus"
+                                       KeyDown="ScenarioStagedInput_KeyDown" />
+                        <TextBox Grid.Column="2"
+                                 IsVisible="{Binding IsText}"
+                                 Height="25"
+                                 Text="{Binding TextValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="{Binding ValueState}"
+                                 ToolTip.Tip="Press Enter or leave the field to apply; Escape cancels."
+                                 LostFocus="ScenarioStagedInput_LostFocus"
+                                 KeyDown="ScenarioStagedInput_KeyDown" />
+
+                        <StackPanel Grid.Column="3"
+                                    Orientation="Horizontal"
+                                    Spacing="5">
+                          <Button IsVisible="{Binding IsText}"
+                                  Height="24"
+                                  Padding="8,2"
+                                  Content="Set empty"
+                                  Command="{Binding SetEmptyCommand}"
+                                  ToolTip.Tip="Supplies an explicit empty string; this is different from leaving the value unknown." />
+                          <Button Height="24"
+                                  Padding="8,2"
+                                  Content="Unset"
+                                  Command="{Binding ClearCommand}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="4"
+                                    VerticalAlignment="Center"
+                                    Spacing="1">
+                          <TextBlock IsVisible="{Binding HasPendingValue}"
+                                     Text="Pending · Enter to apply"
+                                     TextTrimming="CharacterEllipsis"
+                                     FontSize="8"
+                                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+                          <TextBlock IsVisible="{Binding HasValidationError}"
+                                     Text="{Binding ValidationMessage}"
+                                     TextTrimming="CharacterEllipsis"
+                                     FontSize="8"
+                                     Foreground="{DynamicResource StudioErrorBrush}" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
+            <Border Grid.Row="2"
+                    IsVisible="{Binding PreviewDebug.Simulation.HasUnsupportedInputs}"
+                    Margin="0,5,0,0"
+                    Padding="7,5"
+                    CornerRadius="4"
+                    Background="{DynamicResource StudioWarningSurfaceBrush}">
+              <StackPanel Spacing="3">
+                <TextBlock Text="Runtime-computed inputs"
+                           FontSize="8"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource StudioWarningBrush}" />
+                <ItemsControl ItemsSource="{Binding PreviewDebug.Simulation.UnsupportedInputLines}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}"
+                                 FontFamily="Consolas"
+                                 FontSize="8"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <Expander Grid.Row="3"
+                      Margin="0,5,0,0"
+                      Header="{Binding PreviewDebug.AdvancedEvaluationHeading}">
+              <StackPanel Spacing="5">
+                <TextBox MaxHeight="110"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas"
+                         FontSize="8"
+                         Text="{Binding PreviewDebug.AdvancedEvaluationDetails}" />
+                <TextBox MaxHeight="100"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas"
+                         FontSize="8"
+                         Text="{Binding PreviewDebug.DependencyDetails}" />
+              </StackPanel>
+            </Expander>
+
+            <StackPanel Grid.Row="4"
+                        Margin="0,4,0,0"
+                        Spacing="4">
+              <Expander Header="{Binding PreviewDebug.Interaction.ActivationSummary}"
+                        IsVisible="{Binding PreviewDebug.Interaction.HasActivationDetails}">
+                <TextBox MaxHeight="125"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas"
+                         FontSize="8"
+                         Text="{Binding PreviewDebug.Interaction.ActivationDetails}" />
+              </Expander>
+              <Expander Header="{Binding PreviewDebug.Interaction.ResultSummary}"
+                        IsVisible="{Binding PreviewDebug.Interaction.HasResult}">
+                <TextBox MaxHeight="125"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas"
+                         FontSize="8"
+                         Text="{Binding PreviewDebug.Interaction.ResultDetails}" />
+              </Expander>
+            </StackPanel>
+          </Grid>
+        </Expander>
+      </Grid>
+    </Border>
+
   </Grid>
 </UserControl>

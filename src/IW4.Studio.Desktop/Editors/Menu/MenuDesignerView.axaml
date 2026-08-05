@@ -15,7 +15,10 @@
       <RowDefinition Height="10" />
       <RowDefinition Height="2*" />
     </Grid.RowDefinitions>
-    <menu:MenuPreviewView />
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <menu:MenuPreviewView />
+    </ScrollViewer>
     <menu:MenuOutlineView Grid.Row="2" />
   </Grid>
 </UserControl>
