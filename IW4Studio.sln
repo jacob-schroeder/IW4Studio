@@ -24,6 +24,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Studio.Desktop", "src\I
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{FCDD3239-F358-4994-865E-BC1974E865CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Studio.Tests", "tests\IW4.Studio.Tests\IW4.Studio.Tests.csproj", "{9E13A04E-38C2-475C-8543-017C61195C1B}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Gsc", "src\IW4.Gsc\IW4.Gsc.csproj", "{40E491DC-9F14-4DE5-9C7A-0F59F64FF8D3}"
 EndProject
 Global
@@ -80,10 +82,15 @@ Global
 		{40E491DC-9F14-4DE5-9C7A-0F59F64FF8D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{40E491DC-9F14-4DE5-9C7A-0F59F64FF8D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{40E491DC-9F14-4DE5-9C7A-0F59F64FF8D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9E13A04E-38C2-475C-8543-017C61195C1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E13A04E-38C2-475C-8543-017C61195C1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E13A04E-38C2-475C-8543-017C61195C1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E13A04E-38C2-475C-8543-017C61195C1B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{9E13A04E-38C2-475C-8543-017C61195C1B} = {FCDD3239-F358-4994-865E-BC1974E865CF}
 	EndGlobalSection
 EndGlobal

@@ -201,6 +201,8 @@ public sealed class MaterialTechniqueSetLoader
         for (int i = 0; i < passes.Length; i++)
             ReadPassChildren(cursor, passes[i], context);
 
+        ResolveDeferredVertexDeclarations(passes, context);
+
         string? name = ReadXString(cursor, namePointer, context);
 
         var technique = new MaterialTechniqueAsset
@@ -224,7 +226,9 @@ public sealed class MaterialTechniqueSetLoader
         byte[] rootBytes = context.Blocks.Load(cursor, PassSize, out XBlockAddress rootAddress);
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
-        XPointer<MaterialVertexDeclarationAsset> vertexDecl = context.PointerReader.ReadPointer<MaterialVertexDeclarationAsset>(rootCursor, XPointerResolutionMode.Direct);
+        XPointer<MaterialVertexDeclarationAsset> vertexDecl = ReadDeferredCell(
+            rootCursor,
+            XPointerResolutionMode.Direct).AsPointer<MaterialVertexDeclarationAsset>();
         XPointer<MaterialShaderAsset> vertexShader = context.PointerReader.ReadPointer<MaterialShaderAsset>(rootCursor, XPointerResolutionMode.AliasCell);
         XPointer<MaterialShaderAsset> pixelShader = context.PointerReader.ReadPointer<MaterialShaderAsset>(rootCursor, XPointerResolutionMode.AliasCell);
         byte perPrimArgCount = rootCursor.ReadByte();
@@ -286,13 +290,7 @@ public sealed class MaterialTechniqueSetLoader
             return null;
 
         if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<MaterialVertexDeclarationAsset>(
-                pointer,
-                MaterialVertexDeclarationAsset.SerializedSize,
-                "MaterialVertexDeclaration");
-            return context.ResolveMaterialVertexDeclaration(pointer);
-        }
+            return null;
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
             return null;
@@ -327,6 +325,24 @@ public sealed class MaterialTechniqueSetLoader
         return context.RegisterMaterialVertexDeclaration(
             rootAddress,
             declaration);
+    }
+
+    private static void ResolveDeferredVertexDeclarations(
+        IReadOnlyList<MaterialPassAsset> passes,
+        DbLoadExecutionContext context)
+    {
+        foreach (MaterialPassAsset pass in passes)
+        {
+            XPointerReference pointer = pass.VertexDeclPointer.Untyped;
+            if (pointer.Type != PointerType.Offset)
+                continue;
+
+            context.PointerReader.ValidateOffsetPointerRange<MaterialVertexDeclarationAsset>(
+                pointer,
+                MaterialVertexDeclarationAsset.SerializedSize,
+                "MaterialVertexDeclaration");
+            pass.VertexDeclaration = context.ResolveMaterialVertexDeclaration(pointer);
+        }
     }
 
     private static IReadOnlyList<MaterialShaderArgumentAsset> ReadShaderArgs(
