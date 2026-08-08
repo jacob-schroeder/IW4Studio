@@ -12,6 +12,7 @@ public sealed class StockFastFileRoundTripTests
     private const string StockFastFilesDirectory = "/Users/jacob/Repositories/MW2/fastfiles";
     private const string MapPack1Directory = "/Users/jacob/Repositories/MW2/fastfiles/mappack1";
     private const string MapPack2Directory = "/Users/jacob/Repositories/MW2/fastfiles/mappack2";
+    private const string StockFastFileAllowlistEnvironmentVariable = "IW4_STOCK_FASTFILE_ALLOWLIST";
     private const string TemporaryDirectoryNamePrefix = "IW4.Studio.Tests.StockFastFileRoundTrip.";
     private const int ComparisonBufferSize = 1024 * 1024;
 
@@ -92,10 +93,77 @@ public sealed class StockFastFileRoundTripTests
                 SearchOption.TopDirectoryOnly)
         ];
 
-        return paths
+        string[] discoveredPaths = paths
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.Ordinal);
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+        return SelectStockFastFiles(discoveredPaths);
+    }
+
+    private static IEnumerable<string> SelectStockFastFiles(IReadOnlyList<string> discoveredPaths)
+    {
+        string? selector = Environment.GetEnvironmentVariable(StockFastFileAllowlistEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(selector))
+            return discoveredPaths;
+
+        string[] requestedNames = selector.Split(';', StringSplitOptions.TrimEntries);
+        var selectedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var selectedPaths = new List<string>(requestedNames.Length);
+        foreach (string requestedName in requestedNames)
+        {
+            if (requestedName.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Environment variable '{StockFastFileAllowlistEnvironmentVariable}' contains an empty fastfile name.");
+            }
+
+            if (Path.GetFileName(requestedName) != requestedName ||
+                requestedName.Contains('/') ||
+                requestedName.Contains('\\') ||
+                !string.Equals(Path.GetExtension(requestedName), ".ff", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Environment variable '{StockFastFileAllowlistEnvironmentVariable}' entry '{requestedName}' " +
+                    "must be an exact .ff basename without path components.");
+            }
+
+            if (!selectedNames.Add(requestedName))
+            {
+                throw new InvalidOperationException(
+                    $"Environment variable '{StockFastFileAllowlistEnvironmentVariable}' requests '{requestedName}' more than once.");
+            }
+
+            string[] matches = discoveredPaths
+                .Where(path => string.Equals(
+                    Path.GetFileName(path),
+                    requestedName,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (matches.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Environment variable '{StockFastFileAllowlistEnvironmentVariable}' requests unknown stock fastfile '{requestedName}'.");
+            }
+
+            if (matches.Length != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Environment variable '{StockFastFileAllowlistEnvironmentVariable}' entry '{requestedName}' " +
+                    "matches more than one discovered stock fastfile.");
+            }
+
+            selectedPaths.Add(matches[0]);
+        }
+
+        if (selectedPaths.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Environment variable '{StockFastFileAllowlistEnvironmentVariable}' produced an empty fastfile selection.");
+        }
+
+        return selectedPaths.OrderBy(path => path, StringComparer.Ordinal);
     }
 
     private static string CreateTemporaryDirectory()

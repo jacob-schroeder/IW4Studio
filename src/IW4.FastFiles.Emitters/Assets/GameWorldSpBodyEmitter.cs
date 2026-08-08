@@ -333,12 +333,13 @@ public sealed class GameWorldSpBodyEmitter : IXAssetBodyEmitter
         EmissionBlockSegment? links,
         int nodeIndex)
     {
+        int startPosition = writer.Position;
         PathNodeConstant constant = value.Constant; PathNodeDynamic dynamic = value.Dynamic; PathNodeTransient transient = value.Transient;
         string prefix = $"path.nodes[{nodeIndex}].constant";
         writer.WriteInt32(constant.NodeType); writer.WriteUInt16(constant.SpawnFlags); Script(writer, constant.TargetName, $"{prefix}.targetName"); Script(writer, constant.ScriptLinkName, $"{prefix}.scriptLinkName"); Script(writer, constant.ScriptNoteworthy, $"{prefix}.scriptNoteworthy"); Script(writer, constant.Target, $"{prefix}.target"); Script(writer, constant.AnimScript, $"{prefix}.animScript"); writer.WriteInt32(constant.AnimScriptFunc); WriteVec3(writer, constant.Origin); writer.WriteSingle(constant.Angle); writer.WriteSingle(constant.ForwardX); writer.WriteSingle(constant.ForwardY); writer.WriteSingle(constant.Radius); writer.WriteSingle(constant.MinUseDistSq); writer.WriteUInt16(unchecked((ushort)constant.OverlapNode0)); writer.WriteUInt16(unchecked((ushort)constant.OverlapNode1)); writer.WriteUInt16(constant.TotalLinkCount); writer.WriteUInt16(constant.Pad3A); writer.WriteInt32(Pointer(links));
         writer.WriteUInt16(dynamic.OwnerHandle); writer.WriteUInt16(dynamic.Pad42); writer.WriteInt32(dynamic.FreeTime); WriteInts(writer, dynamic.ValidTimes, 3, "PathNode.dynamic.validTimes"); WriteInts(writer, dynamic.DangerousNodeTimes, 3, "PathNode.dynamic.dangerousNodeTimes"); writer.WriteInt32(dynamic.InPlayerLosTime); writer.WriteUInt16(unchecked((ushort)dynamic.LinkCount)); writer.WriteUInt16(unchecked((ushort)dynamic.OverlapCount)); writer.WriteUInt16(unchecked((ushort)dynamic.TurretEntityNumber)); writer.WriteByte(dynamic.UserCount); writer.WriteByte(dynamic.HasBadPlaceLink ? (byte)1 : (byte)0);
         writer.WriteInt32(transient.SearchFrame); writer.WriteUInt32(transient.NextOpenRuntimePointer); writer.WriteUInt32(transient.PreviousOpenRuntimePointer); writer.WriteUInt32(transient.ParentRuntimePointer); writer.WriteSingle(transient.Cost); writer.WriteSingle(transient.Heuristic); writer.WriteUInt32(transient.NodeCostOrLinkIndexBits);
-        Exact(writer, PathNode.SerializedSize, "PathNode");
+        Exact(writer.Position - startPosition, PathNode.SerializedSize, "PathNode");
     }
     private static void WritePathLink(XSourceWriter writer, PathLink value) { writer.WriteSingle(value.Distance); writer.WriteUInt16(value.NodeNumber); writer.WriteByte(value.DisconnectCount); writer.WriteByte(value.NegotiationLink); writer.WriteByte(value.BadPlaceCount0); writer.WriteByte(value.BadPlaceCount1); writer.WriteByte(value.BadPlaceCount2); writer.WriteByte(value.BadPlaceCount3); }
     private static void WriteVehicleSector(XSourceWriter writer, VehicleTrackSector value, EmissionBlockSegment? obstacles)
@@ -358,6 +359,7 @@ public sealed class GameWorldSpBodyEmitter : IXAssetBodyEmitter
     private static int Pointer(EmissionBlockSegment? value) => value is null ? 0 : -1;
     private static int Pointer(bool present) => present ? -1 : 0;
     private static void Add(List<EmissionBlockSegment> values, EmissionBlockSegment? value) { if (value is not null) values.Add(value); }
+    private static void Exact(int actual, int expected, string name) { if (actual != expected) throw new InvalidDataException($"{name} emission produced 0x{actual:X} bytes instead of 0x{expected:X}."); }
     private static void Exact(XSourceWriter writer, int expected, string name) { if (writer.Position != expected) throw new InvalidDataException($"{name} emission produced 0x{writer.Position:X} bytes instead of 0x{expected:X}."); }
     private static void String(string? value, string path, List<EmissionError> errors, int? rowIndex) { if (value is not null && !AssetBodyEmitterHelpers.IsLatin1CString(value)) errors.Add(Error(path, "XString must be a Latin-1 C string.", rowIndex)); }
     private static void ValidatePath(PathData path, List<EmissionError> errors, int? rowIndex)
