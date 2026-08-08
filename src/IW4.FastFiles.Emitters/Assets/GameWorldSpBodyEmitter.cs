@@ -79,6 +79,7 @@ public sealed class GameWorldSpBodyEmitter : IXAssetBodyEmitter
             var writer = new XSourceWriter();
             for (int index = 0; index < path.Nodes.Count; index++)
                 WritePathNode(writer, path.Nodes[index], linkPlans[index], index);
+            Exact(writer, checked(path.Nodes.Count * PathNode.SerializedSize), "PathNode array");
             nodes = new EmissionBlockSegment(address, writer.ToArray()); all.Add(nodes);
             foreach (EmissionBlockSegment? child in linkPlans) Add(nodeChildren, child);
         }
