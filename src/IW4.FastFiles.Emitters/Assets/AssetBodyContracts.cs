@@ -404,6 +404,7 @@ public interface ITracerBuildData : IXAssetBuildData
 {
     string? Name { get; }
     SymbolicXAssetReference? MaterialReference { get; }
+    NestedXAssetBuildLink? MaterialLink => null;
     uint DrawInterval { get; }
     float Speed { get; }
     float BeamLength { get; }
@@ -698,6 +699,8 @@ public interface IFontBuildData : IXAssetBuildData
     int PixelHeight { get; }
     SymbolicXAssetReference? MaterialReference { get; }
     SymbolicXAssetReference? GlowMaterialReference { get; }
+    NestedXAssetBuildLink? MaterialLink => null;
+    NestedXAssetBuildLink? GlowMaterialLink => null;
     IReadOnlyList<FontGlyphBuildData> Glyphs { get; }
 }
 
@@ -761,11 +764,29 @@ public interface ITechniqueSetBuildData : IXAssetBuildData
 
 public readonly record struct MaterialVec2BuildData(float X, float Y);
 public readonly record struct MaterialConstantBuildData(uint NameHash, byte[] NameBytes, Float4BuildData Literal);
+public enum MaterialWaterPointerSourceForm
+{
+    Null,
+    Inline,
+    PackedAlias
+}
+
+/// <summary>
+/// Exact direct-pointer source form for the semantic 0x0b MaterialTextureDef
+/// arm. InlineOwnerRaw identifies the original LARGE water_t root; a packed
+/// alias retains its exact source raw for relocation or compatibility-mode
+/// preservation when its owner is outside this zone.
+/// </summary>
+public sealed record MaterialWaterPointerBuildProvenance(
+    MaterialWaterPointerSourceForm SourceForm,
+    int? InlineOwnerRaw = null,
+    int? ImportedPackedRaw = null);
+
 public sealed class MaterialTextureBuildData
 {
-    public MaterialTextureBuildData(uint nameHash, byte nameStart, byte nameEnd, byte samplerState, byte semantic, SymbolicXAssetReference? imageReference, MaterialWaterBuildData? water, NestedXAssetBuildLink? imageLink = null)
-    { NameHash = nameHash; NameStart = nameStart; NameEnd = nameEnd; SamplerState = samplerState; Semantic = semantic; ImageReference = imageReference; Water = water; ImageLink = imageLink; }
-    public uint NameHash { get; } public byte NameStart { get; } public byte NameEnd { get; } public byte SamplerState { get; } public byte Semantic { get; } public SymbolicXAssetReference? ImageReference { get; } public MaterialWaterBuildData? Water { get; } public NestedXAssetBuildLink? ImageLink { get; }
+    public MaterialTextureBuildData(uint nameHash, byte nameStart, byte nameEnd, byte samplerState, byte semantic, SymbolicXAssetReference? imageReference, MaterialWaterBuildData? water, NestedXAssetBuildLink? imageLink = null, MaterialWaterPointerBuildProvenance? waterPointerProvenance = null)
+    { NameHash = nameHash; NameStart = nameStart; NameEnd = nameEnd; SamplerState = samplerState; Semantic = semantic; ImageReference = imageReference; Water = water; ImageLink = imageLink; WaterPointerProvenance = waterPointerProvenance; }
+    public uint NameHash { get; } public byte NameStart { get; } public byte NameEnd { get; } public byte SamplerState { get; } public byte Semantic { get; } public SymbolicXAssetReference? ImageReference { get; } public MaterialWaterBuildData? Water { get; } public NestedXAssetBuildLink? ImageLink { get; } public MaterialWaterPointerBuildProvenance? WaterPointerProvenance { get; }
 }
 public sealed class MaterialWaterBuildData
 {

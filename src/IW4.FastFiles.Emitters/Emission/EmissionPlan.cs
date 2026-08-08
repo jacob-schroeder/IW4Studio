@@ -129,6 +129,7 @@ public sealed class EmissionPlan
     private readonly Dictionary<int, EmissionAddress> _materialTechniqueOwnersByImportedRaw = [];
     private readonly Dictionary<int, EmissionAddress> _materialVertexDeclarationOwnersByImportedRaw = [];
     private readonly Dictionary<int, EmissionAddress> _materialLiteralOwnersByImportedRaw = [];
+    private readonly Dictionary<int, EmissionAddress> _materialWaterOwnersByImportedRaw = [];
     private readonly Dictionary<int, EmissionAddress> _materialShaderBytecodeAliasCellsByImportedRaw = [];
     private readonly Dictionary<int, EmissionAddress> _materialLoadBitsAliasCells = [];
     private readonly Dictionary<object, EmissionAddress> _persistentObjectAliases =
@@ -278,6 +279,22 @@ public sealed class EmissionPlan
             importedRaw,
             address,
             "MaterialShaderLiteralConstant");
+
+    internal bool TryGetMaterialWaterOwner(
+        int importedRaw,
+        out EmissionAddress address) =>
+        _materialWaterOwnersByImportedRaw.TryGetValue(
+            importedRaw,
+            out address);
+
+    internal void RegisterMaterialWaterOwner(
+        int importedRaw,
+        EmissionAddress address) =>
+        RegisterLargeDirectOwner(
+            _materialWaterOwnersByImportedRaw,
+            importedRaw,
+            address,
+            "MaterialWater");
 
     internal bool TryGetMaterialShaderBytecodeAliasCell(
         int importedRaw,

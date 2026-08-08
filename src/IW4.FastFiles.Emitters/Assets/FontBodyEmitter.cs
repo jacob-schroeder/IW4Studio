@@ -3,9 +3,7 @@ using IW4.FastFiles.Emitters.Emission;
 
 namespace IW4.FastFiles.Emitters.Assets;
 
-/// <summary>Deterministic Font root, external Material references, and glyph table.
-/// Material links are deliberately represented only as comma-prefixed external
-/// references; target-owned Material rows retain their own serialization root.</summary>
+/// <summary>Deterministic Font root, Material pointer topology, and glyph table.</summary>
 public sealed class FontBodyEmitter : IXAssetBodyEmitter
 {
     public XAssetType AssetType => XAssetType.Font;
@@ -19,8 +17,8 @@ public sealed class FontBodyEmitter : IXAssetBodyEmitter
             return diagnostics;
         }
         if (data.Name is { } name && !AssetBodyEmitterHelpers.IsLatin1CString(name)) diagnostics.Add(new("name", "Font name must be a Latin-1 C string.", rowIndex, AssetType));
-        ValidateReference(data.MaterialReference, "material", diagnostics, rowIndex);
-        ValidateReference(data.GlowMaterialReference, "glowMaterial", diagnostics, rowIndex);
+        ValidateMaterial(data.MaterialReference, data.MaterialLink, "material", diagnostics, rowIndex);
+        ValidateMaterial(data.GlowMaterialReference, data.GlowMaterialLink, "glowMaterial", diagnostics, rowIndex);
         for (int index = 0; index < data.Glyphs.Count; index++)
         {
             FontGlyphBuildData glyph = data.Glyphs[index];
@@ -43,8 +41,20 @@ public sealed class FontBodyEmitter : IXAssetBodyEmitter
         PlannedString? name = AssetBodyEmitterHelpers.PlanString(data.Name, plan, segments, plan.StringAliases);
         int afterName = segments.Count;
         plan.Pop(XFileBlockType.LARGE);
-        var material = PlanMaterialReference(data.MaterialReference, plan, segments);
-        var glowMaterial = PlanMaterialReference(data.GlowMaterialReference, plan, segments);
+        MaterialPlan material = PlanMaterial(
+            data.MaterialReference,
+            data.MaterialLink,
+            plan,
+            segments,
+            new EmissionAddress(root.Block, checked(root.Offset + 0x0c)),
+            "Font.Material");
+        MaterialPlan glowMaterial = PlanMaterial(
+            data.GlowMaterialReference,
+            data.GlowMaterialLink,
+            plan,
+            segments,
+            new EmissionAddress(root.Block, checked(root.Offset + 0x10)),
+            "Font.GlowMaterial");
         EmissionAddress? glyphAddress = null;
         EmissionBlockSegment? glyphSegment = null;
         if (data.Glyphs.Count != 0)
@@ -64,34 +74,77 @@ public sealed class FontBodyEmitter : IXAssetBodyEmitter
         plan.Pop(XFileBlockType.TEMP);
         var writer = new XSourceWriter();
         writer.WriteInt32(AssetBodyEmitterHelpers.SourcePointer(name)); writer.WriteInt32(data.PixelHeight); writer.WriteInt32(data.Glyphs.Count);
-        writer.WriteInt32(material?.RootAddress is null ? 0 : -1); writer.WriteInt32(glowMaterial?.RootAddress is null ? 0 : -1); writer.WriteInt32(glyphAddress is null ? 0 : -1);
+        writer.WriteInt32(material.PointerRaw); writer.WriteInt32(glowMaterial.PointerRaw); writer.WriteInt32(glyphAddress is null ? 0 : -1);
         var rootSegment = new EmissionBlockSegment(root, writer.ToArray()); segments.Add(rootSegment);
         // Loader order is root, Font name, each nested Material body (each
         // with its own TEMP/LARGE transition), then the glyph table.
         var source = new List<EmissionBlockSegment> { rootSegment };
         source.AddRange(segments.Skip(beforeName).Take(afterName - beforeName));
-        if (material is not null) source.AddRange(material.SourceSegments);
-        if (glowMaterial is not null) source.AddRange(glowMaterial.SourceSegments);
+        source.AddRange(material.SourceSegments);
+        source.AddRange(glowMaterial.SourceSegments);
         if (glyphSegment is not null) source.Add(glyphSegment);
         return new AssetBodyEmission(AssetType, root, segments, source);
     }
 
-    private static AssetBodyEmission? PlanMaterialReference(SymbolicXAssetReference? reference, EmissionPlan plan, List<EmissionBlockSegment> all)
+    private static MaterialPlan PlanMaterial(
+        SymbolicXAssetReference? reference,
+        NestedXAssetBuildLink? link,
+        EmissionPlan plan,
+        List<EmissionBlockSegment> all,
+        EmissionAddress ownerCell,
+        string owner)
     {
-        if (reference is null) return null;
+        if (link is { } retained)
+        {
+            NestedXAssetPlan nested = NestedXAssetEmission.Plan(
+                retained,
+                plan,
+                all,
+                ownerCell,
+                owner);
+            return new MaterialPlan(nested.PointerRaw, nested.Source);
+        }
+        if (reference is null) return new MaterialPlan(0, []);
         plan.Push(XFileBlockType.TEMP); EmissionAddress root = plan.Allocate(0xa8, 4);
         plan.Push(XFileBlockType.LARGE); EmissionAddress name = plan.Allocate(checked(reference.OriginalSerializedName.Length + 1)); plan.Pop(XFileBlockType.LARGE); plan.Pop(XFileBlockType.TEMP);
         var rootWriter = new XSourceWriter(); rootWriter.WriteInt32(-1); rootWriter.Reserve(0xa4);
         var nameWriter = new XSourceWriter(); nameWriter.WriteLatin1CString(reference.OriginalSerializedName);
         var emission = new AssetBodyEmission(XAssetType.Material, root, [new EmissionBlockSegment(root, rootWriter.ToArray()), new EmissionBlockSegment(name, nameWriter.ToArray())]);
         all.AddRange(emission.Segments);
-        return emission;
+        return new MaterialPlan(-1, emission.SourceSegments);
     }
 
-    private static void ValidateReference(SymbolicXAssetReference? reference, string path, List<EmissionError> diagnostics, int? rowIndex)
+    private static void ValidateMaterial(
+        SymbolicXAssetReference? reference,
+        NestedXAssetBuildLink? link,
+        string path,
+        List<EmissionError> diagnostics,
+        int? rowIndex)
     {
+        if (link is not null)
+        {
+            diagnostics.AddRange(NestedXAssetEmission.Validate(
+                link,
+                XAssetType.Material,
+                path,
+                rowIndex,
+                XAssetType.Font));
+            if (reference != link.Reference)
+            {
+                diagnostics.Add(new(
+                    path,
+                    "Retained Material link identity must equal the parallel Material reference.",
+                    rowIndex,
+                    XAssetType.Font));
+            }
+            return;
+        }
         if (reference is null) return;
         if (reference.AssetType != XAssetType.Material || !reference.IsExternalReference || !AssetBodyEmitterHelpers.IsLatin1CString(reference.OriginalSerializedName))
             diagnostics.Add(new(path, "Font Material references must be comma-prefixed Latin-1 external Material identities.", rowIndex, XAssetType.Font));
     }
+
+    private sealed record MaterialPlan(
+        int PointerRaw,
+        IReadOnlyList<EmissionBlockSegment> SourceSegments);
 }

@@ -133,11 +133,16 @@ public sealed class TracerDefLoader
 
         string? name;
         MaterialAsset? material;
+        MaterialAsset? materialIncomingDefinition;
         context.Blocks.Push(XFileBlockType.LARGE);
         try
         {
             name = context.PointerReader.LoadXString(cursor, namePointer);
-            material = _materialLoader.LoadFromPointer(cursor, materialPointer.Untyped, context);
+            material = _materialLoader.LoadFromPointer(
+                cursor,
+                materialPointer.Untyped,
+                context,
+                out materialIncomingDefinition);
         }
         finally
         {
@@ -153,6 +158,7 @@ public sealed class TracerDefLoader
             Name = name,
             MaterialPointer = materialPointer,
             Material = material,
+            MaterialIncomingDefinition = materialIncomingDefinition,
             DrawInterval = drawInterval,
             Speed = speed,
             BeamLength = beamLength,

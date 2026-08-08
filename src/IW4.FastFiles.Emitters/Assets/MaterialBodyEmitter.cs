@@ -1,5 +1,6 @@
 using IW4.FastFiles.Zone;
 using IW4.FastFiles.Emitters.Emission;
+using IW4.FastFiles.Pointers;
 
 namespace IW4.FastFiles.Emitters.Assets;
 
@@ -444,11 +445,29 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
         EmissionPlan plan,
         List<EmissionBlockSegment> all)
     {
-        if (data.Water is { } water)
+        if (data.Semantic == 0x0b)
         {
-            IReadOnlyList<EmissionBlockSegment> source =
-                PlanWater(water, plan, all);
-            return new TexturePlan(data, -1, source);
+            MaterialWaterPointerBuildProvenance provenance =
+                data.WaterPointerProvenance
+                ?? throw new InvalidDataException(
+                    "Semantic 0x0b MaterialTextureDef has no water pointer provenance.");
+            return provenance.SourceForm switch
+            {
+                MaterialWaterPointerSourceForm.Null =>
+                    new TexturePlan(data, 0, []),
+                MaterialWaterPointerSourceForm.Inline => PlanInlineWater(
+                    data,
+                    provenance,
+                    plan,
+                    all),
+                MaterialWaterPointerSourceForm.PackedAlias => PlanPackedWater(
+                    data,
+                    provenance,
+                    plan,
+                    all),
+                _ => throw new InvalidDataException(
+                    $"Unsupported MaterialWater pointer source form {provenance.SourceForm}.")
+            };
         }
 
         ChildPointerPlan image = PlanNestedReference(
@@ -463,7 +482,52 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
         return new TexturePlan(data, image.PointerRaw, image.Source);
     }
 
-    private static IReadOnlyList<EmissionBlockSegment> PlanWater(
+    private static TexturePlan PlanInlineWater(
+        MaterialTextureBuildData texture,
+        MaterialWaterPointerBuildProvenance provenance,
+        EmissionPlan plan,
+        List<EmissionBlockSegment> all)
+    {
+        WaterPlan water = PlanWater(
+            texture.Water
+            ?? throw new InvalidDataException(
+                "Inline MaterialWater provenance has no water body."),
+            plan,
+            all);
+        plan.RegisterMaterialWaterOwner(
+            provenance.InlineOwnerRaw
+            ?? throw new InvalidDataException(
+                "Inline MaterialWater provenance has no owner raw value."),
+            water.Root);
+        return new TexturePlan(texture, -1, water.Source);
+    }
+
+    private static TexturePlan PlanPackedWater(
+        MaterialTextureBuildData texture,
+        MaterialWaterPointerBuildProvenance provenance,
+        EmissionPlan plan,
+        List<EmissionBlockSegment> all)
+    {
+        int importedRaw = provenance.ImportedPackedRaw
+            ?? throw new InvalidDataException(
+                "Packed MaterialWater provenance has no imported raw value.");
+        if (plan.TryGetMaterialWaterOwner(importedRaw, out EmissionAddress existing))
+            return new TexturePlan(texture, existing.ToPackedPointer(), []);
+
+        if (plan.PreserveImportedXAssetPointerValues)
+            return new TexturePlan(texture, importedRaw, []);
+
+        WaterPlan water = PlanWater(
+            texture.Water
+            ?? throw new InvalidDataException(
+                "Packed MaterialWater provenance has no detached water body."),
+            plan,
+            all);
+        plan.RegisterMaterialWaterOwner(importedRaw, water.Root);
+        return new TexturePlan(texture, -1, water.Source);
+    }
+
+    private static WaterPlan PlanWater(
         MaterialWaterBuildData data,
         EmissionPlan plan,
         List<EmissionBlockSegment> all)
@@ -512,7 +576,7 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
         Add(source, h0y);
         Add(source, wterm);
         source.AddRange(image.Source);
-        return source;
+        return new WaterPlan(root, source);
     }
 
     private static ChildPointerPlan PlanNestedReference(
@@ -650,17 +714,16 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
         int? rowIndex)
     {
         bool water = value.Semantic == 0x0b;
-        if (water != (value.Water is not null))
-        {
-            diagnostics.Add(new(
-                $"textures[{index}]",
-                "Semantic 0x0b is exactly the MaterialWater union arm; all other semantics are GfxImage references.",
-                rowIndex,
-                XAssetType.Material));
-        }
-
         if (!water)
         {
+            if (value.Water is not null || value.WaterPointerProvenance is not null)
+            {
+                diagnostics.Add(new(
+                    $"textures[{index}]",
+                    "Non-water semantics cannot retain MaterialWater data or provenance.",
+                    rowIndex,
+                    XAssetType.Material));
+            }
             if (value.ImageLink is { } imageLink)
             {
                 diagnostics.AddRange(NestedXAssetEmission.Validate(
@@ -679,9 +742,80 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
                     diagnostics,
                     rowIndex);
             }
+            return;
         }
 
-        if (!water || value.Water is not { } data)
+        if (value.ImageReference is not null || value.ImageLink is not null)
+        {
+            diagnostics.Add(new(
+                $"textures[{index}]",
+                "Semantic 0x0b stores only a direct MaterialWater pointer; outer image data is forbidden.",
+                rowIndex,
+                XAssetType.Material));
+        }
+
+        MaterialWaterPointerBuildProvenance? provenance =
+            value.WaterPointerProvenance;
+        if (provenance is null)
+        {
+            diagnostics.Add(new(
+                $"textures[{index}].waterPointer",
+                "Semantic 0x0b requires MaterialWater pointer provenance.",
+                rowIndex,
+                XAssetType.Material));
+            return;
+        }
+
+        switch (provenance.SourceForm)
+        {
+            case MaterialWaterPointerSourceForm.Null:
+                if (value.Water is not null ||
+                    provenance.InlineOwnerRaw is not null ||
+                    provenance.ImportedPackedRaw is not null)
+                {
+                    diagnostics.Add(new(
+                        $"textures[{index}].waterPointer",
+                        "Null MaterialWater provenance requires no water body or raw pointer values.",
+                        rowIndex,
+                        XAssetType.Material));
+                }
+                return;
+            case MaterialWaterPointerSourceForm.Inline:
+                if (value.Water is null ||
+                    provenance.ImportedPackedRaw is not null ||
+                    provenance.InlineOwnerRaw is not { } inlineOwnerRaw ||
+                    !IsPackedLargePointer(inlineOwnerRaw))
+                {
+                    diagnostics.Add(new(
+                        $"textures[{index}].waterPointer",
+                        "Inline MaterialWater provenance requires a water body and a packed LARGE owner raw value only.",
+                        rowIndex,
+                        XAssetType.Material));
+                }
+                break;
+            case MaterialWaterPointerSourceForm.PackedAlias:
+                if (value.Water is null ||
+                    provenance.InlineOwnerRaw is not null ||
+                    provenance.ImportedPackedRaw is not { } importedPackedRaw ||
+                    !IsPackedLargePointer(importedPackedRaw))
+                {
+                    diagnostics.Add(new(
+                        $"textures[{index}].waterPointer",
+                        "Packed MaterialWater provenance requires a water body and a packed LARGE imported raw value only.",
+                        rowIndex,
+                        XAssetType.Material));
+                }
+                break;
+            default:
+                diagnostics.Add(new(
+                    $"textures[{index}].waterPointer",
+                    $"Unsupported MaterialWater pointer source form {provenance.SourceForm}.",
+                    rowIndex,
+                    XAssetType.Material));
+                return;
+        }
+
+        if (value.Water is not { } data)
             return;
 
         int count;
@@ -757,6 +891,12 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
             rowIndex);
     }
 
+    private static bool IsPackedLargePointer(int raw) =>
+        XPointerCodec.TryDecodeBlockAddress(
+            raw,
+            out XBlockAddress address) &&
+        address.BlockType == XFileBlockType.LARGE;
+
     private static void CheckReference(
         SymbolicXAssetReference? value,
         XAssetType type,
@@ -829,5 +969,9 @@ public sealed class MaterialBodyEmitter : IXAssetBodyEmitter
     private sealed record TexturePlan(
         MaterialTextureBuildData Data,
         int DataPointerRaw,
+        IReadOnlyList<EmissionBlockSegment> Source);
+
+    private sealed record WaterPlan(
+        EmissionAddress Root,
         IReadOnlyList<EmissionBlockSegment> Source);
 }

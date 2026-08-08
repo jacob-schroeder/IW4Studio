@@ -265,6 +265,13 @@ public static class MenuPreviewProjector
                     "Cinematic playback is not available in Editor Preview.",
                     MenuPreviewFidelitySeverity.Warning));
                 break;
+            case WindowStyle.WINDOW_STYLE_UNKNOWN_6:
+                issues.Add(new MenuPreviewFidelityIssue(
+                    nodeId,
+                    $"{path}.style",
+                    "Window style value 6 is not rendered because its engine behavior is unknown.",
+                    MenuPreviewFidelitySeverity.Warning));
+                break;
             default:
                 issues.Add(new MenuPreviewFidelityIssue(
                     nodeId,
@@ -296,12 +303,13 @@ public static class MenuPreviewProjector
                     "KC gradient borders are approximated by horizontal solid edges.",
                     MenuPreviewFidelitySeverity.Warning));
             }
-            else if (!Enum.IsDefined(window.Border))
+            else if (window.Border == WindowBorder.WINDOW_BORDER_UNKNOWN_5 ||
+                     !Enum.IsDefined(window.Border))
             {
                 issues.Add(new MenuPreviewFidelityIssue(
                     nodeId,
                     $"{path}.border",
-                    $"Unknown border value {(int)window.Border} is approximated by a full border.",
+                    $"Border value {(int)window.Border} is approximated by a full border.",
                     MenuPreviewFidelitySeverity.Warning));
             }
         }

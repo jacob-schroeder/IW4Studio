@@ -394,11 +394,11 @@ internal static class DetachedAssetSemanticSnapshotFactory
 public sealed class TracerAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
 {
     private readonly TracerColorBuildData[] _colors;
-    internal TracerAuthoredSnapshot(string? name, SymbolicXAssetReference? materialReference, uint drawInterval, float speed, float beamLength, float beamWidth, float screwRadius, float screwDistance, IEnumerable<TracerColorBuildData> colors)
+    internal TracerAuthoredSnapshot(string? name, SymbolicXAssetReference? materialReference, uint drawInterval, float speed, float beamLength, float beamWidth, float screwRadius, float screwDistance, IEnumerable<TracerColorBuildData> colors, NestedXAssetBuildLink? materialLink = null)
     {
-        Name = name; MaterialReference = materialReference; DrawInterval = drawInterval; Speed = speed; BeamLength = beamLength; BeamWidth = beamWidth; ScrewRadius = screwRadius; ScrewDistance = screwDistance; _colors = colors.ToArray();
+        Name = name; MaterialReference = materialReference; DrawInterval = drawInterval; Speed = speed; BeamLength = beamLength; BeamWidth = beamWidth; ScrewRadius = screwRadius; ScrewDistance = screwDistance; _colors = colors.ToArray(); MaterialLink = materialLink;
     }
-    public XAssetType AssetType => XAssetType.Tracer; public string? Name { get; } public SymbolicXAssetReference? MaterialReference { get; }
+    public XAssetType AssetType => XAssetType.Tracer; public string? Name { get; } public SymbolicXAssetReference? MaterialReference { get; } public NestedXAssetBuildLink? MaterialLink { get; }
     public uint DrawInterval { get; } public float Speed { get; } public float BeamLength { get; } public float BeamWidth { get; } public float ScrewRadius { get; } public float ScrewDistance { get; }
     public IReadOnlyList<TracerColorBuildData> Colors => Array.AsReadOnly(_colors);
     internal static TracerAuthoredSnapshot Import(TargetZoneRowSource source)
@@ -407,7 +407,30 @@ public sealed class TracerAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
         if (source.AuthoredDefinition!.SemanticSnapshot is TracerAuthoredSnapshot captured) return captured;
         throw TargetZoneDetachedSnapshotRequirements.Missing(XAssetType.Tracer);
     }
-    internal static TracerAuthoredSnapshot FromLoaded(TracerDefAsset asset) => new(asset.Name, Reference(XAssetType.Material, asset.Material?.Info.Name), asset.DrawInterval, asset.Speed, asset.BeamLength, asset.BeamWidth, asset.ScrewRadius, asset.ScrewDistance, asset.Colors.Select(color => new TracerColorBuildData(color.Red, color.Green, color.Blue, color.Alpha)));
+    internal static TracerAuthoredSnapshot FromLoaded(TracerDefAsset asset)
+    {
+        NestedXAssetBuildLink? materialLink = CaptureMaterialLink(asset);
+        return new(asset.Name, materialLink?.Reference ?? Reference(XAssetType.Material, asset.Material?.Info.Name), asset.DrawInterval, asset.Speed, asset.BeamLength, asset.BeamWidth, asset.ScrewRadius, asset.ScrewDistance, asset.Colors.Select(color => new TracerColorBuildData(color.Red, color.Green, color.Blue, color.Alpha)), materialLink);
+    }
+    private static NestedXAssetBuildLink? CaptureMaterialLink(TracerDefAsset asset)
+    {
+        string? name = asset.MaterialIncomingDefinition?.Info.Name ?? asset.Material?.Info.Name;
+        if (asset.MaterialPointer.Type == PointerType.Null || name is null) return null;
+        NestedXAssetPointerSourceForm sourceForm = asset.MaterialPointer.Type switch
+        {
+            PointerType.Inline => NestedXAssetPointerSourceForm.Inline,
+            PointerType.Insert => NestedXAssetPointerSourceForm.Insert,
+            PointerType.Offset => NestedXAssetPointerSourceForm.PackedAlias,
+            _ => throw new InvalidDataException($"Unsupported nested Tracer Material source form {asset.MaterialPointer.Type}.")
+        };
+        var graph = new MaterialGraphClone();
+        return new NestedXAssetBuildLink(
+            new SymbolicXAssetReference(XAssetType.Material, name),
+            sourceForm,
+            asset.MaterialIncomingDefinition is null ? null : MaterialAuthoredSnapshot.FromLoaded(asset.MaterialIncomingDefinition, graph).Data,
+            sourceForm == NestedXAssetPointerSourceForm.PackedAlias ? asset.MaterialPointer.Raw : null,
+            asset.MaterialPointer.CellAddress is { } ownerCell ? XPointerCodec.Encode(ownerCell) : null);
+    }
     private static SymbolicXAssetReference? Reference(XAssetType type, string? name) => name is null ? null : new SymbolicXAssetReference(type, name);
     private static void RequireDefinition(TargetZoneRowSource source, XAssetType type) { ArgumentNullException.ThrowIfNull(source); if (source.SerializedType != type || source.State != TargetZoneRowSourceState.Definition || source.AuthoredDefinition is null) throw new InvalidDataException($"Only an authored {type} definition can open a detached draft."); }
 }
@@ -415,20 +438,22 @@ public sealed class TracerAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
 public sealed class TracerDraft
 {
     private readonly TracerColorBuildData[] _colors;
-    internal TracerDraft(TracerAuthoredSnapshot source) { Name = source.Name; MaterialReference = source.MaterialReference; DrawInterval = source.DrawInterval; Speed = source.Speed; BeamLength = source.BeamLength; BeamWidth = source.BeamWidth; ScrewRadius = source.ScrewRadius; ScrewDistance = source.ScrewDistance; _colors = source.Colors.ToArray(); }
+    private NestedXAssetBuildLink? _materialLink;
+    internal TracerDraft(TracerAuthoredSnapshot source) { Name = source.Name; MaterialReference = source.MaterialReference; DrawInterval = source.DrawInterval; Speed = source.Speed; BeamLength = source.BeamLength; BeamWidth = source.BeamWidth; ScrewRadius = source.ScrewRadius; ScrewDistance = source.ScrewDistance; _colors = source.Colors.ToArray(); _materialLink = source.MaterialLink; }
     public string? Name { get; } public SymbolicXAssetReference? MaterialReference { get; private set; } public uint DrawInterval { get; private set; } public float Speed { get; private set; } public float BeamLength { get; private set; } public float BeamWidth { get; private set; } public float ScrewRadius { get; private set; } public float ScrewDistance { get; private set; }
     public IReadOnlyList<TracerColorBuildData> Colors => Array.AsReadOnly(_colors.ToArray());
-    public void SetMaterialReference(SymbolicXAssetReference? value) => MaterialReference = value;
+    internal NestedXAssetBuildLink? MaterialLink => _materialLink;
+    public void SetMaterialReference(SymbolicXAssetReference? value) { MaterialReference = value; _materialLink = null; }
     public void SetDrawInterval(uint value) => DrawInterval = value; public void SetSpeed(float value) => Speed = value; public void SetBeamLength(float value) => BeamLength = value; public void SetBeamWidth(float value) => BeamWidth = value; public void SetScrewRadius(float value) => ScrewRadius = value; public void SetScrewDistance(float value) => ScrewDistance = value;
     public void SetColor(int index, TracerColorBuildData value) { if ((uint)index >= _colors.Length) throw new ArgumentOutOfRangeException(nameof(index)); _colors[index] = value; }
-    internal TracerDraft Clone() => new(new TracerAuthoredSnapshot(Name, MaterialReference, DrawInterval, Speed, BeamLength, BeamWidth, ScrewRadius, ScrewDistance, _colors));
+    internal TracerDraft Clone() => new(new TracerAuthoredSnapshot(Name, MaterialReference, DrawInterval, Speed, BeamLength, BeamWidth, ScrewRadius, ScrewDistance, _colors, _materialLink));
 }
 
 public sealed class TracerBuildData : ITracerBuildData
 {
     private readonly TracerColorBuildData[] _colors;
-    internal TracerBuildData(TracerDraft draft) { Name = draft.Name; MaterialReference = draft.MaterialReference; DrawInterval = draft.DrawInterval; Speed = draft.Speed; BeamLength = draft.BeamLength; BeamWidth = draft.BeamWidth; ScrewRadius = draft.ScrewRadius; ScrewDistance = draft.ScrewDistance; _colors = draft.Colors.ToArray(); }
-    public XAssetType AssetType => XAssetType.Tracer; public string? Name { get; } public SymbolicXAssetReference? MaterialReference { get; } public uint DrawInterval { get; } public float Speed { get; } public float BeamLength { get; } public float BeamWidth { get; } public float ScrewRadius { get; } public float ScrewDistance { get; }
+    internal TracerBuildData(TracerDraft draft) { Name = draft.Name; MaterialReference = draft.MaterialReference; MaterialLink = draft.MaterialLink; DrawInterval = draft.DrawInterval; Speed = draft.Speed; BeamLength = draft.BeamLength; BeamWidth = draft.BeamWidth; ScrewRadius = draft.ScrewRadius; ScrewDistance = draft.ScrewDistance; _colors = draft.Colors.ToArray(); }
+    public XAssetType AssetType => XAssetType.Tracer; public string? Name { get; } public SymbolicXAssetReference? MaterialReference { get; } public NestedXAssetBuildLink? MaterialLink { get; } public uint DrawInterval { get; } public float Speed { get; } public float BeamLength { get; } public float BeamWidth { get; } public float ScrewRadius { get; } public float ScrewDistance { get; }
     public IReadOnlyList<TracerColorBuildData> Colors => Array.AsReadOnly(_colors);
 }
 
@@ -437,7 +462,7 @@ public sealed class TracerAuthoringAdapter : AssetAuthoringAdapter<TracerAuthore
     private static readonly TracerBodyEmitter Validator = new();
     public override XAssetType AssetType => XAssetType.Tracer; public override TracerAuthoredSnapshot ImportAuthoredSnapshot(TargetZoneRowSource source) => TracerAuthoredSnapshot.Import(source); public override TracerDraft CreateDraft(TracerAuthoredSnapshot snapshot) => new(snapshot); public override TracerDraft CloneDraft(TracerDraft draft) => draft.Clone();
     public override IReadOnlyList<AssetValidationIssue> ValidateDraft(TracerDraft draft) => Validator.Validate(new TracerBuildData(draft)).Select(value => new AssetValidationIssue(value.Path, value.Message, AssetValidationSeverity.Error)).ToArray();
-    public override bool SemanticallyEquals(TracerDraft left, TracerDraft right) => left.Name == right.Name && left.MaterialReference == right.MaterialReference && left.DrawInterval == right.DrawInterval && Bits(left.Speed, right.Speed) && Bits(left.BeamLength, right.BeamLength) && Bits(left.BeamWidth, right.BeamWidth) && Bits(left.ScrewRadius, right.ScrewRadius) && Bits(left.ScrewDistance, right.ScrewDistance) && left.Colors.Count == right.Colors.Count && left.Colors.Zip(right.Colors).All(pair => Bits(pair.First.Red, pair.Second.Red) && Bits(pair.First.Green, pair.Second.Green) && Bits(pair.First.Blue, pair.Second.Blue) && Bits(pair.First.Alpha, pair.Second.Alpha));
+    public override bool SemanticallyEquals(TracerDraft left, TracerDraft right) => left.Name == right.Name && left.MaterialReference == right.MaterialReference && left.MaterialLink == right.MaterialLink && left.DrawInterval == right.DrawInterval && Bits(left.Speed, right.Speed) && Bits(left.BeamLength, right.BeamLength) && Bits(left.BeamWidth, right.BeamWidth) && Bits(left.ScrewRadius, right.ScrewRadius) && Bits(left.ScrewDistance, right.ScrewDistance) && left.Colors.Count == right.Colors.Count && left.Colors.Zip(right.Colors).All(pair => Bits(pair.First.Red, pair.Second.Red) && Bits(pair.First.Green, pair.Second.Green) && Bits(pair.First.Blue, pair.Second.Blue) && Bits(pair.First.Alpha, pair.Second.Alpha));
     public override TracerBuildData ExportBuildData(TracerDraft draft) { var data = new TracerBuildData(draft); if (Validator.Validate(data).Count != 0) throw new InvalidOperationException("Tracer draft has validation errors and cannot produce build data."); return data; }
     private static bool Bits(float left, float right) => BitConverter.SingleToInt32Bits(left) == BitConverter.SingleToInt32Bits(right);
 }

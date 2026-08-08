@@ -25,5 +25,10 @@ public enum WindowBorder : int
     /// <summary>
     /// Draw horizontal gradient-bar borders.
     /// </summary>
-    WINDOW_BORDER_KCGRADIENT = 4
+    WINDOW_BORDER_KCGRADIENT = 4,
+
+    /// <summary>
+    /// Observed in serialized menu data; its engine behavior is unknown.
+    /// </summary>
+    WINDOW_BORDER_UNKNOWN_5 = 5
 }

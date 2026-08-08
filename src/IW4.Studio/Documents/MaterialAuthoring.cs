@@ -36,7 +36,48 @@ public sealed class MaterialAuthoredSnapshot : ITargetZoneDetachedSemanticSnapsh
                 asset.XStrings.Select(entry => entry.Value),
                 TechniqueSetLink(asset))));
 
-    private static MaterialTextureBuildData Texture(MaterialTextureDef texture) => new(texture.NameHash, texture.NameStart, texture.NameEnd, texture.SamplerState, texture.Semantic, Reference(XAssetType.Image, texture.Image?.Name), texture.Water is { } water ? Water(water) : null, texture.Semantic == 0x0b ? null : ImageLink(texture.DataPointer.Raw, texture.IncomingImage, texture.Image));
+    private static MaterialTextureBuildData Texture(MaterialTextureDef texture) =>
+        texture.Semantic == 0x0b
+            ? new MaterialTextureBuildData(
+                texture.NameHash,
+                texture.NameStart,
+                texture.NameEnd,
+                texture.SamplerState,
+                texture.Semantic,
+                imageReference: null,
+                water: texture.Water is { } water ? Water(water) : null,
+                imageLink: null,
+                waterPointerProvenance: WaterPointerProvenance(texture))
+            : new MaterialTextureBuildData(
+                texture.NameHash,
+                texture.NameStart,
+                texture.NameEnd,
+                texture.SamplerState,
+                texture.Semantic,
+                Reference(XAssetType.Image, texture.Image?.Name),
+                water: null,
+                imageLink: ImageLink(texture.DataPointer.Raw, texture.IncomingImage, texture.Image));
+
+    private static MaterialWaterPointerBuildProvenance WaterPointerProvenance(
+        MaterialTextureDef texture)
+    {
+        return texture.DataPointer.Type switch
+        {
+            PointerType.Null => new MaterialWaterPointerBuildProvenance(
+                MaterialWaterPointerSourceForm.Null),
+            PointerType.Inline => new MaterialWaterPointerBuildProvenance(
+                MaterialWaterPointerSourceForm.Inline,
+                XPointerCodec.Encode(
+                    texture.Water?.DestinationAddress
+                    ?? throw new InvalidDataException(
+                        "Inline MaterialWater has no destination owner address."))),
+            PointerType.Offset => new MaterialWaterPointerBuildProvenance(
+                MaterialWaterPointerSourceForm.PackedAlias,
+                ImportedPackedRaw: texture.DataPointer.Raw),
+            _ => throw new InvalidDataException(
+                $"Semantic 0x0b MaterialTextureDef uses unsupported source pointer {texture.DataPointer.Type}.")
+        };
+    }
     private static MaterialWaterBuildData Water(MaterialWater value) => new(value.Writable.RawValue, value.M, value.N, value.Lx, value.Lz, value.Gravity, value.WindVelocity, new MaterialVec2BuildData(value.WindDirection.X, value.WindDirection.Y), value.Amplitude, Float4(value.CodeConstant), value.H0X, value.H0Y, value.WTerm, Reference(XAssetType.Image, value.Image?.Name), ImageLink(value.ImagePointer.Raw, value.IncomingImage, value.Image));
     private static Float4BuildData Float4(MaterialVec4 value) => new(value.X, value.Y, value.Z, value.W);
     private static MaterialStateBitsBuildData StateBits(
@@ -159,7 +200,7 @@ public sealed class MaterialBuildData : IMaterialBuildData
     public IReadOnlyList<MaterialStateBitsBuildData> StateBits => Array.AsReadOnly(_stateBits.Select(Clone).ToArray());
     public IReadOnlyList<string?> XStrings => Array.AsReadOnly(_xstrings);
     internal MaterialBuildData Copy() => new(Name, GameFlags, SortKey, TextureAtlasRowCount, TextureAtlasColumnCount, SurfaceTypeBits, HashIndex, Pad16, _stateBitsEntries, StateFlags, CameraRegion, Pad43, Pad8E, HasRuntimeTechniqueSlotState, TechniqueSetReference, _textures, _constants, _stateBits, _xstrings, TechniqueSetLink);
-    internal static MaterialTextureBuildData Clone(MaterialTextureBuildData value) => new(value.NameHash, value.NameStart, value.NameEnd, value.SamplerState, value.Semantic, value.ImageReference, value.Water is { } water ? Clone(water) : null, value.ImageLink);
+    internal static MaterialTextureBuildData Clone(MaterialTextureBuildData value) => new(value.NameHash, value.NameStart, value.NameEnd, value.SamplerState, value.Semantic, value.ImageReference, value.Water is { } water ? Clone(water) : null, value.ImageLink, value.WaterPointerProvenance);
     internal static MaterialWaterBuildData Clone(MaterialWaterBuildData value) => new(value.WritableRaw, value.M, value.N, value.Lx, value.Lz, value.Gravity, value.WindVelocity, value.WindDirection, value.Amplitude, value.CodeConstant, value.H0X, value.H0Y, value.WTerm, value.ImageReference, value.ImageLink);
     internal static MaterialConstantBuildData Clone(MaterialConstantBuildData value) => new(value.NameHash, value.NameBytes.ToArray(), value.Literal);
     internal static MaterialStateBitsBuildData Clone(MaterialStateBitsBuildData value) => new(value.LoadBits.ToArray(), value.Tail, value.LinkerProvenance);
@@ -265,5 +306,5 @@ public sealed class MaterialAuthoringAdapter : AssetAuthoringAdapter<MaterialAut
     public override MaterialBuildData ExportBuildData(MaterialDraft draft) { MaterialBuildData data = draft.Data; if (Validator.Validate(data).Count != 0) throw new InvalidOperationException("Material draft has validation errors and cannot produce build data."); return data; }
 
     private static bool Same(MaterialBuildData left, MaterialBuildData right) => left.Name == right.Name && left.GameFlags == right.GameFlags && left.SortKey == right.SortKey && left.TextureAtlasRowCount == right.TextureAtlasRowCount && left.TextureAtlasColumnCount == right.TextureAtlasColumnCount && left.SurfaceTypeBits == right.SurfaceTypeBits && left.HashIndex == right.HashIndex && left.Pad16 == right.Pad16 && left.StateBitsEntries.SequenceEqual(right.StateBitsEntries) && left.StateFlags == right.StateFlags && left.CameraRegion == right.CameraRegion && left.Pad43 == right.Pad43 && left.Pad8E == right.Pad8E && left.HasRuntimeTechniqueSlotState == right.HasRuntimeTechniqueSlotState && left.TechniqueSetReference == right.TechniqueSetReference && left.TechniqueSetLink == right.TechniqueSetLink && left.XStrings.SequenceEqual(right.XStrings) && left.Constants.Count == right.Constants.Count && left.Constants.Zip(right.Constants).All(pair => pair.First.NameHash == pair.Second.NameHash && pair.First.NameBytes.SequenceEqual(pair.Second.NameBytes) && pair.First.Literal == pair.Second.Literal) && left.StateBits.Count == right.StateBits.Count && left.StateBits.Zip(right.StateBits).All(pair => pair.First.LoadBits.SequenceEqual(pair.Second.LoadBits) && pair.First.Tail == pair.Second.Tail && pair.First.LinkerProvenance == pair.Second.LinkerProvenance) && left.Textures.Count == right.Textures.Count && left.Textures.Zip(right.Textures).All(pair => Same(pair.First, pair.Second));
-    private static bool Same(MaterialTextureBuildData left, MaterialTextureBuildData right) => left.NameHash == right.NameHash && left.NameStart == right.NameStart && left.NameEnd == right.NameEnd && left.SamplerState == right.SamplerState && left.Semantic == right.Semantic && left.ImageReference == right.ImageReference && left.ImageLink == right.ImageLink && ((left.Water is null && right.Water is null) || (left.Water is { } a && right.Water is { } b && a.WritableRaw == b.WritableRaw && a.M == b.M && a.N == b.N && a.Lx == b.Lx && a.Lz == b.Lz && a.Gravity == b.Gravity && a.WindVelocity == b.WindVelocity && a.WindDirection == b.WindDirection && a.Amplitude == b.Amplitude && a.CodeConstant == b.CodeConstant && a.H0X.SequenceEqual(b.H0X) && a.H0Y.SequenceEqual(b.H0Y) && a.WTerm.SequenceEqual(b.WTerm) && a.ImageReference == b.ImageReference && a.ImageLink == b.ImageLink));
+    private static bool Same(MaterialTextureBuildData left, MaterialTextureBuildData right) => left.NameHash == right.NameHash && left.NameStart == right.NameStart && left.NameEnd == right.NameEnd && left.SamplerState == right.SamplerState && left.Semantic == right.Semantic && left.ImageReference == right.ImageReference && left.ImageLink == right.ImageLink && left.WaterPointerProvenance == right.WaterPointerProvenance && ((left.Water is null && right.Water is null) || (left.Water is { } a && right.Water is { } b && a.WritableRaw == b.WritableRaw && a.M == b.M && a.N == b.N && a.Lx == b.Lx && a.Lz == b.Lz && a.Gravity == b.Gravity && a.WindVelocity == b.WindVelocity && a.WindDirection == b.WindDirection && a.Amplitude == b.Amplitude && a.CodeConstant == b.CodeConstant && a.H0X.SequenceEqual(b.H0X) && a.H0Y.SequenceEqual(b.H0Y) && a.WTerm.SequenceEqual(b.WTerm) && a.ImageReference == b.ImageReference && a.ImageLink == b.ImageLink));
 }

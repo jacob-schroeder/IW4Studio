@@ -15,6 +15,7 @@ public sealed class TracerDefAsset : BaseAsset
     // 0x04: Material pointer.
     public XPointer<MaterialAsset> MaterialPointer { get; init; }
     public MaterialAsset? Material { get; init; }
+    public MaterialAsset? MaterialIncomingDefinition { get; init; }
 
     // 0x08..0x1C: tracer geometry and timing parameters.
     public uint DrawInterval { get; init; }

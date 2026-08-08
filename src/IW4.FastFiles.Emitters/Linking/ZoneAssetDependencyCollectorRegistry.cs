@@ -145,13 +145,16 @@ public sealed class ZoneAssetDependencyCollectorRegistry
             MaterialTextureBuildData texture = textures[index] ??
                 throw new InvalidDataException(
                     $"Material dependency discovery found a null texture at textures[{index}].");
-            if (texture.Water is { } water)
+            if (texture.Semantic == 0x0b)
             {
-                Add(
-                    result,
-                    water.ImageReference,
-                    XAssetType.Image,
-                    $"textures[{index}].water.image");
+                if (texture.Water is { } water)
+                {
+                    Add(
+                        result,
+                        water.ImageReference,
+                        XAssetType.Image,
+                        $"textures[{index}].water.image");
+                }
             }
             else
             {

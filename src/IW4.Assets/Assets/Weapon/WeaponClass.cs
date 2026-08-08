@@ -11,5 +11,8 @@ public enum WeaponClass
     RocketLauncher = 6,
     Turret = 7,
     NonPlayer = 8,
-    Item = 9
+    Item = 9,
+
+    // Observed in stock serialized weapon definitions; its engine meaning is unknown.
+    Unknown10 = 10
 }

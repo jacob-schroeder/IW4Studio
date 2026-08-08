@@ -14,8 +14,10 @@ public sealed class FontAsset : BaseAsset
     public int GlyphCount { get; init; }
     public XPointer<MaterialAsset> MaterialPointer { get; init; }
     public MaterialAsset? Material { get; init; }
+    public MaterialAsset? MaterialIncomingDefinition { get; init; }
     public XPointer<MaterialAsset> GlowMaterialPointer { get; init; }
     public MaterialAsset? GlowMaterial { get; init; }
+    public MaterialAsset? GlowMaterialIncomingDefinition { get; init; }
     public XPointer<FontGlyph[]> GlyphsPointer { get; init; }
     public IReadOnlyList<FontGlyph> Glyphs { get; init; } = [];
 }

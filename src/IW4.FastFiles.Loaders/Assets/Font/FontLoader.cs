@@ -94,15 +94,17 @@ public sealed class FontLoader
 
         string? name;
         MaterialAsset? material;
+        MaterialAsset? materialIncomingDefinition;
         MaterialAsset? glowMaterial;
+        MaterialAsset? glowMaterialIncomingDefinition;
         IReadOnlyList<FontGlyph> glyphs;
 
         context.Blocks.Push(XFileBlockType.LARGE);
         try
         {
             name = context.PointerReader.LoadXString(cursor, namePointer);
-            material = ReadMaterialPointer(cursor, materialPointer.Untyped, context);
-            glowMaterial = ReadMaterialPointer(cursor, glowMaterialPointer.Untyped, context);
+            material = ReadMaterialPointer(cursor, materialPointer.Untyped, context, out materialIncomingDefinition);
+            glowMaterial = ReadMaterialPointer(cursor, glowMaterialPointer.Untyped, context, out glowMaterialIncomingDefinition);
             glyphs = ReadGlyphArray(cursor, glyphsPointer.Untyped, glyphCount, context);
         }
         finally
@@ -120,8 +122,10 @@ public sealed class FontLoader
             GlyphCount = glyphCount,
             MaterialPointer = materialPointer,
             Material = material,
+            MaterialIncomingDefinition = materialIncomingDefinition,
             GlowMaterialPointer = glowMaterialPointer,
             GlowMaterial = glowMaterial,
+            GlowMaterialIncomingDefinition = glowMaterialIncomingDefinition,
             GlyphsPointer = glyphsPointer,
             Glyphs = glyphs
         };
@@ -143,9 +147,10 @@ public sealed class FontLoader
     private MaterialAsset? ReadMaterialPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context)
+        DbLoadExecutionContext context,
+        out MaterialAsset? incomingDefinition)
     {
-        return _materialLoader.LoadFromPointer(cursor, pointer, context);
+        return _materialLoader.LoadFromPointer(cursor, pointer, context, out incomingDefinition);
     }
 
     private static IReadOnlyList<FontGlyph> ReadGlyphArray(

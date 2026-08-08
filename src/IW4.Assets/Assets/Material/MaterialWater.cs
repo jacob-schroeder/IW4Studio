@@ -9,6 +9,11 @@ public sealed class MaterialWater
 {
     public const int SerializedSize = 0x48;
 
+    /// <summary>
+    /// Stable LARGE-stream root address for an inline water_t owner. Packed
+    /// MaterialTextureDef water pointers target this body directly.
+    /// </summary>
+    public XBlockAddress? DestinationAddress { get; init; }
     public MaterialWaterWritable Writable { get; init; }
     public XPointerReference H0XPointer { get; init; }
     public XPointerReference H0YPointer { get; init; }

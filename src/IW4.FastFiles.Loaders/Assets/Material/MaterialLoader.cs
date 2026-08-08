@@ -334,7 +334,11 @@ public sealed class MaterialLoader
             byte nameEnd = textureCursor.ReadByte();
             byte samplerState = textureCursor.ReadByte();
             byte semantic = textureCursor.ReadByte();
-            XPointerReference dataPointer = context.PointerReader.ReadCell(textureCursor, XPointerOffsetMode.AliasCell);
+            XPointerReference dataPointer = context.PointerReader.ReadCell(
+                textureCursor,
+                semantic == 0x0b
+                    ? XPointerOffsetMode.Direct
+                    : XPointerOffsetMode.AliasCell);
             textures[i] = new MaterialTextureDef
             {
                 NameHash = nameHash,
@@ -407,14 +411,37 @@ public sealed class MaterialLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
+        switch (pointer.Type)
         {
-            context.PointerReader.ValidateOffsetPointerRange(pointer, WaterSize, "water_t");
-            return null;
+            case PointerType.Null:
+                return null;
+            case PointerType.Offset:
+                context.PointerReader.ValidateOffsetPointerRange<MaterialWater>(
+                    pointer,
+                    WaterSize,
+                    "water_t");
+                return context.ResolveMaterializedDirect<MaterialWater>(
+                    pointer,
+                    "MaterialWater");
+            case PointerType.Insert:
+                throw new InvalidDataException(
+                    "MaterialTextureDef semantic 0x0b does not support an insert water_t pointer.");
+            case PointerType.Inline:
+                break;
+            default:
+                throw new InvalidDataException(
+                    $"Unsupported MaterialWater pointer type {pointer.Type}.");
         }
 
-        context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
+        XBlockAddress targetAddress = context.PointerReader.PatchInlinePointerCell(
+            pointer,
+            alignment: 4);
         byte[] rootBytes = context.Blocks.Load(cursor, WaterSize, out XBlockAddress rootAddress);
+        if (rootAddress != targetAddress)
+        {
+            throw new InvalidDataException(
+                $"MaterialWater pointer patched to {targetAddress}, but root loaded at {rootAddress}.");
+        }
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
         var writable = new MaterialWaterWritable(rootCursor.ReadUInt32());
@@ -446,8 +473,9 @@ public sealed class MaterialLoader
             context,
             out GfxImageAsset? incomingImage);
 
-        return new MaterialWater
+        var water = new MaterialWater
         {
+            DestinationAddress = rootAddress,
             Writable = writable,
             H0XPointer = h0xPointer,
             H0YPointer = h0yPointer,
@@ -468,6 +496,10 @@ public sealed class MaterialLoader
             Image = image,
             IncomingImage = incomingImage
         };
+        return context.RegisterMaterialized(
+            rootAddress,
+            water,
+            "MaterialWater");
     }
 
     private static IReadOnlyList<float> ReadWaterSpectrum(

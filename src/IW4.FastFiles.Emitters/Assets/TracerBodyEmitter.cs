@@ -3,8 +3,7 @@ using IW4.FastFiles.Emitters.Emission;
 
 namespace IW4.FastFiles.Emitters.Assets;
 
-/// <summary>TracerDef root plus the only currently safe nested Material form:
-/// an explicit comma-prefixed Material reference placeholder.</summary>
+/// <summary>TracerDef root and its nested Material pointer topology.</summary>
 public sealed class TracerBodyEmitter : IXAssetBodyEmitter
 {
     private const int MaterialSerializedSize = 0xA8;
@@ -21,7 +20,27 @@ public sealed class TracerBodyEmitter : IXAssetBodyEmitter
         ValidateString(data.Name, "name", diagnostics, rowIndex);
         if (data.Colors.Count != 5)
             diagnostics.Add(new("colors", "Tracer requires exactly five serialized color rows.", rowIndex, AssetType));
-        ValidateExternalReference(data.MaterialReference, XAssetType.Material, "material", diagnostics, rowIndex);
+        if (data.MaterialLink is { } materialLink)
+        {
+            diagnostics.AddRange(NestedXAssetEmission.Validate(
+                materialLink,
+                XAssetType.Material,
+                "material",
+                rowIndex,
+                AssetType));
+            if (data.MaterialReference != materialLink.Reference)
+            {
+                diagnostics.Add(new(
+                    "material",
+                    "Retained Material link identity must equal the parallel Material reference.",
+                    rowIndex,
+                    AssetType));
+            }
+        }
+        else
+        {
+            ValidateExternalReference(data.MaterialReference, XAssetType.Material, "material", diagnostics, rowIndex);
+        }
         return diagnostics;
     }
 
@@ -38,24 +57,20 @@ public sealed class TracerBodyEmitter : IXAssetBodyEmitter
         plan.Push(XFileBlockType.LARGE);
         int beforeName = segments.Count;
         PlannedString? name = AssetBodyEmitterHelpers.PlanString(data.Name, plan, segments, plan.StringAliases);
+        int afterName = segments.Count;
         plan.Pop(XFileBlockType.LARGE);
 
-        EmissionAddress? materialRoot = null;
-        PlannedString? materialName = null;
-        int beforeMaterialName = segments.Count;
-        if (data.MaterialReference is { } material)
-        {
-            materialRoot = plan.Allocate(MaterialSerializedSize, 4);
-            plan.Push(XFileBlockType.LARGE);
-            materialName = AssetBodyEmitterHelpers.PlanString(material.OriginalSerializedName, plan, segments, plan.StringAliases);
-            plan.Pop(XFileBlockType.LARGE);
-        }
-        int afterMaterialName = segments.Count;
+        MaterialPlan material = PlanMaterial(
+            data.MaterialReference,
+            data.MaterialLink,
+            plan,
+            segments,
+            new EmissionAddress(root.Block, checked(root.Offset + sizeof(int))));
         plan.Pop(XFileBlockType.TEMP);
 
         var rootWriter = new XSourceWriter();
         rootWriter.WriteInt32(AssetBodyEmitterHelpers.SourcePointer(name));
-        rootWriter.WriteInt32(materialRoot is null ? 0 : -1);
+        rootWriter.WriteInt32(material.PointerRaw);
         rootWriter.WriteUInt32(data.DrawInterval);
         rootWriter.WriteSingle(data.Speed); rootWriter.WriteSingle(data.BeamLength); rootWriter.WriteSingle(data.BeamWidth);
         rootWriter.WriteSingle(data.ScrewRadius); rootWriter.WriteSingle(data.ScrewDistance);
@@ -67,18 +82,47 @@ public sealed class TracerBodyEmitter : IXAssetBodyEmitter
         var rootSegment = new EmissionBlockSegment(root, rootWriter.ToArray());
         segments.Add(rootSegment);
         sourceSegments.Add(rootSegment);
-        sourceSegments.AddRange(segments.Skip(beforeName).Take(beforeMaterialName - beforeName));
-        if (materialRoot is { } nestedRoot)
-        {
-            var materialWriter = new XSourceWriter();
-            materialWriter.WriteInt32(AssetBodyEmitterHelpers.SourcePointer(materialName));
-            materialWriter.Reserve(MaterialSerializedSize - sizeof(int));
-            var materialSegment = new EmissionBlockSegment(nestedRoot, materialWriter.ToArray());
-            segments.Add(materialSegment);
-            sourceSegments.Add(materialSegment);
-            sourceSegments.AddRange(segments.Skip(beforeMaterialName).Take(afterMaterialName - beforeMaterialName));
-        }
+        sourceSegments.AddRange(segments.Skip(beforeName).Take(afterName - beforeName));
+        sourceSegments.AddRange(material.SourceSegments);
         return new AssetBodyEmission(AssetType, root, segments, sourceSegments);
+    }
+
+    private static MaterialPlan PlanMaterial(
+        SymbolicXAssetReference? reference,
+        NestedXAssetBuildLink? link,
+        EmissionPlan plan,
+        List<EmissionBlockSegment> all,
+        EmissionAddress ownerCell)
+    {
+        if (link is { } retained)
+        {
+            NestedXAssetPlan nested = NestedXAssetEmission.Plan(
+                retained,
+                plan,
+                all,
+                ownerCell,
+                "Tracer.Material");
+            return new MaterialPlan(nested.PointerRaw, nested.Source);
+        }
+        if (reference is null)
+            return new MaterialPlan(0, []);
+
+        EmissionAddress root = plan.Allocate(MaterialSerializedSize, 4);
+        plan.Push(XFileBlockType.LARGE);
+        int beforeName = all.Count;
+        PlannedString? name = AssetBodyEmitterHelpers.PlanString(
+            reference.OriginalSerializedName,
+            plan,
+            all,
+            plan.StringAliases);
+        EmissionBlockSegment[] nameSource = all.Skip(beforeName).ToArray();
+        plan.Pop(XFileBlockType.LARGE);
+        var writer = new XSourceWriter();
+        writer.WriteInt32(AssetBodyEmitterHelpers.SourcePointer(name));
+        writer.Reserve(MaterialSerializedSize - sizeof(int));
+        var rootSegment = new EmissionBlockSegment(root, writer.ToArray());
+        all.Add(rootSegment);
+        return new MaterialPlan(-1, [rootSegment, .. nameSource]);
     }
 
     private static void ValidateString(string? value, string path, List<EmissionError> diagnostics, int? rowIndex)
@@ -96,4 +140,8 @@ public sealed class TracerBodyEmitter : IXAssetBodyEmitter
         else if (!reference.IsExternalReference || !AssetBodyEmitterHelpers.IsLatin1CString(reference.OriginalSerializedName))
             diagnostics.Add(new(path, "Only a comma-prefixed Latin-1 external reference is supported.", rowIndex, XAssetType.Tracer));
     }
+
+    private sealed record MaterialPlan(
+        int PointerRaw,
+        IReadOnlyList<EmissionBlockSegment> SourceSegments);
 }

@@ -30,5 +30,10 @@ public enum WindowStyle : int
     /// <summary>
     /// Draw a cinematic/movie-backed window.
     /// </summary>
-    WINDOW_STYLE_CINEMATIC = 5
+    WINDOW_STYLE_CINEMATIC = 5,
+
+    /// <summary>
+    /// Observed in serialized menu data; its engine behavior is unknown.
+    /// </summary>
+    WINDOW_STYLE_UNKNOWN_6 = 6
 }
