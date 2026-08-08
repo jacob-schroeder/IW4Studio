@@ -321,13 +321,14 @@ internal sealed class DetachedAssetSemanticGraphClone
     internal MenuGraphClone Menus { get; } = new();
     internal WeaponGraphClone Weapons { get; } = new();
     internal XModelGraphClone XModels { get; } = new();
+    internal MaterialGraphClone Materials => XModels.Materials;
 
     internal IReadOnlyList<MaterialGraphDefinitionCapture>
         MaterialDefinitionCaptures =>
-            XModels.Materials.DefinitionCaptures;
+            Materials.DefinitionCaptures;
 
     internal void BeginTopLevelRow(int serializedIndex) =>
-        XModels.Materials.BeginTopLevelRow(serializedIndex);
+        Materials.BeginTopLevelRow(serializedIndex);
 }
 
 internal static class DetachedAssetSemanticSnapshotFactory
@@ -358,7 +359,8 @@ internal static class DetachedAssetSemanticSnapshotFactory
         (XAssetType.ImpactFx, FxImpactTableAsset impact) => ImpactFxAuthoredSnapshot.FromLoaded(impact),
         (XAssetType.SndCurve, SndCurve curve) => SndCurveAuthoredSnapshot.FromLoaded(curve),
         (XAssetType.LeaderboardDef, LeaderboardDefAsset leaderboard) => LeaderboardAuthoredSnapshot.FromLoaded(leaderboard),
-        (XAssetType.Tracer, TracerDefAsset tracer) => TracerAuthoredSnapshot.FromLoaded(tracer),
+        (XAssetType.Tracer, TracerDefAsset tracer) =>
+            TracerAuthoredSnapshot.FromLoaded(tracer, graph.Materials),
         (XAssetType.LightDef, LightDefAsset light) => LightDefAuthoredSnapshot.FromLoaded(light),
         (XAssetType.ComMap, ComWorldAsset comMap) => ComWorldAuthoredSnapshot.FromLoaded(comMap),
         (XAssetType.GameMapSp, GameWorldSpAsset gameMapSp) => GameWorldSpAuthoredSnapshot.FromLoaded(gameMapSp),
@@ -366,7 +368,7 @@ internal static class DetachedAssetSemanticSnapshotFactory
         (XAssetType.FxMap, FxWorldAsset fxMap) =>
             FxWorldAuthoredSnapshot.FromLoaded(
                 fxMap,
-                graph.XModels.Materials),
+                graph.Materials),
         (XAssetType.ColMapSp, ClipMapAsset clipMap) => ClipMapAuthoredSnapshot.FromLoaded(clipMap, graph.XModels),
         (XAssetType.ColMapMp, ClipMapAsset clipMap) => ClipMapAuthoredSnapshot.FromLoaded(clipMap, graph.XModels),
         (XAssetType.GfxMap, GfxWorldAsset gfxMap) => GfxWorldAuthoredSnapshot.FromLoaded(gfxMap, graph),
@@ -380,12 +382,13 @@ internal static class DetachedAssetSemanticSnapshotFactory
         (XAssetType.VertexShader, MaterialShaderAsset shader) => MaterialShaderAuthoredSnapshot.FromLoaded(XAssetType.VertexShader, shader),
         (XAssetType.LoadedSound, LoadedSound sound) => LoadedSoundAuthoredSnapshot.FromLoaded(sound),
         (XAssetType.Image, GfxImageAsset image) => GfxImageAuthoredSnapshot.FromLoaded(image),
-        (XAssetType.Font, FontAsset font) => FontAuthoredSnapshot.FromLoaded(font),
+        (XAssetType.Font, FontAsset font) =>
+            FontAuthoredSnapshot.FromLoaded(font, graph.Materials),
         (XAssetType.Techset, MaterialTechniqueSetAsset techset) => TechniqueSetAuthoredSnapshot.FromLoaded(techset),
         (XAssetType.Material, MaterialAsset material) =>
             MaterialAuthoredSnapshot.FromLoaded(
                 material,
-                graph.XModels.Materials),
+                graph.Materials),
         _ => null
         };
     }
@@ -408,11 +411,18 @@ public sealed class TracerAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
         throw TargetZoneDetachedSnapshotRequirements.Missing(XAssetType.Tracer);
     }
     internal static TracerAuthoredSnapshot FromLoaded(TracerDefAsset asset)
+        => FromLoaded(asset, new MaterialGraphClone());
+    internal static TracerAuthoredSnapshot FromLoaded(
+        TracerDefAsset asset,
+        MaterialGraphClone graph)
     {
-        NestedXAssetBuildLink? materialLink = CaptureMaterialLink(asset);
+        ArgumentNullException.ThrowIfNull(graph);
+        NestedXAssetBuildLink? materialLink = CaptureMaterialLink(asset, graph);
         return new(asset.Name, materialLink?.Reference ?? Reference(XAssetType.Material, asset.Material?.Info.Name), asset.DrawInterval, asset.Speed, asset.BeamLength, asset.BeamWidth, asset.ScrewRadius, asset.ScrewDistance, asset.Colors.Select(color => new TracerColorBuildData(color.Red, color.Green, color.Blue, color.Alpha)), materialLink);
     }
-    private static NestedXAssetBuildLink? CaptureMaterialLink(TracerDefAsset asset)
+    private static NestedXAssetBuildLink? CaptureMaterialLink(
+        TracerDefAsset asset,
+        MaterialGraphClone graph)
     {
         string? name = asset.MaterialIncomingDefinition?.Info.Name ?? asset.Material?.Info.Name;
         if (asset.MaterialPointer.Type == PointerType.Null || name is null) return null;
@@ -423,7 +433,6 @@ public sealed class TracerAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
             PointerType.Offset => NestedXAssetPointerSourceForm.PackedAlias,
             _ => throw new InvalidDataException($"Unsupported nested Tracer Material source form {asset.MaterialPointer.Type}.")
         };
-        var graph = new MaterialGraphClone();
         return new NestedXAssetBuildLink(
             new SymbolicXAssetReference(XAssetType.Material, name),
             sourceForm,

@@ -14,5 +14,6 @@ public enum WeaponClass
     Item = 9,
 
     // Observed in stock serialized weapon definitions; its engine meaning is unknown.
-    Unknown10 = 10
+    Unknown10 = 10,
+    Unknown11 = 11
 }

@@ -363,7 +363,7 @@ public sealed class GameWorldSpBodyEmitter : IXAssetBodyEmitter
     private static void ValidatePath(PathData path, List<EmissionError> errors, int? rowIndex)
     {
         if (path.NodeCount > int.MaxValue || path.NodeCount != (uint)path.Nodes.Count || path.NodeCount != (uint)path.BaseNodes.Count) errors.Add(Error("path.nodeCount", "Path node/base-node count must equal the serialized node count.", rowIndex));
-        if (path.NodeCount > int.MaxValue || path.NodeCount != (uint)path.ChainNodeForNode.Count || path.NodeCount != (uint)path.NodeForChainNode.Count) errors.Add(Error("path.chainNodes", "Path node-index maps must each match the serialized node count.", rowIndex));
+        if (path.ChainNodeCount > int.MaxValue || path.ChainNodeCount != (uint)path.ChainNodeForNode.Count || path.ChainNodeCount != (uint)path.NodeForChainNode.Count) errors.Add(Error("path.chainNodes", "Path node-index maps must each match the serialized chain-node count.", rowIndex));
         if (path.VisBytes < 0 || path.VisBytes != path.PathVis.Count) errors.Add(Error("path.visBytes", "Path visibility byte count does not match its array.", rowIndex));
         if (path.NodeTreeCount < 0 || path.NodeTreeCount != path.NodeTree.Count) errors.Add(Error("path.nodeTreeCount", "Path tree count does not match its array.", rowIndex));
         if (path.BaseNodes.Any(value => value.Origin.X != 0 || value.Origin.Y != 0 || value.Origin.Z != 0 || value.Type != 0)) errors.Add(Error("path.baseNodes", "RUNTIME base-node storage must be zero-initialized.", rowIndex));

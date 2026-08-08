@@ -16,8 +16,12 @@ public sealed class FontAuthoredSnapshot : ITargetZoneDetachedSemanticSnapshot
     public XAssetType AssetType => XAssetType.Font; public string? Name { get; } public int PixelHeight { get; } public SymbolicXAssetReference? MaterialReference { get; } public SymbolicXAssetReference? GlowMaterialReference { get; } public NestedXAssetBuildLink? MaterialLink { get; } public NestedXAssetBuildLink? GlowMaterialLink { get; } public IReadOnlyList<FontGlyphBuildData> Glyphs => Array.AsReadOnly(_glyphs);
     internal static FontAuthoredSnapshot Import(TargetZoneRowSource source) => source.AuthoredDefinition?.SemanticSnapshot is FontAuthoredSnapshot snapshot ? snapshot : throw new InvalidDataException("Font editing requires a capture-time detached semantic snapshot because its nested pointers may be aliases.");
     internal static FontAuthoredSnapshot FromLoaded(FontAsset asset)
+        => FromLoaded(asset, new MaterialGraphClone());
+    internal static FontAuthoredSnapshot FromLoaded(
+        FontAsset asset,
+        MaterialGraphClone graph)
     {
-        var graph = new MaterialGraphClone();
+        ArgumentNullException.ThrowIfNull(graph);
         NestedXAssetBuildLink? materialLink = CaptureMaterialLink(asset.MaterialPointer, asset.MaterialIncomingDefinition, asset.Material, graph);
         NestedXAssetBuildLink? glowMaterialLink = CaptureMaterialLink(asset.GlowMaterialPointer, asset.GlowMaterialIncomingDefinition, asset.GlowMaterial, graph);
         return new(asset.Name, asset.PixelHeight, materialLink?.Reference ?? Reference(asset.Material), glowMaterialLink?.Reference ?? Reference(asset.GlowMaterial), asset.Glyphs.Select(glyph => new FontGlyphBuildData(glyph.Letter, glyph.X0, glyph.Y0, glyph.Dx, glyph.PixelWidth, glyph.PixelHeight, glyph.Padding, glyph.S0, glyph.T0, glyph.S1, glyph.T1)), materialLink, glowMaterialLink);
