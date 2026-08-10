@@ -38,25 +38,14 @@ public sealed class RawFileLoader
             throw new InvalidDataException(
                 $"Top-level RawFile pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             RawFileAsset rawFile = ReadRawFile(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline RawFile pointer has no destination cell.");
-            RawFileAsset canonical = context.DB_AddXAsset(rawFile, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical RawFile has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            RawFileAsset canonical = context.DB_AddXAsset(rawFile, providerRegistration);
 
             return canonical;
         }
@@ -82,11 +71,9 @@ public sealed class RawFileLoader
         XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(rootCursor, XPointerResolutionMode.Direct);
         int compressedLen = rootCursor.ReadInt32();
         int len = rootCursor.ReadInt32();
-        int bufferCellOffset = rootCursor.Offset;
-        var bufferPointer = new XPointer<byte[]>(
-            rootCursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            rootCursor.AddressAt(bufferCellOffset));
+        XPointer<byte[]> bufferPointer = context.PointerReader.ReadPointer<byte[]>(
+            rootCursor,
+            XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != RawFileAsset.SerializedSize)
             throw new InvalidDataException($"RawFile consumed 0x{rootCursor.Offset:X} bytes instead of 0x{RawFileAsset.SerializedSize:X}.");

@@ -78,28 +78,18 @@ public sealed class SoundAliasListLoader
                 $"Sound pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             SoundAliasListAsset sound = ReadSoundAliasList(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline Sound pointer has no destination cell.");
             SoundAliasListAsset canonical = context.DB_AddXAsset(
                 XAssetType.Sound,
                 sound.AliasName,
                 sound,
-                pointerCellAddress);
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Sound has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -213,7 +203,7 @@ public sealed class SoundAliasListLoader
             ReadXStringPointer(cursor, context),
             ReadXStringPointer(cursor, context),
             ReadXStringPointer(cursor, context),
-            ReadPointerCellNoValidation<SoundFile[]>(cursor, XPointerResolutionMode.Direct),
+            ReadPointerCellNoValidation<SoundFile[]>(cursor, context, XPointerResolutionMode.Direct),
             cursor.ReadInt32(),
             ReadSingle(cursor),
             ReadSingle(cursor),
@@ -228,11 +218,11 @@ public sealed class SoundAliasListLoader
             ReadSingle(cursor),
             ReadSingle(cursor),
             cursor.ReadInt32(),
-            ReadPointerCellNoValidation<SndCurve>(cursor, XPointerResolutionMode.AliasCell),
+            ReadPointerCellNoValidation<SndCurve>(cursor, context, XPointerResolutionMode.AliasCell),
             ReadSingle(cursor),
             ReadSingle(cursor),
             ReadSingle(cursor),
-            ReadPointerCellNoValidation<SpeakerMap>(cursor, XPointerResolutionMode.Direct));
+            ReadPointerCellNoValidation<SpeakerMap>(cursor, context, XPointerResolutionMode.Direct));
 
         if (cursor.Offset - start != SndAlias.SerializedSize)
             throw new InvalidDataException($"snd_alias_t consumed 0x{cursor.Offset - start:X} bytes instead of 0x{SndAlias.SerializedSize:X}.");
@@ -364,7 +354,7 @@ public sealed class SoundAliasListLoader
         var soundFileCursor = new FastFileCursor(soundFileBytes, soundFilesAddress);
         var roots = new SoundFileRoot[soundFileCount];
         for (int i = 0; i < roots.Length; i++)
-            roots[i] = ReadSoundFileRoot(soundFileCursor);
+            roots[i] = ReadSoundFileRoot(soundFileCursor, context);
 
         var soundFiles = new SoundFile[soundFileCount];
         for (int i = 0; i < soundFiles.Length; i++)
@@ -373,7 +363,7 @@ public sealed class SoundAliasListLoader
         return soundFiles;
     }
 
-    private static SoundFileRoot ReadSoundFileRoot(FastFileCursor cursor)
+    private static SoundFileRoot ReadSoundFileRoot(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         int offset = cursor.AddressAt(cursor.Offset)?.Offset ?? cursor.Offset;
         int start = cursor.Offset;
@@ -381,10 +371,42 @@ public sealed class SoundAliasListLoader
         byte exists = cursor.ReadByte();
         ushort padding = cursor.ReadUInt16();
         int unionCellOffset = cursor.Offset;
-        byte[] unionBytes = cursor.ReadBytes(12);
-        int unionRaw0 = BinaryPrimitives.ReadInt32BigEndian(unionBytes.AsSpan(0, sizeof(int)));
-        int unionRaw1 = BinaryPrimitives.ReadInt32BigEndian(unionBytes.AsSpan(4, sizeof(int)));
-        int unionRaw2 = BinaryPrimitives.ReadInt32BigEndian(unionBytes.AsSpan(8, sizeof(int)));
+        int unionRaw0;
+        int unionRaw1;
+        int unionRaw2;
+        byte[] unionBytes = new byte[12];
+        if (type == SndAliasType.Loaded)
+        {
+            XPointer<LoadedSound> loadedSoundPointer = context.PointerReader.ReadDeferredPointer<LoadedSound>(cursor, XPointerResolutionMode.AliasCell);
+            unionRaw0 = loadedSoundPointer.Raw;
+            byte[] tail = cursor.ReadBytes(8);
+            unionRaw1 = BinaryPrimitives.ReadInt32BigEndian(tail.AsSpan(0, sizeof(int)));
+            unionRaw2 = BinaryPrimitives.ReadInt32BigEndian(tail.AsSpan(sizeof(int), sizeof(int)));
+            BinaryPrimitives.WriteInt32BigEndian(unionBytes.AsSpan(0, sizeof(int)), unionRaw0);
+            tail.CopyTo(unionBytes, sizeof(int));
+        }
+        else
+        {
+            unionRaw0 = cursor.ReadInt32();
+            // Native dispatch treats every non-Loaded tag as the streamed
+            // union. FileIndex zero selects its directory/filename XStrings.
+            if (unionRaw0 == 0)
+            {
+                XPointer<string> directoryPointer = context.PointerReader.ReadDeferredPointer<string>(cursor, XPointerResolutionMode.Direct);
+                XPointer<string> filenamePointer = context.PointerReader.ReadDeferredPointer<string>(cursor, XPointerResolutionMode.Direct);
+                unionRaw1 = directoryPointer.Raw;
+                unionRaw2 = filenamePointer.Raw;
+            }
+            else
+            {
+                unionRaw1 = cursor.ReadInt32();
+                unionRaw2 = cursor.ReadInt32();
+            }
+
+            BinaryPrimitives.WriteInt32BigEndian(unionBytes.AsSpan(0, sizeof(int)), unionRaw0);
+            BinaryPrimitives.WriteInt32BigEndian(unionBytes.AsSpan(sizeof(int), sizeof(int)), unionRaw1);
+            BinaryPrimitives.WriteInt32BigEndian(unionBytes.AsSpan(sizeof(int) * 2, sizeof(int)), unionRaw2);
+        }
 
         if (cursor.Offset - start != SoundFile.SerializedSize)
             throw new InvalidDataException($"SoundFile consumed 0x{cursor.Offset - start:X} bytes instead of 0x{SoundFile.SerializedSize:X}.");
@@ -613,11 +635,7 @@ public sealed class SoundAliasListLoader
         FastFileCursor cursor,
         DbLoadExecutionContext context)
     {
-        int cellOffset = cursor.Offset;
-        return new XString(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
+        return context.PointerReader.ReadDeferredPointer<string>(cursor, XPointerResolutionMode.Direct);
     }
 
     private static string? LoadSoundXString(
@@ -675,14 +693,8 @@ public sealed class SoundAliasListLoader
 
     private static XPointer<T> ReadPointerCellNoValidation<T>(
         FastFileCursor cursor,
-        XPointerResolutionMode resolutionMode)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(
-            cursor.ReadInt32(),
-            resolutionMode,
-            cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode resolutionMode) => context.PointerReader.ReadDeferredPointer<T>(cursor, resolutionMode);
 
     private static float ReadSingle(FastFileCursor cursor)
     {

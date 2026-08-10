@@ -9,6 +9,7 @@ using IW4.Runtime.Assets.Lifecycle;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
 using IW4.Runtime.Strings;
+using IW4.Linker.Model;
 
 namespace IW4.FastFiles.Loaders.Database;
 
@@ -288,8 +289,9 @@ public sealed class DbZoneLoader
         byte[] zoneBytes = _packedStreamReader.ReadZone(cursor, header.FileSize);
         context.DecodedZoneBytes = zoneBytes;
 
-        var zoneCursor = new FastFileCursor(zoneBytes);
+        var zoneCursor = new FastFileCursor(zoneBytes, decodedTapeBaseOffset: 0);
         XFile xfile = _xfileHeaderReader.Read(zoneCursor);
+        context.BeginZoneObjectCapture(zoneBytes, xfile);
 
         return new XFileLoadState(header, xfile, zoneBytes, zoneCursor.Offset);
     }
@@ -349,7 +351,7 @@ public sealed class DbZoneLoader
 
         ValidateAllocation(loadState.XFile, zoneMemory);
 
-        var zoneCursor = new FastFileCursor(loadState.ZoneBytes);
+        var zoneCursor = new FastFileCursor(loadState.ZoneBytes, decodedTapeBaseOffset: 0);
         zoneCursor.Skip(loadState.XFileDataOffset);
         XAssetListSnapshot xassetList =
             _xassetListReader.Read(zoneCursor, context);
@@ -372,6 +374,7 @@ public sealed class DbZoneLoader
                 $"declares the meaningful end at 0x{declaredMeaningfulEnd:X}.");
         }
         RecordZoneTailPadding(loadState.ZoneBytes, zoneCursor.Offset, context);
+        ZoneObjectFile objectFile = context.FreezeZoneObjectFile();
 
         var loaded = new LoadedXZone(
             SourceName: context.CurrentFastFile.Name,
@@ -382,7 +385,8 @@ public sealed class DbZoneLoader
             XAssetList: xassetList,
             LoadedAssets: Array.AsReadOnly(loadedAssets.ToArray()),
             ZoneBytes: loadState.ZoneBytes,
-            Warnings: Array.AsReadOnly(context.Diagnostics.Warnings.ToArray()));
+            Warnings: Array.AsReadOnly(context.Diagnostics.Warnings.ToArray()),
+            ZoneObjectFile: objectFile);
 
         return loaded;
     }

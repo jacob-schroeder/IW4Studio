@@ -8,16 +8,19 @@ public sealed class FastFileCursor
 {
     private readonly ReadOnlyMemory<byte> _memory;
 
-    public FastFileCursor(ReadOnlyMemory<byte> memory, XBlockAddress? baseAddress = null)
+    public FastFileCursor(ReadOnlyMemory<byte> memory, XBlockAddress? baseAddress = null, int? decodedTapeBaseOffset = null)
     {
         _memory = memory;
         BaseAddress = baseAddress;
+        DecodedTapeBaseOffset = decodedTapeBaseOffset;
     }
 
     public int Offset { get; private set; }
     public int Length => _memory.Length;
     public int Remaining => Length - Offset;
     public XBlockAddress? BaseAddress { get; }
+    /// <summary>Optional coordinate of this cursor's first byte in the decoded zone tape.</summary>
+    public int? DecodedTapeBaseOffset { get; }
 
     private ReadOnlySpan<byte> Span => _memory.Span;
 
@@ -137,6 +140,13 @@ public sealed class FastFileCursor
             throw new ArgumentOutOfRangeException(nameof(offset));
 
         return BaseAddress?.Add(offset);
+    }
+
+    public int? DecodedTapeOffsetAt(int offset)
+    {
+        if (offset < 0 || offset > Length)
+            throw new ArgumentOutOfRangeException(nameof(offset));
+        return DecodedTapeBaseOffset is { } baseOffset ? checked(baseOffset + offset) : null;
     }
 
     private void EnsureAvailable(int byteCount)

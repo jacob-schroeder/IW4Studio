@@ -34,12 +34,12 @@ public sealed class GGlassDataLoader
         }
 
         var rootCursor = new FastFileCursor(rootBytes, glassDataAddress);
-        XPointer<GGlassPiece[]> glassPiecesPointer = ReadPresencePointer<GGlassPiece[]>(rootCursor);
+        XPointer<GGlassPiece[]> glassPiecesPointer = ReadPresencePointer<GGlassPiece[]>(rootCursor, context);
         int pieceCount = rootCursor.ReadInt32();
         ushort damageToWeaken = rootCursor.ReadUInt16();
         ushort damageToDestroy = rootCursor.ReadUInt16();
         int glassNameCount = rootCursor.ReadInt32();
-        XPointer<GGlassName[]> glassNamesPointer = ReadPresencePointer<GGlassName[]>(rootCursor);
+        XPointer<GGlassName[]> glassNamesPointer = ReadPresencePointer<GGlassName[]>(rootCursor, context);
         byte[] pad14To7F = rootCursor.ReadBytes(0x6C);
 
         if (rootCursor.Offset != GGlassData.SerializedSize)
@@ -135,7 +135,7 @@ public sealed class GGlassDataLoader
                 XPointerResolutionMode.Direct);
             ushort name = rowCursor.ReadUInt16();
             ushort pieceCount = rowCursor.ReadUInt16();
-            XPointer<ushort[]> pieceIndicesPointer = ReadPresencePointer<ushort[]>(rowCursor);
+            XPointer<ushort[]> pieceIndicesPointer = ReadPresencePointer<ushort[]>(rowCursor, context);
             string? nameStr = context.PointerReader.LoadXString(cursor, nameStrPointer);
             IReadOnlyList<ushort> pieceIndices = ReadUInt16Array(
                 cursor,
@@ -211,13 +211,9 @@ public sealed class GGlassDataLoader
         return bytes;
     }
 
-    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor)
+    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor, DbLoadExecutionContext context)
     {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
+        return context.PointerReader.ReadDeferredPointer<T>(cursor, XPointerResolutionMode.Direct);
     }
 
     private static XBlockAddress PatchPresenceCell(

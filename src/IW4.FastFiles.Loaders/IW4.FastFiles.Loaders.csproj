@@ -5,6 +5,7 @@
     <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
     <ProjectReference Include="..\IW4.Runtime\IW4.Runtime.csproj" />
     <ProjectReference Include="..\IW4.FastFiles.Streaming\IW4.FastFiles.Streaming.csproj" />
+    <ProjectReference Include="..\IW4.Linker\IW4.Linker.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

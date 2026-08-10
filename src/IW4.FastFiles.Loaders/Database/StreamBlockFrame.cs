@@ -4,4 +4,5 @@ namespace IW4.FastFiles.Loaders.Database;
 
 internal readonly record struct StreamBlockFrame(
     XFileBlockType PreviousBlock,
-    int PushedBlockPosition);
+    int PushedBlockPosition,
+    long PreviousTempEpoch);

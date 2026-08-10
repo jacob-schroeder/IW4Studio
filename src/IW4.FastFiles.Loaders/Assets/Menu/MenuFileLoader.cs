@@ -61,25 +61,14 @@ public sealed class MenuFileLoader
             throw new InvalidDataException(
                 $"Top-level MenuFile pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             MenuFileAsset menuFile = ReadMenuFile(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline MenuFile pointer has no destination cell.");
-            MenuFileAsset canonical = context.DB_AddXAsset(menuFile, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical MenuFile has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            MenuFileAsset canonical = context.DB_AddXAsset(menuFile, providerRegistration);
 
             return canonical;
         }
@@ -226,9 +215,7 @@ public sealed class MenuFileLoader
                 $"MenuDef pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -245,16 +232,7 @@ public sealed class MenuFileLoader
                 context.Blocks.Pop();
             }
 
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline MenuDef pointer has no destination cell.");
-            MenuDefAsset canonical = context.DB_AddXAsset(menu, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical MenuDef has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            MenuDefAsset canonical = context.DB_AddXAsset(menu, providerRegistration);
 
             return new MenuDefLoadResult(menu, canonical);
         }
@@ -555,7 +533,7 @@ public sealed class MenuFileLoader
             FocusSound = ReadNullablePointer<SoundAliasListAssetModel>(rootCursor, context, XPointerResolutionMode.AliasCell),
             Special = ReadSingle(rootCursor),
             CursorPos = ReadInt32Array(rootCursor, 4),
-            TypeData = ReadItemDefData(rootCursor, itemType: (ItemDefType)BinaryPrimitives.ReadInt32BigEndian(rootBytes.Span.Slice(0x100, sizeof(int)))),
+            TypeData = ReadItemDefData(rootCursor, itemType: (ItemDefType)BinaryPrimitives.ReadInt32BigEndian(rootBytes.Span.Slice(0x100, sizeof(int))), context),
             ImageTrack = rootCursor.ReadInt32(),
             FloatExpressionCount = rootCursor.ReadInt32(),
             FloatExpressions = ReadPointer<ItemFloatExpression[]>(rootCursor, context, XPointerResolutionMode.Direct),
@@ -825,8 +803,11 @@ public sealed class MenuFileLoader
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
         ReadOnlyMemory<byte> rootBytes = context.Blocks.LoadMemory(cursor, MenuEventHandler.SerializedSize, out XBlockAddress rootAddress);
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
-        XPointerReference eventDataPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
+        int eventDataRaw = rootCursor.ReadInt32();
         var eventType = (MenuEventHandlerType)rootCursor.ReadByte();
+        XPointerReference eventDataPointer = IsPointerEventData(eventType)
+            ? context.PointerReader.ReadCell(new FastFileCursor(rootBytes[..sizeof(int)], rootAddress), XPointerOffsetMode.Direct)
+            : XPointerReference.FromRaw(eventDataRaw, XPointerOffsetMode.Direct, rootAddress);
 
         var handler = new MenuEventHandler
         {
@@ -1118,7 +1099,9 @@ public sealed class MenuFileLoader
             int rowStart = entryCursor.Offset;
             var kind = (ExpressionEntryKind)entryCursor.ReadInt32();
             int discriminatorOrOperation = entryCursor.ReadInt32();
-            int encodedValueOrTail = entryCursor.ReadInt32();
+            int encodedValueOrTail = kind == ExpressionEntryKind.Operand && IsPointerOperand((ExpDataType)discriminatorOrOperation)
+                ? context.PointerReader.ReadCell(entryCursor, XPointerOffsetMode.Direct).Raw
+                : entryCursor.ReadInt32();
 
             if (entryCursor.Offset - rowStart != ExpressionEntry.SerializedSize)
                 throw new InvalidDataException($"ExpressionEntry consumed 0x{entryCursor.Offset - rowStart:X} bytes instead of 0x{ExpressionEntry.SerializedSize:X}.");
@@ -1167,6 +1150,18 @@ public sealed class MenuFileLoader
         };
     }
 
+    private static bool IsPointerOperand(ExpDataType dataType) =>
+        dataType is ExpDataType.VAL_STRING or ExpDataType.VAL_FUNCTION;
+
+    private static bool IsPointerEventData(MenuEventHandlerType eventType) =>
+        eventType is MenuEventHandlerType.UnconditionalScript
+            or MenuEventHandlerType.ConditionalScript
+            or MenuEventHandlerType.ElseScript
+            or MenuEventHandlerType.SetLocalVarBool
+            or MenuEventHandlerType.SetLocalVarInt
+            or MenuEventHandlerType.SetLocalVarFloat
+            or MenuEventHandlerType.SetLocalVarString;
+
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
         XPointerOffsetMode offsetMode)
@@ -1180,9 +1175,28 @@ public sealed class MenuFileLoader
 
     private static ItemDefData ReadItemDefData(
         FastFileCursor cursor,
-        ItemDefType itemType)
+        ItemDefType itemType,
+        DbLoadExecutionContext context)
     {
-        XPointerReference pointer = ReadRawCell(cursor, XPointerOffsetMode.Direct);
+        bool hasPointerPayload = itemType is ItemDefType.Text
+            or ItemDefType.EditField
+            or ItemDefType.NumericField
+            or ItemDefType.Slider
+            or ItemDefType.YesNo
+            or ItemDefType.Bind
+            or ItemDefType.Validation
+            or ItemDefType.DecimalField
+            or ItemDefType.UpDown
+            or ItemDefType.EmailField
+            or ItemDefType.PassWordField
+            or ItemDefType.ListBox
+            or ItemDefType.Multi
+            or ItemDefType.DvarEnum
+            or ItemDefType.NewsTicker
+            or ItemDefType.TextScroll;
+        XPointerReference pointer = hasPointerPayload
+            ? context.PointerReader.ReadCell(cursor, XPointerOffsetMode.Direct)
+            : ReadRawCell(cursor, XPointerOffsetMode.Direct);
         ItemDefDataValue value = itemType switch
         {
             ItemDefType.Text
@@ -1394,11 +1408,17 @@ public sealed class MenuFileLoader
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
         ReadOnlyMemory<byte> rootBytes = context.Blocks.LoadMemory(cursor, StaticDvar.SerializedSize, out XBlockAddress rootAddress);
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
+        int dvarCellOffset = rootCursor.Offset;
+        int dvarRaw = rootCursor.ReadInt32();
 
         var dvar = new StaticDvar
         {
             DestinationAddress = rootAddress,
-            Dvar = ReadNullablePointer<DvarRuntimeHandle>(rootCursor, context, XPointerResolutionMode.Direct),
+            Dvar = XPointerReference.FromRaw(
+                    dvarRaw,
+                    XPointerResolutionMode.Direct,
+                    rootCursor.AddressAt(dvarCellOffset))
+                .AsPointer<DvarRuntimeHandle>(),
             DvarName = ReadXStringPointer(rootCursor, context)
         };
 

@@ -129,8 +129,6 @@ public sealed class XAssetDispatcher
 
                 BaseAsset loadedAsset;
 
-                PatchInlineAssetPointer(asset, context);
-
                 if (asset.Type == XAssetType.PhysPreset)
                 {
                     loadedAsset = _physPresetLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
@@ -315,17 +313,4 @@ public sealed class XAssetDispatcher
         return results;
     }
 
-    private static void PatchInlineAssetPointer(
-        XAssetListEntrySnapshot asset,
-        DbLoadContext context)
-    {
-        if (asset.AssetPointer.Type is not (PointerType.Inline or PointerType.Insert))
-            return;
-
-        XBlockAddress targetAddress = context.PointerReader.PatchInlinePointerCell(
-            asset.AssetPointerCellAddress,
-            asset.AssetPointer.Raw,
-            alignment: 4);
-        int runtimePointer = XPointerCodec.Encode(targetAddress);
-    }
 }

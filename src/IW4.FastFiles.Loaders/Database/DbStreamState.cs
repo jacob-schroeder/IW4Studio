@@ -2,10 +2,13 @@ using IW4.Runtime.Database;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.IO;
+using IW4.Linker.Model;
 using System.Buffers.Binary;
 using System.Text;
 
 namespace IW4.FastFiles.Loaders.Database;
+
+internal readonly record struct CStringMaterializationHandle(CaptureOccurrence Occurrence);
 
 public sealed class DbStreamState : IXZoneRuntimeMemory
 {
@@ -13,7 +16,9 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
     private int[] _blockSizes = [];
     private int[] _positions = [];
     private int[] _materializedLengths = [];
+    private int[] _pendingMaterializationAlignments = [];
     private MemoryStream[] _streams = [];
+    internal ZoneObjectCaptureBridge? CaptureBridge { get; set; }
 
     public XZoneMemory? ZoneMemory { get; private set; }
     public bool IsReleased => ZoneMemory?.IsReleased == true;
@@ -38,6 +43,7 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         _blockSizes = new int[zoneMemory.Blocks.Count];
         _positions = new int[_blockSizes.Length];
         _materializedLengths = new int[_blockSizes.Length];
+        _pendingMaterializationAlignments = new int[_blockSizes.Length];
         _streams = new MemoryStream[_blockSizes.Length];
         for (int i = 0; i < _streams.Length; i++)
         {
@@ -81,13 +87,15 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         _blockSizes = [];
         _positions = [];
         _materializedLengths = [];
+        _pendingMaterializationAlignments = [];
         _stack.Clear();
         zoneMemory.Release();
     }
 
     public void Push(XFileBlockType block)
     {
-        _stack.Push(new StreamBlockFrame(CurrentBlock, GetPosition(block)));
+        _stack.Push(new StreamBlockFrame(CurrentBlock, GetPosition(block), CaptureBridge?.CurrentTempEpoch ?? 1));
+        CaptureBridge?.Push(block);
         CurrentBlock = block;
     }
 
@@ -99,7 +107,10 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         StreamBlockFrame frame = _stack.Pop();
 
         if (CurrentBlock == XFileBlockType.TEMP)
+        {
             _positions[(int)XFileBlockType.TEMP] = frame.PushedBlockPosition;
+            CaptureBridge?.Pop(CurrentBlock, frame.PreviousTempEpoch);
+        }
 
         CurrentBlock = frame.PreviousBlock;
     }
@@ -142,6 +153,12 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         return CurrentAddress;
     }
 
+    /// <summary>
+    /// Allocates the durable LARGE cell for ordinary non-provider -2 payload
+    /// pointers. XAsset providers must use
+    /// <see cref="DbLoadExecutionContext.BeginProviderRegistration"/>, which
+    /// records their source occurrence and owns their provider cell.
+    /// </summary>
     public XBlockAddress AllocateInsertPointerCell()
     {
         int index = GetBlockIndex(XFileBlockType.LARGE);
@@ -154,6 +171,12 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         WriteInt32(address, 0);
         _positions[index] = checked(alignedPosition + sizeof(int));
         EnsureLength(index, _positions[index]);
+        CaptureBridge?.RecordDestination(
+            sizeof(int),
+            address,
+            ConsumePendingMaterializationAlignment(XFileBlockType.LARGE, sizeof(int)),
+            IW4.Linker.Model.MaterializationKind.InsertCell);
+        CaptureBridge?.RecordInsertPointerCell(address);
         return address;
     }
 
@@ -165,6 +188,7 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         int index = (int)CurrentBlock;
         int position = _positions[index];
         _positions[index] = checked((position + alignment - 1) / alignment * alignment);
+        _pendingMaterializationAlignments[index] = Math.Max(_pendingMaterializationAlignments[index], alignment);
         EnsureLength(index, _positions[index]);
     }
 
@@ -182,11 +206,14 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
             // RUNTIME calls the zero-fill helper before advancing; VIRTUAL only advances.
             byte[] zeros = new byte[byteCount];
             Write(zeros);
+            CaptureBridge?.RecordDestination(byteCount, destinationAddress, ConsumePendingMaterializationAlignment(CurrentBlock), CurrentBlock == XFileBlockType.RUNTIME ? IW4.Linker.Model.MaterializationKind.RuntimeZeroFill : IW4.Linker.Model.MaterializationKind.VirtualReservation);
             return zeros;
         }
 
+        int sourceOffset = cursor.Offset;
         byte[] bytes = cursor.ReadBytes(byteCount);
         Write(bytes);
+        CaptureBridge?.RecordLoad(cursor, sourceOffset, byteCount, destinationAddress, ConsumePendingMaterializationAlignment(CurrentBlock), IW4.Linker.Model.MaterializationKind.StreamCopy);
         return bytes;
     }
 
@@ -212,18 +239,52 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         {
             byte[] zeros = new byte[byteCount];
             Write(zeros);
+            CaptureBridge?.RecordDestination(byteCount, address, ConsumePendingMaterializationAlignment(CurrentBlock), CurrentBlock == XFileBlockType.RUNTIME ? IW4.Linker.Model.MaterializationKind.RuntimeZeroFill : IW4.Linker.Model.MaterializationKind.VirtualReservation);
             return zeros;
         }
 
+        int sourceOffset = cursor.Offset;
         ReadOnlyMemory<byte> bytes = cursor.ReadMemory(byteCount);
         Write(bytes.Span);
+        CaptureBridge?.RecordLoad(cursor, sourceOffset, byteCount, address, ConsumePendingMaterializationAlignment(CurrentBlock), IW4.Linker.Model.MaterializationKind.StreamCopy);
         return bytes;
     }
 
-    public string LoadCString(FastFileCursor cursor)
+    public string LoadCString(FastFileCursor cursor) => LoadCStringCore(cursor, out _);
+
+    public string LoadCString(FastFileCursor cursor, out XBlockAddress address)
     {
+        address = CurrentAddress;
+        return LoadCStringCore(cursor, out _);
+    }
+
+    internal string LoadCString(
+        FastFileCursor cursor,
+        out XBlockAddress address,
+        out CStringMaterializationHandle? captureHandle)
+    {
+        address = CurrentAddress;
+        return LoadCStringCore(cursor, out captureHandle);
+    }
+
+    private string LoadCStringCore(
+        FastFileCursor cursor,
+        out CStringMaterializationHandle? captureHandle)
+    {
+        int sourceOffset = cursor.Offset;
+        XBlockAddress destination = CurrentAddress;
         string value = cursor.ReadCString(out ReadOnlyMemory<byte> serializedBytes);
         Write(serializedBytes.Span);
+        CaptureOccurrence? occurrence = CaptureBridge?.RecordLoad(
+            cursor,
+            sourceOffset,
+            serializedBytes.Length,
+            destination,
+            ConsumePendingMaterializationAlignment(CurrentBlock),
+            MaterializationKind.CString);
+        captureHandle = occurrence is { } captured
+            ? new CStringMaterializationHandle(captured)
+            : null;
         return value;
     }
 
@@ -342,6 +403,7 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         BinaryPrimitives.WriteInt32BigEndian(bytes, value);
         stream.Write(bytes);
         _materializedLengths[index] = Math.Max(_materializedLengths[index], end);
+        CaptureBridge?.ObservePointerCellWrite(address, value, PendingMaterializationAlignment(CurrentBlock));
     }
 
     public void WriteUInt16(XBlockAddress address, ushort value)
@@ -462,6 +524,17 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
                 $"Offset pointer 0x{rawPointer:X8} to {targetName} targets {address}, " +
                 $"but no null terminator exists before the end of materialized block {address.BlockType} data at 0x{writtenLength:X}.");
         }
+    }
+
+    private int PendingMaterializationAlignment(XFileBlockType block) =>
+        _pendingMaterializationAlignments[GetBlockIndex(block)];
+
+    private int ConsumePendingMaterializationAlignment(XFileBlockType block, int minimum = 0)
+    {
+        int index = GetBlockIndex(block);
+        int alignment = Math.Max(_pendingMaterializationAlignments[index], minimum);
+        _pendingMaterializationAlignments[index] = 0;
+        return alignment;
     }
 
     private void EnsureLength(int index, int length)

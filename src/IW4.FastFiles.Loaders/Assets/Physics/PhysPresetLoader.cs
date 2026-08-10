@@ -77,25 +77,14 @@ public sealed class PhysPresetLoader
                 $"PhysPreset pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             PhysPresetAsset physPreset = ReadPhysPreset(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline PhysPreset pointer has no destination cell.");
-            PhysPresetAsset canonical = context.DB_AddXAsset(physPreset, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical PhysPreset has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            PhysPresetAsset canonical = context.DB_AddXAsset(physPreset, providerRegistration);
 
             return new PhysPresetPointerLoadResult(canonical, physPreset);
         }

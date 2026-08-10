@@ -10,7 +10,7 @@ public readonly record struct XPointerReference(
     XBlockAddress? CellAddress)
 {
     public XPointerOffsetMode OffsetMode => ResolutionMode.ToOffsetMode();
-    public bool ConsumesSource => Type is PointerType.Inline;
+    public bool ConsumesSource => Type is PointerType.Inline or PointerType.Insert;
 
     public XPointer<T> AsPointer<T>() => new(Raw, ResolutionMode, CellAddress);
 

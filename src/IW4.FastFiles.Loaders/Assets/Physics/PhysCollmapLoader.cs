@@ -89,29 +89,18 @@ public sealed class PhysCollmapLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             PhysCollmapAsset asset = ReadPhysCollmap(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline PhysCollmap pointer has no destination cell.");
             PhysCollmapAsset canonical = context.DB_AddXAsset(
                 XAssetType.PhysCollmap,
                 asset.Name,
                 asset,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical PhysCollmap has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return new PhysCollmapPointerLoadResult(canonical, asset);
         }
@@ -132,9 +121,9 @@ public sealed class PhysCollmapLoader
             throw new InvalidDataException($"PhysCollmap pointer patched to {expectedRootAddress}, but root loaded at {rootAddress}.");
 
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
-        XString namePointer = ReadXStringPointer(rootCursor);
+        XString namePointer = ReadXStringPointer(rootCursor, context);
         int count = rootCursor.ReadInt32();
-        XPointer<PhysGeomInfo[]> geomsPointer = ReadPointer<PhysGeomInfo[]>(rootCursor, XPointerResolutionMode.Direct);
+        XPointer<PhysGeomInfo[]> geomsPointer = ReadPointer<PhysGeomInfo[]>(rootCursor, context, XPointerResolutionMode.Direct);
         PhysMass mass = ReadPhysMass(rootCursor);
         Bounds bounds = ReadBounds(rootCursor);
 
@@ -196,7 +185,7 @@ public sealed class PhysCollmapLoader
                 bytes.AsSpan(entryOffset, PhysGeomInfo.SerializedSize).ToArray(),
                 address with { Offset = address.Offset + entryOffset });
 
-            XPointer<BrushWrapper> brushPointer = ReadPointer<BrushWrapper>(entryCursor, XPointerResolutionMode.Direct);
+            XPointer<BrushWrapper> brushPointer = ReadPointer<BrushWrapper>(entryCursor, context, XPointerResolutionMode.Direct);
             brushPointers[i] = brushPointer;
             int type = entryCursor.ReadInt32();
             Vec3[] orientation = [ReadVec3(entryCursor), ReadVec3(entryCursor), ReadVec3(entryCursor)];
@@ -245,10 +234,15 @@ public sealed class PhysCollmapLoader
         var brushCursor = new FastFileCursor(
             bytes.AsSpan(0x18, CBrush.SerializedSize).ToArray(),
             address with { Offset = address.Offset + 0x18 });
-        CBrush brushRoot = ReadCBrushRoot(brushCursor);
+        CBrush brushRoot = ReadCBrushRoot(brushCursor, context);
         wrapperCursor.Skip(0x3c - wrapperCursor.Offset);
         int totalEdgeCount = wrapperCursor.ReadInt32();
-        XPointer<CPlane[]> planesPointer = ReadPointer<CPlane[]>(wrapperCursor, XPointerResolutionMode.Direct);
+        // The brush-side payload can materialize the shared plane range after
+        // this header is read. Defer target validation until that payload has
+        // been processed below, immediately before the plane view is used.
+        XPointer<CPlane[]> planesPointer = context.PointerReader.ReadDeferredPointer<CPlane[]>(
+            wrapperCursor,
+            XPointerResolutionMode.Direct);
 
         IReadOnlyList<CBrushSide> sides = ReadCBrushSideArray(cursor, brushRoot.SidesPointer.Untyped, brushRoot.NumSides, context);
         IReadOnlyList<byte> baseAdjacentSide = ReadByteArray(cursor, brushRoot.BaseAdjacentSidePointer.Untyped, totalEdgeCount, context);
@@ -276,12 +270,12 @@ public sealed class PhysCollmapLoader
         };
     }
 
-    private static CBrush ReadCBrushRoot(FastFileCursor cursor)
+    private static CBrush ReadCBrushRoot(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         ushort numSides = cursor.ReadUInt16();
         ushort glassPieceIndex = cursor.ReadUInt16();
-        XPointer<CBrushSide[]> sidesPointer = ReadPointer<CBrushSide[]>(cursor, XPointerResolutionMode.Direct);
-        XPointer<byte[]> baseAdjacentSidePointer = ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct);
+        XPointer<CBrushSide[]> sidesPointer = ReadPointer<CBrushSide[]>(cursor, context, XPointerResolutionMode.Direct);
+        XPointer<byte[]> baseAdjacentSidePointer = ReadPointer<byte[]>(cursor, context, XPointerResolutionMode.Direct);
         var axialMaterialNum = new short[6];
         for (int i = 0; i < axialMaterialNum.Length; i++)
             axialMaterialNum[i] = unchecked((short)cursor.ReadUInt16());
@@ -322,7 +316,7 @@ public sealed class PhysCollmapLoader
                 bytes.AsSpan(entryOffset, CBrushSide.SerializedSize).ToArray(),
                 address with { Offset = address.Offset + entryOffset });
 
-            XPointer<CPlane> planePointer = ReadPointer<CPlane>(entryCursor, XPointerResolutionMode.Direct);
+            XPointer<CPlane> planePointer = ReadPointer<CPlane>(entryCursor, context, XPointerResolutionMode.Direct);
             sides[i] = new CBrushSide
             {
                 PlanePointer = planePointer,
@@ -465,16 +459,11 @@ public sealed class PhysCollmapLoader
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
-        XPointerResolutionMode mode)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode mode) => context.PointerReader.ReadPointer<T>(cursor, mode);
 
-    private static XString ReadXStringPointer(FastFileCursor cursor)
-    {
-        return ReadPointer<string>(cursor, XPointerResolutionMode.Direct);
-    }
+    private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 
     private static float ReadSingle(FastFileCursor cursor)
     {

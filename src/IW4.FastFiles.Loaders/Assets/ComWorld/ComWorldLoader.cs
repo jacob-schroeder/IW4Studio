@@ -33,29 +33,18 @@ public sealed class ComWorldLoader
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
             throw new InvalidDataException($"Top-level ComWorld pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             ComWorldAsset comWorld = ReadComWorld(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline ComWorld pointer has no destination cell.");
             ComWorldAsset canonical = context.DB_AddXAsset(
                 XAssetType.ComMap,
                 comWorld.Name,
                 comWorld,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical ComWorld has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }

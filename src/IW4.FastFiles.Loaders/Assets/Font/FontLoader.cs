@@ -37,29 +37,18 @@ public sealed class FontLoader
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
             throw new InvalidDataException($"Top-level Font pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             FontAsset font = ReadFont(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline Font pointer has no destination cell.");
             FontAsset canonical = context.DB_AddXAsset(
                 XAssetType.Font,
                 font.Name,
                 font,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Font has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }

@@ -51,28 +51,18 @@ public sealed class VehicleDefLoader
                 $"Vehicle pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             VehicleDefAsset vehicle = ReadVehicleDef(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline Vehicle pointer has no destination cell.");
             VehicleDefAsset canonical = context.DB_AddXAsset(
                 XAssetType.Vehicle,
                 vehicle.Name,
                 vehicle,
-                pointerCellAddress);
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Vehicle has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -93,9 +83,9 @@ public sealed class VehicleDefLoader
             throw new InvalidDataException($"Vehicle pointer patched to {expectedRootAddress}, but root loaded at {rootAddress}.");
 
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
-        XString namePointer = ReadXStringPointer(rootCursor);
+        XString namePointer = ReadXStringPointer(rootCursor, context);
         VehicleType type = (VehicleType)rootCursor.ReadInt32();
-        XString useHintPointer = ReadXStringPointer(rootCursor);
+        XString useHintPointer = ReadXStringPointer(rootCursor, context);
         int health = rootCursor.ReadInt32();
         int quadBarrel = rootCursor.ReadInt32();
         float texScrollScale = ReadSingle(rootCursor);
@@ -116,7 +106,7 @@ public sealed class VehicleDefLoader
         int projectileDamage = rootCursor.ReadInt32();
         int projectileSplashDamage = rootCursor.ReadInt32();
         int heavyExplosiveDamage = rootCursor.ReadInt32();
-        VehiclePhysDef phys = ReadVehiclePhysDefRoot(rootCursor);
+        VehiclePhysDef phys = ReadVehiclePhysDefRoot(rootCursor, context);
         float boostDuration = ReadSingle(rootCursor);
         float boostRechargeTime = ReadSingle(rootCursor);
         float boostAcceleration = ReadSingle(rootCursor);
@@ -132,15 +122,15 @@ public sealed class VehicleDefLoader
         float camFovIncrease = ReadSingle(rootCursor);
         float camFovOffset = ReadSingle(rootCursor);
         float camFovSpeed = ReadSingle(rootCursor);
-        XString turretWeaponNamePointer = ReadXStringPointer(rootCursor);
-        XPointer<WeaponAsset> turretWeaponPointer = ReadPointer<WeaponAsset>(rootCursor, XPointerResolutionMode.AliasCell);
+        XString turretWeaponNamePointer = ReadXStringPointer(rootCursor, context);
+        XPointer<WeaponAsset> turretWeaponPointer = ReadPointer<WeaponAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
         float turretHorizSpanLeft = ReadSingle(rootCursor);
         float turretHorizSpanRight = ReadSingle(rootCursor);
         float turretVertSpanUp = ReadSingle(rootCursor);
         float turretVertSpanDown = ReadSingle(rootCursor);
         float turretRotRate = ReadSingle(rootCursor);
-        VehicleSoundAliasField turretSpinSoundRoot = ReadSoundAliasRoot(rootCursor, 0x1B4);
-        VehicleSoundAliasField turretStopSoundRoot = ReadSoundAliasRoot(rootCursor, 0x1B8);
+        VehicleSoundAliasField turretSpinSoundRoot = ReadSoundAliasRoot(rootCursor, 0x1B4, context);
+        VehicleSoundAliasField turretStopSoundRoot = ReadSoundAliasRoot(rootCursor, 0x1B8, context);
         int trophyEnabled = rootCursor.ReadInt32();
         float trophyRadius = ReadSingle(rootCursor);
         float trophyInactiveRadius = ReadSingle(rootCursor);
@@ -148,18 +138,18 @@ public sealed class VehicleDefLoader
         float trophyReloadTime = ReadSingle(rootCursor);
         rootCursor.Skip(VehicleDefAsset.ScriptStringCount * sizeof(ushort));
         XBlockAddress scriptStringsAddress = rootAddress.Add(VehicleDefAsset.ScriptStringOffset);
-        XPointer<MaterialAsset> compassFriendlyIconPointer = ReadPointer<MaterialAsset>(rootCursor, XPointerResolutionMode.AliasCell);
-        XPointer<MaterialAsset> compassEnemyIconPointer = ReadPointer<MaterialAsset>(rootCursor, XPointerResolutionMode.AliasCell);
+        XPointer<MaterialAsset> compassFriendlyIconPointer = ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
+        XPointer<MaterialAsset> compassEnemyIconPointer = ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
         float compassIconWidth = ReadSingle(rootCursor);
         float compassIconHeight = ReadSingle(rootCursor);
-        VehicleEngineSoundFields engineSoundRoots = ReadEngineSoundRoots(rootCursor);
-        VehicleSuspensionSoundFields suspensionSoundRoots = ReadSuspensionSoundRoots(rootCursor);
-        VehicleSoundAliasField collisionSoundRoot = ReadSoundAliasRoot(rootCursor, 0x230);
+        VehicleEngineSoundFields engineSoundRoots = ReadEngineSoundRoots(rootCursor, context);
+        VehicleSuspensionSoundFields suspensionSoundRoots = ReadSuspensionSoundRoots(rootCursor, context);
+        VehicleSoundAliasField collisionSoundRoot = ReadSoundAliasRoot(rootCursor, 0x230, context);
         float collisionBlendSpeed = ReadSingle(rootCursor);
-        VehicleSoundAliasField speedSoundRoot = ReadSoundAliasRoot(rootCursor, 0x238);
+        VehicleSoundAliasField speedSoundRoot = ReadSoundAliasRoot(rootCursor, 0x238, context);
         float speedSoundBlendSpeed = ReadSingle(rootCursor);
-        XString surfaceSoundPrefixPointer = ReadXStringPointer(rootCursor);
-        IReadOnlyList<XString> surfaceSoundAliasPointers = ReadEmbeddedSoundAliasRoots(rootCursor, VehicleDefAsset.SurfaceSoundOffset, VehicleDefAsset.SurfaceSoundCount);
+        XString surfaceSoundPrefixPointer = ReadXStringPointer(rootCursor, context);
+        IReadOnlyList<XString> surfaceSoundAliasPointers = ReadEmbeddedSoundAliasRoots(rootCursor, VehicleDefAsset.SurfaceSoundOffset, VehicleDefAsset.SurfaceSoundCount, context);
         float surfaceSoundBlendSpeed = ReadSingle(rootCursor);
         float slideVolume = ReadSingle(rootCursor);
         float slideBlendSpeed = ReadSingle(rootCursor);
@@ -310,15 +300,16 @@ public sealed class VehicleDefLoader
     }
 
     private static VehiclePhysDef ReadVehiclePhysDefRoot(
-        FastFileCursor cursor)
+        FastFileCursor cursor,
+        DbLoadExecutionContext context)
     {
         if (cursor.Offset != VehiclePhysDef.OffsetInVehicleDef)
             throw new InvalidDataException($"VehiclePhysDef root parser started at 0x{cursor.Offset:X}, expected 0x{VehiclePhysDef.OffsetInVehicleDef:X}.");
 
         int physicsEnabled = cursor.ReadInt32();
-        XString physPresetNamePointer = ReadXStringPointer(cursor);
-        XPointer<PhysPresetAsset> physPresetPointer = ReadPointer<PhysPresetAsset>(cursor, XPointerResolutionMode.AliasCell);
-        XString accelGraphNamePointer = ReadXStringPointer(cursor);
+        XString physPresetNamePointer = ReadXStringPointer(cursor, context);
+        XPointer<PhysPresetAsset> physPresetPointer = ReadPointer<PhysPresetAsset>(cursor, context, XPointerResolutionMode.AliasCell);
+        XString accelGraphNamePointer = ReadXStringPointer(cursor, context);
 
         return new VehiclePhysDef
         {
@@ -465,23 +456,23 @@ public sealed class VehicleDefLoader
         };
     }
 
-    private static VehicleEngineSoundFields ReadEngineSoundRoots(FastFileCursor cursor)
+    private static VehicleEngineSoundFields ReadEngineSoundRoots(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         return new VehicleEngineSoundFields
         {
-            IdleLowSound = ReadSoundAliasRoot(cursor, 0x1E8),
-            IdleHighSound = ReadSoundAliasRoot(cursor, 0x1EC),
-            EngineLowSound = ReadSoundAliasRoot(cursor, 0x1F0),
-            EngineHighSound = ReadSoundAliasRoot(cursor, 0x1F4),
+            IdleLowSound = ReadSoundAliasRoot(cursor, 0x1E8, context),
+            IdleHighSound = ReadSoundAliasRoot(cursor, 0x1EC, context),
+            EngineLowSound = ReadSoundAliasRoot(cursor, 0x1F0, context),
+            EngineHighSound = ReadSoundAliasRoot(cursor, 0x1F4, context),
             EngineSoundSpeed = ReadSingle(cursor),
-            EngineStartUpSound = ReadSoundAliasRoot(cursor, 0x1FC),
+            EngineStartUpSound = ReadSoundAliasRoot(cursor, 0x1FC, context),
             EngineStartUpLength = ReadSingle(cursor),
-            EngineShutdownSound = ReadSoundAliasRoot(cursor, 0x204),
-            EngineIdleSound = ReadSoundAliasRoot(cursor, 0x208),
-            EngineSustainSound = ReadSoundAliasRoot(cursor, 0x20C),
-            EngineRampUpSound = ReadSoundAliasRoot(cursor, 0x210),
+            EngineShutdownSound = ReadSoundAliasRoot(cursor, 0x204, context),
+            EngineIdleSound = ReadSoundAliasRoot(cursor, 0x208, context),
+            EngineSustainSound = ReadSoundAliasRoot(cursor, 0x20C, context),
+            EngineRampUpSound = ReadSoundAliasRoot(cursor, 0x210, context),
             EngineRampUpLength = ReadSingle(cursor),
-            EngineRampDownSound = ReadSoundAliasRoot(cursor, 0x218),
+            EngineRampDownSound = ReadSoundAliasRoot(cursor, 0x218, context),
             EngineRampDownLength = ReadSingle(cursor)
         };
     }
@@ -510,13 +501,13 @@ public sealed class VehicleDefLoader
         };
     }
 
-    private static VehicleSuspensionSoundFields ReadSuspensionSoundRoots(FastFileCursor cursor)
+    private static VehicleSuspensionSoundFields ReadSuspensionSoundRoots(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         return new VehicleSuspensionSoundFields
         {
-            SuspensionSoftSound = ReadSoundAliasRoot(cursor, 0x220),
+            SuspensionSoftSound = ReadSoundAliasRoot(cursor, 0x220, context),
             SuspensionSoftCompression = ReadSingle(cursor),
-            SuspensionHardSound = ReadSoundAliasRoot(cursor, 0x228),
+            SuspensionHardSound = ReadSoundAliasRoot(cursor, 0x228, context),
             SuspensionHardCompression = ReadSingle(cursor)
         };
     }
@@ -535,12 +526,12 @@ public sealed class VehicleDefLoader
         };
     }
 
-    private static VehicleSoundAliasField ReadSoundAliasRoot(FastFileCursor cursor, int offset)
+    private static VehicleSoundAliasField ReadSoundAliasRoot(FastFileCursor cursor, int offset, DbLoadExecutionContext context)
     {
         if (cursor.Offset != offset)
             throw new InvalidDataException($"Vehicle sound alias parser at 0x{cursor.Offset:X}, expected 0x{offset:X}.");
 
-        return new VehicleSoundAliasField(offset, ReadXStringPointer(cursor), null);
+        return new VehicleSoundAliasField(offset, ReadXStringPointer(cursor, context), null);
     }
 
     private static VehicleSoundAliasField ResolveSoundAliasField(
@@ -571,21 +562,22 @@ public sealed class VehicleDefLoader
         context.PointerReader.PatchInlinePointerCell(cellPointer, alignment: 4);
         byte[] nestedCellBytes = context.Blocks.Load(cursor, sizeof(int), out XBlockAddress nestedCellAddress);
         var nestedCellCursor = new FastFileCursor(nestedCellBytes, nestedCellAddress);
-        XString nestedStringPointer = ReadXStringPointer(nestedCellCursor);
+        XString nestedStringPointer = ReadXStringPointer(nestedCellCursor, context);
         return context.PointerReader.LoadXString(cursor, nestedStringPointer);
     }
 
     private static IReadOnlyList<XString> ReadEmbeddedSoundAliasRoots(
         FastFileCursor cursor,
         int offset,
-        int count)
+        int count,
+        DbLoadExecutionContext context)
     {
         if (cursor.Offset != offset)
             throw new InvalidDataException($"Vehicle surface sound parser at 0x{cursor.Offset:X}, expected 0x{offset:X}.");
 
         var pointers = new XString[count];
         for (int i = 0; i < pointers.Length; i++)
-            pointers[i] = ReadXStringPointer(cursor);
+            pointers[i] = ReadXStringPointer(cursor, context);
 
         return pointers;
     }
@@ -619,10 +611,8 @@ public sealed class VehicleDefLoader
         return new VehicleVec3(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor));
     }
 
-    private static XString ReadXStringPointer(FastFileCursor cursor)
-    {
-        return ReadPointer<string>(cursor, XPointerResolutionMode.Direct);
-    }
+    private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 
     private static float ReadSingle(FastFileCursor cursor)
     {
@@ -631,11 +621,8 @@ public sealed class VehicleDefLoader
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
-        XPointerResolutionMode mode)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode mode) => context.PointerReader.ReadDeferredPointer<T>(cursor, mode);
 
     private static bool ResolveAliasCellOffset(
         XPointerReference pointer,

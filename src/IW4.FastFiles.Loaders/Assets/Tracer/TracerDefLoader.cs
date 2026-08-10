@@ -55,25 +55,14 @@ public sealed class TracerDefLoader
                 $"TracerDef pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             TracerDefAsset tracer = ReadTracerDef(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline TracerDef pointer has no destination cell.");
-            TracerDefAsset canonical = context.DB_AddXAsset(tracer, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical TracerDef has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            TracerDefAsset canonical = context.DB_AddXAsset(tracer, providerRegistration);
 
             return canonical;
         }

@@ -1,46 +1,26 @@
+using IW4.FastFiles.Loaders.Database;
+using IW4.Linker.Model;
+
 namespace IW4.Studio.Documents;
 
-/// <summary>
-/// One successfully opened fastfile document. Construction means the file is
-/// a valid asset/document workspace;
-/// </summary>
-public sealed record FastFileDocument
+/// <summary>One successfully loaded, immutable fastfile document.</summary>
+public sealed class FastFileDocument
 {
-    internal FastFileDocument(
-        FastFileDocumentOpenRequest request,
-        WorkspaceZone targetZone,
-        TargetZoneSourceSnapshot targetSource)
+    internal FastFileDocument(FastFileDocumentOpenRequest request, LoadedXZone loadedZone)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(targetZone);
-        ArgumentNullException.ThrowIfNull(targetSource);
-        if (!targetZone.IsTarget)
-        {
-            throw new ArgumentException(
-                "A fastfile document target must be marked as the target zone.",
-                nameof(targetZone));
-        }
-        if (!string.Equals(
-                targetZone.LogicalZoneName,
-                targetSource.LogicalZoneName,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException(
-                "The target source snapshot does not belong to the target zone.",
-                nameof(targetSource));
-        }
+        ArgumentNullException.ThrowIfNull(loadedZone);
 
         Request = request;
-        TargetZone = targetZone;
-        TargetSource = targetSource;
+        SourcePath = Path.GetFullPath(request.Path);
+        LoadedZone = loadedZone;
+        ZoneObjectFile = loadedZone.ZoneObjectFile;
     }
 
     public FastFileDocumentOpenRequest Request { get; }
+    public string SourcePath { get; }
+    public LoadedXZone LoadedZone { get; }
 
-    public WorkspaceZone TargetZone { get; }
-
-    public Guid DocumentId => TargetSource.DocumentId;
-
-    public TargetZoneSourceSnapshot TargetSource { get; }
-
+    /// <summary>The loader-frozen symbolic input to the no-op linker.</summary>
+    public ZoneObjectFile ZoneObjectFile { get; }
 }

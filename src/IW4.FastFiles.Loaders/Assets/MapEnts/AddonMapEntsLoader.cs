@@ -42,29 +42,18 @@ public sealed class AddonMapEntsLoader
                 $"AddonMapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             AddonMapEntsAsset addonMapEnts = ReadAddonMapEnts(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline AddonMapEnts pointer has no destination cell.");
             AddonMapEntsAsset canonical = context.DB_AddXAsset(
                 XAssetType.AddonMapEnts,
                 addonMapEnts.Name,
                 addonMapEnts,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical AddonMapEnts has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }

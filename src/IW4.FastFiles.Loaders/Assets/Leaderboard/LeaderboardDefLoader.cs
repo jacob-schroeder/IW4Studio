@@ -40,25 +40,14 @@ public sealed class LeaderboardDefLoader
                 $"Top-level LeaderboardDef pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             LeaderboardDefAsset leaderboard = ReadLeaderboardDef(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline LeaderboardDef pointer has no destination cell.");
-            LeaderboardDefAsset canonical = context.DB_AddXAsset(leaderboard, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical LeaderboardDef has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            LeaderboardDefAsset canonical = context.DB_AddXAsset(leaderboard, providerRegistration);
 
             return canonical;
         }
@@ -92,11 +81,9 @@ public sealed class LeaderboardDefLoader
         int columnCount = rootCursor.ReadInt32();
         int xpColumnId = rootCursor.ReadInt32();
         int prestigeColumnId = rootCursor.ReadInt32();
-        int columnsCellOffset = rootCursor.Offset;
-        var columnsPointer = new XPointer<LbColumnDef[]>(
-            rootCursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            rootCursor.AddressAt(columnsCellOffset));
+        XPointer<LbColumnDef[]> columnsPointer = context.PointerReader.ReadPointer<LbColumnDef[]>(
+            rootCursor,
+            XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != LeaderboardDefAsset.SerializedSize)
         {

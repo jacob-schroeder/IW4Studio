@@ -12,9 +12,9 @@ public sealed class VehicleTrackLoader
     private const int MaximumSegmentDepth = 128;
 
     // Embedded 0x08-byte VehicleTrack header.
-    public VehicleTrack ReadHeader(FastFileCursor cursor)
+    public VehicleTrack ReadHeader(FastFileCursor cursor, DbLoadExecutionContext context)
     {
-        XPointer<VehicleTrackSegment[]> segmentsPointer = ReadPointer<VehicleTrackSegment[]>(cursor);
+        XPointer<VehicleTrackSegment[]> segmentsPointer = ReadPointer<VehicleTrackSegment[]>(cursor, context);
         return new VehicleTrack
         {
             SegmentsPointer = segmentsPointer,
@@ -113,13 +113,13 @@ public sealed class VehicleTrackLoader
         XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(
             rowCursor,
             XPointerResolutionMode.Direct);
-        XPointer<VehicleTrackSector[]> sectorsPointer = ReadPresencePointer<VehicleTrackSector[]>(rowCursor);
+        XPointer<VehicleTrackSector[]> sectorsPointer = ReadPresencePointer<VehicleTrackSector[]>(rowCursor, context);
         int sectorCount = rowCursor.ReadInt32();
         XPointer<XPointer<VehicleTrackSegment>[]> nextBranchesPointer =
-            ReadPresencePointer<XPointer<VehicleTrackSegment>[]>(rowCursor);
+            ReadPresencePointer<XPointer<VehicleTrackSegment>[]>(rowCursor, context);
         int nextBranchCount = rowCursor.ReadInt32();
         XPointer<XPointer<VehicleTrackSegment>[]> previousBranchesPointer =
-            ReadPresencePointer<XPointer<VehicleTrackSegment>[]>(rowCursor);
+            ReadPresencePointer<XPointer<VehicleTrackSegment>[]>(rowCursor, context);
         int previousBranchCount = rowCursor.ReadInt32();
         IReadOnlyList<float> endEdgeDirection = ReadFloatValues(rowCursor, 2);
         float endEdgeDistance = ReadSingle(rowCursor);
@@ -207,7 +207,7 @@ public sealed class VehicleTrackLoader
             float totalPriorLength = ReadSingle(rowCursor);
             float totalFollowingLength = ReadSingle(rowCursor);
             XPointer<VehicleTrackObstacle[]> obstaclesPointer =
-                ReadPresencePointer<VehicleTrackObstacle[]>(rowCursor);
+                ReadPresencePointer<VehicleTrackObstacle[]>(rowCursor, context);
             int obstacleCount = rowCursor.ReadInt32();
             IReadOnlyList<VehicleTrackObstacle> obstacles = ReadObstacleArray(
                 cursor,
@@ -294,7 +294,7 @@ public sealed class VehicleTrackLoader
         var pointerCursor = new FastFileCursor(bytes, address);
         var pointers = new XPointer<VehicleTrackSegment>[count];
         for (int index = 0; index < pointers.Length; index++)
-            pointers[index] = ReadPointer<VehicleTrackSegment>(pointerCursor);
+            pointers[index] = ReadPointer<VehicleTrackSegment>(pointerCursor, context);
 
         var segments = new VehicleTrackSegment?[count];
         for (int index = 0; index < pointers.Length; index++)
@@ -398,17 +398,11 @@ public sealed class VehicleTrackLoader
         return targetAddress;
     }
 
-    private static XPointer<T> ReadPointer<T>(FastFileCursor cursor)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
-    }
+    private static XPointer<T> ReadPointer<T>(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        context.PointerReader.ReadPointer<T>(cursor, XPointerResolutionMode.Direct);
 
-    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor) =>
-        ReadPointer<T>(cursor);
+    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        ReadPointer<T>(cursor, context);
 
     private static FastFileCursor RowCursor(
         byte[] bytes,

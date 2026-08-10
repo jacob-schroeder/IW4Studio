@@ -39,29 +39,18 @@ public sealed class FxWorldLoader
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
             throw new InvalidDataException($"Top-level FxWorld pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             FxWorldAsset fxWorld = ReadFxWorld(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline FxWorld pointer has no destination cell.");
             FxWorldAsset canonical = context.DB_AddXAsset(
                 XAssetType.FxMap,
                 fxWorld.Name,
                 fxWorld,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical FxWorld has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }

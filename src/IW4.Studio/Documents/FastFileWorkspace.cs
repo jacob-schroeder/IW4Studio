@@ -1,67 +1,79 @@
-using IW4.Runtime.Database;
+using IW4.FastFiles.Loaders.Database;
+using IW4.Linker.Model;
 
 namespace IW4.Studio.Documents;
 
 /// <summary>
-/// Immutable result of opening one Studio document. Runtime continues to own
-/// the resolved asset graph and zone registry.
+/// The single-zone immutable workspace returned by an isolated open. At most
+/// one editing session may take ownership of its loaded runtime state.
 /// </summary>
-public sealed record FastFileWorkspace
+public sealed class FastFileWorkspace : IDisposable
 {
+    private readonly DbLoadSession _loadSession;
+    private FastFileEditingSession? _editingSessionOwner;
+    private bool _disposed;
+
     internal FastFileWorkspace(
         FastFileDocument document,
-        DbRuntime runtime,
-        IReadOnlyList<WorkspaceZone> loadedZones,
-        string? zonePlanProfileName,
-        FastFileDependencyGraph dependencyGraph,
-        WorkspaceAssetCatalog? assetCatalog = null)
+        DbLoadSession loadSession)
     {
         ArgumentNullException.ThrowIfNull(document);
-        ArgumentNullException.ThrowIfNull(runtime);
-        ArgumentNullException.ThrowIfNull(loadedZones);
-        ArgumentNullException.ThrowIfNull(dependencyGraph);
+        ArgumentNullException.ThrowIfNull(loadSession);
 
         Document = document;
-        Runtime = runtime;
-        LoadedZones = Array.AsReadOnly(loadedZones.ToArray());
-        ActiveZones = Array.AsReadOnly(
-            LoadedZones.Where(zone => zone.IsActive).ToArray());
-        ZonePlanProfileName = zonePlanProfileName;
-        DependencyGraph = dependencyGraph;
-        AssetCatalog = assetCatalog ?? WorkspaceAssetCatalog.Create(
-            Document.TargetSource,
-            Runtime.AssetPool,
-            LoadedZones.Select(zone => new WorkspaceAssetProviderZone(
-                zone.RuntimeZoneHandle,
-                zone.LogicalZoneName)));
+        _loadSession = loadSession;
     }
 
     public FastFileDocument Document { get; }
+    public string SourcePath => Document.SourcePath;
+    public LoadedXZone LoadedZone => Document.LoadedZone;
+    public ZoneObjectFile ZoneObjectFile => Document.ZoneObjectFile;
 
-    /// <summary>
-    /// Detached target authoring authority. Runtime/LoadedZone state remains
-    /// available for inspection, but is never the source for serialization.
-    /// </summary>
-    public TargetZoneSourceSnapshot TargetSource => Document.TargetSource;
+    internal void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(FastFileWorkspace));
+    }
 
-    public DbRuntime Runtime { get; }
+    internal void ClaimEditingSession(FastFileEditingSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ThrowIfDisposed();
+        if (_editingSessionOwner is not null)
+        {
+            throw new InvalidOperationException(
+                "A fastfile workspace can be owned by only one editing session.");
+        }
 
-    public IReadOnlyList<WorkspaceZone> LoadedZones { get; }
+        _editingSessionOwner = session;
+    }
 
-    public IReadOnlyList<WorkspaceZone> ActiveZones { get; }
+    internal void DisposeEditingSession(FastFileEditingSession session)
+    {
+        if (!ReferenceEquals(_editingSessionOwner, session))
+            throw new InvalidOperationException("The editing session does not own this workspace.");
 
-    public string? ZonePlanProfileName { get; }
+        DisposeCore();
+        _editingSessionOwner = null;
+    }
 
-    /// <summary>
-    /// Physical fastfiles considered by the selected document-open mode, in
-    /// dependency load order.
-    /// </summary>
-    public FastFileDependencyGraph DependencyGraph { get; }
+    public void Dispose()
+    {
+        if (_editingSessionOwner is not null)
+        {
+            throw new InvalidOperationException(
+                "The workspace is owned by an editing session and must be disposed through that session.");
+        }
 
-    /// <summary>
-    /// Immutable post-load catalog. It preserves every target serialized row
-    /// and adds dependency content strictly as a read-only view projection.
-    /// </summary>
-    public WorkspaceAssetCatalog AssetCatalog { get; }
+        DisposeCore();
+    }
 
+    private void DisposeCore()
+    {
+        if (_disposed)
+            return;
+
+        _loadSession.Runtime.DB_FreeXZones(IW4.FastFiles.Zone.XZoneFlags.DB_ZONE_DEV);
+        _disposed = true;
+    }
 }

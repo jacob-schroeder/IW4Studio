@@ -12,18 +12,18 @@ namespace IW4.FastFiles.Loaders.Assets.GameMap;
 public sealed class PathDataLoader
 {
     // Embedded 0x28-byte PathData header.
-    public PathData ReadHeader(FastFileCursor cursor)
+    public PathData ReadHeader(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         uint nodeCount = cursor.ReadUInt32();
-        XPointer<PathNode[]> nodesPointer = ReadPresencePointer<PathNode[]>(cursor);
-        XPointer<PathBaseNode[]> baseNodesPointer = ReadPresencePointer<PathBaseNode[]>(cursor);
+        XPointer<PathNode[]> nodesPointer = ReadPresencePointer<PathNode[]>(cursor, context);
+        XPointer<PathBaseNode[]> baseNodesPointer = ReadPresencePointer<PathBaseNode[]>(cursor, context);
         uint chainNodeCount = cursor.ReadUInt32();
-        XPointer<ushort[]> chainNodeForNodePointer = ReadPresencePointer<ushort[]>(cursor);
-        XPointer<ushort[]> nodeForChainNodePointer = ReadPresencePointer<ushort[]>(cursor);
+        XPointer<ushort[]> chainNodeForNodePointer = ReadPresencePointer<ushort[]>(cursor, context);
+        XPointer<ushort[]> nodeForChainNodePointer = ReadPresencePointer<ushort[]>(cursor, context);
         int visBytes = cursor.ReadInt32();
-        XPointer<byte[]> pathVisPointer = ReadPresencePointer<byte[]>(cursor);
+        XPointer<byte[]> pathVisPointer = ReadPresencePointer<byte[]>(cursor, context);
         int nodeTreeCount = cursor.ReadInt32();
-        XPointer<PathNodeTree[]> nodeTreePointer = ReadPresencePointer<PathNodeTree[]>(cursor);
+        XPointer<PathNodeTree[]> nodeTreePointer = ReadPresencePointer<PathNodeTree[]>(cursor, context);
 
         return new PathData
         {
@@ -169,7 +169,7 @@ public sealed class PathDataLoader
         short overlapNode1 = unchecked((short)rowCursor.ReadUInt16());
         ushort totalLinkCount = rowCursor.ReadUInt16();
         ushort pad3A = rowCursor.ReadUInt16();
-        XPointer<PathLink[]> linksPointer = ReadPresencePointer<PathLink[]>(rowCursor);
+        XPointer<PathLink[]> linksPointer = ReadPresencePointer<PathLink[]>(rowCursor, context);
         IReadOnlyList<PathLink> links = ReadPathLinks(
             cursor,
             linksPointer,
@@ -439,7 +439,7 @@ public sealed class PathDataLoader
         if (axis < 0)
         {
             int nodeCount = rowCursor.ReadInt32();
-            XPointer<ushort[]> nodesPointer = ReadPresencePointer<ushort[]>(rowCursor);
+            XPointer<ushort[]> nodesPointer = ReadPresencePointer<ushort[]>(rowCursor, context);
             IReadOnlyList<ushort> nodes = ReadUInt16Array(
                 cursor,
                 nodesPointer,
@@ -453,8 +453,8 @@ public sealed class PathDataLoader
             return;
         }
 
-        XPointer<PathNodeTree> child0Pointer = ReadTreePointerCell(rowCursor);
-        XPointer<PathNodeTree> child1Pointer = ReadTreePointerCell(rowCursor);
+        XPointer<PathNodeTree> child0Pointer = ReadTreePointerCell(rowCursor, context);
+        XPointer<PathNodeTree> child1Pointer = ReadTreePointerCell(rowCursor, context);
         target.Child0Pointer = child0Pointer;
         target.Child0 = ReadNodeTreePointer(cursor, child0Pointer, context, $"{memberName}.child[0]", byAddress, materialized, active);
         target.Child1Pointer = child1Pointer;
@@ -571,23 +571,11 @@ public sealed class PathDataLoader
         return targetAddress;
     }
 
-    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
-    }
+    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        context.PointerReader.ReadPointer<T>(cursor, XPointerResolutionMode.Direct);
 
-    private static XPointer<PathNodeTree> ReadTreePointerCell(FastFileCursor cursor)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<PathNodeTree>(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
-    }
+    private static XPointer<PathNodeTree> ReadTreePointerCell(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        context.PointerReader.ReadPointer<PathNodeTree>(cursor, XPointerResolutionMode.Direct);
 
     private static FastFileCursor RowCursor(
         byte[] bytes,

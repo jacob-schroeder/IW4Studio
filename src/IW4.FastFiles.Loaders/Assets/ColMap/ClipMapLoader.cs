@@ -62,28 +62,17 @@ public sealed class ClipMapLoader
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
             throw new InvalidDataException($"Top-level ColMap pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             ClipMapAsset asset = ReadClipMap(cursor, rootAddress, serializedType, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline ColMap pointer has no destination cell.");
             ClipMapAsset canonical = context.DB_AddXAsset(
                 serializedType,
                 asset,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical ColMap has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }

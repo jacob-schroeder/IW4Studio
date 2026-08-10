@@ -1,12 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\IW4.Gsc\IW4.Gsc.csproj" />
     <ProjectReference Include="..\IW4.FastFiles\IW4.FastFiles.csproj" />
-    <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
-    <ProjectReference Include="..\IW4.Runtime\IW4.Runtime.csproj" />
     <ProjectReference Include="..\IW4.FastFiles.Loaders\IW4.FastFiles.Loaders.csproj" />
-    <ProjectReference Include="..\IW4.Render\IW4.Render.csproj" />
+    <ProjectReference Include="..\IW4.Linker\IW4.Linker.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

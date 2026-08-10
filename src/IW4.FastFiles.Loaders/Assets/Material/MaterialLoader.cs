@@ -44,10 +44,9 @@ public sealed class MaterialLoader
         if (!context.PointerReader.HasInlinePayload(pointer))
             throw new InvalidDataException($"Top-level Material pointer 0x{pointer.Raw:X8} does not reference inline payload data.");
 
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
         MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context, out _);
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Inline Material pointer has no destination cell.");
-        return context.DB_AddXAsset(material, pointerCellAddress);
+        return context.DB_AddXAsset(material, providerRegistration);
     }
 
     public MaterialAssetModel? LoadFromPointer(
@@ -85,21 +84,11 @@ public sealed class MaterialLoader
                     $"Material pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Material asset.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context, out _);
         incomingDefinition = material;
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Inline Material pointer has no destination cell.");
-        MaterialAssetModel canonical = context.DB_AddXAsset(material, pointerCellAddress);
-        if (insertCell is { } cell)
-        {
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical Material has no runtime address.");
-            context.Blocks.WriteInt32(cell, canonicalRaw);
-        }
+        MaterialAssetModel canonical = context.DB_AddXAsset(material, providerRegistration);
 
         return canonical;
     }
@@ -140,12 +129,12 @@ public sealed class MaterialLoader
             byte pad43 = rootCursor.ReadByte();
             ushort[] inlineTechniqueSlotStateBits = ReadUshorts(rootCursor, TechniqueSlotCount);
             ushort pad8E = rootCursor.ReadUInt16();
-            XPointerReference runtimeUshortPayload = ReadRawCell(rootCursor, XPointerOffsetMode.Direct);
+            XPointerReference runtimeUshortPayload = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
             XPointerReference techniqueSetPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.AliasCell);
             XPointerReference textureTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
             XPointerReference constantTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
             XPointerReference stateBitsPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
-            XPointerReference xstringTablePointer = ReadRawCell(rootCursor, XPointerOffsetMode.Direct);
+            XPointerReference xstringTablePointer = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
 
             if (rootCursor.Offset != MaterialSize)
                 throw new InvalidDataException($"Material consumed 0x{rootCursor.Offset:X} bytes instead of 0x{MaterialSize:X}.");
@@ -515,11 +504,9 @@ public sealed class MaterialLoader
 
         for (int i = 0; i < stateBits.Length; i++)
         {
-            int loadBitsCellOffset = stateCursor.Offset;
-            XPointerReference loadBits = XPointerReference.FromRaw(
-                stateCursor.ReadInt32(),
-                XPointerResolutionMode.AliasCell,
-                stateCursor.AddressAt(loadBitsCellOffset));
+            XPointerReference loadBits = context.PointerReader.ReadCell(
+                stateCursor,
+                XPointerOffsetMode.AliasCell);
             uint tail = stateCursor.ReadUInt32();
             stateBits[i] = new GfxStateBits
             {
@@ -714,13 +701,7 @@ public sealed class MaterialLoader
 
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
-        XPointerOffsetMode offsetMode)
-    {
-        int cellOffset = cursor.Offset;
-        return XPointerReference.FromRaw(
-            cursor.ReadInt32(),
-            offsetMode,
-            cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerOffsetMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
 
 }

@@ -56,9 +56,7 @@ public sealed class MaterialTechniqueSetLoader
             throw new InvalidDataException(
                 $"Top-level Techset pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -66,16 +64,7 @@ public sealed class MaterialTechniqueSetLoader
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             MaterialTechniqueSetAsset techniqueSet = ReadTechniqueSet(cursor, rootAddress, context);
             incomingDefinition = techniqueSet;
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline Techset pointer has no destination cell.");
-            MaterialTechniqueSetAsset canonical = context.DB_AddXAsset(techniqueSet, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Techset has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            MaterialTechniqueSetAsset canonical = context.DB_AddXAsset(techniqueSet, providerRegistration);
 
             return canonical;
         }
@@ -103,7 +92,7 @@ public sealed class MaterialTechniqueSetLoader
 
         var techniquePointers = new XPointerReference[TechniqueSlotCount];
         for (int i = 0; i < techniquePointers.Length; i++)
-            techniquePointers[i] = ReadDeferredCell(rootCursor, XPointerResolutionMode.Direct);
+            techniquePointers[i] = ReadDeferredCell(rootCursor, context, XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != TechniqueSetSize)
             throw new InvalidDataException($"MaterialTechniqueSet consumed 0x{rootCursor.Offset:X} bytes instead of 0x{TechniqueSetSize:X}.");
@@ -169,14 +158,10 @@ public sealed class MaterialTechniqueSetLoader
 
     private static XPointerReference ReadDeferredCell(
         FastFileCursor cursor,
-        XPointerResolutionMode resolutionMode)
-    {
-        int cellOffset = cursor.Offset;
-        return XPointerReference.FromRaw(
-            cursor.ReadInt32(),
-            resolutionMode,
-            cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode resolutionMode) => context.PointerReader.ReadCell(
+            cursor,
+            resolutionMode.ToOffsetMode());
 
     private static MaterialTechniqueAsset ReadTechnique(
         FastFileCursor cursor,
@@ -224,7 +209,14 @@ public sealed class MaterialTechniqueSetLoader
         byte[] rootBytes = context.Blocks.Load(cursor, PassSize, out XBlockAddress rootAddress);
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
-        XPointer<MaterialVertexDeclarationAsset> vertexDecl = context.PointerReader.ReadPointer<MaterialVertexDeclarationAsset>(rootCursor, XPointerResolutionMode.Direct);
+        // Every pass root is copied before any pass children are processed.
+        // A packed declaration or argument table can therefore target an
+        // inline owner from an earlier pass whose bytes are materialized only
+        // during the subsequent child walk. Record these cells now and defer
+        // their range validation until the corresponding child is processed.
+        XPointer<MaterialVertexDeclarationAsset> vertexDecl = context.PointerReader.ReadDeferredPointer<MaterialVertexDeclarationAsset>(
+            rootCursor,
+            XPointerResolutionMode.Direct);
         XPointer<MaterialShaderAsset> vertexShader = context.PointerReader.ReadPointer<MaterialShaderAsset>(rootCursor, XPointerResolutionMode.AliasCell);
         XPointer<MaterialShaderAsset> pixelShader = context.PointerReader.ReadPointer<MaterialShaderAsset>(rootCursor, XPointerResolutionMode.AliasCell);
         byte perPrimArgCount = rootCursor.ReadByte();
@@ -233,7 +225,9 @@ public sealed class MaterialTechniqueSetLoader
         byte customSamplerFlags = rootCursor.ReadByte();
         byte precompiledIndex = rootCursor.ReadByte();
         rootCursor.Skip(3);
-        XPointer<MaterialShaderArgumentAsset[]> args = context.PointerReader.ReadPointer<MaterialShaderArgumentAsset[]>(rootCursor, XPointerResolutionMode.Direct);
+        XPointer<MaterialShaderArgumentAsset[]> args = context.PointerReader.ReadDeferredPointer<MaterialShaderArgumentAsset[]>(
+            rootCursor,
+            XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != PassSize)
             throw new InvalidDataException($"MaterialPass consumed 0x{rootCursor.Offset:X} bytes instead of 0x{PassSize:X}.");
@@ -356,11 +350,9 @@ public sealed class MaterialTechniqueSetLoader
             int argStart = argCursor.Offset;
             var type = (MaterialShaderArgumentType)argCursor.ReadUInt16();
             ushort dest = argCursor.ReadUInt16();
-            int valueCellOffset = argCursor.Offset;
-            XPointerReference argumentPointer = XPointerReference.FromRaw(
-                argCursor.ReadInt32(),
-                XPointerResolutionMode.Direct,
-                argCursor.AddressAt(valueCellOffset));
+            XPointerReference argumentPointer = type is MaterialShaderArgumentType.LiteralVertexConst or MaterialShaderArgumentType.LiteralPixelConst
+                ? context.PointerReader.ReadCell(argCursor, XPointerOffsetMode.Direct)
+                : ReadRawCell(argCursor, XPointerOffsetMode.Direct);
 
             if (argCursor.Offset - argStart != ShaderArgSize)
                 throw new InvalidDataException($"MaterialShaderArgument consumed 0x{argCursor.Offset - argStart:X} bytes instead of 0x{ShaderArgSize:X}.");
@@ -397,6 +389,17 @@ public sealed class MaterialTechniqueSetLoader
         }
 
         return args;
+    }
+
+    private static XPointerReference ReadRawCell(
+        FastFileCursor cursor,
+        XPointerOffsetMode offsetMode)
+    {
+        int cellOffset = cursor.Offset;
+        return XPointerReference.FromRaw(
+            cursor.ReadInt32(),
+            offsetMode,
+            cursor.AddressAt(cellOffset));
     }
 
     private static MaterialShaderLiteralConstant? ReadLiteralFloat4Pointer(

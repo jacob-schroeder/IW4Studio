@@ -114,17 +114,15 @@ public sealed class XModelLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
-        return ReadInlineXModel(cursor, pointer, insertCell, context);
+        return ReadInlineXModel(cursor, pointer, providerRegistration, context);
     }
 
     private XModelPointerLoadResult ReadInlineXModel(
         FastFileCursor cursor,
         XPointerReference pointer,
-        XBlockAddress? insertCell,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
         int sourceOffset = cursor.Offset;
@@ -138,36 +136,36 @@ public sealed class XModelLoader
 
             var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
-            XString namePointer = ReadXStringPointer(rootCursor);
+            XString namePointer = ReadXStringPointer(rootCursor, context);
             byte numBones = rootCursor.ReadByte();
             byte numRootBones = rootCursor.ReadByte();
             byte numSurfs = rootCursor.ReadByte();
             byte pad07 = rootCursor.ReadByte();
             float scale = ReadSingle(rootCursor);
             IReadOnlyList<uint> noScalePartBits = ReadUInt32Values(rootCursor, 6);
-            XPointer<ushort[]> boneNamesPointer = ReadPointer<ushort[]>(rootCursor, XPointerResolutionMode.Direct);
-            XPointer<byte[]> parentListPointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
-            XPointer<short[]> quatsPointer = ReadPointer<short[]>(rootCursor, XPointerResolutionMode.Direct);
-            XPointer<float[]> transPointer = ReadPointer<float[]>(rootCursor, XPointerResolutionMode.Direct);
-            XPointer<byte[]> partClassificationPointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
-            XPointer<byte[]> baseMatPointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
-            XPointer<XPointer<MaterialAsset>[]> materialHandlesPointer = ReadPointer<XPointer<MaterialAsset>[]>(rootCursor, XPointerResolutionMode.Direct);
+            XPointer<ushort[]> boneNamesPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointer<byte[]> parentListPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointer<short[]> quatsPointer = ReadPointer<short[]>(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointer<float[]> transPointer = ReadPointer<float[]>(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointer<byte[]> partClassificationPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointer<byte[]> baseMatPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointer<XPointer<MaterialAsset>[]> materialHandlesPointer = ReadPointer<XPointer<MaterialAsset>[]>(rootCursor, context, XPointerResolutionMode.Direct);
 
             rootCursor.Skip(0xe0 - rootCursor.Offset);
             byte maxLoadedLod = rootCursor.ReadByte();
             byte numLods = rootCursor.ReadByte();
             byte collLod = rootCursor.ReadByte();
             byte flags = rootCursor.ReadByte();
-            XPointer<byte[]> collSurfsPointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
+            XPointer<byte[]> collSurfsPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
             int numCollSurfs = rootCursor.ReadInt32();
             int contents = rootCursor.ReadInt32();
-            XPointer<byte[]> boneInfoPointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
+            XPointer<byte[]> boneInfoPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
             float radius = ReadSingle(rootCursor);
             ModelBounds bounds = ReadBounds(rootCursor);
-            XPointer<ushort[]> invHighMipRadiusPointer = ReadPointer<ushort[]>(rootCursor, XPointerResolutionMode.Direct);
+            XPointer<ushort[]> invHighMipRadiusPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
             int memUsage = rootCursor.ReadInt32();
-            XPointerReference physPresetPointer = ReadPointer<PhysPresetAssetModel>(rootCursor, XPointerResolutionMode.AliasCell).Untyped;
-            XPointerReference physCollmapPointer = ReadPointer<PhysCollmapAssetModel>(rootCursor, XPointerResolutionMode.AliasCell).Untyped;
+            XPointerReference physPresetPointer = ReadPointer<PhysPresetAssetModel>(rootCursor, context, XPointerResolutionMode.AliasCell).Untyped;
+            XPointerReference physCollmapPointer = ReadPointer<PhysCollmapAssetModel>(rootCursor, context, XPointerResolutionMode.AliasCell).Untyped;
 
             if (rootCursor.Offset != XModelSize)
                 throw new InvalidDataException($"XModel consumed 0x{rootCursor.Offset:X} bytes instead of 0x{XModelSize:X}.");
@@ -203,13 +201,18 @@ public sealed class XModelLoader
                     float dist = ReadSingle(lodCursor);
                     ushort lodNumSurfs = lodCursor.ReadUInt16();
                     ushort surfIndex = lodCursor.ReadUInt16();
-                    XPointerReference modelSurfsPointer = ReadPointer<XModelSurfsAssetModel>(lodCursor, XPointerResolutionMode.AliasCell).Untyped;
+                    XPointerReference modelSurfsPointer = ReadPointer<XModelSurfsAssetModel>(lodCursor, context, XPointerResolutionMode.AliasCell).Untyped;
                     var partBits = new uint[6];
                     for (int partBitIndex = 0; partBitIndex < partBits.Length; partBitIndex++)
                         partBits[partBitIndex] = lodCursor.ReadUInt32();
                     IReadOnlyList<uint> serializedPartBits =
                         Array.AsReadOnly(partBits.ToArray());
-                    XPointer<byte[]> surfsRuntimePointer = ReadPointer<byte[]>(lodCursor, XPointerResolutionMode.Direct);
+                    int surfsRuntimeCellOffset = lodCursor.Offset;
+                    XPointer<byte[]> surfsRuntimePointer = XPointerReference.FromRaw(
+                            lodCursor.ReadInt32(),
+                            XPointerResolutionMode.Direct,
+                            lodCursor.AddressAt(surfsRuntimeCellOffset))
+                        .AsPointer<byte[]>();
                     XModelSurfsPointerLoadResult modelSurfsLoad =
                         Load_XModelSurfsPtr(cursor, modelSurfsPointer, lodNumSurfs, context);
                     XModelSurfsAssetModel? modelSurfs = modelSurfsLoad.Canonical;
@@ -318,16 +321,7 @@ public sealed class XModelLoader
                 context.Blocks.Pop();
             }
 
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline XModel pointer has no destination cell.");
-            XModelAssetModel canonical = context.DB_AddXAsset(model, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical XModel has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            XModelAssetModel canonical = context.DB_AddXAsset(model, providerRegistration);
 
             return new XModelPointerLoadResult(canonical, model);
         }
@@ -369,9 +363,7 @@ public sealed class XModelLoader
                 $"XModelSurfs pointer 0x{unchecked((uint)pointer.Raw):X8} uses unsupported source sentinel {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         int sourceOffset = cursor.Offset;
         context.Blocks.Push(XFileBlockType.TEMP);
@@ -384,20 +376,11 @@ public sealed class XModelLoader
                 lodNumSurfs,
                 sourceOffset,
                 context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline XModelSurfs pointer has no destination cell.");
             XModelSurfsAssetModel canonical = context.DB_AddXAsset(
                 XAssetType.XModelSurfs,
                 modelSurfs.Name,
                 modelSurfs,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical XModelSurfs has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return new XModelSurfsPointerLoadResult(canonical, modelSurfs);
         }
@@ -421,8 +404,8 @@ public sealed class XModelLoader
             throw new InvalidDataException($"XModelSurfs pointer patched to {rootAddress}, but Load_Stream wrote its root at {loadedAddress}.");
 
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
-        XString namePointer = ReadXStringPointer(rootCursor);
-        XPointer<byte[]> surfsPointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
+        XString namePointer = ReadXStringPointer(rootCursor, context);
+        XPointer<byte[]> surfsPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
         ushort numSurfs = rootCursor.ReadUInt16();
         ushort pad0A = rootCursor.ReadUInt16();
         var partBits = new uint[6];
@@ -529,18 +512,18 @@ public sealed class XModelLoader
         byte pad03 = surfaceCursor.ReadByte();
         ushort vertCount = surfaceCursor.ReadUInt16();
         ushort triCount = surfaceCursor.ReadUInt16();
-        XPointer<ushort[]> triIndicesPointer = ReadPointer<ushort[]>(surfaceCursor, XPointerResolutionMode.Direct);
+        XPointer<ushort[]> triIndicesPointer = ReadPointer<ushort[]>(surfaceCursor, context, XPointerResolutionMode.Direct);
         ushort blend0 = surfaceCursor.ReadUInt16();
         ushort blend1 = surfaceCursor.ReadUInt16();
         ushort blend2 = surfaceCursor.ReadUInt16();
         ushort blend3 = surfaceCursor.ReadUInt16();
-        XPointer<ushort[]> vertsBlendPointer = ReadPointer<ushort[]>(surfaceCursor, XPointerResolutionMode.Direct);
-        XPointer<byte[]> verts0Pointer = ReadPointer<byte[]>(surfaceCursor, XPointerResolutionMode.Direct);
+        XPointer<ushort[]> vertsBlendPointer = ReadPointer<ushort[]>(surfaceCursor, context, XPointerResolutionMode.Direct);
+        XPointer<byte[]> verts0Pointer = ReadPointer<byte[]>(surfaceCursor, context, XPointerResolutionMode.Direct);
         GfxVertexBuffer vb0 = ReadGfxVertexBuffer(surfaceCursor);
-        XPointer<byte[]> verts1Pointer = ReadPointer<byte[]>(surfaceCursor, XPointerResolutionMode.Direct);
+        XPointer<byte[]> verts1Pointer = ReadPointer<byte[]>(surfaceCursor, context, XPointerResolutionMode.Direct);
         GfxVertexBuffer vb1 = ReadGfxVertexBuffer(surfaceCursor);
         int vertListCount = surfaceCursor.ReadInt32();
-        XPointer<XRigidVertList[]> vertListPointer = ReadPointer<XRigidVertList[]>(surfaceCursor, XPointerResolutionMode.Direct);
+        XPointer<XRigidVertList[]> vertListPointer = ReadPointer<XRigidVertList[]>(surfaceCursor, context, XPointerResolutionMode.Direct);
         GfxIndexBuffer indexBuffer = ReadGfxIndexBuffer(surfaceCursor);
         var partBits = new uint[6];
         for (int i = 0; i < partBits.Length; i++)
@@ -633,7 +616,7 @@ public sealed class XModelLoader
             ushort vertCount = listCursor.ReadUInt16();
             ushort triOffset = listCursor.ReadUInt16();
             ushort triCount = listCursor.ReadUInt16();
-            XPointer<XSurfaceCollisionTree> collisionTreePointer = ReadPointer<XSurfaceCollisionTree>(listCursor, XPointerResolutionMode.Direct);
+            XPointer<XSurfaceCollisionTree> collisionTreePointer = ReadPointer<XSurfaceCollisionTree>(listCursor, context, XPointerResolutionMode.Direct);
             lists[i] = new XRigidVertList
             {
                 BoneOffset = boneOffset,
@@ -669,9 +652,9 @@ public sealed class XModelLoader
         ModelVec3 trans = ReadVec3(treeCursor);
         ModelVec3 scale = ReadVec3(treeCursor);
         int nodeCount = treeCursor.ReadInt32();
-        XPointer<XSurfaceCollisionNode[]> nodesPointer = ReadPointer<XSurfaceCollisionNode[]>(treeCursor, XPointerResolutionMode.Direct);
+        XPointer<XSurfaceCollisionNode[]> nodesPointer = ReadPointer<XSurfaceCollisionNode[]>(treeCursor, context, XPointerResolutionMode.Direct);
         int leafCount = treeCursor.ReadInt32();
-        XPointer<XSurfaceCollisionLeaf[]> leafsPointer = ReadPointer<XSurfaceCollisionLeaf[]>(treeCursor, XPointerResolutionMode.Direct);
+        XPointer<XSurfaceCollisionLeaf[]> leafsPointer = ReadPointer<XSurfaceCollisionLeaf[]>(treeCursor, context, XPointerResolutionMode.Direct);
 
         IReadOnlyList<XSurfaceCollisionNode> nodes =
             ReadCollisionNodeArray(cursor, nodesPointer.Untyped, nodeCount, context, out XBlockAddress? nodesAddress);
@@ -786,7 +769,7 @@ public sealed class XModelLoader
         var pointers = new XPointer<T>[count];
 
         for (int i = 0; i < pointers.Length; i++)
-            pointers[i] = ReadPointer<T>(pointerCursor, XPointerResolutionMode.AliasCell);
+            pointers[i] = ReadPointer<T>(pointerCursor, context, XPointerResolutionMode.AliasCell);
 
         return pointers;
     }
@@ -1082,14 +1065,9 @@ public sealed class XModelLoader
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
-        XPointerResolutionMode mode)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode mode) => context.PointerReader.ReadDeferredPointer<T>(cursor, mode);
 
-    private static XString ReadXStringPointer(FastFileCursor cursor)
-    {
-        return ReadPointer<string>(cursor, XPointerResolutionMode.Direct);
-    }
+    private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 }

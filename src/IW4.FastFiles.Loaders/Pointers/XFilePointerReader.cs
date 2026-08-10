@@ -4,6 +4,7 @@ using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 using IW4.Runtime.Assets;
 using IW4.Runtime.IO;
+using IW4.Linker.Model;
 using System.Reflection;
 
 namespace IW4.FastFiles.Loaders.Pointers;
@@ -23,13 +24,22 @@ public sealed class XFilePointerReader
         FastFileCursor cursor,
         XPointerOffsetMode offsetMode = XPointerOffsetMode.None)
     {
+        return ReadCellWithCaptureHandle(cursor, offsetMode).Pointer;
+    }
+
+    internal XPointerRead ReadCellWithCaptureHandle(
+        FastFileCursor cursor,
+        XPointerOffsetMode offsetMode = XPointerOffsetMode.None)
+    {
         int cellOffset = cursor.Offset;
+        int raw = cursor.ReadInt32();
         XPointerReference pointer = XPointerReference.FromRaw(
-            cursor.ReadInt32(),
+            raw,
             offsetMode,
             cursor.AddressAt(cellOffset));
+        XPointerReadHandle? captureHandle = RecordRead(cursor, cellOffset, pointer);
         ValidateOffsetPointer(pointer, null);
-        return pointer;
+        return new XPointerRead(pointer, captureHandle);
     }
 
     public XPointerReference FromRaw(
@@ -89,7 +99,12 @@ public sealed class XFilePointerReader
         XPointerResolutionMode resolutionMode = XPointerResolutionMode.None)
     {
         int cellOffset = cursor.Offset;
-        return FromRaw<T>(cursor.ReadInt32(), resolutionMode, cursor.AddressAt(cellOffset));
+        int raw = cursor.ReadInt32();
+        XPointerReference pointer = XPointerReference.FromRaw(raw, resolutionMode, cursor.AddressAt(cellOffset));
+        RecordRead(cursor, cellOffset, pointer);
+        ValidateNullObjectPointer(pointer, typeof(T), XPointerNullability.Unspecified);
+        ValidateOffsetPointer(pointer, typeof(T), XPointerNullability.Unspecified);
+        return pointer.AsPointer<T>();
     }
 
     public XPointer<T> ReadPointer<T>(
@@ -98,7 +113,13 @@ public sealed class XFilePointerReader
         XPointerNullability nullability)
     {
         int cellOffset = cursor.Offset;
-        return FromRaw<T>(cursor.ReadInt32(), resolutionMode, cursor.AddressAt(cellOffset), nullability);
+        int raw = cursor.ReadInt32();
+        ValidateNullability(nullability);
+        XPointerReference pointer = XPointerReference.FromRaw(raw, resolutionMode, cursor.AddressAt(cellOffset));
+        RecordRead(cursor, cellOffset, pointer);
+        ValidateNullObjectPointer(pointer, typeof(T), nullability);
+        ValidateOffsetPointer(pointer, typeof(T), nullability);
+        return pointer.AsPointer<T>();
     }
 
     public XPointer<T> ReadPointer<T>(
@@ -106,7 +127,12 @@ public sealed class XFilePointerReader
         XPointerOffsetMode offsetMode)
     {
         int cellOffset = cursor.Offset;
-        return FromRaw<T>(cursor.ReadInt32(), offsetMode, cursor.AddressAt(cellOffset));
+        int raw = cursor.ReadInt32();
+        XPointerReference pointer = XPointerReference.FromRaw(raw, offsetMode, cursor.AddressAt(cellOffset));
+        RecordRead(cursor, cellOffset, pointer);
+        ValidateNullObjectPointer(pointer, typeof(T), XPointerNullability.Unspecified);
+        ValidateOffsetPointer(pointer, typeof(T), XPointerNullability.Unspecified);
+        return pointer.AsPointer<T>();
     }
 
     public XPointer<T> ReadPointer<T>(
@@ -115,7 +141,13 @@ public sealed class XFilePointerReader
         XPointerNullability nullability)
     {
         int cellOffset = cursor.Offset;
-        return FromRaw<T>(cursor.ReadInt32(), offsetMode, cursor.AddressAt(cellOffset), nullability);
+        int raw = cursor.ReadInt32();
+        ValidateNullability(nullability);
+        XPointerReference pointer = XPointerReference.FromRaw(raw, offsetMode, cursor.AddressAt(cellOffset));
+        RecordRead(cursor, cellOffset, pointer);
+        ValidateNullObjectPointer(pointer, typeof(T), nullability);
+        ValidateOffsetPointer(pointer, typeof(T), nullability);
+        return pointer.AsPointer<T>();
     }
 
     /// <summary>
@@ -131,17 +163,19 @@ public sealed class XFilePointerReader
         ValidateNullability(nullability);
 
         int cellOffset = cursor.Offset;
+        int raw = cursor.ReadInt32();
         XPointerReference pointer = XPointerReference.FromRaw(
-            cursor.ReadInt32(),
+            raw,
             resolutionMode,
             cursor.AddressAt(cellOffset));
         ValidateNullObjectPointer(pointer, typeof(T), nullability);
+        RecordRead(cursor, cellOffset, pointer);
         return pointer.AsPointer<T>();
     }
 
     public bool HasInlinePayload(XPointerReference pointer)
     {
-        return pointer.Type is PointerType.Inline;
+        return pointer.ConsumesSource;
     }
 
     public XBlockAddress PatchInlinePointerCell(
@@ -188,6 +222,19 @@ public sealed class XFilePointerReader
         XPointerReference pointer,
         int alignment)
     {
+        return BeginInlinePayload(pointer, alignment, null);
+    }
+
+    internal XBlockAddress BeginInlinePayload(
+        XPointerRead pointer,
+        int alignment) =>
+        BeginInlinePayload(pointer.Pointer, alignment, pointer.CaptureHandle);
+
+    private XBlockAddress BeginInlinePayload(
+        XPointerReference pointer,
+        int alignment,
+        XPointerReadHandle? captureHandle)
+    {
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
         {
             throw new InvalidDataException(
@@ -199,7 +246,13 @@ public sealed class XFilePointerReader
 
         XBlockAddress targetAddress = _blocks.CurrentAddress;
         if (pointer.CellAddress is { } cellAddress)
+        {
             _blocks.WriteInt32(cellAddress, XPointerCodec.Encode(targetAddress));
+        }
+        else
+        {
+            _blocks.CaptureBridge?.BindInlineTarget(null, targetAddress, alignment, captureHandle);
+        }
 
         return targetAddress;
     }
@@ -234,7 +287,9 @@ public sealed class XFilePointerReader
             return null;
 
         PatchInlinePointerCell(pointerCellAddress, pointer.Raw, alignment);
-        return _blocks.LoadCString(cursor);
+        string value = _blocks.LoadCString(cursor, out _, out CStringMaterializationHandle? materialization);
+        MarkXString(materialization);
+        return value;
     }
 
     public string? LoadXString(
@@ -265,7 +320,19 @@ public sealed class XFilePointerReader
             return null;
 
         PatchInlinePointerCell(pointer, alignment);
-        return _blocks.LoadCString(cursor);
+        string value = _blocks.LoadCString(cursor, out _, out CStringMaterializationHandle? materialization);
+        MarkXString(materialization);
+        return value;
+    }
+
+    private void MarkXString(CStringMaterializationHandle? materialization)
+    {
+        if (_blocks.CaptureBridge is not { } capture)
+            return;
+
+        capture.MarkXString(materialization
+            ?? throw new InvalidDataException(
+                "An XString load did not return its captured CString materialization occurrence."));
     }
 
     public byte[]? LoadBytes(
@@ -378,6 +445,23 @@ public sealed class XFilePointerReader
         ValidateOffsetPointer(pointer, typeof(T), byteCount, targetName);
     }
 
+    internal void ValidateOffsetPointerRange<T>(
+        XPointerRead pointer,
+        int byteCount,
+        string? targetName = null)
+    {
+        if (byteCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(byteCount));
+
+        ValidateOffsetPointer(
+            pointer.Pointer,
+            typeof(T),
+            byteCount,
+            targetName,
+            XPointerNullability.Unspecified,
+            pointer.CaptureHandle);
+    }
+
     public void ValidateOffsetPointerRange<T>(
         XPointerReference pointer,
         int byteCount,
@@ -419,7 +503,7 @@ public sealed class XFilePointerReader
         XPointerReference pointer,
         Type? targetType)
     {
-        ValidateOffsetPointer(pointer, targetType, null, null, XPointerNullability.Unspecified);
+        ValidateOffsetPointer(pointer, targetType, null, null, XPointerNullability.Unspecified, null);
     }
 
     private void ValidateOffsetPointer(
@@ -427,7 +511,7 @@ public sealed class XFilePointerReader
         Type? targetType,
         XPointerNullability nullability)
     {
-        ValidateOffsetPointer(pointer, targetType, null, null, nullability);
+        ValidateOffsetPointer(pointer, targetType, null, null, nullability, null);
     }
 
     private void ValidateOffsetPointer(
@@ -435,7 +519,8 @@ public sealed class XFilePointerReader
         Type? targetType,
         int? byteCountOverride,
         string? targetNameOverride,
-        XPointerNullability nullability = XPointerNullability.Unspecified)
+        XPointerNullability nullability = XPointerNullability.Unspecified,
+        XPointerReadHandle? captureHandle = null)
     {
         if (_assetPool.TryResolve(pointer.Raw, out XAssetPoolEntry? directPoolEntry))
         {
@@ -496,11 +581,13 @@ public sealed class XFilePointerReader
                 return;
 
             ValidateTarget(
+                pointer,
                 rawPointer: aliasedRaw,
                 address: aliasedAddress,
                 targetType: targetType,
                 byteCountOverride: byteCountOverride,
-                targetName: targetName);
+                targetName: targetName,
+                captureHandle: captureHandle);
             return;
         }
 
@@ -508,11 +595,13 @@ public sealed class XFilePointerReader
             return;
 
         ValidateTarget(
+            pointer,
             rawPointer: pointer.Raw,
             address: address,
             targetType: targetType,
             byteCountOverride: byteCountOverride,
-            targetName: targetName);
+            targetName: targetName,
+            captureHandle: captureHandle);
     }
 
     private void ValidateAssetPoolTarget(
@@ -540,11 +629,13 @@ public sealed class XFilePointerReader
     }
 
     private void ValidateTarget(
+        XPointerReference sourcePointer,
         int rawPointer,
         XBlockAddress address,
         Type? targetType,
         int? byteCountOverride,
-        string targetName)
+        string targetName,
+        XPointerReadHandle? captureHandle)
     {
         if (targetType == typeof(string))
         {
@@ -554,9 +645,30 @@ public sealed class XFilePointerReader
 
         int byteCount = byteCountOverride ?? GetSerializedSize(targetType) ?? 1;
         if (byteCount == 0)
+        {
+            if (byteCountOverride.HasValue)
+                BindEncodedTargetValidation(sourcePointer, address, byteCount, captureHandle);
             return;
+        }
 
         ValidateRange(rawPointer, address, byteCount, targetName);
+        if (byteCountOverride.HasValue)
+            BindEncodedTargetValidation(sourcePointer, address, byteCount, captureHandle);
+    }
+
+    private void BindEncodedTargetValidation(
+        XPointerReference sourcePointer,
+        XBlockAddress address,
+        int byteCount,
+        XPointerReadHandle? captureHandle)
+    {
+        // An alias-cell source encodes the cell address, while ValidateTarget
+        // is called with the object address read from that cell. The latter is
+        // semantic validation, not the source relocation's encoded target.
+        if (sourcePointer.ResolutionMode == XPointerResolutionMode.AliasCell)
+            return;
+
+        _blocks.CaptureBridge?.BindValidatedTarget(sourcePointer, address, byteCount, captureHandle);
     }
 
     private void ValidateRange(
@@ -588,6 +700,17 @@ public sealed class XFilePointerReader
     {
         if (!Enum.IsDefined(nullability))
             throw new ArgumentOutOfRangeException(nameof(nullability), nullability, "Unknown pointer nullability contract.");
+    }
+
+    private XPointerReadHandle? RecordRead(FastFileCursor cursor, int cellOffset, XPointerReference pointer)
+    {
+        CaptureOccurrence? occurrence = _blocks.CaptureBridge?.RecordPointer(
+            cursor,
+            cellOffset,
+            pointer.CellAddress,
+            pointer.Raw,
+            pointer.ResolutionMode);
+        return occurrence is { } value ? new XPointerReadHandle(value) : null;
     }
 
     private static string FormatCellAddress(XBlockAddress? cellAddress) =>

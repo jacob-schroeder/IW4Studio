@@ -116,30 +116,18 @@ public sealed class MaterialShaderLoader
                     $"has unsupported type {pointer.Type}.");
             }
 
-            // DB_InsertPointer is called after the wrapper's TEMP push and
-            // before the shader body. Its cell ultimately receives canonical
-            // pool identity, not the reusable TEMP staging address.
-            XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-                ? context.Blocks.AllocateInsertPointerCell()
-                : null;
+            // Provider occurrence capture owns the optional durable insert
+            // cell and preserves this source pointer's TEMP lifetime.
+            ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             MaterialShaderAsset shader = ReadShader(cursor, rootAddress, kind, context);
             incomingDefinition = shader;
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException($"Inline {GetDisplayName(kind)} pointer has no destination cell.");
             MaterialShaderAsset canonicalShader = context.DB_AddXAsset(
                 assetType,
                 shader.Name,
                 shader,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonicalShader.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException($"Canonical {GetDisplayName(kind)} has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonicalShader;
         }

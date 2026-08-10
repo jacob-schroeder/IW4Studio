@@ -38,25 +38,14 @@ public sealed class LocalizeLoader
             throw new InvalidDataException(
                 $"Top-level Localize pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             LocalizeAsset localize = ReadLocalize(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline Localize pointer has no destination cell.");
-            LocalizeAsset canonical = context.DB_AddXAsset(localize, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Localize has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            LocalizeAsset canonical = context.DB_AddXAsset(localize, providerRegistration);
 
             return canonical;
         }

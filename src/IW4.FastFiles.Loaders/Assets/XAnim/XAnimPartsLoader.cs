@@ -70,29 +70,18 @@ public sealed class XAnimPartsLoader
                 $"XAnim pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             XAnimPartsAsset asset = ReadXAnimParts(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline XAnim pointer has no destination cell.");
             XAnimPartsAsset canonical = context.DB_AddXAsset(
                 XAssetType.XAnim,
                 asset.Name,
                 asset,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical XAnim has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -117,7 +106,7 @@ public sealed class XAnimPartsLoader
 
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
-        XString namePointer = ReadXStringPointer(rootCursor);
+        XString namePointer = ReadXStringPointer(rootCursor, context);
         ushort dataByteCount = rootCursor.ReadUInt16();
         ushort dataShortCount = rootCursor.ReadUInt16();
         ushort dataIntCount = rootCursor.ReadUInt16();
@@ -135,16 +124,16 @@ public sealed class XAnimPartsLoader
         int indexCount = rootCursor.ReadInt32();
         float framerate = ReadSingle(rootCursor);
         float frequency = ReadSingle(rootCursor);
-        XPointer<ushort[]> namesPointer = ReadPointer<ushort[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<byte[]> dataBytePointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<short[]> dataShortPointer = ReadPointer<short[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<int[]> dataIntPointer = ReadPointer<int[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<short[]> randomDataShortPointer = ReadPointer<short[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<byte[]> randomDataBytePointer = ReadPointer<byte[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<int[]> randomDataIntPointer = ReadPointer<int[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<object> indicesPointer = ReadPointer<object>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<XAnimNotifyInfo[]> notifyPointer = ReadPointer<XAnimNotifyInfo[]>(rootCursor, XPointerResolutionMode.Direct);
-        XPointer<XAnimDeltaPart> deltaPartPointer = ReadPointer<XAnimDeltaPart>(rootCursor, XPointerResolutionMode.Direct);
+        XPointer<ushort[]> namesPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<byte[]> dataBytePointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<short[]> dataShortPointer = ReadPointer<short[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<int[]> dataIntPointer = ReadPointer<int[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<short[]> randomDataShortPointer = ReadPointer<short[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<byte[]> randomDataBytePointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<int[]> randomDataIntPointer = ReadPointer<int[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<object> indicesPointer = ReadPointer<object>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<XAnimNotifyInfo[]> notifyPointer = ReadPointer<XAnimNotifyInfo[]>(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointer<XAnimDeltaPart> deltaPartPointer = ReadPointer<XAnimDeltaPart>(rootCursor, context, XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != XAnimPartsAsset.SerializedSize)
             throw new InvalidDataException($"XAnimParts consumed 0x{rootCursor.Offset:X} bytes instead of 0x{XAnimPartsAsset.SerializedSize:X}.");
@@ -260,9 +249,9 @@ public sealed class XAnimPartsLoader
         byte[] bytes = context.Blocks.Load(cursor, XAnimDeltaPart.SerializedSize);
         var c = new FastFileCursor(bytes, address);
 
-        XPointer<XAnimPartTrans> transPointer = ReadPointer<XAnimPartTrans>(c, XPointerResolutionMode.Direct);
-        XPointer<XAnimDeltaPartQuat2> quat2Pointer = ReadPointer<XAnimDeltaPartQuat2>(c, XPointerResolutionMode.Direct);
-        XPointer<XAnimDeltaPartQuat> quatPointer = ReadPointer<XAnimDeltaPartQuat>(c, XPointerResolutionMode.Direct);
+        XPointer<XAnimPartTrans> transPointer = ReadPointer<XAnimPartTrans>(c, context, XPointerResolutionMode.Direct);
+        XPointer<XAnimDeltaPartQuat2> quat2Pointer = ReadPointer<XAnimDeltaPartQuat2>(c, context, XPointerResolutionMode.Direct);
+        XPointer<XAnimDeltaPartQuat> quatPointer = ReadPointer<XAnimDeltaPartQuat>(c, context, XPointerResolutionMode.Direct);
 
         return new XAnimDeltaPart
         {
@@ -325,7 +314,7 @@ public sealed class XAnimPartsLoader
         var c = new FastFileCursor(bytes, framesAddress);
         XAnimVec3 mins = ReadVec3(c);
         XAnimVec3 frameSize = ReadVec3(c);
-        XPointer<byte[]> framesPointer = ReadPointer<byte[]>(c, XPointerResolutionMode.Direct);
+        XPointer<byte[]> framesPointer = ReadPointer<byte[]>(c, context, XPointerResolutionMode.Direct);
         int frameCount = checked(size + 1);
         int dynamicByteCount = GetDynamicIndexByteCount(numFrames, frameCount);
         byte[] dynamicBytes = context.Blocks.Load(cursor, dynamicByteCount);
@@ -389,7 +378,7 @@ public sealed class XAnimPartsLoader
     {
         byte[] bytes = context.Blocks.Load(cursor, XAnimDeltaPartQuatDataFrames2.SerializedSize, out XBlockAddress framesAddress);
         var c = new FastFileCursor(bytes, framesAddress);
-        XPointer<XQuat2[]> framesPointer = ReadPointer<XQuat2[]>(c, XPointerResolutionMode.Direct);
+        XPointer<XQuat2[]> framesPointer = ReadPointer<XQuat2[]>(c, context, XPointerResolutionMode.Direct);
         int frameCount = checked(size + 1);
         int dynamicByteCount = GetDynamicIndexByteCount(numFrames, frameCount);
         byte[] dynamicBytes = context.Blocks.Load(cursor, dynamicByteCount);
@@ -455,7 +444,7 @@ public sealed class XAnimPartsLoader
     {
         byte[] bytes = context.Blocks.Load(cursor, XAnimDeltaPartQuatDataFrames.SerializedSize, out XBlockAddress framesAddress);
         var c = new FastFileCursor(bytes, framesAddress);
-        XPointer<XQuat[]> framesPointer = ReadPointer<XQuat[]>(c, XPointerResolutionMode.Direct);
+        XPointer<XQuat[]> framesPointer = ReadPointer<XQuat[]>(c, context, XPointerResolutionMode.Direct);
         int frameCount = checked(size + 1);
         int dynamicByteCount = GetDynamicIndexByteCount(numFrames, frameCount);
         byte[] dynamicBytes = context.Blocks.Load(cursor, dynamicByteCount);
@@ -692,16 +681,11 @@ public sealed class XAnimPartsLoader
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
-        XPointerResolutionMode mode)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode mode) => context.PointerReader.ReadDeferredPointer<T>(cursor, mode);
 
-    private static XString ReadXStringPointer(FastFileCursor cursor)
-    {
-        return ReadPointer<string>(cursor, XPointerResolutionMode.Direct);
-    }
+    private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 
     private static XAnimVec3 ReadVec3(FastFileCursor cursor)
     {

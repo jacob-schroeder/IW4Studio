@@ -2,6 +2,7 @@ using IW4.FastFiles.Loaders.Database;
 using IW4.Assets.Zone;
 using IW4.Assets.Assets;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Loaders.Pointers;
 using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
@@ -23,12 +24,14 @@ public sealed class XAssetListReader
         // XAssetList is a separate loader object. Its serialized root is not
         // retained in TEMP; only child payloads are materialized through the
         // block streams.
-        var rootCursor = new FastFileCursor(rootBytes);
+        var rootCursor = new FastFileCursor(rootBytes, decodedTapeBaseOffset: rootOffset);
 
         int scriptStringCount = rootCursor.ReadInt32();
-        XPointerReference scriptStringsReference = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
+        XPointerRead scriptStringsRead = context.PointerReader.ReadCellWithCaptureHandle(rootCursor, XPointerOffsetMode.Direct);
         int assetCount = rootCursor.ReadInt32();
-        XPointerReference assetsReference = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
+        XPointerRead assetsRead = context.PointerReader.ReadCellWithCaptureHandle(rootCursor, XPointerOffsetMode.Direct);
+        XPointerReference scriptStringsReference = scriptStringsRead.Pointer;
+        XPointerReference assetsReference = assetsRead.Pointer;
 
         if (rootCursor.Offset != XAssetListSize)
             throw new InvalidDataException($"XAssetList root consumed 0x{rootCursor.Offset:X} bytes instead of 0x{XAssetListSize:X}.");
@@ -40,8 +43,8 @@ public sealed class XAssetListReader
         try
         {
             scriptStrings = !context.PointerReader.HasInlinePayload(scriptStringsReference)
-                ? ValidateSkippedScriptStringArray(scriptStringsReference, scriptStringCount, context)
-                : ReadScriptStrings(cursor, scriptStringsReference, scriptStringCount, context);
+                ? ValidateSkippedScriptStringArray(scriptStringsRead, scriptStringCount, context)
+                : ReadScriptStrings(cursor, scriptStringsRead, scriptStringCount, context);
             if (scriptStrings.Count != scriptStringCount)
             {
                 throw new InvalidDataException(
@@ -52,8 +55,8 @@ public sealed class XAssetListReader
             context.ZoneScriptStrings.Initialize(scriptStrings);
 
             assets = !context.PointerReader.HasInlinePayload(assetsReference)
-                ? ValidateSkippedAssetArray(assetsReference, assetCount, context)
-                : ReadAssets(cursor, assetsReference, assetCount, context);
+                ? ValidateSkippedAssetArray(assetsRead, assetCount, context)
+                : ReadAssets(cursor, assetsRead, assetCount, context);
         }
         finally
         {
@@ -74,14 +77,14 @@ public sealed class XAssetListReader
 
     private static IReadOnlyList<XScriptStringEntry> ReadScriptStrings(
         FastFileCursor cursor,
-        XPointerReference pointer,
+        XPointerRead pointerRead,
         int count,
         DbLoadContext context)
     {
         if (count < 0)
             throw new InvalidDataException($"Invalid negative script string count {count}.");
 
-        context.PointerReader.BeginInlinePayload(pointer, alignment: 4);
+        context.PointerReader.BeginInlinePayload(pointerRead, alignment: 4);
         int pointerTableSourceOffset = cursor.Offset;
         byte[] pointerTable = context.Blocks.Load(cursor, checked(count * sizeof(int)), out XBlockAddress pointerTableAddress);
         var tableCursor = new FastFileCursor(pointerTable, pointerTableAddress);
@@ -124,14 +127,14 @@ public sealed class XAssetListReader
 
     private static IReadOnlyList<XAssetListEntrySnapshot> ReadAssets(
         FastFileCursor cursor,
-        XPointerReference assetsPointer,
+        XPointerRead assetsPointerRead,
         int count,
         DbLoadContext context)
     {
         if (count < 0)
             throw new InvalidDataException($"Invalid negative asset count {count}.");
 
-        context.PointerReader.BeginInlinePayload(assetsPointer, alignment: 4);
+        context.PointerReader.BeginInlinePayload(assetsPointerRead, alignment: 4);
         int assetTableSourceOffset = cursor.Offset;
         byte[] assetTable = context.Blocks.Load(cursor, checked(count * XAssetSize), out XBlockAddress assetTableAddress);
         var tableCursor = new FastFileCursor(assetTable, assetTableAddress);
@@ -180,7 +183,7 @@ public sealed class XAssetListReader
     }
 
     private static IReadOnlyList<XScriptStringEntry> ValidateSkippedScriptStringArray(
-        XPointerReference pointer,
+        XPointerRead pointer,
         int count,
         DbLoadContext context)
     {
@@ -192,7 +195,7 @@ public sealed class XAssetListReader
     }
 
     private static IReadOnlyList<XAssetListEntrySnapshot> ValidateSkippedAssetArray(
-        XPointerReference pointer,
+        XPointerRead pointer,
         int count,
         DbLoadContext context)
     {

@@ -13,6 +13,7 @@ using IW4.Runtime.Assets;
 using IW4.Runtime.Assets.Lifecycle;
 using IW4.Runtime.Diagnostics;
 using IW4.Runtime.Strings;
+using IW4.Linker.Model;
 
 namespace IW4.FastFiles.Loaders.Database;
 
@@ -55,6 +56,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     public uint SelectedLanguageMask { get; set; }
     public DbHeader? Header { get; set; }
     public byte[]? DecodedZoneBytes { get; set; }
+    internal ZoneObjectCaptureBridge? ZoneObjectCapture { get; private set; }
 
     // "CurrentFastFile" is an external stream-source category used to
     // distinguish the active .ff from imagefile%d.pak; it is not the old load
@@ -105,6 +107,17 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     internal DbZoneContributions FreezeZoneContributions() =>
         AssetLoadSession.FreezeZoneContributions();
 
+    internal void BeginZoneObjectCapture(byte[] decodedTape, XFile layout)
+    {
+        if (ZoneObjectCapture is not null)
+            throw new InvalidOperationException("This load context already owns a zone-object capture.");
+        ZoneObjectCapture = new ZoneObjectCaptureBridge(decodedTape, layout);
+        Blocks.CaptureBridge = ZoneObjectCapture;
+    }
+
+    internal ZoneObjectFile FreezeZoneObjectFile() =>
+        ZoneObjectCapture?.Freeze() ?? throw new InvalidOperationException("Zone object capture was not initialized.");
+
     public override int? AllocateGfxImageStreamIndex(bool hasStreamingData)
     {
         return hasStreamingData ? _nextGfxImageStreamIndex++ : null;
@@ -137,7 +150,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     // separate XAssets.
     public override GfxImageAsset DB_AddXAsset(
         GfxImageAsset image,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = image.StagingAddress
             ?? throw new InvalidDataException("GfxImage has no staging block address for DB_AddXAsset canonicalization.");
@@ -153,7 +166,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
             image,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (GfxImageAsset)entry.Asset;
@@ -173,9 +186,9 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
         int callerRaw = callerImage.RuntimeAddress?.RawValue
             ?? throw new InvalidDataException(
                 $"GfxImage caller target '{callerImage.Name}' has no runtime address.");
-        Blocks.WriteInt32(pointerCellAddress, callerRaw);
+        PatchProviderReference(providerRegistration, callerRaw);
         RegisterGfxImage(image, pointerCellAddress: null);
-        RegisterGfxImage(callerImage, pointerCellAddress);
+        RegisterGfxImage(callerImage, providerRegistration.SourcePointerCell);
         return callerImage;
     }
 
@@ -239,7 +252,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
         BaseAsset asset,
         XBlockAddress stagingAddress,
         ReadOnlySpan<byte> headerBytes,
-        XBlockAddress pointerCellAddress,
+        ProviderRegistrationOccurrence providerRegistration,
         out bool added,
         DbStreamState? sourceBlocks = null,
         ReadOnlySpan<byte> nativePoolCopyBytes = default,
@@ -252,7 +265,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
             asset,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out added,
             sourceBlocks,
             nativePoolCopyBytes,
@@ -285,14 +298,25 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     }
 
     protected override void OnAssetProviderRegistered(
-        XBlockAddress pointerCellAddress,
+        ProviderRegistrationOccurrence providerRegistration,
         XAssetProviderMaterialization provider,
         XAssetProviderId activeProviderId)
     {
         _activeMaterializationScope?.RecordRegistration(
-            pointerCellAddress,
+            providerRegistration.SourcePointerCell,
             provider,
             activeProviderId);
+        if (ZoneObjectCapture is not null)
+        {
+            XBlockAddress materialization = provider.Asset.StagingAddress
+                ?? throw new InvalidDataException(
+                    "Provider registration cannot be captured because its incoming asset has no staging materialization.");
+            ZoneObjectCapture.RecordProvider(
+                providerRegistration,
+                materialization,
+                provider.ProviderId.Value,
+                activeProviderId.Value);
+        }
     }
 
     private TAsset? ResolveSimpleCanonicalAsset<TAsset>(

@@ -38,25 +38,14 @@ public sealed class StringTableLoader
             throw new InvalidDataException(
                 $"Top-level StringTable pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             StringTableAsset stringTable = ReadStringTable(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline StringTable pointer has no destination cell.");
-            StringTableAsset canonical = context.DB_AddXAsset(stringTable, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical StringTable has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            StringTableAsset canonical = context.DB_AddXAsset(stringTable, providerRegistration);
 
             return canonical;
         }
@@ -82,11 +71,9 @@ public sealed class StringTableLoader
         XPointer<string> namePointer = ReadXStringPointer(rootCursor, context);
         int columnCount = rootCursor.ReadInt32();
         int rowCount = rootCursor.ReadInt32();
-        int cellsCellOffset = rootCursor.Offset;
-        var cellsPointer = new XPointer<StringTableCell[]>(
-            rootCursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            rootCursor.AddressAt(cellsCellOffset));
+        XPointer<StringTableCell[]> cellsPointer = context.PointerReader.ReadPointer<StringTableCell[]>(
+            rootCursor,
+            XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != StringTableAsset.SerializedSize)
             throw new InvalidDataException($"StringTable consumed 0x{rootCursor.Offset:X} bytes instead of 0x{StringTableAsset.SerializedSize:X}.");

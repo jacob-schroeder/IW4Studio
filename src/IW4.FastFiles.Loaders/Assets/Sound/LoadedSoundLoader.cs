@@ -95,9 +95,7 @@ public sealed class LoadedSoundLoader
                 $"LoadedSound pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -105,20 +103,11 @@ public sealed class LoadedSoundLoader
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             LoadedSound loadedSound = ReadLoadedSound(cursor, rootAddress, context);
             incomingDefinition = loadedSound;
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline LoadedSound pointer has no destination cell.");
             LoadedSound canonical = context.DB_AddXAsset(
                 XAssetType.LoadedSound,
                 loadedSound.Name,
                 loadedSound,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical LoadedSound has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }

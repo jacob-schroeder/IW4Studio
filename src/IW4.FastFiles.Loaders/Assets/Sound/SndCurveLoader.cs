@@ -93,9 +93,7 @@ public sealed class SndCurveLoader
                 $"SndCurve pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -103,16 +101,7 @@ public sealed class SndCurveLoader
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             SndCurve curve = ReadSndCurve(cursor, rootAddress, context);
             incomingDefinition = curve;
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline SndCurve pointer has no destination cell.");
-            SndCurve canonical = context.DB_AddXAsset(curve, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical SndCurve has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            SndCurve canonical = context.DB_AddXAsset(curve, providerRegistration);
 
             return canonical;
         }

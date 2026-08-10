@@ -59,9 +59,7 @@ public sealed class WeaponLoader
                 $"Top-level Weapon pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -86,16 +84,7 @@ public sealed class WeaponLoader
                 RuntimeAddress = rootAddress,
                 Variant = variant
             };
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline Weapon pointer has no destination cell.");
-            WeaponAsset canonical = context.DB_AddXAsset(weapon, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Weapon has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            WeaponAsset canonical = context.DB_AddXAsset(weapon, providerRegistration);
 
             return canonical;
         }
@@ -1343,8 +1332,7 @@ public sealed class WeaponLoader
     {
         // Weapon roots can point at cells materialized later in the child walk.
         // Validate these in the child consumer helpers instead of during root byte decode.
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
+        return context.PointerReader.ReadDeferredPointer<T>(cursor, mode);
     }
 
     private static XString ReadXStringPointer(

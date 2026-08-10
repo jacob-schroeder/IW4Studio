@@ -43,29 +43,18 @@ public sealed class GameWorldSpLoader
                 $"GameWorldSp pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             GameWorldSpAsset gameWorld = ReadGameWorldSp(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline GameWorldSp pointer has no destination cell.");
             GameWorldSpAsset canonical = context.DB_AddXAsset(
                 XAssetType.GameMapSp,
                 gameWorld.Name,
                 gameWorld,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical GameWorldSp has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -97,9 +86,9 @@ public sealed class GameWorldSpLoader
         XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(
             rootCursor,
             XPointerResolutionMode.Direct);
-        PathData path = _pathDataLoader.ReadHeader(rootCursor);
-        VehicleTrack vehicleTrack = _vehicleTrackLoader.ReadHeader(rootCursor);
-        XPointer<GGlassData> glassDataPointer = ReadPresencePointer<GGlassData>(rootCursor);
+        PathData path = _pathDataLoader.ReadHeader(rootCursor, context);
+        VehicleTrack vehicleTrack = _vehicleTrackLoader.ReadHeader(rootCursor, context);
+        XPointer<GGlassData> glassDataPointer = ReadPresencePointer<GGlassData>(rootCursor, context);
         if (rootCursor.Offset != GameWorldSpAsset.SerializedSize)
         {
             throw new InvalidDataException(
@@ -138,13 +127,9 @@ public sealed class GameWorldSpLoader
         };
     }
 
-    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor)
+    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor, DbLoadExecutionContext context)
     {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
+        return context.PointerReader.ReadDeferredPointer<T>(cursor, XPointerResolutionMode.Direct);
     }
 
     private static void PatchCanonicalPointerCell(

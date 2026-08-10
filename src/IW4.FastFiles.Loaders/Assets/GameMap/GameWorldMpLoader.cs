@@ -37,29 +37,18 @@ public sealed class GameWorldMpLoader
                 $"Top-level GameWorldMp pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             GameWorldMpAsset gameWorld = ReadGameWorldMp(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline GameWorldMp pointer has no destination cell.");
             GameWorldMpAsset canonical = context.DB_AddXAsset(
                 XAssetType.GameMapMp,
                 gameWorld.Name,
                 gameWorld,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical GameWorldMp has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -89,7 +78,7 @@ public sealed class GameWorldMpLoader
         XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(
             rootCursor,
             XPointerResolutionMode.Direct);
-        XPointer<GGlassData> glassDataPointer = ReadPresencePointer<GGlassData>(rootCursor);
+        XPointer<GGlassData> glassDataPointer = ReadPresencePointer<GGlassData>(rootCursor, context);
         if (rootCursor.Offset != GameWorldMpAsset.SerializedSize)
         {
             throw new InvalidDataException(
@@ -124,13 +113,9 @@ public sealed class GameWorldMpLoader
         };
     }
 
-    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor)
+    private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor, DbLoadExecutionContext context)
     {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(
-            cursor.ReadInt32(),
-            XPointerResolutionMode.Direct,
-            cursor.AddressAt(cellOffset));
+        return context.PointerReader.ReadDeferredPointer<T>(cursor, XPointerResolutionMode.Direct);
     }
 
     private static void PatchCanonicalPointerCell(

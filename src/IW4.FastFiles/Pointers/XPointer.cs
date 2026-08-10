@@ -33,7 +33,7 @@ public readonly record struct XPointer<T>
     public PointerType Type => XPointerCodec.GetType(Raw);
     public XBlockAddress? PackedAddress =>
         XPointerCodec.TryDecodeBlockAddress(Raw, out XBlockAddress address) ? address : null;
-    public bool ConsumesSource => Type is PointerType.Inline;
+    public bool ConsumesSource => Type is PointerType.Inline or PointerType.Insert;
 
     public XPointerReference Untyped => XPointerReference.FromRaw(Raw, ResolutionMode, CellAddress);
 

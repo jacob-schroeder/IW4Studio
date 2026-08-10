@@ -42,25 +42,14 @@ public sealed class StructuredDataDefSetLoader
                 $"has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             StructuredDataDefSetAsset defSet = ReadDefSet(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline StructuredDataDefSet pointer has no destination cell.");
-            StructuredDataDefSetAsset canonical = context.DB_AddXAsset(defSet, pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical StructuredDataDefSet has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            StructuredDataDefSetAsset canonical = context.DB_AddXAsset(defSet, providerRegistration);
 
             return canonical;
         }

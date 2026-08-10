@@ -70,17 +70,13 @@ public sealed class FxImpactTableLoader
                 $"ImpactFx pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
         }
 
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             FxImpactTableAsset table = ReadFxImpactTable(cursor, rootAddress, context);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline ImpactFx pointer has no destination cell.");
             if (table.Name is null)
             {
                 throw new InvalidDataException(
@@ -91,14 +87,7 @@ public sealed class FxImpactTableLoader
                 XAssetType.ImpactFx,
                 table.Name,
                 table,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical ImpactFx has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -119,8 +108,8 @@ public sealed class FxImpactTableLoader
             throw new InvalidDataException($"ImpactFx pointer patched to {expectedRootAddress}, but root loaded at {rootAddress}.");
 
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
-        XString namePointer = ReadXStringPointer(rootCursor);
-        XPointer<FxImpactEntry[]> entriesPointer = ReadPointer<FxImpactEntry[]>(rootCursor, XPointerResolutionMode.Direct);
+        XString namePointer = ReadXStringPointer(rootCursor, context);
+        XPointer<FxImpactEntry[]> entriesPointer = ReadPointer<FxImpactEntry[]>(rootCursor, context, XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != FxImpactTableAsset.SerializedSize)
             throw new InvalidDataException($"ImpactFx root consumed 0x{rootCursor.Offset:X} bytes instead of 0x{FxImpactTableAsset.SerializedSize:X}.");
@@ -188,10 +177,12 @@ public sealed class FxImpactTableLoader
             XBlockAddress entryAddress = entriesAddress.Add(entryOffset);
             IReadOnlyList<XPointer<FxEffectDefAsset>> surfacePointers = ReadFxEffectDefPointerBand(
                 entryCursor,
-                FxImpactEntry.SurfaceEffectCount);
+                FxImpactEntry.SurfaceEffectCount,
+                context);
             IReadOnlyList<XPointer<FxEffectDefAsset>> fleshPointers = ReadFxEffectDefPointerBand(
                 entryCursor,
-                FxImpactEntry.FleshEffectCount);
+                FxImpactEntry.FleshEffectCount,
+                context);
 
             if (entryCursor.Offset - entryOffset != FxImpactEntry.SerializedSize)
                 throw new InvalidDataException($"FxImpactEntry consumed 0x{entryCursor.Offset - entryOffset:X} bytes instead of 0x{FxImpactEntry.SerializedSize:X}.");
@@ -215,11 +206,12 @@ public sealed class FxImpactTableLoader
 
     private static IReadOnlyList<XPointer<FxEffectDefAsset>> ReadFxEffectDefPointerBand(
         FastFileCursor cursor,
-        int count)
+        int count,
+        DbLoadExecutionContext context)
     {
         var pointers = new XPointer<FxEffectDefAsset>[count];
         for (int i = 0; i < pointers.Length; i++)
-            pointers[i] = ReadPointer<FxEffectDefAsset>(cursor, XPointerResolutionMode.AliasCell);
+            pointers[i] = ReadPointer<FxEffectDefAsset>(cursor, context, XPointerResolutionMode.AliasCell);
 
         return pointers;
     }
@@ -236,16 +228,16 @@ public sealed class FxImpactTableLoader
         return effects;
     }
 
-    private static XString ReadXStringPointer(FastFileCursor cursor)
+    private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context)
     {
-        return ReadPointer<string>(cursor, XPointerResolutionMode.Direct);
+        return ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
     }
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
+        DbLoadExecutionContext context,
         XPointerResolutionMode mode)
     {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
+        return context.PointerReader.ReadDeferredPointer<T>(cursor, mode);
     }
 }

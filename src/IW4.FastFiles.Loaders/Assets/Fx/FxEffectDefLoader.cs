@@ -76,9 +76,7 @@ public sealed class FxEffectDefLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -91,20 +89,11 @@ public sealed class FxEffectDefLoader
                     $"FxEffectDef pointer patched to {rootAddress}, but root loaded at {effect.StagingAddress}.");
             }
 
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline FxEffectDef pointer has no destination cell.");
             FxEffectDefAsset canonical = context.DB_AddXAsset(
                 XAssetType.Fx,
                 effect.Name,
                 effect,
-                pointerCellAddress);
-
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical FxEffectDef has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+                providerRegistration);
 
             return canonical;
         }
@@ -122,14 +111,14 @@ public sealed class FxEffectDefLoader
         byte[] rootBytes = context.Blocks.Load(cursor, FxEffectDefAsset.SerializedSize, out XBlockAddress rootAddress);
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
-        XString namePointer = ReadXStringPointer(rootCursor);
+        XString namePointer = ReadXStringPointer(rootCursor, context);
         int flags = rootCursor.ReadInt32();
         int totalSize = rootCursor.ReadInt32();
         int msecLoopingLife = rootCursor.ReadInt32();
         int elemDefCountLooping = rootCursor.ReadInt32();
         int elemDefCountOneShot = rootCursor.ReadInt32();
         int elemDefCountEmission = rootCursor.ReadInt32();
-        XPointer<FxElemDef[]> elemDefsPointer = ReadPointer<FxElemDef[]>(rootCursor, XPointerResolutionMode.Direct);
+        XPointer<FxElemDef[]> elemDefsPointer = ReadPointer<FxElemDef[]>(rootCursor, context, XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != FxEffectDefAsset.SerializedSize)
             throw new InvalidDataException($"FxEffectDef consumed 0x{rootCursor.Offset:X} bytes instead of 0x{FxEffectDefAsset.SerializedSize:X}.");
@@ -196,7 +185,7 @@ public sealed class FxEffectDefLoader
 
         var roots = new FxElemDefRoot[count];
         for (int i = 0; i < roots.Length; i++)
-            roots[i] = ReadFxElemDefRoot(elemCursor);
+            roots[i] = ReadFxElemDefRoot(elemCursor, context);
 
         var elems = new FxElemDef[count];
         for (int i = 0; i < elems.Length; i++)
@@ -206,7 +195,7 @@ public sealed class FxEffectDefLoader
         return elems;
     }
 
-    private static FxElemDefRoot ReadFxElemDefRoot(FastFileCursor cursor)
+    private static FxElemDefRoot ReadFxElemDefRoot(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         int offset = cursor.AddressAt(cursor.Offset)?.Offset ?? cursor.Offset;
         int start = cursor.Offset;
@@ -231,16 +220,19 @@ public sealed class FxEffectDefLoader
         byte visualCount = cursor.ReadByte();
         byte velIntervalCount = cursor.ReadByte();
         byte visStateIntervalCount = cursor.ReadByte();
-        XPointer<FxElemVelStateSample[]> velSamplesPointer = ReadPointer<FxElemVelStateSample[]>(cursor, XPointerResolutionMode.Direct);
-        XPointer<FxElemVisStateSample[]> visSamplesPointer = ReadPointer<FxElemVisStateSample[]>(cursor, XPointerResolutionMode.Direct);
-        FxElemDefVisualsRoot visuals = ReadFxElemDefVisualsRoot(cursor);
+        XPointer<FxElemVelStateSample[]> velSamplesPointer = ReadPointer<FxElemVelStateSample[]>(cursor, context, XPointerResolutionMode.Direct);
+        XPointer<FxElemVisStateSample[]> visSamplesPointer = ReadPointer<FxElemVisStateSample[]>(cursor, context, XPointerResolutionMode.Direct);
+        FxElemDefVisualsRoot visuals = ReadFxElemDefVisualsRoot(
+            cursor,
+            context,
+            capturePointer: visualCount > 1 || !IsNoChildVisual(elemType));
         Bounds collBounds = ReadBounds(cursor);
-        FxEffectDefRef effectOnImpact = ReadFxEffectDefRefRoot(cursor);
-        FxEffectDefRef effectOnDeath = ReadFxEffectDefRefRoot(cursor);
-        FxEffectDefRef effectEmitted = ReadFxEffectDefRefRoot(cursor);
+        FxEffectDefRef effectOnImpact = ReadFxEffectDefRefRoot(cursor, context);
+        FxEffectDefRef effectOnDeath = ReadFxEffectDefRefRoot(cursor, context);
+        FxEffectDefRef effectEmitted = ReadFxEffectDefRefRoot(cursor, context);
         FxFloatRange emitDist = ReadFxFloatRange(cursor);
         FxFloatRange emitDistVariance = ReadFxFloatRange(cursor);
-        XPointer<FxElemExtendedDef> extendedPointer = ReadPointer<FxElemExtendedDef>(cursor, XPointerResolutionMode.Direct);
+        XPointer<FxElemExtendedDef> extendedPointer = ReadPointer<FxElemExtendedDef>(cursor, context, XPointerResolutionMode.Direct);
         byte sortOrder = cursor.ReadByte();
         byte lightingFrac = cursor.ReadByte();
         byte useItemClip = cursor.ReadByte();
@@ -431,7 +423,13 @@ public sealed class FxEffectDefLoader
         var visualCursor = new FastFileCursor(visualBytes, visualAddress);
         var visuals = new FxElemDefVisuals[visualCount];
         for (int i = 0; i < visuals.Length; i++)
-            visuals[i] = ReadFxElemVisual(cursor, ReadFxElemDefVisualsRoot(visualCursor), elemType, context);
+        {
+            FxElemDefVisualsRoot visual = ReadFxElemDefVisualsRoot(
+                visualCursor,
+                context,
+                capturePointer: !IsNoChildVisual(elemType));
+            visuals[i] = ReadFxElemVisual(cursor, visual, elemType, context);
+        }
 
         return visuals;
     }
@@ -452,8 +450,8 @@ public sealed class FxEffectDefLoader
         for (int i = 0; i < marks.Length; i++)
         {
             int offset = markCursor.AddressAt(markCursor.Offset)?.Offset ?? markCursor.Offset;
-            XPointer<MaterialAsset> material0Pointer = ReadPointer<MaterialAsset>(markCursor, XPointerResolutionMode.AliasCell);
-            XPointer<MaterialAsset> material1Pointer = ReadPointer<MaterialAsset>(markCursor, XPointerResolutionMode.AliasCell);
+            XPointer<MaterialAsset> material0Pointer = ReadPointer<MaterialAsset>(markCursor, context, XPointerResolutionMode.AliasCell);
+            XPointer<MaterialAsset> material1Pointer = ReadPointer<MaterialAsset>(markCursor, context, XPointerResolutionMode.AliasCell);
             MaterialAsset? material0 = ReadMaterialPointer(
                 cursor,
                 material0Pointer.Untyped,
@@ -615,9 +613,9 @@ public sealed class FxEffectDefLoader
         float invSplitArcDist = ReadSingle(trailCursor);
         float invSplitTime = ReadSingle(trailCursor);
         int vertCount = trailCursor.ReadInt32();
-        XPointer<FxTrailVertex[]> vertsPointer = ReadPointer<FxTrailVertex[]>(trailCursor, XPointerResolutionMode.Direct);
+        XPointer<FxTrailVertex[]> vertsPointer = ReadPointer<FxTrailVertex[]>(trailCursor, context, XPointerResolutionMode.Direct);
         int indCount = trailCursor.ReadInt32();
-        XPointer<ushort[]> indsPointer = ReadPointer<ushort[]>(trailCursor, XPointerResolutionMode.Direct);
+        XPointer<ushort[]> indsPointer = ReadPointer<ushort[]>(trailCursor, context, XPointerResolutionMode.Direct);
 
         if (trailCursor.Offset != FxTrailDef.SerializedSize)
             throw new InvalidDataException($"FxTrailDef consumed 0x{trailCursor.Offset:X} bytes instead of 0x{FxTrailDef.SerializedSize:X}.");
@@ -761,11 +759,8 @@ public sealed class FxEffectDefLoader
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
-        XPointerResolutionMode mode)
-    {
-        int cellOffset = cursor.Offset;
-        return new XPointer<T>(cursor.ReadInt32(), mode, cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerResolutionMode mode) => context.PointerReader.ReadDeferredPointer<T>(cursor, mode);
 
     private static XPointer<T> ReinterpretPointer<T>(
         XPointer<object> pointer,
@@ -774,22 +769,33 @@ public sealed class FxEffectDefLoader
         return new XPointer<T>(pointer.Raw, mode, pointer.CellAddress);
     }
 
-    private static XString ReadXStringPointer(FastFileCursor cursor)
+    private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
+        ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
+
+    private static FxElemDefVisualsRoot ReadFxElemDefVisualsRoot(
+        FastFileCursor cursor,
+        DbLoadExecutionContext context,
+        bool capturePointer)
     {
-        return ReadPointer<string>(cursor, XPointerResolutionMode.Direct);
+        int cellOffset = cursor.Offset;
+        int offset = cursor.AddressAt(cellOffset)?.Offset ?? cellOffset;
+        XPointer<object> raw = capturePointer
+            ? ReadPointer<object>(cursor, context, XPointerResolutionMode.Direct)
+            : context.PointerReader.FromRaw<object>(
+                cursor.ReadInt32(),
+                XPointerResolutionMode.Direct,
+                cursor.AddressAt(cellOffset));
+        return new FxElemDefVisualsRoot(offset, raw);
     }
 
-    private static FxElemDefVisualsRoot ReadFxElemDefVisualsRoot(FastFileCursor cursor)
-    {
-        int offset = cursor.AddressAt(cursor.Offset)?.Offset ?? cursor.Offset;
-        return new FxElemDefVisualsRoot(offset, ReadPointer<object>(cursor, XPointerResolutionMode.Direct));
-    }
+    private static bool IsNoChildVisual(FxElemType elemType) =>
+        elemType is FxElemType.OmniLight or FxElemType.SpotLight;
 
-    private static FxEffectDefRef ReadFxEffectDefRefRoot(FastFileCursor cursor)
+    private static FxEffectDefRef ReadFxEffectDefRefRoot(FastFileCursor cursor, DbLoadExecutionContext context)
     {
         return new FxEffectDefRef
         {
-            NamePointer = ReadXStringPointer(cursor)
+            NamePointer = ReadXStringPointer(cursor, context)
         };
     }
 

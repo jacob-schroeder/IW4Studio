@@ -55,9 +55,7 @@ public sealed class GfxImageLoader
             throw new NotSupportedException($"GfxImage pointer 0x{pointer.Raw:X8} uses unsupported source sentinel {pointer.Type}.");
 
         int sourceOffset = cursor.Offset;
-        XBlockAddress? insertCell = pointer.Type == PointerType.Insert
-            ? context.Blocks.AllocateInsertPointerCell()
-            : null;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
         context.Blocks.Push(XFileBlockType.TEMP);
         try
@@ -90,7 +88,7 @@ public sealed class GfxImageLoader
             ushort baseDepth = rootCursor.ReadUInt16();
             byte baseLevelCount = rootCursor.ReadByte();
             byte cached = rootCursor.ReadByte();
-            XPointerReference payloadPointer = ReadRawCell(rootCursor, XPointerOffsetMode.Direct);
+            XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
             IReadOnlyList<GfxImageStreamData> streamData = ReadStreamData(rootCursor);
             int? streamImageIndex = context.AllocateGfxImageStreamIndex(HasStreamingData(streamData));
             IReadOnlyList<DbHeaderImageStreamEntry> streamEntries = context.GetGfxImageStreamEntries(streamImageIndex);
@@ -165,15 +163,7 @@ public sealed class GfxImageLoader
             // authoring sees the serialized header rather than PixelDataBlock
             // and PixelsOffset after that runtime mutation.
             serializedAsset = SnapshotSerializedAsset(image);
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Inline GfxImage pointer has no destination cell.");
-            GfxImageAsset canonical = context.DB_AddXAsset(image, pointerCellAddress);
-            if (insertCell is { } cell)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical GfxImage has no runtime address.");
-                context.Blocks.WriteInt32(cell, canonicalRaw);
-            }
+            GfxImageAsset canonical = context.DB_AddXAsset(image, providerRegistration);
 
             return canonical;
         }
@@ -292,14 +282,8 @@ public sealed class GfxImageLoader
 
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
-        XPointerOffsetMode offsetMode)
-    {
-        int cellOffset = cursor.Offset;
-        return XPointerReference.FromRaw(
-            cursor.ReadInt32(),
-            offsetMode,
-            cursor.AddressAt(cellOffset));
-    }
+        DbLoadExecutionContext context,
+        XPointerOffsetMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
 
     private static bool ResolveAliasCellOffset<T>(
         XPointerReference pointer,

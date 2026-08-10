@@ -75,6 +75,34 @@ public class DbLoadExecutionContext
     public LoadDiagnostics Diagnostics { get; }
 
     /// <summary>
+    /// Captures one serialized XAsset provider source before loading its body.
+    /// The source lifetime is recorded at this boundary, before nested TEMP
+    /// scopes can reuse the same physical address. Insert sources also reserve
+    /// their durable LARGE provider cell here; provider roots must not allocate
+    /// or patch that cell themselves.
+    /// </summary>
+    public ProviderRegistrationOccurrence BeginProviderRegistration(
+        XPointerReference pointer)
+    {
+        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
+        {
+            throw new InvalidDataException(
+                $"XAsset provider source 0x{unchecked((uint)pointer.Raw):X8} is not an inline or insert pointer.");
+        }
+
+        XBlockAddress sourcePointerCell = pointer.CellAddress
+            ?? throw new InvalidDataException("An XAsset provider source has no serialized pointer cell.");
+        XBlockAddress? insertProviderCell = pointer.Type == PointerType.Insert
+            ? Blocks.AllocateInsertPointerCell()
+            : null;
+
+        return Blocks.CaptureBridge?.CreateProviderRegistrationOccurrence(
+                sourcePointerCell,
+                insertProviderCell)
+            ?? new ProviderRegistrationOccurrence(sourcePointerCell, 0, insertProviderCell);
+    }
+
+    /// <summary>
     /// Registers a nested semantic node at the stable block address produced
     /// when its inline payload was materialized.
     /// </summary>
@@ -173,7 +201,7 @@ public class DbLoadExecutionContext
         BaseAsset asset,
         XBlockAddress stagingAddress,
         ReadOnlySpan<byte> headerBytes,
-        XBlockAddress pointerCellAddress,
+        ProviderRegistrationOccurrence providerRegistration,
         out bool added,
         DbStreamState? sourceBlocks = null,
         ReadOnlySpan<byte> nativePoolCopyBytes = default,
@@ -215,14 +243,30 @@ public class DbLoadExecutionContext
                 ? XAssetProviderRegistrationDisposition.ReferencePlaceholder
                 : XAssetProviderRegistrationDisposition.FullDefinition);
         OnAssetProviderRegistered(
-            pointerCellAddress,
+            providerRegistration,
             incomingMaterialization,
             active.Id);
+        PatchProviderReference(providerRegistration, entry.Address.RawValue);
         return entry;
     }
 
+    /// <summary>
+    /// Publishes the caller-visible provider target to both the natural source
+    /// cell and, when applicable, its durable -2 LARGE cell. Specialized
+    /// registration policies may select a final redirect after pool
+    /// registration, but they still use this single boundary.
+    /// </summary>
+    protected void PatchProviderReference(
+        ProviderRegistrationOccurrence providerRegistration,
+        int canonicalRaw)
+    {
+        Blocks.WriteInt32(providerRegistration.SourcePointerCell, canonicalRaw);
+        if (providerRegistration.InsertProviderCell is { } insertProviderCell)
+            Blocks.WriteInt32(insertProviderCell, canonicalRaw);
+    }
+
     protected virtual void OnAssetProviderRegistered(
-        XBlockAddress pointerCellAddress,
+        ProviderRegistrationOccurrence providerRegistration,
         XAssetProviderMaterialization provider,
         XAssetProviderId activeProviderId)
     {
@@ -407,7 +451,7 @@ public class DbLoadExecutionContext
         XAssetType serializedType,
         string? name,
         TAsset asset,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
         where TAsset : BaseAsset
     {
         XAssetTypeRuntimeMetadata metadata = XAssetTypeRuntimeMetadataCatalog.Get(serializedType);
@@ -435,7 +479,7 @@ public class DbLoadExecutionContext
             asset,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         if (entry.Asset is not TAsset canonical)
@@ -445,7 +489,6 @@ public class DbLoadExecutionContext
                 $"{entry.Asset.GetType().Name}, expected {typeof(TAsset).Name}.");
         }
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         return canonical;
     }
 
@@ -474,7 +517,7 @@ public class DbLoadExecutionContext
     public ClipMapAsset DB_AddXAsset(
         XAssetType serializedType,
         ClipMapAsset clipMap,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         if (serializedType is not (XAssetType.ColMapSp or XAssetType.ColMapMp))
         {
@@ -504,7 +547,7 @@ public class DbLoadExecutionContext
             serializedType,
             clipMap.Name,
             clipMap,
-            pointerCellAddress);
+            providerRegistration);
     }
 
     // The serialized WeaponVariantDef body is 0x74 bytes, while its native
@@ -513,7 +556,7 @@ public class DbLoadExecutionContext
     // loaded 0x684-byte WeaponDef remains in LARGE.
     public WeaponAsset DB_AddXAsset(
         WeaponAsset weapon,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = weapon.StagingAddress
             ?? throw new InvalidDataException("Weapon has no staging block address for DB_AddXAsset canonicalization.");
@@ -528,14 +571,13 @@ public class DbLoadExecutionContext
             weapon,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks,
             nativePoolCopyBytes,
             nativePoolCopyCapturedLength);
         var canonical = (WeaponAsset)entry.Asset;
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         return canonical;
     }
 
@@ -565,7 +607,7 @@ public class DbLoadExecutionContext
     // canonical type-0x18 pool.
     public MenuFileAsset DB_AddXAsset(
         MenuFileAsset menuFile,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = menuFile.StagingAddress
             ?? throw new InvalidDataException("MenuFile has no staging block address for DB_AddXAsset canonicalization.");
@@ -577,12 +619,11 @@ public class DbLoadExecutionContext
             menuFile,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (MenuFileAsset)entry.Asset;
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         return canonical;
     }
 
@@ -591,7 +632,7 @@ public class DbLoadExecutionContext
     // write the canonical Menu identity to every copied ItemDef owner cell.
     public MenuDefAsset DB_AddXAsset(
         MenuDefAsset menu,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = menu.StagingAddress
             ?? throw new InvalidDataException("MenuDef has no staging block address for DB_AddXAsset canonicalization.");
@@ -603,14 +644,13 @@ public class DbLoadExecutionContext
             menu,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (MenuDefAsset)entry.Asset;
 
         // Patch the caller before walking the original staging root, even
         // when DB_AddXAsset deduplicated to an older asset.
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         PatchItemRuntimeParents(menu, entry.Address);
 
         return canonical;
@@ -665,112 +705,112 @@ public class DbLoadExecutionContext
     // canonical type-0x1A pool.
     public LocalizeAsset DB_AddXAsset(
         LocalizeAsset localize,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.Localize,
             "Localize",
             localize.Name,
             localize,
             LocalizeAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "Localize has no staging block address for DB_AddXAsset canonicalization.");
 
     // Canonicalize the completed 0x18-byte TEMP LeaderboardDef root as XAsset
     // type 0x25.
     public LeaderboardDefAsset DB_AddXAsset(
         LeaderboardDefAsset leaderboard,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.LeaderboardDef,
             "LeaderboardDef",
             leaderboard.Name,
             leaderboard,
             LeaderboardDefAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "LeaderboardDef has no staging block address for DB_AddXAsset canonicalization.");
 
     // Canonicalize the completed 0x2C-byte TEMP PhysPreset root as XAsset
     // type 0x00.
     public PhysPresetAsset DB_AddXAsset(
         PhysPresetAsset physPreset,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.PhysPreset,
             "PhysPreset",
             physPreset.Name,
             physPreset,
             PhysPresetAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "PhysPreset has no staging block address for DB_AddXAsset canonicalization.");
 
     // Copy the completed 0x10-byte RawFile header from TEMP into the canonical
     // type-0x23 pool.
     public RawFileAsset DB_AddXAsset(
         RawFileAsset rawFile,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.RawFile,
             "RawFile",
             rawFile.Name,
             rawFile,
             RawFileAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "RawFile has no staging block address for DB_AddXAsset canonicalization.");
 
     // Canonicalize the completed 0x88-byte TEMP SndCurve root as XAsset
     // type 0x0B.
     public SndCurve DB_AddXAsset(
         SndCurve sndCurve,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.SndCurve,
             "SndCurve",
             sndCurve.Filename,
             sndCurve,
             SndCurve.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "SndCurve has no staging block address for DB_AddXAsset canonicalization.");
 
     // Copy the completed 0x10-byte StringTable header from TEMP into the
     // canonical type-0x24 pool.
     public StringTableAsset DB_AddXAsset(
         StringTableAsset stringTable,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.StringTable,
             "StringTable",
             stringTable.Name,
             stringTable,
             StringTableAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "StringTable has no staging block address for DB_AddXAsset canonicalization.");
 
     // StructuredDataDef uses a 0x0C-byte pool copy with no type-specific
     // post-copy callback.
     public StructuredDataDefSetAsset DB_AddXAsset(
         StructuredDataDefSetAsset defSet,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.StructuredDataDef,
             "StructuredDataDef",
             defSet.Name,
             defSet,
             StructuredDataDefSetAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "StructuredDataDefSet has no staging block address for DB_AddXAsset canonicalization.");
 
     // Copy the completed 0x9C-byte Techset header from TEMP into the canonical
     // type-0x08 pool.
     public MaterialTechniqueSetAsset DB_AddXAsset(
         MaterialTechniqueSetAsset techniqueSet,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         RegisterCanonicalAsset(
             XAssetType.Techset,
             "Techset",
             techniqueSet.Name,
             techniqueSet,
             MaterialTechniqueSetAsset.SerializedSize,
-            pointerCellAddress,
+            providerRegistration,
             "Techset has no staging block address for DB_AddXAsset canonicalization.");
 
     // Material roots are TEMP staging objects. Type 5 canonicalization strips
@@ -778,7 +818,7 @@ public class DbLoadExecutionContext
     // destination cell.
     public MaterialAsset DB_AddXAsset(
         MaterialAsset material,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = material.StagingAddress
             ?? throw new InvalidDataException("Material has no staging block address for DB_AddXAsset canonicalization.");
@@ -790,12 +830,11 @@ public class DbLoadExecutionContext
             material,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (MaterialAsset)entry.Asset;
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         if (added &&
             !entry.IsReferencePlaceholder &&
             ReferenceEquals(entry.Asset, material))
@@ -805,7 +844,7 @@ public class DbLoadExecutionContext
                 _assetLoadSession.AssetPool,
                 entry);
         }
-        _materialsByAddress[pointerCellAddress] = canonical;
+        _materialsByAddress[providerRegistration.SourcePointerCell] = canonical;
         return canonical;
     }
 
@@ -813,7 +852,7 @@ public class DbLoadExecutionContext
     // type 0x27.
     public TracerDefAsset DB_AddXAsset(
         TracerDefAsset tracer,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = tracer.StagingAddress
             ?? throw new InvalidDataException("TracerDef has no staging block address for DB_AddXAsset canonicalization.");
@@ -825,12 +864,11 @@ public class DbLoadExecutionContext
             tracer,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (TracerDefAsset)entry.Asset;
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         return canonical;
     }
 
@@ -839,7 +877,7 @@ public class DbLoadExecutionContext
     // to zone unload and is not executed during registration.
     public XModelAsset DB_AddXAsset(
         XModelAsset model,
-        XBlockAddress pointerCellAddress)
+        ProviderRegistrationOccurrence providerRegistration)
     {
         XBlockAddress stagingAddress = model.StagingAddress
             ?? throw new InvalidDataException("XModel has no staging block address for DB_AddXAsset canonicalization.");
@@ -851,12 +889,11 @@ public class DbLoadExecutionContext
             model,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (XModelAsset)entry.Asset;
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         ApplyCanonicalXModelLodFixup(canonical, entry);
         return canonical;
     }
@@ -1086,7 +1123,7 @@ public class DbLoadExecutionContext
 
     public virtual GfxImageAsset DB_AddXAsset(
         GfxImageAsset image,
-        XBlockAddress pointerCellAddress) =>
+        ProviderRegistrationOccurrence providerRegistration) =>
         throw MissingGfxImageExecutionCapability();
 
     public virtual GfxImageAsset? ResolveGfxImage(XPointerReference pointer) =>
@@ -1098,7 +1135,7 @@ public class DbLoadExecutionContext
         string? name,
         TAsset asset,
         int serializedSize,
-        XBlockAddress pointerCellAddress,
+        ProviderRegistrationOccurrence providerRegistration,
         string missingStagingAddressMessage)
         where TAsset : BaseAsset
     {
@@ -1112,12 +1149,11 @@ public class DbLoadExecutionContext
             asset,
             stagingAddress,
             headerBytes,
-            pointerCellAddress,
+            providerRegistration,
             out bool added,
             Blocks);
         var canonical = (TAsset)entry.Asset;
 
-        Blocks.WriteInt32(pointerCellAddress, entry.Address.RawValue);
         return canonical;
     }
 
