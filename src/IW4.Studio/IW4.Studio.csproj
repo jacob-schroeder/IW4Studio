@@ -6,7 +6,6 @@
     <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
     <ProjectReference Include="..\IW4.Runtime\IW4.Runtime.csproj" />
     <ProjectReference Include="..\IW4.FastFiles.Loaders\IW4.FastFiles.Loaders.csproj" />
-    <ProjectReference Include="..\IW4.FastFiles.Emitters\IW4.FastFiles.Emitters.csproj" />
     <ProjectReference Include="..\IW4.Render\IW4.Render.csproj" />
   </ItemGroup>
 
