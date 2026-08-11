@@ -18,8 +18,7 @@ public sealed class LoadedSoundLoader
                 cursor,
                 pointer,
                 context,
-                requireAsset: true,
-                out _)
+                requireAsset: true)
             ?? throw new InvalidDataException("Top-level LoadedSound pointer resolved to null.");
     }
 
@@ -32,32 +31,15 @@ public sealed class LoadedSoundLoader
             cursor,
             pointer,
             context,
-            requireAsset: false,
-            out _);
-    }
-
-    public LoadedSound? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out LoadedSound? incomingDefinition)
-    {
-        return LoadFromPointerCore(
-            cursor,
-            pointer,
-            context,
-            requireAsset: false,
-            out incomingDefinition);
+            requireAsset: false);
     }
 
     private static LoadedSound? LoadFromPointerCore(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context,
-        bool requireAsset,
-        out LoadedSound? incomingDefinition)
+        bool requireAsset)
     {
-        incomingDefinition = null;
         if (pointer.Type == PointerType.Null)
         {
             if (requireAsset)
@@ -102,7 +84,6 @@ public sealed class LoadedSoundLoader
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             LoadedSound loadedSound = ReadLoadedSound(cursor, rootAddress, context);
-            incomingDefinition = loadedSound;
             LoadedSound canonical = context.DB_AddXAsset(
                 XAssetType.LoadedSound,
                 loadedSound.Name,

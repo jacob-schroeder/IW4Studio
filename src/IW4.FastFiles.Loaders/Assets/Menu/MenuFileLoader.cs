@@ -27,8 +27,7 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        MenuDefLoadResult result = ReadMenuDefPointer(cursor, pointer, context);
-        return result.CanonicalMenu ?? result.IncomingDefinition
+        return ReadMenuDefPointer(cursor, pointer, context)
             ?? throw new InvalidDataException("Top-level Menu pointer resolved to null.");
     }
 
@@ -176,24 +175,23 @@ public sealed class MenuFileLoader
                 XPointerOffsetMode.AliasCell,
                 XPointerNullability.Required);
             XPointerReference menuPointer = typedMenuPointer.Untyped;
-            MenuDefLoadResult menu = ReadMenuDefPointer(cursor, menuPointer, context);
+            MenuDefAsset? menu = ReadMenuDefPointer(cursor, menuPointer, context);
             menus[i] = new MenuDefReference(
                 i,
                 typedMenuPointer,
-                menu.IncomingDefinition,
-                menu.CanonicalMenu);
+                menu);
         }
 
         return menus;
     }
 
-    private static MenuDefLoadResult ReadMenuDefPointer(
+    private static MenuDefAsset? ReadMenuDefPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
         if (pointer.Type == PointerType.Null)
-            return new MenuDefLoadResult(null, null);
+            return null;
 
         if (pointer.Type == PointerType.Offset)
         {
@@ -206,7 +204,7 @@ public sealed class MenuFileLoader
             int canonicalRaw = canonical.RuntimeAddress?.RawValue
                 ?? throw new InvalidDataException("Canonical MenuDef has no runtime address.");
             context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-            return new MenuDefLoadResult(null, canonical);
+            return canonical;
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
@@ -234,17 +232,13 @@ public sealed class MenuFileLoader
 
             MenuDefAsset canonical = context.DB_AddXAsset(menu, providerRegistration);
 
-            return new MenuDefLoadResult(menu, canonical);
+            return canonical;
         }
         finally
         {
             context.Blocks.Pop();
         }
     }
-
-    private sealed record MenuDefLoadResult(
-        MenuDefAsset? IncomingDefinition,
-        MenuDefAsset? CanonicalMenu);
 
     private static MenuDefAsset ReadMenuDefRoot(
         FastFileCursor cursor,

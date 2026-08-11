@@ -7,10 +7,6 @@ using IW4.Runtime.IO;
 
 namespace IW4.FastFiles.Loaders.Assets.Physics;
 
-public sealed record PhysPresetPointerLoadResult(
-    PhysPresetAsset? Canonical,
-    PhysPresetAsset? IncomingDefinition);
-
 public sealed class PhysPresetLoader
 {
     public PhysPresetAsset LoadFromAssetPointer(
@@ -18,7 +14,7 @@ public sealed class PhysPresetLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true).Canonical
+        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
             ?? throw new InvalidDataException("Top-level PhysPreset pointer resolved to null.");
     }
 
@@ -27,16 +23,10 @@ public sealed class PhysPresetLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false).Canonical;
+        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
     }
 
-    public PhysPresetPointerLoadResult LoadFromPointerWithMaterialization(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context) =>
-        LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-
-    private static PhysPresetPointerLoadResult LoadFromPointerCore(
+    private static PhysPresetAsset? LoadFromPointerCore(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context,
@@ -47,7 +37,7 @@ public sealed class PhysPresetLoader
             if (requireAsset)
                 throw new InvalidDataException("Top-level PhysPreset pointer is null.");
 
-            return new PhysPresetPointerLoadResult(null, null);
+            return null;
         }
 
         if (pointer.Type == PointerType.Offset)
@@ -60,7 +50,7 @@ public sealed class PhysPresetLoader
             if (canonical is null)
             {
                 if (!requireAsset)
-                    return new PhysPresetPointerLoadResult(null, null);
+                    return null;
 
                 throw new InvalidDataException(
                     $"Top-level PhysPreset pointer 0x{unchecked((uint)pointer.Raw):X8} " +
@@ -68,7 +58,7 @@ public sealed class PhysPresetLoader
             }
 
             PatchCanonicalPointerCell(pointer, canonical, context);
-            return new PhysPresetPointerLoadResult(canonical, null);
+            return canonical;
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
@@ -86,7 +76,7 @@ public sealed class PhysPresetLoader
             PhysPresetAsset physPreset = ReadPhysPreset(cursor, rootAddress, context);
             PhysPresetAsset canonical = context.DB_AddXAsset(physPreset, providerRegistration);
 
-            return new PhysPresetPointerLoadResult(canonical, physPreset);
+            return canonical;
         }
         finally
         {

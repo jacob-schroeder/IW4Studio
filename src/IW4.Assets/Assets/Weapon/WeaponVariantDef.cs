@@ -54,8 +54,7 @@ public sealed class WeaponVariantDef
     // 0x48 / 0x4C: alias-cell Material pointers.
     public XPointer<Material.MaterialAsset> KillIconPointer { get; init; }
     public XPointer<Material.MaterialAsset> DpadIconPointer { get; init; }
-    /// <summary>Resolved only to capture a detached symbolic reference. The
-    /// pointer cells remain the serialized authority.</summary>
+    /// <summary>Materials resolved from the serialized icon pointers.</summary>
     public MaterialAsset? KillIcon { get; init; }
     public MaterialAsset? DpadIcon { get; init; }
 

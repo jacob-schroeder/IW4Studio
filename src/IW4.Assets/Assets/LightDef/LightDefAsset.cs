@@ -17,7 +17,6 @@ public sealed class LightDefAsset : BaseAsset
     // 0x04: GfxLightImage.image.
     public XPointer<GfxImageAsset> ImagePointer { get; init; }
     public GfxImageAsset? Image { get; init; }
-    public GfxImageAsset? IncomingImage { get; init; }
 
     // 0x08: GfxLightImage.samplerState.
     public byte SamplerState { get; init; }

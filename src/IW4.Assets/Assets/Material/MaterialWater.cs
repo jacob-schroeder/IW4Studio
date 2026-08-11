@@ -27,5 +27,4 @@ public sealed class MaterialWater
     public IReadOnlyList<float> H0Y { get; init; } = [];
     public IReadOnlyList<float> WTerm { get; init; } = [];
     public GfxImageAsset? Image { get; init; }
-    public GfxImageAsset? IncomingImage { get; init; }
 }

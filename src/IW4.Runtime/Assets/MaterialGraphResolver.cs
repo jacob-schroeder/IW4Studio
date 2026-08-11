@@ -200,7 +200,6 @@ internal sealed class MaterialGraphResolver
         var result = new MaterialTechniqueAsset
         {
             Offset = address.Offset,
-            DestinationAddress = address,
             NamePointer = namePointer,
             Name = _resolveTechniqueName(blocks, namePointer.Untyped),
             Flags = flags,

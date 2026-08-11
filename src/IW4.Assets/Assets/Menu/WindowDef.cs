@@ -41,13 +41,9 @@ public sealed class WindowDef
     public Vec4 DisableColor { get; init; } = new();
     public XPointer<MaterialAsset> Background { get; init; }
 
-    /// <summary>Resolved only for inspection and detached authoring capture;
-    /// emission uses the preserved symbolic Material identity, never this
-    /// runtime object or its address.</summary>
+    /// <summary>Material resolved from <see cref="Background"/>.</summary>
     public MaterialAsset? BackgroundMaterial { get; set; }
 
-    /// <summary>Serialized external Material identity captured at load time.
-    /// This is deliberately separate from <see cref="BackgroundMaterial"/>,
-    /// which is a runtime pool object and must never be retained by a draft.</summary>
+    /// <summary>Logical name of the background material.</summary>
     public string? BackgroundMaterialName { get; set; }
 }

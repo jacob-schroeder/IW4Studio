@@ -455,22 +455,18 @@ public sealed class FxEffectDefLoader
             MaterialAsset? material0 = ReadMaterialPointer(
                 cursor,
                 material0Pointer.Untyped,
-                context,
-                out MaterialAsset? incomingMaterial0);
+                context);
             MaterialAsset? material1 = ReadMaterialPointer(
                 cursor,
                 material1Pointer.Untyped,
-                context,
-                out MaterialAsset? incomingMaterial1);
+                context);
             marks[i] = new FxElemMarkVisuals
             {
                 Offset = offset,
                 Material0Pointer = material0Pointer,
                 Material0 = material0,
-                IncomingMaterial0 = incomingMaterial0,
                 Material1Pointer = material1Pointer,
-                Material1 = material1,
-                IncomingMaterial1 = incomingMaterial1
+                Material1 = material1
             };
         }
 
@@ -488,7 +484,7 @@ public sealed class FxEffectDefLoader
             case FxElemType.Model:
             {
                 XPointer<XModelAssetModel> modelPointer = ReinterpretPointer<XModelAssetModel>(visual.Raw, XPointerResolutionMode.AliasCell);
-                XModelPointerLoadResult modelResult =
+                XModelAssetModel? model =
                     ReadXModelPointer(cursor, modelPointer.Untyped, context);
                 return new FxElemDefVisuals
                 {
@@ -496,8 +492,7 @@ public sealed class FxEffectDefLoader
                     Visual = new FxModelVisual
                     {
                         ModelPointer = modelPointer,
-                        Model = modelResult.Canonical,
-                        IncomingModel = modelResult.IncomingDefinition
+                        Model = model
                     }
                 };
             }
@@ -541,16 +536,14 @@ public sealed class FxEffectDefLoader
                 MaterialAsset? material = ReadMaterialPointer(
                     cursor,
                     materialPointer.Untyped,
-                    context,
-                    out MaterialAsset? incomingMaterial);
+                    context);
                 return new FxElemDefVisuals
                 {
                     Offset = visual.Offset,
                     Visual = new FxMaterialVisual
                     {
                         MaterialPointer = materialPointer,
-                        Material = material,
-                        IncomingMaterial = incomingMaterial
+                        Material = material
                     }
                 };
             }
@@ -709,22 +702,20 @@ public sealed class FxEffectDefLoader
     private MaterialAsset? ReadMaterialPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out MaterialAsset? incomingDefinition)
+        DbLoadExecutionContext context)
     {
         return _materialLoader.LoadFromPointer(
             cursor,
             pointer,
-            context,
-            out incomingDefinition);
+            context);
     }
 
-    private XModelPointerLoadResult ReadXModelPointer(
+    private XModelAssetModel? ReadXModelPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return _xmodelLoader.LoadFromPointerWithMaterialization(
+        return _xmodelLoader.LoadFromPointer(
             cursor,
             pointer,
             context);

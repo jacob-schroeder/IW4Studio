@@ -24,8 +24,7 @@ public sealed class MaterialShaderLoader
                 pointer,
                 kind,
                 context,
-                requireAsset: true,
-                out _)
+                requireAsset: true)
             ?? throw new InvalidDataException($"Top-level {GetDisplayName(kind)} pointer resolved to null.");
     }
 
@@ -40,24 +39,7 @@ public sealed class MaterialShaderLoader
             pointer,
             kind,
             context,
-            requireAsset: false,
-            out _);
-    }
-
-    public MaterialShaderAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        MaterialShaderKind kind,
-        DbLoadExecutionContext context,
-        out MaterialShaderAsset? incomingDefinition)
-    {
-        return LoadFromPointerCore(
-            cursor,
-            pointer,
-            kind,
-            context,
-            requireAsset: false,
-            out incomingDefinition);
+            requireAsset: false);
     }
 
     private static MaterialShaderAsset? LoadFromPointerCore(
@@ -65,10 +47,8 @@ public sealed class MaterialShaderLoader
         XPointerReference pointer,
         MaterialShaderKind kind,
         DbLoadExecutionContext context,
-        bool requireAsset,
-        out MaterialShaderAsset? incomingDefinition)
+        bool requireAsset)
     {
-        incomingDefinition = null;
         XAssetType assetType = GetAssetType(kind);
         int rootSize = GetRootSize(kind);
 
@@ -122,7 +102,6 @@ public sealed class MaterialShaderLoader
 
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             MaterialShaderAsset shader = ReadShader(cursor, rootAddress, kind, context);
-            incomingDefinition = shader;
             MaterialShaderAsset canonicalShader = context.DB_AddXAsset(
                 assetType,
                 shader.Name,
@@ -180,7 +159,6 @@ public sealed class MaterialShaderLoader
 
         string? name;
         byte[]? data;
-        XBlockAddress? dataInsertCellAddress;
         context.Blocks.Push(XFileBlockType.LARGE);
         try
         {
@@ -192,8 +170,7 @@ public sealed class MaterialShaderLoader
                 dataPointer,
                 dataSize,
                 kind,
-                context,
-                out dataInsertCellAddress);
+                context);
         }
         finally
         {
@@ -210,7 +187,6 @@ public sealed class MaterialShaderLoader
             Name = name,
             DataPointer = dataPointer.AsPointer<MaterialShaderBytecode>(),
             DataSize = dataSize,
-            DataInsertCellAddress = dataInsertCellAddress,
             ProgramBytes = programBytes,
             Data = data
         };
@@ -221,10 +197,8 @@ public sealed class MaterialShaderLoader
         XPointerReference pointer,
         uint dataSize,
         MaterialShaderKind kind,
-        DbLoadExecutionContext context,
-        out XBlockAddress? insertCellAddress)
+        DbLoadExecutionContext context)
     {
-        insertCellAddress = null;
         if (dataSize > int.MaxValue)
         {
             throw new InvalidDataException(
@@ -258,7 +232,6 @@ public sealed class MaterialShaderLoader
             XBlockAddress? insertCell = pointer.Type == PointerType.Insert
                 ? context.Blocks.AllocateInsertPointerCell()
                 : null;
-            insertCellAddress = insertCell;
             XBlockAddress dataAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 16);
             byte[] data = context.Blocks.Load(cursor, (int)dataSize);
 

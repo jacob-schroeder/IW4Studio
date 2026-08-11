@@ -13,10 +13,8 @@ public sealed class Sunflare
     public uint HasValidData { get; init; }
     public XPointer<MaterialAsset> SpriteMaterialPointer { get; init; }
     public MaterialAsset? SpriteMaterial { get; init; }
-    public MaterialAsset? SpriteMaterialIncomingDefinition { get; init; }
     public XPointer<MaterialAsset> FlareMaterialPointer { get; init; }
     public MaterialAsset? FlareMaterial { get; init; }
-    public MaterialAsset? FlareMaterialIncomingDefinition { get; init; }
     public float SpriteSize { get; init; }
     public float FlareMinSize { get; init; }
     public float FlareMinDot { get; init; }

@@ -22,16 +22,6 @@ public sealed class MaterialTechniqueSetLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromAssetPointer(cursor, pointer, context, out _);
-    }
-
-    public MaterialTechniqueSetAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out MaterialTechniqueSetAsset? incomingDefinition)
-    {
-        incomingDefinition = null;
         if (pointer.Type == PointerType.Null)
             throw new InvalidDataException("Top-level Techset pointer is null.");
 
@@ -63,7 +53,6 @@ public sealed class MaterialTechniqueSetLoader
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             MaterialTechniqueSetAsset techniqueSet = ReadTechniqueSet(cursor, rootAddress, context);
-            incomingDefinition = techniqueSet;
             MaterialTechniqueSetAsset canonical = context.DB_AddXAsset(techniqueSet, providerRegistration);
 
             return canonical;
@@ -191,7 +180,6 @@ public sealed class MaterialTechniqueSetLoader
         var technique = new MaterialTechniqueAsset
         {
             Offset = offset,
-            DestinationAddress = rootAddress,
             NamePointer = namePointer,
             Name = name,
             Flags = flags,
@@ -258,16 +246,12 @@ public sealed class MaterialTechniqueSetLoader
             cursor,
             pass.VertexShaderPointer.Untyped,
             MaterialShaderKind.Vertex,
-            context,
-            out MaterialShaderAsset? incomingVertexShader);
-        pass.IncomingVertexShader = incomingVertexShader;
+            context);
         pass.PixelShader = ShaderLoader.LoadFromPointer(
             cursor,
             pass.PixelShaderPointer.Untyped,
             MaterialShaderKind.Pixel,
-            context,
-            out MaterialShaderAsset? incomingPixelShader);
-        pass.IncomingPixelShader = incomingPixelShader;
+            context);
         pass.Args = ReadShaderArgs(cursor, pass.ArgsPointer.Untyped, pass.PerPrimArgCount + pass.PerObjArgCount + pass.StableArgCount, context);
     }
 
@@ -313,7 +297,6 @@ public sealed class MaterialTechniqueSetLoader
 
         var declaration = new MaterialVertexDeclarationAsset
         {
-            DestinationAddress = rootAddress,
             StreamCount = streamCount,
             HasOptionalSource = hasOptionalSource,
             Routing = routing
@@ -370,21 +353,18 @@ public sealed class MaterialTechniqueSetLoader
         for (int i = 0; i < args.Length; i++)
         {
             MaterialShaderLiteralConstant? literal = null;
-            XBlockAddress? literalDestinationAddress = null;
             XPointerReference argumentPointer = argumentPointers[i];
             if (args[i].Type is MaterialShaderArgumentType.LiteralVertexConst or MaterialShaderArgumentType.LiteralPixelConst)
             {
                 literal = ReadLiteralFloat4Pointer(
                     cursor,
                     argumentPointer,
-                    context,
-                    out literalDestinationAddress);
+                    context);
             }
 
             args[i] = args[i] with
             {
-                LiteralConstant = literal,
-                LiteralDestinationAddress = literalDestinationAddress
+                LiteralConstant = literal
             };
         }
 
@@ -405,10 +385,8 @@ public sealed class MaterialTechniqueSetLoader
     private static MaterialShaderLiteralConstant? ReadLiteralFloat4Pointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out XBlockAddress? destinationAddress)
+        DbLoadExecutionContext context)
     {
-        destinationAddress = null;
         if (pointer.Type == PointerType.Null)
             return null;
 
@@ -418,7 +396,6 @@ public sealed class MaterialTechniqueSetLoader
                 pointer,
                 LiteralFloat4Size,
                 "MaterialShaderLiteralConstant");
-            destinationAddress = packedAddress;
             return ReadLiteralFloat4(context.Blocks.ReadBytes(packedAddress, LiteralFloat4Size), packedAddress);
         }
 
@@ -434,7 +411,6 @@ public sealed class MaterialTechniqueSetLoader
         if (insertCell is { } cell)
             context.Blocks.WriteInt32(cell, XPointerCodec.Encode(literalAddress));
 
-        destinationAddress = literalAddress;
         return ReadLiteralFloat4(literalBytes, literalAddress);
     }
 

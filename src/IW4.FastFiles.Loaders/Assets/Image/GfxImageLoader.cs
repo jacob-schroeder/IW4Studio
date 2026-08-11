@@ -22,23 +22,8 @@ public sealed class GfxImageLoader
     public GfxImageAsset? LoadFromPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context) =>
-        LoadFromPointer(cursor, pointer, context, out _);
-
-    /// <summary>
-    /// Loads a pointer using the normal canonical DB semantics while also
-    /// exposing the exact incoming inline/insert body consumed from this
-    /// source position. The incoming body is null for null and packed pointers.
-    /// This keeps source-authoring capture from silently substituting an older
-    /// canonical provider when DB_AddXAsset resolves the same identity.
-    /// </summary>
-    public GfxImageAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out GfxImageAsset? serializedAsset)
+        DbLoadExecutionContext context)
     {
-        serializedAsset = null;
         if (ResolveAliasCellOffset<GfxImageAsset>(pointer, context, GfxImageAsset.SerializedSize, "GfxImage"))
             return context.ResolveGfxImage(pointer);
 
@@ -157,12 +142,6 @@ public sealed class GfxImageLoader
                 NamePointer = namePointer,
                 Name = name
             };
-            // DB_AddXAsset replays the native null-payload registration
-            // fixup on the incoming object (not only on the chosen canonical
-            // provider). Keep a detached copy of the bytes parsed above so
-            // authoring sees the serialized header rather than PixelDataBlock
-            // and PixelsOffset after that runtime mutation.
-            serializedAsset = SnapshotSerializedAsset(image);
             GfxImageAsset canonical = context.DB_AddXAsset(image, providerRegistration);
 
             return canonical;
@@ -172,44 +151,6 @@ public sealed class GfxImageLoader
             context.Blocks.Pop();
         }
     }
-
-    private static GfxImageAsset SnapshotSerializedAsset(
-        GfxImageAsset image) =>
-        new()
-        {
-            Offset = image.Offset,
-            RuntimeAddress = image.RuntimeAddress,
-            Format = image.Format,
-            LevelCount = image.LevelCount,
-            DimensionCount = image.DimensionCount,
-            MultiFaceControl = image.MultiFaceControl,
-            TextureFlags = image.TextureFlags,
-            Width = image.Width,
-            Height = image.Height,
-            Depth = image.Depth,
-            PixelDataBlock = image.PixelDataBlock,
-            Pad0F = image.Pad0F,
-            RenderTargetPitch = image.RenderTargetPitch,
-            PixelsOffset = image.PixelsOffset,
-            MapType = image.MapType,
-            TextureSemantic = image.TextureSemantic,
-            Category = image.Category,
-            Pad1B = image.Pad1B,
-            CardMemory = image.CardMemory,
-            BaseWidth = image.BaseWidth,
-            BaseHeight = image.BaseHeight,
-            BaseDepth = image.BaseDepth,
-            BaseLevelCount = image.BaseLevelCount,
-            Cached = image.Cached,
-            PayloadPointer = image.PayloadPointer,
-            StreamData = image.StreamData.ToArray(),
-            StreamImageIndex = image.StreamImageIndex,
-            StreamEntries = image.StreamEntries.ToArray(),
-            PayloadByteCount = image.PayloadByteCount,
-            PayloadBytes = image.PayloadBytes.ToArray(),
-            NamePointer = image.NamePointer,
-            Name = image.Name
-        };
 
     private static IReadOnlyList<GfxImageStreamData> ReadStreamData(FastFileCursor cursor)
     {

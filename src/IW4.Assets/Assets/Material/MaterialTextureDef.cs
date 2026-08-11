@@ -16,6 +16,5 @@ public sealed class MaterialTextureDef
     public byte Semantic { get; init; }
     public XPointerReference DataPointer { get; init; }
     public GfxImageAsset? Image { get; init; }
-    public GfxImageAsset? IncomingImage { get; init; }
     public MaterialWater? Water { get; init; }
 }

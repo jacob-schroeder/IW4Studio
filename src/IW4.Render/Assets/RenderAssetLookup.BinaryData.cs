@@ -37,7 +37,6 @@ public sealed partial class RenderAssetLookup
 
         return new MaterialVertexDeclarationAsset
         {
-            DestinationAddress = address,
             StreamCount = streamCount,
             HasOptionalSource = hasOptionalSource,
             Routing = routing

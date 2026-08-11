@@ -4,7 +4,7 @@ namespace IW4.Assets.Assets.Menu;
 
 /// <summary>
 /// Numeric selector dispatched by the PS3 MW2 HUD and UI owner-draw tables.
-/// Only selectors with an active runtime handler are offered for authoring.
+/// This enum exposes selectors with an active runtime handler.
 /// </summary>
 public enum WindowOwnerDraw : int
 {

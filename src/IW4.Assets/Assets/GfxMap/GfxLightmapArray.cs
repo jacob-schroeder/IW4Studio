@@ -12,8 +12,6 @@ public sealed class GfxLightmapArray
 
     public XPointer<GfxImageAsset> PrimaryPointer { get; init; }
     public GfxImageAsset? Primary { get; init; }
-    public GfxImageAsset? PrimaryIncomingDefinition { get; init; }
     public XPointer<GfxImageAsset> SecondaryPointer { get; init; }
     public GfxImageAsset? Secondary { get; init; }
-    public GfxImageAsset? SecondaryIncomingDefinition { get; init; }
 }

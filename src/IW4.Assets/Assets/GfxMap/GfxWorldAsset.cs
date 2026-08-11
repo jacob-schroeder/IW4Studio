@@ -58,7 +58,6 @@ public sealed class GfxWorldAsset : BaseAsset
     public IReadOnlyList<float> OutdoorLookupMatrix { get; init; } = [];
     public XPointer<GfxImageAsset> OutdoorImagePointer { get; init; }
     public GfxImageAsset? OutdoorImage { get; init; }
-    public GfxImageAsset? OutdoorImageIncomingDefinition { get; init; }
 
     public XPointer<uint[]> CellCasterBitsPointer { get; init; }
     public IReadOnlyList<uint> CellCasterBits { get; init; } = [];

@@ -20,7 +20,5 @@ public sealed class MaterialPassAsset
     public MaterialVertexDeclarationAsset? VertexDeclaration { get; set; }
     public MaterialShaderAsset? VertexShader { get; set; }
     public MaterialShaderAsset? PixelShader { get; set; }
-    public MaterialShaderAsset? IncomingVertexShader { get; set; }
-    public MaterialShaderAsset? IncomingPixelShader { get; set; }
     public IReadOnlyList<MaterialShaderArgumentAsset> Args { get; set; } = [];
 }

@@ -349,21 +349,18 @@ public sealed class FxWorldLoader
 
         int childSourceStart = cursor.Offset;
 
-        PhysPresetPointerLoadResult physPresetResult =
-            _physPresetLoader.LoadFromPointerWithMaterialization(
-                cursor,
-                physPresetPointer.Untyped,
-                context);
+        PhysPresetAsset? physPreset = _physPresetLoader.LoadFromPointer(
+            cursor,
+            physPresetPointer.Untyped,
+            context);
         MaterialAsset? material = _materialLoader.LoadFromPointer(
             cursor,
             materialPointer.Untyped,
-            context,
-            out MaterialAsset? incomingMaterial);
+            context);
         MaterialAsset? materialShattered = _materialLoader.LoadFromPointer(
             cursor,
             materialShatteredPointer.Untyped,
-            context,
-            out MaterialAsset? incomingMaterialShattered);
+            context);
 
         return new FxGlassDef
         {
@@ -373,13 +370,10 @@ public sealed class FxWorldLoader
             Color = color,
             MaterialPointer = materialPointer,
             Material = material,
-            IncomingMaterial = incomingMaterial,
             MaterialShatteredPointer = materialShatteredPointer,
             MaterialShattered = materialShattered,
-            IncomingMaterialShattered = incomingMaterialShattered,
             PhysPresetPointer = physPresetPointer,
-            PhysPreset = physPresetResult.Canonical,
-            IncomingPhysPreset = physPresetResult.IncomingDefinition,
+            PhysPreset = physPreset,
             InvHighMipRadius = invHighMipRadius,
             ShatteredInvHighMipRadius = shatteredInvHighMipRadius
         };

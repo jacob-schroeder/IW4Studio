@@ -2,7 +2,6 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
-using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.XModel;
 
@@ -21,36 +20,24 @@ public sealed class XModelAsset : BaseAsset
         get => _numSurfs;
         init => _numSurfs = value;
     }
-    /// <summary>
-    /// Exact byte stored at XModel +0x06 before the native post-registration
-    /// LOD fixup rewrites <see cref="NumSurfs"/>.
-    /// </summary>
-    public byte? SerializedNumSurfs { get; init; }
     public byte Pad07 { get; init; }
     public float Scale { get; init; }
     public IReadOnlyList<uint> NoScalePartBits { get; init; } = [];
     public XPointer<ushort[]> BoneNamesPointer { get; init; }
-    public XBlockAddress? BoneNamesRuntimeAddress { get; init; }
     public IReadOnlyList<ushort> BoneNames { get; init; } = [];
     public XPointer<byte[]> ParentListPointer { get; init; }
-    public XBlockAddress? ParentListRuntimeAddress { get; init; }
     public IReadOnlyList<byte> ParentList { get; init; } = [];
     public XPointer<short[]> QuatsPointer { get; init; }
-    public XBlockAddress? QuatsRuntimeAddress { get; init; }
     public IReadOnlyList<short> Quats { get; init; } = [];
     public XPointer<float[]> TransPointer { get; init; }
-    public XBlockAddress? TransRuntimeAddress { get; init; }
     public IReadOnlyList<float> Trans { get; init; } = [];
     public XPointer<byte[]> PartClassificationPointer { get; init; }
-    public XBlockAddress? PartClassificationRuntimeAddress { get; init; }
     public IReadOnlyList<byte> PartClassification { get; init; } = [];
     public XPointer<byte[]> BaseMatPointer { get; init; }
-    public XBlockAddress? BaseMatRuntimeAddress { get; init; }
     public IReadOnlyList<DObjAnimMat> BaseMat { get; init; } = [];
     public XPointer<XPointer<MaterialAsset>[]> MaterialHandlesPointer { get; init; }
     public IReadOnlyList<XPointer<MaterialAsset>> MaterialPointers { get; init; } = [];
     public IReadOnlyList<MaterialAsset?> Materials { get; init; } = [];
-    public IReadOnlyList<MaterialAsset?> MaterialIncomingDefinitions { get; init; } = [];
     public IReadOnlyList<XModelLodInfo> Lods { get; init; } = [];
     public byte MaxLoadedLod { get; init; }
     public byte NumLods { get; init; }
@@ -69,10 +56,8 @@ public sealed class XModelAsset : BaseAsset
     public int MemUsage { get; init; }
     public XPointer<PhysPresetAsset> PhysPresetPointer { get; init; }
     public PhysPresetAsset? PhysPreset { get; init; }
-    public PhysPresetAsset? PhysPresetIncomingDefinition { get; init; }
     public XPointer<PhysCollmapAsset> PhysCollmapPointer { get; init; }
     public PhysCollmapAsset? PhysCollmap { get; init; }
-    public PhysCollmapAsset? PhysCollmapIncomingDefinition { get; init; }
 
     internal void ApplyCanonicalSurfaceCount(byte numSurfs)
     {

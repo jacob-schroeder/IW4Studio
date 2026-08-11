@@ -38,7 +38,6 @@ public sealed class MaterialAsset : BaseAsset
     }
     public XPointer<MaterialTechniqueSetAsset> TechniqueSetPointer { get; init; }
     public MaterialTechniqueSetAsset? TechniqueSet { get; init; }
-    public MaterialTechniqueSetAsset? IncomingTechniqueSet { get; init; }
     public XPointerReference TextureTablePointer { get; init; }
     public IReadOnlyList<MaterialTextureDef> Textures { get; init; } = [];
     public XPointerReference ConstantTablePointer { get; init; }

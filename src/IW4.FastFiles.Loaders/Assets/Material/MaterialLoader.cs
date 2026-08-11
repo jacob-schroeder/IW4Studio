@@ -45,7 +45,7 @@ public sealed class MaterialLoader
             throw new InvalidDataException($"Top-level Material pointer 0x{pointer.Raw:X8} does not reference inline payload data.");
 
         ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-        MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context, out _);
+        MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context);
         return context.DB_AddXAsset(material, providerRegistration);
     }
 
@@ -54,17 +54,6 @@ public sealed class MaterialLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointer(cursor, pointer, context, out _);
-    }
-
-    public MaterialAssetModel? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out MaterialAssetModel? incomingDefinition)
-    {
-        incomingDefinition = null;
-
         if (pointer.Type == PointerType.Null)
             return null;
 
@@ -86,8 +75,7 @@ public sealed class MaterialLoader
 
         ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
 
-        MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context, out _);
-        incomingDefinition = material;
+        MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context);
         MaterialAssetModel canonical = context.DB_AddXAsset(material, providerRegistration);
 
         return canonical;
@@ -96,15 +84,14 @@ public sealed class MaterialLoader
     private static MaterialAssetModel LoadInlineMaterial(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out XBlockAddress rootAddress)
+        DbLoadExecutionContext context)
     {
         int offset = cursor.Offset;
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
             XBlockAddress targetAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            byte[] rootBytes = context.Blocks.Load(cursor, MaterialSize, out rootAddress);
+            byte[] rootBytes = context.Blocks.Load(cursor, MaterialSize, out XBlockAddress rootAddress);
             if (rootAddress != targetAddress)
                 throw new InvalidDataException($"Material pointer patched to {targetAddress}, but root loaded at {rootAddress}.");
 
@@ -148,8 +135,7 @@ public sealed class MaterialLoader
                 MaterialTechniqueSetAsset? techniqueSet = ReadTechniqueSetPointer(
                     cursor,
                     techniqueSetPointer,
-                    context,
-                    out MaterialTechniqueSetAsset? incomingTechniqueSet);
+                    context);
                 IReadOnlyList<MaterialTextureDef> textures = ReadTextureDefArray(cursor, textureTablePointer, textureCount, context);
                 IReadOnlyList<MaterialConstantDef> constants = ReadMaterialConstantArray(cursor, constantTablePointer, constantCount, context);
                 IReadOnlyList<GfxStateBits> stateBits = ReadGfxStateBitsArray(cursor, stateBitsPointer, stateBitsCount, context);
@@ -187,7 +173,6 @@ public sealed class MaterialLoader
                     RuntimeTechniqueSlotStateBits = runtimeTechniqueSlotStateBits,
                     TechniqueSetPointer = techniqueSetPointer.AsPointer<MaterialTechniqueSetAsset>(),
                     TechniqueSet = techniqueSet,
-                    IncomingTechniqueSet = incomingTechniqueSet,
                     TextureTablePointer = textureTablePointer,
                     Textures = textures,
                     ConstantTablePointer = constantTablePointer,
@@ -278,10 +263,8 @@ public sealed class MaterialLoader
     private static MaterialTechniqueSetAsset? ReadTechniqueSetPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out MaterialTechniqueSetAsset? incomingDefinition)
+        DbLoadExecutionContext context)
     {
-        incomingDefinition = null;
         if (pointer.Type is not
                 (PointerType.Inline or PointerType.Insert))
         {
@@ -292,8 +275,7 @@ public sealed class MaterialLoader
         return new MaterialTechniqueSetLoader().LoadFromAssetPointer(
             cursor,
             pointer,
-            context,
-            out incomingDefinition);
+            context);
     }
 
     private static IReadOnlyList<MaterialTextureDef> ReadTextureDefArray(
@@ -343,15 +325,13 @@ public sealed class MaterialLoader
                 textures[i] = CopyTexture(texture, water: ReadWaterPointer(cursor, texture.DataPointer, context));
             else
             {
-                GfxImageAsset? image = ReadGfxImagePointer(
+                GfxImageAsset? image = ImageLoader.LoadFromPointer(
                     cursor,
                     texture.DataPointer,
-                    context,
-                    out GfxImageAsset? incomingImage);
+                    context);
                 textures[i] = CopyTexture(
                     texture,
-                    image: image,
-                    incomingImage: incomingImage);
+                    image: image);
             }
         }
 
@@ -361,7 +341,6 @@ public sealed class MaterialLoader
     private static MaterialTextureDef CopyTexture(
         MaterialTextureDef texture,
         GfxImageAsset? image = null,
-        GfxImageAsset? incomingImage = null,
         MaterialWater? water = null)
     {
         return new MaterialTextureDef
@@ -373,22 +352,8 @@ public sealed class MaterialLoader
             Semantic = texture.Semantic,
             DataPointer = texture.DataPointer,
             Image = image,
-            IncomingImage = incomingImage,
             Water = water
         };
-    }
-
-    private static GfxImageAsset? ReadGfxImagePointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out GfxImageAsset? incomingDefinition)
-    {
-        return ImageLoader.LoadFromPointer(
-            cursor,
-            pointer,
-            context,
-            out incomingDefinition);
     }
 
     private static MaterialWater? ReadWaterPointer(
@@ -429,11 +394,10 @@ public sealed class MaterialLoader
         IReadOnlyList<float> h0x = ReadWaterSpectrum(cursor, h0xPointer, elementCount, context);
         IReadOnlyList<float> h0y = ReadWaterSpectrum(cursor, h0yPointer, elementCount, context);
         IReadOnlyList<float> wTerm = ReadWaterSpectrum(cursor, wTermPointer, elementCount, context);
-        GfxImageAsset? image = ReadGfxImagePointer(
+        GfxImageAsset? image = ImageLoader.LoadFromPointer(
             cursor,
             imagePointer,
-            context,
-            out GfxImageAsset? incomingImage);
+            context);
 
         return new MaterialWater
         {
@@ -454,8 +418,7 @@ public sealed class MaterialLoader
             H0X = h0x,
             H0Y = h0y,
             WTerm = wTerm,
-            Image = image,
-            IncomingImage = incomingImage
+            Image = image
         };
     }
 

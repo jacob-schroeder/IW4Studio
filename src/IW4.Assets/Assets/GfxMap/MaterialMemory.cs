@@ -12,6 +12,5 @@ public sealed class MaterialMemory
 
     public XPointer<MaterialAsset> MaterialPointer { get; init; }
     public MaterialAsset? Material { get; init; }
-    public MaterialAsset? MaterialIncomingDefinition { get; init; }
     public int Memory { get; init; }
 }

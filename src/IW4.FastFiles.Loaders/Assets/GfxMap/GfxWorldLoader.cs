@@ -109,7 +109,6 @@ public sealed class GfxWorldLoader
         IReadOnlyList<MaterialMemory> materialMemory;
         Sunflare sun;
         GfxImageAsset? outdoorImage;
-        GfxImageAsset? outdoorImageIncomingDefinition;
         IReadOnlyList<uint> cellCasterBits;
         IReadOnlyList<uint> cellCasterBits2;
         IReadOnlyList<GfxSceneDynModel> sceneDynModels;
@@ -144,8 +143,7 @@ public sealed class GfxWorldLoader
             outdoorImage = _imageLoader.LoadFromPointer(
                 cursor,
                 root.OutdoorImagePointer.Untyped,
-                context,
-                out outdoorImageIncomingDefinition);
+                context);
 
             int cellCount = Count(dpvsPlanes.CellCount, "cellCount");
             int cellWordCount = WordCount(cellCount);
@@ -229,7 +227,6 @@ public sealed class GfxWorldLoader
             OutdoorLookupMatrix = root.OutdoorLookupMatrix,
             OutdoorImagePointer = root.OutdoorImagePointer,
             OutdoorImage = outdoorImage,
-            OutdoorImageIncomingDefinition = outdoorImageIncomingDefinition,
             CellCasterBitsPointer = root.CellCasterBitsPointer,
             CellCasterBits = cellCasterBits,
             CellCasterBits2Pointer = root.CellCasterBits2Pointer,
@@ -530,8 +527,7 @@ public sealed class GfxWorldLoader
             GfxImageAsset? skyImage = _imageLoader.LoadFromPointer(
                 cursor,
                 skyImagePointer.Untyped,
-                context,
-                out GfxImageAsset? skyImageIncomingDefinition);
+                context);
             rows[i] = new GfxSky
             {
                 SkySurfCount = skySurfCount,
@@ -539,7 +535,6 @@ public sealed class GfxWorldLoader
                 SkyStartSurfs = skyStartSurfs,
                 SkyImagePointer = skyImagePointer,
                 SkyImage = skyImage,
-                SkyImageIncomingDefinition = skyImageIncomingDefinition,
                 SkySamplerState = skySamplerState
             };
         }
@@ -792,8 +787,7 @@ public sealed class GfxWorldLoader
             reflectionProbeCount,
             context,
             "GfxWorldDraw.reflectionProbes",
-            out IReadOnlyList<XPointer<GfxImageAsset>> reflectionProbeImagePointers,
-            out IReadOnlyList<GfxImageAsset?> reflectionProbeImageIncomingDefinitions);
+            out IReadOnlyList<XPointer<GfxImageAsset>> reflectionProbeImagePointers);
         IReadOnlyList<GfxReflectionProbe> reflectionProbeOrigins = ReadReflectionProbes(cursor, header.ReflectionProbeOriginsPointer.Untyped, reflectionProbeCount, context, "GfxWorldDraw.reflectionProbeOrigins");
         (IReadOnlyList<GfxTexture> reflectionProbeTextures, XBlockAddress? reflectionProbeTexturesAddress) = ReadPushed(context, XFileBlockType.RUNTIME, () => ReadTextures(cursor, header.ReflectionProbeTexturesPointer.Untyped, reflectionProbeCount, context, "GfxWorldDraw.reflectionProbeTextures"));
         IReadOnlyList<GfxLightmapArray> lightmaps = ReadLightmaps(cursor, header.LightmapsPointer.Untyped, lightmapCount, context);
@@ -802,13 +796,11 @@ public sealed class GfxWorldLoader
         GfxImageAsset? lightmapOverridePrimary = _imageLoader.LoadFromPointer(
             cursor,
             header.LightmapOverridePrimaryPointer.Untyped,
-            context,
-            out GfxImageAsset? lightmapOverridePrimaryIncomingDefinition);
+            context);
         GfxImageAsset? lightmapOverrideSecondary = _imageLoader.LoadFromPointer(
             cursor,
             header.LightmapOverrideSecondaryPointer.Untyped,
-            context,
-            out GfxImageAsset? lightmapOverrideSecondaryIncomingDefinition);
+            context);
         GfxWorldVertexData vertexData = ReadWorldVertexDataPayload(cursor, header.VertexData, Count(header.VertexCount, "vertexCount"), context);
         GfxWorldVertexLayerData vertexLayerData = ReadWorldVertexLayerDataPayload(cursor, header.VertexLayerData, Count(header.VertexLayerDataSize, "vertexLayerDataSize"), context);
         IReadOnlyList<ushort> indices = ReadUInt16Array(
@@ -826,7 +818,6 @@ public sealed class GfxWorldLoader
             ReflectionProbeImagesPointer = header.ReflectionProbeImagesPointer,
             ReflectionProbeImagePointers = reflectionProbeImagePointers,
             ReflectionProbeImages = reflectionProbeImages,
-            ReflectionProbeImageIncomingDefinitions = reflectionProbeImageIncomingDefinitions,
             ReflectionProbeOriginsPointer = header.ReflectionProbeOriginsPointer,
             ReflectionProbeOrigins = reflectionProbeOrigins,
             ReflectionProbeTexturesPointer = header.ReflectionProbeTexturesPointer,
@@ -843,10 +834,8 @@ public sealed class GfxWorldLoader
             LightmapSecondaryTextures = lightmapSecondaryTextures,
             LightmapOverridePrimaryPointer = header.LightmapOverridePrimaryPointer,
             LightmapOverridePrimary = lightmapOverridePrimary,
-            LightmapOverridePrimaryIncomingDefinition = lightmapOverridePrimaryIncomingDefinition,
             LightmapOverrideSecondaryPointer = header.LightmapOverrideSecondaryPointer,
             LightmapOverrideSecondary = lightmapOverrideSecondary,
-            LightmapOverrideSecondaryIncomingDefinition = lightmapOverrideSecondaryIncomingDefinition,
             VertexCount = header.VertexCount,
             VertexData = vertexData,
             VertexLayerDataSize = header.VertexLayerDataSize,
@@ -917,14 +906,12 @@ public sealed class GfxWorldLoader
         int count,
         DbLoadExecutionContext context,
         string memberName,
-        out IReadOnlyList<XPointer<GfxImageAsset>> sourcePointers,
-        out IReadOnlyList<GfxImageAsset?> incomingDefinitions)
+        out IReadOnlyList<XPointer<GfxImageAsset>> sourcePointers)
     {
         byte[] bytes = LoadInlineArray(cursor, pointer, count, sizeof(int), 4, context, memberName, out XBlockAddress imagesAddress);
         var rowCursor = new FastFileCursor(bytes, imagesAddress);
         var rows = new GfxImageAsset?[count];
         var pointers = new XPointer<GfxImageAsset>[count];
-        var incoming = new GfxImageAsset?[count];
         for (int i = 0; i < rows.Length; i++)
         {
             XPointer<GfxImageAsset> imagePointer = context.PointerReader.ReadPointer<GfxImageAsset>(rowCursor, XPointerResolutionMode.AliasCell);
@@ -932,13 +919,11 @@ public sealed class GfxWorldLoader
             rows[i] = _imageLoader.LoadFromPointer(
                 cursor,
                 imagePointer.Untyped,
-                context,
-                out incoming[i]);
+                context);
         }
 
         EnsureConsumed(rowCursor, bytes.Length, $"{memberName}[]");
         sourcePointers = Array.AsReadOnly(pointers);
-        incomingDefinitions = Array.AsReadOnly(incoming);
         return rows;
     }
 
@@ -997,21 +982,17 @@ public sealed class GfxWorldLoader
             GfxImageAsset? primary = _imageLoader.LoadFromPointer(
                 cursor,
                 primaryPointer.Untyped,
-                context,
-                out GfxImageAsset? primaryIncomingDefinition);
+                context);
             GfxImageAsset? secondary = _imageLoader.LoadFromPointer(
                 cursor,
                 secondaryPointer.Untyped,
-                context,
-                out GfxImageAsset? secondaryIncomingDefinition);
+                context);
             rows[i] = new GfxLightmapArray
             {
                 PrimaryPointer = primaryPointer,
                 Primary = primary,
-                PrimaryIncomingDefinition = primaryIncomingDefinition,
                 SecondaryPointer = secondaryPointer,
-                Secondary = secondary,
-                SecondaryIncomingDefinition = secondaryIncomingDefinition
+                Secondary = secondary
             };
         }
 
@@ -1128,13 +1109,11 @@ public sealed class GfxWorldLoader
             MaterialAsset? material = _materialLoader.LoadFromPointer(
                 cursor,
                 materialPointer.Untyped,
-                context,
-                out MaterialAsset? materialIncomingDefinition);
+                context);
             rows[i] = new MaterialMemory
             {
                 MaterialPointer = materialPointer,
                 Material = material,
-                MaterialIncomingDefinition = materialIncomingDefinition,
                 Memory = memory
             };
         }
@@ -1151,22 +1130,18 @@ public sealed class GfxWorldLoader
         MaterialAsset? spriteMaterial = _materialLoader.LoadFromPointer(
             cursor,
             header.SpriteMaterialPointer.Untyped,
-            context,
-            out MaterialAsset? spriteMaterialIncomingDefinition);
+            context);
         MaterialAsset? flareMaterial = _materialLoader.LoadFromPointer(
             cursor,
             header.FlareMaterialPointer.Untyped,
-            context,
-            out MaterialAsset? flareMaterialIncomingDefinition);
+            context);
         return new Sunflare
         {
             HasValidData = header.HasValidData,
             SpriteMaterialPointer = header.SpriteMaterialPointer,
             SpriteMaterial = spriteMaterial,
-            SpriteMaterialIncomingDefinition = spriteMaterialIncomingDefinition,
             FlareMaterialPointer = header.FlareMaterialPointer,
             FlareMaterial = flareMaterial,
-            FlareMaterialIncomingDefinition = flareMaterialIncomingDefinition,
             SpriteSize = header.SpriteSize,
             FlareMinSize = header.FlareMinSize,
             FlareMinDot = header.FlareMinDot,
@@ -1360,14 +1335,12 @@ public sealed class GfxWorldLoader
             MaterialAsset? material = _materialLoader.LoadFromPointer(
                 cursor,
                 materialPointer.Untyped,
-                context,
-                out MaterialAsset? materialIncomingDefinition);
+                context);
             rows[i] = new GfxSurface
             {
                 Triangles = triangles,
                 MaterialPointer = materialPointer,
                 Material = material,
-                MaterialIncomingDefinition = materialIncomingDefinition,
                 LightmapIndex = lightmapIndex,
                 ReflectionProbeIndex = reflectionProbeIndex,
                 PrimaryLightIndex = primaryLightIndex,
@@ -1399,17 +1372,15 @@ public sealed class GfxWorldLoader
             byte flags = rowCursor.ReadByte();
             byte firstMaterialSkinIndex = rowCursor.ReadByte();
             var groundLighting = new GfxColor(rowCursor.ReadUInt32());
-            XModelPointerLoadResult modelLoad =
-                _xmodelLoader.LoadFromPointerWithMaterialization(
-                    cursor,
-                    modelPointer.Untyped,
-                    context);
+            XModelAsset? model = _xmodelLoader.LoadFromPointer(
+                cursor,
+                modelPointer.Untyped,
+                context);
             rows[i] = new GfxStaticModelDrawInst
             {
                 Placement = placement,
                 ModelPointer = modelPointer,
-                Model = modelLoad.Canonical,
-                ModelIncomingDefinition = modelLoad.IncomingDefinition,
+                Model = model,
                 CullDist = cullDist,
                 LightingHandle = lightingHandle,
                 ReflectionProbeIndex = reflectionProbeIndex,
@@ -1505,12 +1476,6 @@ public sealed class GfxWorldLoader
             SurfacesPointer = header.SurfacesPointer,
             SurfacesAddress = surfacesAddress,
             Surfaces = surfaces,
-            SerializedSurfaceState = CaptureSerializedSurfaceState(
-                sortedSurfIndex,
-                surfaces,
-                surfaceBounds,
-                surfaceMaterials,
-                surfaceCastsSunShadow),
             AuthoredSurfaceIndexByRuntimeSlot = Enumerable.Range(0, surfaces.Count).ToArray(),
             SurfaceBoundsPointer = header.SurfaceBoundsPointer,
             SurfaceBoundsAddress = surfaceBoundsAddress,
@@ -1526,57 +1491,6 @@ public sealed class GfxWorldLoader
             UsageCount = header.UsageCount
         };
     }
-
-    private static GfxWorldSerializedSurfaceState
-        CaptureSerializedSurfaceState(
-            IReadOnlyList<ushort> sortedSurfIndex,
-            IReadOnlyList<GfxSurface> surfaces,
-            IReadOnlyList<GfxSurfaceBounds> surfaceBounds,
-            IReadOnlyList<GfxMapDrawSurf> surfaceMaterials,
-            IReadOnlyList<uint> surfaceCastsSunShadow) =>
-        new()
-        {
-            SortedSurfIndex = sortedSurfIndex.ToArray(),
-            Surfaces = surfaces.Select(CloneSerializedSurface).ToArray(),
-            SurfaceBounds = surfaceBounds
-                .Select(CloneSerializedSurfaceBounds)
-                .ToArray(),
-            SurfaceMaterials = surfaceMaterials.ToArray(),
-            SurfaceCastsSunShadow = surfaceCastsSunShadow.ToArray()
-        };
-
-    private static GfxSurface CloneSerializedSurface(GfxSurface value) =>
-        new()
-        {
-            Triangles = new SrfTriangles
-            {
-                VertexLayerData = value.Triangles.VertexLayerData,
-                BaseVertex = value.Triangles.BaseVertex,
-                MinVertexIndex = value.Triangles.MinVertexIndex,
-                VertexCount = value.Triangles.VertexCount,
-                TriCount = value.Triangles.TriCount,
-                BaseIndex = value.Triangles.BaseIndex
-            },
-            MaterialPointer = value.MaterialPointer,
-            Material = value.Material,
-            MaterialIncomingDefinition = value.MaterialIncomingDefinition,
-            LightmapIndex = value.LightmapIndex,
-            ReflectionProbeIndex = value.ReflectionProbeIndex,
-            PrimaryLightIndex = value.PrimaryLightIndex,
-            CastsSunShadow = value.CastsSunShadow
-        };
-
-    private static GfxSurfaceBounds CloneSerializedSurfaceBounds(
-        GfxSurfaceBounds value) =>
-        new()
-        {
-            Bounds = new ModelBounds
-            {
-                MidPoint = value.Bounds.MidPoint,
-                HalfSize = value.Bounds.HalfSize
-            },
-            Unknown18To1F = value.Unknown18To1F.ToArray()
-        };
 
     private static IReadOnlyList<GfxStaticModelInst> ReadStaticModelInsts(
         FastFileCursor cursor,

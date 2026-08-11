@@ -1,6 +1,5 @@
 using IW4.Assets.Assets;
 using IW4.FastFiles.Pointers;
-using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.TechniqueSet;
 
@@ -22,7 +21,6 @@ public sealed class MaterialShaderAsset : BaseAsset
     // conversion. 0x08: unsigned byte count.
     public XPointer<MaterialShaderBytecode> DataPointer { get; init; }
     public uint DataSize { get; init; }
-    public XBlockAddress? DataInsertCellAddress { get; init; }
 
     // Pixel only, 0x0C..0x17. Preserve these GPU program bytes verbatim.
     // Vertex shaders have no trailing program bytes.

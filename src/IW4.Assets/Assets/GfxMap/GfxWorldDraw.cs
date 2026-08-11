@@ -23,8 +23,6 @@ public sealed class GfxWorldDraw
     // Serialized pointer cells parallel to ReflectionProbeImages.
     public IReadOnlyList<XPointer<GfxImageAsset>> ReflectionProbeImagePointers { get; init; } = [];
     public IReadOnlyList<GfxImageAsset?> ReflectionProbeImages { get; init; } = [];
-    // Original inline definitions retained for detached authoring.
-    public IReadOnlyList<GfxImageAsset?> ReflectionProbeImageIncomingDefinitions { get; init; } = [];
     public XPointer<GfxReflectionProbe[]> ReflectionProbeOriginsPointer { get; init; }
     public IReadOnlyList<GfxReflectionProbe> ReflectionProbeOrigins { get; init; } = [];
     public XPointer<GfxTexture[]> ReflectionProbeTexturesPointer { get; init; }
@@ -59,13 +57,10 @@ public sealed class GfxWorldDraw
     }
     // +0x20/+0x24: serialized GfxImagePtr values. Runtime world loading zeros
     // both cells before reusing them as non-owning cached override identities.
-    // The serialized values remain available for detached authoring.
     public XPointer<GfxImageAsset> LightmapOverridePrimaryPointer { get; init; }
     public GfxImageAsset? LightmapOverridePrimary { get; init; }
-    public GfxImageAsset? LightmapOverridePrimaryIncomingDefinition { get; init; }
     public XPointer<GfxImageAsset> LightmapOverrideSecondaryPointer { get; init; }
     public GfxImageAsset? LightmapOverrideSecondary { get; init; }
-    public GfxImageAsset? LightmapOverrideSecondaryIncomingDefinition { get; init; }
     public uint VertexCount { get; init; }
     public GfxWorldVertexData VertexData { get; init; } = new();
     public uint VertexLayerDataSize { get; init; }

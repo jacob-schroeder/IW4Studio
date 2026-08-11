@@ -18,8 +18,7 @@ public sealed class SndCurveLoader
                 cursor,
                 pointer,
                 context,
-                requireAsset: true,
-                out _)
+                requireAsset: true)
             ?? throw new InvalidDataException("Top-level SndCurve pointer resolved to null.");
     }
 
@@ -32,32 +31,15 @@ public sealed class SndCurveLoader
             cursor,
             pointer,
             context,
-            requireAsset: false,
-            out _);
-    }
-
-    public SndCurve? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out SndCurve? incomingDefinition)
-    {
-        return LoadFromPointerCore(
-            cursor,
-            pointer,
-            context,
-            requireAsset: false,
-            out incomingDefinition);
+            requireAsset: false);
     }
 
     private static SndCurve? LoadFromPointerCore(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context,
-        bool requireAsset,
-        out SndCurve? incomingDefinition)
+        bool requireAsset)
     {
-        incomingDefinition = null;
         if (pointer.Type == PointerType.Null)
         {
             if (requireAsset)
@@ -100,7 +82,6 @@ public sealed class SndCurveLoader
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
             SndCurve curve = ReadSndCurve(cursor, rootAddress, context);
-            incomingDefinition = curve;
             SndCurve canonical = context.DB_AddXAsset(curve, providerRegistration);
 
             return canonical;

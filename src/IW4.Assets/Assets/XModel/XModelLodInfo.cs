@@ -17,14 +17,12 @@ public sealed class XModelLodInfo
         get => _numSurfs;
         init => _numSurfs = value;
     }
-    public ushort? SerializedNumSurfs { get; init; }
 
     public ushort SurfIndex
     {
         get => _surfIndex;
         init => _surfIndex = value;
     }
-    public ushort? SerializedSurfIndex { get; init; }
 
     public XPointer<XModelSurfsAsset> ModelSurfsPointer { get; init; }
     public IReadOnlyList<uint> PartBits
@@ -32,7 +30,6 @@ public sealed class XModelLodInfo
         get => _partBits;
         init => _partBits = value;
     }
-    public IReadOnlyList<uint> SerializedPartBits { get; init; } = [];
 
     public XPointer<byte[]> SurfsRuntimePointer
     {
@@ -41,7 +38,6 @@ public sealed class XModelLodInfo
     }
 
     public XModelSurfsAsset? ModelSurfs { get; init; }
-    public XModelSurfsAsset? ModelSurfsIncomingDefinition { get; init; }
 
     internal void ApplyCanonicalSurfaceFixup(
         ushort numSurfs,

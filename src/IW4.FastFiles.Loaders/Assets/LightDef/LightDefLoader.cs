@@ -79,7 +79,6 @@ public sealed class LightDefLoader
 
         string? name;
         GfxImageAsset? image;
-        GfxImageAsset? incomingImage;
         context.Blocks.Push(XFileBlockType.LARGE);
         try
         {
@@ -87,8 +86,7 @@ public sealed class LightDefLoader
             image = _imageLoader.LoadFromPointer(
                 cursor,
                 imagePointer.Untyped,
-                context,
-                out incomingImage);
+                context);
         }
         finally
         {
@@ -104,7 +102,6 @@ public sealed class LightDefLoader
             Name = name,
             ImagePointer = imagePointer,
             Image = image,
-            IncomingImage = incomingImage,
             SamplerState = samplerState,
             Pad09To0B = pad09To0B,
             LmapLookupStart = lmapLookupStart

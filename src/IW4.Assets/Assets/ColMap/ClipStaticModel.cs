@@ -14,7 +14,6 @@ public sealed class ClipStaticModel
 
     public XPointer<XModelAsset> XModelPointer { get; init; }
     public XModelAsset? XModel { get; init; }
-    public XModelAsset? XModelIncomingDefinition { get; init; }
     public ModelVec3 Origin { get; init; }
     public IReadOnlyList<ModelVec3> InvScaledAxis { get; init; } = [];
     public ModelVec3 AbsMin { get; init; }

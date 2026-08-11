@@ -36,7 +36,6 @@ public sealed class SndAlias
     public int StartDelay { get; init; }
     public XPointer<SndCurve> VolumeFalloffCurvePointer { get; init; }
     public SndCurve? VolumeFalloffCurve { get; init; }
-    public SndCurve? IncomingVolumeFalloffCurve { get; init; }
     public float EnvelopMin { get; init; }
     public float EnvelopMax { get; init; }
     public float EnvelopPercentage { get; init; }

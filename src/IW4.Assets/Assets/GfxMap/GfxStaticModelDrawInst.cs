@@ -13,7 +13,6 @@ public sealed class GfxStaticModelDrawInst
     public GfxPackedPlacement Placement { get; init; } = new();
     public XPointer<XModelAsset> ModelPointer { get; init; }
     public XModelAsset? Model { get; init; }
-    public XModelAsset? ModelIncomingDefinition { get; init; }
     public ushort CullDist { get; init; }
     public ushort LightingHandle { get; init; }
     public byte ReflectionProbeIndex { get; init; }

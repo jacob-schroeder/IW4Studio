@@ -68,7 +68,7 @@ public sealed class ClipMapLoader
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            ClipMapAsset asset = ReadClipMap(cursor, rootAddress, serializedType, context);
+            ClipMapAsset asset = ReadClipMap(cursor, rootAddress, context);
             ClipMapAsset canonical = context.DB_AddXAsset(
                 serializedType,
                 asset,
@@ -85,7 +85,6 @@ public sealed class ClipMapLoader
     private ClipMapAsset ReadClipMap(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
-        XAssetType serializedType,
         DbLoadExecutionContext context)
     {
         int sourceOffset = cursor.Offset;
@@ -187,7 +186,6 @@ public sealed class ClipMapLoader
         IReadOnlyList<ModelBounds> brushBounds;
         IReadOnlyList<uint> brushContents;
         MapEntsAsset? mapEnts;
-        MapEntsPointerLoadResult mapEntsResult;
         IReadOnlyList<SModelAabbNode> smodelNodes;
         IReadOnlyList<DynEntityDef>[] dynEntDefList = new IReadOnlyList<DynEntityDef>[2];
         IReadOnlyList<DynEntityPose>[] dynEntPoseList = new IReadOnlyList<DynEntityPose>[2];
@@ -219,11 +217,10 @@ public sealed class ClipMapLoader
             brushBounds = ReadBoundsArray(cursor, brushBoundsPointer.Untyped, numBrushes, 128, context, "clipMap_t.brushBounds");
             brushContents = ReadUInt32Array(cursor, brushContentsPointer.Untyped, numBrushes, 4, context, "clipMap_t.brushContents");
             smodelNodes = ReadSModelAabbNodeArray(cursor, smodelNodesPointer.Untyped, smodelNodeCount, context);
-            mapEntsResult = _mapEntsLoader.LoadFromPointerWithMaterialization(
+            mapEnts = _mapEntsLoader.LoadFromPointer(
                 cursor,
                 mapEntsPointer.Untyped,
                 context);
-            mapEnts = mapEntsResult.Canonical;
             dynEntDefList[0] = ReadDynEntityDefArray(cursor, dynEntDefListPointers[0].Untyped, dynEntCount[0], context, "clipMap_t.dynEntDefList[0]");
             dynEntDefList[1] = ReadDynEntityDefArray(cursor, dynEntDefListPointers[1].Untyped, dynEntCount[1], context, "clipMap_t.dynEntDefList[1]");
             dynEntPoseList[0] = ReadRuntimeArray(context, () => ReadDynEntityPoseArray(cursor, dynEntPoseListPointers[0].Untyped, dynEntCount[0], context, "clipMap_t.dynEntPoseList[0]"));
@@ -243,11 +240,9 @@ public sealed class ClipMapLoader
         {
             Offset = sourceOffset,
             RuntimeAddress = rootAddress,
-            SerializedType = serializedType,
             NamePointer = namePointer,
             Name = name,
             IsInUse = isInUse,
-            SerializedIsInUse = isInUse,
             PlaneCount = planeCount,
             PlanesPointer = planesPointer,
             Planes = planes,
@@ -308,7 +303,6 @@ public sealed class ClipMapLoader
             BrushContents = brushContents,
             MapEntsPointer = mapEntsPointer,
             MapEnts = mapEnts,
-            MapEntsIncomingDefinition = mapEntsResult.IncomingDefinition,
             SModelNodeCount = smodelNodeCount,
             PadA2ToA3 = padA2ToA3,
             SModelNodesPointer = smodelNodesPointer,
@@ -362,16 +356,14 @@ public sealed class ClipMapLoader
             if (rowCursor.Offset != ClipStaticModel.SerializedSize)
                 throw new InvalidDataException($"ClipStaticModel consumed 0x{rowCursor.Offset:X} bytes.");
 
-            XModelPointerLoadResult xmodelResult =
-                _xmodelLoader.LoadFromPointerWithMaterialization(
-                    cursor,
-                    xmodelPointer.Untyped,
-                    context);
+            XModelAsset? xmodel = _xmodelLoader.LoadFromPointer(
+                cursor,
+                xmodelPointer.Untyped,
+                context);
             rows[i] = new ClipStaticModel
             {
                 XModelPointer = xmodelPointer,
-                XModel = xmodelResult.Canonical,
-                XModelIncomingDefinition = xmodelResult.IncomingDefinition,
+                XModel = xmodel,
                 Origin = origin,
                 InvScaledAxis = invScaledAxis,
                 AbsMin = absMin,
@@ -905,21 +897,19 @@ public sealed class ClipMapLoader
             int type = rowCursor.ReadInt32();
             GfxPlacement pose = ReadGfxPlacement(rowCursor);
             XPointer<XModelAsset> xmodelPointer = ReadPointer<XModelAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
-            XModelPointerLoadResult xmodelResult =
-                _xmodelLoader.LoadFromPointerWithMaterialization(
-                    cursor,
-                    xmodelPointer.Untyped,
-                    context);
+            XModelAsset? xmodel = _xmodelLoader.LoadFromPointer(
+                cursor,
+                xmodelPointer.Untyped,
+                context);
             ushort brushModel = rowCursor.ReadUInt16();
             ushort physicsBrushModel = rowCursor.ReadUInt16();
             XPointer<FxEffectDefAsset> destroyFxPointer = ReadPointer<FxEffectDefAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
             FxEffectDefAsset? destroyFx = _fxLoader.LoadFromPointer(cursor, destroyFxPointer.Untyped, context);
             XPointer<PhysPresetAsset> physPresetPointer = ReadPointer<PhysPresetAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
-            PhysPresetPointerLoadResult physPresetResult =
-                _physPresetLoader.LoadFromPointerWithMaterialization(
-                    cursor,
-                    physPresetPointer.Untyped,
-                    context);
+            PhysPresetAsset? physPreset = _physPresetLoader.LoadFromPointer(
+                cursor,
+                physPresetPointer.Untyped,
+                context);
             int health = rowCursor.ReadInt32();
             PhysMass mass = ReadPhysMass(rowCursor);
             int contents = rowCursor.ReadInt32();
@@ -928,15 +918,13 @@ public sealed class ClipMapLoader
                 Type = type,
                 Pose = pose,
                 XModelPointer = xmodelPointer,
-                XModel = xmodelResult.Canonical,
-                XModelIncomingDefinition = xmodelResult.IncomingDefinition,
+                XModel = xmodel,
                 BrushModel = brushModel,
                 PhysicsBrushModel = physicsBrushModel,
                 DestroyFxPointer = destroyFxPointer,
                 DestroyFx = destroyFx,
                 PhysPresetPointer = physPresetPointer,
-                PhysPreset = physPresetResult.Canonical,
-                PhysPresetIncomingDefinition = physPresetResult.IncomingDefinition,
+                PhysPreset = physPreset,
                 Health = health,
                 Mass = mass,
                 Contents = contents

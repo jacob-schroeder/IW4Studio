@@ -27,10 +27,7 @@ public sealed class GfxWorldDpvsStatic
     public XPointer<GfxSurface[]> SurfacesPointer { get; init; }
     public XBlockAddress? SurfacesAddress { get; init; }
     public IReadOnlyList<GfxSurface> Surfaces { get; set; } = [];
-    // Serialized surface order retained before runtime post-load sorting and
-    // rebuilding of the five surface collections.
-    public GfxWorldSerializedSurfaceState? SerializedSurfaceState { get; init; }
-    // Runtime-to-authored surface index mapping used when saving.
+    // Runtime-to-serialized surface index mapping maintained during sorting.
     public IReadOnlyList<int> AuthoredSurfaceIndexByRuntimeSlot { get; set; } = [];
     public XPointer<GfxSurfaceBounds[]> SurfaceBoundsPointer { get; init; }
     public XBlockAddress? SurfaceBoundsAddress { get; init; }
@@ -45,13 +42,4 @@ public sealed class GfxWorldDpvsStatic
     public XBlockAddress? SurfaceCastsSunShadowAddress { get; init; }
     public IReadOnlyList<uint> SurfaceCastsSunShadow { get; set; } = [];
     public uint UsageCount { get; init; }
-}
-
-public sealed class GfxWorldSerializedSurfaceState
-{
-    public IReadOnlyList<ushort> SortedSurfIndex { get; init; } = [];
-    public IReadOnlyList<GfxSurface> Surfaces { get; init; } = [];
-    public IReadOnlyList<GfxSurfaceBounds> SurfaceBounds { get; init; } = [];
-    public IReadOnlyList<GfxMapDrawSurf> SurfaceMaterials { get; init; } = [];
-    public IReadOnlyList<uint> SurfaceCastsSunShadow { get; init; } = [];
 }

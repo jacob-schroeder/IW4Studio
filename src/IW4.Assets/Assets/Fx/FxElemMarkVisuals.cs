@@ -11,8 +11,6 @@ public sealed class FxElemMarkVisuals
     public int Offset { get; init; }
     public XPointer<MaterialAsset> Material0Pointer { get; init; }
     public MaterialAsset? Material0 { get; init; }
-    public MaterialAsset? IncomingMaterial0 { get; init; }
     public XPointer<MaterialAsset> Material1Pointer { get; init; }
     public MaterialAsset? Material1 { get; init; }
-    public MaterialAsset? IncomingMaterial1 { get; init; }
 }

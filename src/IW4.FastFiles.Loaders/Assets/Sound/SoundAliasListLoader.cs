@@ -260,8 +260,7 @@ public sealed class SoundAliasListLoader
         SndCurve? volumeFalloffCurve = ReadSndCurvePointer(
             cursor,
             root.VolumeFalloffCurvePointer.Untyped,
-            context,
-            out SndCurve? incomingVolumeFalloffCurve);
+            context);
         SpeakerMap? speakerMap = ReadSpeakerMapPointer(cursor, root.SpeakerMapPointer.Untyped, context);
 
         return new SndAlias
@@ -296,7 +295,6 @@ public sealed class SoundAliasListLoader
             StartDelay = root.StartDelay,
             VolumeFalloffCurvePointer = root.VolumeFalloffCurvePointer,
             VolumeFalloffCurve = volumeFalloffCurve,
-            IncomingVolumeFalloffCurve = incomingVolumeFalloffCurve,
             EnvelopMin = root.EnvelopMin,
             EnvelopMax = root.EnvelopMax,
             EnvelopPercentage = root.EnvelopPercentage,
@@ -444,13 +442,11 @@ public sealed class SoundAliasListLoader
                 LoadedSound? loadedSound = LoadedSoundLoader.LoadFromPointer(
                     cursor,
                     loadedSoundPointer.Untyped,
-                    context,
-                    out LoadedSound? incomingLoadedSound);
+                    context);
                 payload = new LoadedSoundFile
                 {
                     LoadedSoundPointer = loadedSoundPointer,
-                    LoadedSound = loadedSound,
-                    IncomingLoadedSound = incomingLoadedSound
+                    LoadedSound = loadedSound
                 };
             }
             else
@@ -521,14 +517,12 @@ public sealed class SoundAliasListLoader
     private static SndCurve? ReadSndCurvePointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context,
-        out SndCurve? incomingDefinition)
+        DbLoadExecutionContext context)
     {
         return SndCurveLoader.LoadFromPointer(
             cursor,
             pointer,
-            context,
-            out incomingDefinition);
+            context);
     }
 
     private static SpeakerMap? ReadSpeakerMapPointer(

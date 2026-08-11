@@ -9,10 +9,6 @@ using IW4.Runtime.IO;
 
 namespace IW4.FastFiles.Loaders.Assets.MapEnts;
 
-public sealed record MapEntsPointerLoadResult(
-    MapEntsAsset? Canonical,
-    MapEntsAsset? IncomingDefinition);
-
 public sealed class MapEntsLoader
 {
     private readonly MapTriggersLoader _mapTriggersLoader = new();
@@ -22,7 +18,7 @@ public sealed class MapEntsLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true).Canonical
+        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
             ?? throw new InvalidDataException("Top-level MapEnts pointer resolved to null.");
     }
 
@@ -32,16 +28,10 @@ public sealed class MapEntsLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false).Canonical;
+        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
     }
 
-    public MapEntsPointerLoadResult LoadFromPointerWithMaterialization(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context) =>
-        LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-
-    private MapEntsPointerLoadResult LoadFromPointerCore(
+    private MapEntsAsset? LoadFromPointerCore(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context,
@@ -52,7 +42,7 @@ public sealed class MapEntsLoader
             if (requireAsset)
                 throw new InvalidDataException("Top-level MapEnts pointer is null.");
 
-            return new MapEntsPointerLoadResult(null, null);
+            return null;
         }
 
         if (pointer.Type == PointerType.Offset)
@@ -67,7 +57,7 @@ public sealed class MapEntsLoader
             if (canonical is null)
             {
                 if (!requireAsset)
-                    return new MapEntsPointerLoadResult(null, null);
+                    return null;
 
                 throw new InvalidDataException(
                     $"Top-level MapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} " +
@@ -75,7 +65,7 @@ public sealed class MapEntsLoader
             }
 
             PatchCanonicalPointerCell(pointer, canonical, context);
-            return new MapEntsPointerLoadResult(canonical, null);
+            return canonical;
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
@@ -97,7 +87,7 @@ public sealed class MapEntsLoader
                 mapEnts,
                 providerRegistration);
 
-            return new MapEntsPointerLoadResult(canonical, mapEnts);
+            return canonical;
         }
         finally
         {

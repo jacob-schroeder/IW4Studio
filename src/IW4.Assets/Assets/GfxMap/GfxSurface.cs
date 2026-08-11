@@ -13,7 +13,6 @@ public sealed class GfxSurface
     public SrfTriangles Triangles { get; init; } = new();
     public XPointer<MaterialAsset> MaterialPointer { get; init; }
     public MaterialAsset? Material { get; init; }
-    public MaterialAsset? MaterialIncomingDefinition { get; init; }
     public byte LightmapIndex { get; init; }
     public byte ReflectionProbeIndex { get; init; }
     public byte PrimaryLightIndex { get; init; }

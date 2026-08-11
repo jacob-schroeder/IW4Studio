@@ -19,7 +19,6 @@ public sealed class ClipMapAsset : BaseAsset
     // ColMapSp (0x0D) and ColMapMp (0x0E) share the same serialized body and
     // are registered in the ColMapMp pool family.
     public XAssetType Type => XAssetType.ColMapMp;
-    public XAssetType SerializedType { get; init; } = XAssetType.ColMapMp;
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
 
@@ -29,8 +28,6 @@ public sealed class ClipMapAsset : BaseAsset
         get => _isInUse;
         init => _isInUse = value;
     }
-    // Source value captured before registration mutates the runtime pool copy.
-    public int SerializedIsInUse { get; init; }
     public int PlaneCount { get; init; }
     public XPointer<CPlane[]> PlanesPointer { get; init; }
     public IReadOnlyList<CPlane> Planes { get; init; } = [];
@@ -91,7 +88,6 @@ public sealed class ClipMapAsset : BaseAsset
     public IReadOnlyList<uint> BrushContents { get; init; } = [];
     public XPointer<MapEntsAsset> MapEntsPointer { get; init; }
     public MapEntsAsset? MapEnts { get; init; }
-    public MapEntsAsset? MapEntsIncomingDefinition { get; init; }
     public ushort SModelNodeCount { get; init; }
     public ushort PadA2ToA3 { get; init; }
     public XPointer<SModelAabbNode[]> SModelNodesPointer { get; init; }

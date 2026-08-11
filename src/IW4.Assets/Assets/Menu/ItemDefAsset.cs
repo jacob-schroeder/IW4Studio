@@ -58,11 +58,9 @@ public sealed class ItemDefAsset : BaseAsset
     public string? EnableDvarString { get; set; }
     public ItemDvarFlags DvarFlags { get; init; }
     public XPointer<SoundAliasListAssetModel> FocusSound { get; init; }
-    /// <summary>Resolved only for inspection/detached authoring capture.
-    /// The serialized form is a symbolic Sound XAsset reference.</summary>
+    /// <summary>Sound alias list resolved from <see cref="FocusSound"/>.</summary>
     public SoundAliasListAssetModel? FocusSoundAsset { get; set; }
-    /// <summary>Serialized external Sound identity, distinct from the
-    /// resolved runtime alias-list object.</summary>
+    /// <summary>Logical name of the focused sound.</summary>
     public string? FocusSoundName { get; set; }
     public float Special { get; init; }
     public IReadOnlyList<int> CursorPos { get; init; } = [];

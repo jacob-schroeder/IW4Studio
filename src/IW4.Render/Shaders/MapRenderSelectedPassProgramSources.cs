@@ -55,7 +55,6 @@ public sealed class MapRenderSelectedPassProgramSources
         ? null
         : new MaterialVertexDeclarationAsset
         {
-            DestinationAddress = declaration.DestinationAddress,
             StreamCount = declaration.StreamCount,
             HasOptionalSource = declaration.HasOptionalSource,
             Routing = Array.AsReadOnly(declaration.Routing.ToArray())

@@ -9,10 +9,6 @@ using XString = IW4.FastFiles.Pointers.XPointer<string>;
 
 namespace IW4.FastFiles.Loaders.Assets.Physics;
 
-public sealed record PhysCollmapPointerLoadResult(
-    PhysCollmapAsset? Canonical,
-    PhysCollmapAsset? IncomingDefinition);
-
 public sealed class PhysCollmapLoader
 {
     public PhysCollmapAsset LoadFromAssetPointer(
@@ -20,7 +16,7 @@ public sealed class PhysCollmapLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true).Canonical
+        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
             ?? throw new InvalidDataException("Top-level PhysCollmap pointer resolved to null.");
     }
 
@@ -29,16 +25,10 @@ public sealed class PhysCollmapLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false).Canonical;
+        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
     }
 
-    public PhysCollmapPointerLoadResult LoadFromPointerWithMaterialization(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context) =>
-        LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-
-    private static PhysCollmapPointerLoadResult LoadFromPointerCore(
+    private static PhysCollmapAsset? LoadFromPointerCore(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context,
@@ -49,7 +39,7 @@ public sealed class PhysCollmapLoader
             if (requireAsset)
                 throw new InvalidDataException("Top-level PhysCollmap pointer is null.");
 
-            return new PhysCollmapPointerLoadResult(null, null);
+            return null;
         }
 
         if (pointer.Type == PointerType.Offset)
@@ -64,7 +54,7 @@ public sealed class PhysCollmapLoader
             if (canonical is null)
             {
                 if (!requireAsset)
-                    return new PhysCollmapPointerLoadResult(null, null);
+                    return null;
 
                 throw new InvalidDataException(
                     $"Top-level PhysCollmap pointer 0x{unchecked((uint)pointer.Raw):X8} " +
@@ -72,7 +62,7 @@ public sealed class PhysCollmapLoader
             }
 
             PatchCanonicalPointerCell(pointer, canonical, context);
-            return new PhysCollmapPointerLoadResult(canonical, null);
+            return canonical;
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
@@ -84,7 +74,7 @@ public sealed class PhysCollmapLoader
         return LoadInlineOrInsert(cursor, pointer, context);
     }
 
-    private static PhysCollmapPointerLoadResult LoadInlineOrInsert(
+    private static PhysCollmapAsset LoadInlineOrInsert(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context)
@@ -102,7 +92,7 @@ public sealed class PhysCollmapLoader
                 asset,
                 providerRegistration);
 
-            return new PhysCollmapPointerLoadResult(canonical, asset);
+            return canonical;
         }
         finally
         {
