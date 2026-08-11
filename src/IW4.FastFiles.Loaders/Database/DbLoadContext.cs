@@ -14,7 +14,7 @@ using IW4.Runtime.Assets.Lifecycle;
 using IW4.Runtime.Diagnostics;
 using IW4.Runtime.Strings;
 using IW4.Linker.Contracts;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 
 namespace IW4.FastFiles.Loaders.Database;
 

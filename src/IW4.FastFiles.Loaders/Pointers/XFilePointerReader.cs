@@ -4,7 +4,7 @@ using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 using IW4.Runtime.Assets;
 using IW4.Runtime.IO;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 using System.Reflection;
 
 namespace IW4.FastFiles.Loaders.Pointers;

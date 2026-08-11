@@ -4,7 +4,7 @@ using IW4.FastFiles.Loaders.Streaming.Images;
 using IW4.Runtime.Assets.Images;
 using IW4.Runtime.Database;
 using IW4.Linker.Contracts;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 
 namespace IW4.FastFiles.Loaders.Database;
 

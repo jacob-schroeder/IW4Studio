@@ -98,7 +98,7 @@ public sealed class FastFilePackager
 
         try
         {
-            Ps3PackedStream packedStream = Ps3PackedStreamEncoder.Encode(
+            PackedStream packedStream = PackedStreamEncoder.Encode(
                 decodedZone.Span,
                 policy.EmitDoubleTerminator ? 2 : 1);
             int headerLength = ComputeHeaderLength(envelope);
@@ -133,12 +133,12 @@ public sealed class FastFilePackager
     {
         void Error(string code, string message) => errors.Add(new FastFilePackagingError(code, message));
 
-        if (!string.Equals(envelope.Magic, Ps3PackageFormat.UnsignedMagic, StringComparison.Ordinal) ||
+        if (!string.Equals(envelope.Magic, PackageFormat.UnsignedMagic, StringComparison.Ordinal) ||
             Encoding.Latin1.GetByteCount(envelope.Magic) != 8)
         {
             Error(
                 "header.magic",
-                $"PS3 packaging requires the eight-byte magic '{Ps3PackageFormat.UnsignedMagic}'.");
+                $"PS3 packaging requires the eight-byte magic '{PackageFormat.UnsignedMagic}'.");
         }
         if (envelope.Version != XFileVersion.ModernWarfare2)
         {
@@ -259,7 +259,7 @@ public sealed class FastFilePackager
             throw new InvalidDataException("Selected language is absent from the rebuilt table order.");
 
         return new DbHeader(
-            magic: Ps3PackageFormat.UnsignedMagic,
+            magic: PackageFormat.UnsignedMagic,
             version: XFileVersion.ModernWarfare2,
             allowOnlineUpdate: false,
             fileCreationTimeRaw: 0,
@@ -328,8 +328,8 @@ public sealed class FastFilePackager
     private static byte[] EncodeHeader(DbHeader envelope, ulong creationTime, uint fileSize, uint maxFileSize)
     {
         byte[] output = new byte[ComputeHeaderLength(envelope)];
-        Ps3PackageFormat.WriteUnsignedPrefix(output);
-        int offset = Ps3PackageFormat.UnsignedPrefixLength;
+        PackageFormat.WriteUnsignedPrefix(output);
+        int offset = PackageFormat.UnsignedPrefixLength;
         output[offset++] = envelope.AllowOnlineUpdate ? (byte)1 : (byte)0;
         WriteUInt64(output, ref offset, creationTime);
         WriteUInt32(output, ref offset, envelope.LanguageMask);

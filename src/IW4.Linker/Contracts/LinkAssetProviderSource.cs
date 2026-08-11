@@ -1,6 +1,6 @@
 using IW4.Assets.Assets;
 using IW4.FastFiles.Pointers;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 
 namespace IW4.Linker.Contracts;
 
@@ -94,7 +94,7 @@ public sealed class LinkAssetProviderSource
     public ILinkAssetImportResolver? ImportResolver { get; }
     /// <summary>
     /// Transient original provider used only to resolve imported pointer
-    /// occurrences. Recipes always serialize <see cref="Definition"/>.
+    /// occurrences. Plans always serialize <see cref="Definition"/>.
     /// </summary>
     public BaseAsset ImportedDefinition { get; }
     public IReadOnlyList<ImageFileStreamLanguageReferences> ImageStreamReferences { get; }

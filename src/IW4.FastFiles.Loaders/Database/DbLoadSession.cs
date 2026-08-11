@@ -91,7 +91,7 @@ public sealed class DbLoadSession : IDisposable
 
     /// <summary>
     /// Atomically freezes the current ordered runtime provider pool into
-    /// Linker-owned immutable recipes. Loader captures are consumed during
+    /// Linker-owned immutable plans. Loader captures are consumed during
     /// construction and are not retained by the resulting pool.
     /// </summary>
     public LinkAssetPool FreezeLinkAssetPool()

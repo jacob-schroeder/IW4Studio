@@ -2,7 +2,7 @@ using IW4.Runtime.Database;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.IO;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 using System.Buffers.Binary;
 using System.Text;
 
@@ -175,7 +175,7 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
             sizeof(int),
             address,
             ConsumePendingMaterializationAlignment(XFileBlockType.LARGE, sizeof(int)),
-            IW4.Linker.Model.MaterializationKind.InsertCell);
+            IW4.Linker.Plans.MaterializationKind.InsertCell);
         CaptureBridge?.RecordInsertPointerCell(address);
         return address;
     }
@@ -206,14 +206,14 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
             // RUNTIME calls the zero-fill helper before advancing; VIRTUAL only advances.
             byte[] zeros = new byte[byteCount];
             Write(zeros);
-            CaptureBridge?.RecordDestination(byteCount, destinationAddress, ConsumePendingMaterializationAlignment(CurrentBlock), CurrentBlock == XFileBlockType.RUNTIME ? IW4.Linker.Model.MaterializationKind.RuntimeZeroFill : IW4.Linker.Model.MaterializationKind.VirtualReservation);
+            CaptureBridge?.RecordDestination(byteCount, destinationAddress, ConsumePendingMaterializationAlignment(CurrentBlock), CurrentBlock == XFileBlockType.RUNTIME ? IW4.Linker.Plans.MaterializationKind.RuntimeZeroFill : IW4.Linker.Plans.MaterializationKind.VirtualReservation);
             return zeros;
         }
 
         int sourceOffset = cursor.Offset;
         byte[] bytes = cursor.ReadBytes(byteCount);
         Write(bytes);
-        CaptureBridge?.RecordLoad(cursor, sourceOffset, byteCount, destinationAddress, ConsumePendingMaterializationAlignment(CurrentBlock), IW4.Linker.Model.MaterializationKind.StreamCopy);
+        CaptureBridge?.RecordLoad(cursor, sourceOffset, byteCount, destinationAddress, ConsumePendingMaterializationAlignment(CurrentBlock), IW4.Linker.Plans.MaterializationKind.StreamCopy);
         return bytes;
     }
 
@@ -239,14 +239,14 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
         {
             byte[] zeros = new byte[byteCount];
             Write(zeros);
-            CaptureBridge?.RecordDestination(byteCount, address, ConsumePendingMaterializationAlignment(CurrentBlock), CurrentBlock == XFileBlockType.RUNTIME ? IW4.Linker.Model.MaterializationKind.RuntimeZeroFill : IW4.Linker.Model.MaterializationKind.VirtualReservation);
+            CaptureBridge?.RecordDestination(byteCount, address, ConsumePendingMaterializationAlignment(CurrentBlock), CurrentBlock == XFileBlockType.RUNTIME ? IW4.Linker.Plans.MaterializationKind.RuntimeZeroFill : IW4.Linker.Plans.MaterializationKind.VirtualReservation);
             return zeros;
         }
 
         int sourceOffset = cursor.Offset;
         ReadOnlyMemory<byte> bytes = cursor.ReadMemory(byteCount);
         Write(bytes.Span);
-        CaptureBridge?.RecordLoad(cursor, sourceOffset, byteCount, address, ConsumePendingMaterializationAlignment(CurrentBlock), IW4.Linker.Model.MaterializationKind.StreamCopy);
+        CaptureBridge?.RecordLoad(cursor, sourceOffset, byteCount, address, ConsumePendingMaterializationAlignment(CurrentBlock), IW4.Linker.Plans.MaterializationKind.StreamCopy);
         return bytes;
     }
 

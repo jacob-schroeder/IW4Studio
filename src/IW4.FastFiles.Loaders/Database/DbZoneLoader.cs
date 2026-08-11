@@ -9,7 +9,7 @@ using IW4.Runtime.Assets.Lifecycle;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
 using IW4.Runtime.Strings;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 
 namespace IW4.FastFiles.Loaders.Database;
 

@@ -1,5 +1,5 @@
 using IW4.FastFiles.Pointers;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 
 namespace IW4.FastFiles.Loaders.Pointers;
 

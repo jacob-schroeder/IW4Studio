@@ -2,7 +2,7 @@ using IW4.Assets.Assets;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.Linker;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 using IW4.Runtime.IO;
 using IW4.FastFiles.Loaders.Pointers;
 

@@ -3,7 +3,7 @@ using IW4.FastFiles.Database;
 using IW4.FastFiles.Database.Streaming;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 
 namespace IW4.Linker.Linking;
 
@@ -71,7 +71,7 @@ public sealed class ZoneLinkResult
 
 /// <summary>
 /// Source-independent canonical zone linker. Providers are selected by
-/// logical identity, then emitted once from frozen schema recipes.
+/// logical identity, then emitted once from frozen schema plans.
 /// </summary>
 public sealed class ZoneLinker
 {
@@ -278,7 +278,7 @@ public sealed class ZoneLinker
                 new ProviderSymbol(index),
                 provider.Key,
                 provider.SerializedType,
-                provider.Recipe);
+                provider.Plan);
             if (provider.IsReferencePlaceholder)
             {
                 references.TryAdd(provider.Key, binding);
@@ -368,12 +368,12 @@ public sealed class ZoneLinker
                 new ProviderSymbol(checked(poolProviderCount + externalProviders.Count)),
                 key,
                 root.SerializedType,
-                CreateExternalRecipe(key, root.SerializedType, serializedName));
+                CreateExternalPlan(key, root.SerializedType, serializedName));
             externalProviders.Add(key, provider);
         }
         else if (provider.SerializedType != root.SerializedType ||
             !string.Equals(
-                provider.Recipe.OriginalSerializedName,
+                provider.Plan.OriginalSerializedName,
                 serializedName,
                 StringComparison.Ordinal))
         {
@@ -391,7 +391,7 @@ public sealed class ZoneLinker
     {
         if (provider.SerializedType != root.SerializedType ||
             !string.Equals(
-                provider.Recipe.OriginalSerializedName,
+                provider.Plan.OriginalSerializedName,
                 serializedName,
                 StringComparison.Ordinal))
         {
@@ -401,11 +401,11 @@ public sealed class ZoneLinker
         }
     }
 
-    private static AssetLinkRecipe CreateExternalRecipe(
+    private static AssetLinkPlan CreateExternalPlan(
         AssetKey key,
         XAssetType serializedType,
         string serializedName) =>
-        ExternalAssetLinkRecipe.CreateSynthetic(
+        ExternalAssetLinkPlan.CreateSynthetic(
             key,
             serializedType,
             serializedName);
@@ -423,7 +423,7 @@ public sealed class ZoneLinker
 
         if (!string.Equals(
                 root.OriginalSerializedName,
-                provider.Recipe.OriginalSerializedName,
+                provider.Plan.OriginalSerializedName,
                 StringComparison.Ordinal))
         {
             throw new InvalidDataException(
@@ -474,7 +474,7 @@ public sealed class ZoneLinker
         if (complete.Contains(provider.Symbol) || !active.Add(provider.Symbol))
             return;
 
-        provider.Recipe.VisitReferences(
+        provider.Plan.VisitReferences(
             VisitProviderDependency,
             VisitDependencyOnly,
             _ => { },
@@ -617,7 +617,7 @@ public sealed class ZoneLinker
             if (!visitedProviders.Add(provider.Symbol))
                 return;
 
-            if (provider.Recipe is SoundLinkRecipe
+            if (provider.Plan is SoundLinkPlan
                 {
                     RequiredLanguageCount: { } soundFileCount
                 } &&
@@ -629,7 +629,7 @@ public sealed class ZoneLinker
                     $"{languageCount}.");
             }
 
-            provider.Recipe.VisitReferences(
+            provider.Plan.VisitReferences(
                 VisitDependency,
                 VisitDependencyIfAvailable,
                 _ => { },
@@ -749,7 +749,7 @@ public sealed class ZoneLinker
             if (!collectedProviders.Add(provider.Symbol))
                 return;
 
-            provider.Recipe.VisitReferences(
+            provider.Plan.VisitReferences(
                 VisitProviderDependency,
                 VisitIndirectDependency,
                 _ => { },
@@ -786,7 +786,7 @@ public sealed class ZoneLinker
                 return;
             }
 
-            provider.Recipe.VisitReferences(
+            provider.Plan.VisitReferences(
                 PlanProviderDependency,
                 PlanDependencyIfAvailable,
                 _ => { },
@@ -902,7 +902,7 @@ public sealed class ZoneLinker
         }
 
         encountered.Add(provider.Symbol);
-        provider.Recipe.VisitReferences(
+        provider.Plan.VisitReferences(
             dependency =>
             {
                 var edge = new DependencyEdge(dependency);
@@ -1002,14 +1002,14 @@ public sealed class ZoneLinker
                 break;
             default:
                 throw new InvalidDataException(
-                    $"Provider cells in {providerCell.BlockType} are not supported by the current schema recipes.");
+                    $"Provider cells in {providerCell.BlockType} are not supported by the current schema plans.");
         }
 
         publications.Add(provider.Symbol, publication);
         output.PatchInt32(providerCellSourceOffset, ownerMarker);
         CollectImageStreams(provider, imageStreams);
 
-        provider.Recipe.Emit(new LinkEmissionContext(
+        provider.Plan.Emit(new LinkEmissionContext(
             storageState,
             (dependency, dependencyCell, dependencySourceOffset) =>
             {
@@ -1050,7 +1050,7 @@ public sealed class ZoneLinker
         ProviderBinding provider,
         IDictionary<uint, List<DbHeaderImageStreamEntry>> streams)
     {
-        if (provider.Recipe is not GfxImageLinkRecipe image ||
+        if (provider.Plan is not GfxImageLinkPlan image ||
             image.StreamReferences.Count == 0)
         {
             return;
@@ -1099,7 +1099,7 @@ public sealed class ZoneLinker
             if (!visited.Add(provider.Symbol))
                 return;
 
-            provider.Recipe.VisitReferences(
+            provider.Plan.VisitReferences(
                 VisitDependency,
                 VisitDependencyIfAvailable,
                 script =>
@@ -1180,7 +1180,7 @@ public sealed class ZoneLinker
         ProviderSymbol Symbol,
         AssetKey Key,
         XAssetType SerializedType,
-        AssetLinkRecipe Recipe);
+        AssetLinkPlan Plan);
 
     private readonly record struct ProviderSelection(
         IReadOnlyDictionary<AssetKey, ProviderBinding> Full,

@@ -25,7 +25,7 @@ using IW4.Assets.Assets.Vehicle;
 using IW4.Assets.Assets.XAnim;
 using IW4.Assets.Assets.XModel;
 using IW4.FastFiles.Zone;
-using IW4.Linker.Model;
+using IW4.Linker.Plans;
 using WeaponAssetDefinition = IW4.Assets.Assets.Weapon.WeaponAsset;
 
 namespace IW4.Linker.Contracts;
@@ -69,89 +69,89 @@ public sealed class LinkAssetProvider
                 nameof(source));
         }
 
-        Recipe = (serializedType, definition) switch
+        Plan = (serializedType, definition) switch
         {
             (XAssetType.RawFile, RawFileAsset rawFile) =>
-                RawFileLinkRecipe.Freeze(key, serializedName, rawFile, freeze),
+                RawFileLinkPlan.Freeze(key, serializedName, rawFile, freeze),
             (XAssetType.LightDef, LightDefAsset lightDef) =>
-                LightDefLinkRecipe.Freeze(key, serializedName, lightDef, freeze),
+                LightDefLinkPlan.Freeze(key, serializedName, lightDef, freeze),
             (XAssetType.Image, GfxImageAsset image) =>
-                GfxImageLinkRecipe.Freeze(
+                GfxImageLinkPlan.Freeze(
                     key,
                     serializedName,
                     image,
                     source.ImageStreamReferences,
                     freeze),
             (XAssetType.Localize, LocalizeAsset localize) =>
-                LocalizeLinkRecipe.Freeze(key, serializedName, localize, freeze),
+                LocalizeLinkPlan.Freeze(key, serializedName, localize, freeze),
             (XAssetType.StringTable, StringTableAsset stringTable) =>
-                StringTableLinkRecipe.Freeze(key, serializedName, stringTable, freeze),
+                StringTableLinkPlan.Freeze(key, serializedName, stringTable, freeze),
             (XAssetType.LoadedSound, LoadedSound loadedSound) =>
-                LoadedSoundLinkRecipe.Freeze(key, serializedName, loadedSound, freeze),
+                LoadedSoundLinkPlan.Freeze(key, serializedName, loadedSound, freeze),
             (XAssetType.Sound, SoundAliasListAsset sound) =>
-                SoundLinkRecipe.Freeze(key, serializedName, sound, freeze),
+                SoundLinkPlan.Freeze(key, serializedName, sound, freeze),
             (XAssetType.SndCurve, SndCurve sndCurve) =>
-                SndCurveLinkRecipe.Freeze(key, serializedName, sndCurve, freeze),
+                SndCurveLinkPlan.Freeze(key, serializedName, sndCurve, freeze),
             (XAssetType.PixelShader, MaterialShaderAsset pixelShader) =>
-                MaterialShaderLinkRecipe.Freeze(key, serializedName, pixelShader, freeze),
+                MaterialShaderLinkPlan.Freeze(key, serializedName, pixelShader, freeze),
             (XAssetType.VertexShader, MaterialShaderAsset vertexShader) =>
-                MaterialShaderLinkRecipe.Freeze(key, serializedName, vertexShader, freeze),
+                MaterialShaderLinkPlan.Freeze(key, serializedName, vertexShader, freeze),
             (XAssetType.Techset, MaterialTechniqueSetAsset techniqueSet) =>
-                MaterialTechniqueSetLinkRecipe.Freeze(
+                MaterialTechniqueSetLinkPlan.Freeze(
                     key,
                     serializedName,
                     techniqueSet,
                     freeze),
             (XAssetType.Material, MaterialAsset material) =>
-                MaterialLinkRecipe.Freeze(key, serializedName, material, freeze),
+                MaterialLinkPlan.Freeze(key, serializedName, material, freeze),
             (XAssetType.Tracer, TracerDefAsset tracer) =>
-                TracerLinkRecipe.Freeze(key, serializedName, tracer, freeze),
+                TracerLinkPlan.Freeze(key, serializedName, tracer, freeze),
             (XAssetType.PhysPreset, PhysPresetAsset physPreset) =>
-                PhysPresetLinkRecipe.Freeze(key, serializedName, physPreset, freeze),
+                PhysPresetLinkPlan.Freeze(key, serializedName, physPreset, freeze),
             (XAssetType.PhysCollmap, PhysCollmapAsset physCollmap) =>
-                PhysCollmapLinkRecipe.Freeze(key, serializedName, physCollmap, freeze),
+                PhysCollmapLinkPlan.Freeze(key, serializedName, physCollmap, freeze),
             (XAssetType.ColMapSp, ClipMapAsset clipMapSp) =>
-                ClipMapLinkRecipe.Freeze(key, serializedName, clipMapSp, freeze),
+                ClipMapLinkPlan.Freeze(key, serializedName, clipMapSp, freeze),
             (XAssetType.ColMapMp, ClipMapAsset clipMapMp) =>
-                ClipMapLinkRecipe.Freeze(key, serializedName, clipMapMp, freeze),
+                ClipMapLinkPlan.Freeze(key, serializedName, clipMapMp, freeze),
             (XAssetType.XAnim, XAnimPartsAsset xanim) =>
-                XAnimLinkRecipe.Freeze(key, serializedName, xanim, freeze),
+                XAnimLinkPlan.Freeze(key, serializedName, xanim, freeze),
             (XAssetType.XModelSurfs, XModelSurfsAsset modelSurfs) =>
-                XModelSurfsLinkRecipe.Freeze(key, serializedName, modelSurfs, freeze),
+                XModelSurfsLinkPlan.Freeze(key, serializedName, modelSurfs, freeze),
             (XAssetType.XModel, XModelAsset model) =>
-                XModelLinkRecipe.Freeze(key, serializedName, model, freeze),
+                XModelLinkPlan.Freeze(key, serializedName, model, freeze),
             (XAssetType.Fx, FxEffectDefAsset effect) =>
-                FxEffectDefLinkRecipe.Freeze(key, serializedName, effect, freeze),
+                FxEffectDefLinkPlan.Freeze(key, serializedName, effect, freeze),
             (XAssetType.ImpactFx, FxImpactTableAsset impactFx) =>
-                FxImpactTableLinkRecipe.Freeze(key, serializedName, impactFx, freeze),
+                FxImpactTableLinkPlan.Freeze(key, serializedName, impactFx, freeze),
             (XAssetType.FxMap, FxWorldAsset fxWorld) =>
-                FxWorldLinkRecipe.Freeze(key, serializedName, fxWorld, freeze),
+                FxWorldLinkPlan.Freeze(key, serializedName, fxWorld, freeze),
             (XAssetType.ComMap, ComWorldAsset comWorld) =>
-                ComWorldLinkRecipe.Freeze(key, serializedName, comWorld, freeze),
+                ComWorldLinkPlan.Freeze(key, serializedName, comWorld, freeze),
             (XAssetType.GameMapMp, GameWorldMpAsset gameWorldMp) =>
-                GameWorldMpLinkRecipe.Freeze(key, serializedName, gameWorldMp, freeze),
+                GameWorldMpLinkPlan.Freeze(key, serializedName, gameWorldMp, freeze),
             (XAssetType.GameMapSp, GameWorldSpAsset gameWorldSp) =>
-                GameWorldSpLinkRecipe.Freeze(key, serializedName, gameWorldSp, freeze),
+                GameWorldSpLinkPlan.Freeze(key, serializedName, gameWorldSp, freeze),
             (XAssetType.MapEnts, MapEntsAsset mapEnts) =>
-                MapEntsLinkRecipe.Freeze(key, serializedName, mapEnts, freeze),
+                MapEntsLinkPlan.Freeze(key, serializedName, mapEnts, freeze),
             (XAssetType.AddonMapEnts, AddonMapEntsAsset addonMapEnts) =>
-                AddonMapEntsLinkRecipe.Freeze(key, serializedName, addonMapEnts, freeze),
+                AddonMapEntsLinkPlan.Freeze(key, serializedName, addonMapEnts, freeze),
             (XAssetType.Font, FontAsset font) =>
-                FontLinkRecipe.Freeze(key, serializedName, font, freeze),
+                FontLinkPlan.Freeze(key, serializedName, font, freeze),
             (XAssetType.MenuFile, MenuFileAsset menuFile) =>
-                MenuFileLinkRecipe.Freeze(key, serializedName, menuFile, freeze),
+                MenuFileLinkPlan.Freeze(key, serializedName, menuFile, freeze),
             (XAssetType.Menu, MenuDefAsset menu) =>
-                MenuLinkRecipe.Freeze(key, serializedName, menu, freeze),
+                MenuLinkPlan.Freeze(key, serializedName, menu, freeze),
             (XAssetType.GfxMap, GfxWorldAsset gfxWorld) =>
-                GfxWorldLinkRecipe.Freeze(key, serializedName, gfxWorld, freeze),
+                GfxWorldLinkPlan.Freeze(key, serializedName, gfxWorld, freeze),
             (XAssetType.Vehicle, VehicleDefAsset vehicle) =>
-                VehicleLinkRecipe.Freeze(key, serializedName, vehicle, freeze),
+                VehicleLinkPlan.Freeze(key, serializedName, vehicle, freeze),
             (XAssetType.Weapon, WeaponAssetDefinition weapon) =>
-                WeaponLinkRecipe.Freeze(key, serializedName, weapon, freeze),
+                WeaponLinkPlan.Freeze(key, serializedName, weapon, freeze),
             (XAssetType.LeaderboardDef, LeaderboardDefAsset leaderboard) =>
-                LeaderboardLinkRecipe.Freeze(key, serializedName, leaderboard, freeze),
+                LeaderboardLinkPlan.Freeze(key, serializedName, leaderboard, freeze),
             (XAssetType.StructuredDataDef, StructuredDataDefSetAsset structuredData) =>
-                StructuredDataLinkRecipe.Freeze(key, serializedName, structuredData, freeze),
+                StructuredDataLinkPlan.Freeze(key, serializedName, structuredData, freeze),
             (XAssetType.RawFile, _) => throw new ArgumentException(
                 "A RawFile provider requires a RawFileAsset definition.",
                 nameof(definition)),
@@ -266,8 +266,8 @@ public sealed class LinkAssetProvider
 
         Key = key;
         SerializedType = serializedType;
-        OriginalSerializedName = Recipe.OriginalSerializedName;
-        IsReferencePlaceholder = Recipe.IsReferencePlaceholder;
+        OriginalSerializedName = Plan.OriginalSerializedName;
+        IsReferencePlaceholder = Plan.IsReferencePlaceholder;
     }
 
     public AssetKey Key { get; }
@@ -275,7 +275,7 @@ public sealed class LinkAssetProvider
     public string OriginalSerializedName { get; }
     public bool IsReferencePlaceholder { get; }
 
-    internal AssetLinkRecipe Recipe { get; }
+    internal AssetLinkPlan Plan { get; }
 }
 
 /// <summary>
