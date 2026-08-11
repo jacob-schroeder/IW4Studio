@@ -1,14 +1,17 @@
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.Physics;
 
 public sealed class PhysPresetAsset : BaseAsset
 {
     public const int SerializedSize = 0x2C;
+    public override XAssetType SerializedAssetType => XAssetType.PhysPreset;
 
     // 0x00: XString name.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04..0x18: physical material parameters.
     public int Type { get; init; }

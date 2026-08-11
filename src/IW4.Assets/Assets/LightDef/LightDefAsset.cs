@@ -8,11 +8,12 @@ public sealed class LightDefAsset : BaseAsset
 {
     public const int SerializedSize = 0x10;
 
-    public XAssetType Type => XAssetType.LightDef;
+    public override XAssetType SerializedAssetType => XAssetType.LightDef;
 
     // 0x00: XString name.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: GfxLightImage.image.
     public XPointer<GfxImageAsset> ImagePointer { get; init; }

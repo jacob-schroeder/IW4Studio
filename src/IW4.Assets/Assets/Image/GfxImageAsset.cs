@@ -11,7 +11,7 @@ public sealed class GfxImageAsset : BaseAsset
     private byte _pixelDataBlock;
     private uint _pixelsOffset;
 
-    public XAssetType Type => XAssetType.Image;
+    public override XAssetType SerializedAssetType => XAssetType.Image;
 
     // 0x00..0x03: RSX format, mip count, dimension, and cube/multiface state.
     public byte Format { get; init; }
@@ -62,6 +62,7 @@ public sealed class GfxImageAsset : BaseAsset
     // 0x4C: XString name pointer.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     internal void ApplyNullPayloadRuntimeHeader(uint? pixelsOffset)
     {

@@ -13,14 +13,33 @@ namespace IW4.Assets.Assets.ColMap;
 public sealed class ClipMapAsset : BaseAsset
 {
     private int _isInUse;
+    private XAssetType _serializedType = XAssetType.ColMapMp;
 
     public const int SerializedSize = 0x100;
 
     // ColMapSp (0x0D) and ColMapMp (0x0E) share the same serialized body and
-    // are registered in the ColMapMp pool family.
-    public XAssetType Type => XAssetType.ColMapMp;
+    // are registered in the ColMapMp pool family. Preserve the exact wire type
+    // independently of that canonical runtime family.
+    public XAssetType SerializedType
+    {
+        get => _serializedType;
+        init
+        {
+            if (value is not (XAssetType.ColMapSp or XAssetType.ColMapMp))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(value),
+                    value,
+                    "ClipMap serialized type must be ColMapSp or ColMapMp.");
+            }
+
+            _serializedType = value;
+        }
+    }
+    public override XAssetType SerializedAssetType => SerializedType;
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: registration sets this to 1 before capturing the 0x100-byte pool copy.
     public int IsInUse

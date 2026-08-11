@@ -7,11 +7,12 @@ public sealed class GameWorldSpAsset : BaseAsset
 {
     public const int SerializedSize = 0x38;
 
-    public XAssetType Type => XAssetType.GameMapSp;
+    public override XAssetType SerializedAssetType => XAssetType.GameMapSp;
 
     // 0x00: XString name resolved in LARGE.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: embedded 0x28-byte PathData.
     public PathData Path { get; init; } = new();

@@ -1,13 +1,16 @@
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.XAnim;
 
 public sealed class XAnimPartsAsset : BaseAsset
 {
     public const int SerializedSize = 0x58;
+    public override XAssetType SerializedAssetType => XAssetType.XAnim;
 
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
     public ushort DataByteCount { get; init; }
     public ushort DataShortCount { get; init; }
     public ushort DataIntCount { get; init; }

@@ -6,9 +6,12 @@ using SoundAliasListAssetModel = IW4.Assets.Assets.Sound.SoundAliasListAsset;
 
 namespace IW4.Assets.Assets.Menu;
 
-public sealed class ItemDefAsset : BaseAsset
+public sealed class ItemDefAsset
 {
     public const int SerializedSize = 0x1cc;
+
+    public int Offset { get; init; }
+    public XRuntimeAddress? RuntimeAddress { get; init; }
 
     public WindowDef Window { get; init; } = new();
     public IReadOnlyList<RectangleDef> TextRect { get; init; } = [];

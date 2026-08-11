@@ -13,7 +13,8 @@ public sealed class MaterialAsset : BaseAsset
     private IReadOnlyList<ushort> _inlineTechniqueSlotStateBits = [];
     private IReadOnlyList<ushort> _runtimeTechniqueSlotStateBits = [];
 
-    public XAssetType Type => XAssetType.Material;
+    public override XAssetType SerializedAssetType => XAssetType.Material;
+    public override string? SerializedAssetName => Info.Name;
 
     public MaterialInfo Info { get; init; } = new();
     public IReadOnlyList<MaterialStateBitsEntry> StateBitsEntries { get; init; } = [];

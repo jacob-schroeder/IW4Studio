@@ -1,5 +1,6 @@
 using IW4.Assets.Assets;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.TechniqueSet;
 
@@ -12,10 +13,17 @@ public sealed class MaterialShaderAsset : BaseAsset
     // Managed discriminator for the two native XAsset pool families; not a
     // serialized root field.
     public MaterialShaderKind Kind { get; init; }
+    public override XAssetType SerializedAssetType => Kind switch
+    {
+        MaterialShaderKind.Pixel => XAssetType.PixelShader,
+        MaterialShaderKind.Vertex => XAssetType.VertexShader,
+        _ => throw new InvalidOperationException($"Unsupported material shader kind {Kind}.")
+    };
 
     // 0x00: XString. Both PS3 bodies push LARGE and call Load_XString.
     public XString NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: GfxShaderLoadDef bytecode pointer; packed values use alias-cell
     // conversion. 0x08: unsigned byte count.

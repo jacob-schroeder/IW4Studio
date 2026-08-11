@@ -1,4 +1,6 @@
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.LightDef;
 using IW4.Assets.Assets.RawFile;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Model;
@@ -11,38 +13,40 @@ namespace IW4.Linker.Contracts;
 /// </summary>
 public sealed class LinkAssetProvider
 {
-    public LinkAssetProvider(
-        AssetKey key,
-        XAssetType serializedType,
-        BaseAsset definition)
+    public LinkAssetProvider(BaseAsset definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        if (!key.IsValid)
-            throw new ArgumentException("Provider asset key must be constructed and valid.", nameof(key));
+        XAssetType serializedType = definition.SerializedAssetType;
         if (!Enum.IsDefined(serializedType))
         {
             throw new ArgumentOutOfRangeException(
-                nameof(serializedType),
+                nameof(definition),
                 serializedType,
                 "Provider serialized type must be a defined XAssetType.");
         }
 
-        CanonicalAssetFamily expectedFamily =
-            CanonicalAssetFamily.FromSerializedType(serializedType);
-        if (key.Family != expectedFamily)
-        {
+        AssetKey key = AssetKey.FromDefinition(definition);
+        string serializedName = definition.SerializedAssetName ??
             throw new ArgumentException(
-                $"Provider key family {key.Family} does not match canonical family " +
-                $"{expectedFamily} for serialized type {serializedType}.",
-                nameof(key));
-        }
+                "Provider definition has no serialized name.",
+                nameof(definition));
 
         Recipe = (serializedType, definition) switch
         {
             (XAssetType.RawFile, RawFileAsset rawFile) =>
-                RawFileLinkRecipe.Freeze(key, rawFile),
+                RawFileLinkRecipe.Freeze(key, serializedName, rawFile),
+            (XAssetType.LightDef, LightDefAsset lightDef) =>
+                LightDefLinkRecipe.Freeze(key, serializedName, lightDef),
+            (XAssetType.Image, GfxImageAsset image) =>
+                GfxImageReferenceLinkRecipe.Freeze(key, serializedName, image),
             (XAssetType.RawFile, _) => throw new ArgumentException(
                 "A RawFile provider requires a RawFileAsset definition.",
+                nameof(definition)),
+            (XAssetType.LightDef, _) => throw new ArgumentException(
+                "A LightDef provider requires a LightDefAsset definition.",
+                nameof(definition)),
+            (XAssetType.Image, _) => throw new ArgumentException(
+                "An Image provider requires a GfxImageAsset definition.",
                 nameof(definition)),
             _ => throw new NotSupportedException(
                 $"Canonical linking does not yet support {serializedType} providers.")
@@ -59,7 +63,7 @@ public sealed class LinkAssetProvider
     public string OriginalSerializedName { get; }
     public bool IsReferencePlaceholder { get; }
 
-    internal RawFileLinkRecipe Recipe { get; }
+    internal AssetLinkRecipe Recipe { get; }
 }
 
 /// <summary>

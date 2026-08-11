@@ -7,11 +7,12 @@ public sealed class MapEntsAsset : BaseAsset
 {
     public const int SerializedSize = 0x2C;
 
-    public XAssetType Type => XAssetType.MapEnts;
+    public override XAssetType SerializedAssetType => XAssetType.MapEnts;
 
     // 0x00: XString name, materialized in LARGE.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: entity-string byte payload; 0x08 supplies its exact byte count.
     public XPointer<byte[]> EntityStringPointer { get; init; }

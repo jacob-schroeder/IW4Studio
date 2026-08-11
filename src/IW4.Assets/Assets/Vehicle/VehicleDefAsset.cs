@@ -12,9 +12,11 @@ public sealed class VehicleDefAsset : BaseAsset
     public const int ScriptStringCount = 4;
     public const int SurfaceSoundOffset = 0x244;
     public const int SurfaceSoundCount = 31;
+    public override XAssetType SerializedAssetType => XAssetType.Vehicle;
 
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
     public VehicleType Type { get; init; }
     public XPointer<string> UseHintStringPointer { get; init; }
     public string? UseHintString { get; init; }

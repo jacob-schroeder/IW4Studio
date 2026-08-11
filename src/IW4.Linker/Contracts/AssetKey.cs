@@ -1,3 +1,4 @@
+using IW4.Assets.Assets;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Linker.Contracts;
@@ -73,6 +74,23 @@ public readonly record struct AssetKey
             ? wireName[1..]
             : wireName;
         return new AssetKey(family, logicalName);
+    }
+
+    /// <summary>
+    /// Derives canonical logical identity from a schema definition's exact
+    /// serialized type and wire name.
+    /// </summary>
+    public static AssetKey FromDefinition(BaseAsset definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        string serializedName = definition.SerializedAssetName ??
+            throw new ArgumentException(
+                "Asset definition has no serialized name.",
+                nameof(definition));
+        CanonicalAssetFamily family =
+            CanonicalAssetFamily.FromSerializedType(
+                definition.SerializedAssetType);
+        return FromWireName(family, serializedName);
     }
 
     internal bool IsValid

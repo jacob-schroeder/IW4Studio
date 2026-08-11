@@ -1,14 +1,17 @@
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.RawFile;
 
 public sealed class RawFileAsset : BaseAsset
 {
     public const int SerializedSize = 0x10;
+    public override XAssetType SerializedAssetType => XAssetType.RawFile;
 
     // 0x00: XString asset name.
     public XString NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: compressed byte count. When nonzero, the body consumes this many bytes.
     public int CompressedLen { get; init; }

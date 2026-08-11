@@ -68,7 +68,7 @@ public sealed class ClipMapLoader
         try
         {
             XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            ClipMapAsset asset = ReadClipMap(cursor, rootAddress, context);
+            ClipMapAsset asset = ReadClipMap(cursor, rootAddress, serializedType, context);
             ClipMapAsset canonical = context.DB_AddXAsset(
                 serializedType,
                 asset,
@@ -85,6 +85,7 @@ public sealed class ClipMapLoader
     private ClipMapAsset ReadClipMap(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
+        XAssetType serializedType,
         DbLoadExecutionContext context)
     {
         int sourceOffset = cursor.Offset;
@@ -240,6 +241,7 @@ public sealed class ClipMapLoader
         {
             Offset = sourceOffset,
             RuntimeAddress = rootAddress,
+            SerializedType = serializedType,
             NamePointer = namePointer,
             Name = name,
             IsInUse = isInUse,

@@ -10,11 +10,12 @@ public sealed class GfxWorldAsset : BaseAsset
 {
     public const int SerializedSize = 0x288;
 
-    public XAssetType Type => XAssetType.GfxMap;
+    public override XAssetType SerializedAssetType => XAssetType.GfxMap;
 
     // 0x00, 0x04: PS3 root stores each cell into varXString and calls Load_XString.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
     public XPointer<string> BaseNamePointer { get; init; }
     public string? BaseName { get; init; }
 

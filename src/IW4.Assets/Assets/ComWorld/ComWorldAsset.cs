@@ -8,11 +8,12 @@ public sealed class ComWorldAsset : BaseAsset
 {
     public const int SerializedSize = 0x10;
 
-    public XAssetType Type => XAssetType.ComMap;
+    public override XAssetType SerializedAssetType => XAssetType.ComMap;
 
     // 0x00: XString name.
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
 
     // 0x04: ComWorld.isInUse.
     public int IsInUse { get; init; }

@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Text;
 using IW4.Assets.Assets.RawFile;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
@@ -10,41 +9,35 @@ namespace IW4.Linker.Model;
 /// Frozen RawFile schema recipe. It contains only semantic wire data and owns
 /// the native traversal order used for both authored and detached providers.
 /// </summary>
-internal sealed class RawFileLinkRecipe
+internal sealed class RawFileLinkRecipe : AssetLinkRecipe
 {
-    private readonly byte[] _nameBytes;
     private readonly byte[]? _payload;
 
     private RawFileLinkRecipe(
+        AssetKey key,
         string originalSerializedName,
-        byte[] nameBytes,
         int compressedLength,
         int uncompressedLength,
         byte[]? payload)
+        : base(key, originalSerializedName)
     {
-        OriginalSerializedName = originalSerializedName;
-        _nameBytes = nameBytes;
         CompressedLength = compressedLength;
         UncompressedLength = uncompressedLength;
         _payload = payload;
-        IsReferencePlaceholder = originalSerializedName[0] == ',';
     }
 
-    public string OriginalSerializedName { get; }
-    public int CompressedLength { get; }
-    public int UncompressedLength { get; }
-    public bool IsReferencePlaceholder { get; }
+    private int CompressedLength { get; }
+    private int UncompressedLength { get; }
 
     public static RawFileLinkRecipe Freeze(
         AssetKey key,
+        string originalSerializedName,
         RawFileAsset definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        string name = definition.Name ?? throw new InvalidDataException(
-            "RawFile provider definition has no name.");
         return Create(
             key,
-            name,
+            originalSerializedName,
             definition.CompressedLen,
             definition.Len,
             definition.Buffer);
@@ -70,9 +63,12 @@ internal sealed class RawFileLinkRecipe
             payload: null);
     }
 
-    public void Emit(ZoneEmissionWriter output)
+    public override void Emit(
+        ZoneEmissionWriter output,
+        Action<AssetDependency, XBlockAddress, int> emitDependency)
     {
         ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(emitDependency);
         output.PushTempScope();
         try
         {
@@ -85,11 +81,7 @@ internal sealed class RawFileLinkRecipe
             output.WriteInt32(UncompressedLength);
             output.WriteInt32(_payload is null ? 0 : -1);
 
-            output.Allocate(
-                XFileBlockType.LARGE,
-                _nameBytes.Length,
-                alignment: 1);
-            output.WriteBytes(_nameBytes);
+            EmitName(output);
 
             if (_payload is not null)
             {
@@ -113,14 +105,13 @@ internal sealed class RawFileLinkRecipe
         int uncompressedLength,
         byte[]? payload)
     {
-        ValidateName(key, originalSerializedName);
         if (compressedLength < 0)
             throw new InvalidDataException("RawFile compressed length cannot be negative.");
         if (uncompressedLength < 0)
             throw new InvalidDataException("RawFile uncompressed length cannot be negative.");
 
         byte[]? copiedPayload = payload?.ToArray();
-        bool referencePlaceholder = originalSerializedName[0] == ',';
+        bool referencePlaceholder = originalSerializedName.StartsWith(',');
         if (referencePlaceholder &&
             (compressedLength != 0 || uncompressedLength != 0 || copiedPayload is not null))
         {
@@ -156,43 +147,12 @@ internal sealed class RawFileLinkRecipe
             }
         }
 
-        byte[] nameBytes = EncodeCString(originalSerializedName);
         return new RawFileLinkRecipe(
+            key,
             originalSerializedName,
-            nameBytes,
             compressedLength,
             uncompressedLength,
             copiedPayload);
-    }
-
-    private static void ValidateName(
-        AssetKey key,
-        string originalSerializedName)
-    {
-        if (string.IsNullOrEmpty(originalSerializedName))
-            throw new InvalidDataException("RawFile name cannot be null or empty.");
-        if (originalSerializedName.Contains('\0'))
-            throw new InvalidDataException("RawFile name cannot contain NUL.");
-        if (originalSerializedName.Any(character => character > byte.MaxValue))
-            throw new InvalidDataException("RawFile name must be representable as Latin-1.");
-
-        AssetKey wireKey = AssetKey.FromWireName(
-            key.Family,
-            originalSerializedName);
-        if (wireKey != key)
-        {
-            throw new InvalidDataException(
-                $"RawFile name '{originalSerializedName}' does not normalize to {key}.");
-        }
-    }
-
-    private static byte[] EncodeCString(string value)
-    {
-        byte[] result = new byte[checked(value.Length + 1)];
-        int written = Encoding.Latin1.GetBytes(value, result);
-        if (written != value.Length)
-            throw new InvalidDataException("RawFile name could not be encoded as Latin-1.");
-        return result;
     }
 
     private static void ValidateCompressedPayload(

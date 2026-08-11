@@ -2,6 +2,7 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.XModel;
 
@@ -10,9 +11,11 @@ public sealed class XModelAsset : BaseAsset
     private byte _numSurfs;
 
     public const int SerializedSize = 0x120;
+    public override XAssetType SerializedAssetType => XAssetType.XModel;
 
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
     public byte NumBones { get; init; }
     public byte NumRootBones { get; init; }
     public byte NumSurfs

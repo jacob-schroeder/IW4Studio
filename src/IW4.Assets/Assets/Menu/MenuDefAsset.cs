@@ -1,5 +1,6 @@
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.Menu;
 
@@ -7,8 +8,11 @@ public sealed class MenuDefAsset : BaseAsset
 {
     public const int SerializedSize = 0x2f0;
 
+    public override XAssetType SerializedAssetType => XAssetType.Menu;
+
     // 0x00: WindowDef begins with the asset-name XString.
     public WindowDef Window { get; init; } = new();
+    public override string? SerializedAssetName => Window.Name;
     public XString FontPointer { get; init; }
     public string? Font { get; set; }
     public int Fullscreen { get; init; }
