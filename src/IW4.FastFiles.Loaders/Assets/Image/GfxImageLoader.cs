@@ -75,7 +75,10 @@ public sealed class GfxImageLoader
             byte cached = rootCursor.ReadByte();
             XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
             IReadOnlyList<GfxImageStreamData> streamData = ReadStreamData(rootCursor);
-            int? streamImageIndex = context.AllocateGfxImageStreamIndex(HasStreamingData(streamData));
+            int[] streamPartByteCounts =
+                GfxImageStreamData.ValidateProfileAndComputePartByteCounts(streamData);
+            int? streamImageIndex = context.AllocateGfxImageStreamIndex(
+                streamPartByteCounts.Any(byteCount => byteCount != 0));
             IReadOnlyList<DbHeaderImageStreamEntry> streamEntries = context.GetGfxImageStreamEntries(streamImageIndex);
             XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(rootCursor, XPointerResolutionMode.Direct);
 
@@ -164,11 +167,6 @@ public sealed class GfxImageLoader
         }
 
         return entries;
-    }
-
-    private static bool HasStreamingData(IReadOnlyList<GfxImageStreamData> entries)
-    {
-        return entries.Any(entry => entry.HasStreamingData);
     }
 
     private static byte[] ReadPayload(

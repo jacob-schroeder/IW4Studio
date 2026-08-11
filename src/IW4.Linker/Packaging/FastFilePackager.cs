@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Numerics;
 using System.Text;
+using IW4.Assets.Assets.Image;
 using IW4.FastFiles.Database;
 using IW4.FastFiles.Database.Streaming;
 
@@ -49,11 +49,40 @@ public sealed class FastFilePackagingResult
 /// </summary>
 public sealed class FastFilePackager
 {
-    private const int DecodedPageSize = 0x10000;
     private const int ImageStreamEntrySize = 0x14;
-    private const ushort TerminatorWord = 1;
-    private const uint SupportedLanguageMask = (1u << 15) - 1;
-    private const string RequiredMagic = "IWffu100";
+    private const int MaximumImageStreamEntryCount = 0x3800;
+
+    /// <summary>
+    /// Packages a source-independent PS3 zone with a newly rebuilt DB header.
+    /// Empty image tables support every stock language-mask combination.
+    /// Streamed zones preserve one complete, equal-cardinality table of
+    /// read-only external imagefile references per language.
+    /// </summary>
+    public FastFilePackagingResult PackageGreenfield(
+        ReadOnlyMemory<byte> decodedZone,
+        uint languageMask,
+        uint selectedLanguageMask,
+        IEnumerable<DbHeaderImageStreamLanguageTable>? imageStreamLanguageTables = null,
+        FastFilePackagingPolicy? policy = null)
+    {
+        try
+        {
+            DbHeader envelope = CreateGreenfieldEnvelope(
+                languageMask,
+                selectedLanguageMask,
+                imageStreamLanguageTables);
+            return Package(decodedZone, envelope, policy);
+        }
+        catch (Exception exception) when (exception is
+            OverflowException or
+            ArgumentException or
+            InvalidDataException)
+        {
+            return FastFilePackagingResult.Failure([
+                new FastFilePackagingError("package.greenfieldHeader", exception.Message)
+            ]);
+        }
+    }
 
     public FastFilePackagingResult Package(
         ReadOnlyMemory<byte> decodedZone,
@@ -69,10 +98,13 @@ public sealed class FastFilePackager
 
         try
         {
-            byte[] packedStream = EncodePackedStream(decodedZone.Span, policy.EmitDoubleTerminator);
+            Ps3PackedStream packedStream = Ps3PackedStreamEncoder.Encode(
+                decodedZone.Span,
+                policy.EmitDoubleTerminator ? 2 : 1);
             int headerLength = ComputeHeaderLength(envelope);
             int trailingPhysicalBytes = policy.EmitDoubleTerminator ? sizeof(ushort) : 0;
-            uint fileSize = checked((uint)(headerLength + packedStream.Length - trailingPhysicalBytes));
+            uint fileSize = checked((uint)(
+                headerLength + packedStream.Bytes.Length - trailingPhysicalBytes));
             uint maxFileSize = policy.MaxFileSizePolicy switch
             {
                 FastFileMaxFileSizePolicy.AtLeastFileSize => Math.Max(envelope.MaxFileSize, fileSize),
@@ -85,9 +117,9 @@ public sealed class FastFilePackager
                 policy.FileCreationTimeRaw ?? envelope.FileCreationTimeRaw,
                 fileSize,
                 maxFileSize);
-            byte[] output = new byte[checked(header.Length + packedStream.Length)];
+            byte[] output = new byte[checked(header.Length + packedStream.Bytes.Length)];
             header.CopyTo(output, 0);
-            packedStream.CopyTo(output, header.Length);
+            packedStream.Bytes.CopyTo(output, header.Length);
             return FastFilePackagingResult.Success(output);
         }
         catch (Exception exception) when (exception is OverflowException or ArgumentException or InvalidDataException)
@@ -101,16 +133,24 @@ public sealed class FastFilePackager
     {
         void Error(string code, string message) => errors.Add(new FastFilePackagingError(code, message));
 
-        if (!string.Equals(envelope.Magic, RequiredMagic, StringComparison.Ordinal) ||
+        if (!string.Equals(envelope.Magic, Ps3PackageFormat.UnsignedMagic, StringComparison.Ordinal) ||
             Encoding.Latin1.GetByteCount(envelope.Magic) != 8)
         {
-            Error("header.magic", $"PS3 packaging requires the eight-byte magic '{RequiredMagic}'.");
+            Error(
+                "header.magic",
+                $"PS3 packaging requires the eight-byte magic '{Ps3PackageFormat.UnsignedMagic}'.");
         }
-        if (envelope.LanguageMask == 0 || (envelope.LanguageMask & ~SupportedLanguageMask) != 0)
+        if (envelope.Version != XFileVersion.ModernWarfare2)
+        {
+            Error(
+                "header.version",
+                $"PS3 IW4 packaging requires version {(uint)XFileVersion.ModernWarfare2}.");
+        }
+        if (!DbLanguageMask.IsSupported(envelope.LanguageMask))
             Error("header.languageMask", "Language mask must contain supported PS3 language bits.");
         if (BitOperations.PopCount(envelope.LanguageMask) != envelope.LanguageTables.Length ||
             envelope.LanguageCount != envelope.LanguageTables.Length ||
-            envelope.SelectedLanguageMask == 0 ||
+            !DbLanguageMask.IsSingleLanguage(envelope.SelectedLanguageMask) ||
             (envelope.SelectedLanguageMask & envelope.LanguageMask) == 0)
         {
             Error("header.languageTables", "Language mask, selected language, count, and serialized tables disagree.");
@@ -120,73 +160,176 @@ public sealed class FastFilePackager
         {
             DbHeaderImageStreamLanguageTable table = envelope.LanguageTables[index];
             if (table.SerializedIndex != index ||
-                table.LanguageMask == 0 ||
-                (table.LanguageMask & (table.LanguageMask - 1)) != 0 ||
+                !DbLanguageMask.IsSingleLanguage(table.LanguageMask) ||
                 (table.LanguageMask & envelope.LanguageMask) == 0 ||
                 table.ImageStreamEntries.Length != envelope.EntryCount)
             {
                 Error("header.languageTables", $"Language table {index} is not representable in PS3 header order.");
+            }
+
+            for (int entryIndex = 0;
+                 entryIndex < table.ImageStreamEntries.Length;
+                 entryIndex++)
+            {
+                string? entryError = GetExternalStreamEntryError(
+                    table.ImageStreamEntries[entryIndex]);
+                if (entryError is not null)
+                {
+                    Error(
+                        "header.imageStreamEntry",
+                        $"Language table {index} entry {entryIndex}: {entryError}");
+                }
             }
         }
 
         return errors.Count == 0;
     }
 
-    private static byte[] EncodePackedStream(ReadOnlySpan<byte> decodedZone, bool emitDoubleTerminator)
+    private static DbHeader CreateGreenfieldEnvelope(
+        uint languageMask,
+        uint selectedLanguageMask,
+        IEnumerable<DbHeaderImageStreamLanguageTable>? languageTablesSource)
     {
-        using var output = new MemoryStream();
-        for (int offset = 0; offset < decodedZone.Length; offset += DecodedPageSize)
+        if (!DbLanguageMask.IsSupported(languageMask))
         {
-            ReadOnlySpan<byte> page = decodedZone.Slice(offset, Math.Min(DecodedPageSize, decodedZone.Length - offset));
-            WriteDecodedPage(output, page);
+            throw new ArgumentOutOfRangeException(
+                nameof(languageMask),
+                "A greenfield PS3 language mask must contain supported language bits.");
+        }
+        if (!DbLanguageMask.IsSingleLanguage(selectedLanguageMask) ||
+            (selectedLanguageMask & languageMask) == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(selectedLanguageMask),
+                "The selected language must be one bit present in the language mask.");
         }
 
-        WriteUInt16(output, TerminatorWord);
-        if (emitDoubleTerminator)
-            WriteUInt16(output, TerminatorWord);
-        return output.ToArray();
+        uint[] languageBits = Enumerable.Range(0, DbLanguageMask.BitCount)
+            .Select(bit => 1u << bit)
+            .Where(bit => (languageMask & bit) != 0)
+            .ToArray();
+        DbHeaderImageStreamLanguageTable[] supplied = languageTablesSource?
+            .Select(table => table ?? throw new ArgumentException(
+                "Image stream language tables cannot contain null.",
+                nameof(languageTablesSource)))
+            .ToArray() ?? [];
+        Dictionary<uint, DbHeaderImageStreamLanguageTable> suppliedByMask =
+            supplied.ToDictionary(table => table.LanguageMask);
+        if (supplied.Length != 0 &&
+            (suppliedByMask.Count != languageBits.Length ||
+             languageBits.Any(bit => !suppliedByMask.ContainsKey(bit)) ||
+             suppliedByMask.Keys.Any(bit => (languageMask & bit) == 0)))
+        {
+            throw new InvalidDataException(
+                "Imagefile references must provide exactly one table for every zone language.");
+        }
+
+        var tables = new DbHeaderImageStreamLanguageTable[languageBits.Length];
+        int? entryCount = null;
+        for (int index = 0; index < tables.Length; index++)
+        {
+            uint bit = languageBits[index];
+            DbHeaderImageStreamEntry[] entries = supplied.Length == 0
+                ? []
+                : suppliedByMask[bit].ImageStreamEntries
+                    .Select(FreezeExternalStreamEntry)
+                    .ToArray();
+            if (entries.Length > MaximumImageStreamEntryCount ||
+                entries.Length % GfxImageStreamData.EntryCount != 0)
+            {
+                throw new InvalidDataException(
+                    $"An imagefile reference table requires {GfxImageStreamData.EntryCount} " +
+                    "entries per streamed image and at most " +
+                    $"0x{MaximumImageStreamEntryCount:X} entries.");
+            }
+            if (entryCount is { } expected && entries.Length != expected)
+            {
+                throw new InvalidDataException(
+                    "Every imagefile reference language table must have equal cardinality.");
+            }
+            entryCount ??= entries.Length;
+            tables[index] = new DbHeaderImageStreamLanguageTable(
+                index,
+                bit,
+                entries);
+        }
+
+        int selectedLanguageIndex = Array.IndexOf(languageBits, selectedLanguageMask);
+        if (selectedLanguageIndex < 0)
+            throw new InvalidDataException("Selected language is absent from the rebuilt table order.");
+
+        return new DbHeader(
+            magic: Ps3PackageFormat.UnsignedMagic,
+            version: XFileVersion.ModernWarfare2,
+            allowOnlineUpdate: false,
+            fileCreationTimeRaw: 0,
+            languageMask: languageMask,
+            selectedLanguageMask: selectedLanguageMask,
+            languageCount: checked((uint)tables.Length),
+            selectedLanguageIndex: checked((uint)selectedLanguageIndex),
+            entryCount: checked((uint)(entryCount ?? 0)),
+            languageTables: tables,
+            fileSize: 0,
+            maxFileSize: 0,
+            serializedHeaderOffset: 0,
+            serializedHeaderBytes: [],
+            packedStreamOffset: 0,
+            sourceFileLength: 0,
+            metadataDispositions: DbHeaderMetadataDispositions.RebuildDefault);
     }
 
-    private static void WriteDecodedPage(Stream output, ReadOnlySpan<byte> page)
+    private static DbHeaderImageStreamEntry FreezeExternalStreamEntry(
+        DbHeaderImageStreamEntry entry)
     {
-        byte[] compressed = EncodeHeaderlessZlib(page);
-        if (compressed.Length is > 1 and <= ushort.MaxValue)
-        {
-            WriteUInt16(output, checked((ushort)compressed.Length));
-            output.Write(compressed);
-            return;
-        }
-        if (page.Length == DecodedPageSize)
-        {
-            WriteUInt16(output, 0);
-            output.Write(page);
-            return;
-        }
-        throw new InvalidDataException("A partial decoded page cannot be represented by one PS3 packed frame.");
+        string? error = GetExternalStreamEntryError(entry);
+        if (error is not null)
+            throw new InvalidDataException(error);
+
+        return new DbHeaderImageStreamEntry(
+            entry.FileIndex,
+            entry.SourceStart,
+            entry.SourceEnd,
+            entry.BlockOffset,
+            entry.StreamOffset,
+            SerializedOffset: -1);
     }
 
-    private static byte[] EncodeHeaderlessZlib(ReadOnlySpan<byte> input)
+    private static string? GetExternalStreamEntryError(
+        DbHeaderImageStreamEntry entry)
     {
-        using var buffer = new MemoryStream();
-        using (var compressor = new ZLibStream(buffer, CompressionLevel.SmallestSize, leaveOpen: true))
-            compressor.Write(input);
-        byte[] zlib = buffer.ToArray();
-        if (zlib.Length < 6)
-            throw new InvalidDataException("The zlib encoder produced an invalid PS3 packed frame.");
+        if (entry.IsEmpty)
+        {
+            if (entry.FileIndex != 0 ||
+                entry.SourceStart != 0 ||
+                entry.SourceEnd != 0 ||
+                entry.BlockOffset != 0 ||
+                entry.StreamOffset != 0)
+            {
+                return "An empty image-stream entry must contain five zero wire fields.";
+            }
+        }
+        else
+        {
+            if (entry.FileIndex == 0)
+            {
+                return "A nonempty image-stream entry must reference an external imagefile with a nonzero file index.";
+            }
+            if (entry.SourceEnd <= entry.SourceStart)
+            {
+                return "A nonempty image-stream entry requires a positive physical source range.";
+            }
+        }
 
-        ushort header = BinaryPrimitives.ReadUInt16BigEndian(zlib.AsSpan(0, sizeof(ushort)));
-        if ((zlib[0] & 0x0f) != 8 || (zlib[0] >> 4) > 7 || (zlib[1] & 0x20) != 0 || header % 31 != 0)
-            throw new InvalidDataException("The zlib encoder produced unsupported CMF/FLG for a PS3 packed frame.");
-        return zlib[sizeof(ushort)..];
+        return (entry.StreamOffset & 0xffff) != entry.BlockOffset
+            ? "An image-stream entry block offset must equal the low 16 bits of its stream offset."
+            : null;
     }
 
     private static byte[] EncodeHeader(DbHeader envelope, ulong creationTime, uint fileSize, uint maxFileSize)
     {
         byte[] output = new byte[ComputeHeaderLength(envelope)];
-        int offset = 0;
-        Encoding.Latin1.GetBytes(envelope.Magic, output.AsSpan(offset, 8));
-        offset += 8;
-        WriteUInt32(output, ref offset, (uint)envelope.Version);
+        Ps3PackageFormat.WriteUnsignedPrefix(output);
+        int offset = Ps3PackageFormat.UnsignedPrefixLength;
         output[offset++] = envelope.AllowOnlineUpdate ? (byte)1 : (byte)0;
         WriteUInt64(output, ref offset, creationTime);
         WriteUInt32(output, ref offset, envelope.LanguageMask);
@@ -211,13 +354,6 @@ public sealed class FastFilePackager
         8 + sizeof(uint) + sizeof(byte) + sizeof(ulong) + sizeof(uint) + sizeof(uint) +
         checked(envelope.LanguageTables.Length * checked((int)envelope.EntryCount) * ImageStreamEntrySize) +
         sizeof(uint) + sizeof(uint));
-
-    private static void WriteUInt16(Stream output, ushort value)
-    {
-        Span<byte> bytes = stackalloc byte[sizeof(ushort)];
-        BinaryPrimitives.WriteUInt16BigEndian(bytes, value);
-        output.Write(bytes);
-    }
 
     private static void WriteUInt32(byte[] output, ref int offset, uint value)
     {

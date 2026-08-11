@@ -1,5 +1,4 @@
 using Avalonia;
-using IW4.Studio.Desktop.Rendering.WorldViewport;
 
 namespace IW4.Studio.Desktop;
 
@@ -15,9 +14,6 @@ internal static class Program
         return AppBuilder
             .Configure<App>()
             .UsePlatformDetect()
-            .With(
-                WorldViewportPlatformGraphicsPolicy
-                    .CreateNativePlatformOptions())
             .WithInterFont();
     }
 }

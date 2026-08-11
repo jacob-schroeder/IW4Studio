@@ -280,7 +280,7 @@ public sealed class DbStreamState : IXZoneRuntimeMemory
             sourceOffset,
             serializedBytes.Length,
             destination,
-            ConsumePendingMaterializationAlignment(CurrentBlock),
+            ConsumePendingMaterializationAlignment(CurrentBlock, minimum: 1),
             MaterializationKind.CString);
         captureHandle = occurrence is { } captured
             ? new CStringMaterializationHandle(captured)

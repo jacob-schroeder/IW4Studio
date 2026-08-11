@@ -13,8 +13,10 @@ public sealed class WeaponProjectileFields
     public XPointer<FxEffectDefAsset> ExplosionEffectPointer { get; init; }       // 0x428
     public XPointer<FxEffectDefAsset> DudEffectPointer { get; init; }             // 0x42C
     public XString ExplosionSoundPointer { get; init; }                           // 0x430
+    public XString ExplosionSoundValuePointer { get; init; }
     public string? ExplosionSound { get; init; }
     public XString DudSoundPointer { get; init; }                                 // 0x434
+    public XString DudSoundValuePointer { get; init; }
     public string? DudSound { get; init; }
     public WeaponStickiness Stickiness { get; init; }                             // 0x438
     public int LowAmmoWarningThreshold { get; init; }                             // 0x43C
@@ -34,6 +36,7 @@ public sealed class WeaponProjectileFields
     public int IgnitionDelay { get; init; }                                       // 0x468
     public XPointer<FxEffectDefAsset> IgnitionEffectPointer { get; init; }        // 0x46C
     public XString IgnitionSoundPointer { get; init; }                            // 0x470
+    public XString IgnitionSoundValuePointer { get; init; }
     public string? IgnitionSound { get; init; }
     public float AdsAimPitch { get; init; }                                       // 0x474
     public float AdsCrosshairInFraction { get; init; }                            // 0x478

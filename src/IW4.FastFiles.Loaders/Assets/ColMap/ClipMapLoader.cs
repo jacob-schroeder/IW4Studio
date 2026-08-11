@@ -245,6 +245,7 @@ public sealed class ClipMapLoader
             NamePointer = namePointer,
             Name = name,
             IsInUse = isInUse,
+            SerializedIsInUse = isInUse,
             PlaneCount = planeCount,
             PlanesPointer = planesPointer,
             Planes = planes,

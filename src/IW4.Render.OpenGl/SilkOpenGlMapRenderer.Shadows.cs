@@ -1078,9 +1078,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             MapRenderSunShadowStaticCasterInstance candidate =
                 runtime.Batch.Instances[sourceIndex];
-            if (!IsLiveStaticModelEditorVisible(
-                    candidate.ObjectIndex) ||
-                !staticCasterIndex.IsSelected(
+            if (!staticCasterIndex.IsSelected(
                     candidate.ObjectIndex,
                     runtime.Batch.LodIndex))
             {

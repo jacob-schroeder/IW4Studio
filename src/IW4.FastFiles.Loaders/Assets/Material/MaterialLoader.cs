@@ -287,10 +287,17 @@ public sealed class MaterialLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative MaterialTextureDef count {count}.");
 
+        if (pointer.Type == PointerType.Null)
+            return [];
+
         if (!context.PointerReader.HasInlinePayload(pointer))
         {
             context.PointerReader.ValidateOffsetPointerRange<MaterialTextureDef[]>(pointer, checked(count * TextureDefSize), "MaterialTextureDef[]");
-            return [];
+            return ResolveMaterializedArray<MaterialTextureDef>(
+                pointer,
+                count,
+                context,
+                "MaterialTextureDef[]");
         }
 
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -305,7 +312,11 @@ public sealed class MaterialLoader
             byte nameEnd = textureCursor.ReadByte();
             byte samplerState = textureCursor.ReadByte();
             byte semantic = textureCursor.ReadByte();
-            XPointerReference dataPointer = context.PointerReader.ReadCell(textureCursor, XPointerOffsetMode.AliasCell);
+            XPointerReference dataPointer = context.PointerReader.ReadCell(
+                textureCursor,
+                semantic == 0x0b
+                    ? XPointerOffsetMode.Direct
+                    : XPointerOffsetMode.AliasCell);
             textures[i] = new MaterialTextureDef
             {
                 NameHash = nameHash,
@@ -335,7 +346,10 @@ public sealed class MaterialLoader
             }
         }
 
-        return textures;
+        return context.RegisterMaterialized(
+            textureAddress,
+            textures,
+            "MaterialTextureDef[]");
     }
 
     private static MaterialTextureDef CopyTexture(
@@ -361,10 +375,18 @@ public sealed class MaterialLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        if (!context.PointerReader.HasInlinePayload(pointer))
-        {
-            context.PointerReader.ValidateOffsetPointerRange(pointer, WaterSize, "water_t");
+        if (pointer.Type == PointerType.Null)
             return null;
+
+        if (pointer.Type == PointerType.Offset)
+        {
+            context.PointerReader.ValidateOffsetPointerRange<MaterialWater>(
+                pointer,
+                WaterSize,
+                "water_t");
+            return context.ResolveMaterializedDirect<MaterialWater>(
+                pointer,
+                "water_t");
         }
 
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -399,7 +421,7 @@ public sealed class MaterialLoader
             imagePointer,
             context);
 
-        return new MaterialWater
+        var water = new MaterialWater
         {
             Writable = writable,
             H0XPointer = h0xPointer,
@@ -420,6 +442,11 @@ public sealed class MaterialLoader
             WTerm = wTerm,
             Image = image
         };
+
+        return context.RegisterMaterialized(
+            rootAddress,
+            water,
+            "water_t");
     }
 
     private static IReadOnlyList<float> ReadWaterSpectrum(
@@ -454,10 +481,17 @@ public sealed class MaterialLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative GfxStateBits count {count}.");
 
+        if (pointer.Type == PointerType.Null)
+            return [];
+
         if (!context.PointerReader.HasInlinePayload(pointer))
         {
             context.PointerReader.ValidateOffsetPointerRange<GfxStateBits[]>(pointer, checked(count * GfxStateBitsSize), "GfxStateBits[]");
-            return [];
+            return ResolveMaterializedArray<GfxStateBits>(
+                pointer,
+                count,
+                context,
+                "GfxStateBits[]");
         }
 
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
@@ -489,7 +523,10 @@ public sealed class MaterialLoader
             };
         }
 
-        return stateBits;
+        return context.RegisterMaterialized(
+            stateAddress,
+            stateBits,
+            "GfxStateBits[]");
     }
 
     private static IReadOnlyList<MaterialConstantDef> ReadMaterialConstantArray(
@@ -501,11 +538,18 @@ public sealed class MaterialLoader
         if (count < 0)
             throw new InvalidDataException($"Invalid negative MaterialConstantDef count {count}.");
 
+        if (pointer.Type == PointerType.Null)
+            return [];
+
         int byteCount = checked(count * ConstantDefSize);
         if (!context.PointerReader.HasInlinePayload(pointer))
         {
             context.PointerReader.ValidateOffsetPointerRange(pointer, byteCount, "MaterialConstantDef[]");
-            return [];
+            return ResolveMaterializedArray<MaterialConstantDef>(
+                pointer,
+                count,
+                context,
+                "MaterialConstantDef[]");
         }
 
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 16);
@@ -529,7 +573,27 @@ public sealed class MaterialLoader
             };
         }
 
-        return constants;
+        return context.RegisterMaterialized(
+            address,
+            constants,
+            "MaterialConstantDef[]");
+    }
+
+    private static T[] ResolveMaterializedArray<T>(
+        XPointerReference pointer,
+        int expectedCount,
+        DbLoadExecutionContext context,
+        string targetName)
+        where T : class
+    {
+        T[] values = context.ResolveMaterializedDirect<T[]>(pointer, targetName);
+        if (values.Length != expectedCount)
+        {
+            throw new InvalidDataException(
+                $"Packed {targetName} target contains {values.Length} element(s), but the Material declares {expectedCount}.");
+        }
+
+        return values;
     }
 
     private static IReadOnlyList<uint> ReadGfxStateBitsLoadBits(

@@ -1,4 +1,5 @@
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.XAnim;
@@ -29,7 +30,7 @@ public sealed class XAnimPartsAsset : BaseAsset
     public float Framerate { get; init; }
     public float Frequency { get; init; }
     public XPointer<ushort[]> NamesPointer { get; init; }
-    public IReadOnlyList<ushort> Names { get; init; } = [];
+    public IReadOnlyList<ScriptStringReference> Names { get; init; } = [];
     public XPointer<byte[]> DataBytePointer { get; init; }
     public XPointer<short[]> DataShortPointer { get; init; }
     public XPointer<int[]> DataIntPointer { get; init; }

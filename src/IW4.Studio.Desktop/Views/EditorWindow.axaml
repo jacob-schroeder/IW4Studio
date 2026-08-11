@@ -34,7 +34,6 @@
       <NativeMenuItem Header="Tools" IsVisible="True" IsEnabled="True">
         <NativeMenu>
           <NativeMenuItem Header="Live Preview" Click="LivePreviewMenuItem_Click" />
-          <NativeMenuItem Header="Map Editor" Click="MapEditorMenuItem_Click" />
         </NativeMenu>
       </NativeMenuItem>
       <NativeMenuItem Header="Options" IsVisible="True" IsEnabled="True">

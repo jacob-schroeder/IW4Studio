@@ -174,7 +174,7 @@ public sealed partial class ZoneObjectCapture
     /// Records runtime-only provider ids solely for load-time correlation. The
     /// frozen graph contains opaque local/import provider symbols instead.
     /// </summary>
-    public void RecordProviderRegistration(
+    public CaptureOccurrence RecordProviderRegistration(
         CaptureOccurrence sourcePointer,
         XBlockAddress expectedMaterialization,
         long incomingProviderIdentity,
@@ -217,6 +217,7 @@ public sealed partial class ZoneObjectCapture
             providerCell,
             materialized);
         _providers.Add(pointer.ProviderRegistration);
+        return pointer.ProviderRegistration.Occurrence;
     }
 
     public int? FindTapeOffset(XBlockAddress cellAddress, long tempEpoch)

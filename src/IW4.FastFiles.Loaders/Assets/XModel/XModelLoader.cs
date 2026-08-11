@@ -7,6 +7,7 @@ using IW4.Assets.Assets.XModel;
 using ModelBounds = IW4.Assets.Math.Bounds;
 using ModelVec3 = IW4.Assets.Math.Vec3;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
@@ -47,6 +48,21 @@ public sealed class XModelLoader
         DbLoadExecutionContext context)
     {
         return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
+    }
+
+    public XModelSurfsAssetModel LoadXModelSurfsFromAssetPointer(
+        FastFileCursor cursor,
+        XPointerReference pointer,
+        DbLoadExecutionContext context)
+    {
+        return Load_XModelSurfsPtr(
+                cursor,
+                pointer,
+                lodNumSurfs: null,
+                context,
+                requireAsset: true)
+            ?? throw new InvalidDataException(
+                "Top-level XModelSurfs pointer resolved to null.");
     }
 
     private XModelAssetModel? LoadFromPointerCore(
@@ -157,14 +173,23 @@ public sealed class XModelLoader
             try
             {
                 name = ReadXString(cursor, namePointer, context);
-                IReadOnlyList<ushort> boneNames = ReadUInt16Array(cursor, boneNamesPointer.Untyped, numBones, context, out _);
+                IReadOnlyList<ScriptStringReference> boneNames = ReadScriptStringArray(
+                    cursor,
+                    boneNamesPointer.Untyped,
+                    numBones,
+                    "XModel.BoneNames",
+                    context);
                 IReadOnlyList<byte> parentList = ReadByteArray(cursor, parentListPointer.Untyped, partCount, context, out _);
                 IReadOnlyList<short> quats = ReadInt16Array(cursor, quatsPointer.Untyped, partCount * 4, context, out _);
                 IReadOnlyList<float> trans = ReadFloatArray(cursor, transPointer.Untyped, partCount * 3, context, out _);
                 IReadOnlyList<byte> partClassification = ReadByteArray(cursor, partClassificationPointer.Untyped, numBones, context, out _);
                 IReadOnlyList<DObjAnimMat> baseMat = ReadDObjAnimMatArray(cursor, baseMatPointer.Untyped, numBones, context, out _);
                 IReadOnlyList<XPointer<MaterialAsset>> materialPointers =
-                    ReadAliasPointerArrayPayload<MaterialAsset>(cursor, materialHandlesPointer.Untyped, numSurfs, context);
+                    ReadAliasPointerArrayPayload<MaterialAsset>(
+                        cursor,
+                        materialHandlesPointer.Untyped,
+                        numSurfs,
+                        context);
                 IReadOnlyList<MaterialAsset?> materials =
                     ReadMaterialPointers(
                         cursor,
@@ -183,6 +208,7 @@ public sealed class XModelLoader
                     var partBits = new uint[6];
                     for (int partBitIndex = 0; partBitIndex < partBits.Length; partBitIndex++)
                         partBits[partBitIndex] = lodCursor.ReadUInt32();
+                    uint[] serializedPartBits = partBits.ToArray();
                     int surfsRuntimeCellOffset = lodCursor.Offset;
                     XPointer<byte[]> surfsRuntimePointer = XPointerReference.FromRaw(
                             lodCursor.ReadInt32(),
@@ -190,7 +216,12 @@ public sealed class XModelLoader
                             lodCursor.AddressAt(surfsRuntimeCellOffset))
                         .AsPointer<byte[]>();
                     XModelSurfsAssetModel? modelSurfs =
-                        Load_XModelSurfsPtr(cursor, modelSurfsPointer, lodNumSurfs, context);
+                        Load_XModelSurfsPtr(
+                            cursor,
+                            modelSurfsPointer,
+                            lodNumSurfs,
+                            context,
+                            requireAsset: false);
                     if (modelSurfs is not null)
                     {
                         (partBits, surfsRuntimePointer) = CopyCanonicalXModelSurfsToLodInfo(
@@ -202,9 +233,12 @@ public sealed class XModelLoader
                     {
                         Dist = dist,
                         NumSurfs = lodNumSurfs,
+                        SerializedNumSurfs = lodNumSurfs,
                         SurfIndex = surfIndex,
+                        SerializedSurfIndex = surfIndex,
                         ModelSurfsPointer = modelSurfsPointer.AsPointer<XModelSurfsAssetModel>(),
                         PartBits = partBits,
+                        SerializedPartBits = serializedPartBits,
                         SurfsRuntimePointer = surfsRuntimePointer,
                         ModelSurfs = modelSurfs
                     };
@@ -232,6 +266,7 @@ public sealed class XModelLoader
                     NumBones = numBones,
                     NumRootBones = numRootBones,
                     NumSurfs = numSurfs,
+                    SerializedNumSurfs = numSurfs,
                     Pad07 = pad07,
                     Scale = scale,
                     NoScalePartBits = noScalePartBits,
@@ -292,11 +327,16 @@ public sealed class XModelLoader
     private XModelSurfsAssetModel? Load_XModelSurfsPtr(
         FastFileCursor cursor,
         XPointerReference pointer,
-        ushort lodNumSurfs,
-        DbLoadExecutionContext context)
+        ushort? lodNumSurfs,
+        DbLoadExecutionContext context,
+        bool requireAsset)
     {
         if (pointer.Type == PointerType.Null)
+        {
+            if (requireAsset)
+                throw new InvalidDataException("Top-level XModelSurfs pointer is null.");
             return null;
+        }
 
         if (pointer.Type == PointerType.Offset)
         {
@@ -352,7 +392,7 @@ public sealed class XModelLoader
     private XModelSurfsAssetModel Load_XModelSurfs(
         FastFileCursor cursor,
         XBlockAddress rootAddress,
-        ushort lodNumSurfs,
+        ushort? lodNumSurfs,
         int sourceOffset,
         DbLoadExecutionContext context)
     {
@@ -373,14 +413,14 @@ public sealed class XModelLoader
         try
         {
             string? name = ReadXString(cursor, namePointer, context);
-            // Take the XSurface count from the owning XModelLodInfo. The count
-            // stored in XModelSurfs is used later by the canonical XModel
-            // fixup; it is not this body's load count and cannot support a
-            // context-free top-level route.
+            // Nested bodies use the owning XModelLodInfo count exactly as the
+            // native walk does. Canonical top-level XModelSurfs rows emitted by
+            // the linker are self-contained and use their validated header
+            // count.
             IReadOnlyList<XSurface> surfaces = ReadXSurfaceArray(
                 cursor,
                 surfsPointer.Untyped,
-                lodNumSurfs,
+                lodNumSurfs ?? numSurfs,
                 context);
 
             return new XModelSurfsAssetModel
@@ -752,6 +792,60 @@ public sealed class XModelLoader
         out XBlockAddress? runtimeAddress)
     {
         return ReadUInt16Values(ReadRawBytes(cursor, pointer, checked(count * sizeof(ushort)), alignment: 2, context, out runtimeAddress));
+    }
+
+    private static IReadOnlyList<ScriptStringReference> ReadScriptStringArray(
+        FastFileCursor cursor,
+        XPointerReference pointer,
+        int count,
+        string memberName,
+        DbLoadExecutionContext context)
+    {
+        if (count < 0)
+            throw new InvalidDataException($"Invalid negative ScriptString array count {count}.");
+
+        string serializedView = $"ScriptString[{count}]";
+        IReadOnlyList<byte> bytes = ReadRawBytes(
+            cursor,
+            pointer,
+            checked(count * sizeof(ushort)),
+            alignment: 2,
+            context,
+            out XBlockAddress? runtimeAddress);
+        if (bytes.Count == 0)
+            return [];
+
+        XBlockAddress arrayAddress = runtimeAddress
+            ?? throw new InvalidDataException($"{memberName} has no materialized destination address.");
+        if (pointer.Type == PointerType.Offset &&
+            context.TryGetMaterializedView<ScriptStringReference[]>(
+                arrayAddress,
+                serializedView,
+                out ScriptStringReference[]? existing) &&
+            existing is not null)
+        {
+            return existing;
+        }
+
+        var valueCursor = new FastFileCursor(bytes.ToArray(), arrayAddress);
+        var values = new ScriptStringReference[count];
+        for (int index = 0; index < values.Length; index++)
+        {
+            ushort rawLocalIndex = valueCursor.ReadUInt16();
+            XBlockAddress destinationCell = arrayAddress.Add(index * sizeof(ushort));
+            ScriptStringReference resolved = context.ZoneScriptStrings.Resolve(
+                rawLocalIndex,
+                destinationCell,
+                $"{memberName}[{index}]");
+            context.Blocks.WriteUInt16(destinationCell, resolved.RuntimeHandle.Value);
+            values[index] = resolved;
+        }
+
+        return context.RegisterMaterializedView(
+            arrayAddress,
+            serializedView,
+            values,
+            $"{memberName} ScriptString[]");
     }
 
     private static IReadOnlyList<float> ReadFloatArray(

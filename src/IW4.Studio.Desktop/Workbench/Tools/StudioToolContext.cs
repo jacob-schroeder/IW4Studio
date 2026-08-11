@@ -7,7 +7,6 @@ using IW4.Studio.Desktop.Workbench.Tools.FastFileDetails;
 using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
-using IW4.Studio.Desktop.Workbench.Tools.MapEditor;
 using IW4.Studio.Desktop.Workbench.Tools.MapRender;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
@@ -23,7 +22,6 @@ public sealed record StudioToolContext(
     GscFindingsToolViewModel GscFindings,
     GscUsagesToolViewModel GscUsages,
     MapRenderToolViewModel LivePreview,
-    MapEditorToolViewModel MapEditor,
     PropertiesToolViewModel Properties,
     FastFileDetailsToolViewModel FastFileDetails,
     ZoneDetailsToolViewModel ZoneDetails,

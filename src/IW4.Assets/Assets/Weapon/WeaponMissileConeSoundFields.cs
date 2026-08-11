@@ -6,8 +6,10 @@ namespace IW4.Assets.Assets.Weapon;
 public sealed class WeaponMissileConeSoundFields
 {
     public XString AliasPointer { get; init; }                                    // 0x618
+    public XString AliasValuePointer { get; init; }
     public string? Alias { get; init; }
     public XString AliasAtBasePointer { get; init; }                              // 0x61C
+    public XString AliasAtBaseValuePointer { get; init; }
     public string? AliasAtBase { get; init; }
 
     // 0x620..0x650: missile-cone sound geometry and falloff parameters.

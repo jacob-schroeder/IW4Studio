@@ -12,35 +12,46 @@ internal sealed class StringTableLinkRecipe : AssetLinkRecipe
 {
     private const int MaximumCellCount = 0x100000;
 
-    private readonly byte[]?[] _cellValues;
-    private readonly int[] _cellHashes;
-
     private StringTableLinkRecipe(
         AssetKey key,
         string originalSerializedName,
         int columnCount,
         int rowCount,
-        byte[]?[] cellValues,
+        LinkStorageSymbol?[] cellValues,
         int[] cellHashes,
-        bool requireReferencePlaceholder)
+        LinkAssetFreezeScope freeze)
         : base(
             key,
             originalSerializedName,
-            requireReferencePlaceholder)
+            freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
-        ColumnCount = columnCount;
-        RowCount = rowCount;
-        _cellValues = cellValues;
-        _cellHashes = cellHashes;
+        LinkStorageSymbol? cells = cellValues.Length == 0
+            ? null
+            : CreateCellStorage(cellValues, cellHashes);
+        var writer = new LinkTemplateWriter(StringTableAsset.SerializedSize);
+        writer.Skip(sizeof(int));
+        writer.WriteInt32(columnCount);
+        writer.WriteInt32(rowCount);
+        writer.Skip(sizeof(int));
+        Root = LinkStorageSymbol.SourceBytes(
+            XFileBlockType.TEMP,
+            writer.Complete(),
+            alignment: 4,
+            root => cells is null
+                ? [NameOperation(root, 0)]
+                : [
+                    NameOperation(root, 0),
+                    PresenceOperation(root, 0x0c, cells, "StringTable.Cells")
+                ]);
     }
 
-    private int ColumnCount { get; }
-    private int RowCount { get; }
+    internal override LinkStorageSymbol Root { get; }
 
-    public static StringTableLinkRecipe Freeze(
+    public static AssetLinkRecipe Freeze(
         AssetKey key,
         string originalSerializedName,
-        StringTableAsset definition)
+        StringTableAsset definition,
+        LinkAssetFreezeScope freeze)
     {
         ArgumentNullException.ThrowIfNull(definition);
         IReadOnlyList<StringTableCell> cells = definition.Cells
@@ -55,7 +66,11 @@ internal sealed class StringTableLinkRecipe : AssetLinkRecipe
                     "A comma-prefixed StringTable provider must have zero dimensions and cells.");
             }
 
-            return CreateReference(key, originalSerializedName);
+            return ExternalAssetLinkRecipe.Create(
+                key,
+                XAssetType.StringTable,
+                originalSerializedName,
+                freeze);
         }
         if (definition.ColumnCount < 0 || definition.RowCount < 0)
         {
@@ -79,15 +94,16 @@ internal sealed class StringTableLinkRecipe : AssetLinkRecipe
                 $"its {definition.RowCount}x{definition.ColumnCount} dimensions require {cellCount}.");
         }
 
-        var values = new byte[]?[cellCount];
+        var values = new LinkStorageSymbol?[cellCount];
         var hashes = new int[cellCount];
         for (int index = 0; index < cellCount; index++)
         {
             StringTableCell cell = cells[index]
                 ?? throw new InvalidDataException(
                     $"StringTable.Cells[{index}] cannot be null.");
-            values[index] = FreezeOptionalXString(
+            values[index] = freeze.FreezeOptionalXString(
                 cell.String,
+                cell.StringPointer.Untyped,
                 $"StringTable.Cells[{index}].String");
             hashes[index] = cell.Hash;
         }
@@ -99,65 +115,32 @@ internal sealed class StringTableLinkRecipe : AssetLinkRecipe
             definition.RowCount,
             values,
             hashes,
-            requireReferencePlaceholder: false);
+            freeze);
     }
 
-    public static StringTableLinkRecipe CreateExternal(
-        AssetKey key,
-        string originalSerializedName) =>
-        CreateReference(key, originalSerializedName);
-
-    public override void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency)
+    private static LinkStorageSymbol CreateCellStorage(
+        IReadOnlyList<LinkStorageSymbol?> values,
+        IReadOnlyList<int> hashes)
     {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(emitDependency);
-
-        output.PushTempScope();
-        try
+        var writer = new LinkTemplateWriter(
+            checked(values.Count * StringTableCell.SerializedSize));
+        for (int index = 0; index < values.Count; index++)
         {
-            output.Allocate(
-                XFileBlockType.TEMP,
-                StringTableAsset.SerializedSize,
-                alignment: 4);
-            output.WriteInt32(-1);
-            output.WriteInt32(ColumnCount);
-            output.WriteInt32(RowCount);
-            output.WriteInt32(_cellValues.Length == 0 ? 0 : -1);
-
-            EmitName(output);
-            if (_cellValues.Length == 0)
-                return;
-
-            output.Allocate(
-                XFileBlockType.LARGE,
-                checked(_cellValues.Length * StringTableCell.SerializedSize),
-                alignment: 4);
-            for (int index = 0; index < _cellValues.Length; index++)
-            {
-                output.WriteInt32(XStringSourcePointer(_cellValues[index]));
-                output.WriteInt32(_cellHashes[index]);
-            }
-
-            foreach (byte[]? value in _cellValues)
-                EmitFrozenXString(output, value);
+            writer.Skip(sizeof(int));
+            writer.WriteInt32(hashes[index]);
         }
-        finally
-        {
-            output.PopTempScope();
-        }
+
+        return LinkStorageSymbol.SourceBytes(
+            XFileBlockType.LARGE,
+            writer.Complete(),
+            alignment: 4,
+            cells => values
+                .Select((value, index) => (value, index))
+                .Where(item => item.value is not null)
+                .Select(item => XStringOperation(
+                    cells,
+                    checked(item.index * StringTableCell.SerializedSize),
+                    item.value!,
+                    $"StringTable.Cells[{item.index}].String")));
     }
-
-    private static StringTableLinkRecipe CreateReference(
-        AssetKey key,
-        string originalSerializedName) =>
-        new(
-            key,
-            originalSerializedName,
-            columnCount: 0,
-            rowCount: 0,
-            cellValues: [],
-            cellHashes: [],
-            requireReferencePlaceholder: true);
 }

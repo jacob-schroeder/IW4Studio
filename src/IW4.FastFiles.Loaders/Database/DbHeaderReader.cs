@@ -9,7 +9,6 @@ namespace IW4.FastFiles.Loaders.Database;
 public sealed class DbHeaderReader
 {
     private const string Ps3Magic = "IWffu100";
-    private const int LanguageBitCount = 15;
     private const int ImageStreamEntrySize = 0x14;
     private const uint MaxHeaderEntries = 0x3800;
 
@@ -73,15 +72,17 @@ public sealed class DbHeaderReader
 
     private static void ResolveSelectedLanguage(uint headerLanguageMask, DbLoadContext context)
     {
-        if (headerLanguageMask == 0)
-            throw new InvalidDataException("Fastfile language mask cannot be zero.");
-
-        if (context.SelectedLanguageMask != 0 &&
-            (context.SelectedLanguageMask &
-             (context.SelectedLanguageMask - 1)) != 0)
+        if (!DbLanguageMask.IsSupported(headerLanguageMask))
         {
             throw new InvalidDataException(
-                "A selected language must contain exactly one bit.");
+                "Fastfile language mask must contain only supported PS3 IW4 language bits.");
+        }
+
+        if (context.SelectedLanguageMask != 0 &&
+            !DbLanguageMask.IsSingleLanguage(context.SelectedLanguageMask))
+        {
+            throw new InvalidDataException(
+                "A selected language must contain exactly one supported PS3 IW4 language bit.");
         }
 
         if (context.SelectedLanguageMask == 0)
@@ -100,7 +101,7 @@ public sealed class DbHeaderReader
         uint languageCount = 0;
         uint selectedLanguageIndex = 0;
 
-        for (int bitIndex = 0; bitIndex < LanguageBitCount; bitIndex++)
+        for (int bitIndex = 0; bitIndex < DbLanguageMask.BitCount; bitIndex++)
         {
             uint bit = 1u << bitIndex;
             if ((headerLanguageMask & bit) == 0)
@@ -124,7 +125,7 @@ public sealed class DbHeaderReader
     {
         var languageTables = new List<DbHeaderImageStreamLanguageTable>();
 
-        for (int bitIndex = 0; bitIndex < LanguageBitCount; bitIndex++)
+        for (int bitIndex = 0; bitIndex < DbLanguageMask.BitCount; bitIndex++)
         {
             uint bit = 1u << bitIndex;
             if ((headerLanguageMask & bit) == 0)

@@ -1,23 +1,25 @@
-using System.Text;
+using IW4.Assets.Assets;
+using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 
 namespace IW4.Linker.Model;
 
 /// <summary>
-/// Frozen schema data and native traversal order for one provider definition.
-/// Recipes contain no loader, runtime, or source-address identity.
+/// Frozen provider module. Its storage graph is the single authority for
+/// native traversal, dependencies, script strings, layout, and relocations.
 /// </summary>
 internal abstract class AssetLinkRecipe
 {
-    private readonly byte[] _nameBytes;
-
     protected AssetLinkRecipe(
         AssetKey key,
         string originalSerializedName,
+        LinkStorageSymbol nameStorage,
         bool requireReferencePlaceholder = false)
     {
-        if (string.IsNullOrEmpty(originalSerializedName))
+        if (originalSerializedName is null ||
+            (originalSerializedName.Length == 0 &&
+             !AssetKey.AllowsEmptyWireName(key.Family)))
             throw new InvalidDataException("Asset name cannot be null or empty.");
         if (originalSerializedName.Contains('\0'))
             throw new InvalidDataException("Asset name cannot contain NUL.");
@@ -33,7 +35,7 @@ internal abstract class AssetLinkRecipe
                 $"Asset name '{originalSerializedName}' does not normalize to {key}.");
         }
 
-        IsReferencePlaceholder = originalSerializedName[0] == ',';
+        IsReferencePlaceholder = originalSerializedName.StartsWith(',');
         if (requireReferencePlaceholder && !IsReferencePlaceholder)
         {
             throw new InvalidDataException(
@@ -41,69 +43,241 @@ internal abstract class AssetLinkRecipe
         }
 
         OriginalSerializedName = originalSerializedName;
-        _nameBytes = EncodeCString(originalSerializedName);
+        NameStorage = nameStorage ?? throw new ArgumentNullException(nameof(nameStorage));
     }
 
     public string OriginalSerializedName { get; }
     public bool IsReferencePlaceholder { get; }
 
-    public virtual IReadOnlyList<AssetDependency> Dependencies =>
-        Array.Empty<AssetDependency>();
+    internal abstract LinkStorageSymbol Root { get; }
 
-    public abstract void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency);
+    protected LinkStorageSymbol NameStorage { get; }
 
-    protected void EmitName(ZoneEmissionWriter output)
+    public void Emit(LinkEmissionContext context)
     {
-        EmitFrozenXString(output, _nameBytes);
+        ArgumentNullException.ThrowIfNull(context);
+        context.EmitProviderRoot(Root);
     }
 
-    protected static byte[]? FreezeOptionalXString(
-        string? value,
-        string fieldPath)
+    internal void VisitReferences(
+        Action<AssetDependency> visitProviderDependency,
+        Action<AssetDependency> visitDependencyOnly,
+        Action<ScriptStringLinkOperation> visitScriptString,
+        ISet<LinkStorageSymbol>? visitedStorage = null)
     {
-        if (value is null)
-            return null;
-        if (value.Contains('\0'))
-            throw new InvalidDataException($"{fieldPath} cannot contain NUL.");
-        if (value.Any(character => character > byte.MaxValue))
+        ArgumentNullException.ThrowIfNull(visitProviderDependency);
+        ArgumentNullException.ThrowIfNull(visitDependencyOnly);
+        ArgumentNullException.ThrowIfNull(visitScriptString);
+        ISet<LinkStorageSymbol> visited = visitedStorage ??
+            new HashSet<LinkStorageSymbol>(ReferenceEqualityComparer.Instance);
+        VisitStorage(Root);
+
+        void VisitStorage(LinkStorageSymbol storage)
+        {
+            if (!visited.Add(storage))
+                return;
+
+            foreach (LinkOperation operation in storage.Definition.Operations)
+            {
+                switch (operation)
+                {
+                    case ProviderLinkOperation provider:
+                        visitProviderDependency(provider.Dependency);
+                        break;
+                    case DependencyOnlyLinkOperation dependencyOnly:
+                        visitDependencyOnly(dependencyOnly.Dependency);
+                        break;
+                    case AliasCellStorageLinkOperation alias:
+                        VisitStorage(alias.AliasCell.Target.Storage);
+                        break;
+                    case ScriptStringLinkOperation script:
+                        visitScriptString(script);
+                        break;
+                    case DirectStorageLinkOperation direct:
+                        VisitStorage(direct.Target.Storage);
+                        break;
+                    case PresenceStorageLinkOperation presence:
+                        VisitStorage(presence.Target.Storage);
+                        break;
+                    case XStringLinkOperation text:
+                        VisitStorage(text.Target.Storage);
+                        break;
+                    case MaterializeStorageLinkOperation materialize:
+                        VisitStorage(materialize.Storage);
+                        break;
+                }
+            }
+        }
+    }
+
+    protected XStringLinkOperation NameOperation(
+        LinkStorageSymbol owner,
+        int pointerOffset) =>
+        XStringOperation(owner, pointerOffset, NameStorage, "Asset.Name");
+
+    protected static XStringLinkOperation XStringOperation(
+        LinkStorageSymbol owner,
+        int pointerOffset,
+        LinkStorageSymbol value,
+        string fieldPath) =>
+        new(
+            new LinkStorageCell(owner, pointerOffset),
+            LinkStorageView.Whole(value),
+            CanMaterializeRoot: true,
+            fieldPath);
+
+    protected static PresenceStorageLinkOperation PresenceOperation(
+        LinkStorageSymbol owner,
+        int pointerOffset,
+        LinkStorageSymbol value,
+        string fieldPath) =>
+        new(
+            new LinkStorageCell(owner, pointerOffset),
+            LinkStorageView.Whole(value),
+            fieldPath);
+
+    protected static ProviderLinkOperation ProviderOperation(
+        LinkStorageSymbol owner,
+        int pointerOffset,
+        AssetDependency dependency) =>
+        new(new LinkStorageCell(owner, pointerOffset), dependency);
+
+    /// <summary>
+    /// Freezes one provider AliasCell from semantic identity. A null retained
+    /// pointer remains valid for authored semantic providers; a retained
+    /// non-null cell cannot be discarded when no semantic identity exists.
+    /// </summary>
+    protected static AssetDependency? FreezeProviderDependency(
+        XPointerReference retainedPointer,
+        BaseAsset? definition,
+        XAssetType expectedType,
+        string fieldPath,
+        string? symbolicName = null)
+    {
+        if (retainedPointer.Type != PointerType.Null &&
+            retainedPointer.ResolutionMode != XPointerResolutionMode.AliasCell)
         {
             throw new InvalidDataException(
-                $"{fieldPath} must be representable as Latin-1.");
+                $"{fieldPath} retains a {retainedPointer.ResolutionMode} pointer; " +
+                "provider cells require AliasCell resolution.");
         }
 
-        return EncodeCString(value);
+        AssetKey? definitionKey = null;
+        if (definition is not null)
+        {
+            XAssetType actualType;
+            try
+            {
+                actualType = definition.SerializedAssetType;
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} has an invalid provider type.",
+                    exception);
+            }
+            if (actualType != expectedType)
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} resolves {actualType}, expected {expectedType}.");
+            }
+
+            try
+            {
+                definitionKey = AssetKey.FromDefinition(definition);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} has an invalid provider identity.",
+                    exception);
+            }
+        }
+
+        AssetKey? symbolicKey = null;
+        if (symbolicName is not null)
+        {
+            try
+            {
+                symbolicKey = AssetKey.FromWireName(
+                    CanonicalAssetFamily.FromSerializedType(expectedType),
+                    symbolicName);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} has invalid symbolic provider name '{symbolicName}'.",
+                    exception);
+            }
+        }
+
+        if (definitionKey is { } resolved &&
+            symbolicKey is { } symbolic &&
+            resolved != symbolic)
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} resolved and symbolic provider identities disagree.");
+        }
+
+        AssetKey? key = definitionKey ?? symbolicKey;
+        if (key is null)
+        {
+            if (retainedPointer.Type != PointerType.Null)
+            {
+                throw new NotSupportedException(
+                    $"{fieldPath} retains a provider pointer without a semantic provider.");
+            }
+            return null;
+        }
+
+        return new AssetDependency(key.Value, expectedType, fieldPath);
     }
 
-    protected static int XStringSourcePointer(byte[]? frozenValue) =>
-        frozenValue is null ? 0 : -1;
-
-    protected static void EmitFrozenXString(
-        ZoneEmissionWriter output,
-        byte[]? frozenValue)
+    protected static IEnumerable<LinkOperation> IndirectXStringOperations(
+        LinkStorageSymbol owner,
+        int pointerOffset,
+        LinkStorageSymbol? textStorage,
+        string? assetName,
+        XAssetType serializedType,
+        string fieldPath)
     {
-        ArgumentNullException.ThrowIfNull(output);
-        if (frozenValue is null)
-            return;
+        if (textStorage is not null)
+        {
+            yield return XStringOperation(
+                owner,
+                pointerOffset,
+                textStorage,
+                fieldPath);
+        }
 
-        output.Allocate(
-            XFileBlockType.LARGE,
-            frozenValue.Length,
-            alignment: 1);
-        output.WriteBytes(frozenValue);
+        if (string.IsNullOrEmpty(assetName))
+            yield break;
+
+        AssetKey key;
+        try
+        {
+            var family = CanonicalAssetFamily.FromSerializedType(serializedType);
+            key = AssetKey.FromWireName(family, assetName);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} has invalid indirect asset name '{assetName}'.",
+                exception);
+        }
+
+        yield return new DependencyOnlyLinkOperation(new AssetDependency(
+            key,
+            serializedType,
+            fieldPath));
     }
 
-    private static byte[] EncodeCString(string value)
-    {
-        byte[] result = new byte[checked(value.Length + 1)];
-        int written = Encoding.Latin1.GetBytes(value, result);
-        if (written != value.Length)
-            throw new InvalidDataException("Asset name could not be encoded as Latin-1.");
-        return result;
-    }
 }
 
+/// <summary>
+/// One schema-declared provider AliasCell occurrence. Direct structural and
+/// payload pointers use separate storage semantics and must not become assets.
+/// </summary>
 internal readonly record struct AssetDependency(
     AssetKey Key,
     XAssetType SerializedType,

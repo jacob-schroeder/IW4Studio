@@ -9,32 +9,38 @@ namespace IW4.Linker.Model;
 /// </summary>
 internal sealed class SndCurveLinkRecipe : AssetLinkRecipe
 {
-    private readonly int[] _knotWords;
-
     private SndCurveLinkRecipe(
         AssetKey key,
         string originalSerializedName,
         ushort knotCount,
         ushort padding,
         int[] knotWords,
-        bool requireReferencePlaceholder)
+        LinkAssetFreezeScope freeze)
         : base(
             key,
             originalSerializedName,
-            requireReferencePlaceholder)
+            freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
-        KnotCount = knotCount;
-        Padding = padding;
-        _knotWords = knotWords;
+        var writer = new LinkTemplateWriter(SndCurve.SerializedSize);
+        writer.Skip(sizeof(int));
+        writer.WriteUInt16(knotCount);
+        writer.WriteUInt16(padding);
+        foreach (int word in knotWords)
+            writer.WriteInt32(word);
+        Root = LinkStorageSymbol.SourceBytes(
+            XFileBlockType.TEMP,
+            writer.Complete(),
+            alignment: 4,
+            root => [NameOperation(root, 0)]);
     }
 
-    private ushort KnotCount { get; }
-    private ushort Padding { get; }
+    internal override LinkStorageSymbol Root { get; }
 
-    public static SndCurveLinkRecipe Freeze(
+    public static AssetLinkRecipe Freeze(
         AssetKey key,
         string originalSerializedName,
-        SndCurve definition)
+        SndCurve definition,
+        LinkAssetFreezeScope freeze)
     {
         ArgumentNullException.ThrowIfNull(definition);
         if (definition.KnotCount > SndCurve.MaxKnotCount)
@@ -49,7 +55,11 @@ internal sealed class SndCurveLinkRecipe : AssetLinkRecipe
         if (originalSerializedName.StartsWith(','))
         {
             ValidateReferenceShape(definition, sourceKnots);
-            return CreateReference(key, originalSerializedName);
+            return ExternalAssetLinkRecipe.Create(
+                key,
+                XAssetType.SndCurve,
+                originalSerializedName,
+                freeze);
         }
 
         if (sourceKnots.Count != SndCurve.MaxKnotCount)
@@ -65,40 +75,7 @@ internal sealed class SndCurveLinkRecipe : AssetLinkRecipe
             definition.KnotCount,
             definition.Padding,
             FreezeKnotWords(sourceKnots),
-            requireReferencePlaceholder: false);
-    }
-
-    public static SndCurveLinkRecipe CreateExternal(
-        AssetKey key,
-        string originalSerializedName) =>
-        CreateReference(key, originalSerializedName);
-
-    public override void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency)
-    {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(emitDependency);
-
-        output.PushTempScope();
-        try
-        {
-            output.Allocate(
-                XFileBlockType.TEMP,
-                SndCurve.SerializedSize,
-                alignment: 4);
-            output.WriteInt32(-1);
-            output.WriteUInt16(KnotCount);
-            output.WriteUInt16(Padding);
-            foreach (int word in _knotWords)
-                output.WriteInt32(word);
-
-            EmitName(output);
-        }
-        finally
-        {
-            output.PopTempScope();
-        }
+            freeze);
     }
 
     private static void ValidateReferenceShape(
@@ -123,17 +100,6 @@ internal sealed class SndCurveLinkRecipe : AssetLinkRecipe
                 "A comma-prefixed SndCurve provider must have zeroed knot slots.");
         }
     }
-
-    private static SndCurveLinkRecipe CreateReference(
-        AssetKey key,
-        string originalSerializedName) =>
-        new(
-            key,
-            originalSerializedName,
-            knotCount: 0,
-            padding: 0,
-            knotWords: new int[SndCurve.MaxKnotCount * 2],
-            requireReferencePlaceholder: true);
 
     private static int[] FreezeKnotWords(
         IReadOnlyList<SndCurveKnot> knots)

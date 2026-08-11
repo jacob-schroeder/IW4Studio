@@ -1,5 +1,4 @@
 using IW4.FastFiles.Zone;
-using IW4.Runtime.Assets;
 
 namespace IW4.FastFiles.Loaders.Assets;
 
@@ -29,6 +28,7 @@ public static class XAssetTopLevelDispatch
         XAssetType.Fx,
         XAssetType.ImpactFx,
         XAssetType.XAnim,
+        XAssetType.XModelSurfs,
         XAssetType.XModel,
         XAssetType.PhysCollmap,
         XAssetType.Font,
@@ -52,8 +52,7 @@ public static class XAssetTopLevelDispatch
     {
         // Native no-op types preserve their opaque XAssetHeader words without
         // pointer conversion, body loading, or canonical registration.
-        if (XAssetTypeRuntimeMetadataCatalog.TryGet(assetType, out XAssetTypeRuntimeMetadata? metadata) &&
-            metadata?.Disposition == XAssetRuntimeDisposition.NativeNoOp)
+        if (XAssetTypeDispatchCatalog.IsNativeNoOp(assetType))
         {
             return XAssetTopLevelDispatchKind.NativeNoOp;
         }

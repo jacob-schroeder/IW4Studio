@@ -203,7 +203,7 @@ public sealed class SoundAliasListLoader
             ReadXStringPointer(cursor, context),
             ReadXStringPointer(cursor, context),
             ReadXStringPointer(cursor, context),
-            ReadPointerCellNoValidation<SoundFile[]>(cursor, context, XPointerResolutionMode.Direct),
+            ReadPointerCellNoValidation<SoundFile[]>(cursor, context, XPointerResolutionMode.AliasCell),
             cursor.ReadInt32(),
             ReadSingle(cursor),
             ReadSingle(cursor),
@@ -312,31 +312,70 @@ public sealed class SoundAliasListLoader
         if (soundFileCount < 0)
             throw new InvalidDataException($"Invalid negative SoundFile count {soundFileCount}.");
 
-        int byteCount = checked(soundFileCount * SoundFile.SerializedSize);
-        if (pointer.Type == PointerType.Null || soundFileCount == 0)
+        _ = checked(soundFileCount * SoundFile.SerializedSize);
+        if (pointer.Type == PointerType.Null)
             return [];
 
         if (pointer.Type == PointerType.Offset)
         {
-            if (pointer.PackedAddress == context.Blocks.CurrentAddress)
-                return ReadInlineSoundFileArray(cursor, soundFileCount, context);
+            if (pointer.ResolutionMode != XPointerResolutionMode.AliasCell ||
+                pointer.PackedAddress is not { } packedAddress)
+            {
+                throw new InvalidDataException(
+                    $"SoundFile[] pointer 0x{unchecked((uint)pointer.Raw):X8} " +
+                    "is not a packed alias-cell pointer.");
+            }
 
-            context.PointerReader.ValidateOffsetPointerRange<SoundFile[]>(pointer, byteCount, "SoundFile[]");
-            return [];
+            string view = SoundFileArrayView(soundFileCount);
+            if (context.TryGetMaterializedView<SoundFile[]>(
+                    packedAddress,
+                    view,
+                    out SoundFile[]? existing) &&
+                existing is not null)
+            {
+                return existing;
+            }
+
+            // Stock packed SoundFile pointers target a previous persistent
+            // snd_alias_t +0x14 owner cell, rather than the TEMP table body.
+            // Only a cell registered while that earlier table was decoded is
+            // accepted here; the raw address alone never establishes sharing.
+            context.Blocks.ValidateMaterializedRange(
+                packedAddress,
+                sizeof(int),
+                "SoundFile[] owner cell",
+                pointer.Raw);
+            throw new InvalidDataException(
+                $"Packed SoundFile[] target {packedAddress} has no earlier " +
+                "materialized semantic owner.");
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            return [];
+        {
+            throw new InvalidDataException(
+                $"SoundFile[] pointer 0x{unchecked((uint)pointer.Raw):X8} " +
+                $"has unsupported type {pointer.Type}.");
+        }
 
         XBlockAddress? insertCell = pointer.Type == PointerType.Insert
             ? context.Blocks.AllocateInsertPointerCell()
             : null;
 
         XBlockAddress soundFilesAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-        return ReadInlineSoundFileArray(cursor, soundFileCount, context, soundFilesAddress, insertCell);
+        SoundFile[] soundFiles = ReadInlineSoundFileArray(
+            cursor,
+            soundFileCount,
+            context,
+            soundFilesAddress,
+            insertCell);
+        return RegisterSoundFileArray(
+            soundFiles,
+            pointer.CellAddress,
+            insertCell,
+            context);
     }
 
-    private static IReadOnlyList<SoundFile> ReadInlineSoundFileArray(
+    private static SoundFile[] ReadInlineSoundFileArray(
         FastFileCursor cursor,
         int soundFileCount,
         DbLoadExecutionContext context,
@@ -360,6 +399,43 @@ public sealed class SoundAliasListLoader
 
         return soundFiles;
     }
+
+    private static SoundFile[] RegisterSoundFileArray(
+        SoundFile[] soundFiles,
+        XBlockAddress? ownerCell,
+        XBlockAddress? insertCell,
+        DbLoadExecutionContext context)
+    {
+        string view = SoundFileArrayView(soundFiles.Length);
+        XBlockAddress persistentOwner = ownerCell
+            ?? throw new InvalidDataException(
+                "A present SoundFile[] pointer has no serialized owner cell.");
+        if (persistentOwner.BlockType == XFileBlockType.TEMP)
+        {
+            throw new InvalidDataException(
+                "A SoundFile[] semantic owner cell cannot use rewound TEMP storage.");
+        }
+
+        SoundFile[] registered = context.RegisterMaterializedView(
+            persistentOwner,
+            view,
+            soundFiles,
+            "SoundFile[] owner cell");
+
+        if (insertCell is { } insertedOwner)
+        {
+            context.RegisterMaterializedView(
+                insertedOwner,
+                view,
+                registered,
+                "SoundFile[] insert cell");
+        }
+
+        return registered;
+    }
+
+    private static string SoundFileArrayView(int count) =>
+        $"SoundFile[{count}]";
 
     private static SoundFileRoot ReadSoundFileRoot(FastFileCursor cursor, DbLoadExecutionContext context)
     {
@@ -539,7 +615,9 @@ public sealed class SoundAliasListLoader
                 return ReadSpeakerMap(cursor, context.Blocks.CurrentAddress, context);
 
             context.PointerReader.ValidateOffsetPointerRange<SpeakerMap>(pointer, SpeakerMap.SerializedSize, "SpeakerMap");
-            return null;
+            return context.ResolveMaterializedDirect<SpeakerMap>(
+                pointer,
+                "SpeakerMap");
         }
 
         if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
@@ -577,7 +655,7 @@ public sealed class SoundAliasListLoader
         string? name = LoadSoundXString(cursor, namePointer, context);
 
 
-        return new SpeakerMap
+        SpeakerMap speakerMap = new()
         {
             Offset = speakerMapAddress.Offset,
             IsDefault = isDefault,
@@ -586,6 +664,11 @@ public sealed class SoundAliasListLoader
             Name = name,
             Channels = channels
         };
+
+        return context.RegisterMaterialized(
+            speakerMapAddress,
+            speakerMap,
+            "SpeakerMap");
     }
 
     private static IReadOnlyList<SpeakerMapChannel> ReadSpeakerMapChannels(FastFileCursor cursor)
@@ -644,7 +727,7 @@ public sealed class SoundAliasListLoader
         if (untyped.Type == PointerType.Offset)
         {
             if (untyped.PackedAddress == context.Blocks.CurrentAddress)
-                return context.Blocks.LoadCString(cursor);
+                return context.PointerReader.LoadXStringPayload(cursor);
 
             return context.PointerReader.LoadXString(cursor, pointer);
         }
@@ -657,7 +740,7 @@ public sealed class SoundAliasListLoader
             : null;
 
         XBlockAddress targetAddress = context.PointerReader.PatchInlinePointerCell(untyped, alignment: 0);
-        string value = context.Blocks.LoadCString(cursor);
+        string value = context.PointerReader.LoadXStringPayload(cursor);
         if (insertCell is { } cell)
             context.Blocks.WriteInt32(cell, XPointerCodec.Encode(targetAddress));
 

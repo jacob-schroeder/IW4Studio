@@ -43,9 +43,11 @@ public readonly record struct AssetKey
     {
         if (!family.IsValid)
             throw new ArgumentException("Asset family must be constructed and valid.", nameof(family));
-        if (string.IsNullOrWhiteSpace(normalizedName))
+        if (normalizedName is null ||
+            (normalizedName.Length == 0 && !AllowsEmptyWireName(family)) ||
+            (normalizedName.Length != 0 && string.IsNullOrWhiteSpace(normalizedName)))
             throw new ArgumentException("Asset name cannot be null or whitespace.", nameof(normalizedName));
-        if (normalizedName[0] == ',')
+        if (normalizedName.Length != 0 && normalizedName[0] == ',')
         {
             throw new ArgumentException(
                 "Asset name cannot include the leading comma used by wire syntax.",
@@ -66,6 +68,14 @@ public readonly record struct AssetKey
 
     public CanonicalAssetFamily Family { get; }
     public string NormalizedName { get; }
+
+    /// <summary>
+    /// Stock IW4 registers the per-zone ImpactFx table under the exact empty
+    /// DB key; the separately named "default" table remains a distinct asset.
+    /// No other recovered asset family permits an empty wire identity.
+    /// </summary>
+    internal static bool AllowsEmptyWireName(CanonicalAssetFamily family) =>
+        family.IsValid && family.Type == XAssetType.ImpactFx;
 
     public static AssetKey FromWireName(CanonicalAssetFamily family, string wireName)
     {

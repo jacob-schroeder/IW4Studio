@@ -10,43 +10,62 @@ namespace IW4.Linker.Model;
 /// </summary>
 internal sealed class LightDefLinkRecipe : AssetLinkRecipe
 {
-    private readonly AssetDependency? _image;
-    private readonly byte[] _padding;
-    private readonly IReadOnlyList<AssetDependency> _dependencies;
-
     private LightDefLinkRecipe(
         AssetKey key,
         string name,
         AssetDependency? image,
         byte samplerState,
         byte[] padding,
-        uint lmapLookupStart)
-        : base(key, name)
+        uint lmapLookupStart,
+        LinkAssetFreezeScope freeze)
+        : base(
+            key,
+            name,
+            freeze.FreezeProviderName(name, 0, "Asset.Name"))
     {
-        _image = image;
-        _padding = padding;
-        SamplerState = samplerState;
-        LmapLookupStart = lmapLookupStart;
-        _dependencies = image is { } dependency
-            ? Array.AsReadOnly([dependency])
-            : Array.Empty<AssetDependency>();
+        var writer = new LinkTemplateWriter(LightDefAsset.SerializedSize);
+        writer.Skip(sizeof(int));
+        writer.Skip(sizeof(int));
+        writer.WriteByte(samplerState);
+        writer.WriteBytes(padding);
+        writer.WriteUInt32(lmapLookupStart);
+        Root = LinkStorageSymbol.SourceBytes(
+            XFileBlockType.TEMP,
+            writer.Complete(),
+            alignment: 4,
+            root => image is { } dependency
+                ? [NameOperation(root, 0), ProviderOperation(root, sizeof(int), dependency)]
+                : [NameOperation(root, 0)]);
     }
 
-    private byte SamplerState { get; }
-    private uint LmapLookupStart { get; }
+    internal override LinkStorageSymbol Root { get; }
 
-    public override IReadOnlyList<AssetDependency> Dependencies => _dependencies;
-
-    public static LightDefLinkRecipe Freeze(
+    public static AssetLinkRecipe Freeze(
         AssetKey key,
         string originalSerializedName,
-        LightDefAsset definition)
+        LightDefAsset definition,
+        LinkAssetFreezeScope freeze)
     {
         ArgumentNullException.ThrowIfNull(definition);
         if (originalSerializedName.StartsWith(','))
         {
-            throw new NotSupportedException(
-                "Canonical linking currently supports LightDef providers only as owned definitions.");
+            if (definition.Image is not null ||
+                definition.ImagePointer.Raw != 0 ||
+                definition.SamplerState != 0 ||
+                definition.Pad09To0B is null ||
+                definition.Pad09To0B.Length is not (0 or 3) ||
+                definition.Pad09To0B.Any(value => value != 0) ||
+                definition.LmapLookupStart != 0)
+            {
+                throw new InvalidDataException(
+                    "A comma-prefixed LightDef provider must have a zeroed reference body.");
+            }
+
+            return ExternalAssetLinkRecipe.Create(
+                key,
+                XAssetType.LightDef,
+                originalSerializedName,
+                freeze);
         }
 
         byte[] sourcePadding = definition.Pad09To0B ??
@@ -61,32 +80,11 @@ internal sealed class LightDefLinkRecipe : AssetLinkRecipe
                 "LightDef padding at 0x09..0x0B must contain exactly three bytes.");
         }
 
-        AssetDependency? image = null;
-        if (definition.Image is { } imageDefinition)
-        {
-            if (imageDefinition.SerializedAssetType != XAssetType.Image)
-            {
-                throw new InvalidDataException(
-                    "LightDef.Image must identify a serialized Image provider.");
-            }
-
-            AssetKey imageKey;
-            try
-            {
-                imageKey = AssetKey.FromDefinition(imageDefinition);
-            }
-            catch (ArgumentException exception)
-            {
-                throw new InvalidDataException(
-                    "LightDef.Image has an invalid asset identity.",
-                    exception);
-            }
-
-            image = new AssetDependency(
-                imageKey,
-                XAssetType.Image,
-                "LightDef.Image");
-        }
+        AssetDependency? image = FreezeProviderDependency(
+            definition.ImagePointer.Untyped,
+            definition.Image,
+            XAssetType.Image,
+            "LightDef.Image");
 
         return new LightDefLinkRecipe(
             key,
@@ -94,45 +92,8 @@ internal sealed class LightDefLinkRecipe : AssetLinkRecipe
             image,
             definition.SamplerState,
             padding,
-            definition.LmapLookupStart);
+            definition.LmapLookupStart,
+            freeze);
     }
 
-    public override void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency)
-    {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(emitDependency);
-
-        output.PushTempScope();
-        try
-        {
-            XBlockAddress root = output.Allocate(
-                XFileBlockType.TEMP,
-                LightDefAsset.SerializedSize,
-                alignment: 4);
-            int rootSourceOffset = output.SourceLength;
-            output.WriteInt32(-1);
-            output.WriteInt32(0);
-            output.WriteBytes([SamplerState]);
-            output.WriteBytes(_padding);
-            output.WriteUInt32(LmapLookupStart);
-
-            EmitName(output);
-
-            if (_image is { } image)
-            {
-                emitDependency(
-                    image,
-                    new XBlockAddress(
-                        XFileBlockType.TEMP,
-                        checked(root.Offset + sizeof(int))),
-                    checked(rootSourceOffset + sizeof(int)));
-            }
-        }
-        finally
-        {
-            output.PopTempScope();
-        }
-    }
 }

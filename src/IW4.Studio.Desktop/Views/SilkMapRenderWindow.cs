@@ -1,11 +1,9 @@
 using System.Numerics;
 using Avalonia.Threading;
 using IW4.Render;
-using IW4.Render.EditorPreview;
 using IW4.Render.OpenGl;
 using IW4.Render.Picking;
 using IW4.Render.Resources;
-using IW4.Studio.Desktop.Rendering;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -31,9 +29,6 @@ internal sealed class SilkMapRenderWindow : IDisposable
     private IInputContext? _input;
     private IKeyboard? _keyboard;
     private IMouse? _mouse;
-    private IMapEditorLivePreviewSource? _livePreviewSource;
-    private readonly MapRenderLiveSceneProjectionMailbox
-        _liveSceneProjectionMailbox = new();
     private SilkMapRenderOpenGlShareGroup.Lease? _shareGroupLease;
     private SilkOpenGlMapRenderer? _renderer;
     private SilkMapRenderFpsOverlay? _fpsOverlay;
@@ -51,8 +46,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
     public SilkMapRenderWindow(
         MapRenderScene scene,
         RenderSceneSnapshot sceneSnapshot,
-        Func<string, Task>? copyTextAsync = null,
-        IMapEditorLivePreviewSource? livePreviewSource = null)
+        Func<string, Task>? copyTextAsync = null)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _sceneSnapshot = sceneSnapshot ??
@@ -60,7 +54,6 @@ internal sealed class SilkMapRenderWindow : IDisposable
         _copyTextAsync = copyTextAsync;
         _camera = MapRenderCamera.CreateForBounds(scene.CameraBounds);
         _timer.Tick += Timer_Tick;
-        AttachLivePreviewSource(livePreviewSource);
     }
 
     public event EventHandler<Exception>? Failed;
@@ -182,7 +175,6 @@ internal sealed class SilkMapRenderWindow : IDisposable
             _camera,
             Math.Max(1, initialSize.X) /
             (float)Math.Max(1, initialSize.Y));
-        ApplyPendingLiveSceneProjection();
         Console.WriteLine(
             $"OpenGL program reuse for '{_scene.Name}': " +
             $"newLinks={shareGroupLease.ProgramCache.SuccessfulLinkCount - successfulLinksBefore}, " +
@@ -222,7 +214,6 @@ internal sealed class SilkMapRenderWindow : IDisposable
 
     private void Window_Update(double elapsedSeconds)
     {
-        ApplyPendingLiveSceneProjection();
         if (_keyboard is null)
             return;
 
@@ -344,16 +335,12 @@ internal sealed class SilkMapRenderWindow : IDisposable
                 includeUntexturedGeometry: false,
                 includeCollision: false);
             _lastPickMiss = false;
-            (_livePreviewSource as IMapEditorLivePreviewPickSink)?
-                .PublishPick(hit);
             return;
         }
 
         _selectedPick = null;
         _selectedNeighborCandidates = [];
         _lastPickMiss = true;
-        (_livePreviewSource as IMapEditorLivePreviewPickSink)?
-            .PublishPick(null);
     }
 
     private void CopyCurrentPickToClipboard()
@@ -405,61 +392,12 @@ internal sealed class SilkMapRenderWindow : IDisposable
 
     private void Window_Closing() => _closeRequested = true;
 
-    internal void AttachLivePreviewSource(
-        IMapEditorLivePreviewSource? source)
-    {
-        ThrowIfDisposed();
-        if (ReferenceEquals(_livePreviewSource, source))
-            return;
-
-        if (_livePreviewSource is not null)
-        {
-            _livePreviewSource.ProjectionChanged -=
-                LivePreviewSource_ProjectionChanged;
-        }
-
-        _livePreviewSource = source;
-        _liveSceneProjectionMailbox.Clear();
-        if (source is null)
-            return;
-
-        source.ProjectionChanged += LivePreviewSource_ProjectionChanged;
-        _liveSceneProjectionMailbox.Publish(source.CurrentProjection);
-    }
-
-    private void LivePreviewSource_ProjectionChanged(
-        object? sender,
-        MapEditorLivePreviewChangedEventArgs e)
-    {
-        if (!ReferenceEquals(sender, _livePreviewSource))
-            return;
-
-        _liveSceneProjectionMailbox.Publish(e.Projection);
-    }
-
-    private void ApplyPendingLiveSceneProjection()
-    {
-        MapRenderLiveSceneProjection? projection =
-            _liveSceneProjectionMailbox.Take();
-        if (projection is null || _renderer is not { } renderer)
-            return;
-
-        renderer.ApplyLiveSceneProjection(projection);
-    }
-
     public void Dispose()
     {
         if (_disposed)
             return;
 
         _disposed = true;
-        if (_livePreviewSource is not null)
-        {
-            _livePreviewSource.ProjectionChanged -=
-                LivePreviewSource_ProjectionChanged;
-            _livePreviewSource = null;
-        }
-        _liveSceneProjectionMailbox.Clear();
         _timer.Stop();
         _timer.Tick -= Timer_Tick;
         IWindow? window = _window;

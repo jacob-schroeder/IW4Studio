@@ -10,7 +10,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace IW4.FastFiles.Streaming.Images;
 
-public sealed class GfxImageStreamResolver
+public sealed class GfxImageStreamResolver : IDisposable
 {
     private const int PackageHeaderSize = 0x0c;
     private const int FullBlockSize = 0x10000;
@@ -21,6 +21,7 @@ public sealed class GfxImageStreamResolver
 
     private readonly ImmutableArray<DbHeaderImageStreamEntry> _entriesByStreamIndex;
     private readonly string _packageDirectory;
+    private readonly ConcurrentDictionary<uint, string> _packagePaths = [];
     private readonly ConcurrentDictionary<
         (DbHeaderImageStreamEntry Entry, int ByteCount),
         Lazy<PackagePayloadReadResult>> _payloadCache = [];
@@ -34,7 +35,11 @@ public sealed class GfxImageStreamResolver
     private readonly Dictionary<PackageBlockCacheKey, PackageBlockLruEntry>
         _packageBlockLruEntries = [];
     private readonly LinkedList<PackageBlockCacheKey> _packageBlockLru = [];
+    private readonly object _lifetimeGate = new();
     private long _cachedPackageBlockBytes;
+    private int _activeReads;
+    private bool _disposeStarted;
+    private bool _disposed;
 
     public GfxImageStreamResolver(DbHeader header, string fastFilePath)
     {
@@ -49,58 +54,66 @@ public sealed class GfxImageStreamResolver
         out int height,
         out string reason)
     {
-        payload = [];
-        width = 0;
-        height = 0;
-        reason = string.Empty;
-
-        if (image.StreamImageIndex is not { } imageIndex)
+        EnterRead();
+        try
         {
-            reason = "image has no PS3 stream index";
+            payload = [];
+            width = 0;
+            height = 0;
+            reason = string.Empty;
+
+            if (image.StreamImageIndex is not { } imageIndex)
+            {
+                reason = "image has no PS3 stream index";
+                return false;
+            }
+
+            // Initial/diagnostic rendering only needs the highest-resolution
+            // payload. Do not inflate every lower authored mip merely to discard
+            // it; strict resources use TryReadMipPayloads and preserve the full
+            // chain. OpenGL generates missing mipmaps from this top level.
+            string? lastReason = null;
+            foreach (var candidate in image.StreamData
+                         .Select((streamData, partIndex) => new { streamData, partIndex })
+                         .Where(x => x.streamData.Width > 0 && x.streamData.Height > 0 && x.streamData.CumulativeByteCount != 0)
+                         .OrderByDescending(x => x.streamData.Width * x.streamData.Height))
+            {
+                GfxImageStreamData streamData = candidate.streamData;
+                int previousByteCount = candidate.partIndex == 0
+                    ? 0
+                    : image.StreamData[candidate.partIndex - 1].CumulativeByteCount;
+                int byteCount = checked(streamData.CumulativeByteCount - previousByteCount);
+                if (byteCount <= 0)
+                {
+                    lastReason = $"stream part {candidate.partIndex} byte count is zero";
+                    continue;
+                }
+
+                int streamEntryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + candidate.partIndex);
+                if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, out DbHeaderImageStreamEntry entry, out reason))
+                {
+                    lastReason = reason;
+                    continue;
+                }
+
+                if (!TryReadPackagePayload(entry, byteCount, out payload, out reason))
+                {
+                    lastReason = reason;
+                    continue;
+                }
+
+                width = streamData.Width;
+                height = streamData.Height;
+                return true;
+            }
+
+            reason = lastReason ?? "no stream data";
             return false;
         }
-
-        // Initial/diagnostic rendering only needs the highest-resolution
-        // payload. Do not inflate every lower authored mip merely to discard
-        // it; strict resources use TryReadMipPayloads and preserve the full
-        // chain. OpenGL generates missing mipmaps from this top level.
-        string? lastReason = null;
-        foreach (var candidate in image.StreamData
-                     .Select((streamData, partIndex) => new { streamData, partIndex })
-                     .Where(x => x.streamData.Width > 0 && x.streamData.Height > 0 && x.streamData.CumulativeByteCount != 0)
-                     .OrderByDescending(x => x.streamData.Width * x.streamData.Height))
+        finally
         {
-            GfxImageStreamData streamData = candidate.streamData;
-            int previousByteCount = candidate.partIndex == 0
-                ? 0
-                : image.StreamData[candidate.partIndex - 1].CumulativeByteCount;
-            int byteCount = checked(streamData.CumulativeByteCount - previousByteCount);
-            if (byteCount <= 0)
-            {
-                lastReason = $"stream part {candidate.partIndex} byte count is zero";
-                continue;
-            }
-
-            int streamEntryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + candidate.partIndex);
-            if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, out DbHeaderImageStreamEntry entry, out reason))
-            {
-                lastReason = reason;
-                continue;
-            }
-
-            if (!TryReadPackagePayload(entry, byteCount, out payload, out reason))
-            {
-                lastReason = reason;
-                continue;
-            }
-
-            width = streamData.Width;
-            height = streamData.Height;
-            return true;
+            ExitRead();
         }
-
-        reason = lastReason ?? "no stream data";
-        return false;
     }
 
     public bool TryReadMipPayloads(
@@ -108,92 +121,212 @@ public sealed class GfxImageStreamResolver
         out IReadOnlyList<GfxImageStreamMipPayload> mips,
         out string reason)
     {
-        mips = [];
-        reason = string.Empty;
-
-        if (image.StreamImageIndex is not { } imageIndex)
+        EnterRead();
+        try
         {
-            reason = "image has no PS3 stream index";
-            return false;
-        }
+            mips = [];
+            reason = string.Empty;
 
-        var candidates = image.StreamData
-            .Select((streamData, partIndex) => new { streamData, partIndex })
-            .Where(x => x.streamData.Width > 0 && x.streamData.Height > 0 && x.streamData.CumulativeByteCount != 0)
-            .OrderByDescending(x => x.streamData.Width * x.streamData.Height);
-
-        string? lastReason = null;
-        var resolvedMips = new List<GfxImageStreamMipPayload>();
-        foreach (var candidate in candidates)
-        {
-            GfxImageStreamData streamData = candidate.streamData;
-            int previousByteCount = candidate.partIndex == 0
-                ? 0
-                : image.StreamData[candidate.partIndex - 1].CumulativeByteCount;
-            int byteCount = checked(streamData.CumulativeByteCount - previousByteCount);
-            if (byteCount <= 0)
+            if (image.StreamImageIndex is not { } imageIndex)
             {
-                lastReason = $"stream part {candidate.partIndex} byte count is zero";
-                if (resolvedMips.Count > 0)
-                    break;
-                continue;
+                reason = "image has no PS3 stream index";
+                return false;
             }
 
-            if (resolvedMips.Count > 0)
+            var candidates = image.StreamData
+                .Select((streamData, partIndex) => new { streamData, partIndex })
+                .Where(x => x.streamData.Width > 0 && x.streamData.Height > 0 && x.streamData.CumulativeByteCount != 0)
+                .OrderByDescending(x => x.streamData.Width * x.streamData.Height);
+
+            string? lastReason = null;
+            var resolvedMips = new List<GfxImageStreamMipPayload>();
+            foreach (var candidate in candidates)
             {
-                GfxImageStreamMipPayload previous = resolvedMips[^1];
-                int expectedWidth = Math.Max(1, previous.Width / 2);
-                int expectedHeight = Math.Max(1, previous.Height / 2);
-                if (streamData.Width != expectedWidth || streamData.Height != expectedHeight)
+                GfxImageStreamData streamData = candidate.streamData;
+                int previousByteCount = candidate.partIndex == 0
+                    ? 0
+                    : image.StreamData[candidate.partIndex - 1].CumulativeByteCount;
+                int byteCount = checked(streamData.CumulativeByteCount - previousByteCount);
+                if (byteCount <= 0)
                 {
-                    lastReason =
-                        $"stream mip chain gap after {previous.Width}x{previous.Height}: " +
-                        $"next part is {streamData.Width}x{streamData.Height}";
-                    break;
+                    lastReason = $"stream part {candidate.partIndex} byte count is zero";
+                    if (resolvedMips.Count > 0)
+                        break;
+                    continue;
+                }
+
+                if (resolvedMips.Count > 0)
+                {
+                    GfxImageStreamMipPayload previous = resolvedMips[^1];
+                    int expectedWidth = Math.Max(1, previous.Width / 2);
+                    int expectedHeight = Math.Max(1, previous.Height / 2);
+                    if (streamData.Width != expectedWidth || streamData.Height != expectedHeight)
+                    {
+                        lastReason =
+                            $"stream mip chain gap after {previous.Width}x{previous.Height}: " +
+                            $"next part is {streamData.Width}x{streamData.Height}";
+                        break;
+                    }
+                }
+
+                int streamEntryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + candidate.partIndex);
+                if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, out DbHeaderImageStreamEntry entry, out reason))
+                {
+                    lastReason = reason;
+                    if (resolvedMips.Count > 0)
+                        break;
+                    continue;
+                }
+
+                if (!TryReadPackagePayload(entry, byteCount, out byte[] payload, out reason))
+                {
+                    lastReason = reason;
+                    if (resolvedMips.Count > 0)
+                        break;
+                    continue;
+                }
+
+                if (GfxImageStreamMipTailSplitter.TrySplit(
+                        image,
+                        streamData,
+                        payload,
+                        out IReadOnlyList<GfxImageStreamMipPayload> tailMips))
+                {
+                    resolvedMips.AddRange(tailMips);
+                }
+                else
+                {
+                    resolvedMips.Add(new GfxImageStreamMipPayload(
+                        streamData.Width,
+                        streamData.Height,
+                        payload));
                 }
             }
 
-            int streamEntryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + candidate.partIndex);
-            if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, out DbHeaderImageStreamEntry entry, out reason))
+            if (resolvedMips.Count == 0)
             {
-                lastReason = reason;
-                if (resolvedMips.Count > 0)
-                    break;
-                continue;
+                reason = lastReason ?? "no stream data";
+                return false;
             }
 
-            if (!TryReadPackagePayload(entry, byteCount, out byte[] payload, out reason))
+            mips = resolvedMips;
+            return true;
+        }
+        finally
+        {
+            ExitRead();
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_lifetimeGate)
+        {
+            if (_disposed)
+                return;
+            if (_disposeStarted)
             {
-                lastReason = reason;
-                if (resolvedMips.Count > 0)
-                    break;
-                continue;
+                while (!_disposed)
+                    Monitor.Wait(_lifetimeGate);
+                return;
             }
 
-            if (GfxImageStreamMipTailSplitter.TrySplit(
-                    image,
-                    streamData,
-                    payload,
-                    out IReadOnlyList<GfxImageStreamMipPayload> tailMips))
+            _disposeStarted = true;
+            while (_activeReads != 0)
+                Monitor.Wait(_lifetimeGate);
+
+            try
             {
-                resolvedMips.AddRange(tailMips);
+                foreach (Lazy<PackageOpenResult> pending in _packageReaders.Values)
+                {
+                    if (!pending.IsValueCreated)
+                        continue;
+
+                    pending.Value.Reader?.Dispose();
+                }
+
+                _packageReaders.Clear();
+                _packageBlocks.Clear();
+                _payloadCache.Clear();
+                _packagePaths.Clear();
+                lock (_packageBlockLruGate)
+                {
+                    _packageBlockLruEntries.Clear();
+                    _packageBlockLru.Clear();
+                    _cachedPackageBlockBytes = 0;
+                }
             }
-            else
+            finally
             {
-                resolvedMips.Add(new GfxImageStreamMipPayload(
-                    streamData.Width,
-                    streamData.Height,
-                    payload));
+                _disposed = true;
+                Monitor.PulseAll(_lifetimeGate);
             }
         }
+    }
 
-        if (resolvedMips.Count == 0)
+    private void EnterRead()
+    {
+        lock (_lifetimeGate)
         {
-            reason = lastReason ?? "no stream data";
+            if (_disposeStarted)
+                throw new ObjectDisposedException(nameof(GfxImageStreamResolver));
+            _activeReads++;
+        }
+    }
+
+    private void ExitRead()
+    {
+        lock (_lifetimeGate)
+        {
+            _activeReads--;
+            if (_activeReads == 0)
+                Monitor.PulseAll(_lifetimeGate);
+        }
+    }
+
+    private bool TryResolvePackagePath(
+        uint fileIndex,
+        out string packagePath,
+        out string reason)
+    {
+        if (fileIndex == 0)
+        {
+            packagePath = string.Empty;
+            reason =
+                "image stream points at the current fastfile; image package resolver only handles imagefileN.pak";
+            return false;
+        }
+        if (_packagePaths.TryGetValue(fileIndex, out string? resolvedPath))
+        {
+            packagePath = resolvedPath;
+            reason = string.Empty;
+            return true;
+        }
+
+        string packageFileName = $"imagefile{fileIndex}.pak";
+        string adjacentPath = Path.Combine(
+            _packageDirectory,
+            packageFileName);
+        string? parentDirectory = Path.GetDirectoryName(_packageDirectory);
+        string? parentPath = parentDirectory is null
+            ? null
+            : Path.Combine(parentDirectory, packageFileName);
+        string? availablePath = File.Exists(adjacentPath)
+            ? adjacentPath
+            : parentPath is not null && File.Exists(parentPath)
+                ? parentPath
+                : null;
+        if (availablePath is null)
+        {
+            packagePath = string.Empty;
+            reason = parentPath is null
+                ? $"missing texture stream package {adjacentPath}"
+                : $"missing texture stream package; checked {adjacentPath} and {parentPath}";
             return false;
         }
 
-        mips = resolvedMips;
+        packagePath = _packagePaths.GetOrAdd(fileIndex, availablePath);
+        reason = string.Empty;
         return true;
     }
 
@@ -267,13 +400,15 @@ public sealed class GfxImageStreamResolver
         DbHeaderImageStreamEntry entry,
         int byteCount)
     {
-        if (entry.FileIndex == 0)
+        if (!TryResolvePackagePath(
+                entry.FileIndex,
+                out string path,
+                out string pathReason))
         {
             return PackagePayloadReadResult.Failed(
-                "image stream points at the current fastfile; image package resolver only handles imagefileN.pak");
+                pathReason);
         }
 
-        string path = Path.Combine(_packageDirectory, $"imagefile{entry.FileIndex}.pak");
         for (int attempt = 1; attempt <= PackageReadAttemptCount; attempt++)
         {
             try
@@ -475,6 +610,14 @@ public sealed class GfxImageStreamResolver
         if (magic is not ("IWffu100" or "S1ffu100"))
         {
             reason = $"{Path.GetFileName(path)} has unexpected package magic '{magic}'";
+            return false;
+        }
+        uint version = BinaryPrimitives.ReadUInt32BigEndian(header[8..]);
+        if (version != (uint)XFileVersion.ModernWarfare2)
+        {
+            reason =
+                $"{Path.GetFileName(path)} has unsupported package version {version}; " +
+                $"expected {(uint)XFileVersion.ModernWarfare2}";
             return false;
         }
 
@@ -731,7 +874,7 @@ public sealed class GfxImageStreamResolver
             new(false, [], 0, reason);
     }
 
-    private sealed class PackageReader
+    private sealed class PackageReader : IDisposable
     {
         public PackageReader(
             uint fileIndex,
@@ -752,5 +895,7 @@ public sealed class GfxImageStreamResolver
         public SafeFileHandle Handle { get; }
 
         public long Length { get; }
+
+        public void Dispose() => Handle.Dispose();
     }
 }

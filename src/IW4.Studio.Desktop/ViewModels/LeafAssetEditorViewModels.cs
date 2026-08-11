@@ -164,7 +164,7 @@ public sealed class VehicleEditorViewModel : ObservableObject
     public bool IsEditable => _session.Mode == AssetEditorMode.Editable;
     public string Name => _draft?.Data.Name ?? _session.Entry.OriginalName ?? string.Empty;
     public int VehicleType => _draft?.Data.Type ?? 0;
-    public int SurfaceSoundCount => _draft?.Data.SurfaceSoundAliases.Count ?? 0;
+    public int SurfaceSoundCount => _draft?.Data.SurfaceSoundFields.Count ?? 0;
     public string StatusMessage => IsEditable ? "Detached Vehicle draft. Physics/tuning groups, source strings, nested sound cells, fixed tags, and symbolic asset links are authored." : "Vehicle content is read-only or unavailable.";
     public IReadOnlyList<AssetValidationIssue> Diagnostics => _session.Validation.Issues;
     public void Replace(VehicleBuildData value) { if (!IsEditable) return; ArgumentNullException.ThrowIfNull(value); _session.Apply<VehicleDraft>(draft => draft.Replace(value)); _draft = _session.ReadDraft<VehicleDraft>(); OnPropertyChanged(nameof(VehicleType)); OnPropertyChanged(nameof(SurfaceSoundCount)); OnPropertyChanged(nameof(Diagnostics)); }

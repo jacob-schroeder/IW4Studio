@@ -2,7 +2,6 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using IW4.Studio.Documents;
-using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Rendering;
 
 namespace IW4.Studio.Desktop.Views;
@@ -18,7 +17,6 @@ public sealed partial class MapRenderWindow : Window
     private readonly CancellationTokenSource _buildWaitCancellation = new();
     private bool _ownsRenderViewService;
     private SilkMapRenderWindow? _nativeRenderWindow;
-    private IMapEditorLivePreviewSource? _livePreviewSource;
     private bool _closed;
     private bool _buildStarted;
     private bool _nativeRendererFailed;
@@ -50,22 +48,7 @@ public sealed partial class MapRenderWindow : Window
             workspace,
             documentName,
             renderViewService,
-            ownsRenderViewService: false,
-            livePreviewSource: null)
-    {
-    }
-
-    internal MapRenderWindow(
-        FastFileWorkspace workspace,
-        string documentName,
-        FastFileRenderViewService renderViewService,
-        IMapEditorLivePreviewSource? livePreviewSource)
-        : this(
-            workspace,
-            documentName,
-            renderViewService,
-            ownsRenderViewService: false,
-            livePreviewSource: livePreviewSource)
+            ownsRenderViewService: false)
     {
     }
 
@@ -73,8 +56,7 @@ public sealed partial class MapRenderWindow : Window
         FastFileWorkspace workspace,
         string documentName,
         FastFileRenderViewService renderViewService,
-        bool ownsRenderViewService,
-        IMapEditorLivePreviewSource? livePreviewSource = null)
+        bool ownsRenderViewService)
         : this()
     {
         ArgumentNullException.ThrowIfNull(workspace);
@@ -83,7 +65,6 @@ public sealed partial class MapRenderWindow : Window
         _workspace = workspace;
         _renderViewService = renderViewService;
         _ownsRenderViewService = ownsRenderViewService;
-        _livePreviewSource = livePreviewSource;
         Title = $"Live Preview — {documentName} — IW4 Studio";
     }
 
@@ -160,8 +141,7 @@ public sealed partial class MapRenderWindow : Window
             var nativeRenderWindow = new SilkMapRenderWindow(
                 scene,
                 sceneSnapshot,
-                text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask,
-                _livePreviewSource);
+                text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
             nativeRenderWindow.Failed += NativeRenderWindow_Failed;
             nativeRenderWindow.Stopped += NativeRenderWindow_Stopped;
             nativeRenderWindow.Show();
@@ -194,17 +174,6 @@ public sealed partial class MapRenderWindow : Window
                 Close();
         });
 
-    internal void AttachLivePreviewSource(
-        IMapEditorLivePreviewSource source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        if (_closed)
-            return;
-
-        _livePreviewSource = source;
-        _nativeRenderWindow?.AttachLivePreviewSource(source);
-    }
-
     private void MapRenderWindow_Closed(object? sender, EventArgs e)
     {
         _closed = true;
@@ -212,7 +181,6 @@ public sealed partial class MapRenderWindow : Window
         if (_ownsRenderViewService)
             _renderViewService?.Dispose();
         _renderViewService = null;
-        _livePreviewSource = null;
         _nativeRenderWindow?.Dispose();
         _nativeRenderWindow = null;
     }

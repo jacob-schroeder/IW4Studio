@@ -87,11 +87,11 @@ public sealed class DbHeaderImageStreamLanguageTable
     {
         if (serializedIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(serializedIndex));
-        if (languageMask == 0 || (languageMask & (languageMask - 1)) != 0)
+        if (!DbLanguageMask.IsSingleLanguage(languageMask))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(languageMask),
-                "A language table must represent exactly one language bit.");
+                "A language table must represent exactly one supported PS3 IW4 language bit.");
         }
 
         ArgumentNullException.ThrowIfNull(imageStreamEntries);
@@ -144,6 +144,18 @@ public sealed class DbHeader
         ImmutableArray<DbHeaderImageStreamLanguageTable> capturedTables =
             languageTables.ToImmutableArray();
         ValidateLanguageTables(languageMask, languageCount, entryCount, capturedTables);
+        if (!DbLanguageMask.IsSingleLanguage(selectedLanguageMask) ||
+            (selectedLanguageMask & languageMask) == 0)
+        {
+            throw new InvalidDataException(
+                "DB header selected language must be one supported bit present in its language mask.");
+        }
+        if (selectedLanguageIndex >= capturedTables.Length ||
+            capturedTables[checked((int)selectedLanguageIndex)].LanguageMask != selectedLanguageMask)
+        {
+            throw new InvalidDataException(
+                "DB header selected-language index does not identify its selected language table.");
+        }
 
         Magic = magic;
         Version = version;
@@ -229,6 +241,16 @@ public sealed class DbHeader
         uint entryCount,
         ImmutableArray<DbHeaderImageStreamLanguageTable> languageTables)
     {
+        if (!DbLanguageMask.IsSupported(languageMask))
+        {
+            throw new InvalidDataException(
+                "DB header language mask contains unsupported PS3 IW4 language bits.");
+        }
+        if (System.Numerics.BitOperations.PopCount(languageMask) != languageCount)
+        {
+            throw new InvalidDataException(
+                "DB header language count does not match its language mask.");
+        }
         if (languageTables.Length != languageCount)
         {
             throw new InvalidDataException(

@@ -218,6 +218,13 @@ public sealed class XAssetDispatcher
                 {
                     loadedAsset = _xanimLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
                 }
+                else if (asset.Type == XAssetType.XModelSurfs)
+                {
+                    loadedAsset = _xmodelLoader.LoadXModelSurfsFromAssetPointer(
+                        cursor,
+                        asset.AssetPointer.Untyped,
+                        context);
+                }
                 else if (asset.Type == XAssetType.XModel)
                 {
                     loadedAsset = _xmodelLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);

@@ -167,7 +167,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _staticInstanceCompactionFullInvalidationPending = true;
         _staticSchedulingByObjectIndex.Clear();
         _staticScheduling = [];
-        ResetLiveStaticModelProjectionState();
         _staticModelLightingObjectIndices = [];
         _conservativeUnscheduledStaticObjectIndices = [];
         _staticModelLightingWorkingSet = null;
@@ -238,8 +237,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         _loaded = false;
         _editorPreviewLighting = null;
-        _liveSceneProjectionRevision = -1;
-        _liveSceneProjectionContentIdentity = null;
         _editorPreviewEffectivePost = null;
         _editorPreviewDirectionalSunDiffuseColor = Vector3.Zero;
         _editorPreviewDirectionalSunSpecularColor = Vector3.Zero;

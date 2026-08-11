@@ -11,28 +11,48 @@ namespace IW4.Linker.Model;
 /// </summary>
 internal sealed class RawFileLinkRecipe : AssetLinkRecipe
 {
-    private readonly byte[]? _payload;
-
     private RawFileLinkRecipe(
         AssetKey key,
         string originalSerializedName,
         int compressedLength,
         int uncompressedLength,
-        byte[]? payload)
-        : base(key, originalSerializedName)
+        byte[]? payload,
+        LinkAssetFreezeScope freeze)
+        : base(
+            key,
+            originalSerializedName,
+            freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
-        CompressedLength = compressedLength;
-        UncompressedLength = uncompressedLength;
-        _payload = payload;
+        LinkStorageSymbol? payloadStorage = payload is null
+            ? null
+            : LinkStorageSymbol.SourceBytes(
+                XFileBlockType.LARGE,
+                payload,
+                alignment: 1);
+        var writer = new LinkTemplateWriter(RawFileAsset.SerializedSize);
+        writer.Skip(sizeof(int));
+        writer.WriteInt32(compressedLength);
+        writer.WriteInt32(uncompressedLength);
+        writer.Skip(sizeof(int));
+        Root = LinkStorageSymbol.SourceBytes(
+            XFileBlockType.TEMP,
+            writer.Complete(),
+            alignment: 4,
+            root => payloadStorage is null
+                ? [NameOperation(root, 0)]
+                : [
+                    NameOperation(root, 0),
+                    PresenceOperation(root, 0x0c, payloadStorage, "RawFile.Buffer")
+                ]);
     }
 
-    private int CompressedLength { get; }
-    private int UncompressedLength { get; }
+    internal override LinkStorageSymbol Root { get; }
 
-    public static RawFileLinkRecipe Freeze(
+    public static AssetLinkRecipe Freeze(
         AssetKey key,
         string originalSerializedName,
-        RawFileAsset definition)
+        RawFileAsset definition,
+        LinkAssetFreezeScope freeze)
     {
         ArgumentNullException.ThrowIfNull(definition);
         return Create(
@@ -40,70 +60,17 @@ internal sealed class RawFileLinkRecipe : AssetLinkRecipe
             originalSerializedName,
             definition.CompressedLen,
             definition.Len,
-            definition.Buffer);
+            definition.Buffer,
+            freeze);
     }
 
-    public static RawFileLinkRecipe CreateExternal(
-        AssetKey key,
-        string originalSerializedName)
-    {
-        if (string.IsNullOrEmpty(originalSerializedName) ||
-            originalSerializedName[0] != ',')
-        {
-            throw new ArgumentException(
-                "An external RawFile name must begin with one comma.",
-                nameof(originalSerializedName));
-        }
-
-        return Create(
-            key,
-            originalSerializedName,
-            compressedLength: 0,
-            uncompressedLength: 0,
-            payload: null);
-    }
-
-    public override void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency)
-    {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(emitDependency);
-        output.PushTempScope();
-        try
-        {
-            output.Allocate(
-                XFileBlockType.TEMP,
-                RawFileAsset.SerializedSize,
-                alignment: 4);
-            output.WriteInt32(-1);
-            output.WriteInt32(CompressedLength);
-            output.WriteInt32(UncompressedLength);
-            output.WriteInt32(_payload is null ? 0 : -1);
-
-            EmitName(output);
-
-            if (_payload is not null)
-            {
-                output.Allocate(
-                    XFileBlockType.LARGE,
-                    _payload.Length,
-                    alignment: 1);
-                output.WriteBytes(_payload);
-            }
-        }
-        finally
-        {
-            output.PopTempScope();
-        }
-    }
-
-    private static RawFileLinkRecipe Create(
+    private static AssetLinkRecipe Create(
         AssetKey key,
         string originalSerializedName,
         int compressedLength,
         int uncompressedLength,
-        byte[]? payload)
+        byte[]? payload,
+        LinkAssetFreezeScope freeze)
     {
         if (compressedLength < 0)
             throw new InvalidDataException("RawFile compressed length cannot be negative.");
@@ -117,6 +84,14 @@ internal sealed class RawFileLinkRecipe : AssetLinkRecipe
         {
             throw new InvalidDataException(
                 "A comma-prefixed RawFile provider must be an empty reference placeholder.");
+        }
+        if (referencePlaceholder)
+        {
+            return ExternalAssetLinkRecipe.Create(
+                key,
+                XAssetType.RawFile,
+                originalSerializedName,
+                freeze);
         }
 
         if (copiedPayload is null)
@@ -152,7 +127,8 @@ internal sealed class RawFileLinkRecipe : AssetLinkRecipe
             originalSerializedName,
             compressedLength,
             uncompressedLength,
-            copiedPayload);
+            copiedPayload,
+            freeze);
     }
 
     private static void ValidateCompressedPayload(

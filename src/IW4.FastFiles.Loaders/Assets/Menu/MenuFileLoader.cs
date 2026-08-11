@@ -1093,9 +1093,20 @@ public sealed class MenuFileLoader
             int rowStart = entryCursor.Offset;
             var kind = (ExpressionEntryKind)entryCursor.ReadInt32();
             int discriminatorOrOperation = entryCursor.ReadInt32();
-            int encodedValueOrTail = kind == ExpressionEntryKind.Operand && IsPointerOperand((ExpDataType)discriminatorOrOperation)
-                ? context.PointerReader.ReadCell(entryCursor, XPointerOffsetMode.Direct).Raw
-                : entryCursor.ReadInt32();
+            XPointerReference? operandPointer = null;
+            int encodedValueOrTail;
+            if (kind == ExpressionEntryKind.Operand &&
+                IsPointerOperand((ExpDataType)discriminatorOrOperation))
+            {
+                operandPointer = context.PointerReader.ReadCell(
+                    entryCursor,
+                    XPointerOffsetMode.Direct);
+                encodedValueOrTail = operandPointer.Value.Raw;
+            }
+            else
+            {
+                encodedValueOrTail = entryCursor.ReadInt32();
+            }
 
             if (entryCursor.Offset - rowStart != ExpressionEntry.SerializedSize)
                 throw new InvalidDataException($"ExpressionEntry consumed 0x{entryCursor.Offset - rowStart:X} bytes instead of 0x{ExpressionEntry.SerializedSize:X}.");
@@ -1111,7 +1122,10 @@ public sealed class MenuFileLoader
                 ExpressionEntryKind.Operand => new ExpressionEntry
                 {
                     Kind = kind,
-                    Operand = ReadOperand(discriminatorOrOperation, encodedValueOrTail)
+                    Operand = ReadOperand(
+                        discriminatorOrOperation,
+                        encodedValueOrTail,
+                        operandPointer)
                 },
                 _ => new ExpressionEntry
                 {
@@ -1128,19 +1142,32 @@ public sealed class MenuFileLoader
             if (kind != ExpressionEntryKind.Operand)
                 continue;
 
-            ReadOperandChildren(cursor, entry, tableAddress.Add(rowStart + 0x08), context);
+            ReadOperandChildren(cursor, entry, context);
         }
 
         return entries;
     }
 
-    private static Operand ReadOperand(int dataTypeRaw, int encodedValue)
+    private static Operand ReadOperand(
+        int dataTypeRaw,
+        int encodedValue,
+        XPointerReference? retainedPointer = null)
     {
         var dataType = (ExpDataType)dataTypeRaw;
         return new Operand
         {
             DataType = dataType,
-            Value = OperandValueFactory.FromEncoded(dataType, encodedValue)
+            Value = retainedPointer is { } pointer
+                ? dataType switch
+                {
+                    ExpDataType.VAL_STRING =>
+                        new StringOperandValue(pointer.AsPointer<string>()),
+                    ExpDataType.VAL_FUNCTION =>
+                        new FunctionOperandValue(pointer.AsPointer<Statement>()),
+                    _ => throw new InvalidDataException(
+                        $"Operand type {dataType} cannot retain a pointer cell.")
+                }
+                : OperandValueFactory.FromEncoded(dataType, encodedValue)
         };
     }
 
@@ -1251,7 +1278,6 @@ public sealed class MenuFileLoader
     private static void ReadOperandChildren(
         FastFileCursor cursor,
         ExpressionEntry entry,
-        XBlockAddress pointerCellAddress,
         DbLoadExecutionContext context)
     {
         Operand operand = entry.Operand;
@@ -1262,10 +1288,7 @@ public sealed class MenuFileLoader
                 {
                     entry.StringValue = context.PointerReader.LoadXString(
                         cursor,
-                        context.PointerReader.FromRaw<string>(
-                            stringValue.StringPointer.Raw,
-                            XPointerResolutionMode.Direct,
-                            pointerCellAddress));
+                        stringValue.StringPointer);
                 }
                 break;
 
@@ -1274,10 +1297,7 @@ public sealed class MenuFileLoader
                 {
                     entry.FunctionStatement = ReadStatementPointer(
                         cursor,
-                        context.PointerReader.FromRaw<Statement>(
-                            functionValue.StatementPointer.Raw,
-                            XPointerResolutionMode.Direct,
-                            pointerCellAddress).Untyped,
+                        functionValue.StatementPointer.Untyped,
                         context);
                 }
                 break;

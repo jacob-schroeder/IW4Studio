@@ -1,4 +1,5 @@
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.GameMap;
@@ -14,7 +15,11 @@ public sealed class GGlassName
     public string? NameStr { get; init; }
 
     // 0x04: G_GlassName.name script-string index.
-    public ushort Name { get; init; }
+    public ScriptStringReference Name { get; init; } = new(
+        RawLocalIndex: 0,
+        Text: null,
+        RuntimeHandle: ScriptStringHandle.Null,
+        DestinationCellAddress: default);
 
     // 0x06: G_GlassName.pieceCount. PS3 uses this as the pieceIndices ushort count.
     public ushort PieceCount { get; init; }

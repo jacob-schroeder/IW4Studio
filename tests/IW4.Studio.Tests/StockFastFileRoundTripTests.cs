@@ -1,5 +1,21 @@
 using System.Security.Cryptography;
+using IW4.Assets.Assets;
+using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.LightDef;
+using IW4.Assets.Assets.Localize;
+using IW4.Assets.Assets.XAnim;
+using IW4.FastFiles.Database;
+using IW4.FastFiles.Database.Streaming;
 using IW4.FastFiles.Loaders.Database;
+using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
+using IW4.FastFiles.Zone;
+using IW4.Linker.Contracts;
+using IW4.Linker.Linking;
+using IW4.Linker.Packaging;
+using IW4.Linker.SourceLayout;
+using IW4.Runtime.Database;
+using IW4.Runtime.IO;
 using IW4.Studio.Documents;
 using Xunit;
 
@@ -22,7 +38,8 @@ public sealed class StockFastFileRoundTripTests
 
     [Theory]
     [MemberData(nameof(StockFastFiles))]
-    public void Unmodified_save_as_preserves_decoded_zone_and_header_metadata(string sourcePath)
+    public void Source_layout_relinker_preserves_stock_decoded_zone_and_header_envelope(
+        string sourcePath)
     {
         string temporaryDirectory = CreateTemporaryDirectory();
         FileFingerprint? sourceBefore = null;
@@ -30,49 +47,596 @@ public sealed class StockFastFileRoundTripTests
         try
         {
             sourceBefore = CaptureFingerprint(sourcePath);
-
             string destinationPath = Path.Combine(
                 temporaryDirectory,
                 Path.GetFileName(sourcePath));
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+
+            SourceLayoutReplay source = WithLoadedZone(
+                sourcePath,
+                selectedLanguageMask: 0,
+                (_, loaded) =>
+                {
+                    SourceLayoutRelinkResult relink =
+                        new SourceLayoutRelinker().Relink(loaded.ZoneObjectFile);
+                    Assert.True(
+                        relink.Succeeded,
+                        $"Source-layout relink failed for '{sourcePath}'.{Environment.NewLine}" +
+                        string.Join(
+                            Environment.NewLine,
+                            relink.Errors.Select(error => $"{error.Code}: {error.Message}")));
+                    ReadOnlyMemory<byte>? relinked = relink.DecodedBytes;
+                    Assert.True(relinked.HasValue);
+                    AssertByteSequencesMatch(
+                        loaded.ZoneBytes,
+                        relinked.Value.Span,
+                        $"Source-layout decoded replay mismatch for '{sourcePath}'");
+
+                    FastFilePackagingResult package = new FastFilePackager().Package(
+                        relinked.Value,
+                        loaded.Header);
+                    Assert.True(
+                        package.Succeeded,
+                        $"Source-layout packaging failed for '{sourcePath}'.{Environment.NewLine}" +
+                        string.Join(
+                            Environment.NewLine,
+                            package.Errors.Select(error => $"{error.Code}: {error.Message}")));
+                    ReadOnlyMemory<byte>? packaged = package.Bytes;
+                    Assert.True(packaged.HasValue);
+
+                    return new SourceLayoutReplay(
+                        loaded.ZoneBytes.ToArray(),
+                        CaptureHeaderEnvelope(loaded),
+                        packaged.Value.ToArray());
+                });
+
+            File.WriteAllBytes(destinationPath, source.PackagedFastFile);
+            HeaderEnvelope candidate = WithLoadedZone(
+                destinationPath,
+                selectedLanguageMask: 0,
+                (_, loaded) =>
+                {
+                    AssertByteSequencesMatch(
+                        source.DecodedZone,
+                        loaded.ZoneBytes,
+                        $"Decoded zone mismatch: source '{sourcePath}', candidate '{destinationPath}'");
+                    return CaptureHeaderEnvelope(loaded);
+                });
+
+            AssertHeaderEnvelopeMatches(source.Header, candidate, sourcePath, destinationPath);
+        }
+        finally
+        {
+            try
+            {
+                AssertSourceFingerprintUnchanged(sourcePath, sourceBefore);
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(temporaryDirectory);
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(StockFastFiles))]
+    public void Canonical_save_as_reloads_as_the_same_semantic_zone(string sourcePath)
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        FileFingerprint? sourceBefore = null;
+
+        try
+        {
+            sourceBefore = CaptureFingerprint(sourcePath);
+            string destinationPath = Path.Combine(
+                temporaryDirectory,
+                Path.GetFileName(sourcePath));
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
 
             var documentService = new FastFileDocumentService();
-            FastFileWorkspace workspace = documentService.Open(
+            using FastFileWorkspace workspace = documentService.Open(
                 new FastFileDocumentOpenRequest(sourcePath, Isolated.Instance));
+            ZoneLinkRequest sourceRequest = workspace.InitialLinkRequest;
+            ZoneLinkResult expected = new ZoneLinker().Link(sourceRequest);
+            AssertLinkSucceeded(expected, $"Canonical source link failed for '{sourcePath}'");
+
             using (var editingSession = new FastFileEditingSession(workspace))
             {
-                EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
                 SaveAsResult result = new TransactionalSaveAsService().SaveAs(
                     editingSession,
                     new SaveAsRequest(destinationPath, AllowOverwrite: false));
 
                 Assert.True(
                     result.Succeeded,
-                    $"Unmodified Save As failed for '{sourcePath}'.{Environment.NewLine}" +
+                    $"Canonical Save As failed for '{sourcePath}'.{Environment.NewLine}" +
                     string.Join(Environment.NewLine, result.Diagnostics));
             }
 
             Assert.True(
                 File.Exists(destinationPath),
                 $"Save As reported success for '{sourcePath}', but did not create '{destinationPath}'.");
-            AssertDecodedZoneAndHeaderMetadataMatch(sourcePath, destinationPath);
+
+            using FastFileWorkspace candidate = documentService.Open(
+                new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            ZoneLinkRequest candidateRequest = candidate.InitialLinkRequest;
+            ZoneLinkResult actual = new ZoneLinker().Link(candidateRequest);
+            AssertLinkSucceeded(actual, $"Canonical candidate relink failed for '{sourcePath}'");
+
+            Assert.Equal(sourceRequest.LanguageMask, candidateRequest.LanguageMask);
+            Assert.Equal(sourceRequest.SelectedLanguageMask, candidateRequest.SelectedLanguageMask);
+            Assert.Equal(expected.LanguageMask, actual.LanguageMask);
+            Assert.Equal(expected.SelectedLanguageMask, actual.SelectedLanguageMask);
+            AssertByteSequencesMatch(
+                GetDecodedBytes(expected).Span,
+                GetDecodedBytes(actual).Span,
+                $"Canonical decoded zone mismatch for '{sourcePath}'");
+            AssertXFileLayoutMatches(expected.XFile, actual.XFile, sourcePath);
+            AssertXFileLayoutMatches(expected.XFile, candidate.LoadedZone.XFile, sourcePath);
+            AssertImageStreamLanguageTablesMatch(
+                expected.ImageStreamLanguageTables,
+                actual.ImageStreamLanguageTables,
+                sourcePath);
+            AssertOrderedRootSubsequence(sourceRequest.Roots, candidateRequest.Roots, sourcePath);
+            AssertCandidateRootRows(candidate.LoadedZone, candidateRequest.Roots, sourcePath);
         }
         finally
         {
             try
             {
-                if (sourceBefore is not null)
-                {
-                    FileFingerprint sourceAfter = CaptureFingerprint(sourcePath);
-                    Assert.True(
-                        sourceBefore == sourceAfter,
-                        $"Stock source '{sourcePath}' changed during the round trip. " +
-                        $"Before: {sourceBefore}. After: {sourceAfter}.");
-                }
+                AssertSourceFingerprintUnchanged(sourcePath, sourceBefore);
             }
             finally
             {
                 DeleteTemporaryDirectory(temporaryDirectory);
             }
+        }
+    }
+
+    [Fact]
+    public void Blank_save_as_reloads_an_empty_semantic_zone()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string destinationPath = Path.Combine(temporaryDirectory, "blank.ff");
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
+            using (var editingSession = new FastFileEditingSession(blank))
+                AssertSaveSucceeded(editingSession, destinationPath);
+
+            Assert.False(File.Exists(Path.Combine(temporaryDirectory, "imagefile1.pak")));
+            using FastFileWorkspace loaded = documentService.Open(
+                new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            Assert.Equal(1u, loaded.InitialLinkRequest.LanguageMask);
+            Assert.Equal(1u, loaded.InitialLinkRequest.SelectedLanguageMask);
+            Assert.Empty(loaded.InitialLinkRequest.Roots);
+            Assert.Empty(loaded.InitialLinkRequest.Assets.Providers);
+            Assert.Equal(0, loaded.LoadedZone.XAssetList.AssetCount);
+            Assert.Empty(loaded.LoadedZone.XAssetList.Assets);
+            Assert.Equal(0, loaded.LoadedZone.XAssetList.ScriptStringCount);
+            Assert.Empty(loaded.LoadedZone.XAssetList.ScriptStrings);
+            Assert.Empty(loaded.LoadedZone.LoadedAssets);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("ImAgEfIlE0007.PaK")]
+    [InlineData("imagefile-custom.pak")]
+    [InlineData("imagefile.pak")]
+    public void Save_as_refuses_to_create_an_imagefile_package(
+        string protectedFileName)
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string protectedPath = Path.Combine(
+                temporaryDirectory,
+                protectedFileName);
+            EnsureOutputPathIsSafe(protectedPath, temporaryDirectory);
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
+            using var editingSession = new FastFileEditingSession(blank);
+            SaveAsResult result = new TransactionalSaveAsService().SaveAs(
+                editingSession,
+                new SaveAsRequest(protectedPath, AllowOverwrite: true));
+
+            Assert.False(result.Succeeded);
+            Assert.False(result.Cancelled);
+            Assert.Contains(
+                result.Diagnostics,
+                diagnostic => diagnostic.Contains(
+                    "imagefile*.pak",
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(temporaryDirectory));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Fact]
+    public void Authored_provider_replace_and_delete_publish_the_selected_revision()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string destinationPath = Path.Combine(temporaryDirectory, "edited.ff");
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+
+            var original = new LocalizeAsset
+            {
+                Name = "qual/replace",
+                Value = "old value"
+            };
+            var replacement = new LocalizeAsset
+            {
+                Name = original.Name,
+                Value = "new value"
+            };
+            var deleted = new LocalizeAsset
+            {
+                Name = "qual/delete",
+                Value = "remove me"
+            };
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
+            using (var editingSession = new FastFileEditingSession(blank))
+            {
+                editingSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(original),
+                    new LinkAssetProviderSource(deleted)
+                ]);
+                editingSession.SetOrderedRoots([
+                    CreateOwnedRoot("replacement", original),
+                    CreateOwnedRoot("deleted", deleted)
+                ]);
+                editingSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(replacement)
+                ]);
+                editingSession.DeleteAssets([
+                    AssetKey.FromDefinition(deleted)
+                ]);
+                AssertSaveSucceeded(editingSession, destinationPath);
+            }
+
+            using FastFileWorkspace loaded = documentService.Open(
+                new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            LocalizeAsset linked = Assert.IsType<LocalizeAsset>(
+                Assert.Single(loaded.LoadedZone.LoadedAssets).Asset);
+            Assert.Equal(replacement.Name, linked.Name);
+            Assert.Equal(replacement.Value, linked.Value);
+            Assert.Single(loaded.InitialLinkRequest.Roots);
+            Assert.Single(loaded.InitialLinkRequest.Assets.Providers);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Fact]
+    public void Imported_provider_edit_detaches_changed_text_from_the_frozen_base_identity()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string sourcePath = Path.Combine(temporaryDirectory, "imported-source.ff");
+            string editedPath = Path.Combine(temporaryDirectory, "imported-edited.ff");
+            EnsureOutputPathIsSafe(sourcePath, temporaryDirectory);
+            EnsureOutputPathIsSafe(editedPath, temporaryDirectory);
+
+            var original = new LocalizeAsset
+            {
+                Name = "qual/imported-edit",
+                Value = "original"
+            };
+            var documentService = new FastFileDocumentService();
+            using (FastFileWorkspace blank = documentService.CreateBlank(1, 1))
+            using (var authoringSession = new FastFileEditingSession(blank))
+            {
+                authoringSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(original)
+                ]);
+                authoringSession.SetOrderedRoots([
+                    CreateOwnedRoot("imported-edit", original)
+                ]);
+                AssertSaveSucceeded(authoringSession, sourcePath);
+            }
+
+            using (FastFileWorkspace importedWorkspace = documentService.Open(
+                       new FastFileDocumentOpenRequest(sourcePath, Isolated.Instance)))
+            using (var editingSession = new FastFileEditingSession(importedWorkspace))
+            {
+                LocalizeAsset imported = Assert.IsType<LocalizeAsset>(
+                    Assert.Single(importedWorkspace.LoadedZone.LoadedAssets).Asset);
+                var edited = new LocalizeAsset
+                {
+                    NamePointer = imported.NamePointer,
+                    Name = imported.Name,
+                    ValuePointer = imported.ValuePointer,
+                    Value = "edited replacement value"
+                };
+
+                editingSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(
+                        edited,
+                        importedWorkspace.LoadedZone.LinkAssetImportResolver,
+                        importedDefinition: imported)
+                ]);
+                AssertSaveSucceeded(editingSession, editedPath);
+            }
+
+            using FastFileWorkspace linkedWorkspace = documentService.Open(
+                new FastFileDocumentOpenRequest(editedPath, Isolated.Instance));
+            LocalizeAsset linked = Assert.IsType<LocalizeAsset>(
+                Assert.Single(linkedWorkspace.LoadedZone.LoadedAssets).Asset);
+            Assert.Equal(original.Name, linked.Name);
+            Assert.Equal("edited replacement value", linked.Value);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Fact]
+    public void Save_as_rejects_a_stale_revision_and_removes_staged_files()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string destinationPath = Path.Combine(temporaryDirectory, "stale.ff");
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
+            using var editingSession = new FastFileEditingSession(blank);
+            var validator = new CallbackCandidateValidator((_, _) =>
+            {
+                editingSession.SetOrderedRoots([]);
+                return [];
+            });
+
+            SaveAsResult result = new TransactionalSaveAsService().SaveAs(
+                editingSession,
+                new SaveAsRequest(
+                    destinationPath,
+                    AllowOverwrite: false,
+                    CandidateValidator: validator));
+
+            Assert.False(result.Succeeded);
+            Assert.False(result.Cancelled);
+            Assert.Contains(
+                result.Diagnostics,
+                value => value.Contains("became stale", StringComparison.Ordinal));
+            Assert.False(File.Exists(destinationPath));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(temporaryDirectory));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Fact]
+    public void Shared_nested_provider_is_emitted_once_and_reused_by_alias_cell()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string destinationPath = Path.Combine(temporaryDirectory, "shared-provider.ff");
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+
+            var sharedImage = new GfxImageAsset { Name = ",qual/shared_image" };
+            var lightA = new LightDefAsset
+            {
+                Name = "qual/light_a",
+                Image = sharedImage
+            };
+            var lightB = new LightDefAsset
+            {
+                Name = "qual/light_b",
+                Image = sharedImage
+            };
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
+            using (var editingSession = new FastFileEditingSession(blank))
+            {
+                editingSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(sharedImage),
+                    new LinkAssetProviderSource(lightA),
+                    new LinkAssetProviderSource(lightB)
+                ]);
+                editingSession.SetOrderedRoots([
+                    CreateOwnedRoot("light-a", lightA),
+                    CreateOwnedRoot("light-b", lightB)
+                ]);
+                AssertSaveSucceeded(editingSession, destinationPath);
+            }
+
+            using FastFileWorkspace loaded = documentService.Open(
+                new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            Assert.Equal(2, loaded.LoadedZone.XAssetList.AssetCount);
+            Assert.Equal(2, loaded.LoadedZone.LoadedAssets.Count);
+            Assert.Equal(3, loaded.InitialLinkRequest.Assets.Providers.Count);
+            Assert.Single(
+                loaded.InitialLinkRequest.Assets.Providers,
+                provider => provider.SerializedType == XAssetType.Image);
+
+            LightDefAsset loadedA = Assert.IsType<LightDefAsset>(
+                loaded.LoadedZone.LoadedAssets[0].Asset);
+            LightDefAsset loadedB = Assert.IsType<LightDefAsset>(
+                loaded.LoadedZone.LoadedAssets[1].Asset);
+            Assert.NotNull(loadedA.Image);
+            Assert.Same(loadedA.Image, loadedB.Image);
+            Assert.Equal(PointerType.Insert, loadedA.ImagePointer.Type);
+            Assert.Equal(PointerType.Offset, loadedB.ImagePointer.Type);
+            Assert.Equal(XPointerResolutionMode.AliasCell, loadedB.ImagePointer.ResolutionMode);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Fact]
+    public void XAnim_script_strings_rebuild_null_empty_and_shared_indices()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string destinationPath = Path.Combine(temporaryDirectory, "script-strings.ff");
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+            XBlockAddress semanticCell = new(XFileBlockType.LARGE, 0);
+            var animation = new XAnimPartsAsset
+            {
+                Name = "qual/anim",
+                BoneCounts = new byte[10],
+                BoneNameCount = 4,
+                Names = [
+                    new ScriptStringReference(41, "", new ScriptStringHandle(41), semanticCell),
+                    new ScriptStringReference(99, "tag_shared", new ScriptStringHandle(99), semanticCell),
+                    new ScriptStringReference(7, "tag_shared", new ScriptStringHandle(7), semanticCell),
+                    new ScriptStringReference(0, null, ScriptStringHandle.Null, semanticCell)
+                ]
+            };
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
+            using (var editingSession = new FastFileEditingSession(blank))
+            {
+                editingSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(animation)
+                ]);
+                editingSession.SetOrderedRoots([
+                    CreateOwnedRoot("animation", animation)
+                ]);
+                AssertSaveSucceeded(editingSession, destinationPath);
+            }
+
+            using FastFileWorkspace loaded = documentService.Open(
+                new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            Assert.Equal(3, loaded.LoadedZone.XAssetList.ScriptStringCount);
+            Assert.Equal(
+                new string?[] { null, "", "tag_shared" },
+                loaded.LoadedZone.XAssetList.ScriptStrings
+                    .Select(entry => entry.Value)
+                    .ToArray());
+
+            XAnimPartsAsset loadedAnimation = Assert.IsType<XAnimPartsAsset>(
+                Assert.Single(loaded.LoadedZone.LoadedAssets).Asset);
+            Assert.Equal(new ushort[] { 1, 2, 2, 0 },
+                loadedAnimation.Names.Select(value => value.RawLocalIndex).ToArray());
+            Assert.Equal(new string?[] { "", "tag_shared", "tag_shared", null },
+                loadedAnimation.Names.Select(value => value.Text).ToArray());
+            Assert.False(loadedAnimation.Names[0].RuntimeHandle.IsNull);
+            Assert.Equal(
+                loadedAnimation.Names[1].RuntimeHandle,
+                loadedAnimation.Names[2].RuntimeHandle);
+            Assert.True(loadedAnimation.Names[3].RuntimeHandle.IsNull);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
+        }
+    }
+
+    [Fact]
+    public void Streamed_image_preserves_read_only_language_references_without_creating_a_package()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            string destinationPath = Path.Combine(temporaryDirectory, "streamed-image.ff");
+            EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
+
+            var languageOneEntry = new DbHeaderImageStreamEntry(
+                FileIndex: 3,
+                SourceStart: 0x1000,
+                SourceEnd: 0x1100,
+                BlockOffset: 0x0020,
+                StreamOffset: 0x00020020,
+                SerializedOffset: -1);
+            var languageTwoEntry = new DbHeaderImageStreamEntry(
+                FileIndex: 9,
+                SourceStart: 0x3000,
+                SourceEnd: 0x3200,
+                BlockOffset: 0x0040,
+                StreamOffset: 0x00050040,
+                SerializedOffset: -1);
+            ImageFileStreamLanguageReferences[] imageStreamReferences = [
+                new(1, [
+                    new ImageFileStreamReference(languageOneEntry, byteLength: 4),
+                    EmptyImageFileStreamReference(),
+                    EmptyImageFileStreamReference(),
+                    EmptyImageFileStreamReference()
+                ]),
+                new(2, [
+                    new ImageFileStreamReference(languageTwoEntry, byteLength: 4),
+                    EmptyImageFileStreamReference(),
+                    EmptyImageFileStreamReference(),
+                    EmptyImageFileStreamReference()
+                ])
+            ];
+            var image = new GfxImageAsset
+            {
+                Name = "qual/streamed",
+                StreamData = [
+                    new GfxImageStreamData(1, 1, 4),
+                    new GfxImageStreamData(0, 0, 0),
+                    new GfxImageStreamData(0, 0, 0),
+                    new GfxImageStreamData(0, 0, 0)
+                ]
+            };
+
+            var documentService = new FastFileDocumentService();
+            using FastFileWorkspace blank = documentService.CreateBlank(3, 2);
+            using (var editingSession = new FastFileEditingSession(blank))
+            {
+                editingSession.AddOrReplaceProviders([
+                    new LinkAssetProviderSource(
+                        image,
+                        imageStreamReferences: imageStreamReferences)
+                ]);
+                editingSession.SetOrderedRoots([
+                    CreateOwnedRoot("streamed-image", image)
+                ]);
+                AssertSaveSucceeded(editingSession, destinationPath);
+            }
+
+            Assert.True(File.Exists(destinationPath));
+            Assert.Equal(
+                destinationPath,
+                Assert.Single(Directory.EnumerateFiles(temporaryDirectory)));
+            Assert.Empty(Directory.EnumerateDirectories(temporaryDirectory));
+            Assert.DoesNotContain(
+                Directory.EnumerateFiles(temporaryDirectory),
+                path => string.Equals(
+                    Path.GetExtension(path),
+                    ".pak",
+                    StringComparison.OrdinalIgnoreCase));
+            AssertStreamedImageReload(
+                destinationPath,
+                selectedLanguageMask: 1,
+                imageStreamReferences);
+            AssertStreamedImageReload(
+                destinationPath,
+                selectedLanguageMask: 2,
+                imageStreamReferences);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(temporaryDirectory);
         }
     }
 
@@ -99,6 +663,14 @@ public sealed class StockFastFileRoundTripTests
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
+
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
+                StockFastFileAllowlistEnvironmentVariable)) &&
+            discoveredPaths.Length != 105)
+        {
+            throw new InvalidOperationException(
+                $"The stock-oracle suite requires exactly 105 fastfiles, but discovered {discoveredPaths.Length}.");
+        }
 
         return SelectStockFastFiles(discoveredPaths);
     }
@@ -423,43 +995,296 @@ public sealed class StockFastFileRoundTripTests
         return new FileFingerprint(file.Length, file.LastWriteTimeUtc, sha256);
     }
 
-    private static void AssertDecodedZoneAndHeaderMetadataMatch(
+    private static void AssertSourceFingerprintUnchanged(
+        string sourcePath,
+        FileFingerprint? sourceBefore)
+    {
+        if (sourceBefore is null)
+            return;
+
+        FileFingerprint sourceAfter = CaptureFingerprint(sourcePath);
+        Assert.True(
+            sourceBefore == sourceAfter,
+            $"Stock source '{sourcePath}' changed during qualification. " +
+            $"Before: {sourceBefore}. After: {sourceAfter}.");
+    }
+
+    private static TResult WithLoadedZone<TResult>(
+        string path,
+        uint selectedLanguageMask,
+        Func<DbLoadSession, LoadedXZone, TResult> operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        using var loadSession = new DbLoadSession(
+            selectedLanguageMask: selectedLanguageMask);
+        LoadedXZone loaded = loadSession.DB_LoadXZone(
+            path,
+            XZoneFlags.DB_ZONE_DEV);
+        return operation(loadSession, loaded);
+    }
+
+    private static HeaderEnvelope CaptureHeaderEnvelope(LoadedXZone loaded) =>
+        new(
+            loaded.Header.PackedStreamOffset,
+            loaded.Header.SerializedHeaderLength,
+            loaded.Header.SerializedHeaderBytes.ToArray());
+
+    private static void AssertHeaderEnvelopeMatches(
+        HeaderEnvelope source,
+        HeaderEnvelope candidate,
         string sourcePath,
         string candidatePath)
     {
-        LoadedXZone source = LoadZone(sourcePath);
-        LoadedXZone candidate = LoadZone(candidatePath);
-
-        AssertByteSequencesMatch(
-            source.ZoneBytes,
-            candidate.ZoneBytes,
-            $"Decoded zone mismatch: source '{sourcePath}', candidate '{candidatePath}'");
-
-        Assert.Equal(
-            source.Header.PackedStreamOffset,
-            candidate.Header.PackedStreamOffset);
-        Assert.Equal(
-            source.Header.SerializedHeaderLength,
-            candidate.Header.SerializedHeaderLength);
-
-        ReadOnlySpan<byte> sourceHeader = source.Header.SerializedHeaderBytes.AsSpan();
-        ReadOnlySpan<byte> candidateHeader = candidate.Header.SerializedHeaderBytes.AsSpan();
+        Assert.Equal(source.PackedStreamOffset, candidate.PackedStreamOffset);
+        Assert.Equal(source.SerializedHeaderLength, candidate.SerializedHeaderLength);
         Assert.True(
-            sourceHeader.Length >= 8 && candidateHeader.Length >= 8,
+            source.SerializedBytes.Length >= 8 && candidate.SerializedBytes.Length >= 8,
             "DB headers must contain FileSize and MaxFileSize dwords.");
         AssertByteSequencesMatch(
-            sourceHeader[..^8],
-            candidateHeader[..^8],
-            $"DB-header metadata mismatch: source '{sourcePath}', candidate '{candidatePath}'");
+            source.SerializedBytes.AsSpan()[..^8],
+            candidate.SerializedBytes.AsSpan()[..^8],
+            $"DB-header envelope mismatch: source '{sourcePath}', candidate '{candidatePath}'");
     }
 
-    private static LoadedXZone LoadZone(string path)
+    private static void AssertSaveSucceeded(
+        FastFileEditingSession editingSession,
+        string destinationPath)
     {
-        byte[] bytes = File.ReadAllBytes(path);
-        return new DbZoneLoader().DB_LoadXZone(
-            bytes,
-            bytes.Length,
-            sourceName: path);
+        SaveAsResult result = new TransactionalSaveAsService().SaveAs(
+            editingSession,
+            new SaveAsRequest(destinationPath, AllowOverwrite: false));
+        Assert.True(
+            result.Succeeded,
+            $"Save As failed for '{destinationPath}'.{Environment.NewLine}" +
+            string.Join(Environment.NewLine, result.Diagnostics));
+        Assert.True(File.Exists(destinationPath));
+    }
+
+    private static LinkRoot CreateOwnedRoot(string entryId, BaseAsset asset) =>
+        new(
+            entryId,
+            asset.SerializedAssetType,
+            LinkRootIntent.Owned,
+            AssetKey.FromDefinition(asset),
+            asset.SerializedAssetName,
+            opaqueHeader: null);
+
+    private static void AssertLinkSucceeded(
+        ZoneLinkResult result,
+        string description)
+    {
+        Assert.True(
+            result.Succeeded,
+            $"{description}.{Environment.NewLine}" +
+            string.Join(Environment.NewLine, result.Errors));
+        Assert.True(result.DecodedBytes.HasValue);
+        Assert.NotNull(result.XFile);
+    }
+
+    private static ReadOnlyMemory<byte> GetDecodedBytes(ZoneLinkResult result)
+    {
+        ReadOnlyMemory<byte>? decoded = result.DecodedBytes;
+        Assert.True(decoded.HasValue);
+        return decoded.Value;
+    }
+
+    private static void AssertXFileLayoutMatches(
+        XFile? expected,
+        XFile? actual,
+        string description)
+    {
+        if (expected is null || actual is null)
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"Canonical link for '{description}' did not produce an XFile layout.");
+        }
+
+        Assert.Equal(expected.Size, actual.Size);
+        Assert.Equal(expected.ExternalSize, actual.ExternalSize);
+        Assert.Equal(XFile.BlockCount, expected.BlockSizes.Count);
+        Assert.Equal(XFile.BlockCount, actual.BlockSizes.Count);
+        Assert.Equal(expected.BlockSizes, actual.BlockSizes);
+    }
+
+    private static void AssertImageStreamLanguageTablesMatch(
+        IReadOnlyList<DbHeaderImageStreamLanguageTable> expected,
+        IReadOnlyList<DbHeaderImageStreamLanguageTable> actual,
+        string description)
+    {
+        Assert.Equal(expected.Count, actual.Count);
+        for (int languageIndex = 0; languageIndex < expected.Count; languageIndex++)
+        {
+            DbHeaderImageStreamLanguageTable expectedLanguage = expected[languageIndex];
+            DbHeaderImageStreamLanguageTable actualLanguage = actual[languageIndex];
+            Assert.Equal(expectedLanguage.SerializedIndex, actualLanguage.SerializedIndex);
+            Assert.Equal(expectedLanguage.LanguageMask, actualLanguage.LanguageMask);
+            Assert.Equal(
+                expectedLanguage.ImageStreamEntries.Length,
+                actualLanguage.ImageStreamEntries.Length);
+            for (int entryIndex = 0;
+                 entryIndex < expectedLanguage.ImageStreamEntries.Length;
+                 entryIndex++)
+            {
+                AssertImageStreamEntryMatches(
+                    expectedLanguage.ImageStreamEntries[entryIndex],
+                    actualLanguage.ImageStreamEntries[entryIndex],
+                    $"Image stream mismatch for '{description}', language " +
+                    $"0x{expectedLanguage.LanguageMask:X}, entry {entryIndex}");
+            }
+        }
+    }
+
+    private static void AssertImageStreamEntryMatches(
+        DbHeaderImageStreamEntry expected,
+        DbHeaderImageStreamEntry actual,
+        string description)
+    {
+        Assert.True(
+            expected.FileIndex == actual.FileIndex &&
+            expected.SourceStart == actual.SourceStart &&
+            expected.SourceEnd == actual.SourceEnd &&
+            expected.BlockOffset == actual.BlockOffset &&
+            expected.StreamOffset == actual.StreamOffset,
+            $"{description}: expected wire fields {expected}, actual {actual}.");
+    }
+
+    private static void AssertOrderedRootSubsequence(
+        IReadOnlyList<LinkRoot> expectedRoots,
+        IReadOnlyList<LinkRoot> candidateRoots,
+        string sourcePath)
+    {
+        LinkRootDescriptor[] expected = expectedRoots
+            .Select(CreateRootDescriptor)
+            .ToArray();
+        LinkRootDescriptor[] candidate = candidateRoots
+            .Select(CreateRootDescriptor)
+            .ToArray();
+        int candidateIndex = 0;
+        for (int expectedIndex = 0; expectedIndex < expected.Length; expectedIndex++)
+        {
+            while (candidateIndex < candidate.Length &&
+                candidate[candidateIndex] != expected[expectedIndex])
+            {
+                candidateIndex++;
+            }
+
+            Assert.True(
+                candidateIndex < candidate.Length,
+                $"Canonical candidate for '{sourcePath}' does not retain source root " +
+                $"{expectedIndex} ({expected[expectedIndex]}) as an ordered subsequence.");
+            candidateIndex++;
+        }
+    }
+
+    private static LinkRootDescriptor CreateRootDescriptor(LinkRoot root) =>
+        new(
+            root.SerializedType,
+            root.Intent,
+            root.Asset,
+            root.OriginalSerializedName,
+            root.OpaqueHeader);
+
+    private static void AssertCandidateRootRows(
+        LoadedXZone loaded,
+        IReadOnlyList<LinkRoot> roots,
+        string sourcePath)
+    {
+        Assert.Equal(roots.Count, loaded.XAssetList.Assets.Count);
+        Assert.Equal(roots.Count, loaded.LoadedAssets.Count);
+        for (int index = 0; index < roots.Count; index++)
+        {
+            LinkRoot root = roots[index];
+            XAssetListEntrySnapshot row = loaded.XAssetList.Assets[index];
+            Assert.Equal(root.SerializedType, row.Type);
+            switch (root.Intent)
+            {
+                case LinkRootIntent.Owned:
+                case LinkRootIntent.External:
+                    Assert.False(row.IsOpaqueHeader);
+                    Assert.Equal(PointerType.Inline, row.AssetPointer.Type);
+                    break;
+                case LinkRootIntent.Null:
+                    Assert.False(row.IsOpaqueHeader);
+                    Assert.Equal(PointerType.Null, row.AssetPointer.Type);
+                    break;
+                case LinkRootIntent.OpaqueNative:
+                    Assert.True(row.IsOpaqueHeader);
+                    Assert.Equal(root.OpaqueHeader, row.RawHeader);
+                    break;
+                default:
+                    throw new Xunit.Sdk.XunitException(
+                        $"Candidate '{sourcePath}' has unknown root intent {root.Intent} at row {index}.");
+            }
+        }
+    }
+
+    private static ImageFileStreamReference EmptyImageFileStreamReference() =>
+        new(
+            new DbHeaderImageStreamEntry(
+                FileIndex: 0,
+                SourceStart: 0,
+                SourceEnd: 0,
+                BlockOffset: 0,
+                StreamOffset: 0,
+                SerializedOffset: -1),
+            byteLength: 0);
+
+    private static void AssertStreamedImageReload(
+        string fastFilePath,
+        uint selectedLanguageMask,
+        IReadOnlyList<ImageFileStreamLanguageReferences> expectedReferences)
+    {
+        DbHeaderImageStreamLanguageTable[] expectedTables = expectedReferences
+            .Select((language, index) => new DbHeaderImageStreamLanguageTable(
+                index,
+                language.LanguageMask,
+                language.References.Select(reference => reference.Entry)))
+            .ToArray();
+        _ = WithLoadedZone(
+            fastFilePath,
+            selectedLanguageMask,
+            (loadSession, loaded) =>
+            {
+                Assert.Equal(3u, loaded.Header.LanguageMask);
+                Assert.Equal(selectedLanguageMask, loaded.Header.SelectedLanguageMask);
+                Assert.Equal(2, loaded.Header.LanguageTables.Length);
+                Assert.Equal(4u, loaded.Header.EntryCount);
+                AssertImageStreamLanguageTablesMatch(
+                    expectedTables,
+                    loaded.Header.LanguageTables,
+                    $"Reloaded header for selected language 0x{selectedLanguageMask:X}");
+
+                GfxImageAsset loadedImage = Assert.IsType<GfxImageAsset>(
+                    Assert.Single(loaded.LoadedAssets).Asset);
+                int[] reloadedByteLengths =
+                    GfxImageStreamData.ValidateProfileAndComputePartByteCounts(
+                        loadedImage.StreamData);
+                foreach (ImageFileStreamLanguageReferences language in expectedReferences)
+                {
+                    Assert.Equal(
+                        language.References.Select(reference => reference.ByteLength),
+                        reloadedByteLengths);
+                }
+
+                LinkAssetPool pool = loadSession.FreezeLinkAssetPool();
+                IReadOnlyList<LinkRoot> roots = loaded.FreezeLinkRoots();
+                Assert.Single(pool.Providers);
+                Assert.Single(roots);
+                var request = new ZoneLinkRequest(
+                    pool,
+                    roots,
+                    loaded.Header.LanguageMask,
+                    loaded.Header.SelectedLanguageMask);
+                ZoneLinkResult link = new ZoneLinker().Link(request);
+                AssertLinkSucceeded(
+                    link,
+                    $"Streamed image relink failed for selected language 0x{selectedLanguageMask:X}");
+                AssertImageStreamLanguageTablesMatch(
+                    expectedTables,
+                    link.ImageStreamLanguageTables,
+                    $"Reloaded link for selected language 0x{selectedLanguageMask:X}");
+                return true;
+            });
     }
 
     private static void AssertByteSequencesMatch(
@@ -482,8 +1307,35 @@ public sealed class StockFastFileRoundTripTests
         }
     }
 
+    private sealed class CallbackCandidateValidator(
+        Func<string, CancellationToken, IReadOnlyList<string>> validate)
+        : ITransactionalSaveCandidateValidator
+    {
+        public IReadOnlyList<string> Validate(
+            string candidatePath,
+            CancellationToken cancellationToken = default) =>
+            validate(candidatePath, cancellationToken);
+    }
+
     private sealed record FileFingerprint(
         long Length,
         DateTime LastWriteTimeUtc,
         string Sha256);
+
+    private sealed record SourceLayoutReplay(
+        byte[] DecodedZone,
+        HeaderEnvelope Header,
+        byte[] PackagedFastFile);
+
+    private sealed record HeaderEnvelope(
+        int PackedStreamOffset,
+        int SerializedHeaderLength,
+        byte[] SerializedBytes);
+
+    private readonly record struct LinkRootDescriptor(
+        XAssetType SerializedType,
+        LinkRootIntent Intent,
+        AssetKey? Asset,
+        string? OriginalSerializedName,
+        int? OpaqueHeader);
 }

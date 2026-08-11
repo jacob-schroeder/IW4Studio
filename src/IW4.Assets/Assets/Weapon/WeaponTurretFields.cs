@@ -7,6 +7,7 @@ namespace IW4.Assets.Assets.Weapon;
 public sealed class WeaponTurretFields
 {
     public XString OverheatSoundPointer { get; init; }                            // 0x5DC
+    public XString OverheatSoundValuePointer { get; init; }
     public string? OverheatSound { get; init; }
     public XPointer<FxEffectDefAsset> OverheatEffectPointer { get; init; }        // 0x5E0
     public XString BarrelSpinRumblePointer { get; init; }                         // 0x5E4
@@ -15,9 +16,12 @@ public sealed class WeaponTurretFields
     public float BarrelSpinUpTime { get; init; }                                  // 0x5EC
     public float BarrelSpinDownTime { get; init; }                                // 0x5F0
     public XString BarrelSpinMaxSoundPointer { get; init; }                       // 0x5F4
+    public XString BarrelSpinMaxSoundValuePointer { get; init; }
     public string? BarrelSpinMaxSound { get; init; }
     public IReadOnlyList<XString> BarrelSpinUpSoundPointers { get; init; } = [];  // 0x5F8..0x604, count 4
+    public IReadOnlyList<XString> BarrelSpinUpSoundValuePointers { get; init; } = [];
     public IReadOnlyList<string?> BarrelSpinUpSoundNames { get; init; } = [];
     public IReadOnlyList<XString> BarrelSpinDownSoundPointers { get; init; } = [];// 0x608..0x614, count 4
+    public IReadOnlyList<XString> BarrelSpinDownSoundValuePointers { get; init; } = [];
     public IReadOnlyList<string?> BarrelSpinDownSoundNames { get; init; } = [];
 }

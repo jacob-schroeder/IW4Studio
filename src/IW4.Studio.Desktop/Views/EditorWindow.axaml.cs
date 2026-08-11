@@ -4,14 +4,11 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Lifecycle;
-using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Desktop.Themes;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Composition;
 using IW4.Studio.Desktop.Workbench.Tools;
 using IW4.Studio.Documents;
-using IW4.Studio.MapEditor.Compilation.Import;
-using IW4.Studio.MapEditor.Compilation.Persistence;
 using IW4.Studio.Rendering;
 
 namespace IW4.Studio.Desktop.Views;
@@ -21,12 +18,9 @@ public sealed partial class EditorWindow : Window
     private readonly DestructiveNavigationCoordinator _navigationCoordinator;
     private readonly IUnsavedChangesDialog _unsavedChangesDialog;
     private readonly TransactionalSaveAsService _saveAsService = new();
-    private readonly MapEditorSaveAsService _mapEditorSaveAsService = new();
     private readonly FastFileRenderViewService _renderViewService = new();
     private StudioWorkbenchViewModel? _workbench;
-    private MapEditorWindow? _mapEditorWindow;
     private GscEngineReferenceWindow? _gscEngineReferenceWindow;
-    private MapEditorLivePreviewBridge? _mapEditorLivePreviewBridge;
     private readonly HashSet<MapRenderWindow> _livePreviewWindows = [];
     private readonly RetryableRenderWarmup _renderWarmup = new();
     private int _saveAsInProgress;
@@ -60,7 +54,6 @@ public sealed partial class EditorWindow : Window
         ArgumentNullException.ThrowIfNull(workspace);
         _workbench = new StudioWorkbenchViewModel(workspace);
         _workbench.LivePreviewRequested += Workbench_LivePreviewRequested;
-        _workbench.MapEditorRequested += Workbench_MapEditorRequested;
         _workbench.EditorTabCloseRequested +=
             Workbench_EditorTabCloseRequested;
         _workbench.EditorTabsCloseRequested +=
@@ -136,14 +129,6 @@ public sealed partial class EditorWindow : Window
         workbench.ActivateTool(StudioToolIds.LivePreview);
     }
 
-    private void MapEditorMenuItem_Click(object? sender, EventArgs e)
-    {
-        if (_disposed || _workbench is not { } workbench)
-            return;
-
-        workbench.ActivateTool(StudioToolIds.MapEditor);
-    }
-
     private void Workbench_LivePreviewRequested(
         object? sender,
         EventArgs e)
@@ -154,8 +139,7 @@ public sealed partial class EditorWindow : Window
         var renderWindow = new MapRenderWindow(
             workbench.Workspace,
             workbench.TargetFileName,
-            _renderViewService,
-            _mapEditorLivePreviewBridge);
+            _renderViewService);
         _livePreviewWindows.Add(renderWindow);
         renderWindow.Closed += (_, _) =>
             _livePreviewWindows.Remove(renderWindow);
@@ -164,51 +148,6 @@ public sealed partial class EditorWindow : Window
             "Live Preview",
             "Opening the native in-game rendering preview.");
         renderWindow.Show(this);
-    }
-
-    private void Workbench_MapEditorRequested(object? sender, EventArgs e)
-    {
-        if (_disposed ||
-            _workbench?.MapEditor.OpenResult is not
-                { Succeeded: true, Session: { } session } result)
-        {
-            return;
-        }
-
-        if (_mapEditorWindow is not null)
-        {
-            _mapEditorWindow.Activate();
-            return;
-        }
-
-        if (_mapEditorLivePreviewBridge is null ||
-            !ReferenceEquals(
-                _mapEditorLivePreviewBridge.Document,
-                session.Document))
-        {
-            _mapEditorLivePreviewBridge?.Dispose();
-            _mapEditorLivePreviewBridge =
-                new MapEditorLivePreviewBridge(session.Document);
-            foreach (MapRenderWindow renderWindow in _livePreviewWindows)
-            {
-                renderWindow.AttachLivePreviewSource(
-                    _mapEditorLivePreviewBridge);
-            }
-        }
-
-        _mapEditorWindow = new MapEditorWindow(
-            result,
-            _mapEditorLivePreviewBridge,
-            _workbench.MapEditor.EditingContext ??
-            throw new InvalidOperationException(
-                "The prepared map document has no Desktop editing context."),
-            EnsureRenderWarmup(_workbench));
-        _mapEditorWindow.Closed += (_, _) => _mapEditorWindow = null;
-        _workbench.ConsoleOutput.Append(
-            Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information,
-            "Map Editor",
-            $"Opening aggregate compiled-map document '{session.Bundle.MapIdentity}'.");
-        _mapEditorWindow.Show(this);
     }
 
     private async void Workbench_EditorTabCloseRequested(
@@ -441,8 +380,7 @@ public sealed partial class EditorWindow : Window
                 _unsavedChangesDialog,
                 proceedAsync,
                 workbench.CanSaveAs ? RequestSaveAsAsync : null,
-                CaptureMapEditorUnsavedChanges,
-                CaptureStagedEditorChanges);
+                stagedEditorChanges: CaptureStagedEditorChanges);
         }
         finally
         {
@@ -477,174 +415,18 @@ public sealed partial class EditorWindow : Window
         string originalTitle = Title ?? "IW4 Studio";
         try
         {
-            ExistingMapImportResult? preparedMapSession =
-                workbench.MapEditor.Session;
-            if (preparedMapSession?.Document.RequiresReopen == true)
-            {
-                string[] diagnostics =
-                [
-                    "A verified compiled-map Save As has already been committed " +
-                    "from this imported baseline.",
-                    "Reopen that output before saving again so ordinary Studio " +
-                    "drafts and map-editor changes share the same baseline."
-                ];
-                workbench.ConsoleOutput.Append(
-                    Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Error,
-                    "Map Editor Save As",
-                    string.Join(" ", diagnostics));
-                if (!_disposed)
-                    await ShowSaveResultAsync(cancelled: false, diagnostics);
-                return WorkspaceSaveOutcome.Failure;
-            }
-
-            MapEditorEditingContext? editingContext =
-                workbench.MapEditor.EditingContext;
-            if (editingContext?.HasStaticModelTranslationDraft == true)
-            {
-                string[] diagnostics =
-                [
-                    "A static-model move is still being previewed.",
-                    "Apply or cancel the viewport move before Map Editor Save As."
-                ];
-                workbench.ConsoleOutput.Append(
-                    Workbench.Tools.ConsoleOutput
-                        .ConsoleOutputLevel.Error,
-                    "Map Editor Save As",
-                    string.Join(" ", diagnostics));
-                if (!_disposed)
-                {
-                    await ShowSaveResultAsync(
-                        cancelled: false,
-                        diagnostics);
-                }
-                return WorkspaceSaveOutcome.Failure;
-            }
-
             string? destination =
                 await SelectSaveDestinationAsync(workbench.TargetFileName);
             if (destination is null || _disposed)
                 return WorkspaceSaveOutcome.Cancellation;
 
-            if (editingContext?.HasPropertyDrafts == true)
-            {
-                MapEntityPropertyDraftCommitResult draftCommit;
-                try
-                {
-                    draftCommit =
-                        editingContext.CommitPropertyDrafts();
-                }
-                catch (Exception exception)
-                    when (exception is not OutOfMemoryException)
-                {
-                    draftCommit =
-                        MapEntityPropertyDraftCommitResult.Failure(
-                            [
-                                "Could not prepare MapEnt property drafts for " +
-                                $"Save As: {exception.Message}"
-                            ]);
-                }
-                if (!draftCommit.Succeeded)
-                {
-                    workbench.ConsoleOutput.Append(
-                        Workbench.Tools.ConsoleOutput
-                            .ConsoleOutputLevel.Error,
-                        "Map Editor Save As",
-                        string.Join(" ", draftCommit.Diagnostics));
-                    if (!_disposed)
-                    {
-                        await ShowSaveResultAsync(
-                            cancelled: false,
-                            draftCommit.Diagnostics);
-                    }
-                    return WorkspaceSaveOutcome.Failure;
-                }
-            }
-
             var progress = new Progress<SaveAsProgress>(value =>
                 Title = $"{originalTitle} — {value.Message}");
-            ExistingMapImportResult? mapSession = preparedMapSession;
-            if (mapSession is not null &&
-                mapSession.Document.History.SerializedPendingEdits.Count != 0)
-            {
-                MapEditorSaveLease saveLease;
-                try
-                {
-                    // Acquire both mutable source leases synchronously before
-                    // yielding the UI thread to background candidate work.
-                    saveLease = _mapEditorSaveAsService.AcquireSaveLease(
-                        mapSession,
-                        workbench.Editor.EditingSession);
-                }
-                catch (Exception exception)
-                    when (exception is not OutOfMemoryException)
-                {
-                    string[] diagnostics =
-                    [
-                        "Could not acquire the compiled-map save boundary: " +
-                        exception.Message
-                    ];
-                    workbench.ConsoleOutput.Append(
-                        Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Error,
-                        "Map Editor Save As",
-                        diagnostics[0]);
-                    if (!_disposed)
-                    {
-                        await ShowSaveResultAsync(
-                            cancelled: false,
-                            diagnostics);
-                    }
-                    return WorkspaceSaveOutcome.Failure;
-                }
-
-                MapEditorSaveAsResult mapResult;
-                try
-                {
-                    mapResult = await Task.Run(() =>
-                        _mapEditorSaveAsService.SaveAs(
-                            mapSession,
-                            workbench.Editor.EditingSession,
-                            saveLease,
-                            new SaveAsRequest(
-                                destination,
-                                AllowOverwrite: true),
-                            progress,
-                            workbench.Editor.EditingSession.CancellationToken));
-                }
-                catch
-                {
-                    saveLease.Dispose();
-                    throw;
-                }
-                workbench.RefreshAfterSave();
-                LogMapSaveResult(workbench, mapResult);
-                if (!mapResult.Succeeded && !_disposed)
-                {
-                    await ShowSaveResultAsync(
-                        mapResult.Cancelled,
-                        mapResult.Diagnostics);
-                }
-
-                return ToWorkspaceSaveOutcome(
-                    mapResult.Status);
-            }
-
-            long? editorOnlyMapRevision =
-                mapSession?.Document.IsDirty == true
-                    ? mapSession.Document.Revision
-                    : null;
             SaveAsResult result = await Task.Run(() => _saveAsService.SaveAs(
                 workbench.Editor.EditingSession,
                 new SaveAsRequest(destination, AllowOverwrite: true),
                 progress,
                 workbench.Editor.EditingSession.CancellationToken));
-            if (result.Succeeded &&
-                editorOnlyMapRevision is { } savedMapRevision)
-            {
-                // Editor-only commands are intentionally omitted from the
-                // fastfile. A successful Save As acknowledges the captured
-                // semantic revision without changing its live editor state.
-                mapSession!.Document.MarkRevisionSaved(savedMapRevision);
-            }
             workbench.RefreshAfterSave();
             workbench.LogSaveResult(result);
             if (!result.Succeeded && !_disposed)
@@ -719,25 +501,6 @@ public sealed partial class EditorWindow : Window
         await window.ShowDialog(this);
     }
 
-    private SupplementalUnsavedChanges CaptureMapEditorUnsavedChanges()
-    {
-        if (_disposed ||
-            _workbench?.MapEditor.Session?.Document is not { } document)
-        {
-            return SupplementalUnsavedChanges.Clean;
-        }
-
-        int changedItemCount =
-            _workbench.MapEditor.EditingContext?.UnsavedChangeCount ??
-            document.History.PendingJournal.Count;
-        if (changedItemCount == 0)
-            return SupplementalUnsavedChanges.Clean;
-
-        return new SupplementalUnsavedChanges(
-            IsDirty: true,
-            ChangedItemCount: changedItemCount);
-    }
-
     private SupplementalUnsavedChanges CaptureStagedEditorChanges()
     {
         if (_disposed || _workbench is not { } workbench)
@@ -751,41 +514,6 @@ public sealed partial class EditorWindow : Window
                 ChangedItemCount: changedTabCount);
     }
 
-    private static WorkspaceSaveOutcome ToWorkspaceSaveOutcome(
-        MapEditorSaveAsStatus status) =>
-        status switch
-        {
-            MapEditorSaveAsStatus.Succeeded =>
-                WorkspaceSaveOutcome.Success,
-            MapEditorSaveAsStatus.Cancelled =>
-                WorkspaceSaveOutcome.Cancellation,
-            MapEditorSaveAsStatus.Rejected or
-                MapEditorSaveAsStatus.Failed =>
-                    WorkspaceSaveOutcome.Failure,
-            _ => throw new ArgumentOutOfRangeException(nameof(status))
-        };
-
-    private static void LogMapSaveResult(
-        StudioWorkbenchViewModel workbench,
-        MapEditorSaveAsResult result)
-    {
-        workbench.ConsoleOutput.Append(
-            result.Succeeded
-                ? Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information
-                : result.Cancelled
-                    ? Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Warning
-                    : Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Error,
-            "Map Editor Save As",
-            result.Succeeded
-                ? "Compiled-map changes saved and reopen-verified."
-                : result.Cancelled
-                    ? "Map Editor Save As was cancelled."
-                    : string.Join(
-                        " ",
-                        result.Diagnostics.DefaultIfEmpty(
-                            "Map Editor Save As was blocked.")));
-    }
-
     private void DisposeEditor()
     {
         if (_disposed)
@@ -795,16 +523,11 @@ public sealed partial class EditorWindow : Window
         _renderViewService.Dispose();
         _gscEngineReferenceWindow?.Close();
         _gscEngineReferenceWindow = null;
-        _mapEditorWindow?.Close();
-        _mapEditorWindow = null;
-        _mapEditorLivePreviewBridge?.Dispose();
-        _mapEditorLivePreviewBridge = null;
         _livePreviewWindows.Clear();
         if (_workbench is not null)
         {
             _workbench.LivePreviewRequested -=
                 Workbench_LivePreviewRequested;
-            _workbench.MapEditorRequested -= Workbench_MapEditorRequested;
             _workbench.EditorTabCloseRequested -=
                 Workbench_EditorTabCloseRequested;
             _workbench.EditorTabsCloseRequested -=

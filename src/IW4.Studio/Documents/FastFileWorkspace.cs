@@ -1,34 +1,42 @@
 using IW4.FastFiles.Loaders.Database;
+using IW4.Linker.Contracts;
 using IW4.Linker.Model;
 
 namespace IW4.Studio.Documents;
 
 /// <summary>
-/// The single-zone immutable source-layout replay workspace returned by an
-/// isolated open. At most one editing session may take ownership of its loaded
-/// runtime state.
+/// An imported or blank semantic fastfile workspace. At most one editing
+/// session may own it. Imported workspaces retain their loaded runtime view
+/// only for current workbench consumers; the editing state is linker-owned.
 /// </summary>
 public sealed class FastFileWorkspace : IDisposable
 {
-    private readonly DbLoadSession _loadSession;
+    private readonly DbLoadSession? _loadSession;
     private FastFileEditingSession? _editingSessionOwner;
     private bool _disposed;
 
     internal FastFileWorkspace(
         FastFileDocument document,
-        DbLoadSession loadSession)
+        DbLoadSession? loadSession = null)
     {
         ArgumentNullException.ThrowIfNull(document);
-        ArgumentNullException.ThrowIfNull(loadSession);
+        if (document.IsBlank != (loadSession is null))
+        {
+            throw new ArgumentException(
+                "Only imported workspaces can retain a DB load session.",
+                nameof(loadSession));
+        }
 
         Document = document;
         _loadSession = loadSession;
     }
 
     public FastFileDocument Document { get; }
+    public bool IsBlank => Document.IsBlank;
     public string SourcePath => Document.SourcePath;
     public LoadedXZone LoadedZone => Document.LoadedZone;
     public ZoneObjectFile ZoneObjectFile => Document.ZoneObjectFile;
+    public ZoneLinkRequest InitialLinkRequest => Document.InitialLinkRequest;
 
     internal void ThrowIfDisposed()
     {
@@ -74,7 +82,7 @@ public sealed class FastFileWorkspace : IDisposable
         if (_disposed)
             return;
 
-        _loadSession.Runtime.DB_FreeXZones(IW4.FastFiles.Zone.XZoneFlags.DB_ZONE_DEV);
+        _loadSession?.Dispose();
         _disposed = true;
     }
 }

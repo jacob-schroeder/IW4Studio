@@ -1,6 +1,7 @@
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Weapon;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.Vehicle;
@@ -74,7 +75,7 @@ public sealed class VehicleDefAsset : BaseAsset
     public int TrophyAmmoCount { get; init; }
     public float TrophyReloadTime { get; init; }
     public XBlockAddress? ScriptStringsAddress { get; init; }
-    public IReadOnlyList<ushort> TrophyTags { get; init; } = [];
+    public IReadOnlyList<ScriptStringReference> TrophyTags { get; init; } = [];
     public XPointer<MaterialAsset> CompassFriendlyIconPointer { get; init; }
     public MaterialAsset? CompassFriendlyIcon { get; init; }
     public XPointer<MaterialAsset> CompassEnemyIconPointer { get; init; }
@@ -89,8 +90,7 @@ public sealed class VehicleDefAsset : BaseAsset
     public float SpeedSoundBlendSpeed { get; init; }
     public XPointer<string> SurfaceSoundPrefixPointer { get; init; }
     public string? SurfaceSoundPrefix { get; init; }
-    public IReadOnlyList<XPointer<string>> SurfaceSoundAliasPointers { get; init; } = [];
-    public IReadOnlyList<string?> SurfaceSoundAliases { get; init; } = [];
+    public IReadOnlyList<VehicleSoundAliasField> SurfaceSoundFields { get; init; } = [];
     public float SurfaceSoundBlendSpeed { get; init; }
     public float SlideVolume { get; init; }
     public float SlideBlendSpeed { get; init; }

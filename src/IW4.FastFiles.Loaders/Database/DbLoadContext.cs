@@ -13,6 +13,7 @@ using IW4.Runtime.Assets;
 using IW4.Runtime.Assets.Lifecycle;
 using IW4.Runtime.Diagnostics;
 using IW4.Runtime.Strings;
+using IW4.Linker.Contracts;
 using IW4.Linker.Model;
 
 namespace IW4.FastFiles.Loaders.Database;
@@ -117,6 +118,10 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
 
     internal ZoneObjectFile FreezeZoneObjectFile() =>
         ZoneObjectCapture?.Freeze() ?? throw new InvalidOperationException("Zone object capture was not initialized.");
+
+    internal ILinkAssetImportResolver LinkAssetImportResolver =>
+        ZoneObjectCapture?.ImportResolver ?? throw new InvalidOperationException(
+            "Zone object capture was not initialized.");
 
     public override int? AllocateGfxImageStreamIndex(bool hasStreamingData)
     {
@@ -315,7 +320,8 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
                 providerRegistration,
                 materialization,
                 provider.ProviderId.Value,
-                activeProviderId.Value);
+                activeProviderId.Value,
+                provider.Asset);
         }
     }
 

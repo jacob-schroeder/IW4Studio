@@ -57,10 +57,14 @@ public sealed class WeaponDef
     // 0x048..0x120: effect, sound, and material pointer region.
     public IReadOnlyList<XPointer<FxEffectDefAsset>> FlashEffectPointers { get; init; } = [];
     public IReadOnlyList<FxEffectDefAsset?> FlashEffects { get; init; } = [];
+    // Root cells point to one-word wrappers; these retain each wrapper's
+    // nested XString cell separately from its outer direct pointer.
     public IReadOnlyList<XString> SoundAliasPointers { get; init; } = [];
+    public IReadOnlyList<XString> SoundAliasValuePointers { get; init; } = [];
     public IReadOnlyList<string?> SoundAliasNames { get; init; } = [];
     public XPointer<XString[]> BounceSoundPointer { get; init; }
     public IReadOnlyList<XString> BounceSoundPointers { get; init; } = [];
+    public IReadOnlyList<XString> BounceSoundValuePointers { get; init; } = [];
     public IReadOnlyList<string?> BounceSoundNames { get; init; } = [];
     public IReadOnlyList<XPointer<FxEffectDefAsset>> EffectPointers { get; init; } = [];
     public IReadOnlyList<FxEffectDefAsset?> Effects { get; init; } = [];
@@ -88,6 +92,7 @@ public sealed class WeaponDef
 
     // 0x3C8: alias-cell PhysCollmap pointer.
     public XPointer<PhysCollmapAsset> PhysCollmapPointer { get; init; }
+    public IW4.Assets.Assets.Physics.PhysCollmapAsset? PhysCollmap { get; init; }
     public string? PhysCollmapName { get; init; }
     public WeaponPhysicsFields Physics { get; init; } = new();                         // 0x3CC..0x41C
 

@@ -47,6 +47,9 @@ public sealed class ClipMapAsset : BaseAsset
         get => _isInUse;
         init => _isInUse = value;
     }
+    // Original +0x04 wire value before DB_Add marks the runtime-facing pool
+    // definition in use. Null identifies an authored definition.
+    public int? SerializedIsInUse { get; init; }
     public int PlaneCount { get; init; }
     public XPointer<CPlane[]> PlanesPointer { get; init; }
     public IReadOnlyList<CPlane> Planes { get; init; } = [];

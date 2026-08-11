@@ -10,25 +10,38 @@ namespace IW4.Linker.Model;
 /// </summary>
 internal sealed class LocalizeLinkRecipe : AssetLinkRecipe
 {
-    private readonly byte[]? _value;
-
     private LocalizeLinkRecipe(
         AssetKey key,
         string originalSerializedName,
-        byte[]? value,
-        bool requireReferencePlaceholder)
+        LinkStorageSymbol? value,
+        LinkAssetFreezeScope freeze)
         : base(
             key,
             originalSerializedName,
-            requireReferencePlaceholder)
+            freeze.FreezeProviderName(
+                originalSerializedName,
+                sizeof(int),
+                "Asset.Name"))
     {
-        _value = value;
+        Root = LinkStorageSymbol.SourceBytes(
+            XFileBlockType.TEMP,
+            new byte[LocalizeAsset.SerializedSize],
+            alignment: 4,
+            root => value is null
+                ? [NameOperation(root, sizeof(int))]
+                : [
+                    XStringOperation(root, 0, value, "Localize.Value"),
+                    NameOperation(root, sizeof(int))
+                ]);
     }
 
-    public static LocalizeLinkRecipe Freeze(
+    internal override LinkStorageSymbol Root { get; }
+
+    public static AssetLinkRecipe Freeze(
         AssetKey key,
         string originalSerializedName,
-        LocalizeAsset definition)
+        LocalizeAsset definition,
+        LinkAssetFreezeScope freeze)
     {
         ArgumentNullException.ThrowIfNull(definition);
         if (originalSerializedName.StartsWith(','))
@@ -39,53 +52,20 @@ internal sealed class LocalizeLinkRecipe : AssetLinkRecipe
                     "A comma-prefixed Localize provider must have a null value.");
             }
 
-            return CreateReference(key, originalSerializedName);
+            return ExternalAssetLinkRecipe.Create(
+                key,
+                XAssetType.Localize,
+                originalSerializedName,
+                freeze);
         }
 
         return new LocalizeLinkRecipe(
             key,
             originalSerializedName,
-            FreezeOptionalXString(definition.Value, "Localize.Value"),
-            requireReferencePlaceholder: false);
+            freeze.FreezeOptionalXString(
+                definition.Value,
+                definition.ValuePointer.Untyped,
+                "Localize.Value"),
+            freeze);
     }
-
-    public static LocalizeLinkRecipe CreateExternal(
-        AssetKey key,
-        string originalSerializedName) =>
-        CreateReference(key, originalSerializedName);
-
-    public override void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency)
-    {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(emitDependency);
-
-        output.PushTempScope();
-        try
-        {
-            output.Allocate(
-                XFileBlockType.TEMP,
-                LocalizeAsset.SerializedSize,
-                alignment: 4);
-            output.WriteInt32(XStringSourcePointer(_value));
-            output.WriteInt32(-1);
-
-            EmitFrozenXString(output, _value);
-            EmitName(output);
-        }
-        finally
-        {
-            output.PopTempScope();
-        }
-    }
-
-    private static LocalizeLinkRecipe CreateReference(
-        AssetKey key,
-        string originalSerializedName) =>
-        new(
-            key,
-            originalSerializedName,
-            value: null,
-            requireReferencePlaceholder: true);
 }

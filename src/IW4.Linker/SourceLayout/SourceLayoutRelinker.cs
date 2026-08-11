@@ -126,6 +126,13 @@ public sealed class SourceLayoutRelinker
             {
                 throw new InvalidDataException($"Packed direct relocation at 0x{relocation.TapeOffset:X} has the wrong resolution mode.");
             }
+            if (relocation.PublicationCell is not null &&
+                (relocation.ResolutionMode != XPointerResolutionMode.AliasCell ||
+                 relocation.Form is not (SerializedPointerForm.Inline or SerializedPointerForm.Insert)))
+            {
+                throw new InvalidDataException(
+                    $"Relocation at 0x{relocation.TapeOffset:X} has an invalid alias publication cell.");
+            }
             if (!lifetimes.TryGetValue(relocation.AmbientTempEpoch, out TempLifetime? ambientLifetime) ||
                 !Contains(ambientLifetime, relocation.Occurrence.Value))
             {
@@ -148,6 +155,8 @@ public sealed class SourceLayoutRelinker
                 _ = Address(source.Symbol.Allocation, source.Addend, source.AllowsEndAddress);
             if (relocation.Form is SerializedPointerForm.PackedDirect or SerializedPointerForm.PackedAlias)
                 _ = EncodeAddress(relocation.Target);
+            if (relocation.PublicationCell is { } publicationCell)
+                _ = EncodeAddress(publicationCell);
         }
     }
 

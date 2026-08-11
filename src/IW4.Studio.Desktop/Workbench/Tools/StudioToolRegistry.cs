@@ -8,7 +8,6 @@ using IW4.Studio.Desktop.Workbench.Tools.FastFileDetails;
 using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
-using IW4.Studio.Desktop.Workbench.Tools.MapEditor;
 using IW4.Studio.Desktop.Workbench.Tools.MapRender;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
@@ -141,20 +140,6 @@ public static class StudioToolRegistry
                     DataContext = context.LivePreview
                 },
                 context.LivePreview),
-            Implemented(
-                Descriptor(
-                    StudioToolIds.MapEditor,
-                    "Map Editor",
-                    "VectorSquare",
-                    20,
-                    defaultOpen: false,
-                    DockRegion.Right,
-                    DockRailGroup.Right),
-                new MapEditorToolView
-                {
-                    DataContext = context.MapEditor
-                },
-                context.MapEditor),
             Implemented(
                 Descriptor(
                     StudioToolIds.Properties,

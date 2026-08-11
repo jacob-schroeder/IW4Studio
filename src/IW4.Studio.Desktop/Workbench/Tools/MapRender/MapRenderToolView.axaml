@@ -83,7 +83,7 @@
               IsEnabled="{Binding CanLaunch}"
               Click="OpenRendererButton_Click" />
 
-      <TextBlock Text="Live Preview approximates the in-game rendering of the loaded compiled map in a native OpenGL window. It remains separate from the authoritative Map Editor document."
+      <TextBlock Text="Live Preview approximates the in-game rendering of the loaded compiled map in a native OpenGL window."
                  TextWrapping="Wrap"
                  FontSize="9"
                  Foreground="{DynamicResource StudioTextSubtleBrush}" />

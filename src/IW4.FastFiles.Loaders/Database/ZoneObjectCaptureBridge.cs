@@ -1,3 +1,4 @@
+using IW4.Assets.Assets;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.Linker;
@@ -16,6 +17,9 @@ internal sealed class ZoneObjectCaptureBridge
     private readonly ZoneObjectCapture _capture;
     private readonly Stack<long> _activeTempEpochs = new([1]);
     private readonly Dictionary<PhysicalCell, CaptureOccurrence> _pointerOccurrences = [];
+    private readonly Dictionary<BaseAsset, CaptureOccurrence> _providerOccurrences =
+        new(ReferenceEqualityComparer.Instance);
+    private ZoneObjectLinkImportResolver? _importResolver;
     private long _tempEpoch = 1;
 
     public ZoneObjectCaptureBridge(ReadOnlySpan<byte> decodedTape, XFile layout) => _capture = new(decodedTape, layout);
@@ -162,8 +166,11 @@ internal sealed class ZoneObjectCaptureBridge
         ProviderRegistrationOccurrence providerRegistration,
         XBlockAddress materialization,
         long incomingProviderIdentity,
-        long activeProviderIdentity) =>
-        _capture.RecordProviderRegistration(
+        long activeProviderIdentity,
+        BaseAsset provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        CaptureOccurrence occurrence = _capture.RecordProviderRegistration(
             FindPointerOccurrence(
                 providerRegistration.SourcePointerCell,
                 providerRegistration.SourceEpoch),
@@ -171,8 +178,28 @@ internal sealed class ZoneObjectCaptureBridge
             incomingProviderIdentity,
             activeProviderIdentity,
             providerRegistration.InsertProviderCell);
+        if (!_providerOccurrences.TryAdd(provider, occurrence))
+        {
+            throw new InvalidDataException(
+                "One provider object was registered by more than one captured source occurrence.");
+        }
+    }
 
-    public ZoneObjectFile Freeze() => _capture.Freeze();
+    public ZoneObjectFile Freeze()
+    {
+        if (_importResolver is not null)
+            throw new InvalidOperationException("Zone-object capture was frozen more than once.");
+
+        ZoneObjectFile objectFile = _capture.Freeze();
+        _importResolver = new ZoneObjectLinkImportResolver(
+            objectFile,
+            _providerOccurrences);
+        return objectFile;
+    }
+
+    public ZoneObjectLinkImportResolver ImportResolver =>
+        _importResolver ?? throw new InvalidOperationException(
+            "Zone-object capture has not been frozen.");
 
     private CaptureOccurrence FindPointerOccurrence(XBlockAddress address)
     {

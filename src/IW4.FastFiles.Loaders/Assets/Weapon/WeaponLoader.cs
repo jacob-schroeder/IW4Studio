@@ -562,7 +562,10 @@ public sealed class WeaponLoader
         };
 
         IReadOnlyList<FxEffectDefAsset?> flashEffects = ReadFxPointers(cursor, root.FlashEffectPointers, context);
-        IReadOnlyList<string?> soundAliasNames = ReadSoundAliasCells(cursor, root.SoundAliasPointers, context);
+        SoundAliasCellArrayPayload soundAliases = ReadSoundAliasCells(
+            cursor,
+            root.SoundAliasPointers,
+            context);
         SoundAliasCellArrayPayload bounceSounds = ReadSoundAliasCellArray(cursor, root.BounceSoundPointer.Untyped, WeaponDef.SurfaceCount, context);
         IReadOnlyList<FxEffectDefAsset?> effects = ReadFxPointers(cursor, root.EffectPointers, context);
         IReadOnlyList<MaterialAsset?> materials = ReadMaterialPointers(cursor, root.MaterialPointers, "WeaponDef.materialPointers", context);
@@ -586,12 +589,18 @@ public sealed class WeaponLoader
 
         XModelAsset? projectileModel = ReadXModelPointer(cursor, root.ProjectileModelPointer.Untyped, context);
         IReadOnlyList<FxEffectDefAsset?> projectileEffects = ReadFxPointers(cursor, root.ProjectileEffectPointers, context);
-        IReadOnlyList<string?> projectileSoundAliasNames = ReadSoundAliasCells(cursor, root.ProjectileSoundAliasPointers, context);
+        SoundAliasCellArrayPayload projectileSounds = ReadSoundAliasCells(
+            cursor,
+            root.ProjectileSoundAliasPointers,
+            context);
         IReadOnlyList<float> parallelBounce = ReadFloatArray(cursor, root.ParallelBouncePointer.Untyped, WeaponDef.SurfaceCount, context);
         IReadOnlyList<float> perpendicularBounce = ReadFloatArray(cursor, root.PerpendicularBouncePointer.Untyped, WeaponDef.SurfaceCount, context);
         IReadOnlyList<FxEffectDefAsset?> impactEffects = ReadFxPointers(cursor, root.ImpactEffectPointers, context);
         FxEffectDefAsset? viewShellEjectEffect = ReadFxPointer(cursor, root.ViewShellEjectEffectPointer.Untyped, context);
-        string? shellEjectSound = ReadSoundAliasCell(cursor, root.ShellEjectSoundPointer, context);
+        SoundAliasCellPayload shellEjectSound = ReadSoundAliasCell(
+            cursor,
+            root.ShellEjectSoundPointer,
+            context);
 
         string? graphName0 = ReadXString(cursor, root.AccuracyGraphName0Pointer, context);
         IReadOnlyList<Vec2> graphKnots = ReadVec2Array(cursor, root.AccuracyGraphKnotsPointer.Untyped, owner.AccuracyGraphKnotCount, context);
@@ -606,14 +615,32 @@ public sealed class WeaponLoader
         string? meleeImpactRumble = ReadXString(cursor, root.MeleeImpactRumblePointer, context);
         TracerDefAsset? tracer = ReadTracerPointer(cursor, root.TracerPointer.Untyped, context);
 
-        string? turretOverheatSound = ReadSoundAliasCell(cursor, root.TurretOverheatSoundPointer, context);
+        SoundAliasCellPayload turretOverheatSound = ReadSoundAliasCell(
+            cursor,
+            root.TurretOverheatSoundPointer,
+            context);
         FxEffectDefAsset? turretOverheatEffect = ReadFxPointer(cursor, root.TurretOverheatEffectPointer.Untyped, context);
         string? turretBarrelSpinRumble = ReadXString(cursor, root.TurretBarrelSpinRumblePointer, context);
-        string? turretBarrelSpinMaxSound = ReadSoundAliasCell(cursor, root.TurretBarrelSpinMaxSoundPointer, context);
-        IReadOnlyList<string?> barrelSpinUpSoundNames = ReadSoundAliasCells(cursor, root.TurretBarrelSpinUpSoundPointers, context);
-        IReadOnlyList<string?> barrelSpinDownSoundNames = ReadSoundAliasCells(cursor, root.TurretBarrelSpinDownSoundPointers, context);
-        string? missileConeSoundAlias = ReadSoundAliasCell(cursor, root.MissileConeSoundAliasPointer, context);
-        string? missileConeSoundAliasAtBase = ReadSoundAliasCell(cursor, root.MissileConeSoundAliasAtBasePointer, context);
+        SoundAliasCellPayload turretBarrelSpinMaxSound = ReadSoundAliasCell(
+            cursor,
+            root.TurretBarrelSpinMaxSoundPointer,
+            context);
+        SoundAliasCellArrayPayload barrelSpinUpSounds = ReadSoundAliasCells(
+            cursor,
+            root.TurretBarrelSpinUpSoundPointers,
+            context);
+        SoundAliasCellArrayPayload barrelSpinDownSounds = ReadSoundAliasCells(
+            cursor,
+            root.TurretBarrelSpinDownSoundPointers,
+            context);
+        SoundAliasCellPayload missileConeSoundAlias = ReadSoundAliasCell(
+            cursor,
+            root.MissileConeSoundAliasPointer,
+            context);
+        SoundAliasCellPayload missileConeSoundAliasAtBase = ReadSoundAliasCell(
+            cursor,
+            root.MissileConeSoundAliasAtBasePointer,
+            context);
 
         return new WeaponDef
         {
@@ -645,9 +672,11 @@ public sealed class WeaponLoader
             FlashEffectPointers = root.FlashEffectPointers,
             FlashEffects = flashEffects,
             SoundAliasPointers = root.SoundAliasPointers,
-            SoundAliasNames = soundAliasNames,
+            SoundAliasValuePointers = soundAliases.ValuePointers,
+            SoundAliasNames = soundAliases.Values,
             BounceSoundPointer = root.BounceSoundPointer,
             BounceSoundPointers = bounceSounds.Pointers,
+            BounceSoundValuePointers = bounceSounds.ValuePointers,
             BounceSoundNames = bounceSounds.Values,
             EffectPointers = root.EffectPointers,
             Effects = effects,
@@ -688,6 +717,7 @@ public sealed class WeaponLoader
             AimMovementTuning = root.AimMovementTuning,
             AdsViewAndSpread = root.AdsViewAndSpread,
             PhysCollmapPointer = root.PhysCollmapPointer,
+            PhysCollmap = physCollmap,
             PhysCollmapName = physCollmap?.Name,
             Physics = root.Physics,
             Projectile = new WeaponProjectileFields
@@ -698,9 +728,11 @@ public sealed class WeaponLoader
                 ExplosionEffectPointer = root.ProjectileEffectPointers[0],
                 DudEffectPointer = root.ProjectileEffectPointers[1],
                 ExplosionSoundPointer = root.ProjectileSoundAliasPointers[0],
-                ExplosionSound = projectileSoundAliasNames[0],
+                ExplosionSoundValuePointer = projectileSounds.ValuePointers[0],
+                ExplosionSound = projectileSounds.Values[0],
                 DudSoundPointer = root.ProjectileSoundAliasPointers[1],
-                DudSound = projectileSoundAliasNames[1],
+                DudSoundValuePointer = projectileSounds.ValuePointers[1],
+                DudSound = projectileSounds.Values[1],
                 Stickiness = (WeaponStickiness)root.ProjectileFieldsA[0],
                 LowAmmoWarningThreshold = root.ProjectileFieldsA[1],
                 RicochetChance = SingleFromRawInt(root.ProjectileFieldsA[2]),
@@ -716,7 +748,8 @@ public sealed class WeaponLoader
                 IgnitionDelay = root.ImpactFieldsC[1],
                 IgnitionEffectPointer = root.ViewShellEjectEffectPointer,
                 IgnitionSoundPointer = root.ShellEjectSoundPointer,
-                IgnitionSound = shellEjectSound,
+                IgnitionSoundValuePointer = shellEjectSound.ValuePointer,
+                IgnitionSound = shellEjectSound.Value,
                 AdsAimPitch = SingleFromRawInt(root.ShellEjectFields[0]),
                 AdsCrosshairInFraction = SingleFromRawInt(root.ShellEjectFields[1]),
                 AdsCrosshairOutFraction = SingleFromRawInt(root.ShellEjectFields[2]),
@@ -792,7 +825,8 @@ public sealed class WeaponLoader
             Turret = new WeaponTurretFields
             {
                 OverheatSoundPointer = root.TurretOverheatSoundPointer,
-                OverheatSound = turretOverheatSound,
+                OverheatSoundValuePointer = turretOverheatSound.ValuePointer,
+                OverheatSound = turretOverheatSound.Value,
                 OverheatEffectPointer = root.TurretOverheatEffectPointer,
                 BarrelSpinRumblePointer = root.TurretBarrelSpinRumblePointer,
                 BarrelSpinRumble = turretBarrelSpinRumble,
@@ -800,19 +834,24 @@ public sealed class WeaponLoader
                 BarrelSpinUpTime = root.TurretBarrelSpinUpTime,
                 BarrelSpinDownTime = root.TurretBarrelSpinDownTime,
                 BarrelSpinMaxSoundPointer = root.TurretBarrelSpinMaxSoundPointer,
-                BarrelSpinMaxSound = turretBarrelSpinMaxSound,
+                BarrelSpinMaxSoundValuePointer = turretBarrelSpinMaxSound.ValuePointer,
+                BarrelSpinMaxSound = turretBarrelSpinMaxSound.Value,
                 BarrelSpinUpSoundPointers = root.TurretBarrelSpinUpSoundPointers,
-                BarrelSpinUpSoundNames = barrelSpinUpSoundNames,
+                BarrelSpinUpSoundValuePointers = barrelSpinUpSounds.ValuePointers,
+                BarrelSpinUpSoundNames = barrelSpinUpSounds.Values,
                 BarrelSpinDownSoundPointers = root.TurretBarrelSpinDownSoundPointers,
-                BarrelSpinDownSoundNames = barrelSpinDownSoundNames
+                BarrelSpinDownSoundValuePointers = barrelSpinDownSounds.ValuePointers,
+                BarrelSpinDownSoundNames = barrelSpinDownSounds.Values
             },
             TurretOverheatEffect = turretOverheatEffect,
             MissileConeSound = new WeaponMissileConeSoundFields
             {
                 AliasPointer = root.MissileConeSoundAliasPointer,
-                Alias = missileConeSoundAlias,
+                AliasValuePointer = missileConeSoundAlias.ValuePointer,
+                Alias = missileConeSoundAlias.Value,
                 AliasAtBasePointer = root.MissileConeSoundAliasAtBasePointer,
-                AliasAtBase = missileConeSoundAliasAtBase,
+                AliasAtBaseValuePointer = missileConeSoundAliasAtBase.ValuePointer,
+                AliasAtBase = missileConeSoundAliasAtBase.Value,
                 RadiusAtTop = root.MissileConeFloats[0],
                 RadiusAtBase = root.MissileConeFloats[1],
                 Height = root.MissileConeFloats[2],
@@ -1142,26 +1181,37 @@ public sealed class WeaponLoader
         return pointers;
     }
 
-    private static IReadOnlyList<string?> ReadSoundAliasCells(
+    private static SoundAliasCellArrayPayload ReadSoundAliasCells(
         FastFileCursor cursor,
         IReadOnlyList<XString> pointers,
         DbLoadExecutionContext context)
     {
+        var valuePointers = new XString[pointers.Count];
         var values = new string?[pointers.Count];
         for (int i = 0; i < pointers.Count; i++)
-            values[i] = ReadSoundAliasCell(cursor, pointers[i], context);
+        {
+            SoundAliasCellPayload payload = ReadSoundAliasCell(
+                cursor,
+                pointers[i],
+                context);
+            valuePointers[i] = payload.ValuePointer;
+            values[i] = payload.Value;
+        }
 
-        return values;
+        return new SoundAliasCellArrayPayload(
+            pointers,
+            valuePointers,
+            values);
     }
 
-    private static string? ReadSoundAliasCell(
+    private static SoundAliasCellPayload ReadSoundAliasCell(
         FastFileCursor cursor,
         XString pointer,
         DbLoadExecutionContext context)
     {
         XPointerReference cellPointer = pointer.Untyped;
         if (cellPointer.Type == PointerType.Null)
-            return null;
+            return SoundAliasCellPayload.Empty;
 
         if (cellPointer.Type == PointerType.Offset)
         {
@@ -1172,15 +1222,16 @@ public sealed class WeaponLoader
             }
 
             context.Blocks.ValidateMaterializedRange(address, sizeof(int), "snd_alias_list_name cell", cellPointer.Raw);
-            int nestedRaw = context.Blocks.ReadInt32(address);
-            if (nestedRaw == 0)
-                return null;
+            if (context.TryGetMaterialized<SoundAliasCellPayload>(
+                    address,
+                    out SoundAliasCellPayload? materialized) &&
+                materialized is not null)
+            {
+                return materialized;
+            }
 
-            var materializedNestedStringPointer = new XString(
-                nestedRaw,
-                XPointerResolutionMode.Direct,
-                address);
-            return ReadXString(cursor, materializedNestedStringPointer, context);
+            throw new InvalidDataException(
+                $"Packed snd_alias_list_name target {address} has no earlier materialized semantic owner.");
         }
 
         RequireInlinePayload(cellPointer, "snd_alias_list_name cell");
@@ -1191,7 +1242,13 @@ public sealed class WeaponLoader
         byte[] nestedCellBytes = context.Blocks.Load(cursor, sizeof(int), out XBlockAddress nestedCellAddress);
         var nestedCellCursor = new FastFileCursor(nestedCellBytes, nestedCellAddress);
         XString nestedStringPointer = ReadXStringPointer(nestedCellCursor, context);
-        return ReadXString(cursor, nestedStringPointer, context);
+        var payload = new SoundAliasCellPayload(
+            nestedStringPointer,
+            ReadXString(cursor, nestedStringPointer, context));
+        return context.RegisterMaterialized(
+            nestedCellAddress,
+            payload,
+            "snd_alias_list_name cell");
     }
 
     private static SoundAliasCellArrayPayload ReadSoundAliasCellArray(
@@ -1204,7 +1261,7 @@ public sealed class WeaponLoader
             throw new InvalidDataException($"Invalid negative sound alias count {count}.");
 
         if (pointer.Type == PointerType.Null)
-            return new SoundAliasCellArrayPayload([], []);
+            return new SoundAliasCellArrayPayload([], [], []);
 
         string view = $"SoundAliasCell[{count}]";
         if (pointer.Type == PointerType.Offset &&
@@ -1236,16 +1293,22 @@ public sealed class WeaponLoader
 
         var cellCursor = new FastFileCursor(cellBytes, arrayAddress);
         IReadOnlyList<XString> pointers = ReadSoundAliasCellPointers(cellCursor, count, context);
+        var valuePointers = new XString[pointers.Count];
         var values = new string?[pointers.Count];
         for (int i = 0; i < pointers.Count; i++)
         {
-            values[i] = ReadSoundAliasCell(cursor, pointers[i], context);
+            SoundAliasCellPayload payload = ReadSoundAliasCell(
+                cursor,
+                pointers[i],
+                context);
+            valuePointers[i] = payload.ValuePointer;
+            values[i] = payload.Value;
         }
 
         return context.RegisterMaterializedView(
             arrayAddress,
             view,
-            new SoundAliasCellArrayPayload(pointers, values),
+            new SoundAliasCellArrayPayload(pointers, valuePointers, values),
             view);
     }
 

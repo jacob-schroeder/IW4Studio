@@ -329,8 +329,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private bool IsStaticObjectVisible(int objectIndex)
     {
-        if (!IsLiveStaticModelEditorVisible(objectIndex))
-            return false;
         if ((uint)objectIndex <
             (uint)_visibleStaticObjects.Length)
         {

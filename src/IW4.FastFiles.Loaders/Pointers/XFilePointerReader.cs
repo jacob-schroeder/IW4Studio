@@ -287,9 +287,7 @@ public sealed class XFilePointerReader
             return null;
 
         PatchInlinePointerCell(pointerCellAddress, pointer.Raw, alignment);
-        string value = _blocks.LoadCString(cursor, out _, out CStringMaterializationHandle? materialization);
-        MarkXString(materialization);
-        return value;
+        return LoadXStringPayload(cursor);
     }
 
     public string? LoadXString(
@@ -320,6 +318,11 @@ public sealed class XFilePointerReader
             return null;
 
         PatchInlinePointerCell(pointer, alignment);
+        return LoadXStringPayload(cursor);
+    }
+
+    internal string LoadXStringPayload(FastFileCursor cursor)
+    {
         string value = _blocks.LoadCString(cursor, out _, out CStringMaterializationHandle? materialization);
         MarkXString(materialization);
         return value;

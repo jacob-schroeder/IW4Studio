@@ -9,7 +9,7 @@ namespace IW4.Runtime.Assets;
 public static class XAssetTypeRuntimeMetadataCatalog
 {
     private static readonly XAssetTypeRuntimeMetadata[] EntryArray =
-        CreateEntries().ToArray();
+        CreateValidatedEntries();
 
     private static readonly IReadOnlyDictionary<XAssetType, XAssetTypeRuntimeMetadata> Entries =
         EntryArray.ToDictionary(entry => entry.SerializedType);
@@ -26,6 +26,25 @@ public static class XAssetTypeRuntimeMetadataCatalog
         XAssetType assetType,
         out XAssetTypeRuntimeMetadata? metadata) =>
         Entries.TryGetValue(assetType, out metadata);
+
+    private static XAssetTypeRuntimeMetadata[] CreateValidatedEntries()
+    {
+        XAssetTypeRuntimeMetadata[] entries = CreateEntries().ToArray();
+        foreach (XAssetTypeRuntimeMetadata entry in entries)
+        {
+            bool expectedNativeNoOp =
+                XAssetTypeDispatchCatalog.IsNativeNoOp(entry.SerializedType);
+            if ((entry.Disposition == XAssetRuntimeDisposition.NativeNoOp) !=
+                expectedNativeNoOp)
+            {
+                throw new InvalidDataException(
+                    $"Runtime disposition for {entry.SerializedType} disagrees " +
+                    "with the shared PS3 top-level dispatch catalog.");
+            }
+        }
+
+        return entries;
+    }
 
     private static IEnumerable<XAssetTypeRuntimeMetadata> CreateEntries()
     {

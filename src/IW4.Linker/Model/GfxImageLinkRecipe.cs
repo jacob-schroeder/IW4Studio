@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using IW4.Assets.Assets.Image;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
@@ -7,115 +6,118 @@ namespace IW4.Linker.Model;
 
 /// <summary>
 /// Frozen GfxImage wire recipe. Reference definitions synthesize the canonical
-/// zeroed body; owned definitions currently require an inline PHYSICAL payload.
+/// zeroed body. Owned definitions preserve null payloads, emit inline PHYSICAL
+/// bytes, reserve source-free RUNTIME pixels, or retain read-only imagefile
+/// references for the package envelope.
 /// </summary>
 internal sealed class GfxImageLinkRecipe : AssetLinkRecipe
 {
-    private readonly byte[] _rootBytes;
-    private readonly byte[]? _payload;
-
     private GfxImageLinkRecipe(
         AssetKey key,
         string originalSerializedName,
         byte[] rootBytes,
-        byte[]? payload,
+        LinkStorageSymbol nameStorage,
+        LinkStorageTarget? payloadStorage,
+        IReadOnlyList<ImageFileStreamLanguageReferences> streamReferences,
         bool requireReferencePlaceholder)
         : base(
             key,
             originalSerializedName,
+            nameStorage,
             requireReferencePlaceholder)
     {
-        _rootBytes = rootBytes;
-        _payload = payload;
+        StreamReferences = streamReferences ??
+            throw new ArgumentNullException(nameof(streamReferences));
+        Root = LinkStorageSymbol.SourceBytes(
+            XFileBlockType.TEMP,
+            rootBytes,
+            alignment: 4,
+            root => payloadStorage is null
+                ? [NameOperation(root, 0x4c)]
+                : [
+                    NameOperation(root, 0x4c),
+                    new PresenceStorageLinkOperation(
+                        new LinkStorageCell(root, 0x28),
+                        payloadStorage.Value.View,
+                        "GfxImage.Pixels")
+                ]);
     }
 
-    public static GfxImageLinkRecipe Freeze(
+    internal override LinkStorageSymbol Root { get; }
+
+    internal IReadOnlyList<ImageFileStreamLanguageReferences> StreamReferences { get; }
+
+    public static AssetLinkRecipe Freeze(
         AssetKey key,
         string originalSerializedName,
-        GfxImageAsset definition)
+        GfxImageAsset definition,
+        IReadOnlyList<ImageFileStreamLanguageReferences> imageStreamReferences,
+        LinkAssetFreezeScope freeze)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        return originalSerializedName.StartsWith(',')
-            ? CreateReference(key, originalSerializedName)
-            : CreateOwned(key, originalSerializedName, definition);
-    }
-
-    public static GfxImageLinkRecipe CreateExternal(
-        AssetKey key,
-        string originalSerializedName) =>
-        CreateReference(key, originalSerializedName);
-
-    public override void Emit(
-        ZoneEmissionWriter output,
-        Action<AssetDependency, XBlockAddress, int> emitDependency)
-    {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(emitDependency);
-
-        output.PushTempScope();
-        try
+        ArgumentNullException.ThrowIfNull(imageStreamReferences);
+        ArgumentNullException.ThrowIfNull(freeze);
+        if (originalSerializedName.StartsWith(','))
         {
-            output.Allocate(
-                XFileBlockType.TEMP,
-                GfxImageAsset.SerializedSize,
-                alignment: 4);
-            output.WriteBytes(_rootBytes);
-            EmitName(output);
-
-            if (_payload is not null)
+            if (imageStreamReferences.Count != 0)
             {
-                output.Allocate(
-                    XFileBlockType.PHYSICAL,
-                    _payload.Length,
-                    alignment: 128);
-                output.WriteBytes(_payload);
+                throw new InvalidDataException(
+                    "A comma-prefixed GfxImage reference cannot carry imagefile references.");
             }
+            ValidateReferenceShape(definition);
+            return ExternalAssetLinkRecipe.Create(
+                key,
+                XAssetType.Image,
+                originalSerializedName,
+                freeze);
         }
-        finally
-        {
-            output.PopTempScope();
-        }
-    }
 
-    private static GfxImageLinkRecipe CreateReference(
-        AssetKey key,
-        string originalSerializedName)
-    {
-        byte[] rootBytes = new byte[GfxImageAsset.SerializedSize];
-        BinaryPrimitives.WriteInt32BigEndian(
-            rootBytes.AsSpan(0x4c, sizeof(int)),
-            -1);
-        return new GfxImageLinkRecipe(
+        return CreateOwned(
             key,
             originalSerializedName,
-            rootBytes,
-            payload: null,
-            requireReferencePlaceholder: true);
+            definition,
+            imageStreamReferences,
+            freeze);
     }
 
     private static GfxImageLinkRecipe CreateOwned(
         AssetKey key,
         string originalSerializedName,
-        GfxImageAsset definition)
+        GfxImageAsset definition,
+        IReadOnlyList<ImageFileStreamLanguageReferences> imageStreamReferences,
+        LinkAssetFreezeScope freeze)
     {
-        if (definition.TextureSemantic == 0x0b)
-        {
-            throw new NotSupportedException(
-                "Canonical linking does not yet support source-free RUNTIME GfxImage payloads.");
-        }
-
         GfxImageStreamData[] streamData = FreezeStreamData(definition.StreamData);
-        if (streamData.Any(entry => entry.HasStreamingData))
-        {
-            throw new NotSupportedException(
-                "Canonical linking does not yet support streamed GfxImages because their " +
-                "DB-header and external imagefile contributions must be rebuilt together.");
-        }
+        int[] streamPartByteCounts =
+            GfxImageStreamData.ValidateProfileAndComputePartByteCounts(streamData);
+        bool isStreamed = streamPartByteCounts.Any(byteCount => byteCount != 0);
+        IReadOnlyList<ImageFileStreamLanguageReferences> frozenStreamReferences =
+            FreezeStreamReferences(
+                streamPartByteCounts,
+                imageStreamReferences,
+                isStreamed);
 
         // Pixel bytes are the authored presence signal. PayloadPointer is
         // loader state and is deliberately not retained by the link request.
         byte[] payload = definition.PayloadBytes?.ToArray()
             ?? throw new InvalidDataException("GfxImage payload bytes cannot be null.");
+        if (isStreamed && payload.Length != 0)
+        {
+            throw new InvalidDataException(
+                "A streamed GfxImage cannot also own an inline pixel payload.");
+        }
+        if (isStreamed && definition.PayloadPointer.Raw != 0)
+        {
+            throw new InvalidDataException(
+                "A streamed GfxImage cannot retain an inline pixel-presence cell.");
+        }
+        if (!isStreamed && payload.Length == 0 &&
+            definition.PayloadPointer.Raw != 0)
+        {
+            throw new NotSupportedException(
+                "Canonical linking cannot preserve a present zero-byte GfxImage payload without explicit semantic presence.");
+        }
+
         int expectedByteCount = GfxImagePixelLayout.ComputePayloadByteCount(
             definition.Format,
             definition.LevelCount,
@@ -124,24 +126,157 @@ internal sealed class GfxImageLinkRecipe : AssetLinkRecipe
             definition.Width,
             definition.Height,
             definition.Depth);
-        if (expectedByteCount <= 0)
+        LinkStorageTarget? payloadStorage = null;
+        if (payload.Length != 0 && expectedByteCount <= 0)
         {
             throw new NotSupportedException(
                 "Canonical linking requires an owned GfxImage layout with a positive, proven payload size.");
         }
-        if (payload.Length != expectedByteCount)
+        if (payload.Length != 0 && payload.Length != expectedByteCount)
         {
             throw new InvalidDataException(
                 $"GfxImage inline payload is {payload.Length} byte(s); " +
                 $"its serialized layout requires {expectedByteCount} byte(s).");
+        }
+        if (payload.Length != 0)
+        {
+            if (definition.TextureSemantic == 0x0b)
+            {
+                if (payload.Any(value => value != 0))
+                {
+                    throw new InvalidDataException(
+                        "A source-free RUNTIME GfxImage payload can retain only zero-filled semantic bytes.");
+                }
+                LinkStorageSymbol runtimeStorage = LinkStorageSymbol.SourceFree(
+                    XFileBlockType.RUNTIME,
+                    payload.Length,
+                    alignment: 128,
+                    LinkMaterializationKind.RuntimeZeroFill);
+                payloadStorage = new LinkStorageTarget(
+                    LinkStorageView.Whole(runtimeStorage),
+                    CanMaterializeRoot: true);
+            }
+            else
+            {
+                payloadStorage = freeze.FreezeStorage(
+                    definition.PayloadPointer,
+                    payload,
+                    XFileBlockType.PHYSICAL,
+                    alignment: 128,
+                    operations: null,
+                    "GfxImage.Pixels");
+            }
         }
 
         return new GfxImageLinkRecipe(
             key,
             originalSerializedName,
             BuildOwnedRoot(definition, streamData),
-            payload,
+            freeze.FreezeProviderName(originalSerializedName, 0x4c, "Asset.Name"),
+            payloadStorage,
+            frozenStreamReferences,
             requireReferencePlaceholder: false);
+    }
+
+    private static IReadOnlyList<ImageFileStreamLanguageReferences>
+        FreezeStreamReferences(
+        IReadOnlyList<int> byteCounts,
+        IReadOnlyList<ImageFileStreamLanguageReferences> source,
+        bool isStreamed)
+    {
+        if (!isStreamed)
+        {
+            if (source.Count != 0)
+            {
+                throw new InvalidDataException(
+                    "A non-streamed GfxImage cannot carry imagefile references.");
+            }
+
+            return Array.Empty<ImageFileStreamLanguageReferences>();
+        }
+        if (source.Count == 0)
+        {
+            throw new InvalidDataException(
+                "A streamed GfxImage requires four imagefile references for every language.");
+        }
+
+        var masks = new HashSet<uint>();
+        var copied = new ImageFileStreamLanguageReferences[source.Count];
+        for (int languageIndex = 0; languageIndex < source.Count; languageIndex++)
+        {
+            ImageFileStreamLanguageReferences language = source[languageIndex] ??
+                throw new InvalidDataException(
+                    "GfxImage imagefile language references cannot contain null.");
+            if (!masks.Add(language.LanguageMask))
+            {
+                throw new InvalidDataException(
+                    $"GfxImage has duplicate stream contributions for language " +
+                    $"0x{language.LanguageMask:X}.");
+            }
+
+            for (int partIndex = 0; partIndex < byteCounts.Count; partIndex++)
+            {
+                ImageFileStreamReference reference = language.References[partIndex];
+                int required = byteCounts[partIndex];
+                if (required == 0)
+                {
+                    if (!reference.IsEmpty)
+                    {
+                        throw new InvalidDataException(
+                            $"GfxImage stream part {partIndex} is semantically empty but " +
+                            $"language 0x{language.LanguageMask:X} supplies an imagefile reference.");
+                    }
+                }
+                else if (reference.IsEmpty || reference.ByteLength != required)
+                {
+                    throw new InvalidDataException(
+                        $"GfxImage stream part {partIndex} requires 0x{required:X} bytes " +
+                        $"for language 0x{language.LanguageMask:X}.");
+                }
+            }
+
+            copied[languageIndex] = language;
+        }
+
+        return Array.AsReadOnly(copied);
+    }
+
+    private static void ValidateReferenceShape(GfxImageAsset definition)
+    {
+        bool nonzeroStream = definition.StreamData.Any(entry =>
+            entry.Width != 0 || entry.Height != 0 || entry.LevelSizeAndOffset != 0);
+        if (definition.Format != 0 ||
+            definition.LevelCount != 0 ||
+            definition.DimensionCount != 0 ||
+            definition.MultiFaceControl != 0 ||
+            definition.TextureFlags != 0 ||
+            definition.Width != 0 ||
+            definition.Height != 0 ||
+            definition.Depth != 0 ||
+            definition.SerializedPixelDataBlock != 0 ||
+            definition.Pad0F != 0 ||
+            definition.RenderTargetPitch != 0 ||
+            definition.SerializedPixelsOffset != 0 ||
+            definition.MapType != 0 ||
+            definition.TextureSemantic != 0 ||
+            definition.Category != 0 ||
+            definition.Pad1B != 0 ||
+            definition.CardMemory != 0 ||
+            definition.BaseWidth != 0 ||
+            definition.BaseHeight != 0 ||
+            definition.BaseDepth != 0 ||
+            definition.BaseLevelCount != 0 ||
+            definition.Cached != 0 ||
+            definition.PayloadPointer.Type != IW4.FastFiles.Pointers.PointerType.Null ||
+            definition.PayloadBytes.Count != 0 ||
+            definition.PayloadByteCount != 0 ||
+            definition.StreamImageIndex is not null ||
+            definition.StreamEntries.Count != 0 ||
+            nonzeroStream)
+        {
+            throw new InvalidDataException(
+                "A comma-prefixed GfxImage provider must have a zeroed reference body.");
+        }
     }
 
     private static GfxImageStreamData[] FreezeStreamData(
@@ -170,64 +305,37 @@ internal sealed class GfxImageLinkRecipe : AssetLinkRecipe
         GfxImageAsset definition,
         IReadOnlyList<GfxImageStreamData> streamData)
     {
-        byte[] root = new byte[GfxImageAsset.SerializedSize];
-        int offset = 0;
-        root[offset++] = definition.Format;
-        root[offset++] = definition.LevelCount;
-        root[offset++] = definition.DimensionCount;
-        root[offset++] = definition.MultiFaceControl;
-        WriteUInt32(root, ref offset, definition.TextureFlags);
-        WriteUInt16(root, ref offset, definition.Width);
-        WriteUInt16(root, ref offset, definition.Height);
-        WriteUInt16(root, ref offset, definition.Depth);
-        root[offset++] = definition.PixelDataBlock;
-        root[offset++] = definition.Pad0F;
-        WriteUInt32(root, ref offset, definition.RenderTargetPitch);
-        WriteUInt32(root, ref offset, definition.PixelsOffset);
-        root[offset++] = definition.MapType;
-        root[offset++] = definition.TextureSemantic;
-        root[offset++] = definition.Category;
-        root[offset++] = definition.Pad1B;
-        WriteUInt32(root, ref offset, definition.CardMemory);
-        WriteUInt16(root, ref offset, definition.BaseWidth);
-        WriteUInt16(root, ref offset, definition.BaseHeight);
-        WriteUInt16(root, ref offset, definition.BaseDepth);
-        root[offset++] = definition.BaseLevelCount;
-        root[offset++] = definition.Cached;
-        WriteInt32(root, ref offset, -1);
+        var writer = new LinkTemplateWriter(GfxImageAsset.SerializedSize);
+        writer.WriteByte(definition.Format);
+        writer.WriteByte(definition.LevelCount);
+        writer.WriteByte(definition.DimensionCount);
+        writer.WriteByte(definition.MultiFaceControl);
+        writer.WriteUInt32(definition.TextureFlags);
+        writer.WriteUInt16(definition.Width);
+        writer.WriteUInt16(definition.Height);
+        writer.WriteUInt16(definition.Depth);
+        writer.WriteByte(definition.SerializedPixelDataBlock);
+        writer.WriteByte(definition.Pad0F);
+        writer.WriteUInt32(definition.RenderTargetPitch);
+        writer.WriteUInt32(definition.SerializedPixelsOffset);
+        writer.WriteByte(definition.MapType);
+        writer.WriteByte(definition.TextureSemantic);
+        writer.WriteByte(definition.Category);
+        writer.WriteByte(definition.Pad1B);
+        writer.WriteUInt32(definition.CardMemory);
+        writer.WriteUInt16(definition.BaseWidth);
+        writer.WriteUInt16(definition.BaseHeight);
+        writer.WriteUInt16(definition.BaseDepth);
+        writer.WriteByte(definition.BaseLevelCount);
+        writer.WriteByte(definition.Cached);
+        writer.Skip(sizeof(int));
         foreach (GfxImageStreamData entry in streamData)
         {
-            WriteUInt16(root, ref offset, entry.Width);
-            WriteUInt16(root, ref offset, entry.Height);
-            WriteUInt32(root, ref offset, entry.LevelSizeAndOffset);
+            writer.WriteUInt16(entry.Width);
+            writer.WriteUInt16(entry.Height);
+            writer.WriteUInt32(entry.LevelSizeAndOffset);
         }
-        WriteInt32(root, ref offset, -1);
-        if (offset != root.Length)
-            throw new InvalidOperationException("GfxImage root serialization did not produce 0x50 bytes.");
-        return root;
-    }
-
-    private static void WriteInt32(byte[] destination, ref int offset, int value)
-    {
-        BinaryPrimitives.WriteInt32BigEndian(
-            destination.AsSpan(offset, sizeof(int)),
-            value);
-        offset += sizeof(int);
-    }
-
-    private static void WriteUInt16(byte[] destination, ref int offset, ushort value)
-    {
-        BinaryPrimitives.WriteUInt16BigEndian(
-            destination.AsSpan(offset, sizeof(ushort)),
-            value);
-        offset += sizeof(ushort);
-    }
-
-    private static void WriteUInt32(byte[] destination, ref int offset, uint value)
-    {
-        BinaryPrimitives.WriteUInt32BigEndian(
-            destination.AsSpan(offset, sizeof(uint)),
-            value);
-        offset += sizeof(uint);
+        writer.Skip(sizeof(int));
+        return writer.Complete();
     }
 }

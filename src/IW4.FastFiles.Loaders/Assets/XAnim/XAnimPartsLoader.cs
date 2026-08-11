@@ -1,6 +1,7 @@
 using IW4.FastFiles.Loaders.Database;
 using IW4.Assets.Assets.XAnim;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
@@ -139,7 +140,7 @@ public sealed class XAnimPartsLoader
             throw new InvalidDataException($"XAnimParts consumed 0x{rootCursor.Offset:X} bytes instead of 0x{XAnimPartsAsset.SerializedSize:X}.");
 
         string? name;
-        IReadOnlyList<ushort> names;
+        IReadOnlyList<ScriptStringReference> names;
         IReadOnlyList<XAnimNotifyInfo> notify;
         XAnimDeltaPart? deltaPart;
         XAnimPackedDataStreams packedDataStreams;
@@ -149,7 +150,12 @@ public sealed class XAnimPartsLoader
         try
         {
             name = ReadXString(cursor, namePointer, context);
-            names = ReadUInt16Array(cursor, namesPointer.Untyped, boneNameCount, alignment: 2, "XAnimParts.Names", context);
+            names = ReadScriptStringArray(
+                cursor,
+                namesPointer.Untyped,
+                boneNameCount,
+                "XAnimParts.Names",
+                context);
             notify = ReadXAnimNotifyInfoArray(cursor, notifyPointer.Untyped, notifyCount, context);
             deltaPart = ReadXAnimDeltaPart(cursor, deltaPartPointer.Untyped, numFrames, context);
             packedDataStreams = new XAnimPackedDataStreams
@@ -228,7 +234,13 @@ public sealed class XAnimPartsLoader
         var values = new XAnimNotifyInfo[count];
         for (int i = 0; i < values.Length; i++)
         {
-            ushort name = c.ReadUInt16();
+            ushort rawName = c.ReadUInt16();
+            XBlockAddress nameCell = address.Add(i * XAnimNotifyInfo.SerializedSize);
+            ScriptStringReference name = context.ZoneScriptStrings.Resolve(
+                rawName,
+                nameCell,
+                $"XAnimParts.Notify[{i}].Name");
+            context.Blocks.WriteUInt16(nameCell, name.RuntimeHandle.Value);
             c.Skip(0x04 - c.Offset % XAnimNotifyInfo.SerializedSize);
             values[i] = new XAnimNotifyInfo(name, ReadSingle(c));
         }
@@ -490,26 +502,40 @@ public sealed class XAnimPartsLoader
         };
     }
 
-    private static IReadOnlyList<ushort> ReadUInt16Array(
+    private static IReadOnlyList<ScriptStringReference> ReadScriptStringArray(
         FastFileCursor cursor,
         XPointerReference pointer,
         int count,
-        int alignment,
         string targetName,
         DbLoadExecutionContext context)
     {
         if (count < 0)
-            throw new InvalidDataException($"Invalid negative ushort count {count} for {targetName}.");
+            throw new InvalidDataException($"Invalid negative script-string count {count} for {targetName}.");
 
         if (pointer.Type == PointerType.Null || count == 0)
             return [];
 
-        XBlockAddress address = PatchCurrentPayloadPointer(pointer, alignment, checked(count * sizeof(ushort)), targetName, context);
+        XBlockAddress address = PatchCurrentPayloadPointer(
+            pointer,
+            alignment: 2,
+            checked(count * sizeof(ushort)),
+            targetName,
+            context);
         byte[] bytes = context.Blocks.Load(cursor, checked(count * sizeof(ushort)));
         var c = new FastFileCursor(bytes, address);
-        var values = new ushort[count];
+        var values = new ScriptStringReference[count];
         for (int i = 0; i < values.Length; i++)
-            values[i] = c.ReadUInt16();
+        {
+            ushort rawLocalIndex = c.ReadUInt16();
+            XBlockAddress destinationCell = address.Add(i * sizeof(ushort));
+            ScriptStringReference resolved = context.ZoneScriptStrings.Resolve(
+                rawLocalIndex,
+                destinationCell,
+                $"{targetName}[{i}]");
+            context.Blocks.WriteUInt16(destinationCell, resolved.RuntimeHandle.Value);
+            values[i] = resolved;
+        }
+
         return values;
     }
 

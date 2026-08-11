@@ -1,5 +1,4 @@
 using IW4.FastFiles.Loaders.Database;
-using System.Buffers.Binary;
 using IW4.FastFiles.Loaders.Assets.Material;
 using IW4.FastFiles.Loaders.Assets.Physics;
 using IW4.FastFiles.Loaders.Assets.Weapon;
@@ -7,6 +6,7 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Assets.Vehicle;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
@@ -164,7 +164,7 @@ public sealed class VehicleDefLoader
         WeaponAsset? turretWeapon;
         VehicleSoundAliasField turretSpinSound;
         VehicleSoundAliasField turretStopSound;
-        IReadOnlyList<ushort> trophyTags;
+        IReadOnlyList<ScriptStringReference> trophyTags;
         MaterialAsset? compassFriendlyIcon;
         MaterialAsset? compassEnemyIcon;
         VehicleEngineSoundFields engineSounds;
@@ -172,7 +172,7 @@ public sealed class VehicleDefLoader
         VehicleSoundAliasField collisionSound;
         VehicleSoundAliasField speedSound;
         string? surfaceSoundPrefix;
-        IReadOnlyList<string?> surfaceSoundAliases;
+        IReadOnlyList<VehicleSoundAliasField> surfaceSoundFields;
 
         context.Blocks.Push(XFileBlockType.LARGE);
         try
@@ -184,7 +184,12 @@ public sealed class VehicleDefLoader
             turretWeapon = _weaponLoader.LoadFromPointer(cursor, turretWeaponPointer.Untyped, context);
             turretSpinSound = ResolveSoundAliasField(cursor, turretSpinSoundRoot, context);
             turretStopSound = ResolveSoundAliasField(cursor, turretStopSoundRoot, context);
-            trophyTags = ReadScriptStringArray(rootBytes, VehicleDefAsset.ScriptStringOffset, VehicleDefAsset.ScriptStringCount);
+            trophyTags = ReadScriptStringArray(
+                rootBytes,
+                scriptStringsAddress,
+                VehicleDefAsset.ScriptStringOffset,
+                VehicleDefAsset.ScriptStringCount,
+                context);
             compassFriendlyIcon = ReadMaterialPointer(cursor, compassFriendlyIconPointer.Untyped, context);
             compassEnemyIcon = ReadMaterialPointer(cursor, compassEnemyIconPointer.Untyped, context);
             engineSounds = ResolveEngineSoundFields(cursor, engineSoundRoots, context);
@@ -192,7 +197,11 @@ public sealed class VehicleDefLoader
             collisionSound = ResolveSoundAliasField(cursor, collisionSoundRoot, context);
             speedSound = ResolveSoundAliasField(cursor, speedSoundRoot, context);
             surfaceSoundPrefix = context.PointerReader.LoadXString(cursor, surfaceSoundPrefixPointer);
-            surfaceSoundAliases = ReadSoundAliasCellArray(cursor, surfaceSoundAliasPointers, context);
+            surfaceSoundFields = ReadSoundAliasCellArray(
+                cursor,
+                surfaceSoundAliasPointers,
+                VehicleDefAsset.SurfaceSoundOffset,
+                context);
         }
         finally
         {
@@ -277,8 +286,7 @@ public sealed class VehicleDefLoader
             SpeedSoundBlendSpeed = speedSoundBlendSpeed,
             SurfaceSoundPrefixPointer = surfaceSoundPrefixPointer,
             SurfaceSoundPrefix = surfaceSoundPrefix,
-            SurfaceSoundAliasPointers = surfaceSoundAliasPointers,
-            SurfaceSoundAliases = surfaceSoundAliases,
+            SurfaceSoundFields = surfaceSoundFields,
             SurfaceSoundBlendSpeed = surfaceSoundBlendSpeed,
             SlideVolume = slideVolume,
             SlideBlendSpeed = slideBlendSpeed,
@@ -531,7 +539,11 @@ public sealed class VehicleDefLoader
         if (cursor.Offset != offset)
             throw new InvalidDataException($"Vehicle sound alias parser at 0x{cursor.Offset:X}, expected 0x{offset:X}.");
 
-        return new VehicleSoundAliasField(offset, ReadXStringPointer(cursor, context), null);
+        return new VehicleSoundAliasField(
+            offset,
+            ReadXStringPointer(cursor, context),
+            default,
+            null);
     }
 
     private static VehicleSoundAliasField ResolveSoundAliasField(
@@ -539,20 +551,52 @@ public sealed class VehicleDefLoader
         VehicleSoundAliasField field,
         DbLoadExecutionContext context)
     {
-        return field with { Value = ReadSoundAliasCell(cursor, field.Pointer, context) };
+        SoundAliasCellPayload resolved = ReadSoundAliasCell(
+            cursor,
+            field.Pointer,
+            context);
+        return field with
+        {
+            ValuePointer = resolved.ValuePointer,
+            Value = resolved.Value
+        };
     }
 
-    private static string? ReadSoundAliasCell(
+    private static SoundAliasCellPayload ReadSoundAliasCell(
         FastFileCursor cursor,
         XString pointer,
         DbLoadExecutionContext context)
     {
         XPointerReference cellPointer = pointer.Untyped;
-        if (cellPointer.Type == PointerType.Offset && cellPointer.PackedAddress is { } address)
-            context.Blocks.ValidateMaterializedRange(address, sizeof(int), "snd_alias_list_name cell", cellPointer.Raw);
+        if (cellPointer.Type == PointerType.Null)
+            return SoundAliasCellPayload.Empty;
 
-        if (cellPointer.Type == PointerType.Null || cellPointer.Type == PointerType.Offset)
-            return null;
+        if (cellPointer.Type == PointerType.Offset)
+        {
+            if (cellPointer.ResolutionMode != XPointerResolutionMode.Direct ||
+                cellPointer.PackedAddress is not { } address)
+            {
+                throw new InvalidDataException(
+                    $"snd_alias_list_name cell pointer " +
+                    $"0x{unchecked((uint)cellPointer.Raw):X8} is not a packed direct pointer.");
+            }
+
+            context.Blocks.ValidateMaterializedRange(
+                address,
+                sizeof(int),
+                "snd_alias_list_name cell",
+                cellPointer.Raw);
+            if (context.TryGetMaterialized<SoundAliasCellPayload>(
+                    address,
+                    out SoundAliasCellPayload? materialized) &&
+                materialized is not null)
+            {
+                return materialized;
+            }
+
+            throw new InvalidDataException(
+                $"Packed snd_alias_list_name target {address} has no earlier materialized semantic owner.");
+        }
 
         if (cellPointer.Type is not PointerType.Inline)
             throw new NotSupportedException($"snd_alias_list_name cell 0x{cellPointer.Raw:X8} uses unsupported source sentinel {cellPointer.Type}.");
@@ -563,7 +607,13 @@ public sealed class VehicleDefLoader
         byte[] nestedCellBytes = context.Blocks.Load(cursor, sizeof(int), out XBlockAddress nestedCellAddress);
         var nestedCellCursor = new FastFileCursor(nestedCellBytes, nestedCellAddress);
         XString nestedStringPointer = ReadXStringPointer(nestedCellCursor, context);
-        return context.PointerReader.LoadXString(cursor, nestedStringPointer);
+        var payload = new SoundAliasCellPayload(
+            nestedStringPointer,
+            context.PointerReader.LoadXString(cursor, nestedStringPointer));
+        return context.RegisterMaterialized(
+            nestedCellAddress,
+            payload,
+            "snd_alias_list_name cell");
     }
 
     private static IReadOnlyList<XString> ReadEmbeddedSoundAliasRoots(
@@ -582,26 +632,50 @@ public sealed class VehicleDefLoader
         return pointers;
     }
 
-    private static IReadOnlyList<string?> ReadSoundAliasCellArray(
+    private static IReadOnlyList<VehicleSoundAliasField> ReadSoundAliasCellArray(
         FastFileCursor cursor,
         IReadOnlyList<XString> pointers,
+        int baseOffset,
         DbLoadExecutionContext context)
     {
-        var values = new string?[pointers.Count];
+        var values = new VehicleSoundAliasField[pointers.Count];
         for (int i = 0; i < pointers.Count; i++)
-            values[i] = ReadSoundAliasCell(cursor, pointers[i], context);
+        {
+            SoundAliasCellPayload resolved = ReadSoundAliasCell(
+                cursor,
+                pointers[i],
+                context);
+            values[i] = new VehicleSoundAliasField(
+                checked(baseOffset + i * sizeof(int)),
+                pointers[i],
+                resolved.ValuePointer,
+                resolved.Value);
+        }
 
         return values;
     }
 
-    private static IReadOnlyList<ushort> ReadScriptStringArray(
+    private static IReadOnlyList<ScriptStringReference> ReadScriptStringArray(
         byte[] rootBytes,
+        XBlockAddress arrayAddress,
         int offset,
-        int count)
+        int count,
+        DbLoadExecutionContext context)
     {
-        var values = new ushort[count];
+        var values = new ScriptStringReference[count];
         for (int i = 0; i < values.Length; i++)
-            values[i] = BinaryPrimitives.ReadUInt16BigEndian(rootBytes.AsSpan(offset + (i * sizeof(ushort)), sizeof(ushort)));
+        {
+            var valueCursor = new FastFileCursor(
+                rootBytes.AsSpan(offset + (i * sizeof(ushort)), sizeof(ushort)).ToArray());
+            ushort rawLocalIndex = valueCursor.ReadUInt16();
+            XBlockAddress destinationCell = arrayAddress.Add(i * sizeof(ushort));
+            ScriptStringReference resolved = context.ZoneScriptStrings.Resolve(
+                rawLocalIndex,
+                destinationCell,
+                $"VehicleDef.TrophyTags[{i}]");
+            context.Blocks.WriteUInt16(destinationCell, resolved.RuntimeHandle.Value);
+            values[i] = resolved;
+        }
 
         return values;
     }

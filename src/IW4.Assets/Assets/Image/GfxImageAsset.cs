@@ -8,8 +8,10 @@ public sealed class GfxImageAsset : BaseAsset
 {
     public const int SerializedSize = 0x50;
 
-    private byte _pixelDataBlock;
-    private uint _pixelsOffset;
+    private byte _serializedPixelDataBlock;
+    private uint _serializedPixelsOffset;
+    private byte? _runtimePixelDataBlock;
+    private uint? _runtimePixelsOffset;
 
     public override XAssetType SerializedAssetType => XAssetType.Image;
 
@@ -24,20 +26,26 @@ public sealed class GfxImageAsset : BaseAsset
     public ushort Width { get; init; }
     public ushort Height { get; init; }
     public ushort Depth { get; init; }
-    // 0x0E..0x0F: pixel block and copied alignment byte.
+    // 0x0E..0x0F: pixel block and copied alignment byte. Runtime registration
+    // may override the effective block without changing the serialized value.
     public byte PixelDataBlock
     {
-        get => _pixelDataBlock;
-        init => _pixelDataBlock = value;
+        get => _runtimePixelDataBlock ?? _serializedPixelDataBlock;
+        init => _serializedPixelDataBlock = value;
     }
+    /// <summary>The exact +0x0E value loaded or authored for wire output.</summary>
+    public byte SerializedPixelDataBlock => _serializedPixelDataBlock;
     public byte Pad0F { get; init; }
-    // 0x10..0x17: RSX pitch and runtime pixel offset fields.
+    // 0x10..0x17: RSX pitch and pixel offset fields. Runtime registration may
+    // override the effective offset without changing the serialized value.
     public uint RenderTargetPitch { get; init; }
     public uint PixelsOffset
     {
-        get => _pixelsOffset;
-        init => _pixelsOffset = value;
+        get => _runtimePixelsOffset ?? _serializedPixelsOffset;
+        init => _serializedPixelsOffset = value;
     }
+    /// <summary>The exact +0x14 value loaded or authored for wire output.</summary>
+    public uint SerializedPixelsOffset => _serializedPixelsOffset;
     // 0x18..0x1B: map type, texture semantic, category, and copied padding.
     public byte MapType { get; init; }
     public byte TextureSemantic { get; init; }
@@ -66,8 +74,8 @@ public sealed class GfxImageAsset : BaseAsset
 
     internal void ApplyNullPayloadRuntimeHeader(uint? pixelsOffset)
     {
-        _pixelDataBlock = 1;
+        _runtimePixelDataBlock = 1;
         if (pixelsOffset.HasValue)
-            _pixelsOffset = pixelsOffset.Value;
+            _runtimePixelsOffset = pixelsOffset.Value;
     }
 }

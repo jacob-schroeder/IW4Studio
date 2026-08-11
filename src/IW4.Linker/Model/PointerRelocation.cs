@@ -34,4 +34,5 @@ public sealed record PointerRelocation(
     long AmbientTempEpoch,
     long? SourceAllocationTempEpoch,
     long? TargetTempEpoch,
-    SymbolReference? Target);
+    SymbolReference? Target,
+    AliasCellReference? PublicationCell);

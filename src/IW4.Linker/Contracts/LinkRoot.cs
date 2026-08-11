@@ -107,7 +107,9 @@ public sealed record LinkRoot
                 $"{expectedFamily} for serialized type {serializedType}.",
                 nameof(asset));
         }
-        if (string.IsNullOrEmpty(originalSerializedName))
+        if (originalSerializedName is null ||
+            (originalSerializedName.Length == 0 &&
+             !AssetKey.AllowsEmptyWireName(assetKey.Family)))
         {
             throw new ArgumentException(
                 "An asset root requires its exact serialized wire name.",
@@ -122,7 +124,7 @@ public sealed record LinkRoot
         if (opaqueHeader is not null)
             throw new ArgumentException("An asset root cannot have an opaque header.", nameof(opaqueHeader));
 
-        bool commaPrefixed = originalSerializedName[0] == ',';
+        bool commaPrefixed = originalSerializedName.StartsWith(',');
         if (external != commaPrefixed)
         {
             throw new ArgumentException(

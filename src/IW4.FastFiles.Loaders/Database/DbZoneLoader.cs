@@ -386,7 +386,8 @@ public sealed class DbZoneLoader
             LoadedAssets: Array.AsReadOnly(loadedAssets.ToArray()),
             ZoneBytes: loadState.ZoneBytes,
             Warnings: Array.AsReadOnly(context.Diagnostics.Warnings.ToArray()),
-            ZoneObjectFile: objectFile);
+            ZoneObjectFile: objectFile,
+            LinkAssetImportResolver: context.LinkAssetImportResolver);
 
         return loaded;
     }

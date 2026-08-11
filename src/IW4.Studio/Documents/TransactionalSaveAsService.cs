@@ -1,6 +1,9 @@
 using IW4.FastFiles.Database;
+using IW4.FastFiles.Loaders.Database;
+using IW4.FastFiles.Zone;
+using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
-using IW4.Linker.SourceLayout;
+using System.Security.Cryptography;
 
 namespace IW4.Studio.Documents;
 
@@ -55,7 +58,9 @@ public sealed class SaveAsResult
 
 /// <summary>
 /// Narrow filesystem boundary for the transactional publication protocol.
-/// Implementations may delete only operation-created temporary paths.
+/// Save As assumes its destination directory is not concurrently mutated by a
+/// hostile same-user process. Files stay open from exclusive creation through
+/// validation, publication, or rollback.
 /// </summary>
 public interface ITransactionalSaveFileSystem
 {
@@ -64,10 +69,82 @@ public interface ITransactionalSaveFileSystem
     string ResolveExistingFilePath(string path);
     bool DirectoryExists(string path);
     bool FileExists(string path);
-    string CreateTemporarySiblingPath(string destinationPath);
-    void WriteAllBytesAndFlushNew(string path, ReadOnlySpan<byte> bytes);
-    void CommitTemporaryFile(string temporaryPath, string destinationPath, bool overwrite);
-    void DeleteTemporaryFile(string path);
+    TransactionalSaveDirectory CreateTemporarySiblingDirectory(
+        string destinationPath);
+    TransactionalSaveFile WriteTemporaryFile(
+        TransactionalSaveDirectory directory,
+        string fileName,
+        ReadOnlySpan<byte> bytes);
+    void CommitTemporaryFile(
+        TransactionalSaveFile temporaryFile,
+        string destinationPath,
+        bool overwrite);
+    void RollbackFile(TransactionalSaveFile file);
+    void DeleteTemporaryDirectory(TransactionalSaveDirectory directory);
+}
+
+/// <summary>
+/// One private staging directory created beside the publication target.
+/// </summary>
+public sealed class TransactionalSaveDirectory
+{
+    internal TransactionalSaveDirectory(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        Path = path;
+    }
+
+    public string Path { get; }
+}
+
+/// <summary>
+/// An operation-created file retained open until publication or rollback.
+/// </summary>
+public sealed class TransactionalSaveFile : IDisposable
+{
+    private readonly byte[] _contentSha256;
+    private FileStream? _stream;
+
+    internal TransactionalSaveFile(
+        string path,
+        long length,
+        ReadOnlySpan<byte> contentSha256,
+        FileStream stream)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (contentSha256.Length != SHA256.HashSizeInBytes)
+        {
+            throw new ArgumentException(
+                $"A file identity requires exactly {SHA256.HashSizeInBytes} SHA-256 bytes.",
+                nameof(contentSha256));
+        }
+
+        ArgumentNullException.ThrowIfNull(stream);
+        Path = path;
+        Length = length;
+        _contentSha256 = contentSha256.ToArray();
+        _stream = stream;
+    }
+
+    public string Path { get; private set; }
+    public long Length { get; }
+    public ReadOnlyMemory<byte> ContentSha256 => _contentSha256;
+
+    internal FileStream Stream => _stream ??
+        throw new ObjectDisposedException(nameof(TransactionalSaveFile));
+
+    internal void MoveTo(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        Path = path;
+    }
+
+    public void Dispose()
+    {
+        _stream?.Dispose();
+        _stream = null;
+    }
 }
 
 public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
@@ -83,47 +160,149 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
     public bool DirectoryExists(string path) => Directory.Exists(path);
     public bool FileExists(string path) => File.Exists(path);
 
-    public string CreateTemporarySiblingPath(string destinationPath)
+    public TransactionalSaveDirectory CreateTemporarySiblingDirectory(
+        string destinationPath)
     {
+        RejectProtectedImageFilePackageMutation(destinationPath);
         string directory = Path.GetDirectoryName(destinationPath)
             ?? throw new InvalidDataException("Save destination has no containing directory.");
         string name = Path.GetFileName(destinationPath);
         for (int attempt = 0; attempt != 128; attempt++)
         {
-            string candidate = Path.Combine(directory, $".{name}.{Guid.NewGuid():N}.tmp");
-            if (!File.Exists(candidate))
-                return candidate;
+            string candidate = Path.Combine(directory, $".{name}.{Guid.NewGuid():N}.save");
+            if (Directory.Exists(candidate) || File.Exists(candidate))
+                continue;
+
+            Directory.CreateDirectory(candidate);
+            return new TransactionalSaveDirectory(candidate);
         }
 
-        throw new IOException("Could not allocate a unique temporary Save As sibling path.");
+        throw new IOException("Could not create a unique Save As staging directory.");
     }
 
-    public void WriteAllBytesAndFlushNew(string path, ReadOnlySpan<byte> bytes)
+    public TransactionalSaveFile WriteTemporaryFile(
+        TransactionalSaveDirectory directory,
+        string fileName,
+        ReadOnlySpan<byte> bytes)
     {
-        using var stream = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 81920,
-            FileOptions.WriteThrough);
-        stream.Write(bytes);
-        stream.Flush(flushToDisk: true);
+        ArgumentNullException.ThrowIfNull(directory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        if (!string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal))
+            throw new ArgumentException("A staged file name cannot contain a directory.", nameof(fileName));
+        RejectProtectedImageFilePackageMutation(fileName);
+
+        string path = Path.Combine(directory.Path, fileName);
+        byte[] contentSha256 = SHA256.HashData(bytes);
+        FileStream? stream = null;
+        try
+        {
+            stream = new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.ReadWrite,
+                FileShare.Read | FileShare.Delete,
+                bufferSize: 81920,
+                FileOptions.WriteThrough);
+            stream.Write(bytes);
+            stream.Flush(flushToDisk: true);
+            stream.Position = 0;
+            var file = new TransactionalSaveFile(
+                path,
+                bytes.Length,
+                contentSha256,
+                stream);
+            stream = null;
+            return file;
+        }
+        catch
+        {
+            if (stream is not null)
+            {
+                try
+                {
+                    File.Delete(path);
+                }
+                finally
+                {
+                    stream.Dispose();
+                }
+            }
+
+            throw;
+        }
     }
 
-    public void CommitTemporaryFile(string temporaryPath, string destinationPath, bool overwrite)
+    public void CommitTemporaryFile(
+        TransactionalSaveFile temporaryFile,
+        string destinationPath,
+        bool overwrite)
     {
+        ArgumentNullException.ThrowIfNull(temporaryFile);
+        RejectProtectedImageFilePackageMutation(temporaryFile.Path);
+        RejectProtectedImageFilePackageMutation(destinationPath);
+        VerifyOperationCreatedFile(temporaryFile);
         if (File.Exists(destinationPath) && !overwrite)
             throw new IOException("Save destination already exists and overwrite was not approved.");
 
         // A same-directory rename is this service's atomic publication edge.
-        File.Move(temporaryPath, destinationPath, overwrite);
+        File.Move(temporaryFile.Path, destinationPath, overwrite);
+        temporaryFile.MoveTo(destinationPath);
     }
 
-    public void DeleteTemporaryFile(string path)
+    public void RollbackFile(TransactionalSaveFile file)
     {
-        if (File.Exists(path))
-            File.Delete(path);
+        ArgumentNullException.ThrowIfNull(file);
+        RejectProtectedImageFilePackageMutation(file.Path);
+        try
+        {
+            VerifyOperationCreatedFile(file);
+            File.Delete(file.Path);
+        }
+        finally
+        {
+            file.Dispose();
+        }
+    }
+
+    public void DeleteTemporaryDirectory(TransactionalSaveDirectory directory)
+    {
+        ArgumentNullException.ThrowIfNull(directory);
+        RejectProtectedImageFilePackageMutation(directory.Path);
+        Directory.Delete(directory.Path, recursive: false);
+    }
+
+    private static void RejectProtectedImageFilePackageMutation(string path)
+    {
+        if (TransactionalSaveAsService.IsProtectedImageFilePackagePath(path))
+        {
+            throw new InvalidOperationException(
+                "Packages named 'imagefile*.pak' are immutable and cannot be mutated by Save As.");
+        }
+    }
+
+    private static void VerifyOperationCreatedFile(TransactionalSaveFile file)
+    {
+        file.Stream.Flush(flushToDisk: true);
+        var info = new FileInfo(file.Path);
+        if (!info.Exists || info.Length != file.Length)
+        {
+            throw new IOException(
+                $"Operation-created file '{file.Path}' no longer has its owned identity.");
+        }
+
+        using var stream = new FileStream(
+            file.Path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete);
+        byte[] actualSha256 = SHA256.HashData(stream);
+        if (!CryptographicOperations.FixedTimeEquals(
+                actualSha256,
+                file.ContentSha256.Span))
+        {
+            throw new IOException(
+                $"Operation-created file '{file.Path}' was replaced after creation.");
+        }
     }
 
     private static string ResolveExistingPath(string path, bool requireDirectory)
@@ -180,22 +359,21 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
 }
 
 /// <summary>
-/// Replays and packages the session's unchanged, frozen source layout, then
-/// publishes it through a flushed temporary sibling and same-directory atomic
-/// move. This does not perform a canonical asset link.
+/// Canonically links one immutable semantic revision, preserves its read-only
+/// imagefile references, and atomically publishes the fastfile.
 /// </summary>
 public sealed class TransactionalSaveAsService
 {
-    private readonly SourceLayoutRelinker _sourceLayoutRelinker;
+    private readonly ZoneLinker _zoneLinker;
     private readonly FastFilePackager _packager;
     private readonly ITransactionalSaveFileSystem _fileSystem;
 
     public TransactionalSaveAsService(
+        ZoneLinker? zoneLinker = null,
         FastFilePackager? packager = null,
-        ITransactionalSaveFileSystem? fileSystem = null,
-        SourceLayoutRelinker? sourceLayoutRelinker = null)
+        ITransactionalSaveFileSystem? fileSystem = null)
     {
-        _sourceLayoutRelinker = sourceLayoutRelinker ?? new SourceLayoutRelinker();
+        _zoneLinker = zoneLinker ?? new ZoneLinker();
         _packager = packager ?? new FastFilePackager();
         _fileSystem = fileSystem ?? new TransactionalSaveFileSystem();
     }
@@ -213,11 +391,16 @@ public sealed class TransactionalSaveAsService
         FastFileSaveRevision revision = session.CaptureRevision();
 
         var diagnostics = new List<string>();
-        string? temporaryPath = null;
-        bool committed = false;
+        TransactionalSaveDirectory? temporaryDirectory = null;
+        TransactionalSaveFile? temporaryFastFile = null;
         try
         {
             string requestedDestinationPath = _fileSystem.GetFullPath(request.DestinationPath);
+            if (IsProtectedImageFilePackagePath(requestedDestinationPath))
+            {
+                throw new InvalidOperationException(
+                    "Save As cannot target an immutable imagefile*.pak package.");
+            }
             string destinationDirectory = Path.GetDirectoryName(requestedDestinationPath)
                 ?? throw new InvalidDataException("Save destination has no containing directory.");
             if (!_fileSystem.DirectoryExists(destinationDirectory))
@@ -227,13 +410,8 @@ public sealed class TransactionalSaveAsService
             string destinationPath = Path.Combine(
                 physicalDestinationDirectory,
                 Path.GetFileName(requestedDestinationPath));
-            string physicalSourcePath = _fileSystem.ResolveExistingFilePath(revision.SourcePath);
-            if (string.Equals(destinationPath, physicalSourcePath, StringComparison.OrdinalIgnoreCase) ||
-                (_fileSystem.FileExists(destinationPath) &&
-                 string.Equals(
-                     _fileSystem.ResolveExistingFilePath(destinationPath),
-                     physicalSourcePath,
-                     StringComparison.OrdinalIgnoreCase)))
+            if (revision.SourcePath is { } sourcePath &&
+                IsSourceDestinationAlias(sourcePath, destinationPath))
             {
                 throw new InvalidOperationException(
                     "Save As cannot replace the currently opened source fastfile through a physical path alias.");
@@ -244,55 +422,101 @@ public sealed class TransactionalSaveAsService
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new(
                 SaveAsStage.Linking,
-                "Replaying the unchanged, frozen source layout (not a canonical asset link)."));
-            SourceLayoutRelinkResult sourceRelink =
-                _sourceLayoutRelinker.Relink(revision.ZoneObjectFile);
-            diagnostics.AddRange(sourceRelink.Errors.Select(error => $"{error.Code}: {error.Message}"));
-            if (!sourceRelink.Succeeded || sourceRelink.DecodedBytes is not { } decodedBytes)
+                $"Canonically linking semantic revision {revision.Revision}."));
+            ZoneLinkResult link = _zoneLinker.Link(revision.LinkRequest);
+            diagnostics.AddRange(link.Errors);
+            if (!link.Succeeded || link.DecodedBytes is not { } decodedBytes)
                 return new SaveAsResult(false, false, null, diagnostics);
 
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new(
                 SaveAsStage.Packaging,
-                "Packaging the source-layout replayed decoded zone."));
-            FastFilePackagingPolicy policy = request.PackagingPolicy ??
-                CreateSourcePreservingPackagingPolicy(revision.Header);
-            FastFilePackagingResult package = _packager.Package(
+                "Packaging the linked zone."));
+
+            FastFilePackagingResult package = _packager.PackageGreenfield(
                 decodedBytes,
-                revision.Header,
-                policy);
+                link.LanguageMask,
+                link.SelectedLanguageMask,
+                link.ImageStreamLanguageTables,
+                request.PackagingPolicy);
             diagnostics.AddRange(package.Errors.Select(error => $"{error.Code}: {error.Message}"));
             if (!package.Succeeded || package.Bytes is not { } packageBytes)
                 return new SaveAsResult(false, false, null, diagnostics);
 
             cancellationToken.ThrowIfCancellationRequested();
-            temporaryPath = _fileSystem.CreateTemporarySiblingPath(destinationPath);
-            progress?.Report(new(SaveAsStage.WritingTemporary, "Writing and flushing a temporary sibling candidate."));
-            _fileSystem.WriteAllBytesAndFlushNew(temporaryPath, packageBytes.Span);
+            progress?.Report(new(
+                SaveAsStage.WritingTemporary,
+                "Writing and flushing the staged fastfile candidate."));
+            temporaryDirectory = _fileSystem.CreateTemporarySiblingDirectory(
+                destinationPath);
+            temporaryFastFile = _fileSystem.WriteTemporaryFile(
+                temporaryDirectory,
+                Path.GetFileName(destinationPath),
+                packageBytes.Span);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new(
+                SaveAsStage.VerifyingCandidate,
+                "Fresh-loading the flushed canonical candidate."));
+            ValidateFreshCandidate(
+                temporaryFastFile.Path,
+                cancellationToken);
 
             if (request.CandidateValidator is not null)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                progress?.Report(new(SaveAsStage.VerifyingCandidate, "Validating the flushed candidate."));
+                progress?.Report(new(
+                    SaveAsStage.VerifyingCandidate,
+                    "Applying caller candidate constraints."));
                 IReadOnlyList<string> candidateDiagnostics = request.CandidateValidator.Validate(
-                    temporaryPath,
+                    temporaryFastFile.Path,
                     cancellationToken)
                     ?? throw new InvalidDataException("The Save As candidate validator returned no result.");
                 diagnostics.AddRange(candidateDiagnostics.Where(value => !string.IsNullOrWhiteSpace(value)));
                 if (candidateDiagnostics.Any(value => !string.IsNullOrWhiteSpace(value)))
+                {
+                    RollbackPendingFiles(
+                        ref temporaryFastFile,
+                        ref temporaryDirectory,
+                        diagnostics);
                     return new SaveAsResult(false, false, null, diagnostics);
+                }
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new(SaveAsStage.Committing, "Atomically committing the temporary sibling."));
-            _fileSystem.CommitTemporaryFile(temporaryPath, destinationPath, request.AllowOverwrite);
-            committed = true;
-            temporaryPath = null;
+            progress?.Report(new(
+                SaveAsStage.Committing,
+                "Atomically publishing the fastfile."));
+            if (!session.ExecuteIfCurrentRevision(
+                    revision.Revision,
+                    () =>
+                    {
+                        _fileSystem.CommitTemporaryFile(
+                            temporaryFastFile,
+                            destinationPath,
+                            request.AllowOverwrite);
+                    }))
+            {
+                diagnostics.Add(
+                    $"Semantic revision {revision.Revision} became stale before publication.");
+                RollbackPendingFiles(
+                    ref temporaryFastFile,
+                    ref temporaryDirectory,
+                    diagnostics);
+                return new SaveAsResult(false, false, null, diagnostics);
+            }
+
+            ReleasePublishedFile(ref temporaryFastFile, diagnostics);
+            DeleteTemporaryDirectory(ref temporaryDirectory, diagnostics);
             return new SaveAsResult(true, false, destinationPath, diagnostics);
         }
         catch (OperationCanceledException)
         {
             diagnostics.Add("Save As was cancelled before commit.");
+            RollbackPendingFiles(
+                ref temporaryFastFile,
+                ref temporaryDirectory,
+                diagnostics);
             return new SaveAsResult(false, true, null, diagnostics);
         }
         catch (Exception exception) when (exception is
@@ -300,41 +524,155 @@ public sealed class TransactionalSaveAsService
             UnauthorizedAccessException or
             InvalidDataException or
             InvalidOperationException or
+            NotSupportedException or
             ArgumentException or
+            KeyNotFoundException or
             OverflowException)
         {
             diagnostics.Add($"{exception.GetType().Name}: {exception.Message}");
+            RollbackPendingFiles(
+                ref temporaryFastFile,
+                ref temporaryDirectory,
+                diagnostics);
             return new SaveAsResult(false, false, null, diagnostics);
         }
         finally
         {
-            if (!committed && temporaryPath is not null)
-            {
-                try
-                {
-                    _fileSystem.DeleteTemporaryFile(temporaryPath);
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    // Keep the primary failure; cleanup is restricted to the
-                    // operation-created temporary sibling.
-                }
-            }
+            RollbackPendingFiles(
+                ref temporaryFastFile,
+                ref temporaryDirectory,
+                diagnostics);
         }
     }
 
-    private static FastFilePackagingPolicy CreateSourcePreservingPackagingPolicy(DbHeader header)
+    private static void ValidateFreshCandidate(
+        string candidatePath,
+        CancellationToken cancellationToken)
     {
-        long physicalTrailerLength = header.SourceFileLength - header.FileSize;
-        if (physicalTrailerLength is not 0 and not sizeof(ushort))
+        cancellationToken.ThrowIfCancellationRequested();
+        using var loadSession = new DbLoadSession();
+        LoadedXZone loadedZone = loadSession.DB_LoadXZone(
+            candidatePath,
+            XZoneFlags.DB_ZONE_DEV);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = loadSession.FreezeLinkAssetPool();
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = loadedZone.FreezeLinkRoots();
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private void RollbackPendingFiles(
+        ref TransactionalSaveFile? fastFile,
+        ref TransactionalSaveDirectory? directory,
+        ICollection<string> diagnostics)
+    {
+        RollbackFile(ref fastFile, "fastfile", diagnostics);
+        DeleteTemporaryDirectory(ref directory, diagnostics);
+    }
+
+    private void RollbackFile(
+        ref TransactionalSaveFile? file,
+        string description,
+        ICollection<string> diagnostics)
+    {
+        TransactionalSaveFile? ownedFile = file;
+        file = null;
+        if (ownedFile is null)
+            return;
+
+        try
         {
-            throw new InvalidDataException(
-                "The imported fastfile has an unsupported physical trailer length.");
+            _fileSystem.RollbackFile(ownedFile);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(
+                $"Could not roll back the operation-created {description} '{ownedFile.Path}': {exception.Message}");
+        }
+    }
+
+    private static void ReleasePublishedFile(
+        ref TransactionalSaveFile? file,
+        ICollection<string> diagnostics)
+    {
+        TransactionalSaveFile? publishedFile = file;
+        file = null;
+        if (publishedFile is null)
+            return;
+
+        try
+        {
+            publishedFile.Dispose();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(
+                $"Published '{publishedFile.Path}', but releasing its file handle failed: {exception.Message}");
+        }
+    }
+
+    private void DeleteTemporaryDirectory(
+        ref TransactionalSaveDirectory? directory,
+        ICollection<string> diagnostics)
+    {
+        TransactionalSaveDirectory? ownedDirectory = directory;
+        directory = null;
+        if (ownedDirectory is null)
+            return;
+
+        try
+        {
+            _fileSystem.DeleteTemporaryDirectory(ownedDirectory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(
+                $"Could not remove Save As staging directory '{ownedDirectory.Path}': {exception.Message}");
+        }
+    }
+
+    private bool IsSourceDestinationAlias(string sourcePath, string destinationPath)
+    {
+        string fullSourcePath = _fileSystem.GetFullPath(sourcePath);
+        if (string.Equals(
+                destinationPath,
+                fullSourcePath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
         }
 
-        return new FastFilePackagingPolicy(
-            FileCreationTimeRaw: header.FileCreationTimeRaw,
-            MaxFileSizePolicy: FastFileMaxFileSizePolicy.AtLeastFileSize,
-            EmitDoubleTerminator: physicalTrailerLength == sizeof(ushort));
+        if (!_fileSystem.FileExists(fullSourcePath))
+            return false;
+
+        string physicalSourcePath = _fileSystem.ResolveExistingFilePath(fullSourcePath);
+        return string.Equals(
+                   destinationPath,
+                   physicalSourcePath,
+                   StringComparison.OrdinalIgnoreCase) ||
+               (_fileSystem.FileExists(destinationPath) &&
+                string.Equals(
+                    _fileSystem.ResolveExistingFilePath(destinationPath),
+                    physicalSourcePath,
+                    StringComparison.OrdinalIgnoreCase));
     }
+
+    internal static bool IsProtectedImageFilePackagePath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return false;
+
+        const string prefix = "imagefile";
+        const string suffix = ".pak";
+        string fileName = Path.GetFileName(
+            Path.TrimEndingDirectorySeparator(path));
+        if (!fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+            !fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
 }

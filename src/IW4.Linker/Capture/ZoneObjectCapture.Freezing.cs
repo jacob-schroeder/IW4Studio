@@ -127,6 +127,9 @@ public sealed partial class ZoneObjectCapture
             PointerType pointerType = XPointerCodec.GetType(pointer.Raw);
             SerializedPointerForm form = FormFor(pointerType, pointer.ResolutionMode);
             SymbolReference? target = TargetFor(pointer, pointerType);
+            AliasCellReference? publicationCell = PublicationCellFor(
+                pointer,
+                pointerType);
             relocations.Add(new PointerRelocation(
                 pointer.Occurrence,
                 tapeOffset,
@@ -139,7 +142,8 @@ public sealed partial class ZoneObjectCapture
                 pointer.TemporalEpoch,
                 source?.Symbol.Allocation.TempEpoch,
                 TargetLifetime(target),
-                target));
+                target,
+                publicationCell));
         }
 
         return new ZoneObjectFile(
@@ -193,6 +197,31 @@ public sealed partial class ZoneObjectCapture
 
             CapturedAllocation target = ResolvePackedTarget(pointer, targetAddress, requiredLength: 1, allowEnd: false);
             return ReferenceFor(SymbolFor(target), targetAddress.Offset, false, stringByAllocationOccurrence);
+        }
+
+        AliasCellReference? PublicationCellFor(
+            CapturedPointer pointer,
+            PointerType pointerType)
+        {
+            if (pointer.ResolutionMode != XPointerResolutionMode.AliasCell ||
+                selectionBySource.ContainsKey(pointer.Occurrence))
+            {
+                return null;
+            }
+
+            PhysicalKey? publicationCell = pointerType switch
+            {
+                PointerType.Inline => pointer.Cell,
+                PointerType.Insert => pointer.InsertCell,
+                _ => null
+            };
+            if (publicationCell is not { } cell)
+                return null;
+
+            CapturedAllocation owner = ResolveConcreteOwner(
+                cell,
+                "alias publication cell");
+            return new AliasCellReference(AliasFor(owner, cell.Offset));
         }
     }
 }

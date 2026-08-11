@@ -56,6 +56,14 @@ internal sealed class ZoneEmissionWriter
     public void PatchInt32(int sourceOffset, int value) =>
         PatchUInt32(sourceOffset, unchecked((uint)value));
 
+    public void PatchUInt16(int sourceOffset, ushort value)
+    {
+        ValidatePatchRange(sourceOffset, sizeof(ushort));
+        BinaryPrimitives.WriteUInt16BigEndian(
+            _source.GetBuffer().AsSpan(sourceOffset, sizeof(ushort)),
+            value);
+    }
+
     public void PatchUInt32(int sourceOffset, uint value)
     {
         ValidatePatchRange(sourceOffset, sizeof(uint));

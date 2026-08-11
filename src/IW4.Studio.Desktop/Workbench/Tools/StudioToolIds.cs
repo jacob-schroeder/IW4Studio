@@ -12,7 +12,6 @@ public static class StudioToolIds
     public const string LivePreview = "map-render";
     [Obsolete("Use LivePreview.")]
     public const string MapRender = LivePreview;
-    public const string MapEditor = "map-editor";
     public const string Properties = "properties";
     public const string FastFileDetails = "fastfile-details";
     public const string ZoneDetails = "zone-details";

@@ -2,6 +2,7 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Assets.Assets.XModel;
@@ -23,11 +24,14 @@ public sealed class XModelAsset : BaseAsset
         get => _numSurfs;
         init => _numSurfs = value;
     }
+    // Original +0x06 wire value before DB canonical LOD fixups mutate
+    // NumSurfs for runtime consumption. Null identifies authored definitions.
+    public byte? SerializedNumSurfs { get; init; }
     public byte Pad07 { get; init; }
     public float Scale { get; init; }
     public IReadOnlyList<uint> NoScalePartBits { get; init; } = [];
     public XPointer<ushort[]> BoneNamesPointer { get; init; }
-    public IReadOnlyList<ushort> BoneNames { get; init; } = [];
+    public IReadOnlyList<ScriptStringReference> BoneNames { get; init; } = [];
     public XPointer<byte[]> ParentListPointer { get; init; }
     public IReadOnlyList<byte> ParentList { get; init; } = [];
     public XPointer<short[]> QuatsPointer { get; init; }

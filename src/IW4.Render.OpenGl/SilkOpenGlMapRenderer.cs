@@ -1,7 +1,5 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using IW4.Render.Capture;
-using IW4.Render.Export;
 using IW4.Render.Diagnostics;
 using Silk.NET.OpenGL;
 
@@ -349,8 +347,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private bool _disposed;
     private bool? _anisotropicFilteringSupported;
     private MapRenderEditorPreviewLightingPlan? _editorPreviewLighting;
-    private long _liveSceneProjectionRevision = -1;
-    private string? _liveSceneProjectionContentIdentity;
     private MapRenderWorldEvent20SceneLightFrameInput?
         _editorPreviewSceneLightFrame;
     private MapRenderWorldEvent20SceneLightFrameInputFailure?
@@ -775,7 +771,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             scene.StaticModelLightingAtlas,
             EnumerateStaticModelShaderExecutions(scene));
         DeleteLoadedResources();
-        CaptureLiveStaticModelSourceAuthority(scene);
         AccountSceneTexturePayloads(scene);
         _progressiveStaticMaterializationEnabled =
             initialView.HasValue &&
@@ -1229,68 +1224,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             $"authoredBc:{TextureAuthoredBcSourceBytes}/" +
             $"gpuResident:{TextureGpuResidentBytes}, " +
             $"total={System.Diagnostics.Stopwatch.GetElapsedTime(rendererLoadStarted, rendererLoadFinished).TotalMilliseconds:0}ms.");
-    }
-
-    /// <summary>
-    /// Reconciles one immutable semantic editor projection into the loaded
-    /// light inputs. This method must be called on the renderer thread. It
-    /// never reloads scene resources or mutates the loaded FastFile assets.
-    /// </summary>
-    /// <returns>
-    /// <see langword="true"/> when the projection is current or was applied;
-    /// <see langword="false"/> when a newer projection is already active.
-    /// </returns>
-    public bool ApplyLiveSceneProjection(
-        MapRenderLiveSceneProjection projection)
-    {
-        ThrowIfUnavailable();
-        ArgumentNullException.ThrowIfNull(projection);
-        if (!_loaded || _editorPreviewLighting is null)
-        {
-            throw new InvalidOperationException(
-                "A Live Preview scene must be loaded before applying an editor projection.");
-        }
-
-        if (projection.Revision < _liveSceneProjectionRevision)
-            return false;
-        if (projection.Revision == _liveSceneProjectionRevision)
-        {
-            if (!string.Equals(
-                    projection.ContentIdentity,
-                    _liveSceneProjectionContentIdentity,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"Live Preview received divergent content for editor revision {projection.Revision}.");
-            }
-
-            return true;
-        }
-
-        MapRenderLiveSceneReconciliation reconciliation =
-            MapRenderLiveSceneProjectionReconciler.Reconcile(
-                projection,
-                _editorPreviewLighting,
-                _editorPreviewSceneLightFrame);
-        MapRenderLiveSceneProjection effectiveStaticModelProjection =
-            ComposeEffectiveStaticModelProjection(projection);
-        ApplyLiveStaticModelProjection(effectiveStaticModelProjection);
-
-        // Commit only after the pure reconciliation has fully validated the
-        // update, preserving the previous renderer state on any failure.
-        _editorPreviewLighting = reconciliation.Lighting;
-        _editorPreviewSceneLightFrame = reconciliation.SceneLightFrame;
-        RecomputeEditorPreviewDirectionalSunColors();
-        _editorPreviewActiveFog = _editorPreviewGenericActiveFog ??
-            (_editorPreviewAtmosphere?.IsEnabled == true
-                ? MapRenderEditorPreviewActiveFogAdapter.Create(
-                    _editorPreviewAtmosphere,
-                    _editorPreviewLighting)
-                : null);
-        RetainCommittedStaticModelProjection(projection);
-        _liveSceneProjectionRevision = projection.Revision;
-        _liveSceneProjectionContentIdentity = projection.ContentIdentity;
-        return true;
     }
 
     private void RecomputeEditorPreviewDirectionalSunColors()
@@ -1960,53 +1893,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         rsxFragmentOutputDiagnostic: RsxFragmentOutputDiagnostic,
         animationTimeSeconds: animationTimeSeconds);
 
-    /// <summary>
-    /// Captures either resolved target 4 at logical scene resolution or the
-    /// current physical host back buffer. ResolvedScene is stable across host
-    /// swaps; HostBackBuffer callers are responsible for invoking this before
-    /// their windowing layer swaps that buffer.
-    /// </summary>
-    public void SaveScreenshot(
-        string path,
-        MapRenderScreenshotSource source)
-    {
-        if (!_loaded)
-            return;
-        if (_frameTelemetry.IsCpuFrameActive)
-        {
-            throw new InvalidOperationException(
-                "A screenshot cannot interrupt an active render frame.");
-        }
-
-        MapRenderOpenGlNormalCameraDefaultPresentationExecutionResult
-            presentation = LastEditorPreviewPresentationResult ??
-            throw new InvalidOperationException(
-                "Screenshot capture requires a completed Live Preview presentation frame.");
-        MapRenderCaptureRequest request =
-            MapRenderCaptureRequest.ForFrame(
-                source,
-                presentation.Plan.FrameRevision,
-                presentation.SurfaceExtents);
-        MapRenderCaptureResult result = CaptureAsync(request)
-            .GetAwaiter()
-            .GetResult();
-        if (!result.IsCompleted)
-        {
-            throw new InvalidOperationException(
-                result.FailureDetail ??
-                $"Screenshot capture failed with status {result.Status}.");
-        }
-        MapRenderCaptureImage image = result.Image!;
-
-        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-        File.WriteAllBytes(
-            path,
-            PngWriter.WriteRgba(
-                image.Width,
-                image.Height,
-                image.SharedTopDownRgba8));
-    }
-
     public void Dispose()
     {
         if (_disposed)
@@ -2052,10 +1938,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
 
         _contextAbandoned = true;
         _loaded = false;
-        ResetLiveStaticModelProjectionState();
         ResetEditorSelectionOutline();
-        _liveSceneProjectionRevision = -1;
-        _liveSceneProjectionContentIdentity = null;
         List<Exception>? failures = null;
         TryRelease(
             () => _sunShadowDpvsWorker?.Dispose(),

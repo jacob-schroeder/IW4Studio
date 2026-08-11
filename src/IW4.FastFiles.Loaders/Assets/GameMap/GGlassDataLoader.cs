@@ -1,6 +1,7 @@
 using IW4.FastFiles.Loaders.Database;
 using IW4.Assets.Assets.GameMap;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
@@ -133,7 +134,13 @@ public sealed class GGlassDataLoader
             XPointer<string> nameStrPointer = context.PointerReader.ReadPointer<string>(
                 rowCursor,
                 XPointerResolutionMode.Direct);
-            ushort name = rowCursor.ReadUInt16();
+            ushort rawName = rowCursor.ReadUInt16();
+            XBlockAddress nameCell = rowAddress.Add(0x04);
+            ScriptStringReference name = context.ZoneScriptStrings.Resolve(
+                rawName,
+                nameCell,
+                $"G_GlassData.glassNames[{index}].name");
+            context.Blocks.WriteUInt16(nameCell, name.RuntimeHandle.Value);
             ushort pieceCount = rowCursor.ReadUInt16();
             XPointer<ushort[]> pieceIndicesPointer = ReadPresencePointer<ushort[]>(rowCursor, context);
             string? nameStr = context.PointerReader.LoadXString(cursor, nameStrPointer);

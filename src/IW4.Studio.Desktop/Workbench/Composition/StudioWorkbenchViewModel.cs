@@ -20,7 +20,6 @@ using IW4.Studio.Desktop.Workbench.Tools.FastFileDetails;
 using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
-using IW4.Studio.Desktop.Workbench.Tools.MapEditor;
 using IW4.Studio.Desktop.Workbench.Tools.MapRender;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
@@ -137,9 +136,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 Diagnostics,
                 GscFindings);
         LivePreview = new MapRenderToolViewModel(workspace);
-        MapEditor = new MapEditorToolViewModel(
-            workspace,
-            Editor.EditingSession);
         Properties = new PropertiesToolViewModel(
             _selectionContext,
             ImageFilePak);
@@ -156,7 +152,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             GscFindings,
             GscUsages,
             LivePreview,
-            MapEditor,
             Properties,
             FastFileDetails,
             ZoneDetails,
@@ -218,12 +213,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         remove => LivePreview.LaunchRequested -= value;
     }
 
-    public event EventHandler? MapEditorRequested
-    {
-        add => MapEditor.LaunchRequested += value;
-        remove => MapEditor.LaunchRequested -= value;
-    }
-
     public event EventHandler<GscEngineBuiltInNavigationRequestedEventArgs>?
         EngineBuiltInReferenceRequested;
 
@@ -275,8 +264,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     [Obsolete("Use LivePreview.")]
     public MapRenderToolViewModel MapRender => LivePreview;
-
-    public MapEditorToolViewModel MapEditor { get; }
 
     public PropertiesToolViewModel Properties { get; }
 
@@ -405,9 +392,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         {
             case DockActivationResult.Opened:
             case DockActivationResult.Switched:
-                if (toolId == StudioToolIds.MapEditor)
-                    _ = MapEditor.EnsurePrepared();
-
                 ConsoleOutput.Append(
                     ConsoleOutputLevel.Debug,
                     "Workbench",
@@ -640,7 +624,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         FastFileAssets.Dispose();
         AssetPool.Dispose();
         ImageFilePak.Dispose();
-        MapEditor.Dispose();
         LivePreview.Dispose();
         SetPropertiesRevealSource(null);
         Properties.Dispose();

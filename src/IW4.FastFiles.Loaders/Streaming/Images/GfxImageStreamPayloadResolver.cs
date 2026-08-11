@@ -1,7 +1,6 @@
 using IW4.Assets.Assets.Image;
-using IW4.FastFiles.Database;
-using IW4.Runtime.Assets.Images;
 using IW4.FastFiles.Streaming.Images;
+using IW4.Runtime.Assets.Images;
 
 namespace IW4.FastFiles.Loaders.Streaming.Images;
 
@@ -12,11 +11,6 @@ namespace IW4.FastFiles.Loaders.Streaming.Images;
 public sealed class GfxImageStreamPayloadResolver : IGfxImagePayloadResolver
 {
     private readonly GfxImageStreamResolver _streams;
-
-    public GfxImageStreamPayloadResolver(DbHeader header, string fastFilePath)
-        : this(new GfxImageStreamResolver(header, fastFilePath))
-    {
-    }
 
     public GfxImageStreamPayloadResolver(GfxImageStreamResolver streams)
     {
