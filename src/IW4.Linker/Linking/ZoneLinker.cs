@@ -155,7 +155,10 @@ public sealed class ZoneLinker
             if (root.SerializedType is not (
                 XAssetType.RawFile or
                 XAssetType.LightDef or
-                XAssetType.Image))
+                XAssetType.Image or
+                XAssetType.Localize or
+                XAssetType.StringTable or
+                XAssetType.SndCurve))
             {
                 throw new NotSupportedException(
                     $"Canonical linking does not yet support {root.SerializedType} roots.");
@@ -322,6 +325,9 @@ public sealed class ZoneLinker
         {
             XAssetType.RawFile => RawFileLinkRecipe.CreateExternal(key, serializedName),
             XAssetType.Image => GfxImageLinkRecipe.CreateExternal(key, serializedName),
+            XAssetType.Localize => LocalizeLinkRecipe.CreateExternal(key, serializedName),
+            XAssetType.SndCurve => SndCurveLinkRecipe.CreateExternal(key, serializedName),
+            XAssetType.StringTable => StringTableLinkRecipe.CreateExternal(key, serializedName),
             _ => throw new NotSupportedException(
                 $"Canonical linking does not yet support external {serializedType} roots.")
         };

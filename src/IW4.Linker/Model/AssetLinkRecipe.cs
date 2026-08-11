@@ -56,11 +56,42 @@ internal abstract class AssetLinkRecipe
 
     protected void EmitName(ZoneEmissionWriter output)
     {
+        EmitFrozenXString(output, _nameBytes);
+    }
+
+    protected static byte[]? FreezeOptionalXString(
+        string? value,
+        string fieldPath)
+    {
+        if (value is null)
+            return null;
+        if (value.Contains('\0'))
+            throw new InvalidDataException($"{fieldPath} cannot contain NUL.");
+        if (value.Any(character => character > byte.MaxValue))
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} must be representable as Latin-1.");
+        }
+
+        return EncodeCString(value);
+    }
+
+    protected static int XStringSourcePointer(byte[]? frozenValue) =>
+        frozenValue is null ? 0 : -1;
+
+    protected static void EmitFrozenXString(
+        ZoneEmissionWriter output,
+        byte[]? frozenValue)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        if (frozenValue is null)
+            return;
+
         output.Allocate(
             XFileBlockType.LARGE,
-            _nameBytes.Length,
+            frozenValue.Length,
             alignment: 1);
-        output.WriteBytes(_nameBytes);
+        output.WriteBytes(frozenValue);
     }
 
     private static byte[] EncodeCString(string value)

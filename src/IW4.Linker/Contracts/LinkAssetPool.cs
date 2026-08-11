@@ -1,7 +1,10 @@
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.LightDef;
+using IW4.Assets.Assets.Localize;
 using IW4.Assets.Assets.RawFile;
+using IW4.Assets.Assets.Sound;
+using IW4.Assets.Assets.StringTable;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Model;
 
@@ -39,6 +42,12 @@ public sealed class LinkAssetProvider
                 LightDefLinkRecipe.Freeze(key, serializedName, lightDef),
             (XAssetType.Image, GfxImageAsset image) =>
                 GfxImageLinkRecipe.Freeze(key, serializedName, image),
+            (XAssetType.Localize, LocalizeAsset localize) =>
+                LocalizeLinkRecipe.Freeze(key, serializedName, localize),
+            (XAssetType.StringTable, StringTableAsset stringTable) =>
+                StringTableLinkRecipe.Freeze(key, serializedName, stringTable),
+            (XAssetType.SndCurve, SndCurve sndCurve) =>
+                SndCurveLinkRecipe.Freeze(key, serializedName, sndCurve),
             (XAssetType.RawFile, _) => throw new ArgumentException(
                 "A RawFile provider requires a RawFileAsset definition.",
                 nameof(definition)),
@@ -47,6 +56,15 @@ public sealed class LinkAssetProvider
                 nameof(definition)),
             (XAssetType.Image, _) => throw new ArgumentException(
                 "An Image provider requires a GfxImageAsset definition.",
+                nameof(definition)),
+            (XAssetType.Localize, _) => throw new ArgumentException(
+                "A Localize provider requires a LocalizeAsset definition.",
+                nameof(definition)),
+            (XAssetType.StringTable, _) => throw new ArgumentException(
+                "A StringTable provider requires a StringTableAsset definition.",
+                nameof(definition)),
+            (XAssetType.SndCurve, _) => throw new ArgumentException(
+                "A SndCurve provider requires a SndCurve definition.",
                 nameof(definition)),
             _ => throw new NotSupportedException(
                 $"Canonical linking does not yet support {serializedType} providers.")

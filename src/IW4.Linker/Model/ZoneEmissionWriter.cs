@@ -44,6 +44,13 @@ internal sealed class ZoneEmissionWriter
         _source.Write(bytes);
     }
 
+    public void WriteUInt16(ushort value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(ushort)];
+        BinaryPrimitives.WriteUInt16BigEndian(bytes, value);
+        _source.Write(bytes);
+    }
+
     public void WriteBytes(ReadOnlySpan<byte> bytes) => _source.Write(bytes);
 
     public void PatchInt32(int sourceOffset, int value) =>
