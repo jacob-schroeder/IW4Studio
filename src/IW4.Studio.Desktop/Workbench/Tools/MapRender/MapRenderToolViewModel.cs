@@ -172,7 +172,7 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
             return null;
 
         GfxImageAsset[] images = material.Textures
-            .Select(texture => texture.Image)
+            .Select(texture => texture.IncomingImage ?? texture.Image)
             .Where(image => image is not null)
             .Select(image => image!)
             .Distinct<GfxImageAsset>(ReferenceEqualityComparer.Instance)

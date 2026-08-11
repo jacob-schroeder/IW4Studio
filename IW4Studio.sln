@@ -24,6 +24,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Gsc", "src\IW4.Gsc\IW4.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Linker", "src\IW4.Linker\IW4.Linker.csproj", "{31A460EC-ECF3-4271-A0B7-A10F03FEEA40}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Studio.Desktop", "src\IW4.Studio.Desktop\IW4.Studio.Desktop.csproj", "{CC835191-D4B1-4698-8E49-7D285F7E0889}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -74,6 +76,10 @@ Global
 		{9E13A04E-38C2-475C-8543-017C61195C1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9E13A04E-38C2-475C-8543-017C61195C1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9E13A04E-38C2-475C-8543-017C61195C1B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

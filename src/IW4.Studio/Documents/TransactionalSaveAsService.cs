@@ -1,6 +1,6 @@
 using IW4.FastFiles.Database;
-using IW4.Linker;
 using IW4.Linker.Packaging;
+using IW4.Linker.SourceLayout;
 
 namespace IW4.Studio.Documents;
 
@@ -180,21 +180,22 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
 }
 
 /// <summary>
-/// Links and packages the session's single frozen object file, then publishes
-/// it through a flushed temporary sibling and same-directory atomic move.
+/// Replays and packages the session's unchanged, frozen source layout, then
+/// publishes it through a flushed temporary sibling and same-directory atomic
+/// move. This does not perform a canonical asset link.
 /// </summary>
 public sealed class TransactionalSaveAsService
 {
-    private readonly ZoneLinker _linker;
+    private readonly SourceLayoutRelinker _sourceLayoutRelinker;
     private readonly FastFilePackager _packager;
     private readonly ITransactionalSaveFileSystem _fileSystem;
 
     public TransactionalSaveAsService(
         FastFilePackager? packager = null,
         ITransactionalSaveFileSystem? fileSystem = null,
-        ZoneLinker? linker = null)
+        SourceLayoutRelinker? sourceLayoutRelinker = null)
     {
-        _linker = linker ?? new ZoneLinker();
+        _sourceLayoutRelinker = sourceLayoutRelinker ?? new SourceLayoutRelinker();
         _packager = packager ?? new FastFilePackager();
         _fileSystem = fileSystem ?? new TransactionalSaveFileSystem();
     }
@@ -241,14 +242,19 @@ public sealed class TransactionalSaveAsService
                 throw new IOException("Save destination already exists and overwrite was not approved.");
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new(SaveAsStage.Linking, "Linking the frozen zone object."));
-            ZoneLinkResult link = _linker.Link(revision.ZoneObjectFile);
-            diagnostics.AddRange(link.Errors.Select(error => $"{error.Code}: {error.Message}"));
-            if (!link.Succeeded || link.DecodedBytes is not { } decodedBytes)
+            progress?.Report(new(
+                SaveAsStage.Linking,
+                "Replaying the unchanged, frozen source layout (not a canonical asset link)."));
+            SourceLayoutRelinkResult sourceRelink =
+                _sourceLayoutRelinker.Relink(revision.ZoneObjectFile);
+            diagnostics.AddRange(sourceRelink.Errors.Select(error => $"{error.Code}: {error.Message}"));
+            if (!sourceRelink.Succeeded || sourceRelink.DecodedBytes is not { } decodedBytes)
                 return new SaveAsResult(false, false, null, diagnostics);
 
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new(SaveAsStage.Packaging, "Packaging the linked decoded zone."));
+            progress?.Report(new(
+                SaveAsStage.Packaging,
+                "Packaging the source-layout replayed decoded zone."));
             FastFilePackagingPolicy policy = request.PackagingPolicy ??
                 CreateSourcePreservingPackagingPolicy(revision.Header);
             FastFilePackagingResult package = _packager.Package(

@@ -3,14 +3,16 @@ using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Model;
 
-namespace IW4.Linker;
+namespace IW4.Linker.SourceLayout;
 
-public sealed record ZoneLinkError(string Code, string Message);
+public sealed record SourceLayoutRelinkError(string Code, string Message);
 
-/// <summary>A failed link never exposes a partially patched byte tape.</summary>
-public sealed class ZoneLinkResult
+/// <summary>A failed source-layout replay never exposes a partially patched byte tape.</summary>
+public sealed class SourceLayoutRelinkResult
 {
-    private ZoneLinkResult(byte[]? decodedBytes, IEnumerable<ZoneLinkError> errors)
+    private SourceLayoutRelinkResult(
+        byte[]? decodedBytes,
+        IEnumerable<SourceLayoutRelinkError> errors)
     {
         DecodedBytes = decodedBytes is null ? null : decodedBytes.ToArray();
         Errors = Array.AsReadOnly(errors.ToArray());
@@ -18,15 +20,19 @@ public sealed class ZoneLinkResult
 
     public bool Succeeded => DecodedBytes is not null;
     public ReadOnlyMemory<byte>? DecodedBytes { get; }
-    public IReadOnlyList<ZoneLinkError> Errors { get; }
-    internal static ZoneLinkResult Success(byte[] bytes) => new(bytes, []);
-    internal static ZoneLinkResult Failure(IEnumerable<ZoneLinkError> errors) => new(null, errors);
+    public IReadOnlyList<SourceLayoutRelinkError> Errors { get; }
+    internal static SourceLayoutRelinkResult Success(byte[] bytes) => new(bytes, []);
+    internal static SourceLayoutRelinkResult Failure(
+        IEnumerable<SourceLayoutRelinkError> errors) => new(null, errors);
 }
 
-/// <summary>Deterministic source-layout relinker for the first no-op object-file policy.</summary>
-public sealed class ZoneLinker
+/// <summary>
+/// Deterministically replays an unchanged, frozen object file in its captured
+/// source layout. This is not a canonical asset link.
+/// </summary>
+public sealed class SourceLayoutRelinker
 {
-    public ZoneLinkResult Link(ZoneObjectFile objectFile)
+    public SourceLayoutRelinkResult Relink(ZoneObjectFile objectFile)
     {
         ArgumentNullException.ThrowIfNull(objectFile);
         try
@@ -38,19 +44,19 @@ public sealed class ZoneLinker
                 int encoded = Encode(relocation);
                 if (encoded != relocation.CapturedRaw)
                 {
-                    return ZoneLinkResult.Failure([new(
-                        "link.sourceCompatibility",
+                    return SourceLayoutRelinkResult.Failure([new(
+                        "sourceRelink.sourceCompatibility",
                         $"Relocation at 0x{relocation.TapeOffset:X} re-encodes " +
                         $"0x{unchecked((uint)encoded):X8}, not captured source " +
                         $"word 0x{unchecked((uint)relocation.CapturedRaw):X8}.")]);
                 }
                 BinaryPrimitives.WriteInt32BigEndian(output.AsSpan(relocation.TapeOffset, relocation.Width), encoded);
             }
-            return ZoneLinkResult.Success(output);
+            return SourceLayoutRelinkResult.Success(output);
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentOutOfRangeException or OverflowException)
         {
-            return ZoneLinkResult.Failure([new("link.validation", exception.Message)]);
+            return SourceLayoutRelinkResult.Failure([new("sourceRelink.validation", exception.Message)]);
         }
     }
 

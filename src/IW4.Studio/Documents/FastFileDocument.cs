@@ -21,6 +21,9 @@ public sealed class FastFileDocument
     public string SourcePath { get; }
     public LoadedXZone LoadedZone { get; }
 
-    /// <summary>The loader-frozen symbolic input to the no-op linker.</summary>
+    /// <summary>
+    /// The loader-frozen symbolic input for unchanged source-layout replay.
+    /// It is not a canonical asset-link input.
+    /// </summary>
     public ZoneObjectFile ZoneObjectFile { get; }
 }

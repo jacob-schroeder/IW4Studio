@@ -3,7 +3,9 @@ using IW4.FastFiles.Zone;
 
 namespace IW4.Studio.Documents;
 
-/// <summary>Opens one isolated fastfile into its immutable linker object file.</summary>
+/// <summary>
+/// Opens one isolated fastfile into an immutable source-layout replay object.
+/// </summary>
 public sealed class FastFileDocumentService
 {
     public FastFileDocumentService()
@@ -17,8 +19,8 @@ public sealed class FastFileDocumentService
             throw new NotSupportedException("The initial Studio boundary supports isolated opens only.");
 
         // One direct call deliberately creates one XZone and one frozen
-        // ZoneObjectFile. Studio retains neither a dependency plan nor draft
-        // authoring state.
+        // ZoneObjectFile for unchanged source-layout replay. Studio retains
+        // neither a canonical link request nor draft authoring state.
         var loadSession = new DbLoadSession();
         LoadedXZone loadedZone = loadSession.DB_LoadXZone(
             request.Path,

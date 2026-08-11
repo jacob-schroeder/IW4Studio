@@ -4,8 +4,9 @@ using IW4.Linker.Model;
 namespace IW4.Studio.Documents;
 
 /// <summary>
-/// The single-zone immutable workspace returned by an isolated open. At most
-/// one editing session may take ownership of its loaded runtime state.
+/// The single-zone immutable source-layout replay workspace returned by an
+/// isolated open. At most one editing session may take ownership of its loaded
+/// runtime state.
 /// </summary>
 public sealed class FastFileWorkspace : IDisposable
 {

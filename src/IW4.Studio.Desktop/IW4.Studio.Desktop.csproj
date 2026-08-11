@@ -37,6 +37,7 @@
   <ItemGroup>
     <ProjectReference Include="..\IW4.Gsc\IW4.Gsc.csproj" />
     <ProjectReference Include="..\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\IW4.Studio.MapEditor\IW4.Studio.MapEditor.csproj" />
     <ProjectReference Include="..\IW4.Render.OpenGl\IW4.Render.OpenGl.csproj" />
     <AvaloniaResource Include="..\..\Resources\logo_alt.svg" Link="Resources\logo_alt.svg" />
     <AvaloniaResource Include="..\..\Resources\logo.svg" Link="Resources\logo.svg" />

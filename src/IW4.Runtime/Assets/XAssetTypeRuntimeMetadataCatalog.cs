@@ -44,7 +44,6 @@ public static class XAssetTypeRuntimeMetadataCatalog
         yield return Canonical(XAssetType.LoadedSound, 0x1C);
         yield return CanonicalAlias(
             XAssetType.ColMapSp,
-            XAssetType.ColMapMp,
             0x100,
             hasReleaseLifecycle: true,
             allowsFallbackPromotion: false);
@@ -110,7 +109,7 @@ public static class XAssetTypeRuntimeMetadataCatalog
         bool allowsFallbackPromotion = true) =>
         new(
             type,
-            type,
+            XAssetTypeFamilyCatalog.GetCanonicalFamily(type),
             XAssetRuntimeDisposition.Canonical,
             rootSize,
             nativePoolCopySize,
@@ -119,13 +118,12 @@ public static class XAssetTypeRuntimeMetadataCatalog
 
     private static XAssetTypeRuntimeMetadata CanonicalAlias(
         XAssetType serializedType,
-        XAssetType canonicalType,
         int rootSize,
         bool hasReleaseLifecycle = false,
         bool allowsFallbackPromotion = true) =>
         new(
             serializedType,
-            canonicalType,
+            XAssetTypeFamilyCatalog.GetCanonicalFamily(serializedType),
             XAssetRuntimeDisposition.CanonicalAlias,
             rootSize,
             rootSize,
@@ -135,7 +133,7 @@ public static class XAssetTypeRuntimeMetadataCatalog
     private static XAssetTypeRuntimeMetadata NoOp(XAssetType type) =>
         new(
             type,
-            type,
+            XAssetTypeFamilyCatalog.GetCanonicalFamily(type),
             XAssetRuntimeDisposition.NativeNoOp,
             0,
             0,

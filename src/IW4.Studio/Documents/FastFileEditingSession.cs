@@ -5,8 +5,9 @@ namespace IW4.Studio.Documents;
 
 /// <summary>
 /// Exclusively owns one workspace and its immutable Save As revision. The
-/// initial linker boundary intentionally has no semantic mutation surface;
-/// disposing the session also releases the loaded workspace.
+/// revision supports unchanged, frozen source-layout replay only, not semantic
+/// mutation or canonical asset linking. Disposing the session also releases
+/// the loaded workspace.
 /// </summary>
 public sealed class FastFileEditingSession : IDisposable
 {
@@ -27,7 +28,7 @@ public sealed class FastFileEditingSession : IDisposable
 
     public FastFileWorkspace Workspace { get; }
 
-    /// <summary>The only captured revision; it never changes in this no-op phase.</summary>
+    /// <summary>The only captured source-layout replay revision; it never changes.</summary>
     public long Revision => 0;
 
     internal FastFileSaveRevision CaptureRevision()
@@ -53,7 +54,7 @@ public sealed class FastFileEditingSession : IDisposable
     }
 }
 
-/// <summary>One immutable no-op save input captured when the session begins.</summary>
+/// <summary>One immutable source-layout replay input captured when the session begins.</summary>
 internal sealed record FastFileSaveRevision(
     string SourcePath,
     DbHeader Header,
