@@ -38,7 +38,7 @@ public sealed class LinkAssetProvider
             (XAssetType.LightDef, LightDefAsset lightDef) =>
                 LightDefLinkRecipe.Freeze(key, serializedName, lightDef),
             (XAssetType.Image, GfxImageAsset image) =>
-                GfxImageReferenceLinkRecipe.Freeze(key, serializedName, image),
+                GfxImageLinkRecipe.Freeze(key, serializedName, image),
             (XAssetType.RawFile, _) => throw new ArgumentException(
                 "A RawFile provider requires a RawFileAsset definition.",
                 nameof(definition)),

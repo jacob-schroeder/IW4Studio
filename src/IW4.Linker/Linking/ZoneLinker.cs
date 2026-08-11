@@ -321,7 +321,7 @@ public sealed class ZoneLinker
         serializedType switch
         {
             XAssetType.RawFile => RawFileLinkRecipe.CreateExternal(key, serializedName),
-            XAssetType.Image => GfxImageReferenceLinkRecipe.CreateExternal(key, serializedName),
+            XAssetType.Image => GfxImageLinkRecipe.CreateExternal(key, serializedName),
             _ => throw new NotSupportedException(
                 $"Canonical linking does not yet support external {serializedType} roots.")
         };
