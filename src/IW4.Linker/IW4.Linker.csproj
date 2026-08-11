@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IW4.FastFiles\IW4.FastFiles.csproj" />
+    <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
