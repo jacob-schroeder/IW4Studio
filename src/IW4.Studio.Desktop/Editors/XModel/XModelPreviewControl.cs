@@ -30,6 +30,11 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
             nameof(ShowWireframe));
 
+    public static readonly StyledProperty<bool> UseStudioEnvironmentProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, bool>(
+            nameof(UseStudioEnvironment),
+            true);
+
     public static readonly StyledProperty<bool> ShowBoneTagsProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
             nameof(ShowBoneTags));
@@ -90,6 +95,12 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     {
         get => GetValue(ShowWireframeProperty);
         set => SetValue(ShowWireframeProperty, value);
+    }
+
+    public bool UseStudioEnvironment
+    {
+        get => GetValue(UseStudioEnvironmentProperty);
+        set => SetValue(UseStudioEnvironmentProperty, value);
     }
 
     public bool ShowBoneTags
@@ -219,6 +230,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
                 pixelSize.Height,
                 camera,
                 materialTimeSeconds: 0f,
+                studioEnvironmentEnabled: UseStudioEnvironment,
                 showWireframe: ShowWireframe);
             if (!ShowWireframe &&
                 _uploadResult is not null &&
@@ -255,7 +267,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             PublishRendererStatus(-1, null, null);
             Fit();
         }
-        else if (change.Property == ShowWireframeProperty)
+        else if (change.Property == ShowWireframeProperty ||
+                 change.Property == UseStudioEnvironmentProperty)
         {
             RequestNextFrameRendering();
         }

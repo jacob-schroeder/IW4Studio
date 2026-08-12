@@ -55,6 +55,10 @@
               <TextBlock Text="Fit" />
             </StackPanel>
           </Button>
+          <CheckBox Content="Studio light"
+                    VerticalAlignment="Center"
+                    ToolTip.Tip="Toggle the preview-only studio reflection environment; authored material passes remain unchanged"
+                    IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" />
           <CheckBox Content="Wireframe"
                     VerticalAlignment="Center"
                     IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
@@ -94,6 +98,7 @@
         <xmodel:XModelPreviewControl x:Name="Preview"
                                     Scene="{Binding Scene}"
                                     SelectedLodIndex="{Binding SelectedLodIndex}"
+                                    UseStudioEnvironment="{Binding IsStudioEnvironmentEnabled}"
                                     ShowWireframe="{Binding IsWireframeEnabled}"
                                     ShowBoneTags="{Binding ShowBoneTags}" />
 

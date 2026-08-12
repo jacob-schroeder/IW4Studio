@@ -48,6 +48,8 @@ public sealed class XModelViewerUploadResult
 public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 {
     private const int TextureUnitCount = 16;
+    private const int ViewerReflectionEnvironmentSize = 32;
+    private const int ViewerReflectionEnvironmentMaxMipLevel = 5;
     private const int NeutralDynamicLightingEntry =
         MapRenderStaticModelLightingAtlas.StaticEntryCapacity;
 
@@ -65,12 +67,15 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private readonly SilkOpenGlAuthoredMaterialExecutor _authoredMaterials;
     private readonly Dictionary<MapRenderTexture, uint> _textureHandles =
         new(ReferenceEqualityComparer.Instance);
+    private readonly uint _checkerboardProgram;
+    private readonly uint _checkerboardVertexArray;
     private readonly uint _wireframeProgram;
     private readonly int _wireframeViewProjectionLocation;
     private readonly List<AuthoredDrawGroup> _drawGroups = [];
     private WireframeGeometry _wireframe;
     private uint _neutralModelLightingAtlas;
-    private uint _neutralReflectionCube;
+    private uint _viewerReflectionEnvironment;
+    private bool? _viewerReflectionEnvironmentStudioEnabled;
     private bool _disposed;
 
     public SilkXModelViewerRenderer(GL gl)
@@ -86,6 +91,15 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 gl,
                 _state,
                 ResolveLinkedProgram);
+            _checkerboardProgram = LinkProgram(
+                CheckerboardVertexShaderSource,
+                CheckerboardFragmentShaderSource);
+            _checkerboardVertexArray = _gl.GenVertexArray();
+            if (_checkerboardVertexArray == 0)
+            {
+                throw new InvalidOperationException(
+                    "OpenGL did not allocate the XModel viewer checkerboard vertex array.");
+            }
             _wireframeProgram = LinkProgram(
                 WireframeVertexShaderSource,
                 WireframeFragmentShaderSource);
@@ -96,6 +110,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         {
             if (_wireframeProgram != 0)
                 _gl.DeleteProgram(_wireframeProgram);
+            if (_checkerboardVertexArray != 0)
+                _gl.DeleteVertexArray(_checkerboardVertexArray);
+            if (_checkerboardProgram != 0)
+                _gl.DeleteProgram(_checkerboardProgram);
             _sharedProgramUsage.Dispose();
             _sharedPrograms.Dispose();
             throw;
@@ -167,13 +185,13 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                             .XModelViewerReflectionProbeResourceIdentity,
                         StringComparison.Ordinal))
                     .Any()
-                        ? ["neutralReflectionCube"]
+                        ? ["viewerReflectionEnvironment"]
                         : [];
                 if (prepared.Any(pass =>
                         pass.RuntimeSamplerRequirements.Length != 0))
                 {
                     viewerInputs = viewerInputs
-                        .Append("nativeNeutralModelLightingEntry7168")
+                        .Append("nativeViewerModelLightingEntry7168")
                         .ToArray();
                 }
                 if (viewerInputs.Length != 0)
@@ -216,6 +234,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         int height,
         MapRenderCamera camera,
         float materialTimeSeconds,
+        bool studioEnvironmentEnabled,
         bool showWireframe)
     {
         ThrowIfDisposed();
@@ -233,7 +252,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             MapRenderOpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
                 camera,
                 aspect);
+        ApplyViewerReflectionEnvironment(studioEnvironmentEnabled);
         EstablishFrameState(framebuffer, width, height);
+        DrawCheckerboard();
         if (showWireframe)
         {
             DrawWireframe(CreateHostViewProjection(camera, aspect));
@@ -288,6 +309,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _authoredMaterials.Clear();
         DeleteViewerOwnedPrograms();
         _gl.DeleteProgram(_wireframeProgram);
+        _gl.DeleteVertexArray(_checkerboardVertexArray);
+        _gl.DeleteProgram(_checkerboardProgram);
         _sharedProgramUsage.Dispose();
         _sharedPrograms.Dispose();
         _disposed = true;
@@ -734,7 +757,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     binding.SamplerDest,
                     binding.Texture is { } texture
                         ? GetOrCreateTexture(texture)
-                        : GetOrCreateNeutralReflectionCube(),
+                        : GetOrCreateViewerReflectionEnvironment(),
                     binding.Texture is { } source
                         ? ToGlTextureTarget(source.Target)
                         : TextureTarget.TextureCubeMap))
@@ -908,6 +931,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             : DrawBufferMode.ColorAttachment0);
         _state.Viewport(0, 0, width, height);
         _state.SetEnabled(EnableCap.ScissorTest, false);
+        _state.SetEnabled(EnableCap.TextureCubeMapSeamless, true);
         _state.ColorMask(true, true, true, true);
         _state.DepthMask(true);
         _state.BindVertexArray(0);
@@ -916,11 +940,32 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _gl.DepthRange(
             MapRenderOpenGlRsxClipSpaceLowering.SceneDepthRange.Minimum,
             MapRenderOpenGlRsxClipSpaceLowering.SceneDepthRange.Maximum);
-        _gl.ClearColor(0.047f, 0.059f, 0.078f, 1f);
+        _gl.ClearColor(0.52f, 0.52f, 0.52f, 1f);
         _gl.ClearDepth(1d);
         _gl.Clear(
             ClearBufferMask.ColorBufferBit |
             ClearBufferMask.DepthBufferBit);
+    }
+
+    private void DrawCheckerboard()
+    {
+        _state.SetEnabled(EnableCap.FramebufferSrgb, false);
+        _state.SetEnabled(EnableCap.ScissorTest, false);
+        _state.SetEnabled(EnableCap.DepthTest, false);
+        _state.DepthMask(false);
+        _state.SetEnabled(EnableCap.Blend, false);
+        _state.SetEnabled(EnableCap.CullFace, false);
+        _state.SetEnabled(EnableCap.StencilTest, false);
+        _state.SetEnabled(EnableCap.PolygonOffsetFill, false);
+        _state.SetEnabled(EnableCap.PolygonOffsetLine, false);
+        _state.SetEnabled(EnableCap.PolygonOffsetPoint, false);
+        _state.PolygonMode(PolygonMode.Fill);
+        _state.ColorMask(true, true, true, true);
+        _state.UseProgram(_checkerboardProgram);
+        _state.BindVertexArray(_checkerboardVertexArray);
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
+        _state.BindVertexArray(0);
+        _state.UseProgram(0);
     }
 
     private void DrawWireframe(Matrix4x4 viewProjection)
@@ -1165,18 +1210,18 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
     }
 
-    private uint GetOrCreateNeutralReflectionCube()
+    private uint GetOrCreateViewerReflectionEnvironment()
     {
-        if (_neutralReflectionCube != 0)
-            return _neutralReflectionCube;
+        if (_viewerReflectionEnvironment != 0)
+            return _viewerReflectionEnvironment;
 
-        ReadOnlySpan<byte> neutral = [0, 0, 0, 255];
+        byte[] neutral = CreateBlackReflectionEnvironmentFace();
         uint handle = _gl.GenTexture();
         try
         {
             _gl.BindTexture(TextureTarget.TextureCubeMap, handle);
             _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
-            fixed (byte* pixel = neutral)
+            fixed (byte* pixels = neutral)
             {
                 for (int face = 0; face < 6; face++)
                 {
@@ -1186,43 +1231,18 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                             face),
                         0,
                         InternalFormat.Rgba8,
-                        1,
-                        1,
+                        ViewerReflectionEnvironmentSize,
+                        ViewerReflectionEnvironmentSize,
                         0,
                         PixelFormat.Rgba,
                         PixelType.UnsignedByte,
-                        pixel);
+                        pixels);
                 }
             }
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureMinFilter,
-                (int)TextureMinFilter.Linear);
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureMagFilter,
-                (int)TextureMagFilter.Linear);
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureWrapS,
-                (int)TextureWrapMode.ClampToEdge);
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureWrapT,
-                (int)TextureWrapMode.ClampToEdge);
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureWrapR,
-                (int)TextureWrapMode.ClampToEdge);
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureBaseLevel,
-                0);
-            _gl.TexParameter(
-                TextureTarget.TextureCubeMap,
-                TextureParameterName.TextureMaxLevel,
-                0);
-            _neutralReflectionCube = handle;
+            _gl.GenerateMipmap(TextureTarget.TextureCubeMap);
+            ApplyViewerReflectionEnvironmentSampler();
+            _viewerReflectionEnvironment = handle;
+            _viewerReflectionEnvironmentStudioEnabled = false;
             return handle;
         }
         catch
@@ -1235,6 +1255,136 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
             _gl.BindTexture(TextureTarget.TextureCubeMap, 0);
         }
+    }
+
+    private void ApplyViewerReflectionEnvironment(bool studioEnabled)
+    {
+        if (_viewerReflectionEnvironment == 0 ||
+            _viewerReflectionEnvironmentStudioEnabled == studioEnabled)
+        {
+            return;
+        }
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(
+            TextureTarget.TextureCubeMap,
+            _viewerReflectionEnvironment);
+        _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+        try
+        {
+            for (int face = 0; face < 6; face++)
+            {
+                byte[] rgba = studioEnabled
+                    ? CreateStudioReflectionEnvironmentFace(face)
+                    : CreateBlackReflectionEnvironmentFace();
+                fixed (byte* pixels = rgba)
+                {
+                    _gl.TexSubImage2D(
+                        (TextureTarget)(
+                            (int)TextureTarget.TextureCubeMapPositiveX +
+                            face),
+                        0,
+                        0,
+                        0,
+                        ViewerReflectionEnvironmentSize,
+                        ViewerReflectionEnvironmentSize,
+                        PixelFormat.Rgba,
+                        PixelType.UnsignedByte,
+                        pixels);
+                }
+            }
+
+            _gl.GenerateMipmap(TextureTarget.TextureCubeMap);
+            ApplyViewerReflectionEnvironmentSampler();
+            _viewerReflectionEnvironmentStudioEnabled = studioEnabled;
+        }
+        finally
+        {
+            _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+            _gl.BindTexture(TextureTarget.TextureCubeMap, 0);
+        }
+    }
+
+    private void ApplyViewerReflectionEnvironmentSampler() =>
+        _textureParameters.ApplySampler(
+            MapRenderWorldImplicitSamplerStateFactory.Create(
+                MapRenderWorldRuntimeTextureKind.ReflectionProbe),
+            ViewerReflectionEnvironmentMaxMipLevel,
+            TextureTarget.TextureCubeMap);
+
+    private static byte[] CreateBlackReflectionEnvironmentFace()
+    {
+        var rgba = new byte[
+            ViewerReflectionEnvironmentSize *
+            ViewerReflectionEnvironmentSize * 4];
+        for (int offset = 3; offset < rgba.Length; offset += 4)
+            rgba[offset] = byte.MaxValue;
+        return rgba;
+    }
+
+    private static byte[] CreateStudioReflectionEnvironmentFace(int face)
+    {
+        if (face is < 0 or >= 6)
+            throw new ArgumentOutOfRangeException(nameof(face));
+
+        var rgba = new byte[
+            ViewerReflectionEnvironmentSize *
+            ViewerReflectionEnvironmentSize * 4];
+        Vector3 softboxDirection = Vector3.Normalize(
+            new Vector3(-0.38f, 0.22f, 0.90f));
+        for (int y = 0; y < ViewerReflectionEnvironmentSize; y++)
+        {
+            float t = 2f * (y + 0.5f) /
+                ViewerReflectionEnvironmentSize - 1f;
+            for (int x = 0; x < ViewerReflectionEnvironmentSize; x++)
+            {
+                float s = 2f * (x + 0.5f) /
+                    ViewerReflectionEnvironmentSize - 1f;
+                Vector3 direction = CubeFaceDirection(face, s, t);
+                float overhead = SmoothStep(0.1f, 0.95f, direction.Z);
+                float horizon = 1f - MathF.Abs(direction.Z);
+                float softbox = MathF.Pow(
+                    MathF.Max(Vector3.Dot(direction, softboxDirection), 0f),
+                    18f);
+                float sideVariation = 0.5f + 0.5f * direction.X;
+                float intensity = Math.Clamp(
+                    0.14f +
+                    0.18f * horizon +
+                    0.32f * overhead +
+                    0.28f * softbox +
+                    0.06f * sideVariation,
+                    0.10f,
+                    0.95f);
+                byte value = checked((byte)MathF.Round(intensity * 255f));
+                int offset = (y * ViewerReflectionEnvironmentSize + x) * 4;
+                rgba[offset] = value;
+                rgba[offset + 1] = value;
+                rgba[offset + 2] = value;
+                rgba[offset + 3] = byte.MaxValue;
+            }
+        }
+        return rgba;
+    }
+
+    private static Vector3 CubeFaceDirection(int face, float s, float t) =>
+        Vector3.Normalize(face switch
+        {
+            0 => new Vector3(1f, -t, -s),
+            1 => new Vector3(-1f, -t, s),
+            2 => new Vector3(s, 1f, t),
+            3 => new Vector3(s, -1f, -t),
+            4 => new Vector3(s, -t, 1f),
+            5 => new Vector3(-s, -t, -1f),
+            _ => throw new ArgumentOutOfRangeException(nameof(face))
+        });
+
+    private static float SmoothStep(float minimum, float maximum, float value)
+    {
+        float normalized = Math.Clamp(
+            (value - minimum) / (maximum - minimum),
+            0f,
+            1f);
+        return normalized * normalized * (3f - 2f * normalized);
     }
 
     private void UploadTextureLevel(
@@ -1400,9 +1550,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         if (_neutralModelLightingAtlas != 0)
             _gl.DeleteTexture(_neutralModelLightingAtlas);
         _neutralModelLightingAtlas = 0;
-        if (_neutralReflectionCube != 0)
-            _gl.DeleteTexture(_neutralReflectionCube);
-        _neutralReflectionCube = 0;
+        if (_viewerReflectionEnvironment != 0)
+            _gl.DeleteTexture(_viewerReflectionEnvironment);
+        _viewerReflectionEnvironment = 0;
+        _viewerReflectionEnvironmentStudioEnabled = null;
         DeleteWireframe(_wireframe);
         _wireframe = default;
         _state.InvalidateAll();
@@ -1481,6 +1632,30 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         uint VertexBuffer,
         uint IndexBuffer,
         uint IndexCount);
+
+    private const string CheckerboardVertexShaderSource = """
+        #version 330 core
+        const vec2 positions[3] = vec2[](
+            vec2(-1.0, -1.0),
+            vec2( 3.0, -1.0),
+            vec2(-1.0,  3.0));
+        void main()
+        {
+            gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+        }
+        """;
+
+    private const string CheckerboardFragmentShaderSource = """
+        #version 330 core
+        layout (location = 0) out vec4 FragColor;
+        void main()
+        {
+            vec2 cell = floor(gl_FragCoord.xy / 20.0);
+            float alternate = mod(cell.x + cell.y, 2.0);
+            vec3 shade = mix(vec3(0.48), vec3(0.58), alternate);
+            FragColor = vec4(shade, 1.0);
+        }
+        """;
 
     private const string WireframeVertexShaderSource = """
         #version 330 core

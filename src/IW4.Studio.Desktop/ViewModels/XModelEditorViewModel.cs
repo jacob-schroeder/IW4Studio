@@ -41,6 +41,7 @@ public sealed class XModelEditorViewModel
     private int _rendererLodIndex = -1;
     private XModelViewerUploadResult? _rendererUploadResult;
     private string? _rendererFailure;
+    private bool _isStudioEnvironmentEnabled = true;
     private bool _isWireframeEnabled;
     private bool _showBoneTags;
     private bool _disposed;
@@ -100,6 +101,18 @@ public sealed class XModelEditorViewModel
 
     public int SelectedLodIndex => SelectedLod?.LodIndex ?? -1;
 
+    public bool IsStudioEnvironmentEnabled
+    {
+        get => _isStudioEnvironmentEnabled;
+        set
+        {
+            if (!SetProperty(ref _isStudioEnvironmentEnabled, value))
+                return;
+
+            OnPropertyChanged(nameof(EditorProperties));
+        }
+    }
+
     public bool IsWireframeEnabled
     {
         get => _isWireframeEnabled;
@@ -156,6 +169,11 @@ public sealed class XModelEditorViewModel
             return
             [
                 new("Material execution", "Authored normal-camera pass group"),
+                new(
+                    "Viewer environment",
+                    IsStudioEnvironmentEnabled
+                        ? "Studio reflection · preview-only"
+                        : "Neutral black reflection · preview-only"),
                 new("Selected LOD", SelectedLod?.DisplayName ?? "None"),
                 new("Triangles", SelectedLod?.TriangleCount.ToString("N0") ?? "0"),
                 new("Vertices", SelectedLod?.VertexCount.ToString("N0") ?? "0"),
