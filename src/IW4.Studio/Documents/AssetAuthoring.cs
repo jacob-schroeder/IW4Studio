@@ -87,6 +87,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new LocalizeAdapter());
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
+        registry.Register(new XModelAdapter());
         return registry;
     }
     public void Register(IAssetAuthoringAdapter adapter)

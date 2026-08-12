@@ -349,7 +349,7 @@
                     <TextBlock Text="Asset editors available"
                                FontSize="11"
                                FontWeight="SemiBold" />
-                    <TextBlock Text="RawFile, StringTable, and Localize assets open in dedicated editors; other asset types use a clear structural fallback."
+                    <TextBlock Text="Supported assets open in dedicated editors; other asset types use a clear structural fallback."
                                TextWrapping="Wrap"
                                FontSize="9"
                                Foreground="{DynamicResource StudioTextMutedBrush}" />

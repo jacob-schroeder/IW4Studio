@@ -7,6 +7,7 @@ using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.StringTable;
+using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 
 namespace IW4.Studio.Desktop.Editors;
@@ -66,6 +67,7 @@ public sealed class AssetEditorViewRegistry
             gscUsagesPresenter));
         registry.Register(new StringTableViewFactory());
         registry.Register(new LocalizeViewFactory());
+        registry.Register(new XModelViewFactory());
         return registry;
     }
 
