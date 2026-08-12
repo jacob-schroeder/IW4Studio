@@ -8,8 +8,8 @@ using IW4.Studio.Desktop.Editors.Menu;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents.MenuEditing;
 using IW4.Studio.Documents.MenuEditing.Behavior;
-using IW4.Studio.Documents.MenuEditing.Preview;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.ViewModels.Menu;
 

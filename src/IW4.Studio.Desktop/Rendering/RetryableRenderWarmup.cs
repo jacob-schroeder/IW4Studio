@@ -1,5 +1,3 @@
-using IW4.Studio.Rendering;
-
 namespace IW4.Studio.Desktop.Rendering;
 
 /// <summary>

@@ -146,6 +146,75 @@ public sealed class DbLoadSession : IDisposable
         return result;
     }
 
+    /// <summary>Freezes providers owned by one currently loaded zone.</summary>
+    public LinkAssetPool FreezeLinkAssetPool(LoadedXZone targetZone)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(targetZone);
+        if (!_zones.Any(zone => ReferenceEquals(zone, targetZone)))
+        {
+            throw new ArgumentException(
+                "The target zone was not loaded by this session.",
+                nameof(targetZone));
+        }
+
+        long revision = AssetPool.Revision;
+        LinkAssetPool result = FreezeProviders(
+            AssetPool.Slots.SelectMany(slot => slot.Providers)
+                .Where(provider => provider.Owner == targetZone.Context.ZoneOwner),
+            targetZone);
+
+        if (AssetPool.Revision != revision)
+        {
+            throw new InvalidOperationException(
+                "The runtime XAssetPool changed while target-prioritized providers were being frozen.");
+        }
+        return result;
+    }
+
+    /// <summary>Freezes the effective fallback providers without one target owner.</summary>
+    internal LinkAssetPool FreezeLinkAssetPoolExcluding(LoadedXZone excludedZone)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(excludedZone);
+        if (!_zones.Any(zone => ReferenceEquals(zone, excludedZone)))
+        {
+            throw new ArgumentException(
+                "The excluded zone was not loaded by this session.",
+                nameof(excludedZone));
+        }
+
+        long revision = AssetPool.Revision;
+        Dictionary<DbZoneHandle, LoadedXZone> loadedByOwner = _zones
+            .Where(zone => !zone.Context.ZoneOwner.IsNone)
+            .ToDictionary(zone => zone.Context.ZoneOwner);
+        XAssetProviderContribution[] providers = AssetPool.Slots
+            .Select(slot =>
+            {
+                XAssetProviderContribution[] remaining = slot.Providers
+                    .Where(provider =>
+                        provider.Owner != excludedZone.Context.ZoneOwner)
+                    .ToArray();
+                return remaining.FirstOrDefault(provider =>
+                        !provider.IsReferencePlaceholder)
+                    ?? remaining.FirstOrDefault();
+            })
+            .Where(provider => provider is not null)
+            .Cast<XAssetProviderContribution>()
+            .OrderBy(provider => provider.RegistrationSequence)
+            .ToArray();
+        var sources = new List<LinkAssetProviderSource>(providers.Length);
+        foreach (XAssetProviderContribution provider in providers)
+        {
+            if (!loadedByOwner.TryGetValue(provider.Owner, out LoadedXZone? zone))
+                throw new InvalidOperationException($"Fallback runtime provider {provider.Id} has no matching load-session zone.");
+            sources.Add(CreateProviderSource(zone, provider));
+        }
+        if (AssetPool.Revision != revision)
+            throw new InvalidOperationException("The runtime XAssetPool changed while fallback providers were being frozen.");
+        return new LinkAssetPool(sources);
+    }
+
     public LoadedXZone DB_LoadXZone(
         byte[] buffer,
         int length,
@@ -332,4 +401,17 @@ public sealed class DbLoadSession : IDisposable
         if (Volatile.Read(ref _disposeState) != 0)
             throw new ObjectDisposedException(nameof(DbLoadSession));
     }
+
+    private LinkAssetPool FreezeProviders(
+        IEnumerable<XAssetProviderContribution> providers,
+        LoadedXZone zone) => new(providers
+        .OrderBy(provider => provider.RegistrationSequence)
+        .Select(provider => CreateProviderSource(zone, provider)));
+
+    private static LinkAssetProviderSource CreateProviderSource(
+        LoadedXZone zone,
+        XAssetProviderContribution provider) => new(
+        provider.Asset,
+        zone.LinkAssetImportResolver,
+        FreezeImageStreamReferences(zone, provider.Asset));
 }

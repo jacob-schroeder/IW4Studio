@@ -12,7 +12,6 @@ public sealed class DependencyGraphNodeViewModel
         bool hasSuccessor)
     {
         ArgumentNullException.ThrowIfNull(node);
-
         FileName = node.FileName;
         PhysicalPath = node.PhysicalPath;
         IsTarget = node.IsTarget;
@@ -32,20 +31,12 @@ public sealed class DependencyGraphNodeViewModel
 
     public bool IsLoaded => Status == FastFileDependencyLoadStatus.Loaded;
 
-    public bool IsSkippedOptional =>
-        Status == FastFileDependencyLoadStatus.SkippedOptional;
-
-    public bool IsMissingRequired =>
-        Status == FastFileDependencyLoadStatus.MissingRequired;
+    public bool IsSkippedOptional => Status == FastFileDependencyLoadStatus.SkippedOptional;
 
     public string StatusText => Status switch
     {
-        FastFileDependencyLoadStatus.Loaded =>
-            IsTarget ? "Target · loaded" : "Loaded",
-        FastFileDependencyLoadStatus.SkippedOptional =>
-            "Optional · not needed",
-        FastFileDependencyLoadStatus.MissingRequired =>
-            "Required · not loaded",
+        FastFileDependencyLoadStatus.Loaded => IsTarget ? "Target · loaded" : "Loaded",
+        FastFileDependencyLoadStatus.SkippedOptional => "Optional · not needed",
         _ => throw new ArgumentOutOfRangeException()
     };
 }

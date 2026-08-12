@@ -5,7 +5,7 @@ using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.MapRender;
 
@@ -31,7 +31,7 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
     {
         ArgumentNullException.ThrowIfNull(workspace);
         DocumentName = Path.GetFileName(workspace.Document.Request.Path);
-        ZoneName = workspace.Document.TargetZone.LogicalZoneName;
+        ZoneName = workspace.LoadedZone.Zone.Name;
 
         LevelBriefingPreviewSource? previewSource =
             FindLevelBriefingPreviewSource(workspace);
@@ -143,7 +143,7 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
     private static LevelBriefingPreviewSource? FindLevelBriefingPreviewSource(
         FastFileWorkspace workspace)
     {
-        string targetZoneName = workspace.Document.TargetZone.LogicalZoneName;
+        string targetZoneName = workspace.LoadedZone.Zone.Name;
         string mapZoneName = targetZoneName.EndsWith(
             "_load",
             StringComparison.OrdinalIgnoreCase)
@@ -154,10 +154,7 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
 
         string loadZoneName = mapZoneName + "_load";
         WorkspaceZone? loadZone = workspace.LoadedZones.FirstOrDefault(zone =>
-            string.Equals(
-                zone.LogicalZoneName,
-                loadZoneName,
-                StringComparison.OrdinalIgnoreCase));
+            string.Equals(zone.LogicalZoneName, loadZoneName, StringComparison.OrdinalIgnoreCase));
         if (loadZone is null)
             return null;
 
@@ -172,7 +169,7 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
             return null;
 
         GfxImageAsset[] images = material.Textures
-            .Select(texture => texture.IncomingImage ?? texture.Image)
+            .Select(texture => texture.Image)
             .Where(image => image is not null)
             .Select(image => image!)
             .Distinct<GfxImageAsset>(ReferenceEqualityComparer.Instance)

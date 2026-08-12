@@ -4,12 +4,12 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Lifecycle;
+using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Desktop.Themes;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Composition;
 using IW4.Studio.Desktop.Workbench.Tools;
 using IW4.Studio.Documents;
-using IW4.Studio.Rendering;
 
 namespace IW4.Studio.Desktop.Views;
 
@@ -52,18 +52,63 @@ public sealed partial class EditorWindow : Window
         : this(navigationCoordinator)
     {
         ArgumentNullException.ThrowIfNull(workspace);
-        _workbench = new StudioWorkbenchViewModel(workspace);
-        _workbench.LivePreviewRequested += Workbench_LivePreviewRequested;
-        _workbench.EditorTabCloseRequested +=
-            Workbench_EditorTabCloseRequested;
-        _workbench.EditorTabsCloseRequested +=
-            Workbench_EditorTabsCloseRequested;
-        _workbench.EngineBuiltInReferenceRequested +=
-            Workbench_EngineBuiltInReferenceRequested;
-        DataContext = _workbench;
-        Title = $"{Path.GetFileName(workspace.Document.Request.Path)} — IW4 Studio";
-        Opened += EditorWindow_Opened;
-        Closed += (_, _) => DisposeEditor();
+        var constructionRollback = new List<Action>
+        {
+            _renderViewService.Dispose
+        };
+        try
+        {
+            var workbench = new StudioWorkbenchViewModel(workspace);
+            constructionRollback.Add(workbench.Dispose);
+            workbench.LivePreviewRequested += Workbench_LivePreviewRequested;
+            constructionRollback.Add(() =>
+                workbench.LivePreviewRequested -= Workbench_LivePreviewRequested);
+            workbench.EditorTabCloseRequested +=
+                Workbench_EditorTabCloseRequested;
+            constructionRollback.Add(() =>
+                workbench.EditorTabCloseRequested -=
+                    Workbench_EditorTabCloseRequested);
+            workbench.EditorTabsCloseRequested +=
+                Workbench_EditorTabsCloseRequested;
+            constructionRollback.Add(() =>
+                workbench.EditorTabsCloseRequested -=
+                    Workbench_EditorTabsCloseRequested);
+            workbench.EngineBuiltInReferenceRequested +=
+                Workbench_EngineBuiltInReferenceRequested;
+            constructionRollback.Add(() =>
+                workbench.EngineBuiltInReferenceRequested -=
+                    Workbench_EngineBuiltInReferenceRequested);
+            DataContext = workbench;
+            constructionRollback.Add(() =>
+            {
+                if (ReferenceEquals(DataContext, workbench))
+                    DataContext = null;
+            });
+            Title = $"{Path.GetFileName(workspace.Document.Request.Path)} — IW4 Studio";
+            Opened += EditorWindow_Opened;
+            constructionRollback.Add(() => Opened -= EditorWindow_Opened);
+            EventHandler closedHandler = (_, _) => DisposeEditor();
+            Closed += closedHandler;
+            constructionRollback.Add(() => Closed -= closedHandler);
+            _workbench = workbench;
+        }
+        catch
+        {
+            _workbench = null;
+            for (int index = constructionRollback.Count - 1; index >= 0; index--)
+            {
+                try
+                {
+                    constructionRollback[index]();
+                }
+                catch
+                {
+                    // Construction must report its original failure.
+                }
+            }
+
+            throw;
+        }
     }
 
     public event Action<EditorWindow>? WelcomeRequested;
@@ -97,6 +142,19 @@ public sealed partial class EditorWindow : Window
     /// approved application shutdown is retried.
     /// </summary>
     internal void PrepareApprovedCloseRetry() => _approvedCloseRetry = true;
+
+    internal void DisposeAfterFailedOpen()
+    {
+        try
+        {
+            PrepareApprovedCloseRetry();
+            Close();
+        }
+        finally
+        {
+            DisposeEditor();
+        }
+    }
 
     /// <summary>
     /// Routes an application-lifetime shutdown through the same guard used by
@@ -520,10 +578,22 @@ public sealed partial class EditorWindow : Window
             return;
 
         _disposed = true;
+        foreach (MapRenderWindow livePreviewWindow in
+            _livePreviewWindows.ToArray())
+        {
+            try
+            {
+                livePreviewWindow.Close();
+            }
+            catch
+            {
+                // One child window cannot block workspace disposal.
+            }
+        }
+        _livePreviewWindows.Clear();
         _renderViewService.Dispose();
         _gscEngineReferenceWindow?.Close();
         _gscEngineReferenceWindow = null;
-        _livePreviewWindows.Clear();
         if (_workbench is not null)
         {
             _workbench.LivePreviewRequested -=

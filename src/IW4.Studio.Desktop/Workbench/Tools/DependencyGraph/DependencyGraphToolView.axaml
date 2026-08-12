@@ -20,7 +20,7 @@
                    FontWeight="SemiBold"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="Physical fastfiles in dependency load order"
+        <TextBlock Text="Physical fastfiles considered for the current workspace"
                    FontSize="9"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
       </StackPanel>
@@ -53,13 +53,6 @@
                                               VerticalAlignment="Center"
                                               IsVisible="{Binding IsSkippedOptional}"
                                               Foreground="{DynamicResource StudioInfoBrush}" />
-                  <materialIcons:MaterialIcon Kind="AlertCircleOutline"
-                                              Width="20"
-                                              Height="20"
-                                              VerticalAlignment="Center"
-                                              IsVisible="{Binding IsMissingRequired}"
-                                              Foreground="{DynamicResource StudioErrorBrush}" />
-
                   <StackPanel Grid.Column="2"
                               Spacing="3">
                     <TextBlock Text="{Binding FileName}"
@@ -74,12 +67,6 @@
                                TextTrimming="CharacterEllipsis"
                                IsVisible="{Binding IsSkippedOptional}"
                                Foreground="{DynamicResource StudioInfoBrush}" />
-                    <TextBlock Text="{Binding FileName}"
-                               FontSize="11"
-                               FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis"
-                               IsVisible="{Binding IsMissingRequired}"
-                               Foreground="{DynamicResource StudioErrorBrush}" />
                     <TextBlock Text="{Binding StatusText}"
                                FontSize="8"
                                FontWeight="SemiBold"

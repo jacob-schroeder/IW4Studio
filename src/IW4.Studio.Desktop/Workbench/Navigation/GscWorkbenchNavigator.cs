@@ -6,7 +6,7 @@ using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 using IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 using IW4.Studio.Documents;
-using IW4.Studio.Gsc;
+using IW4.Studio.Desktop.Gsc;
 
 namespace IW4.Studio.Desktop.Workbench.Navigation;
 
@@ -143,8 +143,6 @@ internal sealed class GscWorkbenchNavigator
 
     private string? SelectRawFile(GscWorkspaceRawFileSlot slot)
     {
-        GscWorkspaceProviderProvenance activeProvider = slot.Providers.Single(
-            provider => provider.IsActive);
         WorkspaceAssetCatalogEntry[] targetEntries = _workspace.AssetCatalog
             .TargetEntries
             .Where(entry =>
@@ -159,7 +157,6 @@ internal sealed class GscWorkbenchNavigator
 
         WorkspaceAssetCatalogEntry? targetEntry = ResolveActiveTargetEntry(
             slot,
-            activeProvider,
             targetEntries,
             out string? failureReason);
         return targetEntry is null
@@ -169,14 +166,13 @@ internal sealed class GscWorkbenchNavigator
 
     private static WorkspaceAssetCatalogEntry? ResolveActiveTargetEntry(
         GscWorkspaceRawFileSlot slot,
-        GscWorkspaceProviderProvenance activeProvider,
         IReadOnlyList<WorkspaceAssetCatalogEntry> targetEntries,
         out string? failureReason)
     {
         WorkspaceAssetCatalogEntry? resolvedReference = targetEntries
             .Where(entry =>
                 entry.Origin == WorkspaceAssetOrigin.TargetResolvedReference &&
-                entry.ResolvedProvider?.ProviderId == slot.ActiveProviderId)
+                entry.ResolvedProvider?.ProviderId == slot.ActiveProviderId.Value)
             .OrderBy(entry => entry.TargetRowIdentity!.Value.SerializedIndex)
             .FirstOrDefault();
         if (resolvedReference is not null)
@@ -185,18 +181,21 @@ internal sealed class GscWorkbenchNavigator
             return resolvedReference;
         }
 
-        if (!targetEntries.Any(entry =>
-                entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition))
+        WorkspaceAssetCatalogEntry[] ownedDefinitions = targetEntries
+            .Where(entry =>
+                entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition)
+            .ToArray();
+        if (ownedDefinitions.Length == 0)
         {
             failureReason =
-                $"target catalog rows exist for this path, but none exposes active " +
-                $"provider {slot.ActiveProviderId}.";
+                "target catalog rows exist for this path, but none is an editable " +
+                "RawFile definition.";
             return null;
         }
 
         // An editable target editor presents its authored baseline, not an
         // arbitrary provider currently shadowing that runtime pool identity.
-        if (activeProvider.IsTargetZone != true)
+        if (!slot.ActiveProviderIsTargetZone)
         {
             failureReason =
                 $"active provider {slot.ActiveProviderId} shadows a target-owned " +
@@ -205,16 +204,15 @@ internal sealed class GscWorkbenchNavigator
             return null;
         }
 
-        WorkspaceAssetCatalogEntry[] activeDefinitions = targetEntries
+        WorkspaceAssetCatalogEntry[] activeDefinitions = ownedDefinitions
             .Where(entry =>
-                entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition &&
-                entry.ResolvedProvider?.ProviderId == slot.ActiveProviderId)
+                entry.ResolvedProvider?.ProviderId == slot.ActiveProviderId.Value)
             .ToArray();
         if (activeDefinitions.Length != 1)
         {
             failureReason =
-                $"the active target provider {slot.ActiveProviderId} cannot be " +
-                "mapped to exactly one authored RawFile row.";
+                "the active target RawFile cannot be mapped to exactly one authored " +
+                "target row.";
             return null;
         }
 
@@ -237,7 +235,7 @@ internal sealed class GscWorkbenchNavigator
         _fastFileAssets.SelectedRow = targetRow;
         WorkspaceAssetCatalogEntry? selectedEntry = _editor.SelectedEditorHost?.Entry.Entry;
         if (selectedEntry?.TargetRowIdentity != targetIdentity ||
-            selectedEntry?.ResolvedProvider?.ProviderId != slot.ActiveProviderId)
+            selectedEntry?.ResolvedProvider?.ProviderId != slot.ActiveProviderId.Value)
         {
             return $"workbench catalog routing did not open active provider " +
                    $"{slot.ActiveProviderId}.";
@@ -260,7 +258,7 @@ internal sealed class GscWorkbenchNavigator
 
         _assetPool.SelectedRow = poolRow;
         if (_editor.SelectedEditorHost?.Entry.Entry.ResolvedProvider?.ProviderId !=
-            slot.ActiveProviderId)
+            slot.ActiveProviderId.Value)
         {
             return $"workbench catalog routing did not open active provider " +
                    $"{slot.ActiveProviderId}.";

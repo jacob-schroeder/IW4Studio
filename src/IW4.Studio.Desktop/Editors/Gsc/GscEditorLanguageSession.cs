@@ -2,7 +2,7 @@ using IW4.Gsc.Analysis;
 using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
-using IW4.Studio.Gsc;
+using IW4.Studio.Desktop.Gsc;
 
 namespace IW4.Studio.Desktop.Editors.Gsc;
 
@@ -315,7 +315,7 @@ internal sealed class GscEditorLanguageSession
                 return (_cachedBaseSnapshot!, _cachedSnapshot);
             }
 
-            GscWorkspaceSnapshot overlaySnapshot = _workspace.GetSnapshot(
+            GscWorkspaceSnapshot overlaySnapshot = baseSnapshot.WithOverlay(
                 new GscWorkspaceBufferOverlay(assetName, source),
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();

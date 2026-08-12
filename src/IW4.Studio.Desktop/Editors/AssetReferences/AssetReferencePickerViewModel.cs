@@ -4,7 +4,7 @@ using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 using IW4.Studio.Documents.AssetReferences;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Editors.AssetReferences;
 
@@ -335,10 +335,8 @@ public sealed class AssetReferencePickerViewModel
         WorkspaceAssetOrigin.TargetResolvedReference => "Target reference",
         WorkspaceAssetOrigin.TargetUnresolvedReference => "Target unresolved reference",
         WorkspaceAssetOrigin.DependencyOnly => "Dependency provider",
-        WorkspaceAssetOrigin.OffsetAliasRow => "Target alias row",
         WorkspaceAssetOrigin.NullRow => "Target null row",
         WorkspaceAssetOrigin.OpaqueRow => "Target opaque row",
-        WorkspaceAssetOrigin.UnsupportedRow => "Unsupported target row",
         _ => value.ToString()
     };
 

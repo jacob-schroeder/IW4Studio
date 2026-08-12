@@ -11,32 +11,45 @@ namespace IW4.Studio.Documents;
 /// </summary>
 public sealed class FastFileDocument
 {
+    private readonly Guid _documentId = Guid.NewGuid();
     private readonly FastFileDocumentOpenRequest? _request;
     private readonly string? _sourcePath;
     private readonly LoadedXZone? _loadedZone;
 
     internal FastFileDocument(
         FastFileDocumentOpenRequest request,
-        LoadedXZone loadedZone,
-        ZoneLinkRequest initialLinkRequest)
+        WorkspaceZone targetZone,
+        ZoneLinkRequest initialLinkRequest,
+        LinkAssetPool targetAssets,
+        LinkAssetPool dependencyAssets)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(loadedZone);
+        ArgumentNullException.ThrowIfNull(targetZone);
         ArgumentNullException.ThrowIfNull(initialLinkRequest);
+        ArgumentNullException.ThrowIfNull(targetAssets);
+        ArgumentNullException.ThrowIfNull(dependencyAssets);
 
         _request = request;
-        _sourcePath = Path.GetFullPath(request.Path);
-        _loadedZone = loadedZone;
+        if (!targetZone.IsTarget)
+            throw new ArgumentException("The document target must be marked as target.", nameof(targetZone));
+        _sourcePath = targetZone.PhysicalPath;
+        _loadedZone = targetZone.LoadResult;
         InitialLinkRequest = initialLinkRequest;
+        TargetAssets = targetAssets;
+        DependencyAssets = dependencyAssets;
     }
 
     internal FastFileDocument(ZoneLinkRequest initialLinkRequest)
     {
         InitialLinkRequest = initialLinkRequest ??
             throw new ArgumentNullException(nameof(initialLinkRequest));
+        TargetAssets = initialLinkRequest.Assets;
+        DependencyAssets = new LinkAssetPool([]);
     }
 
     public bool IsBlank => _loadedZone is null;
+
+    public Guid DocumentId => _documentId;
 
     public FastFileDocumentOpenRequest Request => _request ??
         throw new InvalidOperationException("A blank fastfile document has no open request.");
@@ -49,6 +62,10 @@ public sealed class FastFileDocument
 
     /// <summary>The immutable semantic state captured at open or blank creation.</summary>
     public ZoneLinkRequest InitialLinkRequest { get; }
+
+    internal LinkAssetPool TargetAssets { get; }
+
+    internal LinkAssetPool DependencyAssets { get; }
 
     internal string? SourcePathOrNull => _sourcePath;
 

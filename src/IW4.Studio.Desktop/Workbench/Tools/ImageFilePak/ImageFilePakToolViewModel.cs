@@ -110,13 +110,9 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
         foreach (WorkspaceZone zone in workspace.LoadedZones)
         {
             GfxImageAsset[] streamedImages = zone.LoadResult.Context
-                .GfxImagesByAddress
-                .Values
-                .Distinct()
-                .Where(image =>
-                    image.StreamData.Any(part => part.HasStreamingData))
-                .OrderBy(image => image.Offset)
-                .ThenBy(image => image.Name, StringComparer.Ordinal)
+                .GfxImagesByAddress.Values.Distinct()
+                .Where(image => image.StreamData.Any(part => part.HasStreamingData))
+                .OrderBy(image => image.Offset).ThenBy(image => image.Name, StringComparer.Ordinal)
                 .ToArray();
             foreach (GfxImageAsset image in streamedImages)
             {
@@ -124,9 +120,7 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
                     image,
                     zone.LoadResult.ImagePayloadResolver,
                     zone.PhysicalPath,
-                    new WorkbenchStreamedImageIdentity(
-                        workspace.Document.DocumentId,
-                        entries.Count)));
+                    new WorkbenchStreamedImageIdentity(workspace.Document.DocumentId, entries.Count)));
             }
         }
 

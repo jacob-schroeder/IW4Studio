@@ -2,7 +2,7 @@ using Avalonia.Controls;
 using IW4.FastFiles.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Studio.Documents;
-using IW4.Studio.Gsc;
+using IW4.Studio.Desktop.Gsc;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.RawFile;

@@ -166,14 +166,6 @@ public sealed class FastFileAssetsNavigatorSnapshot
     public IReadOnlyList<FastFileAssetNavigatorRow> Rows { get; }
 
     public static FastFileAssetsNavigatorSnapshot Capture(
-        FastFileWorkspace workspace,
-        Func<XAssetType, bool> hasDesktopEditor)
-    {
-        ArgumentNullException.ThrowIfNull(workspace);
-        return Capture(workspace.AssetCatalog.TargetEntries, hasDesktopEditor);
-    }
-
-    public static FastFileAssetsNavigatorSnapshot Capture(
         TargetZoneDocument document,
         Func<XAssetType, bool> hasDesktopEditor)
     {
@@ -205,12 +197,6 @@ public sealed class FastFileAssetsNavigatorSnapshot
                 "The target asset navigator received a dependency-only catalog entry.");
         string displayName = entry.OriginalName ?? StructuralRowName(entry.Origin);
         string? providerZone = entry.ResolvedProviderZone?.LogicalZoneName;
-        if (string.IsNullOrWhiteSpace(providerZone) &&
-            entry.ProviderZone is { } providerHandle &&
-            !providerHandle.IsNone)
-        {
-            providerZone = providerHandle.ToString();
-        }
 
         return new FastFileAssetNavigatorRow(
             identity,
@@ -227,9 +213,7 @@ public sealed class FastFileAssetsNavigatorSnapshot
             hasDesktopEditor(entry.AssetType) &&
             entry.ContentSource != WorkspaceAssetContentSource.Unavailable &&
             entry.Origin is not WorkspaceAssetOrigin.NullRow and
-                not WorkspaceAssetOrigin.OpaqueRow and
-                not WorkspaceAssetOrigin.OffsetAliasRow and
-                not WorkspaceAssetOrigin.UnsupportedRow);
+                not WorkspaceAssetOrigin.OpaqueRow);
     }
 
     private static string StructuralRowName(WorkspaceAssetOrigin origin) =>
@@ -237,8 +221,6 @@ public sealed class FastFileAssetsNavigatorSnapshot
         {
             WorkspaceAssetOrigin.NullRow => "<null row>",
             WorkspaceAssetOrigin.OpaqueRow => "<opaque row>",
-            WorkspaceAssetOrigin.OffsetAliasRow => "<offset alias>",
-            WorkspaceAssetOrigin.UnsupportedRow => "<unsupported row>",
             _ => "<unnamed asset>"
         };
 }

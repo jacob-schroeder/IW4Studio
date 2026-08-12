@@ -6,13 +6,13 @@ namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 
 public sealed partial class AddAssetDialogWindow : Window
 {
-    private readonly Func<string, string?> _validateName;
+    private readonly Func<XAssetType, string, string?> _validateName;
     private readonly Action<XAssetType, string> _addAsset;
 
     public AddAssetDialogWindow()
         : this(
             [],
-            _ => "Name is required.",
+            (_, _) => "Name is required.",
             (_, _) => throw new InvalidOperationException(
                 "Asset creation is unavailable."))
     {
@@ -20,7 +20,7 @@ public sealed partial class AddAssetDialogWindow : Window
 
     internal AddAssetDialogWindow(
         IReadOnlyList<XAssetType> assetTypes,
-        Func<string, string?> validateName,
+        Func<XAssetType, string, string?> validateName,
         Action<XAssetType, string> addAsset)
     {
         ArgumentNullException.ThrowIfNull(assetTypes);
@@ -42,14 +42,22 @@ public sealed partial class AddAssetDialogWindow : Window
         TextChangedEventArgs e) =>
         RefreshValidation();
 
+    private void AssetTypeComboBox_SelectionChanged(
+        object? sender,
+        SelectionChangedEventArgs e) => RefreshValidation();
+
     private void AddButton_Click(
         object? sender,
         RoutedEventArgs e)
     {
         string name = NameTextBox.Text ?? string.Empty;
-        string? validationMessage = Validate(name);
-        if (validationMessage is not null ||
-            AssetTypeComboBox.SelectedItem is not XAssetType assetType)
+        if (AssetTypeComboBox.SelectedItem is not XAssetType assetType)
+        {
+            RefreshValidation();
+            return;
+        }
+        string? validationMessage = Validate(assetType, name);
+        if (validationMessage is not null)
         {
             RefreshValidation();
             return;
@@ -82,15 +90,20 @@ public sealed partial class AddAssetDialogWindow : Window
             return;
 
         string name = NameTextBox.Text ?? string.Empty;
-        string? validationMessage = Validate(name);
+        XAssetType? assetType = AssetTypeComboBox.SelectedItem is XAssetType selectedType
+            ? selectedType
+            : null;
+        string? validationMessage = assetType is { } selectedAssetType
+            ? Validate(selectedAssetType, name)
+            : "Asset type is required.";
         ValidationTextBlock.Text = validationMessage ?? string.Empty;
         AddButton.IsEnabled =
             validationMessage is null &&
-            AssetTypeComboBox.SelectedItem is XAssetType;
+            assetType is not null;
     }
 
-    private string? Validate(string name) =>
+    private string? Validate(XAssetType assetType, string name) =>
         string.IsNullOrWhiteSpace(name)
             ? "Name is required."
-            : _validateName(name);
+            : _validateName(assetType, name);
 }

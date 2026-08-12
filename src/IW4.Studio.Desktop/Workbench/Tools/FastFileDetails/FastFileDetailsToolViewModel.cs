@@ -15,8 +15,8 @@ public sealed class FastFileDetailsToolViewModel
     {
         ArgumentNullException.ThrowIfNull(workspace);
 
-        DbHeader header = workspace.TargetSource.ContainerEnvelope;
-        FileName = Path.GetFileName(workspace.TargetSource.PhysicalPath);
+        DbHeader header = workspace.LoadedZone.Header;
+        FileName = Path.GetFileName(workspace.SourcePath);
         Magic = header.Magic;
         MagicType = header.MagicType;
         Version = GetDisplayName(header.Version);

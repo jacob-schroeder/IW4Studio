@@ -26,8 +26,8 @@ using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 using IW4.Studio.Documents;
 using IW4.Studio.Documents.AssetReferences;
 using IW4.Studio.Documents.MenuEditing;
-using IW4.Studio.Gsc;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Gsc;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Workbench.Composition;
 
@@ -64,150 +64,188 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         OpenEditorTabs = new ReadOnlyObservableCollection<WorkbenchEditorTabViewModel>(
             _openEditorTabs);
-        var editingSession = new FastFileEditingSession(workspace);
-        AssetAuthoringAdapterRegistry authoringRegistry =
-            AssetAuthoringAdapterRegistry.CreateDefault();
-        _menuEditingCoordinator = new MenuEditingCoordinator(
-            editingSession,
-            authoringRegistry);
-        var assetReferenceCatalog = new WorkspaceAssetReferenceCatalog(
-            editingSession);
-        var menuMaterialResolver = new MenuPreviewMaterialResolver(workspace);
-        _menuTextResourceResolver = new MenuTextResourceResolver(
-            editingSession);
-        var assetReferencePicker = new AssetReferencePickerService(
-            assetReferenceCatalog,
-            menuMaterialResolver);
-        _gscWorkspace = new GscWorkspaceIndexService(editingSession);
-        _gscSourceNavigation = new GscSourceNavigationBroker();
-        GscUsages = new GscUsagesToolViewModel();
-        _gscUsagesPresenter = new GscUsagesPresenter(
-            GscUsages,
-            _gscSourceNavigation);
-        AssetEditorViewRegistry editorViewRegistry =
-            AssetEditorViewRegistry.CreateDefault(
-                _gscWorkspace,
-                _gscSourceNavigation,
-                _gscUsagesPresenter);
-        editorViewRegistry.Register(new MenuEditorViewFactory(
-            _menuEditingCoordinator,
-            assetReferencePicker,
-            menuMaterialResolver,
-            _menuTextResourceResolver));
-        editorViewRegistry.Register(new MenuFileEditorViewFactory(
-            _menuEditingCoordinator,
-            assetReferencePicker,
-            menuMaterialResolver,
-            _menuTextResourceResolver));
-        Editor = new EditorViewModel(
-            workspace,
-            editingSession,
-            authoringRegistry,
-            viewRegistry: editorViewRegistry);
-        _selectionRouter = new WorkbenchAssetSelectionRouter(
-            workspace.AssetCatalog,
-            Editor.EditingSession.Document);
-        Func<XAssetType, bool> hasDesktopEditor = assetType =>
-            editorViewRegistry.TryGetFactory(assetType, out _);
+        var constructionResources = new List<IDisposable>
+        {
+            _gscWorkspaceWarmupCancellation
+        };
+        try
+        {
+            var editingSession = new FastFileEditingSession(workspace);
+            constructionResources.Add(editingSession);
+            int editingSessionOwnerIndex = constructionResources.Count - 1;
+            AssetAuthoringAdapterRegistry authoringRegistry =
+                AssetAuthoringAdapterRegistry.CreateDefault();
+            _menuEditingCoordinator = new MenuEditingCoordinator(
+                editingSession,
+                authoringRegistry);
+            constructionResources.Add(_menuEditingCoordinator);
+            var assetReferenceCatalog = new WorkspaceAssetReferenceCatalog(
+                editingSession);
+            var menuMaterialResolver = new MenuPreviewMaterialResolver(workspace);
+            _menuTextResourceResolver = new MenuTextResourceResolver(
+                editingSession);
+            constructionResources.Add(_menuTextResourceResolver);
+            var assetReferencePicker = new AssetReferencePickerService(
+                assetReferenceCatalog,
+                menuMaterialResolver);
+            _gscWorkspace = new GscWorkspaceIndexService(editingSession);
+            _gscSourceNavigation = new GscSourceNavigationBroker();
+            GscUsages = new GscUsagesToolViewModel();
+            _gscUsagesPresenter = new GscUsagesPresenter(
+                GscUsages,
+                _gscSourceNavigation);
+            constructionResources.Add(_gscUsagesPresenter);
+            AssetEditorViewRegistry editorViewRegistry =
+                AssetEditorViewRegistry.CreateDefault(
+                    _gscWorkspace,
+                    _gscSourceNavigation,
+                    _gscUsagesPresenter);
+            editorViewRegistry.Register(new MenuEditorViewFactory(
+                _menuEditingCoordinator,
+                assetReferencePicker,
+                menuMaterialResolver,
+                _menuTextResourceResolver));
+            editorViewRegistry.Register(new MenuFileEditorViewFactory(
+                _menuEditingCoordinator,
+                assetReferencePicker,
+                menuMaterialResolver,
+                _menuTextResourceResolver));
+            Editor = new EditorViewModel(
+                workspace,
+                editingSession,
+                authoringRegistry,
+                viewRegistry: editorViewRegistry);
+            constructionResources[editingSessionOwnerIndex] = Editor;
+            _selectionRouter = new WorkbenchAssetSelectionRouter(
+                workspace.AssetCatalog,
+                Editor.EditingSession.Document);
+            Func<XAssetType, bool> hasDesktopEditor = assetType =>
+                editorViewRegistry.TryGetFactory(assetType, out _);
 
-        FastFileAssets = new FastFileAssetsNavigatorViewModel(
-            Editor,
-            _selectionContext,
-            hasDesktopEditor);
-        AssetPool = new AssetPoolNavigatorViewModel(
-            workspace,
-            _selectionContext,
-            hasDesktopEditor);
-        _gscWorkbenchNavigator = new GscWorkbenchNavigator(
-            workspace,
-            _gscWorkspace,
-            FastFileAssets,
-            AssetPool,
-            Editor);
-        ImageFilePak = new ImageFilePakToolViewModel(
-            workspace,
-            _selectionContext);
-        ConsoleOutput = new ConsoleOutputBuffer();
-        Diagnostics = new DiagnosticsAggregator();
-        GscFindings = new GscFindingsToolViewModel();
-        _editorDiagnosticsBridge =
-            new WorkbenchEditorDiagnosticsBridge(
+            FastFileAssets = new FastFileAssetsNavigatorViewModel(
                 Editor,
+                _selectionContext,
+                hasDesktopEditor);
+            constructionResources.Add(FastFileAssets);
+            AssetPool = new AssetPoolNavigatorViewModel(
+                workspace,
+                _selectionContext,
+                hasDesktopEditor);
+            constructionResources.Add(AssetPool);
+            _gscWorkbenchNavigator = new GscWorkbenchNavigator(
+                workspace,
+                _gscWorkspace,
+                FastFileAssets,
+                AssetPool,
+                Editor);
+            ImageFilePak = new ImageFilePakToolViewModel(
+                workspace,
+                _selectionContext);
+            constructionResources.Add(ImageFilePak);
+            ConsoleOutput = new ConsoleOutputBuffer();
+            Diagnostics = new DiagnosticsAggregator();
+            constructionResources.Add(Diagnostics);
+            GscFindings = new GscFindingsToolViewModel();
+            _editorDiagnosticsBridge =
+                new WorkbenchEditorDiagnosticsBridge(
+                    Editor,
+                    Diagnostics,
+                    GscFindings);
+            constructionResources.Add(_editorDiagnosticsBridge);
+            LivePreview = new MapRenderToolViewModel(workspace);
+            constructionResources.Add(LivePreview);
+            Properties = new PropertiesToolViewModel(
+                _selectionContext,
+                ImageFilePak);
+            constructionResources.Add(Properties);
+            FastFileDetails = new FastFileDetailsToolViewModel(workspace);
+            ZoneDetails = new ZoneDetailsToolViewModel(workspace);
+            DependencyGraph = new DependencyGraphToolViewModel(workspace);
+
+            StudioToolContext toolContext = new(
+                FastFileAssets,
+                AssetPool,
+                ImageFilePak,
+                ConsoleOutput,
                 Diagnostics,
-                GscFindings);
-        LivePreview = new MapRenderToolViewModel(workspace);
-        Properties = new PropertiesToolViewModel(
-            _selectionContext,
-            ImageFilePak);
-        FastFileDetails = new FastFileDetailsToolViewModel(workspace);
-        ZoneDetails = new ZoneDetailsToolViewModel(workspace);
-        DependencyGraph = new DependencyGraphToolViewModel(workspace);
+                GscFindings,
+                GscUsages,
+                LivePreview,
+                Properties,
+                FastFileDetails,
+                ZoneDetails,
+                DependencyGraph);
+            Registrations = StudioToolRegistry.CreateDefault(toolContext);
+            _registrationsById = Registrations.ToDictionary(
+                registration => registration.Descriptor.Id,
+                StringComparer.Ordinal);
+            DockLayout = new DockLayoutController(
+                Registrations.Select(registration => registration.Descriptor),
+                new DockLayoutOptions(
+                    new DockRegionSizeLimits(minimum: 240, maximum: 520, initial: 300),
+                    new DockRegionSizeLimits(minimum: 140, maximum: 420, initial: 220),
+                    new DockRegionSizeLimits(minimum: 260, maximum: 520, initial: 320)));
 
-        StudioToolContext toolContext = new(
-            FastFileAssets,
-            AssetPool,
-            ImageFilePak,
-            ConsoleOutput,
-            Diagnostics,
-            GscFindings,
-            GscUsages,
-            LivePreview,
-            Properties,
-            FastFileDetails,
-            ZoneDetails,
-            DependencyGraph);
-        Registrations = StudioToolRegistry.CreateDefault(toolContext);
-        _registrationsById = Registrations.ToDictionary(
-            registration => registration.Descriptor.Id,
-            StringComparer.Ordinal);
-        DockLayout = new DockLayoutController(
-            Registrations.Select(registration => registration.Descriptor),
-            new DockLayoutOptions(
-                new DockRegionSizeLimits(minimum: 240, maximum: 520, initial: 300),
-                new DockRegionSizeLimits(minimum: 140, maximum: 420, initial: 220),
-                new DockRegionSizeLimits(minimum: 260, maximum: 520, initial: 320)));
+            _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
+            _gscSourceNavigation.NavigationRequested +=
+                GscSourceNavigation_NavigationRequested;
+            _gscSourceNavigation.EngineBuiltInNavigationRequested +=
+                GscSourceNavigation_EngineBuiltInNavigationRequested;
+            _gscUsagesPresenter.PresentationRequested +=
+                GscUsagesPresenter_PresentationRequested;
+            _editorDiagnosticsBridge.GscFindingsPresented +=
+                EditorDiagnosticsBridge_GscFindingsPresented;
+            Editor.PropertyChanged += Editor_PropertyChanged;
+            Editor.EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
+            DockLayout.State.Left.PropertyChanged += DockRegion_PropertyChanged;
+            DockLayout.State.Bottom.PropertyChanged += DockRegion_PropertyChanged;
+            DockLayout.State.Right.PropertyChanged += DockRegion_PropertyChanged;
 
-        _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
-        _gscSourceNavigation.NavigationRequested +=
-            GscSourceNavigation_NavigationRequested;
-        _gscSourceNavigation.EngineBuiltInNavigationRequested +=
-            GscSourceNavigation_EngineBuiltInNavigationRequested;
-        _gscUsagesPresenter.PresentationRequested +=
-            GscUsagesPresenter_PresentationRequested;
-        _editorDiagnosticsBridge.GscFindingsPresented +=
-            EditorDiagnosticsBridge_GscFindingsPresented;
-        Editor.PropertyChanged += Editor_PropertyChanged;
-        Editor.EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
-        DockLayout.State.Left.PropertyChanged += DockRegion_PropertyChanged;
-        DockLayout.State.Bottom.PropertyChanged += DockRegion_PropertyChanged;
-        DockLayout.State.Right.PropertyChanged += DockRegion_PropertyChanged;
+            AppendInitialOutput();
+            Diagnostics.ReplaceBySource(
+                "Workspace",
+                [
+                    new WorkbenchDiagnostic(
+                        "catalog-ready",
+                        WorkbenchDiagnosticSeverity.Information,
+                        "Workspace",
+                        $"Workspace catalog loaded with {Editor.AssetCountText} entries.")
+                ]);
 
-        AppendInitialOutput();
-        Diagnostics.ReplaceBySource(
-            "Workspace",
-            [
-                new WorkbenchDiagnostic(
-                    "catalog-ready",
-                    WorkbenchDiagnosticSeverity.Information,
-                    "Workspace",
-                    $"Workspace catalog loaded with {Editor.AssetCountText} entries.")
-            ]);
+            CancellationToken warmupCancellation =
+                _gscWorkspaceWarmupCancellation.Token;
+            _gscWorkspaceWarmup = ObserveGscWorkspaceWarmupAsync(
+                _gscWorkspace.WarmBaseSnapshotAsync(warmupCancellation),
+                warmupCancellation);
+        }
+        catch
+        {
+            try
+            {
+                _gscWorkspaceWarmupCancellation.Cancel();
+            }
+            catch
+            {
+                // Construction must report its original failure.
+            }
 
-        CancellationToken warmupCancellation =
-            _gscWorkspaceWarmupCancellation.Token;
-        _gscWorkspaceWarmup = ObserveGscWorkspaceWarmupAsync(
-            _gscWorkspace.WarmBaseSnapshotAsync(warmupCancellation),
-            warmupCancellation);
+            for (int index = constructionResources.Count - 1; index >= 0; index--)
+            {
+                try
+                {
+                    constructionResources[index].Dispose();
+                }
+                catch
+                {
+                    // Construction must report its original failure.
+                }
+            }
+
+            throw;
+        }
     }
 
     public event EventHandler? LivePreviewRequested
-    {
-        add => LivePreview.LaunchRequested += value;
-        remove => LivePreview.LaunchRequested -= value;
-    }
-
-    [Obsolete("Use LivePreviewRequested.")]
-    public event EventHandler? MapRenderRequested
     {
         add => LivePreview.LaunchRequested += value;
         remove => LivePreview.LaunchRequested -= value;
@@ -261,9 +299,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public GscUsagesToolViewModel GscUsages { get; }
 
     public MapRenderToolViewModel LivePreview { get; }
-
-    [Obsolete("Use LivePreview.")]
-    public MapRenderToolViewModel MapRender => LivePreview;
 
     public PropertiesToolViewModel Properties { get; }
 

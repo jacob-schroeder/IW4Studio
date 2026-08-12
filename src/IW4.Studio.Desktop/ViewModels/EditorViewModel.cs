@@ -48,15 +48,15 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             EditingSession.AddableAssetTypes
                 .Where(assetType => _authoringRegistry.TryGetAdapter(assetType, out _))
                 .ToArray());
-        TargetFileName = Path.GetFileName(workspace.Document.Request.Path);
-        TargetPath = Path.GetFullPath(workspace.Document.Request.Path);
+        TargetFileName = Path.GetFileName(workspace.SourcePath);
+        TargetPath = Path.GetFullPath(workspace.SourcePath);
         ModeName = workspace.ZonePlanProfileName is null
             ? "Single file"
-            : $"{workspace.ZonePlanProfileName}.elf dependencies";
+            : workspace.ZonePlanProfileName + ".elf dependencies";
         ActiveZoneCount = workspace.ActiveZones.Count;
         LoadedZoneCount = workspace.LoadedZones.Count;
         ActiveZoneNames = string.Join(
-            "  ·  ",
+            ", ",
             workspace.ActiveZones.Select(zone => zone.LogicalZoneName));
 
         CatalogEntries = Array.Empty<AssetExplorerEntryViewModel>();
@@ -168,8 +168,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool CanSaveAs => true;
 
-    public string? ValidateNewAssetName(string name) =>
-        EditingSession.ValidateNewAssetName(name);
+    public string? ValidateNewAssetName(XAssetType assetType, string name) =>
+        EditingSession.ValidateNewAssetName(assetType, name);
 
     public WorkspaceAssetCatalogEntry AddAsset(
         XAssetType assetType,

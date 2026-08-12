@@ -1,5 +1,3 @@
-using IW4.Runtime.Diagnostics;
-
 namespace IW4.Studio.Desktop.ViewModels;
 
 public sealed class WelcomeViewModel : ObservableObject
@@ -88,13 +86,6 @@ public sealed class WelcomeViewModel : ObservableObject
         StatusText = withDependencies
             ? "Preparing the engine dependency plan..."
             : "Preparing the selected fastfile...";
-    }
-
-    public void ReportProgress(XAssetLoadProgress progress)
-    {
-        int completed = Math.Clamp(progress.AssetNumber, 0, progress.AssetCount);
-        StatusText = $"{Path.GetFileName(progress.SourceName)}  ·  {progress.AssetType}  ·  " +
-                     $"{completed:N0} of {progress.AssetCount:N0}";
     }
 
     public void FailLoad(Exception exception)

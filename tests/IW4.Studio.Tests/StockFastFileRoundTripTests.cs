@@ -263,7 +263,7 @@ public sealed class StockFastFileRoundTripTests
     }
 
     [Fact]
-    public void Authored_provider_replace_and_delete_publish_the_selected_revision()
+    public void Authored_localize_edit_publishes_the_selected_revision()
     {
         string temporaryDirectory = CreateTemporaryDirectory();
         try
@@ -271,40 +271,21 @@ public sealed class StockFastFileRoundTripTests
             string destinationPath = Path.Combine(temporaryDirectory, "edited.ff");
             EnsureOutputPathIsSafe(destinationPath, temporaryDirectory);
 
-            var original = new LocalizeAsset
-            {
-                Name = "qual/replace",
-                Value = "old value"
-            };
-            var replacement = new LocalizeAsset
-            {
-                Name = original.Name,
-                Value = "new value"
-            };
-            var deleted = new LocalizeAsset
-            {
-                Name = "qual/delete",
-                Value = "remove me"
-            };
-
             var documentService = new FastFileDocumentService();
             using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
             using (var editingSession = new FastFileEditingSession(blank))
             {
-                editingSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(original),
-                    new LinkAssetProviderSource(deleted)
-                ]);
-                editingSession.SetOrderedRoots([
-                    CreateOwnedRoot("replacement", original),
-                    CreateOwnedRoot("deleted", deleted)
-                ]);
-                editingSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(replacement)
-                ]);
-                editingSession.DeleteAssets([
-                    AssetKey.FromDefinition(deleted)
-                ]);
+                AssetAuthoringAdapterRegistry registry =
+                    AssetAuthoringAdapterRegistry.CreateDefault();
+                WorkspaceAssetCatalogEntry entry = registry.AddAsset(
+                    editingSession,
+                    XAssetType.Localize,
+                    "qual/replace");
+                var editor = Assert.IsType<AssetEditorSession>(
+                    registry.CreateSurface(editingSession, entry));
+                Assert.True(editor.Apply<LocalizeDraft>(draft =>
+                    draft.SetValue("new value")));
+                editor.Close();
                 AssertSaveSucceeded(editingSession, destinationPath);
             }
 
@@ -312,8 +293,8 @@ public sealed class StockFastFileRoundTripTests
                 new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
             LocalizeAsset linked = Assert.IsType<LocalizeAsset>(
                 Assert.Single(loaded.LoadedZone.LoadedAssets).Asset);
-            Assert.Equal(replacement.Name, linked.Name);
-            Assert.Equal(replacement.Value, linked.Value);
+            Assert.Equal("qual/replace", linked.Name);
+            Assert.Equal("new value", linked.Value);
             Assert.Single(loaded.InitialLinkRequest.Roots);
             Assert.Single(loaded.InitialLinkRequest.Assets.Providers);
         }
@@ -340,38 +321,27 @@ public sealed class StockFastFileRoundTripTests
                 Value = "original"
             };
             var documentService = new FastFileDocumentService();
-            using (FastFileWorkspace blank = documentService.CreateBlank(1, 1))
-            using (var authoringSession = new FastFileEditingSession(blank))
-            {
-                authoringSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(original)
-                ]);
-                authoringSession.SetOrderedRoots([
-                    CreateOwnedRoot("imported-edit", original)
-                ]);
-                AssertSaveSucceeded(authoringSession, sourcePath);
-            }
+            WriteCanonicalFastFile(
+                new ZoneLinkRequest(
+                    new LinkAssetPool([new LinkAssetProviderSource(original)]),
+                    [CreateOwnedRoot("imported-edit", original)],
+                    languageMask: 1,
+                    selectedLanguageMask: 1),
+                sourcePath);
 
             using (FastFileWorkspace importedWorkspace = documentService.Open(
                        new FastFileDocumentOpenRequest(sourcePath, Isolated.Instance)))
             using (var editingSession = new FastFileEditingSession(importedWorkspace))
             {
-                LocalizeAsset imported = Assert.IsType<LocalizeAsset>(
-                    Assert.Single(importedWorkspace.LoadedZone.LoadedAssets).Asset);
-                var edited = new LocalizeAsset
-                {
-                    NamePointer = imported.NamePointer,
-                    Name = imported.Name,
-                    ValuePointer = imported.ValuePointer,
-                    Value = "edited replacement value"
-                };
-
-                editingSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(
-                        edited,
-                        importedWorkspace.LoadedZone.LinkAssetImportResolver,
-                        importedDefinition: imported)
-                ]);
+                WorkspaceAssetCatalogEntry entry = Assert.Single(
+                    editingSession.Document.Rows);
+                AssetAuthoringAdapterRegistry registry =
+                    AssetAuthoringAdapterRegistry.CreateDefault();
+                var editor = Assert.IsType<AssetEditorSession>(
+                    registry.CreateSurface(editingSession, entry));
+                Assert.True(editor.Apply<LocalizeDraft>(draft =>
+                    draft.SetValue("edited replacement value")));
+                editor.Close();
                 AssertSaveSucceeded(editingSession, editedPath);
             }
 
@@ -402,7 +372,10 @@ public sealed class StockFastFileRoundTripTests
             using var editingSession = new FastFileEditingSession(blank);
             var validator = new CallbackCandidateValidator((_, _) =>
             {
-                editingSession.SetOrderedRoots([]);
+                _ = AssetAuthoringAdapterRegistry.CreateDefault().AddAsset(
+                    editingSession,
+                    XAssetType.Localize,
+                    "qual/stale-revision");
                 return [];
             });
 
@@ -448,22 +421,22 @@ public sealed class StockFastFileRoundTripTests
                 Image = sharedImage
             };
 
-            var documentService = new FastFileDocumentService();
-            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
-            using (var editingSession = new FastFileEditingSession(blank))
-            {
-                editingSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(sharedImage),
-                    new LinkAssetProviderSource(lightA),
-                    new LinkAssetProviderSource(lightB)
-                ]);
-                editingSession.SetOrderedRoots([
-                    CreateOwnedRoot("light-a", lightA),
-                    CreateOwnedRoot("light-b", lightB)
-                ]);
-                AssertSaveSucceeded(editingSession, destinationPath);
-            }
+            WriteCanonicalFastFile(
+                new ZoneLinkRequest(
+                    new LinkAssetPool([
+                        new LinkAssetProviderSource(sharedImage),
+                        new LinkAssetProviderSource(lightA),
+                        new LinkAssetProviderSource(lightB)
+                    ]),
+                    [
+                        CreateOwnedRoot("light-a", lightA),
+                        CreateOwnedRoot("light-b", lightB)
+                    ],
+                    languageMask: 1,
+                    selectedLanguageMask: 1),
+                destinationPath);
 
+            var documentService = new FastFileDocumentService();
             using FastFileWorkspace loaded = documentService.Open(
                 new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
             Assert.Equal(2, loaded.LoadedZone.XAssetList.AssetCount);
@@ -511,19 +484,15 @@ public sealed class StockFastFileRoundTripTests
                 ]
             };
 
-            var documentService = new FastFileDocumentService();
-            using FastFileWorkspace blank = documentService.CreateBlank(1, 1);
-            using (var editingSession = new FastFileEditingSession(blank))
-            {
-                editingSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(animation)
-                ]);
-                editingSession.SetOrderedRoots([
-                    CreateOwnedRoot("animation", animation)
-                ]);
-                AssertSaveSucceeded(editingSession, destinationPath);
-            }
+            WriteCanonicalFastFile(
+                new ZoneLinkRequest(
+                    new LinkAssetPool([new LinkAssetProviderSource(animation)]),
+                    [CreateOwnedRoot("animation", animation)],
+                    languageMask: 1,
+                    selectedLanguageMask: 1),
+                destinationPath);
 
+            var documentService = new FastFileDocumentService();
             using FastFileWorkspace loaded = documentService.Open(
                 new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
             Assert.Equal(3, loaded.LoadedZone.XAssetList.ScriptStringCount);
@@ -599,20 +568,17 @@ public sealed class StockFastFileRoundTripTests
                 ]
             };
 
-            var documentService = new FastFileDocumentService();
-            using FastFileWorkspace blank = documentService.CreateBlank(3, 2);
-            using (var editingSession = new FastFileEditingSession(blank))
-            {
-                editingSession.AddOrReplaceProviders([
-                    new LinkAssetProviderSource(
-                        image,
-                        imageStreamReferences: imageStreamReferences)
-                ]);
-                editingSession.SetOrderedRoots([
-                    CreateOwnedRoot("streamed-image", image)
-                ]);
-                AssertSaveSucceeded(editingSession, destinationPath);
-            }
+            WriteCanonicalFastFile(
+                new ZoneLinkRequest(
+                    new LinkAssetPool([
+                        new LinkAssetProviderSource(
+                            image,
+                            imageStreamReferences: imageStreamReferences)
+                    ]),
+                    [CreateOwnedRoot("streamed-image", image)],
+                    languageMask: 3,
+                    selectedLanguageMask: 2),
+                destinationPath);
 
             Assert.True(File.Exists(destinationPath));
             Assert.Equal(
@@ -1057,6 +1023,30 @@ public sealed class StockFastFileRoundTripTests
             result.Succeeded,
             $"Save As failed for '{destinationPath}'.{Environment.NewLine}" +
             string.Join(Environment.NewLine, result.Diagnostics));
+        Assert.True(File.Exists(destinationPath));
+    }
+
+    private static void WriteCanonicalFastFile(
+        ZoneLinkRequest request,
+        string destinationPath)
+    {
+        ZoneLinkResult link = new ZoneLinker().Link(request);
+        AssertLinkSucceeded(
+            link,
+            $"Canonical fixture link failed for '{destinationPath}'");
+        FastFilePackagingResult package = new FastFilePackager().PackageGreenfield(
+            GetDecodedBytes(link),
+            link.LanguageMask,
+            link.SelectedLanguageMask,
+            link.ImageStreamLanguageTables);
+        Assert.True(
+            package.Succeeded,
+            $"Canonical fixture packaging failed for '{destinationPath}'.{Environment.NewLine}" +
+            string.Join(
+                Environment.NewLine,
+                package.Errors.Select(error => $"{error.Code}: {error.Message}")));
+        Assert.True(package.Bytes.HasValue);
+        File.WriteAllBytes(destinationPath, package.Bytes.Value.Span);
         Assert.True(File.Exists(destinationPath));
     }
 

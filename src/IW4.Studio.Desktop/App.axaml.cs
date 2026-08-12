@@ -53,16 +53,49 @@ public sealed partial class App : Application
     private void OpenEditor(WelcomeWindow welcomeWindow, FastFileWorkspace workspace)
     {
         if (_desktop is null)
-            return;
+            throw new InvalidOperationException(
+                "The desktop application lifetime is unavailable.");
 
-        var editorWindow = new EditorWindow(workspace, _navigationCoordinator);
-        editorWindow.WelcomeRequested += ReturnToWelcome;
-        editorWindow.ThemeRequested += SelectTheme;
-        editorWindow.ApprovedCloseRequested += EditorWindow_ApprovedCloseRequested;
-        editorWindow.SetThemeMode(GetCurrentThemeMode());
-        _desktop.MainWindow = editorWindow;
-        editorWindow.Show();
-        welcomeWindow.Close();
+        EditorWindow? editorWindow = null;
+        try
+        {
+            editorWindow = new EditorWindow(workspace, _navigationCoordinator);
+            editorWindow.WelcomeRequested += ReturnToWelcome;
+            editorWindow.ThemeRequested += SelectTheme;
+            editorWindow.ApprovedCloseRequested +=
+                EditorWindow_ApprovedCloseRequested;
+            editorWindow.SetThemeMode(GetCurrentThemeMode());
+            _desktop.MainWindow = editorWindow;
+            editorWindow.Show();
+            welcomeWindow.Close();
+            editorWindow = null;
+        }
+        catch
+        {
+            if (editorWindow is not null)
+            {
+                try
+                {
+                    if (ReferenceEquals(_desktop.MainWindow, editorWindow))
+                        _desktop.MainWindow = welcomeWindow;
+                }
+                catch
+                {
+                    // Opening must report its original failure.
+                }
+
+                try
+                {
+                    editorWindow.DisposeAfterFailedOpen();
+                }
+                catch
+                {
+                    // Opening must report its original failure.
+                }
+            }
+
+            throw;
+        }
     }
 
     private void ReturnToWelcome(EditorWindow editorWindow)

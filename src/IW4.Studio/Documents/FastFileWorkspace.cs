@@ -17,7 +17,10 @@ public sealed class FastFileWorkspace : IDisposable
 
     internal FastFileWorkspace(
         FastFileDocument document,
-        DbLoadSession? loadSession = null)
+        DbLoadSession? loadSession = null,
+        IReadOnlyList<WorkspaceZone>? loadedZones = null,
+        string? zonePlanProfileName = null,
+        FastFileDependencyGraph? dependencyGraph = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         if (document.IsBlank != (loadSession is null))
@@ -29,14 +32,29 @@ public sealed class FastFileWorkspace : IDisposable
 
         Document = document;
         _loadSession = loadSession;
+        LoadedZones = Array.AsReadOnly((loadedZones ?? (document.IsBlank
+            ? []
+            : [new WorkspaceZone(document.LoadedZone, document.SourcePath, true, true)])).ToArray());
+        ActiveZones = Array.AsReadOnly(LoadedZones.Where(zone => zone.IsActive).ToArray());
+        ZonePlanProfileName = zonePlanProfileName;
+        DependencyGraph = dependencyGraph ?? (document.IsBlank
+            ? null
+            : new FastFileDependencyGraph([new FastFileDependencyNode(
+                document.SourcePath, FastFileDependencyLoadStatus.Loaded, true)]));
+        AssetCatalog = WorkspaceAssetCatalog.Create(document, LoadedZones);
     }
 
     public FastFileDocument Document { get; }
+    public WorkspaceAssetCatalog AssetCatalog { get; }
     public bool IsBlank => Document.IsBlank;
     public string SourcePath => Document.SourcePath;
     public LoadedXZone LoadedZone => Document.LoadedZone;
     public ZoneObjectFile ZoneObjectFile => Document.ZoneObjectFile;
     public ZoneLinkRequest InitialLinkRequest => Document.InitialLinkRequest;
+    public IReadOnlyList<WorkspaceZone> LoadedZones { get; }
+    public IReadOnlyList<WorkspaceZone> ActiveZones { get; }
+    public string? ZonePlanProfileName { get; }
+    public FastFileDependencyGraph? DependencyGraph { get; }
 
     internal void ThrowIfDisposed()
     {
@@ -62,8 +80,14 @@ public sealed class FastFileWorkspace : IDisposable
         if (!ReferenceEquals(_editingSessionOwner, session))
             throw new InvalidOperationException("The editing session does not own this workspace.");
 
-        DisposeCore();
-        _editingSessionOwner = null;
+        try
+        {
+            DisposeCore();
+        }
+        finally
+        {
+            _editingSessionOwner = null;
+        }
     }
 
     public void Dispose()

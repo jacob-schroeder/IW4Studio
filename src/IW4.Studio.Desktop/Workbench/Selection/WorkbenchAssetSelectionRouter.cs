@@ -23,7 +23,7 @@ public sealed class WorkbenchAssetSelectionRouter
     private readonly TargetZoneDocument? _targetDocument;
     private readonly IReadOnlyDictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry>
         _targetRows;
-    private readonly IReadOnlyDictionary<XAssetProviderId, WorkspaceAssetCatalogEntry[]>
+    private readonly IReadOnlyDictionary<long, WorkspaceAssetCatalogEntry[]>
         _entriesByProvider;
     private readonly IReadOnlyDictionary<(XAssetType Type, string Name), WorkspaceAssetCatalogEntry[]>
         _entriesByCanonicalIdentity;
@@ -88,7 +88,7 @@ public sealed class WorkbenchAssetSelectionRouter
         if (selection.ProviderId is { } providerId &&
             !providerId.IsNone &&
             _entriesByProvider.TryGetValue(
-                providerId,
+                providerId.Value,
                 out WorkspaceAssetCatalogEntry[]? providerEntries))
         {
             entry = ChooseForPoolSelection(providerEntries, selection);

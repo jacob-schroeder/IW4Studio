@@ -487,7 +487,7 @@ public sealed class TransactionalSaveAsService
             progress?.Report(new(
                 SaveAsStage.Committing,
                 "Atomically publishing the fastfile."));
-            if (!session.ExecuteIfCurrentRevision(
+            if (!session.CommitSaveIfCurrentRevision(
                     revision.Revision,
                     () =>
                     {

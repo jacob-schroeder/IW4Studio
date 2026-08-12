@@ -12,3 +12,22 @@ public sealed record Isolated : FastFileOpenMode
 
     public static Isolated Instance { get; } = new();
 }
+
+/// <summary>Open the target through one default engine dependency lifecycle.</summary>
+public sealed record ZonePlan : FastFileOpenMode
+{
+    public ZonePlan(string profileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileName);
+        ProfileName = profileName;
+    }
+
+    public string ProfileName { get; }
+}
+
+public static class FastFileOpenProfiles
+{
+    public static string ResolveForTarget(string targetNameOrPath) =>
+        IW4.FastFiles.Loaders.Database.Planning.DbDefaultZoneDependencyLoader
+            .ResolveProfile(targetNameOrPath);
+}

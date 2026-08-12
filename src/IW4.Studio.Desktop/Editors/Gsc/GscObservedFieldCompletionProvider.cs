@@ -1,5 +1,5 @@
 using IW4.Gsc.Workspace;
-using IW4.Studio.Gsc;
+using IW4.Studio.Desktop.Gsc;
 
 namespace IW4.Studio.Desktop.Editors.Gsc;
 

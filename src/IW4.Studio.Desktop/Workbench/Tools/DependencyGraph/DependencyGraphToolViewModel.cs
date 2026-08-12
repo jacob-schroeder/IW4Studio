@@ -18,12 +18,12 @@ public sealed class DependencyGraphToolViewModel
             ZonePlan plan => $"{plan.ProfileName}.elf Dependencies",
             _ => "Fastfile Dependencies"
         };
-
-        FastFileDependencyNode[] nodes = workspace.DependencyGraph.Nodes.ToArray();
+        FastFileDependencyNode[] nodes = (workspace.DependencyGraph?.Nodes ?? [])
+            .ToArray();
         Nodes = Array.AsReadOnly(nodes
             .Select((node, index) => new DependencyGraphNodeViewModel(
                 node,
-                hasSuccessor: index < nodes.Length - 1))
+                index < nodes.Length - 1))
             .ToArray());
     }
 

@@ -8,7 +8,7 @@ using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents;
 using IW4.Studio.Documents.MenuEditing;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.ViewModels.Menu;
 
@@ -54,7 +54,7 @@ public sealed class MenuEditorViewModel
             throw new InvalidDataException(
                 "The Menu view model can host only Menu editor sessions.");
         }
-        if (coordinator.DocumentId != session.Workspace.Document.TargetSource.DocumentId)
+        if (coordinator.DocumentId != session.Workspace.Document.DocumentId)
         {
             throw new InvalidOperationException(
                 "The Menu coordinator belongs to another editing document.");
@@ -252,6 +252,7 @@ public sealed class MenuEditorViewModel
 
     private bool CanRevert() =>
         Mode == AssetEditorMode.Editable &&
+        _session.HasUnsavedChanges &&
         !Designer.HasStagedInput &&
         _rowIdentity is { } rowIdentity &&
         _resolution is { } resolution &&

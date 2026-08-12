@@ -29,7 +29,8 @@
                    Foreground="{DynamicResource StudioTextBrush}" />
         <ComboBox x:Name="AssetTypeComboBox"
                   MinHeight="34"
-                  HorizontalAlignment="Stretch" />
+                  HorizontalAlignment="Stretch"
+                  SelectionChanged="AssetTypeComboBox_SelectionChanged" />
       </StackPanel>
 
       <StackPanel Grid.Row="4" Spacing="6">

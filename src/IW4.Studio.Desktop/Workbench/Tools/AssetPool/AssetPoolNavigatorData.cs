@@ -208,13 +208,7 @@ public sealed class AssetPoolNavigatorSnapshot
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(hasDesktopEditor);
 
-        XAssetPool pool = workspace.Runtime.AssetPool;
-        IReadOnlyDictionary<DbZoneHandle, string> zoneNames = workspace.LoadedZones
-            .Where(zone => !zone.RuntimeZoneHandle.IsNone)
-            .GroupBy(zone => zone.RuntimeZoneHandle)
-            .ToDictionary(
-                group => group.Key,
-                group => group.First().LogicalZoneName);
+        XAssetPool pool = workspace.LoadedZone.Context.AssetPool;
         long revision = pool.Revision;
         XAssetSlot[] slots = pool.Slots.ToArray();
         AssetPoolSlotSnapshot[] rows = slots.Select(slot =>
@@ -223,9 +217,9 @@ public sealed class AssetPoolNavigatorSnapshot
             string? zoneName = null;
             if (!provider.Owner.IsNone)
             {
-                zoneName = zoneNames.TryGetValue(provider.Owner, out string? knownName)
-                    ? knownName
-                    : provider.Owner.ToString();
+                zoneName = workspace.LoadedZones
+                    .FirstOrDefault(zone => zone.LoadResult.Context.ZoneOwner == provider.Owner)
+                    ?.LogicalZoneName ?? provider.Owner.ToString();
             }
 
             return new AssetPoolSlotSnapshot(

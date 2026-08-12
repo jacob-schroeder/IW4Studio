@@ -10,7 +10,7 @@ using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Documents;
-using IW4.Studio.Gsc;
+using IW4.Studio.Desktop.Gsc;
 
 namespace IW4.Studio.Desktop.ViewModels;
 

@@ -57,16 +57,14 @@ public sealed class AssetExplorerEntryViewModel
         Origin = entry.Origin;
         Access = entry.Access;
         ProviderZone = entry.ResolvedProviderZone?.LogicalZoneName
-            ?? (entry.ProviderZone is { } handle && !handle.IsNone ? handle.ToString() : string.Empty);
+            ?? string.Empty;
         OwnershipBadge = GetOwnershipBadge(entry.Origin);
         ResolutionBadge = GetResolutionBadge(entry, ProviderZone);
         HasUsableEditor = hasBackendAdapter &&
                           hasDesktopView &&
                           entry.ContentSource != WorkspaceAssetContentSource.Unavailable &&
                           entry.Origin is not WorkspaceAssetOrigin.NullRow and
-                              not WorkspaceAssetOrigin.OpaqueRow and
-                              not WorkspaceAssetOrigin.OffsetAliasRow and
-                              not WorkspaceAssetOrigin.UnsupportedRow;
+                              not WorkspaceAssetOrigin.OpaqueRow;
         EditorBadge = HasUsableEditor ? "EDITOR AVAILABLE" : "EDITOR UNAVAILABLE";
         AccessBadge = entry.Access switch
         {
@@ -132,8 +130,6 @@ public sealed class AssetExplorerEntryViewModel
         WorkspaceAssetOrigin.DependencyOnly => "◆",
         WorkspaceAssetOrigin.NullRow => "∅",
         WorkspaceAssetOrigin.OpaqueRow => "◌",
-        WorkspaceAssetOrigin.OffsetAliasRow => "≡",
-        WorkspaceAssetOrigin.UnsupportedRow => "!",
         _ => "?"
     };
 
@@ -143,8 +139,6 @@ public sealed class AssetExplorerEntryViewModel
     {
         WorkspaceAssetOrigin.NullRow => "<null row>",
         WorkspaceAssetOrigin.OpaqueRow => "<opaque row>",
-        WorkspaceAssetOrigin.OffsetAliasRow => "<offset alias>",
-        WorkspaceAssetOrigin.UnsupportedRow => "<unsupported row>",
         _ => "<unnamed asset>"
     };
 
@@ -153,8 +147,7 @@ public sealed class AssetExplorerEntryViewModel
         WorkspaceAssetOrigin.TargetOwnedDefinition => "TARGET DEFINITION",
         WorkspaceAssetOrigin.TargetResolvedReference or WorkspaceAssetOrigin.TargetUnresolvedReference => "TARGET REFERENCE",
         WorkspaceAssetOrigin.DependencyOnly => "DEPENDENCY ONLY",
-        WorkspaceAssetOrigin.NullRow or WorkspaceAssetOrigin.OpaqueRow or WorkspaceAssetOrigin.OffsetAliasRow => "TARGET STRUCTURAL",
-        WorkspaceAssetOrigin.UnsupportedRow => "TARGET UNSUPPORTED",
+        WorkspaceAssetOrigin.NullRow or WorkspaceAssetOrigin.OpaqueRow => "TARGET STRUCTURAL",
         _ => throw new InvalidDataException($"Unknown catalog origin '{origin}'.")
     };
 
@@ -170,8 +163,7 @@ public sealed class AssetExplorerEntryViewModel
         WorkspaceAssetOrigin.DependencyOnly => string.IsNullOrEmpty(providerZone)
             ? "DEPENDENCY CONTENT"
             : $"DEPENDENCY · {providerZone}",
-        WorkspaceAssetOrigin.NullRow or WorkspaceAssetOrigin.OpaqueRow or WorkspaceAssetOrigin.OffsetAliasRow => "STRUCTURAL ONLY",
-        WorkspaceAssetOrigin.UnsupportedRow => "UNSUPPORTED CONTENT",
+        WorkspaceAssetOrigin.NullRow or WorkspaceAssetOrigin.OpaqueRow => "STRUCTURAL ONLY",
         _ => throw new InvalidDataException($"Unknown catalog origin '{entry.Origin}'.")
     };
 

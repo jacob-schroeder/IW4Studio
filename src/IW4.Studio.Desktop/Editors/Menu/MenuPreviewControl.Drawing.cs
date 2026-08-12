@@ -7,8 +7,8 @@ using Avalonia.Platform;
 using IW4.Render.UI.ScreenPlacement;
 using IW4.Render.UI.Text;
 using IW4.Studio.Documents.MenuEditing;
-using IW4.Studio.Documents.MenuEditing.Preview;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Editors.Menu;
 

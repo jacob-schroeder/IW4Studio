@@ -123,8 +123,9 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     public IReadOnlyList<IW4.FastFiles.Zone.XAssetType> AddableAssetTypes =>
         _editor.AddableAssetTypes;
 
-    public string? ValidateNewAssetName(string name) =>
-        _editor.ValidateNewAssetName(name);
+    public string? ValidateNewAssetName(
+        IW4.FastFiles.Zone.XAssetType assetType,
+        string name) => _editor.ValidateNewAssetName(assetType, name);
 
     public void AddAsset(
         IW4.FastFiles.Zone.XAssetType assetType,

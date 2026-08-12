@@ -13,23 +13,24 @@ public sealed class ZoneDetailsToolViewModel
     {
         ArgumentNullException.ThrowIfNull(workspace);
 
-        TargetZoneSourceSnapshot source = workspace.TargetSource;
-        IReadOnlyList<uint> blockSizes = source.DecodedMetadata.BlockSizeFloors
-            ?? Array.Empty<uint>();
+        var loadedZone = workspace.LoadedZone;
+        IReadOnlyList<uint> blockSizes = loadedZone.XFile.BlockSizes;
 
-        ZoneName = source.LogicalZoneName;
+        ZoneName = loadedZone.Zone.Name;
         BlockStreams = Array.AsReadOnly(
             Enumerable.Range(0, XFile.BlockCount)
                 .Select(index => new ZoneBlockStreamViewModel(
                     (XFileBlockType)index,
-                    index < blockSizes.Count ? blockSizes[index] : 0))
+                    index < blockSizes.Count
+                        ? blockSizes[index]
+                        : 0))
                 .ToArray());
         ScriptStrings = Array.AsReadOnly(
-            source.ScriptStrings
+            loadedZone.Context.ZoneScriptStrings.Entries
                 .Select(value => new ZoneScriptStringViewModel(value.Index, value.Value))
                 .ToArray());
         ScriptStringCount = ScriptStrings.Count.ToString("N0", CultureInfo.InvariantCulture);
-        AssetCount = source.Rows.Count.ToString("N0", CultureInfo.InvariantCulture);
+        AssetCount = loadedZone.XAssetList.Assets.Count.ToString("N0", CultureInfo.InvariantCulture);
     }
 
     public string ZoneName { get; }

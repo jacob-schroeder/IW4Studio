@@ -8,7 +8,7 @@ using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents;
 using IW4.Studio.Documents.MenuEditing;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.ViewModels.Menu;
 
@@ -67,7 +67,7 @@ public sealed class MenuFileEditorViewModel
             throw new InvalidDataException(
                 "The MenuFile view model can host only MenuFile editor sessions.");
         }
-        if (coordinator.DocumentId != session.Workspace.Document.TargetSource.DocumentId)
+        if (coordinator.DocumentId != session.Workspace.Document.DocumentId)
         {
             throw new InvalidOperationException(
                 "The Menu coordinator belongs to another editing document.");
@@ -270,14 +270,6 @@ public sealed class MenuFileEditorViewModel
             _coordinator.RevertMenuFile(rowIdentity));
         if (_disposed)
             return;
-        if (result.Removed)
-        {
-            _snapshot = null;
-            RebuildRegistrations(null);
-            StatusMessage = "Removed the newly added MenuFile row.";
-            return;
-        }
-
         _snapshot = result.MenuFile;
         RefreshValidation();
         RebuildRegistrations(selectedId);
@@ -419,6 +411,7 @@ public sealed class MenuFileEditorViewModel
 
     private bool CanRevert() =>
         IsEditable &&
+        _session.HasUnsavedChanges &&
         !Designer.HasStagedInput &&
         _rowIdentity is not null &&
         _canRevertWithoutSplittingAuthority;

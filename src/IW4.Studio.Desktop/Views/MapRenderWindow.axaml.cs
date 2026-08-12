@@ -2,7 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using IW4.Studio.Documents;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Views;
 

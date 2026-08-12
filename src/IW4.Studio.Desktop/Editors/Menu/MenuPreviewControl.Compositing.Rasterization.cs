@@ -4,8 +4,8 @@ using Avalonia.Media;
 using IW4.Render.Materials;
 using IW4.Render.Textures;
 using IW4.Render.UI;
-using IW4.Studio.Documents.MenuEditing.Preview;
-using IW4.Studio.Rendering;
+using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
+using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Editors.Menu;
 
