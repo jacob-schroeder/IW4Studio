@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.Menu;
 using IW4.Assets.Math;
@@ -188,7 +189,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
     private sealed class StorageFreezer
     {
         private readonly LinkAssetFreezeScope _freeze;
-        private readonly Dictionary<object, LinkStorageSymbol> _activeStorage =
+        private readonly Dictionary<object, LinkStorageSymbol> _frozenStorage =
             new(ReferenceEqualityComparer.Instance);
 
         public StorageFreezer(LinkAssetFreezeScope freeze) =>
@@ -316,7 +317,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ItemDefAsset item,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(item, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(item, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
 
             ValidateItem(item, fieldPath);
@@ -425,7 +426,8 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                             item.FocusSoundAsset,
                             XAssetType.Sound,
                             $"{fieldPath}.FocusSound",
-                            item.FocusSoundName));
+                            item.FocusSoundName,
+                            allowExternalReference: _freeze.IsAuthoredDetached));
                     AddItemDataOperation(operations, storage, item, fieldPath);
                     AddDirect(operations, storage, 0x190,
                         FreezeFloatExpressionTable(
@@ -463,7 +465,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             MenuEventHandlerSet value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             if (value.EventHandlerCount < 0 ||
                 value.EventHandlerCount != value.Handlers.Count)
@@ -500,7 +502,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             MenuEventHandler value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             if (!Enum.IsDefined(value.EventType))
             {
@@ -576,7 +578,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ConditionalScript value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -604,7 +606,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             SetLocalVarData value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -628,7 +630,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ItemKeyHandler value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             var writer = new LinkTemplateWriter(ItemKeyHandler.SerializedSize);
             writer.WriteInt32(value.Key);
@@ -656,7 +658,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             Statement value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             if (value.NumEntries < 0 || value.NumEntries != value.LoadedEntries.Count)
             {
@@ -695,7 +697,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ExpressionSupportingData value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             UIFunctionList functions = value.UiFunctions ??
                 throw new InvalidDataException($"{fieldPath}.UiFunctions cannot be null.");
@@ -750,7 +752,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             StaticDvar value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -769,7 +771,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             EditFieldDef value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             ValidateFinite(value.MinVal, $"{fieldPath}.MinVal");
             ValidateFinite(value.MaxVal, $"{fieldPath}.MaxVal");
@@ -799,7 +801,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ListBoxDef value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             ValidateFixedCount(value.StartPos, 4, $"{fieldPath}.StartPos");
             ValidateFixedCount(value.EndPos, 4, $"{fieldPath}.EndPos");
@@ -856,7 +858,8 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                             value.SelectIconMaterial,
                             XAssetType.Material,
                             $"{fieldPath}.SelectIcon",
-                            value.SelectIconMaterialName));
+                            value.SelectIconMaterialName,
+                            allowExternalReference: _freeze.IsAuthoredDetached));
                 },
                 fieldPath);
         }
@@ -866,7 +869,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             MultiDef value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             ValidateFixedCount(value.DvarList, MultiDef.EntryCapacity,
                 $"{fieldPath}.DvarList");
@@ -922,7 +925,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             NewsTickerDef value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             var writer = new LinkTemplateWriter(NewsTickerDef.SerializedSize);
             writer.WriteInt32(value.FeedId);
@@ -942,7 +945,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             TextScrollDef value,
             string fieldPath)
         {
-            if (_activeStorage.TryGetValue(value, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(value, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -960,7 +963,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -995,7 +998,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -1032,7 +1035,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             var writer = new LinkTemplateWriter(
                 checked(values.Count * ExpressionEntry.SerializedSize));
@@ -1112,7 +1115,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -1143,7 +1146,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -1174,7 +1177,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             return FreezeDirectStorage(
                 pointer,
@@ -1204,7 +1207,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ArgumentNullException.ThrowIfNull(values);
             if (values.Count == 0 && pointer.Type == PointerType.Null)
                 return null;
-            if (_activeStorage.TryGetValue(values, out LinkStorageSymbol? existing))
+            if (TryGetFrozenStorage(values, pointer, fieldPath, out LinkStorageSymbol? existing))
                 return existing;
             var writer = new LinkTemplateWriter(
                 checked(values.Count * ItemFloatExpression.SerializedSize));
@@ -1327,21 +1330,14 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                             $"{fieldPath} is a complete direct-storage owner, not an interior view.");
                     }
 
-                    if (!_activeStorage.TryAdd(semanticIdentity, owner))
+                    if (!_frozenStorage.TryAdd(semanticIdentity, owner))
                     {
                         throw new InvalidDataException(
                             $"{fieldPath} attempted to freeze an already-active semantic node.");
                     }
-                    try
-                    {
-                        var operations = new List<LinkOperation>();
-                        freezeChildren?.Invoke(owner, operations);
-                        return operations;
-                    }
-                    finally
-                    {
-                        _activeStorage.Remove(semanticIdentity);
-                    }
+                    var operations = new List<LinkOperation>();
+                    freezeChildren?.Invoke(owner, operations);
+                    return operations;
                 },
                 fieldPath);
 
@@ -1352,7 +1348,34 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                 throw new InvalidDataException(
                     $"{fieldPath} did not freeze as a complete direct-storage owner.");
             }
-            return target.View.Storage;
+
+            LinkStorageSymbol finalStorage = target.View.Storage;
+            if (!_frozenStorage.TryGetValue(
+                    semanticIdentity,
+                    out LinkStorageSymbol? provisionalStorage))
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} completed without its active semantic storage registration.");
+            }
+            if (!ReferenceEquals(provisionalStorage, finalStorage))
+            {
+                _freeze.ValidateReusedStorage(pointer, finalStorage, fieldPath);
+                _frozenStorage[semanticIdentity] = finalStorage;
+            }
+            return finalStorage;
+        }
+
+        private bool TryGetFrozenStorage(
+            object semanticIdentity,
+            XPointerReference pointer,
+            string fieldPath,
+            [NotNullWhen(true)] out LinkStorageSymbol? storage)
+        {
+            if (!_frozenStorage.TryGetValue(semanticIdentity, out storage))
+                return false;
+
+            _freeze.ValidateReusedStorage(pointer, storage, fieldPath);
+            return true;
         }
 
         private void AppendWindowOperations(
@@ -1376,7 +1399,8 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                     window.BackgroundMaterial,
                     XAssetType.Material,
                     $"{fieldPath}.Background",
-                    window.BackgroundMaterialName));
+                    window.BackgroundMaterialName,
+                    allowExternalReference: _freeze.IsAuthoredDetached));
         }
 
         private LinkStorageSymbol? FreezeOptionalNode<T>(

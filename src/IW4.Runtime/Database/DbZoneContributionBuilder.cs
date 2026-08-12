@@ -6,7 +6,7 @@ namespace IW4.Runtime.Database;
 
 internal sealed class DbZoneContributionBuilder
 {
-    private readonly List<XAssetProviderId> _assetProviders = [];
+    private readonly List<XAssetProviderContribution> _assetProviders = [];
     private readonly HashSet<XAssetProviderId> _assetProviderSet = [];
     private readonly List<ScriptStringHandle> _scriptStrings = [];
     private readonly HashSet<ScriptStringHandle> _scriptStringSet = [];
@@ -22,12 +22,16 @@ internal sealed class DbZoneContributionBuilder
 
     public DbZoneHandle Zone { get; }
 
-    public void Add(XAssetProviderId provider)
+    public void Add(XAssetProviderContribution provider)
     {
         EnsureMutable();
-        if (provider.IsNone)
-            throw new ArgumentOutOfRangeException(nameof(provider));
-        if (_assetProviderSet.Add(provider))
+        ArgumentNullException.ThrowIfNull(provider);
+        if (provider.Owner != Zone)
+        {
+            throw new InvalidDataException(
+                $"Provider {provider.Id} is owned by {provider.Owner}, not contribution zone {Zone}.");
+        }
+        if (_assetProviderSet.Add(provider.Id))
             _assetProviders.Add(provider);
     }
 

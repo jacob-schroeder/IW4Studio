@@ -291,7 +291,8 @@ public sealed class DbZoneLoader
 
         var zoneCursor = new FastFileCursor(zoneBytes, decodedTapeBaseOffset: 0);
         XFile xfile = _xfileHeaderReader.Read(zoneCursor);
-        context.BeginZoneObjectCapture(zoneBytes, xfile);
+        if (context.CaptureZoneObject)
+            context.BeginZoneObjectCapture(zoneBytes, xfile);
 
         return new XFileLoadState(header, xfile, zoneBytes, zoneCursor.Offset);
     }
@@ -374,7 +375,9 @@ public sealed class DbZoneLoader
                 $"declares the meaningful end at 0x{declaredMeaningfulEnd:X}.");
         }
         RecordZoneTailPadding(loadState.ZoneBytes, zoneCursor.Offset, context);
-        ZoneObjectFile objectFile = context.FreezeZoneObjectFile();
+        ZoneObjectFile? objectFile = context.ZoneObjectCapture is null
+            ? null
+            : context.FreezeZoneObjectFile();
 
         var loaded = new LoadedXZone(
             SourceName: context.CurrentFastFile.Name,
@@ -387,7 +390,7 @@ public sealed class DbZoneLoader
             ZoneBytes: loadState.ZoneBytes,
             Warnings: Array.AsReadOnly(context.Diagnostics.Warnings.ToArray()),
             ZoneObjectFile: objectFile,
-            LinkAssetImportResolver: context.LinkAssetImportResolver);
+            LinkAssetImportResolver: context.ZoneObjectCapture?.ImportResolver);
 
         return loaded;
     }

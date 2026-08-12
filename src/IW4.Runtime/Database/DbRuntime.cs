@@ -470,8 +470,9 @@ public sealed class DbRuntime
         // Material ordering and world-surface post-load state are process-
         // global derived state. Always rebuild from active canonical providers
         // so a promoted fallback cannot leave references to retired zone memory.
-        MaterialPostLoadProcessor.RebuildDrawSurfs(AssetPool);
-        foreach (XAssetPoolEntry entry in AssetPool.Entries)
+        IReadOnlyCollection<XAssetPoolEntry> activeEntries = AssetPool.Entries;
+        MaterialPostLoadProcessor.RebuildDrawSurfs(AssetPool, activeEntries);
+        foreach (XAssetPoolEntry entry in activeEntries)
         {
             if (entry.AssetType != XAssetType.GfxMap ||
                 entry.Asset is not GfxWorldAsset world ||

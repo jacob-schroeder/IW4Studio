@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using IW4.Runtime.Diagnostics;
 using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes;
 using IW4.Studio.Desktop.ViewModels;
@@ -12,6 +14,9 @@ public sealed partial class WelcomeWindow : Window
 {
     private readonly AppSettingsStore _settingsStore;
     private readonly WelcomeViewModel _viewModel = new();
+    private readonly DispatcherTimer _progressTimer;
+    private readonly object _progressSync = new();
+    private XAssetLoadProgress? _pendingProgress;
     private bool _isClosing;
 
     public WelcomeWindow()
@@ -27,6 +32,11 @@ public sealed partial class WelcomeWindow : Window
         Icon = AppIcon.Create();
         DataContext = _viewModel;
         _viewModel.SetRecentFiles(_settingsStore.LoadRecentFastFiles());
+        _progressTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(80)
+        };
+        _progressTimer.Tick += (_, _) => ApplyPendingProgress();
         Closing += (_, _) => _isClosing = true;
     }
 
@@ -139,15 +149,19 @@ public sealed partial class WelcomeWindow : Window
         selectedPath = Path.GetFullPath(selectedPath);
         _viewModel.SelectedPath = selectedPath;
         _viewModel.BeginLoad(withDependencies);
+        lock (_progressSync)
+            _pendingProgress = null;
+        _progressTimer.Start();
 
         try
         {
             FastFileOpenMode mode = withDependencies
                 ? new ZonePlan(FastFileOpenProfiles.ResolveForTarget(selectedPath))
                 : Isolated.Instance;
-            var service = new FastFileDocumentService();
+            var service = new FastFileDocumentService(QueueProgress);
             var request = new FastFileDocumentOpenRequest(selectedPath, mode);
             FastFileWorkspace? workspace = await Task.Run(() => service.Open(request));
+            ApplyPendingProgress();
             try
             {
                 if (_isClosing)
@@ -170,6 +184,31 @@ public sealed partial class WelcomeWindow : Window
             if (!_isClosing)
                 _viewModel.FailLoad(exception);
         }
+        finally
+        {
+            _progressTimer.Stop();
+            lock (_progressSync)
+                _pendingProgress = null;
+        }
+    }
+
+    private void QueueProgress(XAssetLoadProgress progress)
+    {
+        lock (_progressSync)
+            _pendingProgress = progress;
+    }
+
+    private void ApplyPendingProgress()
+    {
+        XAssetLoadProgress? progress;
+        lock (_progressSync)
+        {
+            progress = _pendingProgress;
+            _pendingProgress = null;
+        }
+
+        if (progress is { } value)
+            _viewModel.ReportProgress(value);
     }
 
     private void SaveRecentFastFile(string path)

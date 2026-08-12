@@ -70,7 +70,8 @@ public static class DbLoadPlanExecutor
                         new XZoneInfo(
                             request.ZoneInfo.Name,
                             request.ZoneInfo.AllocFlags,
-                            XZoneFlags.None));
+                            XZoneFlags.None),
+                        captureZoneObject: request.IsTarget);
                     loadedZones.Add(loaded);
                     onZoneLoaded?.Invoke(request, loaded);
                     if (request.IsTarget)

@@ -132,7 +132,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
     {
         public MenuRow(MenuDefAsset baseline)
         {
-            Current = new MenuGraphClone(false).CloneMenu(baseline);
+            Current = baseline;
             Identity = MenuDocumentIdentity.Create(Current);
         }
 
@@ -144,7 +144,7 @@ public sealed partial class MenuEditingCoordinator : IDisposable
     {
         public MenuFileRow(MenuFileAsset baseline)
         {
-            Current = MenuAssetProjector.Clone(baseline);
+            Current = baseline;
             Identity = MenuFileDocumentIdentity.Create(Current);
         }
 

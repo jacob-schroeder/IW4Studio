@@ -120,23 +120,28 @@ internal sealed class ZoneObjectCaptureBridge
         if (XPointerCodec.GetType(value) != PointerType.Offset)
             return;
 
-        CaptureOccurrence[] candidates = FindPointerOccurrences(cell);
-        if (candidates.Length == 0)
-            return;
-
         if (!XPointerCodec.TryDecodeBlockAddress(value, out XBlockAddress target))
             return;
-        foreach (CaptureOccurrence occurrence in candidates)
+
+        if (cell.BlockType != XFileBlockType.TEMP)
         {
-            try
+            if (_pointerOccurrences.TryGetValue(
+                    new PhysicalCell(cell, 1),
+                    out CaptureOccurrence occurrence))
             {
-                _capture.BindInlineTarget(occurrence, target, pendingAlignment, EpochForDestination(target));
-                return;
+                TryBindObservedPointer(occurrence, target, pendingAlignment);
             }
-            catch (InvalidDataException)
+            return;
+        }
+
+        foreach (long epoch in _activeTempEpochs)
+        {
+            if (_pointerOccurrences.TryGetValue(
+                    new PhysicalCell(cell, epoch),
+                    out CaptureOccurrence occurrence) &&
+                TryBindObservedPointer(occurrence, target, pendingAlignment))
             {
-                // A cell can subsequently be rewritten to canonical runtime
-                // data. Only the original inline/insert occurrence is bound.
+                return;
             }
         }
     }
@@ -203,10 +208,39 @@ internal sealed class ZoneObjectCaptureBridge
 
     private CaptureOccurrence FindPointerOccurrence(XBlockAddress address)
     {
-        CaptureOccurrence[] matches = FindPointerOccurrences(address);
-        return matches.Length == 1
-            ? matches[0]
-            : throw new InvalidDataException($"Pointer cell {address} has no unique captured source occurrence in its active lifetime.");
+        if (address.BlockType != XFileBlockType.TEMP)
+        {
+            return _pointerOccurrences.TryGetValue(
+                    new PhysicalCell(address, 1),
+                    out CaptureOccurrence occurrence)
+                ? occurrence
+                : throw new InvalidDataException(
+                    $"Pointer cell {address} has no unique captured source occurrence in its active lifetime.");
+        }
+
+        CaptureOccurrence match = default;
+        bool found = false;
+        foreach (long epoch in _activeTempEpochs)
+        {
+            if (!_pointerOccurrences.TryGetValue(
+                    new PhysicalCell(address, epoch),
+                    out CaptureOccurrence occurrence))
+            {
+                continue;
+            }
+            if (found)
+            {
+                throw new InvalidDataException(
+                    $"Pointer cell {address} has no unique captured source occurrence in its active lifetime.");
+            }
+            match = occurrence;
+            found = true;
+        }
+
+        return found
+            ? match
+            : throw new InvalidDataException(
+                $"Pointer cell {address} has no unique captured source occurrence in its active lifetime.");
     }
 
     private CaptureOccurrence FindPointerOccurrence(XBlockAddress address, long epoch)
@@ -218,16 +252,26 @@ internal sealed class ZoneObjectCaptureBridge
                 $"Pointer cell {address} has no captured source occurrence in TEMP epoch {epoch}.");
     }
 
-    private CaptureOccurrence[] FindPointerOccurrences(XBlockAddress address)
+    private bool TryBindObservedPointer(
+        CaptureOccurrence occurrence,
+        XBlockAddress target,
+        int pendingAlignment)
     {
-        IEnumerable<long> epochs = address.BlockType == XFileBlockType.TEMP
-            ? _activeTempEpochs
-            : [1L];
-        return epochs
-            .Select(epoch => new PhysicalCell(address, epoch))
-            .Where(key => _pointerOccurrences.TryGetValue(key, out _))
-            .Select(key => _pointerOccurrences[key])
-            .ToArray();
+        try
+        {
+            _capture.BindInlineTarget(
+                occurrence,
+                target,
+                pendingAlignment,
+                EpochForDestination(target));
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            // A cell can subsequently be rewritten to canonical runtime
+            // data. Only the original inline/insert occurrence is bound.
+            return false;
+        }
     }
 
     private CaptureOccurrence ResolvePointerOccurrence(

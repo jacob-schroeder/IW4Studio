@@ -19,7 +19,10 @@ public sealed class ZoneObjectFile
         IEnumerable<BoundarySymbol> boundaries,
         IEnumerable<PointerRelocation> relocations)
     {
-        DecodedTape = Array.AsReadOnly(decodedTape.ToArray());
+        // ZoneObjectCapture transfers its private frozen tape. No mutable
+        // owner remains after Freeze, so an additional full-tape copy would
+        // only duplicate immutable source-layout storage.
+        DecodedTape = Array.AsReadOnly(decodedTape);
         DeclaredLayout = new XFile(declaredLayout.Size, declaredLayout.ExternalSize, declaredLayout.BlockSizes);
         AllocationLedger = Array.AsReadOnly(allocationLedger.ToArray());
         TempLifetimes = Array.AsReadOnly(tempLifetimes.ToArray());

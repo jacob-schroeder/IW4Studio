@@ -58,8 +58,6 @@ public static class DbDefaultZoneDependencyLoader
             });
         LinkAssetPool frozenTargetAssets = targetAssets ?? throw new InvalidDataException(
             "The dependency plan completed without freezing its target providers.");
-        LinkAssetPool dependencyAssets =
-            session.FreezeLinkAssetPoolExcluding(execution.Target);
         DbZonePlanRequest[] loadedRequests = plan.RequestsInScope
             .Where(request => request.IsLoad && request.FileExists)
             .ToArray();
@@ -83,7 +81,6 @@ public static class DbDefaultZoneDependencyLoader
         return new DbDependencyLoadExecution(
             Array.AsReadOnly(zones),
             frozenTargetAssets,
-            dependencyAssets,
             Array.AsReadOnly(plan.RequestsInScope
                 .Where(request => request.IsLoad)
                 .Select(request => new DbDependencyRequestStatus(
@@ -116,5 +113,4 @@ public sealed record DbDependencyLoadedZone(
 public sealed record DbDependencyLoadExecution(
     IReadOnlyList<DbDependencyLoadedZone> LoadedZones,
     LinkAssetPool TargetAssets,
-    LinkAssetPool DependencyAssets,
     IReadOnlyList<DbDependencyRequestStatus> Requests);

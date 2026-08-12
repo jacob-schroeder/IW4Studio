@@ -135,7 +135,10 @@ public sealed class XAssetLoadSession
             sourceBlocks,
             nativePoolCopyBytes,
             nativePoolCopyCapturedLength);
-        contributions.Add(providerId);
+        XAssetProviderContribution provider = AssetPool.GetProvider(
+            entry.Address,
+            providerId);
+        contributions.Add(provider);
         _registrationSink.RegisterProvider(AssetPool, entry.Address, providerId);
         return entry;
     }

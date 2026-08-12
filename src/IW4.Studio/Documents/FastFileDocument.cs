@@ -19,15 +19,11 @@ public sealed class FastFileDocument
     internal FastFileDocument(
         FastFileDocumentOpenRequest request,
         WorkspaceZone targetZone,
-        ZoneLinkRequest initialLinkRequest,
-        LinkAssetPool targetAssets,
-        LinkAssetPool dependencyAssets)
+        ZoneLinkRequest initialLinkRequest)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(targetZone);
         ArgumentNullException.ThrowIfNull(initialLinkRequest);
-        ArgumentNullException.ThrowIfNull(targetAssets);
-        ArgumentNullException.ThrowIfNull(dependencyAssets);
 
         _request = request;
         if (!targetZone.IsTarget)
@@ -35,16 +31,12 @@ public sealed class FastFileDocument
         _sourcePath = targetZone.PhysicalPath;
         _loadedZone = targetZone.LoadResult;
         InitialLinkRequest = initialLinkRequest;
-        TargetAssets = targetAssets;
-        DependencyAssets = dependencyAssets;
     }
 
     internal FastFileDocument(ZoneLinkRequest initialLinkRequest)
     {
         InitialLinkRequest = initialLinkRequest ??
             throw new ArgumentNullException(nameof(initialLinkRequest));
-        TargetAssets = initialLinkRequest.Assets;
-        DependencyAssets = new LinkAssetPool([]);
     }
 
     public bool IsBlank => _loadedZone is null;
@@ -63,10 +55,6 @@ public sealed class FastFileDocument
     /// <summary>The immutable semantic state captured at open or blank creation.</summary>
     public ZoneLinkRequest InitialLinkRequest { get; }
 
-    internal LinkAssetPool TargetAssets { get; }
-
-    internal LinkAssetPool DependencyAssets { get; }
-
     internal string? SourcePathOrNull => _sourcePath;
 
     /// <summary>
@@ -74,5 +62,6 @@ public sealed class FastFileDocument
     /// It is not a canonical asset-link input.
     /// </summary>
     public ZoneObjectFile ZoneObjectFile => _loadedZone?.ZoneObjectFile ??
-        throw new InvalidOperationException("A blank fastfile document has no source-layout object.");
+        throw new InvalidOperationException(
+            "A blank or runtime-only dependency document has no source-layout object.");
 }

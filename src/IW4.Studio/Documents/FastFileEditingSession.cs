@@ -12,7 +12,6 @@ public sealed class FastFileEditingSession : IDisposable
 {
     private readonly object _gate = new();
     private readonly LinkAssetPool _targetBaseAssets;
-    private readonly LinkAssetPool _dependencyBaseAssets;
     private LinkAssetPool _authoredAssets;
     private IReadOnlySet<AssetKey> _maskedTargetBaseProviderKeys =
         new HashSet<AssetKey>();
@@ -29,16 +28,17 @@ public sealed class FastFileEditingSession : IDisposable
         workspace.ThrowIfDisposed();
         Workspace = workspace;
         Document = new TargetZoneDocument(workspace);
-        _targetBaseAssets = workspace.Document.TargetAssets;
-        _dependencyBaseAssets = workspace.Document.DependencyAssets;
+        _targetBaseAssets = workspace.InitialLinkRequest.Assets;
         _authoredAssets = workspace.InitialLinkRequest.Assets.WithoutProviders(
             workspace.InitialLinkRequest.Assets.Providers.Select(provider => provider.Key));
         _revision = new FastFileSaveRevision(
             Revision: 0,
             SourcePath: workspace.Document.SourcePathOrNull,
             LinkRequest: workspace.InitialLinkRequest);
+        AssetAuthoringAdapterRegistry adapters =
+            AssetAuthoringAdapterRegistry.CreateDefault();
         foreach (WorkspaceAssetCatalogEntry entry in Document.Rows)
-            AddInitialDraft(entry);
+            AddInitialDraft(entry, adapters);
         workspace.ClaimEditingSession(this);
     }
 
@@ -164,7 +164,12 @@ public sealed class FastFileEditingSession : IDisposable
                     provider.Key.NormalizedName,
                     normalized,
                     StringComparison.Ordinal));
-            return targetCollision || poolCollision
+            bool dependencyCollision = Workspace.AssetCatalog.DependencyEntries
+                .Any(entry =>
+                    entry.ProviderZone?.IsTarget != true &&
+                    CanonicalAssetFamily.FromSerializedType(entry.AssetType) == family &&
+                    string.Equals(entry.NormalizedName, normalized, StringComparison.Ordinal));
+            return targetCollision || poolCollision || dependencyCollision
                 ? $"An asset named '{name}' already exists in the workspace."
                 : null;
         }
@@ -487,11 +492,9 @@ public sealed class FastFileEditingSession : IDisposable
         ZoneLinkRequest previous = _revision.LinkRequest;
         LinkAssetPool targetBaseAssets = _targetBaseAssets.WithoutProviders(
             maskedTargetBaseProviderKeys);
-        LinkAssetPool baseAssets = _dependencyBaseAssets
-            .WithHighestPrecedencePool(targetBaseAssets);
         LinkAssetPool effectiveAuthoredAssets = authoredAssets.WithoutProviders(
             maskedTargetBaseProviderKeys);
-        LinkAssetPool assets = baseAssets.WithHighestPrecedencePool(
+        LinkAssetPool assets = targetBaseAssets.WithHighestPrecedencePool(
             effectiveAuthoredAssets);
         var request = new ZoneLinkRequest(
             assets,
@@ -532,12 +535,15 @@ public sealed class FastFileEditingSession : IDisposable
         RebuildChangeSet();
     }
 
-    private void AddInitialDraft(WorkspaceAssetCatalogEntry entry)
+    private void AddInitialDraft(
+        WorkspaceAssetCatalogEntry entry,
+        AssetAuthoringAdapterRegistry adapters)
     {
+        ArgumentNullException.ThrowIfNull(adapters);
         if (entry.TargetRowIdentity is not { } identity ||
             entry.Access != WorkspaceAssetAccess.Editable ||
             entry.Definition is null ||
-            !AssetAuthoringAdapterRegistry.CreateDefault().TryGetAdapter(
+            !adapters.TryGetAdapter(
                 entry.AssetType,
                 out IAssetAuthoringAdapter? adapter))
         {
@@ -605,13 +611,18 @@ public sealed class FastFileEditingSession : IDisposable
                 "A hosted editor state requires a target row.");
             _saved = adapter.CreateDraft(entry.Definition ?? throw new InvalidDataException(
                 "A hosted editor state requires a detached definition."));
-            _current = adapter.CloneDraft(_saved);
+            // Stored drafts are immutable snapshots: every outward edit and
+            // definition capture clones before use, while SetCurrent replaces
+            // rather than mutates. Share the identical initial state until the
+            // first authored replacement is published.
+            _current = _saved;
         }
 
         public WorkspaceAssetCatalogEntry Entry { get; }
         public IAssetAuthoringAdapter Adapter { get; }
         public TargetZoneRowIdentity Identity { get; }
-        public bool IsChanged => !Adapter.SemanticallyEquals(_saved, _current);
+        public bool IsChanged => !ReferenceEquals(_saved, _current) &&
+            !Adapter.SemanticallyEquals(_saved, _current);
 
         public object CloneCurrent() => Adapter.CloneDraft(_current);
         public object CloneSaved() => Adapter.CloneDraft(_saved);
@@ -639,7 +650,7 @@ public sealed class FastFileEditingSession : IDisposable
 
         public void AcknowledgeSaved()
         {
-            _saved = Adapter.CloneDraft(_current);
+            _saved = _current;
             _firstChangedRevision = null;
             _lastChangedRevision = 0;
         }

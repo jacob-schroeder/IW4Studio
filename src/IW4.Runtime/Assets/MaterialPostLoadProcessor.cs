@@ -20,8 +20,17 @@ public static class MaterialPostLoadProcessor
     public static void RebuildDrawSurfs(XAssetPool assetPool)
     {
         ArgumentNullException.ThrowIfNull(assetPool);
+        RebuildDrawSurfs(assetPool, assetPool.Entries);
+    }
 
-        XAssetPoolEntry[] materialEntries = assetPool.Entries
+    internal static void RebuildDrawSurfs(
+        XAssetPool assetPool,
+        IReadOnlyCollection<XAssetPoolEntry> activeEntries)
+    {
+        ArgumentNullException.ThrowIfNull(assetPool);
+        ArgumentNullException.ThrowIfNull(activeEntries);
+
+        XAssetPoolEntry[] materialEntries = activeEntries
             .Where(entry => entry.AssetType == XAssetType.Material &&
                             !entry.IsReferencePlaceholder &&
                             entry.Asset is MaterialAsset)

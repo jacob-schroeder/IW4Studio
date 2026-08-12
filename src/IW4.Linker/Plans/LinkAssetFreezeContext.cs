@@ -10,7 +10,6 @@ internal sealed class LinkAssetFrozenIdentityCatalog
 {
     private readonly Dictionary<ImportSymbolKey, LinkStorageSymbol> _storage;
     private readonly Dictionary<ImportSymbolKey, LinkStorageSymbol> _xstrings;
-    private readonly Dictionary<ImportSymbolKey, byte[]> _xstringTemplates;
     private readonly Dictionary<ImportSymbolKey, LinkAliasCellSymbol> _aliasCells;
     private readonly Dictionary<LinkStorageSymbol, LinkStorageSymbol>
         _techniquePassTables;
@@ -19,7 +18,6 @@ internal sealed class LinkAssetFrozenIdentityCatalog
     {
         _storage = new(ImportSymbolKeyComparer.Instance);
         _xstrings = new(ImportSymbolKeyComparer.Instance);
-        _xstringTemplates = new(ImportSymbolKeyComparer.Instance);
         _aliasCells = new(ImportSymbolKeyComparer.Instance);
         _techniquePassTables = new(ReferenceEqualityComparer.Instance);
     }
@@ -31,8 +29,6 @@ internal sealed class LinkAssetFrozenIdentityCatalog
             _storage.Add(key, value);
         foreach ((ImportSymbolKey key, LinkStorageSymbol value) in source._xstrings)
             _xstrings.Add(key, value);
-        foreach ((ImportSymbolKey key, byte[] value) in source._xstringTemplates)
-            _xstringTemplates.Add(key, value.ToArray());
         foreach ((ImportSymbolKey key, LinkAliasCellSymbol value) in source._aliasCells)
             _aliasCells.Add(key, value);
         foreach ((LinkStorageSymbol key, LinkStorageSymbol value) in source._techniquePassTables)
@@ -50,21 +46,6 @@ internal sealed class LinkAssetFrozenIdentityCatalog
             MergeIdentity(merged._storage, key, value, "direct storage");
         foreach ((ImportSymbolKey key, LinkStorageSymbol value) in other._xstrings)
             MergeIdentity(merged._xstrings, key, value, "XString storage");
-        foreach ((ImportSymbolKey key, byte[] value) in other._xstringTemplates)
-        {
-            if (merged._xstringTemplates.TryGetValue(key, out byte[]? existing))
-            {
-                if (!existing.AsSpan().SequenceEqual(value))
-                {
-                    throw new InvalidDataException(
-                        "Composed pools assign competing text to one imported XString identity.");
-                }
-            }
-            else
-            {
-                merged._xstringTemplates.Add(key, value.ToArray());
-            }
-        }
         foreach ((ImportSymbolKey key, LinkAliasCellSymbol value) in other._aliasCells)
             MergeIdentity(merged._aliasCells, key, value, "alias-cell storage");
         foreach ((LinkStorageSymbol key, LinkStorageSymbol value) in other._techniquePassTables)
@@ -95,11 +76,6 @@ internal sealed class LinkAssetFrozenIdentityCatalog
         [NotNullWhen(true)] out LinkStorageSymbol? storage) =>
         _xstrings.TryGetValue(key, out storage);
 
-    public bool TryGetXStringTemplate(
-        ImportSymbolKey key,
-        [NotNullWhen(true)] out byte[]? bytes) =>
-        _xstringTemplates.TryGetValue(key, out bytes);
-
     public bool TryGetAliasCell(
         ImportSymbolKey key,
         [NotNullWhen(true)] out LinkAliasCellSymbol? alias) =>
@@ -108,14 +84,8 @@ internal sealed class LinkAssetFrozenIdentityCatalog
     public void AddStorage(ImportSymbolKey key, LinkStorageSymbol storage) =>
         _storage.Add(key, storage);
 
-    public void AddXString(
-        ImportSymbolKey key,
-        LinkStorageSymbol storage,
-        ReadOnlySpan<byte> sourceTemplate)
-    {
+    public void AddXString(ImportSymbolKey key, LinkStorageSymbol storage) =>
         _xstrings.Add(key, storage);
-        _xstringTemplates.Add(key, sourceTemplate.ToArray());
-    }
 
     public void AddAliasCell(ImportSymbolKey key, LinkAliasCellSymbol alias) =>
         _aliasCells.Add(key, alias);
@@ -215,12 +185,7 @@ internal sealed class LinkAssetFreezeContext
                 _catalog.AddStorage(key, storage.Symbol);
         }
         foreach ((ImportSymbolKey key, LinkStorageSymbol storage) in _xstrings)
-        {
-            _catalog.AddXString(
-                key,
-                storage,
-                _xstringTemplates[key]);
-        }
+            _catalog.AddXString(key, storage);
         foreach ((ImportSymbolKey key, LinkAliasCellSymbol alias) in _aliasCells)
             _catalog.AddAliasCell(key, alias);
         foreach ((LinkStorageSymbol technique, LinkStorageSymbol passTable) in
@@ -450,6 +415,46 @@ internal sealed class LinkAssetFreezeContext
         {
             _capturedAllocations.Add(storage, allocation);
         }
+    }
+
+    internal void ValidateReusedStorage(
+        ILinkAssetImportResolver resolver,
+        AllocationReference captured,
+        LinkStorageSymbol reused,
+        string fieldPath)
+    {
+        EnsureOpen();
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(reused);
+        AllocationEvent allocation = captured.Symbol.Allocation;
+        LinkStorageDefinition definition = reused.Definition;
+        LinkStorageSymbol capturedIdentity = reused;
+        if (_authoredStorageBaselines.TryGetValue(
+                reused,
+                out LinkStorageView baseline))
+        {
+            if (baseline.Addend != 0 ||
+                baseline.Length != definition.ByteLength)
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} reused an authored storage view with a different captured shape.");
+            }
+            capturedIdentity = baseline.Storage;
+        }
+
+        if (allocation.DestinationBlock != definition.Block ||
+            captured.Addend != 0 ||
+            allocation.Length != definition.ByteLength)
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} reused one semantic node through a different captured storage allocation.");
+        }
+
+        RememberCapturedStorage(
+            KeyFor(resolver, captured.Symbol.Occurrence),
+            capturedIdentity,
+            captured.Symbol,
+            fieldPath);
     }
 
     private LinkStorageTarget FreezeAuthoredStorage(
@@ -1022,10 +1027,19 @@ internal sealed class LinkAssetFreezeContext
                 fieldPath);
         }
 
-        if (_xstringTemplates.TryGetValue(key, out byte[]? existingBytes) ||
-            _catalog.TryGetXStringTemplate(key, out existingBytes))
+        if (_xstringTemplates.TryGetValue(key, out byte[]? activeBytes))
         {
-            if (!existingBytes.AsSpan().SequenceEqual(bytes))
+            if (!activeBytes.AsSpan().SequenceEqual(bytes))
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} assigns competing text to one captured XString identity.");
+            }
+        }
+        else if (_catalog.TryGetXString(
+                     key,
+                     out LinkStorageSymbol? importedStorage))
+        {
+            if (!importedStorage.Definition.SourceTemplate.Span.SequenceEqual(bytes))
             {
                 throw new InvalidDataException(
                     $"{fieldPath} assigns competing text to one captured XString identity.");
@@ -1083,14 +1097,9 @@ internal sealed class LinkAssetFreezeContext
         byte[] bytes,
         string fieldPath)
     {
-        if (_catalog.TryGetXStringTemplate(key, out byte[]? importedBytes) &&
-            importedBytes.AsSpan().SequenceEqual(bytes))
+        if (_catalog.TryGetXString(key, out LinkStorageSymbol? imported) &&
+            imported.Definition.SourceTemplate.Span.SequenceEqual(bytes))
         {
-            if (!_catalog.TryGetXString(key, out LinkStorageSymbol? imported))
-            {
-                throw new InvalidDataException(
-                    $"{fieldPath} imported XString identity has no frozen storage symbol.");
-            }
             return imported;
         }
 
@@ -1209,7 +1218,7 @@ internal sealed class LinkAssetFreezeContext
     private sealed class ImportedStorage
     {
         private readonly byte[] _bytes;
-        private readonly bool[] _written;
+        private readonly List<WrittenRange> _writtenRanges = [];
         private readonly List<LinkOperation> _operations = [];
         private readonly Dictionary<int, LinkOperation> _operationsByCell = [];
         private readonly bool _isFrozen;
@@ -1227,7 +1236,6 @@ internal sealed class LinkAssetFreezeContext
             }
 
             _bytes = new byte[allocation.Length];
-            _written = new bool[allocation.Length];
             Symbol = LinkStorageSymbol.CreatePendingSourceBytes(
                 allocation.DestinationBlock,
                 allocation.Length,
@@ -1246,7 +1254,6 @@ internal sealed class LinkAssetFreezeContext
 
             Symbol = frozen;
             _bytes = frozen.Definition.SourceTemplate.ToArray();
-            _written = Array.Empty<bool>();
             _isFrozen = true;
         }
 
@@ -1276,15 +1283,10 @@ internal sealed class LinkAssetFreezeContext
             {
                 return false;
             }
-            for (int index = 0; index < length; index++)
-            {
-                int source = checked(addend + index);
-                if (!_written[source] ||
-                    _bytes[source] != definition.SourceTemplate.Span[index])
-                {
-                    return false;
-                }
-            }
+            if (!IsRangeWritten(addend, length) ||
+                !_bytes.AsSpan(addend, length)
+                    .SequenceEqual(definition.SourceTemplate.Span))
+                return false;
 
             int end = checked(addend + length);
             bool whole = addend == 0 && length == _bytes.Length;
@@ -1428,23 +1430,7 @@ internal sealed class LinkAssetFreezeContext
                 return;
             }
 
-            for (int index = 0; index < sourceTemplate.Length; index++)
-            {
-                int destination = checked(addend + index);
-                byte value = sourceTemplate[index];
-                if (_written[destination])
-                {
-                    if (_bytes[destination] != value)
-                    {
-                        throw new InvalidDataException(
-                            $"{fieldPath} provides conflicting semantic bytes for one captured storage identity.");
-                    }
-                    continue;
-                }
-
-                _bytes[destination] = value;
-                _written[destination] = true;
-            }
+            ContributeBytes(addend, sourceTemplate, fieldPath);
 
             if (operations is not null)
             {
@@ -1481,6 +1467,64 @@ internal sealed class LinkAssetFreezeContext
             if (_operations.Any(existing => Equivalent(existing, operation)))
                 return;
             _operations.Add(operation);
+        }
+
+        private void ContributeBytes(
+            int addend,
+            ReadOnlySpan<byte> sourceTemplate,
+            string fieldPath)
+        {
+            if (addend < 0 || addend > _bytes.Length - sourceTemplate.Length)
+                throw new InvalidDataException($"{fieldPath} lies outside captured storage.");
+            if (sourceTemplate.Length == 0)
+                return;
+
+            int end = checked(addend + sourceTemplate.Length);
+            foreach (WrittenRange range in _writtenRanges)
+            {
+                if (range.End <= addend)
+                    continue;
+                if (range.Start >= end)
+                    break;
+
+                int overlapStart = Math.Max(addend, range.Start);
+                int overlapEnd = Math.Min(end, range.End);
+                int overlapLength = overlapEnd - overlapStart;
+                if (!_bytes.AsSpan(overlapStart, overlapLength).SequenceEqual(
+                        sourceTemplate.Slice(overlapStart - addend, overlapLength)))
+                {
+                    throw new InvalidDataException(
+                        $"{fieldPath} provides conflicting semantic bytes for one captured storage identity.");
+                }
+            }
+
+            sourceTemplate.CopyTo(_bytes.AsSpan(addend, sourceTemplate.Length));
+
+            int insertionIndex = 0;
+            while (insertionIndex < _writtenRanges.Count &&
+                   _writtenRanges[insertionIndex].End < addend)
+            {
+                insertionIndex++;
+            }
+
+            int mergedStart = addend;
+            int mergedEnd = end;
+            while (insertionIndex < _writtenRanges.Count &&
+                   _writtenRanges[insertionIndex].Start <= mergedEnd)
+            {
+                WrittenRange range = _writtenRanges[insertionIndex];
+                mergedStart = Math.Min(mergedStart, range.Start);
+                mergedEnd = Math.Max(mergedEnd, range.End);
+                _writtenRanges.RemoveAt(insertionIndex);
+            }
+            _writtenRanges.Insert(insertionIndex, new WrittenRange(mergedStart, mergedEnd));
+        }
+
+        private bool IsRangeWritten(int addend, int length)
+        {
+            int end = checked(addend + length);
+            return length == 0 || _writtenRanges.Any(range =>
+                range.Start <= addend && range.End >= end);
         }
 
         private static bool TryGetCell(
@@ -1625,7 +1669,7 @@ internal sealed class LinkAssetFreezeContext
             if (_isFrozen)
                 return;
 
-            int missing = Array.FindIndex(_written, written => !written);
+            int missing = FirstMissingByte();
             if (missing >= 0)
             {
                 throw new NotSupportedException(
@@ -1634,6 +1678,20 @@ internal sealed class LinkAssetFreezeContext
 
             Symbol.FreezeSourceBytes(_bytes, _operations);
         }
+
+        private int FirstMissingByte()
+        {
+            int covered = 0;
+            foreach (WrittenRange range in _writtenRanges)
+            {
+                if (range.Start > covered)
+                    return covered;
+                covered = Math.Max(covered, range.End);
+            }
+            return covered == _bytes.Length ? -1 : covered;
+        }
+
+        private readonly record struct WrittenRange(int Start, int End);
     }
 
 }
@@ -1736,6 +1794,41 @@ internal sealed class LinkAssetFreezeScope
             requireCompleteAllocation: true,
             allowStandaloneDetach: false,
             fieldPath);
+
+    public void ValidateReusedStorage(
+        XPointerReference pointer,
+        LinkStorageSymbol reused,
+        string fieldPath)
+    {
+        ArgumentNullException.ThrowIfNull(reused);
+        if (_resolver is null)
+        {
+            if (!IsAuthoredDetached && pointer.CellAddress is not null)
+            {
+                throw new NotSupportedException(
+                    $"{fieldPath} retains an imported pointer cell but has no capture resolver.");
+            }
+            return;
+        }
+        if (pointer.CellAddress is null)
+            return;
+
+        PointerRelocation relocation = _resolver.ResolvePointer(
+            _importedDefinition,
+            pointer,
+            fieldPath);
+        if (relocation.Target is not AllocationReference captured)
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} reused semantic storage through a non-storage captured pointer.");
+        }
+
+        _context.ValidateReusedStorage(
+            _resolver,
+            captured,
+            reused,
+            fieldPath);
+    }
 
     public LinkStorageTarget FreezeStorageView(
         XPointerReference pointer,

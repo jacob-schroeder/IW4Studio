@@ -203,6 +203,22 @@ public sealed class XAssetPool
         return false;
     }
 
+    internal XAssetProviderContribution GetProvider(
+        XAssetPoolAddress address,
+        XAssetProviderId providerId)
+    {
+        if (!TryGetSlot(address, out XAssetSlot? slot) || slot is null)
+        {
+            throw new InvalidDataException(
+                $"XAsset pool address {address} has no registered slot.");
+        }
+
+        XAssetProviderContribution? provider = slot.Providers
+            .SingleOrDefault(candidate => candidate.Id == providerId);
+        return provider ?? throw new InvalidDataException(
+            $"XAsset pool slot {address} has no provider {providerId}.");
+    }
+
     public bool TryResolve<TAsset>(int rawPointer, XAssetType expectedType, out TAsset? asset)
         where TAsset : BaseAsset
     {

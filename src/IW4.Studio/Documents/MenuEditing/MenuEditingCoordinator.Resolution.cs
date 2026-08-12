@@ -20,16 +20,22 @@ public sealed partial class MenuEditingCoordinator
         if (definitions.Length == 0)
         {
             LinkAssetPool liveAssets = _session.LinkRequest.Assets;
+            var initialProviders = new HashSet<LinkAssetProvider>(
+                _session.Workspace.InitialLinkRequest.Assets.Providers,
+                ReferenceEqualityComparer.Instance);
             MenuDefAsset? provider = _session.Document.Rows
                 .Concat(_session.Workspace.AssetCatalog.DependencyEntries)
                 .Where(entry => entry.AssetType == XAssetType.Menu &&
-                    entry.Access == WorkspaceAssetAccess.ReadOnly)
+                    entry.Access == WorkspaceAssetAccess.ReadOnly &&
+                    (entry.ProviderZone?.IsTarget != true ||
+                        entry.Definition is { } targetProvider &&
+                        liveAssets.Providers.Any(candidate =>
+                            candidate.Key == AssetKey.FromDefinition(targetProvider) &&
+                            !candidate.IsReferencePlaceholder &&
+                            initialProviders.Contains(candidate))))
                 .Select(entry => entry.Definition as MenuDefAsset)
                 .FirstOrDefault(menu => menu is not null &&
-                    Normalize(menu.Window.Name) == normalizedName &&
-                    liveAssets.Providers.Any(candidate =>
-                        candidate.Key == AssetKey.FromDefinition(menu) &&
-                        !candidate.IsReferencePlaceholder));
+                    Normalize(menu.Window.Name) == normalizedName);
             if (provider is not null)
             {
                 MenuEditorSnapshot providerSnapshot = MenuAssetProjector.Project(

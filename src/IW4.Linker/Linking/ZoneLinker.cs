@@ -102,16 +102,20 @@ public sealed class ZoneLinker
         ValidateRoots(request.Roots);
         ProviderSelection providerSelection =
             SelectProviders(request.Assets.Providers);
+        var externalProviders = new Dictionary<AssetKey, ProviderBinding>();
         ResolvedRoot[] resolvedRoots = ResolveRoots(
             request,
-            providerSelection);
+            providerSelection,
+            externalProviders);
         IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities =
             BindRootAuthorities(resolvedRoots);
         IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure =
             ResolveDependencyClosure(
                 resolvedRoots,
                 providerSelection,
-                rootAuthorities);
+                rootAuthorities,
+                externalProviders,
+                request.Assets.Providers.Count);
         AssetRow[] assetRows = BuildAssetRows(
             request.Roots,
             resolvedRoots,
@@ -294,9 +298,9 @@ public sealed class ZoneLinker
 
     private static ResolvedRoot[] ResolveRoots(
         ZoneLinkRequest request,
-        ProviderSelection providerSelection)
+        ProviderSelection providerSelection,
+        IDictionary<AssetKey, ProviderBinding> externalProviders)
     {
-        var externalProviders = new Dictionary<AssetKey, ProviderBinding>();
         var result = new ResolvedRoot[request.Roots.Count];
 
         for (int index = 0; index < request.Roots.Count; index++)
@@ -434,9 +438,11 @@ public sealed class ZoneLinker
 
     private static IReadOnlyDictionary<DependencyEdge, ProviderBinding>
         ResolveDependencyClosure(
-            IEnumerable<ResolvedRoot> roots,
-            ProviderSelection providerSelection,
-            IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities)
+        IEnumerable<ResolvedRoot> roots,
+        ProviderSelection providerSelection,
+        IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities,
+        IDictionary<AssetKey, ProviderBinding> externalProviders,
+        int poolProviderCount)
     {
         var edges = new Dictionary<DependencyEdge, ProviderBinding>();
         var complete = new HashSet<ProviderSymbol>();
@@ -452,6 +458,8 @@ public sealed class ZoneLinker
                     provider,
                     providerSelection,
                     rootAuthorities,
+                    externalProviders,
+                    poolProviderCount,
                     edges,
                     complete,
                     active,
@@ -466,6 +474,8 @@ public sealed class ZoneLinker
         ProviderBinding provider,
         ProviderSelection providerSelection,
         IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities,
+        IDictionary<AssetKey, ProviderBinding> externalProviders,
+        int poolProviderCount,
         Dictionary<DependencyEdge, ProviderBinding> edges,
         ISet<ProviderSymbol> complete,
         ISet<ProviderSymbol> active,
@@ -489,7 +499,9 @@ public sealed class ZoneLinker
                 provider,
                 dependency,
                 providerSelection,
-                rootAuthorities);
+                rootAuthorities,
+                externalProviders,
+                poolProviderCount);
             edges.TryAdd(
                 new DependencyEdge(dependency),
                 dependencyProvider);
@@ -497,6 +509,8 @@ public sealed class ZoneLinker
                 dependencyProvider,
                 providerSelection,
                 rootAuthorities,
+                externalProviders,
+                poolProviderCount,
                 edges,
                 complete,
                 active,
@@ -510,6 +524,8 @@ public sealed class ZoneLinker
                     dependency,
                     providerSelection,
                     rootAuthorities,
+                    externalProviders,
+                    poolProviderCount,
                     out ProviderBinding dependencyProvider))
             {
                 return;
@@ -522,6 +538,8 @@ public sealed class ZoneLinker
                 dependencyProvider,
                 providerSelection,
                 rootAuthorities,
+                externalProviders,
+                poolProviderCount,
                 edges,
                 complete,
                 active,
@@ -533,13 +551,17 @@ public sealed class ZoneLinker
         ProviderBinding owner,
         AssetDependency dependency,
         ProviderSelection providerSelection,
-        IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities)
+        IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities,
+        IDictionary<AssetKey, ProviderBinding> externalProviders,
+        int poolProviderCount)
     {
         if (!TryResolveDependency(
                 owner,
                 dependency,
                 providerSelection,
                 rootAuthorities,
+                externalProviders,
+                poolProviderCount,
                 out ProviderBinding provider))
         {
             throw new InvalidDataException(
@@ -555,11 +577,18 @@ public sealed class ZoneLinker
         AssetDependency dependency,
         ProviderSelection providerSelection,
         IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities,
+        IDictionary<AssetKey, ProviderBinding> externalProviders,
+        int poolProviderCount,
         out ProviderBinding provider)
     {
         if (!rootAuthorities.TryGetValue(dependency.Key, out provider) &&
             !providerSelection.Full.TryGetValue(dependency.Key, out provider) &&
-            !providerSelection.References.TryGetValue(dependency.Key, out provider))
+            !providerSelection.References.TryGetValue(dependency.Key, out provider) &&
+            !TryResolveExternalDependency(
+                dependency,
+                externalProviders,
+                poolProviderCount,
+                out provider))
         {
             return false;
         }
@@ -570,6 +599,45 @@ public sealed class ZoneLinker
                 $"{dependency.FieldPath} on provider {owner.Key} expects " +
                 $"dependency {dependency.Key} as " +
                 $"{dependency.SerializedType}, but its selected provider uses {provider.SerializedType}.");
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveExternalDependency(
+        AssetDependency dependency,
+        IDictionary<AssetKey, ProviderBinding> externalProviders,
+        int poolProviderCount,
+        out ProviderBinding provider)
+    {
+        if (dependency.ExternalSerializedName is not { } serializedName)
+        {
+            provider = default;
+            return false;
+        }
+
+        if (!externalProviders.TryGetValue(dependency.Key, out provider))
+        {
+            provider = new ProviderBinding(
+                new ProviderSymbol(checked(poolProviderCount + externalProviders.Count)),
+                dependency.Key,
+                dependency.SerializedType,
+                CreateExternalPlan(
+                    dependency.Key,
+                    dependency.SerializedType,
+                    serializedName));
+            externalProviders.Add(dependency.Key, provider);
+            return true;
+        }
+
+        if (provider.SerializedType != dependency.SerializedType ||
+            !string.Equals(
+                provider.Plan.OriginalSerializedName,
+                serializedName,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"External dependencies for {dependency.Key} make conflicting serialized claims.");
         }
 
         return true;

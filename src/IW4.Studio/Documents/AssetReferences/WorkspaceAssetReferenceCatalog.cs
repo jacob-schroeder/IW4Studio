@@ -71,17 +71,15 @@ public sealed class WorkspaceAssetReferenceCatalog
             }
         }
 
-        // Retain loader provenance only while that exact dependency remains
-        // a full provider in the current linker revision.
         foreach (WorkspaceAssetCatalogEntry entry in
                  _editingSession.Workspace.AssetCatalog.DependencyEntries)
         {
             if (entry.AssetType == assetType &&
-                TryGetKey(entry, out AssetKey dependencyKey) &&
-                selectedFullProviders.TryGetValue(
-                    dependencyKey,
-                    out LinkAssetProvider? dependencyProvider) &&
-                initialProviders.Contains(dependencyProvider) &&
+                (entry.ProviderZone?.IsTarget != true ||
+                    EntryRetainsInitialTargetProvider(
+                        entry,
+                        selectedFullProviders,
+                        initialProviders)) &&
                 TryCreateCatalogCandidate(entry) is { } candidate)
             {
                 candidates.Add(candidate);
@@ -118,28 +116,32 @@ public sealed class WorkspaceAssetReferenceCatalog
     private static WorkspaceAssetReferenceCandidate? TryCreateTargetCandidate(
         WorkspaceAssetCatalogEntry entry,
         bool hasFullProvider,
-        bool retainsCatalogProvenance)
+        bool retainsInitialProvider)
     {
-        WorkspaceAssetAccess access = hasFullProvider
-            ? entry.Access == WorkspaceAssetAccess.Editable
-                ? WorkspaceAssetAccess.Editable
-                : WorkspaceAssetAccess.ReadOnly
-            : WorkspaceAssetAccess.ContentUnavailable;
-        WorkspaceAssetOrigin origin = entry.Origin is
-            WorkspaceAssetOrigin.TargetResolvedReference or
-            WorkspaceAssetOrigin.TargetUnresolvedReference
-                ? hasFullProvider
-                    ? WorkspaceAssetOrigin.TargetResolvedReference
-                    : WorkspaceAssetOrigin.TargetUnresolvedReference
+        bool targetProviderReference = entry.Origin ==
+                WorkspaceAssetOrigin.TargetResolvedReference &&
+            entry.ProviderZone?.IsTarget == true;
+        bool hasRequiredProvider = targetProviderReference
+            ? retainsInitialProvider
+            : hasFullProvider;
+        bool requiresFullProvider = entry.Origin ==
+                WorkspaceAssetOrigin.TargetOwnedDefinition ||
+            targetProviderReference;
+        WorkspaceAssetAccess access = requiresFullProvider && !hasRequiredProvider
+            ? WorkspaceAssetAccess.ContentUnavailable
+            : entry.Access;
+        WorkspaceAssetOrigin origin = targetProviderReference &&
+            !hasRequiredProvider
+                ? WorkspaceAssetOrigin.TargetUnresolvedReference
                 : entry.Origin;
         return TryCreateCandidate(
             entry.AssetType,
             entry.OriginalName ?? entry.NormalizedName,
             origin,
             access,
-            retainsCatalogProvenance
-                ? entry.ResolvedProviderZone?.LogicalZoneName
-                : null,
+            targetProviderReference && !hasRequiredProvider
+                ? null
+                : entry.ResolvedProviderZone?.LogicalZoneName,
             entry.TargetRowIdentity);
     }
 
@@ -220,6 +222,14 @@ public sealed class WorkspaceAssetReferenceCatalog
             name);
         return true;
     }
+
+    private static bool EntryRetainsInitialTargetProvider(
+        WorkspaceAssetCatalogEntry entry,
+        IReadOnlyDictionary<AssetKey, LinkAssetProvider> selectedFullProviders,
+        IReadOnlySet<LinkAssetProvider> initialProviders) =>
+        TryGetKey(entry, out AssetKey key) &&
+        selectedFullProviders.TryGetValue(key, out LinkAssetProvider? provider) &&
+        initialProviders.Contains(provider);
 
     private static string Normalize(XAssetType assetType, string name) =>
         AssetKey.FromWireName(

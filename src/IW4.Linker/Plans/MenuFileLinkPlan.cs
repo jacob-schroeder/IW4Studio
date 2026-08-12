@@ -115,7 +115,8 @@ internal sealed class MenuFileLinkPlan : AssetLinkPlan
                 row.Pointer.Untyped,
                 row.CanonicalMenu,
                 XAssetType.Menu,
-                $"MenuFile.Menus[{index}]");
+                $"MenuFile.Menus[{index}]",
+                allowExternalReference: freeze.IsAuthoredDetached);
         }
 
         return freeze.FreezeStorage(

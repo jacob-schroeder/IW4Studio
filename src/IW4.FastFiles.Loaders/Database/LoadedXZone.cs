@@ -24,8 +24,8 @@ public sealed record LoadedXZone(
     IReadOnlyList<XAssetLoadResult> LoadedAssets,
     byte[] ZoneBytes,
     IReadOnlyList<string> Warnings,
-    ZoneObjectFile ZoneObjectFile,
-    ILinkAssetImportResolver LinkAssetImportResolver)
+    ZoneObjectFile? ZoneObjectFile,
+    ILinkAssetImportResolver? LinkAssetImportResolver)
 {
     public IGfxImagePayloadResolver ImagePayloadResolver { get; init; } =
         UnavailableGfxImagePayloadResolver.Instance;

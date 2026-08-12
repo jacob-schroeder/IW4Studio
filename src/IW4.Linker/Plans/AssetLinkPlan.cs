@@ -152,7 +152,8 @@ internal abstract class AssetLinkPlan
         BaseAsset? definition,
         XAssetType expectedType,
         string fieldPath,
-        string? symbolicName = null)
+        string? symbolicName = null,
+        bool allowExternalReference = false)
     {
         if (retainedPointer.Type != PointerType.Null &&
             retainedPointer.ResolutionMode != XPointerResolutionMode.AliasCell)
@@ -230,7 +231,26 @@ internal abstract class AssetLinkPlan
             return null;
         }
 
-        return new AssetDependency(key.Value, expectedType, fieldPath);
+        string? externalSerializedName = null;
+        if (allowExternalReference)
+        {
+            string? sourceName = symbolicName ?? definition?.SerializedAssetName;
+            if (sourceName is null)
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} permits an external provider but has no serialized name.");
+            }
+
+            externalSerializedName = sourceName.StartsWith(',')
+                ? sourceName
+                : $",{sourceName}";
+        }
+
+        return new AssetDependency(
+            key.Value,
+            expectedType,
+            fieldPath,
+            externalSerializedName);
     }
 
     protected static IEnumerable<LinkOperation> IndirectXStringOperations(
@@ -281,4 +301,5 @@ internal abstract class AssetLinkPlan
 internal readonly record struct AssetDependency(
     AssetKey Key,
     XAssetType SerializedType,
-    string FieldPath);
+    string FieldPath,
+    string? ExternalSerializedName = null);

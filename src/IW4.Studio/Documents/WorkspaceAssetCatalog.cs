@@ -1,5 +1,7 @@
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
+using IW4.Runtime.Assets;
+using IW4.Runtime.Database;
 
 namespace IW4.Studio.Documents;
 
@@ -31,7 +33,9 @@ public enum WorkspaceAssetContentSource
 public readonly record struct WorkspaceDependencyAssetIdentity(
     Guid DocumentId,
     long ProviderId);
-public sealed record WorkspaceAssetProviderZone(string? LogicalZoneName);
+public sealed record WorkspaceAssetProviderZone(
+    string? LogicalZoneName,
+    bool IsTarget = false);
 public sealed record WorkspaceAssetResolvedProvider(
     long ProviderId,
     WorkspaceAssetProviderZone Zone);
@@ -51,6 +55,7 @@ public sealed class WorkspaceAssetCatalogEntry
         int? rawHeader = null,
         XAssetHeaderKind? headerKind = null,
         WorkspaceAssetResolvedProvider? resolvedProvider = null,
+        WorkspaceAssetProviderZone? providerZone = null,
         WorkspaceDependencyAssetIdentity? dependencyIdentity = null)
     {
         if ((targetRowIdentity is null) == (dependencyIdentity is null))
@@ -70,6 +75,7 @@ public sealed class WorkspaceAssetCatalogEntry
         RawHeader = rawHeader;
         HeaderKind = headerKind;
         ResolvedProvider = resolvedProvider;
+        ProviderZone = providerZone ?? resolvedProvider?.Zone;
         DependencyIdentity = dependencyIdentity;
     }
     public TargetZoneRowIdentity? TargetRowIdentity { get; }
@@ -83,6 +89,7 @@ public sealed class WorkspaceAssetCatalogEntry
     public int? RawHeader { get; }
     public XAssetHeaderKind? HeaderKind { get; }
     public WorkspaceAssetResolvedProvider? ResolvedProvider { get; }
+    internal WorkspaceAssetProviderZone? ProviderZone { get; }
     public WorkspaceAssetProviderZone? ResolvedProviderZone =>
         ResolvedProvider?.Zone;
     internal IW4.Assets.Assets.BaseAsset? Definition { get; }
@@ -108,6 +115,24 @@ public sealed class WorkspaceAssetCatalog
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(loadedZones);
+        IReadOnlyDictionary<DbZoneHandle, WorkspaceAssetProviderZone>
+            providerZones = loadedZones.ToDictionary(
+                zone => zone.LoadResult.Context.ZoneOwner,
+                zone => new WorkspaceAssetProviderZone(
+                    zone.LogicalZoneName,
+                    zone.IsTarget));
+        IReadOnlyCollection<XAssetSlot> activeSlots = document.IsBlank
+            ? []
+            : document.LoadedZone.Context.AssetPool.Slots;
+        var activeSlotsByKey = new Dictionary<AssetKey, XAssetSlot>();
+        foreach (XAssetSlot slot in activeSlots)
+        {
+            AssetKey key = AssetKey.FromWireName(
+                CanonicalAssetFamily.FromSerializedType(slot.AssetType),
+                slot.Name);
+            activeSlotsByKey.TryAdd(key, slot);
+        }
+
         WorkspaceAssetCatalogEntry[] targetEntries = document.InitialLinkRequest.Roots
             .Select((root, index) =>
             {
@@ -123,21 +148,21 @@ public sealed class WorkspaceAssetCatalog
                 var sourceRow = loadedZone.XAssetList.Assets[index];
                 var materialization = loadedZone.LoadedAssets[index].Materialization;
                 var provider = materialization.RootProvider;
-                var activePoolProvider = root.Asset is { } rootKey
-                    ? loadedZone.Context.AssetPool.Slots
-                        .FirstOrDefault(slot => AssetKey.FromWireName(
-                            CanonicalAssetFamily.FromSerializedType(slot.AssetType),
-                            slot.Name) == rootKey)
-                        ?.ActiveProvider
-                    : null;
+                var activePoolProvider = root.Asset is { } rootKey &&
+                    activeSlotsByKey.TryGetValue(rootKey, out XAssetSlot? activeSlot)
+                        ? activeSlot.ActiveProvider
+                        : null;
+                WorkspaceAssetProviderZone? activeProviderZone =
+                    activePoolProvider is null
+                        ? null
+                        : ResolveProviderZone(
+                            providerZones,
+                            activePoolProvider.Owner);
                 WorkspaceAssetResolvedProvider? activeProvider =
                     activePoolProvider is { IsReferencePlaceholder: false }
                         ? new WorkspaceAssetResolvedProvider(
                             activePoolProvider.Id.Value,
-                            new WorkspaceAssetProviderZone(
-                                ResolveProviderZoneName(
-                                    loadedZones,
-                                    activePoolProvider.Owner)))
+                            activeProviderZone!)
                         : null;
                 bool isResolvedReference = root.Intent == LinkRootIntent.External &&
                     activeProvider is not null;
@@ -164,7 +189,8 @@ public sealed class WorkspaceAssetCatalog
                         definition,
                         sourceRow.RawHeader,
                         sourceRow.HeaderKind,
-                        resolvedProvider),
+                        resolvedProvider,
+                        activeProviderZone),
                     LinkRootIntent.External => new WorkspaceAssetCatalogEntry(
                         identity,
                         isResolvedReference
@@ -182,7 +208,8 @@ public sealed class WorkspaceAssetCatalog
                         definition,
                         sourceRow.RawHeader,
                         sourceRow.HeaderKind,
-                        resolvedProvider),
+                        resolvedProvider,
+                        activeProviderZone),
                     LinkRootIntent.Null => new WorkspaceAssetCatalogEntry(
                         identity,
                         WorkspaceAssetOrigin.NullRow,
@@ -213,14 +240,17 @@ public sealed class WorkspaceAssetCatalog
                 .Select(root => root.Asset!.Value));
         WorkspaceAssetCatalogEntry[] dependencyEntries = document.IsBlank
             ? []
-            : document.LoadedZone.Context.AssetPool.Slots
+            : activeSlots
                 .Select(slot =>
                 {
                     var provider = slot.ActiveProvider;
                     AssetKey key = AssetKey.FromWireName(
                         CanonicalAssetFamily.FromSerializedType(slot.AssetType),
                         slot.Name);
-                    return (slot, provider, key);
+                    WorkspaceAssetProviderZone providerZone = ResolveProviderZone(
+                        providerZones,
+                        provider.Owner);
+                    return (slot, provider, providerZone, key);
                 })
                 .Where(value => !targetKeys.Contains(value.key))
                 .Select(value => new WorkspaceAssetCatalogEntry(
@@ -242,8 +272,8 @@ public sealed class WorkspaceAssetCatalog
                         ? null
                         : new WorkspaceAssetResolvedProvider(
                             value.provider.Id.Value,
-                            new WorkspaceAssetProviderZone(
-                                ResolveProviderZoneName(loadedZones, value.provider.Owner))),
+                            value.providerZone),
+                    providerZone: value.providerZone,
                     dependencyIdentity: new WorkspaceDependencyAssetIdentity(
                         document.DocumentId,
                         value.provider.Id.Value)))
@@ -251,15 +281,17 @@ public sealed class WorkspaceAssetCatalog
         return new WorkspaceAssetCatalog(targetEntries, dependencyEntries);
     }
 
-    private static string? ResolveProviderZoneName(
-        IEnumerable<WorkspaceZone> loadedZones,
-        object? owner)
+    private static WorkspaceAssetProviderZone ResolveProviderZone(
+        IReadOnlyDictionary<DbZoneHandle, WorkspaceAssetProviderZone> providerZones,
+        DbZoneHandle owner)
     {
-        if (owner is null)
-            return null;
-        WorkspaceZone? zone = loadedZones.FirstOrDefault(candidate =>
-            candidate.LoadResult.Context.ZoneOwner.Equals(owner));
-        return zone?.LogicalZoneName ?? owner.ToString();
+        if (owner.IsNone)
+            return new WorkspaceAssetProviderZone(null, IsTarget: false);
+        return providerZones.TryGetValue(
+                owner,
+                out WorkspaceAssetProviderZone? zone)
+            ? zone
+            : new WorkspaceAssetProviderZone(owner.ToString(), IsTarget: false);
     }
 
     private static WorkspaceAssetCatalogEntry CreateBlankEntry(

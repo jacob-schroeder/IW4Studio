@@ -127,6 +127,11 @@ public sealed class DbLoadSession : IDisposable
                     $"Runtime provider {provider.Id} belongs to zone {provider.Owner}, " +
                     "but this load session has no matching captured LoadedXZone.");
             }
+            if (zone.LinkAssetImportResolver is null)
+            {
+                throw new InvalidOperationException(
+                    $"Zone '{zone.SourceName}' was loaded without canonical linker capture.");
+            }
 
             IReadOnlyList<ImageFileStreamLanguageReferences> imageStreamReferences =
                 FreezeImageStreamReferences(zone, provider.Asset);
@@ -159,9 +164,13 @@ public sealed class DbLoadSession : IDisposable
         }
 
         long revision = AssetPool.Revision;
+        DbLoadedXZone registeredTarget = Runtime.Zones.SingleOrDefault(zone =>
+                zone.Handle == targetZone.Context.ZoneOwner &&
+                ReferenceEquals(zone.Context, targetZone.Context))
+            ?? throw new InvalidOperationException(
+                $"Target zone '{targetZone.SourceName}' is not active in the runtime registry.");
         LinkAssetPool result = FreezeProviders(
-            AssetPool.Slots.SelectMany(slot => slot.Providers)
-                .Where(provider => provider.Owner == targetZone.Context.ZoneOwner),
+            registeredTarget.Contributions.ProviderContributions,
             targetZone);
 
         if (AssetPool.Revision != revision)
@@ -170,49 +179,6 @@ public sealed class DbLoadSession : IDisposable
                 "The runtime XAssetPool changed while target-prioritized providers were being frozen.");
         }
         return result;
-    }
-
-    /// <summary>Freezes the effective fallback providers without one target owner.</summary>
-    internal LinkAssetPool FreezeLinkAssetPoolExcluding(LoadedXZone excludedZone)
-    {
-        ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(excludedZone);
-        if (!_zones.Any(zone => ReferenceEquals(zone, excludedZone)))
-        {
-            throw new ArgumentException(
-                "The excluded zone was not loaded by this session.",
-                nameof(excludedZone));
-        }
-
-        long revision = AssetPool.Revision;
-        Dictionary<DbZoneHandle, LoadedXZone> loadedByOwner = _zones
-            .Where(zone => !zone.Context.ZoneOwner.IsNone)
-            .ToDictionary(zone => zone.Context.ZoneOwner);
-        XAssetProviderContribution[] providers = AssetPool.Slots
-            .Select(slot =>
-            {
-                XAssetProviderContribution[] remaining = slot.Providers
-                    .Where(provider =>
-                        provider.Owner != excludedZone.Context.ZoneOwner)
-                    .ToArray();
-                return remaining.FirstOrDefault(provider =>
-                        !provider.IsReferencePlaceholder)
-                    ?? remaining.FirstOrDefault();
-            })
-            .Where(provider => provider is not null)
-            .Cast<XAssetProviderContribution>()
-            .OrderBy(provider => provider.RegistrationSequence)
-            .ToArray();
-        var sources = new List<LinkAssetProviderSource>(providers.Length);
-        foreach (XAssetProviderContribution provider in providers)
-        {
-            if (!loadedByOwner.TryGetValue(provider.Owner, out LoadedXZone? zone))
-                throw new InvalidOperationException($"Fallback runtime provider {provider.Id} has no matching load-session zone.");
-            sources.Add(CreateProviderSource(zone, provider));
-        }
-        if (AssetPool.Revision != revision)
-            throw new InvalidOperationException("The runtime XAssetPool changed while fallback providers were being frozen.");
-        return new LinkAssetPool(sources);
     }
 
     public LoadedXZone DB_LoadXZone(
@@ -277,13 +243,19 @@ public sealed class DbLoadSession : IDisposable
     }
 
     public LoadedXZone DB_LoadXZone(string path, XZoneInfo zoneInfo)
+        => DB_LoadXZone(path, zoneInfo, captureZoneObject: true);
+
+    internal LoadedXZone DB_LoadXZone(
+        string path,
+        XZoneInfo zoneInfo,
+        bool captureZoneObject)
     {
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentException.ThrowIfNullOrWhiteSpace(zoneInfo.Name);
 
         string sourceName = Path.GetFileName(path);
-        DbLoadContext context = CreateContext(sourceName);
+        DbLoadContext context = CreateContext(sourceName, captureZoneObject);
         using SysFile sysFile = _fileSystem.Sys_OpenFile(path);
         // The physical target may be an edited override for a logical engine
         // slot. XZone/DBFile identity follows XZoneInfo.Name; diagnostics
@@ -337,9 +309,12 @@ public sealed class DbLoadSession : IDisposable
         return source.Freeze(image);
     }
 
-    private DbLoadContext CreateContext(string sourceName)
+    private DbLoadContext CreateContext(
+        string sourceName,
+        bool captureZoneObject = true)
     {
         DbLoadContext context = _runtime.CreateLoadContext();
+        context.CaptureZoneObject = captureZoneObject;
         context.SelectedLanguageMask = _selectedLanguageMask;
         context.CurrentFastFile = new StreamFileRef(
             0,
@@ -412,6 +387,7 @@ public sealed class DbLoadSession : IDisposable
         LoadedXZone zone,
         XAssetProviderContribution provider) => new(
         provider.Asset,
-        zone.LinkAssetImportResolver,
+        zone.LinkAssetImportResolver ?? throw new InvalidOperationException(
+            $"Zone '{zone.SourceName}' was loaded without canonical linker capture."),
         FreezeImageStreamReferences(zone, provider.Asset));
 }

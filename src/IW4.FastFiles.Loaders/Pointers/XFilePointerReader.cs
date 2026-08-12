@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Reflection;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
@@ -5,12 +7,13 @@ using IW4.Runtime.Database;
 using IW4.Runtime.Assets;
 using IW4.Runtime.IO;
 using IW4.Linker.Plans;
-using System.Reflection;
 
 namespace IW4.FastFiles.Loaders.Pointers;
 
 public sealed class XFilePointerReader
 {
+    private static readonly ConcurrentDictionary<Type, PointerTargetMetadata>
+        TargetMetadata = new();
     private readonly DbStreamState _blocks;
     private readonly XAssetPool _assetPool;
 
@@ -724,22 +727,36 @@ public sealed class XFilePointerReader
         if (targetType is null)
             return "untyped pointer target";
 
-        return targetType.IsArray
-            ? $"{targetType.GetElementType()?.Name ?? "unknown"}[]"
-            : targetType.Name;
+        return TargetMetadata.GetOrAdd(targetType, CreateTargetMetadata).Name;
     }
 
     private static int? GetSerializedSize(Type? targetType)
     {
-        if (targetType is null || targetType == typeof(string) || targetType.IsArray)
-            return null;
+        return targetType is null
+            ? null
+            : TargetMetadata.GetOrAdd(targetType, CreateTargetMetadata).SerializedSize;
+    }
+
+    private static PointerTargetMetadata CreateTargetMetadata(Type targetType)
+    {
+        bool isArray = targetType.IsArray;
+        string name = isArray
+            ? $"{targetType.GetElementType()?.Name ?? "unknown"}[]"
+            : targetType.Name;
+        if (targetType == typeof(string) || isArray)
+            return new PointerTargetMetadata(name, SerializedSize: null);
 
         FieldInfo? field = targetType.GetField(
             "SerializedSize",
             BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
 
-        return field?.FieldType == typeof(int)
+        int? serializedSize = field?.FieldType == typeof(int)
             ? (int?)field.GetRawConstantValue()
             : null;
+        return new PointerTargetMetadata(name, serializedSize);
     }
+
+    private readonly record struct PointerTargetMetadata(
+        string Name,
+        int? SerializedSize);
 }

@@ -25,7 +25,7 @@ internal sealed class ZoneObjectLinkImportResolver : ILinkAssetImportResolver
         _allocationEdges = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<AllocationSymbol, Dictionary<int, List<PointerRelocation>>>
         _relocationsByAllocationSource = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<AllocationLocationKey, List<AllocationSymbol>>
+    private readonly Dictionary<AllocationLocationKey, AllocationSymbol>
         _allocationsByLocation = [];
     private readonly Dictionary<AliasCellSymbol, List<PointerRelocation>>
         _relocationsByPublication = new(ReferenceEqualityComparer.Instance);
@@ -114,13 +114,15 @@ internal sealed class ZoneObjectLinkImportResolver : ILinkAssetImportResolver
             if (materialization.Length <= 0)
                 continue;
 
-            AddCandidate(
-                _allocationsByLocation,
-                new AllocationLocationKey(
-                    materialization.DestinationBlock,
-                    materialization.TempEpoch,
-                    materialization.DestinationOffset),
-                allocation);
+            var location = new AllocationLocationKey(
+                materialization.DestinationBlock,
+                materialization.TempEpoch,
+                materialization.DestinationOffset);
+            if (!_allocationsByLocation.TryAdd(location, allocation))
+            {
+                throw new InvalidDataException(
+                    $"More than one positive allocation begins at {materialization.DestinationBlock}:0x{materialization.DestinationOffset:X} in TEMP epoch {materialization.TempEpoch}.");
+            }
         }
     }
 
@@ -204,16 +206,16 @@ internal sealed class ZoneObjectLinkImportResolver : ILinkAssetImportResolver
         int nextOffset = checked(firstEvent.DestinationOffset + firstEvent.Length);
         while (covered < byteLength)
         {
-            _allocationsByLocation.TryGetValue(
-                new AllocationLocationKey(
-                    firstEvent.DestinationBlock,
-                    firstEvent.TempEpoch,
-                    nextOffset),
-                out List<AllocationSymbol>? next);
-            AllocationSymbol segment = RequireUnique(
-                next ?? [],
-                fieldPath,
-                $"contiguous captured segment at {firstEvent.DestinationBlock}:0x{nextOffset:X}");
+            if (!_allocationsByLocation.TryGetValue(
+                    new AllocationLocationKey(
+                        firstEvent.DestinationBlock,
+                        firstEvent.TempEpoch,
+                        nextOffset),
+                    out AllocationSymbol? segment))
+            {
+                throw new InvalidDataException(
+                    $"{fieldPath} has 0 contiguous captured segment at {firstEvent.DestinationBlock}:0x{nextOffset:X} candidates; exact occurrence identity is required.");
+            }
             result.Add(new AllocationReference(segment));
             int used = Math.Min(
                 byteLength - covered,

@@ -57,6 +57,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     public uint SelectedLanguageMask { get; set; }
     public DbHeader? Header { get; set; }
     public byte[]? DecodedZoneBytes { get; set; }
+    internal bool CaptureZoneObject { get; set; } = true;
     internal ZoneObjectCaptureBridge? ZoneObjectCapture { get; private set; }
 
     // "CurrentFastFile" is an external stream-source category used to
@@ -118,10 +119,6 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
 
     internal ZoneObjectFile FreezeZoneObjectFile() =>
         ZoneObjectCapture?.Freeze() ?? throw new InvalidOperationException("Zone object capture was not initialized.");
-
-    internal ILinkAssetImportResolver LinkAssetImportResolver =>
-        ZoneObjectCapture?.ImportResolver ?? throw new InvalidOperationException(
-            "Zone object capture was not initialized.");
 
     public override int? AllocateGfxImageStreamIndex(bool hasStreamingData)
     {

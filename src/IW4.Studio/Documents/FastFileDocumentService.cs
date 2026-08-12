@@ -2,6 +2,7 @@ using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Database.Planning;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
+using IW4.Runtime.Diagnostics;
 
 namespace IW4.Studio.Documents;
 
@@ -10,14 +11,21 @@ namespace IW4.Studio.Documents;
 /// </summary>
 public sealed class FastFileDocumentService
 {
+    private readonly Action<XAssetLoadProgress>? _assetProgress;
+
     public FastFileDocumentService()
     {
+    }
+
+    public FastFileDocumentService(Action<XAssetLoadProgress>? assetProgress)
+    {
+        _assetProgress = assetProgress;
     }
 
     public FastFileWorkspace Open(FastFileDocumentOpenRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var loadSession = new DbLoadSession();
+        var loadSession = new DbLoadSession(_assetProgress);
         try
         {
             return request.Mode switch
@@ -47,8 +55,7 @@ public sealed class FastFileDocumentService
             profileName: null,
             new FastFileDependencyGraph([new FastFileDependencyNode(
                 Path.GetFullPath(request.Path), FastFileDependencyLoadStatus.Loaded, true)]),
-            targetAssets,
-            new LinkAssetPool([]));
+            targetAssets);
     }
 
     private static FastFileWorkspace OpenDependencies(
@@ -83,8 +90,7 @@ public sealed class FastFileDocumentService
             zones,
             plan.ProfileName,
             graph,
-            execution.TargetAssets,
-            execution.DependencyAssets);
+            execution.TargetAssets);
     }
 
     private static FastFileWorkspace CreateWorkspace(
@@ -93,16 +99,12 @@ public sealed class FastFileDocumentService
         IReadOnlyList<WorkspaceZone> zones,
         string? profileName,
         FastFileDependencyGraph graph,
-        LinkAssetPool targetAssets,
-        LinkAssetPool dependencyAssets)
+        LinkAssetPool targetAssets)
     {
         ArgumentNullException.ThrowIfNull(targetAssets);
-        ArgumentNullException.ThrowIfNull(dependencyAssets);
         WorkspaceZone target = zones.Single(zone => zone.IsTarget);
-        LinkAssetPool assets = dependencyAssets.WithHighestPrecedencePool(
-            targetAssets);
         var linkRequest = new ZoneLinkRequest(
-            assets,
+            targetAssets,
             target.LoadResult.FreezeLinkRoots(),
             target.LoadResult.Header.LanguageMask,
             target.LoadResult.Header.SelectedLanguageMask);
@@ -110,9 +112,7 @@ public sealed class FastFileDocumentService
             new FastFileDocument(
                 request,
                 target,
-                linkRequest,
-                targetAssets,
-                dependencyAssets),
+                linkRequest),
             session,
             zones,
             profileName,

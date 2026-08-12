@@ -67,7 +67,7 @@ internal sealed class LinkStorageSymbol
             pendingSourceTemplate: true));
 
     internal void FreezeSourceBytes(
-        ReadOnlySpan<byte> sourceTemplate,
+        byte[] sourceTemplate,
         IEnumerable<LinkOperation> operations)
     {
         Definition.FreezeSourceTemplate(sourceTemplate);
@@ -193,7 +193,10 @@ internal sealed class LinkStorageDefinition
         ByteLength = byteLength;
         Alignment = alignment;
         Kind = kind;
-        _sourceTemplate = sourceTemplate?.ToArray();
+        // Every caller transfers a newly allocated template. Retaining that
+        // buffer avoids duplicating large imported allocations solely to
+        // cross this private construction boundary.
+        _sourceTemplate = sourceTemplate;
         _sourceTemplateFrozen = !pendingSourceTemplate;
     }
 
@@ -229,8 +232,9 @@ internal sealed class LinkStorageDefinition
         _operations = Array.AsReadOnly(copied);
     }
 
-    internal void FreezeSourceTemplate(ReadOnlySpan<byte> sourceTemplate)
+    internal void FreezeSourceTemplate(byte[] sourceTemplate)
     {
+        ArgumentNullException.ThrowIfNull(sourceTemplate);
         if (Kind != LinkMaterializationKind.SourceBytes)
             throw new InvalidOperationException("Only source-backed storage owns a source template.");
         if (_sourceTemplateFrozen)
@@ -241,7 +245,7 @@ internal sealed class LinkStorageDefinition
                 "Frozen source byte count does not match its physical allocation.");
         }
 
-        _sourceTemplate = sourceTemplate.ToArray();
+        _sourceTemplate = sourceTemplate;
         _sourceTemplateFrozen = true;
     }
 
@@ -370,6 +374,7 @@ internal sealed class LinkAliasCellSymbol
 internal sealed class LinkTemplateWriter
 {
     private readonly byte[] _bytes;
+    private bool _completed;
 
     public LinkTemplateWriter(int byteLength)
     {
@@ -428,16 +433,21 @@ internal sealed class LinkTemplateWriter
 
     public byte[] Complete()
     {
+        if (_completed)
+            throw new InvalidOperationException("Storage template was completed more than once.");
         if (Position != _bytes.Length)
         {
             throw new InvalidOperationException(
                 $"Storage template wrote 0x{Position:X} of 0x{_bytes.Length:X} bytes.");
         }
-        return _bytes.ToArray();
+        _completed = true;
+        return _bytes;
     }
 
     private void EnsureAvailable(int byteCount)
     {
+        if (_completed)
+            throw new InvalidOperationException("Storage template is already complete.");
         if (byteCount < 0 || Position > _bytes.Length - byteCount)
             throw new InvalidOperationException("Storage template exceeds its fixed native size.");
     }
