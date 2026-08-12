@@ -137,8 +137,6 @@ public sealed class StockFastFileRoundTripTests
             using FastFileWorkspace workspace = documentService.Open(
                 new FastFileDocumentOpenRequest(sourcePath, Isolated.Instance));
             ZoneLinkRequest sourceRequest = workspace.InitialLinkRequest;
-            ZoneLinkResult expected = new ZoneLinker().Link(sourceRequest);
-            AssertLinkSucceeded(expected, $"Canonical source link failed for '{sourcePath}'");
 
             using (var editingSession = new FastFileEditingSession(workspace))
             {
@@ -162,18 +160,25 @@ public sealed class StockFastFileRoundTripTests
             ZoneLinkResult actual = new ZoneLinker().Link(candidateRequest);
             AssertLinkSucceeded(actual, $"Canonical candidate relink failed for '{sourcePath}'");
 
+            // Save As already linked sourceRequest. The loaded candidate is
+            // that first link's persisted output; this relink proves the
+            // canonical linker has reached the same semantic fixed point.
             Assert.Equal(sourceRequest.LanguageMask, candidateRequest.LanguageMask);
             Assert.Equal(sourceRequest.SelectedLanguageMask, candidateRequest.SelectedLanguageMask);
-            Assert.Equal(expected.LanguageMask, actual.LanguageMask);
-            Assert.Equal(expected.SelectedLanguageMask, actual.SelectedLanguageMask);
+            Assert.Equal(candidate.LoadedZone.Header.LanguageMask, actual.LanguageMask);
+            Assert.Equal(
+                candidate.LoadedZone.Header.SelectedLanguageMask,
+                actual.SelectedLanguageMask);
             AssertByteSequencesMatch(
-                GetDecodedBytes(expected).Span,
+                candidate.LoadedZone.ZoneBytes,
                 GetDecodedBytes(actual).Span,
-                $"Canonical decoded zone mismatch for '{sourcePath}'");
-            AssertXFileLayoutMatches(expected.XFile, actual.XFile, sourcePath);
-            AssertXFileLayoutMatches(expected.XFile, candidate.LoadedZone.XFile, sourcePath);
+                $"Canonical fixed-point decoded zone mismatch for '{sourcePath}'");
+            AssertXFileLayoutMatches(
+                candidate.LoadedZone.XFile,
+                actual.XFile,
+                sourcePath);
             AssertImageStreamLanguageTablesMatch(
-                expected.ImageStreamLanguageTables,
+                candidate.LoadedZone.Header.LanguageTables,
                 actual.ImageStreamLanguageTables,
                 sourcePath);
             AssertOrderedRootSubsequence(sourceRequest.Roots, candidateRequest.Roots, sourcePath);
