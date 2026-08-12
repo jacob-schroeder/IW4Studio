@@ -428,19 +428,9 @@ internal sealed class LinkAssetFreezeContext
         ArgumentNullException.ThrowIfNull(reused);
         AllocationEvent allocation = captured.Symbol.Allocation;
         LinkStorageDefinition definition = reused.Definition;
-        LinkStorageSymbol capturedIdentity = reused;
-        if (_authoredStorageBaselines.TryGetValue(
-                reused,
-                out LinkStorageView baseline))
-        {
-            if (baseline.Addend != 0 ||
-                baseline.Length != definition.ByteLength)
-            {
-                throw new InvalidDataException(
-                    $"{fieldPath} reused an authored storage view with a different captured shape.");
-            }
-            capturedIdentity = baseline.Storage;
-        }
+        LinkStorageSymbol capturedIdentity = CapturedIdentityForReusedStorage(
+            reused,
+            fieldPath);
 
         if (allocation.DestinationBlock != definition.Block ||
             captured.Addend != 0 ||
@@ -455,6 +445,66 @@ internal sealed class LinkAssetFreezeContext
             capturedIdentity,
             captured.Symbol,
             fieldPath);
+    }
+
+    internal void ValidateReusedBoundaryStorage(
+        ILinkAssetImportResolver resolver,
+        BoundaryReference boundary,
+        LinkStorageSymbol reused,
+        string fieldPath)
+    {
+        EnsureOpen();
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(boundary);
+        ArgumentNullException.ThrowIfNull(reused);
+        LinkStorageSymbol capturedIdentity = CapturedIdentityForReusedStorage(
+            reused,
+            fieldPath);
+        if (reused.Definition.ByteLength != 0 ||
+            !_capturedAllocations.TryGetValue(
+                capturedIdentity,
+                out AllocationSymbol? allocationSymbol))
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} zero-length boundary has no captured canonical storage allocation.");
+        }
+
+        AllocationEvent allocation = allocationSymbol.Allocation;
+        BoundaryEvent captured = boundary.Symbol.Boundary;
+        if (allocation.Length != 0 ||
+            captured.DestinationBlock != allocation.DestinationBlock ||
+            captured.TempEpoch != allocation.TempEpoch ||
+            captured.DestinationOffset != allocation.DestinationOffset)
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} boundary does not select its canonical zero-length storage allocation.");
+        }
+
+        RememberCapturedStorage(
+            KeyFor(resolver, boundary.Symbol.Occurrence),
+            capturedIdentity,
+            allocationSymbol,
+            fieldPath);
+    }
+
+    private LinkStorageSymbol CapturedIdentityForReusedStorage(
+        LinkStorageSymbol reused,
+        string fieldPath)
+    {
+        LinkStorageDefinition definition = reused.Definition;
+        if (!_authoredStorageBaselines.TryGetValue(
+                reused,
+                out LinkStorageView baseline))
+        {
+            return reused;
+        }
+        if (baseline.Addend != 0 ||
+            baseline.Length != definition.ByteLength)
+        {
+            throw new InvalidDataException(
+                $"{fieldPath} reused an authored storage view with a different captured shape.");
+        }
+        return baseline.Storage;
     }
 
     private LinkStorageTarget FreezeAuthoredStorage(
@@ -1817,17 +1867,26 @@ internal sealed class LinkAssetFreezeScope
             _importedDefinition,
             pointer,
             fieldPath);
-        if (relocation.Target is not AllocationReference captured)
+        switch (relocation.Target)
         {
-            throw new InvalidDataException(
-                $"{fieldPath} reused semantic storage through a non-storage captured pointer.");
+            case AllocationReference captured:
+                _context.ValidateReusedStorage(
+                    _resolver,
+                    captured,
+                    reused,
+                    fieldPath);
+                return;
+            case BoundaryReference boundary when reused.Definition.ByteLength == 0:
+                _context.ValidateReusedBoundaryStorage(
+                    _resolver,
+                    boundary,
+                    reused,
+                    fieldPath);
+                return;
+            default:
+                throw new InvalidDataException(
+                    $"{fieldPath} reused semantic storage through a non-storage captured pointer.");
         }
-
-        _context.ValidateReusedStorage(
-            _resolver,
-            captured,
-            reused,
-            fieldPath);
     }
 
     public LinkStorageTarget FreezeStorageView(
