@@ -93,7 +93,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
                 ? [NameOperation(root, 0)]
                 : [
                     NameOperation(root, 0),
-                    Direct(root, 0x04, surfaces.Value, "XModelSurfs.Surfaces")
+                    DirectOperation(root, 0x04, surfaces.Value, "XModelSurfs.Surfaces")
                 ]);
     }
 
@@ -215,15 +215,15 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             int row = checked(addend + index * XSurface.SerializedSize);
             SurfaceChildren value = children[index];
             if (value.Blend is { } blend)
-                yield return Direct(owner, row + 0x14, blend, $"XSurface[{index}].VertsBlend");
+                yield return DirectOperation(owner, row + 0x14, blend, $"XSurface[{index}].VertsBlend");
             if (value.Verts0 is { } verts0)
-                yield return Direct(owner, row + 0x18, verts0, $"XSurface[{index}].Verts0");
+                yield return DirectOperation(owner, row + 0x18, verts0, $"XSurface[{index}].Verts0");
             if (value.Verts1 is { } verts1)
-                yield return Direct(owner, row + 0x24, verts1, $"XSurface[{index}].Verts1");
+                yield return DirectOperation(owner, row + 0x24, verts1, $"XSurface[{index}].Verts1");
             if (value.Rigid is { } rigid)
-                yield return Direct(owner, row + 0x34, rigid, $"XSurface[{index}].VertList");
+                yield return DirectOperation(owner, row + 0x34, rigid, $"XSurface[{index}].VertList");
             if (value.Triangles is { } triangles)
-                yield return Direct(owner, row + 0x08, triangles, $"XSurface[{index}].TriIndices");
+                yield return DirectOperation(owner, row + 0x08, triangles, $"XSurface[{index}].TriIndices");
         }
     }
 
@@ -283,7 +283,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             (owner, addend) => trees
                 .Select((target, index) => (target, index))
                 .Where(item => item.target is not null)
-                .Select(item => Direct(
+                .Select(item => DirectOperation(
                     owner,
                     checked(addend + item.index * XRigidVertList.SerializedSize + 0x08),
                     item.target!.Value,
@@ -568,20 +568,10 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
         foreach ((int offset, LinkStorageTarget? target, string path) in values)
         {
             if (target is { } value)
-                yield return Direct(owner, offset, value, path);
+                yield return DirectOperation(owner, offset, value, path);
         }
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int offset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, offset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private static void RequireAuthoredOrInline(
         XPointerReference pointer,
@@ -610,7 +600,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
     {
         if (!float.IsFinite(value) && !(allowPositiveInfinity && float.IsPositiveInfinity(value)))
             throw new InvalidDataException($"{fieldPath} has an unsupported floating-point value.");
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
+        writer.WriteSingle(value);
     }
 
     private readonly record struct SurfaceChildren(

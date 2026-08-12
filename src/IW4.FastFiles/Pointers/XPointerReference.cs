@@ -9,7 +9,6 @@ public readonly record struct XPointerReference(
     XBlockAddress? PackedAddress,
     XBlockAddress? CellAddress)
 {
-    public XPointerOffsetMode OffsetMode => ResolutionMode.ToOffsetMode();
     public bool ConsumesSource => Type is PointerType.Inline or PointerType.Insert;
 
     public XPointer<T> AsPointer<T>() => new(Raw, ResolutionMode, CellAddress);
@@ -27,11 +26,4 @@ public readonly record struct XPointerReference(
         return new XPointerReference(raw, type, resolutionMode, packedAddress, cellAddress);
     }
 
-    public static XPointerReference FromRaw(
-        int raw,
-        XPointerOffsetMode offsetMode,
-        XBlockAddress? cellAddress = null)
-    {
-        return FromRaw(raw, offsetMode.ToResolutionMode(), cellAddress);
-    }
 }

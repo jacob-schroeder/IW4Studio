@@ -54,7 +54,7 @@ public sealed class FastFileDocumentService
             [new WorkspaceZone(target, request.Path, true, true)],
             profileName: null,
             new FastFileDependencyGraph([new FastFileDependencyNode(
-                Path.GetFullPath(request.Path), FastFileDependencyLoadStatus.Loaded, true)]),
+                Path.GetFullPath(request.Path), DbDependencyRequestLoadStatus.Loaded, true)]),
             targetAssets);
     }
 
@@ -77,12 +77,7 @@ public sealed class FastFileDocumentService
         var graph = new FastFileDependencyGraph(execution.Requests.Select(request =>
             new FastFileDependencyNode(
                 request.PhysicalPath,
-                request.Status switch
-                {
-                    DbDependencyRequestLoadStatus.Loaded => FastFileDependencyLoadStatus.Loaded,
-                    DbDependencyRequestLoadStatus.SkippedOptional => FastFileDependencyLoadStatus.SkippedOptional,
-                    _ => throw new ArgumentOutOfRangeException()
-                },
+                request.Status,
                 request.IsTarget)));
         return CreateWorkspace(
             request,

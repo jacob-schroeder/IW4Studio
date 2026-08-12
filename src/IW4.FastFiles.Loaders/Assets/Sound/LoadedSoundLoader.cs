@@ -67,7 +67,10 @@ public sealed class LoadedSoundLoader
                     "does not resolve to a canonical LoadedSound asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCellIfPresent(
+                pointer,
+                canonical,
+                "Canonical LoadedSound has no runtime address.");
             return canonical;
         }
 
@@ -238,16 +241,4 @@ public sealed class LoadedSoundLoader
         return bytes;
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        LoadedSound canonical,
-        DbLoadExecutionContext context)
-    {
-        if (pointer.CellAddress is not { } pointerCellAddress)
-            return;
-
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical LoadedSound has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
     }
-}

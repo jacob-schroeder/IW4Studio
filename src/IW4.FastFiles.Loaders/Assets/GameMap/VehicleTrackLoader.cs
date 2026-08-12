@@ -83,7 +83,9 @@ public sealed class VehicleTrackLoader
         for (int index = 0; index < segments.Length; index++)
         {
             XBlockAddress rowAddress = targetAddress.Add(checked(index * VehicleTrackSegment.SerializedSize));
-            var rowCursor = RowCursor(bytes, targetAddress, index, VehicleTrackSegment.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, targetAddress).Slice(
+                checked(index * VehicleTrackSegment.SerializedSize),
+                VehicleTrackSegment.SerializedSize);
             VehicleTrackSegment segment = ReadSegmentBody(
                 cursor,
                 rowCursor,
@@ -122,8 +124,8 @@ public sealed class VehicleTrackLoader
             ReadPresencePointer<XPointer<VehicleTrackSegment>[]>(rowCursor, context);
         int previousBranchCount = rowCursor.ReadInt32();
         IReadOnlyList<float> endEdgeDirection = ReadFloatValues(rowCursor, 2);
-        float endEdgeDistance = ReadSingle(rowCursor);
-        float totalLength = ReadSingle(rowCursor);
+        float endEdgeDistance = rowCursor.ReadSingle();
+        float totalLength = rowCursor.ReadSingle();
 
         string? name = context.PointerReader.LoadXString(cursor, namePointer);
         IReadOnlyList<VehicleTrackSector> sectors = ReadSectorArray(
@@ -194,18 +196,20 @@ public sealed class VehicleTrackLoader
         var sectors = new VehicleTrackSector[count];
         for (int index = 0; index < sectors.Length; index++)
         {
-            var rowCursor = RowCursor(bytes, address, index, VehicleTrackSector.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(index * VehicleTrackSector.SerializedSize),
+                VehicleTrackSector.SerializedSize);
             XBlockAddress rowAddress = address.Add(checked(index * VehicleTrackSector.SerializedSize));
             IReadOnlyList<float> startEdgeDirection = ReadFloatValues(rowCursor, 2);
-            float startEdgeDistance = ReadSingle(rowCursor);
+            float startEdgeDistance = rowCursor.ReadSingle();
             IReadOnlyList<float> leftEdgeDirection = ReadFloatValues(rowCursor, 2);
-            float leftEdgeDistance = ReadSingle(rowCursor);
+            float leftEdgeDistance = rowCursor.ReadSingle();
             IReadOnlyList<float> rightEdgeDirection = ReadFloatValues(rowCursor, 2);
-            float rightEdgeDistance = ReadSingle(rowCursor);
-            float sectorLength = ReadSingle(rowCursor);
-            float sectorWidth = ReadSingle(rowCursor);
-            float totalPriorLength = ReadSingle(rowCursor);
-            float totalFollowingLength = ReadSingle(rowCursor);
+            float rightEdgeDistance = rowCursor.ReadSingle();
+            float sectorLength = rowCursor.ReadSingle();
+            float sectorWidth = rowCursor.ReadSingle();
+            float totalPriorLength = rowCursor.ReadSingle();
+            float totalFollowingLength = rowCursor.ReadSingle();
             XPointer<VehicleTrackObstacle[]> obstaclesPointer =
                 ReadPresencePointer<VehicleTrackObstacle[]>(rowCursor, context);
             int obstacleCount = rowCursor.ReadInt32();
@@ -263,7 +267,7 @@ public sealed class VehicleTrackLoader
             obstacles[index] = new VehicleTrackObstacle
             {
                 Origin = ReadFloatValues(rowCursor, 2),
-                Radius = ReadSingle(rowCursor)
+                Radius = rowCursor.ReadSingle()
             };
         }
 
@@ -404,15 +408,6 @@ public sealed class VehicleTrackLoader
     private static XPointer<T> ReadPresencePointer<T>(FastFileCursor cursor, DbLoadExecutionContext context) =>
         ReadPointer<T>(cursor, context);
 
-    private static FastFileCursor RowCursor(
-        byte[] bytes,
-        XBlockAddress address,
-        int index,
-        int stride)
-    {
-        int offset = checked(index * stride);
-        return new FastFileCursor(bytes.AsSpan(offset, stride).ToArray(), address.Add(offset));
-    }
 
     private static void EnsureDepth(int depth, string memberName)
     {
@@ -434,10 +429,8 @@ public sealed class VehicleTrackLoader
     {
         var values = new float[count];
         for (int index = 0; index < values.Length; index++)
-            values[index] = ReadSingle(cursor);
+            values[index] = cursor.ReadSingle();
         return values;
     }
 
-    private static float ReadSingle(FastFileCursor cursor) =>
-        BitConverter.Int32BitsToSingle(cursor.ReadInt32());
 }

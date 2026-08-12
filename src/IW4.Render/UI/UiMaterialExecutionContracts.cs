@@ -138,7 +138,7 @@ public sealed class UiMaterialDrawPacket : UiDrawPacket
         }
         if (_diagnostics.Any(diagnostic =>
                 diagnostic.Severity ==
-                UiMaterialExecutionDiagnosticSeverity.Blocker))
+                UiDiagnosticSeverity.Blocker))
         {
             throw new ArgumentException(
                 "An executable UI material packet cannot retain blockers.",

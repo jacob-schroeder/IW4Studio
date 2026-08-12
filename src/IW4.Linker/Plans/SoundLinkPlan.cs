@@ -37,7 +37,7 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
                 ? [NameOperation(root, 0)]
                 : [
                     NameOperation(root, 0),
-                    Direct(root, 0x04, aliases.Value, "Sound.Aliases")
+                    DirectOperation(root, 0x04, aliases.Value, "Sound.Aliases")
                 ]);
     }
 
@@ -288,8 +288,8 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
                             $".Speakers[{speakerIndex}] cannot be null.");
                     writer.WriteInt32(speaker.Speaker);
                     writer.WriteInt32(speaker.NumLevels);
-                    writer.WriteInt32(BitConverter.SingleToInt32Bits(speaker.Level0));
-                    writer.WriteInt32(BitConverter.SingleToInt32Bits(speaker.Level1));
+                    writer.WriteSingle(speaker.Level0);
+                    writer.WriteSingle(speaker.Level1);
                 }
             }
         }
@@ -324,16 +324,6 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
         return freeze.FreezeRequiredXString(value, pointer, fieldPath);
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private sealed class FrozenAlias
     {
@@ -431,23 +421,23 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
             var writer = new LinkTemplateWriter(SndAlias.SerializedSize);
             writer.Skip(sizeof(int) * 6);
             writer.WriteInt32(alias.Sequence);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.VolumeMin));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.VolumeMax));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.PitchMin));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.PitchMax));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.DistanceMin));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.DistanceMax));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.VelocityMin));
+            writer.WriteSingle(alias.VolumeMin);
+            writer.WriteSingle(alias.VolumeMax);
+            writer.WriteSingle(alias.PitchMin);
+            writer.WriteSingle(alias.PitchMax);
+            writer.WriteSingle(alias.DistanceMin);
+            writer.WriteSingle(alias.DistanceMax);
+            writer.WriteSingle(alias.VelocityMin);
             writer.WriteInt32(alias.Flags);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.SlavePercentage));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.Probability));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.LfePercentage));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.CenterPercentage));
+            writer.WriteSingle(alias.SlavePercentage);
+            writer.WriteSingle(alias.Probability);
+            writer.WriteSingle(alias.LfePercentage);
+            writer.WriteSingle(alias.CenterPercentage);
             writer.WriteInt32(alias.StartDelay);
             writer.Skip(sizeof(int));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.EnvelopMin));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.EnvelopMax));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(alias.EnvelopPercentage));
+            writer.WriteSingle(alias.EnvelopMin);
+            writer.WriteSingle(alias.EnvelopMax);
+            writer.WriteSingle(alias.EnvelopPercentage);
             writer.Skip(sizeof(int));
             return new FrozenAlias(
                 writer.Complete(),
@@ -489,7 +479,7 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
             }
             if (SpeakerMap is { } speakerMap)
             {
-                operations.Add(Direct(
+                operations.Add(DirectOperation(
                     table,
                     checked(baseOffset + 0x60),
                     speakerMap,

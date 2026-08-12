@@ -61,7 +61,11 @@ public sealed class XAnimPartsLoader
                     "does not resolve to a canonical XAnim asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed XAnim pointer has no destination cell.",
+                "Canonical XAnim has no runtime address.");
             return canonical;
         }
 
@@ -123,8 +127,8 @@ public sealed class XAnimPartsLoader
         byte pad1F = rootCursor.ReadByte();
         int randomDataShortCount = rootCursor.ReadInt32();
         int indexCount = rootCursor.ReadInt32();
-        float framerate = ReadSingle(rootCursor);
-        float frequency = ReadSingle(rootCursor);
+        float framerate = rootCursor.ReadSingle();
+        float frequency = rootCursor.ReadSingle();
         XPointer<ushort[]> namesPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
         XPointer<byte[]> dataBytePointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
         XPointer<short[]> dataShortPointer = ReadPointer<short[]>(rootCursor, context, XPointerResolutionMode.Direct);
@@ -242,7 +246,7 @@ public sealed class XAnimPartsLoader
                 $"XAnimParts.Notify[{i}].Name");
             context.Blocks.WriteUInt16(nameCell, name.RuntimeHandle.Value);
             c.Skip(0x04 - c.Offset % XAnimNotifyInfo.SerializedSize);
-            values[i] = new XAnimNotifyInfo(name, ReadSingle(c));
+            values[i] = new XAnimNotifyInfo(name, c.ReadSingle());
         }
 
         return values;
@@ -301,7 +305,7 @@ public sealed class XAnimPartsLoader
                 Size = size,
                 SmallTrans = smallTrans,
                 Pad3 = pad3,
-                Frame0 = new XAnimPartTransFrame0(ReadSingle(frameCursor), ReadSingle(frameCursor), ReadSingle(frameCursor))
+                Frame0 = new XAnimPartTransFrame0(frameCursor.ReadSingle(), frameCursor.ReadSingle(), frameCursor.ReadSingle())
             };
         }
 
@@ -715,23 +719,8 @@ public sealed class XAnimPartsLoader
 
     private static XAnimVec3 ReadVec3(FastFileCursor cursor)
     {
-        return new XAnimVec3(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor));
+        return new XAnimVec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        XAnimPartsAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed XAnim pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical XAnim has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
     }
-}

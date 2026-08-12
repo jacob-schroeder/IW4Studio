@@ -1,5 +1,6 @@
 using IW4.FastFiles.Pointers;
 using FxEffectDefAsset = IW4.Assets.Assets.Fx.FxEffectDefAsset;
+using PhysCollmapAsset = IW4.Assets.Assets.Physics.PhysCollmapAsset;
 using TracerDefAsset = IW4.Assets.Assets.Tracer.TracerDefAsset;
 using XModelAsset = IW4.Assets.Assets.XModel.XModelAsset;
 
@@ -92,7 +93,7 @@ public sealed class WeaponDef
 
     // 0x3C8: alias-cell PhysCollmap pointer.
     public XPointer<PhysCollmapAsset> PhysCollmapPointer { get; init; }
-    public IW4.Assets.Assets.Physics.PhysCollmapAsset? PhysCollmap { get; init; }
+    public PhysCollmapAsset? PhysCollmap { get; init; }
     public string? PhysCollmapName { get; init; }
     public WeaponPhysicsFields Physics { get; init; } = new();                         // 0x3CC..0x41C
 

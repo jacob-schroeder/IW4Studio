@@ -159,10 +159,21 @@ public static class MapRenderEditorPreviewVisionResolver
         transitionSeconds = 0f;
         status = MapRenderEditorPreviewVisionStatus.VisionSetCallMissing;
         detail = string.Empty;
-        if (!TryMaskComments(createArt, out string searchable, out detail))
+        if (!MapRenderCreateArtLexer.TryMaskComments(
+                createArt,
+                out string searchable,
+                out MapRenderCreateArtLexicalFailure lexicalFailure))
         {
             status = MapRenderEditorPreviewVisionStatus
                 .VisionSetCallMalformed;
+            detail = lexicalFailure switch
+            {
+                MapRenderCreateArtLexicalFailure.UnterminatedQuotedString =>
+                    "Createart contains an unterminated quoted string.",
+                MapRenderCreateArtLexicalFailure.UnterminatedBlockComment =>
+                    "Createart contains an unterminated block comment.",
+                _ => string.Empty
+            };
             return false;
         }
 
@@ -171,7 +182,10 @@ public static class MapRenderEditorPreviewVisionResolver
         {
             if (searchable[index] is '\'' or '"')
             {
-                if (!TrySkipQuoted(searchable, index, out index))
+                if (!MapRenderCreateArtLexer.TrySkipQuoted(
+                        searchable,
+                        index,
+                        out index))
                 {
                     status = MapRenderEditorPreviewVisionStatus
                         .VisionSetCallMalformed;
@@ -180,7 +194,7 @@ public static class MapRenderEditorPreviewVisionResolver
                 }
                 continue;
             }
-            if (!IsIdentifierStart(searchable[index]))
+            if (!MapRenderCreateArtLexer.IsIdentifierStart(searchable[index]))
             {
                 index++;
                 continue;
@@ -188,7 +202,7 @@ public static class MapRenderEditorPreviewVisionResolver
 
             int start = index++;
             while (index < searchable.Length &&
-                   IsIdentifierPart(searchable[index]))
+                   MapRenderCreateArtLexer.IsIdentifierPart(searchable[index]))
             {
                 index++;
             }
@@ -204,22 +218,28 @@ public static class MapRenderEditorPreviewVisionResolver
             {
                 open++;
             }
+            lexicalFailure = MapRenderCreateArtLexicalFailure.None;
             if (open >= searchable.Length || searchable[open] != '(' ||
-                !TryReadBalancedParentheses(
+                !MapRenderCreateArtLexer.TryReadBalancedParentheses(
                     searchable,
                     open,
                     out int close,
-                    out string arguments,
-                    out detail))
+                    out lexicalFailure))
             {
                 status = MapRenderEditorPreviewVisionStatus
                     .VisionSetCallMalformed;
-                if (detail.Length == 0)
-                    detail = "VisionSetNaked is not followed by a valid argument list.";
+                detail = lexicalFailure switch
+                {
+                    MapRenderCreateArtLexicalFailure.UnterminatedQuotedString =>
+                        "VisionSetNaked contains an unterminated quoted string.",
+                    MapRenderCreateArtLexicalFailure.UnterminatedParentheses =>
+                        "VisionSetNaked has an unterminated argument list.",
+                    _ => "VisionSetNaked is not followed by a valid argument list."
+                };
                 return false;
             }
 
-            calls.Add(arguments);
+            calls.Add(searchable[(open + 1)..close]);
             index = close + 1;
         }
 
@@ -482,111 +502,6 @@ public static class MapRenderEditorPreviewVisionResolver
         return true;
     }
 
-    private static bool TryMaskComments(
-        string text,
-        out string masked,
-        out string detail)
-    {
-        char[] result = text.ToCharArray();
-        detail = string.Empty;
-        for (int index = 0; index < result.Length;)
-        {
-            if (result[index] is '\'' or '"')
-            {
-                if (!TrySkipQuoted(text, index, out int next))
-                {
-                    masked = string.Empty;
-                    detail = "Createart contains an unterminated quoted string.";
-                    return false;
-                }
-                index = next;
-                continue;
-            }
-            if (result[index] != '/' || index + 1 >= result.Length)
-            {
-                index++;
-                continue;
-            }
-            if (result[index + 1] == '/')
-            {
-                result[index++] = ' ';
-                result[index++] = ' ';
-                while (index < result.Length &&
-                       result[index] is not ('\r' or '\n'))
-                {
-                    result[index++] = ' ';
-                }
-                continue;
-            }
-            if (result[index + 1] == '*')
-            {
-                result[index++] = ' ';
-                result[index++] = ' ';
-                bool closed = false;
-                while (index < result.Length)
-                {
-                    if (index + 1 < result.Length &&
-                        result[index] == '*' && result[index + 1] == '/')
-                    {
-                        result[index++] = ' ';
-                        result[index++] = ' ';
-                        closed = true;
-                        break;
-                    }
-                    if (result[index] is not ('\r' or '\n'))
-                        result[index] = ' ';
-                    index++;
-                }
-                if (!closed)
-                {
-                    masked = string.Empty;
-                    detail = "Createart contains an unterminated block comment.";
-                    return false;
-                }
-                continue;
-            }
-            index++;
-        }
-        masked = new string(result);
-        return true;
-    }
-
-    private static bool TryReadBalancedParentheses(
-        string text,
-        int open,
-        out int close,
-        out string arguments,
-        out string detail)
-    {
-        close = -1;
-        arguments = string.Empty;
-        detail = string.Empty;
-        int depth = 0;
-        for (int index = open; index < text.Length; index++)
-        {
-            if (text[index] is '\'' or '"')
-            {
-                if (!TrySkipQuoted(text, index, out int next))
-                {
-                    detail = "VisionSetNaked contains an unterminated quoted string.";
-                    return false;
-                }
-                index = next - 1;
-                continue;
-            }
-            if (text[index] == '(')
-                depth++;
-            else if (text[index] == ')' && --depth == 0)
-            {
-                close = index;
-                arguments = text[(open + 1)..close];
-                return true;
-            }
-        }
-        detail = "VisionSetNaked has an unterminated argument list.";
-        return false;
-    }
-
     private static bool TrySplitCallArguments(
         string arguments,
         out string[] fields)
@@ -597,7 +512,10 @@ public static class MapRenderEditorPreviewVisionResolver
         {
             if (arguments[index] is '\'' or '"')
             {
-                if (!TrySkipQuoted(arguments, index, out int next))
+                if (!MapRenderCreateArtLexer.TrySkipQuoted(
+                        arguments,
+                        index,
+                        out int next))
                 {
                     fields = [];
                     return false;
@@ -615,35 +533,6 @@ public static class MapRenderEditorPreviewVisionResolver
         fields = result.ToArray();
         return fields.All(field => field.Length != 0);
     }
-
-    private static bool TrySkipQuoted(
-        string text,
-        int quote,
-        out int next)
-    {
-        char delimiter = text[quote];
-        for (int index = quote + 1; index < text.Length; index++)
-        {
-            if (text[index] == '\\')
-            {
-                index++;
-                continue;
-            }
-            if (text[index] == delimiter)
-            {
-                next = index + 1;
-                return true;
-            }
-        }
-        next = text.Length;
-        return false;
-    }
-
-    private static bool IsIdentifierStart(char character) =>
-        char.IsAsciiLetter(character) || character == '_';
-
-    private static bool IsIdentifierPart(char character) =>
-        IsIdentifierStart(character) || char.IsAsciiDigit(character);
 
     private static bool Between(float value, float minimum, float maximum) =>
         float.IsFinite(value) && value >= minimum && value <= maximum;

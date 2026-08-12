@@ -8,16 +8,12 @@ namespace IW4.FastFiles.Loaders.Database;
 
 public sealed class DbHeaderReader
 {
-    private const string Ps3Magic = "IWffu100";
-    private const int ImageStreamEntrySize = 0x14;
-    private const uint MaxHeaderEntries = 0x3800;
-
     public DbHeader Read(FastFileCursor cursor, DbLoadContext context)
     {
         int startOffset = cursor.Offset;
-        string magic = cursor.ReadFixedString(8);
-        if (magic != Ps3Magic)
-            throw new InvalidDataException($"Expected PS3 fastfile magic '{Ps3Magic}' at 0x{startOffset:X}, got '{magic}'.");
+        string magic = cursor.ReadFixedString(DbHeader.MagicByteLength);
+        if (magic != DbHeader.UnsignedMagic)
+            throw new InvalidDataException($"Expected PS3 fastfile magic '{DbHeader.UnsignedMagic}' at 0x{startOffset:X}, got '{magic}'.");
 
         XFileVersion version = (XFileVersion)cursor.ReadUInt32();
 
@@ -35,8 +31,8 @@ public sealed class DbHeaderReader
         LanguageScan languageScan = ScanLanguages(languageMask, context.SelectedLanguageMask);
 
         uint entryCount = cursor.ReadUInt32();
-        if (entryCount > MaxHeaderEntries)
-            throw new InvalidDataException($"DB header EntryCount 0x{entryCount:X} exceeds PS3 maximum 0x{MaxHeaderEntries:X}.");
+        if (entryCount > DbHeader.MaximumImageStreamEntryCount)
+            throw new InvalidDataException($"DB header EntryCount 0x{entryCount:X} exceeds PS3 maximum 0x{DbHeader.MaximumImageStreamEntryCount:X}.");
 
         DbHeaderImageStreamLanguageTable[] languageTables = ReadLanguageTables(
             cursor,

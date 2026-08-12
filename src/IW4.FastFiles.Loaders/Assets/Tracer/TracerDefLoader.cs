@@ -41,11 +41,11 @@ public sealed class TracerDefLoader
             TracerDefAsset canonical = context.ResolveTracerDef(pointer)
                 ?? throw new InvalidDataException(
                     $"TracerDef pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical TracerDef asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed TracerDef pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical TracerDef has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed TracerDef pointer has no destination cell.",
+                "Canonical TracerDef has no runtime address.");
             return canonical;
         }
 
@@ -99,19 +99,19 @@ public sealed class TracerDefLoader
             XPointerResolutionMode.AliasCell,
             XPointerNullability.Nullable);
         uint drawInterval = rootCursor.ReadUInt32();
-        float speed = ReadSingle(rootCursor);
-        float beamLength = ReadSingle(rootCursor);
-        float beamWidth = ReadSingle(rootCursor);
-        float screwRadius = ReadSingle(rootCursor);
-        float screwDistance = ReadSingle(rootCursor);
+        float speed = rootCursor.ReadSingle();
+        float beamLength = rootCursor.ReadSingle();
+        float beamWidth = rootCursor.ReadSingle();
+        float screwRadius = rootCursor.ReadSingle();
+        float screwDistance = rootCursor.ReadSingle();
         var colors = new TracerColor[TracerDefAsset.ColorCount];
         for (int index = 0; index < colors.Length; index++)
         {
             colors[index] = new TracerColor(
-                ReadSingle(rootCursor),
-                ReadSingle(rootCursor),
-                ReadSingle(rootCursor),
-                ReadSingle(rootCursor));
+                rootCursor.ReadSingle(),
+                rootCursor.ReadSingle(),
+                rootCursor.ReadSingle(),
+                rootCursor.ReadSingle());
         }
 
         if (rootCursor.Offset != TracerDefAsset.SerializedSize)
@@ -152,8 +152,4 @@ public sealed class TracerDefLoader
         };
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 }

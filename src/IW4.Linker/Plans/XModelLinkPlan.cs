@@ -657,7 +657,7 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
     {
         if (!float.IsFinite(value))
             throw new InvalidDataException($"{fieldPath} must be finite.");
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
+        writer.WriteSingle(value);
     }
 
     private static bool IsZeroReference(XModelAsset definition)

@@ -27,9 +27,9 @@ public sealed class XAssetListReader
         var rootCursor = new FastFileCursor(rootBytes, decodedTapeBaseOffset: rootOffset);
 
         int scriptStringCount = rootCursor.ReadInt32();
-        XPointerRead scriptStringsRead = context.PointerReader.ReadCellWithCaptureHandle(rootCursor, XPointerOffsetMode.Direct);
+        XPointerRead scriptStringsRead = context.PointerReader.ReadCellWithCaptureHandle(rootCursor, XPointerResolutionMode.Direct);
         int assetCount = rootCursor.ReadInt32();
-        XPointerRead assetsRead = context.PointerReader.ReadCellWithCaptureHandle(rootCursor, XPointerOffsetMode.Direct);
+        XPointerRead assetsRead = context.PointerReader.ReadCellWithCaptureHandle(rootCursor, XPointerResolutionMode.Direct);
         XPointerReference scriptStringsReference = scriptStringsRead.Pointer;
         XPointerReference assetsReference = assetsRead.Pointer;
 
@@ -95,7 +95,7 @@ public sealed class XAssetListReader
         for (int i = 0; i < count; i++)
         {
             pointerOffsets[i] = pointerTableSourceOffset + i * sizeof(int);
-            pointers[i] = context.PointerReader.ReadCell(tableCursor, XPointerOffsetMode.Direct);
+            pointers[i] = context.PointerReader.ReadCell(tableCursor, XPointerResolutionMode.Direct);
         }
 
         var entries = new XScriptStringEntry[count];
@@ -161,7 +161,7 @@ public sealed class XAssetListReader
             }
             else
             {
-                pointer = context.PointerReader.ReadCell(tableCursor, XPointerOffsetMode.AliasCell);
+                pointer = context.PointerReader.ReadCell(tableCursor, XPointerResolutionMode.AliasCell);
                 headerKind = XAssetHeaderKind.Pointer;
             }
 

@@ -1,12 +1,5 @@
 namespace IW4.Render.UI;
 
-public enum UiMaterialPreviewDiagnosticSeverity
-{
-    Information = 0,
-    Warning = 1,
-    Blocker = 2
-}
-
 public enum UiMaterialPreviewDiagnosticCode
 {
     MaterialHasNoTextures = 0,
@@ -26,6 +19,6 @@ public enum UiMaterialPreviewDiagnosticCode
 
 public sealed record UiMaterialPreviewDiagnostic(
     UiMaterialPreviewDiagnosticCode Code,
-    UiMaterialPreviewDiagnosticSeverity Severity,
+    UiDiagnosticSeverity Severity,
     string Message,
     int? TextureTableOrdinal = null);

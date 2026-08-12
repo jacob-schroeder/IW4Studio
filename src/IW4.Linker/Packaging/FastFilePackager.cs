@@ -49,9 +49,6 @@ public sealed class FastFilePackagingResult
 /// </summary>
 public sealed class FastFilePackager
 {
-    private const int ImageStreamEntrySize = 0x14;
-    private const int MaximumImageStreamEntryCount = 0x3800;
-
     /// <summary>
     /// Packages a source-independent PS3 zone with a newly rebuilt DB header.
     /// Empty image tables support every stock language-mask combination.
@@ -133,12 +130,12 @@ public sealed class FastFilePackager
     {
         void Error(string code, string message) => errors.Add(new FastFilePackagingError(code, message));
 
-        if (!string.Equals(envelope.Magic, PackageFormat.UnsignedMagic, StringComparison.Ordinal) ||
-            Encoding.Latin1.GetByteCount(envelope.Magic) != 8)
+        if (!string.Equals(envelope.Magic, DbHeader.UnsignedMagic, StringComparison.Ordinal) ||
+            Encoding.Latin1.GetByteCount(envelope.Magic) != DbHeader.MagicByteLength)
         {
             Error(
                 "header.magic",
-                $"PS3 packaging requires the eight-byte magic '{PackageFormat.UnsignedMagic}'.");
+                $"PS3 packaging requires the eight-byte magic '{DbHeader.UnsignedMagic}'.");
         }
         if (envelope.Version != XFileVersion.ModernWarfare2)
         {
@@ -234,13 +231,13 @@ public sealed class FastFilePackager
                 : suppliedByMask[bit].ImageStreamEntries
                     .Select(FreezeExternalStreamEntry)
                     .ToArray();
-            if (entries.Length > MaximumImageStreamEntryCount ||
+            if (entries.Length > DbHeader.MaximumImageStreamEntryCount ||
                 entries.Length % GfxImageStreamData.EntryCount != 0)
             {
                 throw new InvalidDataException(
                     $"An imagefile reference table requires {GfxImageStreamData.EntryCount} " +
                     "entries per streamed image and at most " +
-                    $"0x{MaximumImageStreamEntryCount:X} entries.");
+                    $"0x{DbHeader.MaximumImageStreamEntryCount:X} entries.");
             }
             if (entryCount is { } expected && entries.Length != expected)
             {
@@ -259,7 +256,7 @@ public sealed class FastFilePackager
             throw new InvalidDataException("Selected language is absent from the rebuilt table order.");
 
         return new DbHeader(
-            magic: PackageFormat.UnsignedMagic,
+            magic: DbHeader.UnsignedMagic,
             version: XFileVersion.ModernWarfare2,
             allowOnlineUpdate: false,
             fileCreationTimeRaw: 0,
@@ -329,7 +326,7 @@ public sealed class FastFilePackager
     {
         byte[] output = new byte[ComputeHeaderLength(envelope)];
         PackageFormat.WriteUnsignedPrefix(output);
-        int offset = PackageFormat.UnsignedPrefixLength;
+        int offset = DbHeader.UnsignedPrefixLength;
         output[offset++] = envelope.AllowOnlineUpdate ? (byte)1 : (byte)0;
         WriteUInt64(output, ref offset, creationTime);
         WriteUInt32(output, ref offset, envelope.LanguageMask);
@@ -351,8 +348,8 @@ public sealed class FastFilePackager
     }
 
     private static int ComputeHeaderLength(DbHeader envelope) => checked(
-        8 + sizeof(uint) + sizeof(byte) + sizeof(ulong) + sizeof(uint) + sizeof(uint) +
-        checked(envelope.LanguageTables.Length * checked((int)envelope.EntryCount) * ImageStreamEntrySize) +
+        DbHeader.UnsignedPrefixLength + sizeof(byte) + sizeof(ulong) + sizeof(uint) + sizeof(uint) +
+        checked(envelope.LanguageTables.Length * checked((int)envelope.EntryCount) * DbHeaderImageStreamEntry.SerializedSize) +
         sizeof(uint) + sizeof(uint));
 
     private static void WriteUInt32(byte[] output, ref int offset, uint value)

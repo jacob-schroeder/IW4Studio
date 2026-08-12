@@ -74,7 +74,7 @@ public sealed class SilkMapRenderOpenGlNormalCameraColorTargetResourceAllocator 
         uint previousReadFramebuffer = _api.GetBoundReadFramebuffer();
         uint texture = 0;
         uint framebuffer = 0;
-        List<Exception>? failures = null;
+        var failures = new GlResourceFailureCollector();
         try
         {
             texture = _api.CreateTexture();
@@ -110,60 +110,38 @@ public sealed class SilkMapRenderOpenGlNormalCameraColorTargetResourceAllocator 
         }
         catch (Exception exception)
         {
-            (failures ??= []).Add(exception);
+            failures.Add(exception);
         }
         finally
         {
-            Restore(() => _api.BindTexture(textureTarget, previousTexture));
-            Restore(() => _api.BindDrawFramebuffer(previousDrawFramebuffer));
-            Restore(() => _api.BindReadFramebuffer(previousReadFramebuffer));
+            failures.TryExecute(
+                () => _api.BindTexture(textureTarget, previousTexture));
+            failures.TryExecute(
+                () => _api.BindDrawFramebuffer(previousDrawFramebuffer));
+            failures.TryExecute(
+                () => _api.BindReadFramebuffer(previousReadFramebuffer));
         }
 
-        if (failures is not null)
+        if (failures.HasFailures)
         {
-            DeletePartial(() =>
+            failures.TryExecute(() =>
             {
                 if (framebuffer != 0)
                     _api.DeleteFramebuffer(framebuffer);
             });
-            DeletePartial(() =>
+            failures.TryExecute(() =>
             {
                 if (texture != 0)
                     _api.DeleteTexture(texture);
             });
-            throw new AggregateException(
-                "Silk normal-camera color-target allocation failed; partial objects were deleted when possible.",
-                failures);
+            failures.ThrowAggregate(
+                "Silk normal-camera color-target allocation failed; partial objects were deleted when possible.");
         }
 
         return new MapRenderOpenGlNormalCameraColorTargetResource(
             key,
             texture,
             framebuffer);
-
-        void Restore(Action restore)
-        {
-            try
-            {
-                restore();
-            }
-            catch (Exception exception)
-            {
-                (failures ??= []).Add(exception);
-            }
-        }
-
-        void DeletePartial(Action delete)
-        {
-            try
-            {
-                delete();
-            }
-            catch (Exception exception)
-            {
-                failures!.Add(exception);
-            }
-        }
     }
 
     public void DeleteTexture(uint textureHandle)
@@ -322,34 +300,21 @@ public sealed class MapRenderOpenGlNormalCameraColorTargetResourceCache : IDispo
         if (!_scope.BeginDispose())
             return;
 
-        List<Exception>? failures = null;
+        var failures = new GlResourceFailureCollector();
         foreach (uint framebuffer in _ownedFramebuffers)
         {
-            TryDelete(() => _allocator.DeleteFramebuffer(framebuffer));
+            failures.TryExecute(() => _allocator.DeleteFramebuffer(framebuffer));
         }
         foreach (uint texture in _ownedTextures)
-            TryDelete(() => _allocator.DeleteTexture(texture));
+            failures.TryExecute(() => _allocator.DeleteTexture(texture));
 
         _resources.Clear();
         _ownedFramebuffers.Clear();
         _ownedTextures.Clear();
-        if (failures is not null)
+        if (failures.HasFailures)
         {
-            throw new AggregateException(
-                "One or more normal-camera color-target objects could not be deleted.",
-                failures);
-        }
-
-        void TryDelete(Action delete)
-        {
-            try
-            {
-                delete();
-            }
-            catch (Exception exception)
-            {
-                (failures ??= []).Add(exception);
-            }
+            failures.ThrowAggregate(
+                "One or more normal-camera color-target objects could not be deleted.");
         }
     }
 
@@ -360,33 +325,22 @@ public sealed class MapRenderOpenGlNormalCameraColorTargetResourceCache : IDispo
         bool framebufferCollision)
     {
         var mismatch = new InvalidOperationException(message);
-        var failures = new List<Exception> { mismatch };
+        var failures = new GlResourceFailureCollector();
+        failures.Add(mismatch);
         if (!framebufferCollision)
         {
-            try
-            {
-                _allocator.DeleteFramebuffer(resource.FramebufferHandle);
-            }
-            catch (Exception cleanup)
-            {
-                failures.Add(cleanup);
-            }
+            failures.TryExecute(
+                () => _allocator.DeleteFramebuffer(resource.FramebufferHandle));
         }
         if (!textureCollision)
         {
-            try
-            {
-                _allocator.DeleteTexture(resource.TextureHandle);
-            }
-            catch (Exception cleanup)
-            {
-                failures.Add(cleanup);
-            }
+            failures.TryExecute(
+                () => _allocator.DeleteTexture(resource.TextureHandle));
         }
 
         if (failures.Count == 1)
             throw mismatch;
-        throw new AggregateException(message, failures);
+        failures.ThrowAggregate(message);
     }
 
     private void ValidateLimits(MapRenderOpenGlNormalCameraColorTargetKey key)

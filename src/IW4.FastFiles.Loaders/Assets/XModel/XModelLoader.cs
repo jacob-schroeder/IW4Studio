@@ -91,7 +91,11 @@ public sealed class XModelLoader
                     $"XModel pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical XModel asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                $"Packed {canonical.GetType().Name} pointer has no destination cell.",
+                $"Canonical {canonical.GetType().Name} has no runtime address.");
             return canonical;
         }
 
@@ -136,7 +140,7 @@ public sealed class XModelLoader
             byte numRootBones = rootCursor.ReadByte();
             byte numSurfs = rootCursor.ReadByte();
             byte pad07 = rootCursor.ReadByte();
-            float scale = ReadSingle(rootCursor);
+            float scale = rootCursor.ReadSingle();
             IReadOnlyList<uint> noScalePartBits = ReadUInt32Values(rootCursor, 6);
             XPointer<ushort[]> boneNamesPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
             XPointer<byte[]> parentListPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
@@ -155,7 +159,7 @@ public sealed class XModelLoader
             int numCollSurfs = rootCursor.ReadInt32();
             int contents = rootCursor.ReadInt32();
             XPointer<byte[]> boneInfoPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
-            float radius = ReadSingle(rootCursor);
+            float radius = rootCursor.ReadSingle();
             ModelBounds bounds = ReadBounds(rootCursor);
             XPointer<ushort[]> invHighMipRadiusPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
             int memUsage = rootCursor.ReadInt32();
@@ -201,7 +205,7 @@ public sealed class XModelLoader
                 {
                     int lodOffset = 0x40 + (i * XModelLodInfoSize);
                     var lodCursor = new FastFileCursor(rootBytes.AsSpan(lodOffset, XModelLodInfoSize).ToArray(), rootAddress with { Offset = rootAddress.Offset + lodOffset });
-                    float dist = ReadSingle(lodCursor);
+                    float dist = lodCursor.ReadSingle();
                     ushort lodNumSurfs = lodCursor.ReadUInt16();
                     ushort surfIndex = lodCursor.ReadUInt16();
                     XPointerReference modelSurfsPointer = ReadPointer<XModelSurfsAssetModel>(lodCursor, context, XPointerResolutionMode.AliasCell).Untyped;
@@ -350,7 +354,11 @@ public sealed class XModelLoader
                     $"XModelSurfs pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical XModelSurfs asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                $"Packed {canonical.GetType().Name} pointer has no destination cell.",
+                $"Canonical {canonical.GetType().Name} has no runtime address.");
             return canonical;
         }
 
@@ -881,9 +889,9 @@ public sealed class XModelLoader
     {
         var cursor = new FastFileCursor(bytes.Skip(offset).Take(DObjAnimMat.SerializedSize).ToArray());
         return new DObjAnimMat(
-            new DObjQuat(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor)),
+            new DObjQuat(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle()),
             ReadVec3(cursor),
-            ReadSingle(cursor));
+            cursor.ReadSingle());
     }
 
     private static IReadOnlyList<XModelCollSurf> ReadXModelCollSurfArray(
@@ -937,7 +945,7 @@ public sealed class XModelLoader
     private static XBoneInfo ReadXBoneInfo(IReadOnlyList<byte> bytes, int offset)
     {
         var cursor = new FastFileCursor(bytes.Skip(offset).Take(XBoneInfo.SerializedSize).ToArray());
-        return new XBoneInfo(ReadBounds(cursor), ReadSingle(cursor));
+        return new XBoneInfo(ReadBounds(cursor), cursor.ReadSingle());
     }
 
     private static IReadOnlyList<XSurfaceCollisionNode> ReadCollisionNodeArray(
@@ -1047,7 +1055,7 @@ public sealed class XModelLoader
         var cursor = new FastFileCursor(bytes.ToArray());
         var values = new float[bytes.Count / sizeof(float)];
         for (int i = 0; i < values.Length; i++)
-            values[i] = BitConverter.Int32BitsToSingle(cursor.ReadInt32());
+            values[i] = cursor.ReadSingle();
 
         return values;
     }
@@ -1061,10 +1069,6 @@ public sealed class XModelLoader
         return values;
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static ModelBounds ReadBounds(FastFileCursor cursor)
     {
@@ -1079,25 +1083,12 @@ public sealed class XModelLoader
     {
         return new ModelVec3
         {
-            X = ReadSingle(cursor),
-            Y = ReadSingle(cursor),
-            Z = ReadSingle(cursor)
+            X = cursor.ReadSingle(),
+            Y = cursor.ReadSingle(),
+            Z = cursor.ReadSingle()
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        BaseAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress destinationCell = pointer.CellAddress
-            ?? throw new InvalidDataException(
-                $"Packed {canonical.GetType().Name} pointer has no destination cell.");
-
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException($"Canonical {canonical.GetType().Name} has no runtime address.");
-        context.Blocks.WriteInt32(destinationCell, canonicalRaw);
-    }
 
     private static string? ReadXString(
         FastFileCursor cursor,

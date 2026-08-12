@@ -27,11 +27,11 @@ public sealed class StructuredDataDefSetLoader
                 ?? throw new InvalidDataException(
                     $"Top-level StructuredDataDefSet pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical StructuredDataDef asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed StructuredDataDefSet pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical StructuredDataDefSet has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed StructuredDataDefSet pointer has no destination cell.",
+                "Canonical StructuredDataDefSet has no runtime address.");
             return canonical;
         }
 

@@ -91,16 +91,16 @@ public sealed class MenuPreviewMaterialResolution
         ArgumentException.ThrowIfNullOrWhiteSpace(requestedName);
         string[] warnings = Diagnostics
             .Where(diagnostic => diagnostic.Severity is
-                UiMaterialPreviewDiagnosticSeverity.Warning or
-                UiMaterialPreviewDiagnosticSeverity.Blocker)
+                UiDiagnosticSeverity.Warning or
+                UiDiagnosticSeverity.Blocker)
             .Select(diagnostic => diagnostic.Message)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         warnings = warnings
             .Concat(ExecutionDiagnostics
                 .Where(diagnostic => diagnostic.Severity is
-                    UiMaterialExecutionDiagnosticSeverity.Warning or
-                    UiMaterialExecutionDiagnosticSeverity.Blocker)
+                    UiDiagnosticSeverity.Warning or
+                    UiDiagnosticSeverity.Blocker)
                 .Select(diagnostic => diagnostic.Message))
             .Distinct(StringComparer.Ordinal)
             .ToArray();

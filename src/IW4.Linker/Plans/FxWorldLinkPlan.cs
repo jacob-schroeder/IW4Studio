@@ -54,7 +54,7 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
         writer.WriteByte(glass.NeedToCompactData);
         writer.WriteByte(glass.InitCount);
         writer.WriteUInt16(glass.Pad66);
-        WriteSingle(writer, glass.EffectChanceAccum);
+        writer.WriteSingle(glass.EffectChanceAccum);
         writer.WriteInt32(glass.LastPieceDeletionTime);
         Root = LinkStorageSymbol.SourceBytes(
             XFileBlockType.TEMP,
@@ -137,7 +137,7 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
     {
         yield return NameOperation(root, 0);
         if (definitions is { } definitionStorage)
-            yield return Direct(root, 0x34, definitionStorage, "FxMap.GlassSystem.Defs");
+            yield return DirectOperation(root, 0x34, definitionStorage, "FxMap.GlassSystem.Defs");
         if (piecePlaces is not null)
             yield return PresenceOperation(root, 0x38, piecePlaces, "FxMap.GlassSystem.PiecePlaces");
         if (pieceStates is not null)
@@ -157,11 +157,11 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
         if (halfThickness is not null)
             yield return PresenceOperation(root, 0x58, halfThickness, "FxMap.GlassSystem.HalfThickness");
         if (lightingHandles is { } lightingStorage)
-            yield return Direct(root, 0x5c, lightingStorage, "FxMap.GlassSystem.LightingHandles");
+            yield return DirectOperation(root, 0x5c, lightingStorage, "FxMap.GlassSystem.LightingHandles");
         if (initialPieceStates is { } initialPieceStorage)
-            yield return Direct(root, 0x60, initialPieceStorage, "FxMap.GlassSystem.InitPieceStates");
+            yield return DirectOperation(root, 0x60, initialPieceStorage, "FxMap.GlassSystem.InitPieceStates");
         if (initialGeoData is { } initialGeoStorage)
-            yield return Direct(root, 0x64, initialGeoStorage, "FxMap.GlassSystem.InitGeoData");
+            yield return DirectOperation(root, 0x64, initialGeoStorage, "FxMap.GlassSystem.InitGeoData");
     }
 
     private static LinkStorageTarget? FreezeDefinitions(
@@ -264,10 +264,10 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
                 throw new InvalidDataException(
                     $"FxMap.GlassSystem.InitPieceStates[{index}] cannot be null.");
             WriteFrame(writer, value.Frame);
-            WriteSingle(writer, value.Radius);
+            writer.WriteSingle(value.Radius);
             WriteVec2(writer, value.TexCoordOrigin);
             writer.WriteUInt32(value.SupportMask);
-            WriteSingle(writer, value.AreaX2);
+            writer.WriteSingle(value.AreaX2);
             writer.WriteByte(value.DefIndex);
             writer.WriteByte(value.VertCount);
             writer.WriteByte(value.FanDataCount);
@@ -357,39 +357,27 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
 
     private static void WriteFrame(LinkTemplateWriter writer, FxSpatialFrame frame)
     {
-        WriteSingle(writer, frame.Quat.X);
-        WriteSingle(writer, frame.Quat.Y);
-        WriteSingle(writer, frame.Quat.Z);
-        WriteSingle(writer, frame.Quat.W);
+        writer.WriteSingle(frame.Quat.X);
+        writer.WriteSingle(frame.Quat.Y);
+        writer.WriteSingle(frame.Quat.Z);
+        writer.WriteSingle(frame.Quat.W);
         WriteVec3(writer, frame.Origin);
     }
 
     private static void WriteVec2(LinkTemplateWriter writer, FxVec2 value)
     {
-        WriteSingle(writer, value.X);
-        WriteSingle(writer, value.Y);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
     }
 
     private static void WriteVec3(LinkTemplateWriter writer, FxVec3 value)
     {
-        WriteSingle(writer, value.X);
-        WriteSingle(writer, value.Y);
-        WriteSingle(writer, value.Z);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
-    private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private static bool IsZero(float value) =>
         BitConverter.SingleToInt32Bits(value) == 0;
@@ -452,13 +440,13 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
                 XAssetType.Material,
                 $"{path}.MaterialShattered");
             var writer = new LinkTemplateWriter(FxGlassDef.SerializedSize);
-            WriteSingle(writer, definition.HalfThickness);
+            writer.WriteSingle(definition.HalfThickness);
             WriteVec2(writer, texVecs[0]);
             WriteVec2(writer, texVecs[1]);
             writer.WriteUInt32(definition.Color);
             writer.Skip(3 * sizeof(int));
-            WriteSingle(writer, definition.InvHighMipRadius);
-            WriteSingle(writer, definition.ShatteredInvHighMipRadius);
+            writer.WriteSingle(definition.InvHighMipRadius);
+            writer.WriteSingle(definition.ShatteredInvHighMipRadius);
             return new FrozenDefinition(
                 writer.Complete(),
                 physPreset,

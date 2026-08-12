@@ -186,6 +186,22 @@ public sealed class RenderShaderProgramDescriptor
     public RenderShaderAbiDescriptor Abi { get; }
 
     public RenderAuthoredRsxProgramDescriptor? AuthoredRsxProgram { get; }
+
+    internal bool ContentEquals(RenderShaderProgramDescriptor? other) =>
+        other is not null &&
+        Identity == other.Identity &&
+        string.Equals(
+            VertexProgramIdentity,
+            other.VertexProgramIdentity,
+            StringComparison.Ordinal) &&
+        string.Equals(
+            FragmentProgramIdentity,
+            other.FragmentProgramIdentity,
+            StringComparison.Ordinal) &&
+        Abi.ContentEquals(other.Abi) &&
+        (AuthoredRsxProgram is null
+            ? other.AuthoredRsxProgram is null
+            : AuthoredRsxProgram.ContentEquals(other.AuthoredRsxProgram));
 }
 
 public sealed class RenderMaterialDescriptor
@@ -222,6 +238,14 @@ public sealed class RenderMaterialDescriptor
     public string PassClass { get; }
 
     public int PassIndex { get; }
+
+    internal bool ContentEquals(RenderMaterialDescriptor? other) =>
+        other is not null &&
+        Identity == other.Identity &&
+        string.Equals(MaterialName, other.MaterialName, StringComparison.Ordinal) &&
+        string.Equals(TechniqueName, other.TechniqueName, StringComparison.Ordinal) &&
+        string.Equals(PassClass, other.PassClass, StringComparison.Ordinal) &&
+        PassIndex == other.PassIndex;
 }
 
 /// <summary>

@@ -1,6 +1,41 @@
 namespace IW4.Render.OpenGl;
 
 /// <summary>
+/// Collects failures from ordered best-effort GL resource cleanup actions.
+/// </summary>
+internal sealed class GlResourceFailureCollector
+{
+    private readonly List<Exception> _failures = [];
+
+    public bool HasFailures => _failures.Count != 0;
+
+    public int Count => _failures.Count;
+
+    public void Add(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        _failures.Add(exception);
+    }
+
+    public void TryExecute(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            _failures.Add(exception);
+        }
+    }
+
+    public void ThrowAggregate(string message)
+    {
+        throw new AggregateException(message, _failures);
+    }
+}
+
+/// <summary>
 /// Guards the context, render thread, and lifetime shared by context-owned GL
 /// resource caches. Domain caches retain their own allocation validation and
 /// cleanup policy.

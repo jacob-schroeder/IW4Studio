@@ -1,10 +1,10 @@
-namespace IW4.Studio.Documents;
+using IW4.FastFiles.Loaders.Database.Planning;
 
-public enum FastFileDependencyLoadStatus { Loaded, SkippedOptional }
+namespace IW4.Studio.Documents;
 
 public sealed record FastFileDependencyNode(
     string PhysicalPath,
-    FastFileDependencyLoadStatus Status,
+    DbDependencyRequestLoadStatus Status,
     bool IsTarget)
 {
     public string FileName => Path.GetFileName(PhysicalPath);

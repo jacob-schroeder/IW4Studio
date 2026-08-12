@@ -65,7 +65,11 @@ public sealed class SndCurveLoader
                     "does not resolve to a canonical SndCurve asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed SndCurve pointer has no destination cell.",
+                "Canonical SndCurve has no runtime address.");
             return canonical;
         }
 
@@ -118,7 +122,7 @@ public sealed class SndCurveLoader
         ushort padding = rootCursor.ReadUInt16();
         var knots = new SndCurveKnot[SndCurve.MaxKnotCount];
         for (int index = 0; index < knots.Length; index++)
-            knots[index] = new SndCurveKnot(ReadSingle(rootCursor), ReadSingle(rootCursor));
+            knots[index] = new SndCurveKnot(rootCursor.ReadSingle(), rootCursor.ReadSingle());
 
         if (rootCursor.Offset != SndCurve.SerializedSize)
         {
@@ -150,20 +154,5 @@ public sealed class SndCurveLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        SndCurve canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed SndCurve pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical SndCurve has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 }

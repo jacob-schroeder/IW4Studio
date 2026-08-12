@@ -26,11 +26,11 @@ public sealed class LeaderboardDefLoader
             LeaderboardDefAsset canonical = context.ResolveLeaderboardDef(pointer)
                 ?? throw new InvalidDataException(
                     $"Top-level LeaderboardDef pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical LeaderboardDef asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed LeaderboardDef pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical LeaderboardDef has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed LeaderboardDef pointer has no destination cell.",
+                "Canonical LeaderboardDef has no runtime address.");
             return canonical;
         }
 

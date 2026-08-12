@@ -1,12 +1,5 @@
 namespace IW4.Render.UI;
 
-public enum UiMaterialExecutionDiagnosticSeverity
-{
-    Information = 0,
-    Warning = 1,
-    Blocker = 2
-}
-
 public enum UiMaterialExecutionDiagnosticCode
 {
     CanonicalMaterialUnavailable = 0,
@@ -32,5 +25,5 @@ public enum UiMaterialExecutionDiagnosticCode
 
 public sealed record UiMaterialExecutionDiagnostic(
     UiMaterialExecutionDiagnosticCode Code,
-    UiMaterialExecutionDiagnosticSeverity Severity,
+    UiDiagnosticSeverity Severity,
     string Message);

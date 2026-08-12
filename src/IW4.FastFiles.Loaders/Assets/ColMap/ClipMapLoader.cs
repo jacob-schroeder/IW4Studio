@@ -55,7 +55,11 @@ public sealed class ClipMapLoader
                 ?? throw new InvalidDataException(
                     $"Top-level {serializedType} pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to the canonical ColMapMp asset family.");
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed ColMap pointer has no destination cell.",
+                "Canonical ColMap has no runtime address.");
             return canonical;
         }
 
@@ -324,17 +328,6 @@ public sealed class ClipMapLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        ClipMapAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed ColMap pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical ColMap has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private IReadOnlyList<ClipStaticModel> ReadStaticModelArray(
         FastFileCursor cursor,
@@ -349,7 +342,9 @@ public sealed class ClipMapLoader
         var rows = new ClipStaticModel[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, ClipStaticModel.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * ClipStaticModel.SerializedSize),
+                ClipStaticModel.SerializedSize);
             XPointer<XModelAsset> xmodelPointer = ReadPointer<XModelAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
             ModelVec3 origin = ReadVec3(rowCursor);
             ModelVec3[] invScaledAxis = [ReadVec3(rowCursor), ReadVec3(rowCursor), ReadVec3(rowCursor)];
@@ -390,7 +385,9 @@ public sealed class ClipMapLoader
         var rows = new ClipMaterial[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, ClipMaterial.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * ClipMaterial.SerializedSize),
+                ClipMaterial.SerializedSize);
             XPointer<string> namePointer = ReadPointer<string>(rowCursor, context, XPointerResolutionMode.Direct);
             int surfaceFlags = rowCursor.ReadInt32();
             int contents = rowCursor.ReadInt32();
@@ -439,7 +436,9 @@ public sealed class ClipMapLoader
 
             CBrushSide side = ReadCBrushSide(
                 cursor,
-                RowCursor(bytes, address, i, CBrushSide.SerializedSize),
+                new FastFileCursor(bytes, address).Slice(
+                    checked(i * CBrushSide.SerializedSize),
+                    CBrushSide.SerializedSize),
                 context);
             rows[i] = context.RegisterMaterialized(sideAddress, side, "cbrushside_t");
         }
@@ -476,7 +475,9 @@ public sealed class ClipMapLoader
         var rows = new CNode[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, CNode.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * CNode.SerializedSize),
+                CNode.SerializedSize);
             XPointer<CPlane> planePointer = ReadPointer<CPlane>(rowCursor, context, XPointerResolutionMode.Direct);
             rows[i] = new CNode
             {
@@ -501,7 +502,10 @@ public sealed class ClipMapLoader
 
         var rows = new CLeaf[count];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = ReadLeaf(RowCursor(bytes, address, i, CLeaf.SerializedSize));
+            rows[i] = ReadLeaf(
+                new FastFileCursor(bytes, address).Slice(
+                    checked(i * CLeaf.SerializedSize),
+                    CLeaf.SerializedSize));
 
         return rows;
     }
@@ -519,7 +523,9 @@ public sealed class ClipMapLoader
         var rows = new CLeafBrushNode[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, CLeafBrushNode.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * CLeafBrushNode.SerializedSize),
+                CLeafBrushNode.SerializedSize);
             byte axis = rowCursor.ReadByte();
             byte pad01 = rowCursor.ReadByte();
             short leafBrushCount = ReadInt16(rowCursor);
@@ -557,8 +563,8 @@ public sealed class ClipMapLoader
             };
         }
 
-        float dist = ReadSingle(rowCursor);
-        float range = ReadSingle(rowCursor);
+        float dist = rowCursor.ReadSingle();
+        float range = rowCursor.ReadSingle();
         var childOffsets = new ushort[2];
         for (int i = 0; i < childOffsets.Length; i++)
             childOffsets[i] = rowCursor.ReadUInt16();
@@ -607,7 +613,9 @@ public sealed class ClipMapLoader
             }
 
             CollisionBorder border = ReadCollisionBorder(
-                RowCursor(bytes, address, i, CollisionBorder.SerializedSize));
+                new FastFileCursor(bytes, address).Slice(
+                    checked(i * CollisionBorder.SerializedSize),
+                    CollisionBorder.SerializedSize));
             rows[i] = context.RegisterMaterialized(
                 borderAddress,
                 border,
@@ -630,7 +638,9 @@ public sealed class ClipMapLoader
         var rows = new CollisionPartition[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, CollisionPartition.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * CollisionPartition.SerializedSize),
+                CollisionPartition.SerializedSize);
             byte triCount = rowCursor.ReadByte();
             byte borderCount = rowCursor.ReadByte();
             byte firstVertSegment = rowCursor.ReadByte();
@@ -665,7 +675,9 @@ public sealed class ClipMapLoader
         var rows = new CollisionAabbTree[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, CollisionAabbTree.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * CollisionAabbTree.SerializedSize),
+                CollisionAabbTree.SerializedSize);
             rows[i] = new CollisionAabbTree
             {
                 Origin = ReadVec3(rowCursor),
@@ -692,12 +704,14 @@ public sealed class ClipMapLoader
         var rows = new CModel[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, CModel.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * CModel.SerializedSize),
+                CModel.SerializedSize);
             rows[i] = new CModel
             {
                 Mins = ReadVec3(rowCursor),
                 Maxs = ReadVec3(rowCursor),
-                Radius = ReadSingle(rowCursor),
+                Radius = rowCursor.ReadSingle(),
                 Leaf = ReadLeaf(rowCursor)
             };
         }
@@ -718,7 +732,11 @@ public sealed class ClipMapLoader
         var rows = new CBrush[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            CBrush root = ReadCBrushRoot(RowCursor(bytes, address, i, CBrush.SerializedSize), context);
+            CBrush root = ReadCBrushRoot(
+                new FastFileCursor(bytes, address).Slice(
+                    checked(i * CBrush.SerializedSize),
+                    CBrush.SerializedSize),
+                context);
             IReadOnlyList<CBrushSide> sides = ReadCBrushPointerSidePayload(cursor, root.SidesPointer.Untyped, root.NumSides, context);
             int adjacencyByteCount = RequiredAdjacencyByteCount(root, sides);
             IReadOnlyList<byte> baseAdjacentSide = ReadCBrushPointerBytePayload(
@@ -896,7 +914,9 @@ public sealed class ClipMapLoader
         var rows = new DynEntityDef[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, DynEntityDef.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * DynEntityDef.SerializedSize),
+                DynEntityDef.SerializedSize);
             int type = rowCursor.ReadInt32();
             GfxPlacement pose = ReadGfxPlacement(rowCursor);
             XPointer<XModelAsset> xmodelPointer = ReadPointer<XModelAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
@@ -951,11 +971,13 @@ public sealed class ClipMapLoader
         var rows = new DynEntityPose[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, DynEntityPose.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * DynEntityPose.SerializedSize),
+                DynEntityPose.SerializedSize);
             rows[i] = new DynEntityPose
             {
                 Pose = ReadGfxPlacement(rowCursor),
-                Radius = ReadSingle(rowCursor)
+                Radius = rowCursor.ReadSingle()
             };
         }
 
@@ -976,7 +998,9 @@ public sealed class ClipMapLoader
         var rows = new DynEntityClient[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, DynEntityClient.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * DynEntityClient.SerializedSize),
+                DynEntityClient.SerializedSize);
             rows[i] = new DynEntityClient
             {
                 PhysObjId = rowCursor.ReadInt32(),
@@ -1003,7 +1027,9 @@ public sealed class ClipMapLoader
         var rows = new DynEntityColl[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, DynEntityColl.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * DynEntityColl.SerializedSize),
+                DynEntityColl.SerializedSize);
             rows[i] = new DynEntityColl
             {
                 Sector = rowCursor.ReadUInt16(),
@@ -1029,7 +1055,9 @@ public sealed class ClipMapLoader
         var rows = new SModelAabbNode[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, SModelAabbNode.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * SModelAabbNode.SerializedSize),
+                SModelAabbNode.SerializedSize);
             rows[i] = new SModelAabbNode
             {
                 Bounds = ReadBounds(rowCursor),
@@ -1078,7 +1106,9 @@ public sealed class ClipMapLoader
                 continue;
             }
 
-            FastFileCursor rowCursor = RowCursor(bytes, address, i, CPlane.SerializedSize);
+            FastFileCursor rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * CPlane.SerializedSize),
+                CPlane.SerializedSize);
             CPlane plane = ReadCPlane(rowCursor);
             context.RegisterClipPlane(planeAddress, plane);
             rows[i] = plane;
@@ -1136,7 +1166,7 @@ public sealed class ClipMapLoader
         return new CPlane
         {
             Normal = ReadVec3(cursor),
-            Dist = ReadSingle(cursor),
+            Dist = cursor.ReadSingle(),
             Type = cursor.ReadByte(),
             SignBits = cursor.ReadByte(),
             Pad12 = cursor.ReadBytes(2)
@@ -1157,7 +1187,10 @@ public sealed class ClipMapLoader
 
         var rows = new ModelBounds[count];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = ReadBounds(RowCursor(bytes, address, i, 0x18));
+            rows[i] = ReadBounds(
+                new FastFileCursor(bytes, address).Slice(
+                    checked(i * 0x18),
+                    0x18));
 
         return rows;
     }
@@ -1175,7 +1208,10 @@ public sealed class ClipMapLoader
 
         var rows = new ModelVec3[count];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = ReadVec3(RowCursor(bytes, address, i, 0x0C));
+            rows[i] = ReadVec3(
+                new FastFileCursor(bytes, address).Slice(
+                    checked(i * 0x0C),
+                    0x0C));
 
         return rows;
     }
@@ -1328,11 +1364,6 @@ public sealed class ClipMapLoader
         }
     }
 
-    private static FastFileCursor RowCursor(byte[] bytes, XBlockAddress address, int index, int stride)
-    {
-        int offset = checked(index * stride);
-        return new FastFileCursor(bytes.AsSpan(offset, stride).ToArray(), address.Add(offset));
-    }
 
     private static CLeaf ReadLeaf(FastFileCursor cursor)
     {
@@ -1352,11 +1383,11 @@ public sealed class ClipMapLoader
     {
         return new CollisionBorder
         {
-            DistEq = [ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor)],
-            ZBase = ReadSingle(cursor),
-            ZSlope = ReadSingle(cursor),
-            Start = ReadSingle(cursor),
-            Length = ReadSingle(cursor)
+            DistEq = [cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle()],
+            ZBase = cursor.ReadSingle(),
+            ZSlope = cursor.ReadSingle(),
+            Start = cursor.ReadSingle(),
+            Length = cursor.ReadSingle()
         };
     }
 
@@ -1364,7 +1395,7 @@ public sealed class ClipMapLoader
     {
         return new GfxPlacement
         {
-            Quat = [ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor)],
+            Quat = [cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle()],
             Origin = ReadVec3(cursor)
         };
     }
@@ -1392,9 +1423,9 @@ public sealed class ClipMapLoader
     {
         return new ModelVec3
         {
-            X = ReadSingle(cursor),
-            Y = ReadSingle(cursor),
-            Z = ReadSingle(cursor)
+            X = cursor.ReadSingle(),
+            Y = cursor.ReadSingle(),
+            Z = cursor.ReadSingle()
         };
     }
 
@@ -1402,8 +1433,8 @@ public sealed class ClipMapLoader
     {
         return new ModelVec2
         {
-            a = ReadSingle(cursor),
-            b = ReadSingle(cursor)
+            a = cursor.ReadSingle(),
+            b = cursor.ReadSingle()
         };
     }
 
@@ -1420,10 +1451,6 @@ public sealed class ClipMapLoader
         return unchecked((short)cursor.ReadUInt16());
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static int Count(uint count, string name)
     {

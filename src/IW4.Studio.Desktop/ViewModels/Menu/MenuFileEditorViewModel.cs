@@ -84,7 +84,7 @@ public sealed class MenuFileEditorViewModel
             isAssetReferenceResolved: _isAssetReferenceResolved);
         _designer.PropertyChanged += Designer_PropertyChanged;
         _designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
-        if (Mode == AssetEditorMode.Editable)
+        if (Mode == WorkspaceAssetAccess.Editable)
             _coordinator.Changed += Coordinator_Changed;
 
         RevertCommand = new ViewModelCommand(RevertDraft, CanRevert);
@@ -103,8 +103,8 @@ public sealed class MenuFileEditorViewModel
         RebuildRegistrations(selectedId: null);
     }
 
-    public AssetEditorMode Mode => _session.Mode;
-    public bool IsEditable => Mode == AssetEditorMode.Editable;
+    public WorkspaceAssetAccess Mode => _session.Mode;
+    public bool IsEditable => Mode == WorkspaceAssetAccess.Editable;
     public bool CanAddRegistration => IsEditable && !Designer.HasStagedInput;
     public bool CanRetargetRegistration =>
         CanAddRegistration && SelectedRegistration is not null;
@@ -293,7 +293,7 @@ public sealed class MenuFileEditorViewModel
 
     private void InitializeSnapshot()
     {
-        if (Mode == AssetEditorMode.Editable && _rowIdentity is { } rowIdentity)
+        if (Mode == WorkspaceAssetAccess.Editable && _rowIdentity is { } rowIdentity)
         {
             _ = _session.OpenDraft<MenuFileDraft>();
             _snapshot = _coordinator.ReadMenuFile(rowIdentity);
@@ -305,7 +305,7 @@ public sealed class MenuFileEditorViewModel
             return;
         }
 
-        if (Mode == AssetEditorMode.ReadOnly)
+        if (Mode == WorkspaceAssetAccess.ReadOnly)
         {
             try
             {
@@ -530,7 +530,7 @@ public sealed class MenuFileEditorViewModel
         // wide editing revision; every coordinator mutation rebases them.
         if (
             _disposed ||
-            Mode != AssetEditorMode.Editable ||
+            Mode != WorkspaceAssetAccess.Editable ||
             _rowIdentity is null ||
             _coordinatorMutationDepth != 0)
             return;
@@ -593,7 +593,7 @@ public sealed class MenuFileEditorViewModel
     private void RefreshValidation()
     {
         var issues = new List<AssetValidationIssue>();
-        if (Mode == AssetEditorMode.Editable && _session.IsDraftOpen)
+        if (Mode == WorkspaceAssetAccess.Editable && _session.IsDraftOpen)
             issues.AddRange(_session.RefreshValidation().Issues);
         if (_selectedResolution is { } resolution)
         {

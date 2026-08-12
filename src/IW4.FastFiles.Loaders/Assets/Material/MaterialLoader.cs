@@ -116,12 +116,12 @@ public sealed class MaterialLoader
             byte pad43 = rootCursor.ReadByte();
             ushort[] inlineTechniqueSlotStateBits = ReadUshorts(rootCursor, TechniqueSlotCount);
             ushort pad8E = rootCursor.ReadUInt16();
-            XPointerReference runtimeUshortPayload = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
-            XPointerReference techniqueSetPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.AliasCell);
-            XPointerReference textureTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
-            XPointerReference constantTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
-            XPointerReference stateBitsPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
-            XPointerReference xstringTablePointer = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
+            XPointerReference runtimeUshortPayload = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
+            XPointerReference techniqueSetPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.AliasCell);
+            XPointerReference textureTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+            XPointerReference constantTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+            XPointerReference stateBitsPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+            XPointerReference xstringTablePointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
 
             if (rootCursor.Offset != MaterialSize)
                 throw new InvalidDataException($"Material consumed 0x{rootCursor.Offset:X} bytes instead of 0x{MaterialSize:X}.");
@@ -315,8 +315,8 @@ public sealed class MaterialLoader
             XPointerReference dataPointer = context.PointerReader.ReadCell(
                 textureCursor,
                 semantic == 0x0b
-                    ? XPointerOffsetMode.Direct
-                    : XPointerOffsetMode.AliasCell);
+                    ? XPointerResolutionMode.Direct
+                    : XPointerResolutionMode.AliasCell);
             textures[i] = new MaterialTextureDef
             {
                 NameHash = nameHash,
@@ -394,23 +394,23 @@ public sealed class MaterialLoader
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
         var writable = new MaterialWaterWritable(rootCursor.ReadUInt32());
-        XPointerReference h0xPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
-        XPointerReference h0yPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
-        XPointerReference wTermPointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.Direct);
+        XPointerReference h0xPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+        XPointerReference h0yPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+        XPointerReference wTermPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
         int m = rootCursor.ReadInt32();
         int n = rootCursor.ReadInt32();
-        float lx = ReadSingle(rootCursor);
-        float lz = ReadSingle(rootCursor);
-        float gravity = ReadSingle(rootCursor);
-        float windVelocity = ReadSingle(rootCursor);
-        var windDirection = new MaterialVec2(ReadSingle(rootCursor), ReadSingle(rootCursor));
-        float amplitude = ReadSingle(rootCursor);
+        float lx = rootCursor.ReadSingle();
+        float lz = rootCursor.ReadSingle();
+        float gravity = rootCursor.ReadSingle();
+        float windVelocity = rootCursor.ReadSingle();
+        var windDirection = new MaterialVec2(rootCursor.ReadSingle(), rootCursor.ReadSingle());
+        float amplitude = rootCursor.ReadSingle();
         var codeConstant = new MaterialVec4(
-            ReadSingle(rootCursor),
-            ReadSingle(rootCursor),
-            ReadSingle(rootCursor),
-            ReadSingle(rootCursor));
-        XPointerReference imagePointer = context.PointerReader.ReadCell(rootCursor, XPointerOffsetMode.AliasCell);
+            rootCursor.ReadSingle(),
+            rootCursor.ReadSingle(),
+            rootCursor.ReadSingle(),
+            rootCursor.ReadSingle());
+        XPointerReference imagePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.AliasCell);
 
         int elementCount = checked(m * n);
         IReadOnlyList<float> h0x = ReadWaterSpectrum(cursor, h0xPointer, elementCount, context);
@@ -467,7 +467,7 @@ public sealed class MaterialLoader
         var spectrumCursor = new FastFileCursor(bytes, address);
         var values = new float[elementCount];
         for (int i = 0; i < values.Length; i++)
-            values[i] = ReadSingle(spectrumCursor);
+            values[i] = spectrumCursor.ReadSingle();
 
         return values;
     }
@@ -503,7 +503,7 @@ public sealed class MaterialLoader
         {
             XPointerReference loadBits = context.PointerReader.ReadCell(
                 stateCursor,
-                XPointerOffsetMode.AliasCell);
+                XPointerResolutionMode.AliasCell);
             uint tail = stateCursor.ReadUInt32();
             stateBits[i] = new GfxStateBits
             {
@@ -566,10 +566,10 @@ public sealed class MaterialLoader
                 NameHash = nameHash,
                 NameBytes = nameBytes,
                 Literal = new MaterialVec4(
-                    ReadSingle(constantCursor),
-                    ReadSingle(constantCursor),
-                    ReadSingle(constantCursor),
-                    ReadSingle(constantCursor))
+                    constantCursor.ReadSingle(),
+                    constantCursor.ReadSingle(),
+                    constantCursor.ReadSingle(),
+                    constantCursor.ReadSingle())
             };
         }
 
@@ -706,10 +706,6 @@ public sealed class MaterialLoader
         return values;
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static XPointer<string> ReadXStringPointer(
         FastFileCursor cursor,
@@ -729,6 +725,6 @@ public sealed class MaterialLoader
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
         DbLoadExecutionContext context,
-        XPointerOffsetMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
+        XPointerResolutionMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
 
 }

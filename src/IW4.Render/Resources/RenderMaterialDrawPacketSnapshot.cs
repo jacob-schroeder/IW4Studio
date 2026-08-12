@@ -400,7 +400,7 @@ public sealed class RenderMaterialDrawPacketSnapshot
         SourcePass.AppendContent(writer);
         BaseTextureBinding.AppendContent(writer);
         UvRoute.AppendContent(writer);
-        AppendState(writer, EffectiveState);
+        writer.AppendMapRenderStateV1(EffectiveState);
         writer.WriteByte(SceneLightIndex);
         writer.WriteString(ShaderExecutionStatus);
         writer.WriteInt32(PickRanges.Length);
@@ -509,52 +509,6 @@ public sealed class RenderMaterialDrawPacketSnapshot
             RenderSemanticResourceKind.Sampler);
     }
 
-    private static void AppendState(
-        RenderContentDigestWriter writer,
-        MapRenderState state)
-    {
-        writer.WriteBoolean(state.HasState);
-        writer.WriteUInt32(state.LoadBits0);
-        writer.WriteUInt32(state.LoadBits1);
-        writer.WriteUInt32(state.Tail);
-        writer.WriteBoolean(state.ShaderPackerSrgbEnabled);
-        writer.WriteUInt32(state.ColorMask);
-        writer.WriteBoolean(state.AlphaTestEnabled);
-        writer.WriteUInt32(state.AlphaFunc);
-        writer.WriteByte(state.AlphaRef);
-        writer.WriteBoolean(state.CullEnabled);
-        writer.WriteUInt32(state.CullFace);
-        writer.WriteUInt32(state.PolygonMode);
-        writer.WriteBoolean(state.BlendEnabled);
-        writer.WriteUInt32(state.BlendEquationRgb);
-        writer.WriteUInt32(state.BlendEquationAlpha);
-        writer.WriteUInt32(state.BlendSourceRgb);
-        writer.WriteUInt32(state.BlendSourceAlpha);
-        writer.WriteUInt32(state.BlendDestinationRgb);
-        writer.WriteUInt32(state.BlendDestinationAlpha);
-        writer.WriteBoolean(state.DepthTestEnabled);
-        writer.WriteBoolean(state.DepthWriteEnabled);
-        writer.WriteUInt32(state.DepthFunc);
-        writer.WriteBoolean(state.Stencil.Enabled);
-        writer.WriteBoolean(state.Stencil.BackFaceStateIsIndependent);
-        AppendStencilFace(writer, state.Stencil.Front);
-        AppendStencilFace(writer, state.Stencil.Back);
-        writer.WriteBoolean(state.PolygonOffsetEnabled);
-        writer.WriteSingle(state.PolygonOffsetFactor);
-        writer.WriteSingle(state.PolygonOffsetUnits);
-    }
-
-    private static void AppendStencilFace(
-        RenderContentDigestWriter writer,
-        MapRenderStencilFaceState state)
-    {
-        writer.WriteUInt32(state.Function);
-        writer.WriteInt32(state.Reference);
-        writer.WriteUInt32(state.CompareMask);
-        writer.WriteUInt32(state.FailOperation);
-        writer.WriteUInt32(state.DepthFailOperation);
-        writer.WriteUInt32(state.PassOperation);
-    }
 }
 
 public enum RenderMaterialDrawPacketCandidateRejectionCode

@@ -21,11 +21,6 @@ public readonly record struct XPointer<T>
         CellAddress = cellAddress;
     }
 
-    public XPointer(int raw, XPointerOffsetMode resolutionMode)
-        : this(raw, resolutionMode.ToResolutionMode())
-    {
-    }
-
     public int Raw { get; }
     public int Value => Raw;
     public XPointerResolutionMode ResolutionMode { get; }

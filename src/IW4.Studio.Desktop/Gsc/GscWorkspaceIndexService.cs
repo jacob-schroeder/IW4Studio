@@ -1,4 +1,3 @@
-using System.Text;
 using IW4.Assets.Assets.RawFile;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
@@ -13,7 +12,7 @@ namespace IW4.Studio.Desktop.Gsc;
 /// <summary>
 /// Builds an immutable GSC/CSC workspace from active runtime providers and
 /// applied target-document drafts. Exact editor-buffer content is represented
-/// by a final overlay and never mutates runtime assets or session drafts.
+/// by a final document and never mutates runtime assets or session drafts.
 /// </summary>
 public sealed class GscWorkspaceIndexService
 {
@@ -70,7 +69,7 @@ public sealed class GscWorkspaceIndexService
                     authoredDocuments.Select(document =>
                         new GscDocumentSnapshot(
                             GscScriptPath.FromAssetName(document.AssetName),
-                            document.Source.Text)),
+                            document.Source)),
                     cancellationToken);
             var captured = new GscWorkspaceSnapshot(
                 runtimeCapture.AssetPoolRevision,
@@ -86,7 +85,7 @@ public sealed class GscWorkspaceIndexService
     /// <summary>
     /// Warms the immutable base snapshot for the current runtime-pool and
     /// editing-session revisions on a worker thread. The normal snapshot cache
-    /// serializes concurrent captures; editor buffer overlays remain
+    /// serializes concurrent captures; editor-buffer documents remain
     /// demand-driven.
     /// </summary>
     public Task<GscWorkspaceSnapshot> WarmBaseSnapshotAsync(
@@ -139,7 +138,7 @@ public sealed class GscWorkspaceIndexService
             XAssetProviderContribution activeProvider = slot.ActiveProvider;
             WorkspaceZone? ownerZone = _workspace.LoadedZones.FirstOrDefault(zone =>
                 zone.LoadResult.Context.ZoneOwner == activeProvider.Owner);
-            GscWorkspaceRawFileSource? source = activeProvider.IsReferencePlaceholder
+            GscSourceText? source = activeProvider.IsReferencePlaceholder
                 ? null
                 : CaptureSource(slot.Name, activeProvider);
             capturedSlots.Add(new GscWorkspaceRawFileSlot(
@@ -167,7 +166,7 @@ public sealed class GscWorkspaceIndexService
                 .Where(slot => slot.Source is not null)
                 .Select(slot => new GscDocumentSnapshot(
                     GscScriptPath.FromAssetName(slot.AssetName),
-                    slot.Source!.Text)),
+                    slot.Source!)),
             cancellationToken);
         if (pool.Revision != expectedRevision)
         {
@@ -204,7 +203,7 @@ public sealed class GscWorkspaceIndexService
         return documents.ToArray();
     }
 
-    private static GscWorkspaceRawFileSource CaptureSource(
+    private static GscSourceText CaptureSource(
         string assetName,
         XAssetProviderContribution provider)
     {
@@ -216,70 +215,18 @@ public sealed class GscWorkspaceIndexService
         return CaptureSource(assetName, rawFile);
     }
 
-    private static GscWorkspaceRawFileSource CaptureSource(
+    private static GscSourceText CaptureSource(
         string assetName,
         RawFileAsset rawFile)
     {
-        if (rawFile.CompressedLen < 0 || rawFile.Len < 0)
-        {
-            throw new InvalidDataException(
-                $"RawFile '{assetName}' has negative serialized length metadata.");
-        }
-
-        byte[] payload = rawFile.Buffer?.ToArray() ?? [];
-        byte[] logicalContent;
-        bool isCompressed = rawFile.CompressedLen != 0;
-        if (isCompressed)
-        {
-            if (payload.Length != rawFile.CompressedLen)
-            {
-                throw new InvalidDataException(
-                    $"Compressed RawFile '{assetName}' has {payload.Length} payload bytes; expected {rawFile.CompressedLen}.");
-            }
-            logicalContent = RawFileContentCodec.DecodeCompressed(payload, rawFile.Len);
-        }
-        else if (rawFile.Buffer is null)
-        {
-            if (rawFile.Len != 0)
-            {
-                throw new InvalidDataException(
-                    $"RawFile '{assetName}' has no buffer for its declared {rawFile.Len}-byte content.");
-            }
-            logicalContent = [];
-        }
-        else
-        {
-            int expectedLength;
-            try
-            {
-                expectedLength = checked(rawFile.Len + 1);
-            }
-            catch (OverflowException exception)
-            {
-                throw new InvalidDataException(
-                    $"RawFile '{assetName}' length cannot include its terminal null.",
-                    exception);
-            }
-            if (payload.Length != expectedLength || payload[^1] != 0)
-            {
-                throw new InvalidDataException(
-                    $"Uncompressed RawFile '{assetName}' must contain exactly len + 1 bytes ending in a terminal null.");
-            }
-            logicalContent = payload[..rawFile.Len];
-        }
-
         return CreateSource(
             assetName,
-            logicalContent,
-            isCompressed,
-            payload.Length);
+            RawFileContentCodec.DecodeStrictSerializedContent(assetName, rawFile));
     }
 
-    private static GscWorkspaceRawFileSource CreateSource(
+    private static GscSourceText CreateSource(
         string assetName,
-        byte[] logicalContent,
-        bool isCompressed,
-        int serializedLength)
+        byte[] logicalContent)
     {
         RawFileContentClassification classification =
             RawFileContentClassifier.Classify(assetName, logicalContent);
@@ -289,27 +236,9 @@ public sealed class GscWorkspaceIndexService
         string text = RawFileContentClassifier.DecodeText(
             logicalContent,
             encoding);
-        return new GscWorkspaceRawFileSource(
-            new GscSourceText(text, CreateSourceEncoding(encoding)),
-            encoding,
-            isCompressed,
-            serializedLength,
-            logicalContent.Length);
-    }
-
-    private static Encoding CreateSourceEncoding(RawFileTextEncoding encoding)
-    {
-        return encoding switch
-        {
-            RawFileTextEncoding.Utf8 => new UTF8Encoding(
-                encoderShouldEmitUTF8Identifier: false,
-                throwOnInvalidBytes: true),
-            RawFileTextEncoding.Windows1252 => Encoding.GetEncoding(
-                1252,
-                EncoderFallback.ExceptionFallback,
-                DecoderFallback.ExceptionFallback),
-            _ => throw new ArgumentOutOfRangeException(nameof(encoding))
-        };
+        return new GscSourceText(
+            text,
+            RawFileContentClassifier.GetTextEncoding(encoding));
     }
 
     private sealed record RuntimeWorkspaceCapture(

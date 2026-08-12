@@ -34,7 +34,7 @@ public sealed class LocalizeEditorViewModel
 
         switch (editorSession.Mode)
         {
-            case AssetEditorMode.Editable:
+            case WorkspaceAssetAccess.Editable:
                 _draft = editorSession.OpenDraft<LocalizeDraft>();
                 _valueInput = DisplayValue(_draft.Value);
                 _diagnostics = editorSession.Validation.Issues;
@@ -42,7 +42,7 @@ public sealed class LocalizeEditorViewModel
                     "Value edits are staged until Apply. The key remains locked as row identity.";
                 break;
 
-            case AssetEditorMode.ReadOnly:
+            case WorkspaceAssetAccess.ReadOnly:
                 try
                 {
                     _readOnlySnapshot =
@@ -65,7 +65,7 @@ public sealed class LocalizeEditorViewModel
                 }
                 break;
 
-            case AssetEditorMode.ContentUnavailable:
+            case WorkspaceAssetAccess.ContentUnavailable:
                 _statusMessage =
                     "Localize content is unavailable because this reference has no resolved provider.";
                 break;
@@ -76,8 +76,8 @@ public sealed class LocalizeEditorViewModel
         }
     }
 
-    public AssetEditorMode Mode => _editorSession.Mode;
-    public bool IsEditable => Mode == AssetEditorMode.Editable;
+    public WorkspaceAssetAccess Mode => _editorSession.Mode;
+    public bool IsEditable => Mode == WorkspaceAssetAccess.Editable;
     public bool IsInputReadOnly => !IsEditable;
     public bool CanApply =>
         IsEditable &&

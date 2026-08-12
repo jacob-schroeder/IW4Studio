@@ -30,7 +30,11 @@ public sealed class FontLoader
                 ?? throw new InvalidDataException(
                     $"Top-level Font pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical Font asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context, "Font");
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed Font pointer has no destination cell.",
+                "Canonical Font has no runtime address.");
             return canonical;
         }
 
@@ -116,18 +120,6 @@ public sealed class FontLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        FontAsset canonical,
-        DbLoadExecutionContext context,
-        string targetName)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException($"Packed {targetName} pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException($"Canonical {targetName} has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private MaterialAsset? ReadMaterialPointer(
         FastFileCursor cursor,
@@ -188,10 +180,10 @@ public sealed class FontLoader
             cursor.ReadByte(),
             cursor.ReadByte(),
             cursor.ReadByte(),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor));
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle());
 
         if (cursor.Offset - start != FontAsset.GlyphSerializedSize)
             throw new InvalidDataException($"FontGlyph consumed 0x{cursor.Offset - start:X} bytes instead of 0x{FontAsset.GlyphSerializedSize:X}.");
@@ -199,8 +191,4 @@ public sealed class FontLoader
         return glyph;
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 }

@@ -472,10 +472,10 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
         {
             MaterialShaderLiteralConstant literal = argument.LiteralConstant!.Value;
             var writer = new LinkTemplateWriter(sizeof(float) * 4);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(literal.X));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(literal.Y));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(literal.Z));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(literal.W));
+            writer.WriteSingle(literal.X);
+            writer.WriteSingle(literal.Y);
+            writer.WriteSingle(literal.Z);
+            writer.WriteSingle(literal.W);
             return _freeze.FreezeStorage(
                 pointer,
                 writer.Complete(),

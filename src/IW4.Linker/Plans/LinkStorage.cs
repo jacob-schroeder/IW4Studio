@@ -407,6 +407,11 @@ internal sealed class LinkTemplateWriter
         Position += sizeof(int);
     }
 
+    public void WriteSingle(float value)
+    {
+        WriteInt32(BitConverter.SingleToInt32Bits(value));
+    }
+
     public void WriteUInt32(uint value)
     {
         EnsureAvailable(sizeof(uint));

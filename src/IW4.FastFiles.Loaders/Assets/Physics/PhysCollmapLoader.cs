@@ -61,7 +61,11 @@ public sealed class PhysCollmapLoader
                     "does not resolve to a canonical PhysCollmap asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed PhysCollmap pointer has no destination cell.",
+                "Canonical PhysCollmap has no runtime address.");
             return canonical;
         }
 
@@ -366,7 +370,7 @@ public sealed class PhysCollmapLoader
     private static CPlane ReadCPlane(FastFileCursor cursor)
     {
         Vec3 normal = ReadVec3(cursor);
-        float dist = ReadSingle(cursor);
+        float dist = cursor.ReadSingle();
         byte type = cursor.ReadByte();
         byte signBits = cursor.ReadByte();
         byte[] pad12 = cursor.ReadBytes(2);
@@ -441,9 +445,9 @@ public sealed class PhysCollmapLoader
     {
         return new Vec3
         {
-            X = ReadSingle(cursor),
-            Y = ReadSingle(cursor),
-            Z = ReadSingle(cursor)
+            X = cursor.ReadSingle(),
+            Y = cursor.ReadSingle(),
+            Z = cursor.ReadSingle()
         };
     }
 
@@ -455,20 +459,5 @@ public sealed class PhysCollmapLoader
     private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
         ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        PhysCollmapAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed PhysCollmap pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical PhysCollmap has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
     }
-}

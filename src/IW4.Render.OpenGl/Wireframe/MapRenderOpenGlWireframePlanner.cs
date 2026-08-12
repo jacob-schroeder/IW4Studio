@@ -276,14 +276,11 @@ internal static class MapRenderOpenGlWireframePlanner
             pipeline.DepthStencilAttachmentFormat !=
                 depthStencil.PixelFormat ||
             pipeline.Multisample != expectedMultisample ||
-            !IsExactFixedState(
-                pipeline.FixedState,
+            !pipeline.FixedState.ContentEquals(
                 RenderFixedStatePresets.WireframeV1) ||
-            !IsExactProgram(
-                pipeline.ShaderProgram,
+            !pipeline.ShaderProgram.ContentEquals(
                 RenderFramePlanner.WireframeShaderProgram) ||
-            !IsExactMaterial(
-                draw.Material,
+            !draw.Material.ContentEquals(
                 RenderFramePlanner.WireframeMaterial))
         {
             throw Invalid(
@@ -332,50 +329,6 @@ internal static class MapRenderOpenGlWireframePlanner
             rows[2].X, rows[2].Y, rows[2].Z, rows[2].W,
             rows[3].X, rows[3].Y, rows[3].Z, rows[3].W);
     }
-
-    private static bool IsExactFixedState(
-        RenderFixedStateDescriptor actual,
-        RenderFixedStateDescriptor expected) =>
-        actual.Identity == expected.Identity &&
-        actual.Raster == expected.Raster &&
-        actual.Depth == expected.Depth &&
-        actual.Stencil == expected.Stencil &&
-        actual.Blend == expected.Blend &&
-        actual.ColorWriteMask == expected.ColorWriteMask &&
-        actual.FragmentOutputTransfer == expected.FragmentOutputTransfer;
-
-    private static bool IsExactProgram(
-        RenderShaderProgramDescriptor actual,
-        RenderShaderProgramDescriptor expected) =>
-        actual.Identity == expected.Identity &&
-        string.Equals(
-            actual.VertexProgramIdentity,
-            expected.VertexProgramIdentity,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            actual.FragmentProgramIdentity,
-            expected.FragmentProgramIdentity,
-            StringComparison.Ordinal) &&
-        actual.Abi.Identity == expected.Abi.Identity &&
-        actual.Abi.Requirements.SequenceEqual(expected.Abi.Requirements);
-
-    private static bool IsExactMaterial(
-        RenderMaterialDescriptor actual,
-        RenderMaterialDescriptor expected) =>
-        actual.Identity == expected.Identity &&
-        string.Equals(
-            actual.MaterialName,
-            expected.MaterialName,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            actual.TechniqueName,
-            expected.TechniqueName,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            actual.PassClass,
-            expected.PassClass,
-            StringComparison.Ordinal) &&
-        actual.PassIndex == expected.PassIndex;
 
     private static ArgumentException Invalid(string requirement) => new(
         $"OpenGL wireframe lowering requires {requirement}.",

@@ -1,3 +1,4 @@
+using IW4.Gsc.Semantics;
 using IW4.Gsc.Workspace;
 using IW4.Studio.Desktop.Gsc;
 
@@ -23,8 +24,8 @@ internal static class GscObservedFieldCompletionProvider
         GscSymbolId? receiverBinding = overlay.Index
             .FindDefinitions(currentPath, context.ReceiverProbeOffset)
             .FirstOrDefault(definition => definition.Kind is
-                GscWorkspaceSymbolKind.Local or
-                GscWorkspaceSymbolKind.Parameter)
+                GscSymbolKind.Local or
+                GscSymbolKind.Parameter)
             ?.Id;
         ObservedFieldCandidate[] candidates = EnumerateObservedFields(
                 baseSnapshot,

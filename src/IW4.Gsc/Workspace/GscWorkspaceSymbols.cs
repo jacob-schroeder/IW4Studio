@@ -1,15 +1,8 @@
 using IW4.Gsc.Analysis;
+using IW4.Gsc.Semantics;
 using IW4.Gsc.Syntax;
 
 namespace IW4.Gsc.Workspace;
-
-public enum GscWorkspaceSymbolKind
-{
-    Function,
-    Define,
-    Parameter,
-    Local
-}
 
 public enum GscWorkspaceReferenceKind
 {
@@ -27,7 +20,7 @@ public sealed record GscSourceLocation(
 
 public sealed record GscSymbolId(
     GscSourceLocation Declaration,
-    GscWorkspaceSymbolKind Kind);
+    GscSymbolKind Kind);
 
 /// <summary>
 /// A symbol identity with both its canonical binding name and exact source
@@ -42,7 +35,7 @@ public sealed record GscSymbolDefinition(
 {
     public GscSourceLocation Location => Id.Declaration;
 
-    public GscWorkspaceSymbolKind Kind => Id.Kind;
+    public GscSymbolKind Kind => Id.Kind;
 }
 
 public sealed class GscFunctionDefinition

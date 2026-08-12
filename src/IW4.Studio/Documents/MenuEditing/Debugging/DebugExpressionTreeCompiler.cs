@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Menu;
+using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 
 namespace IW4.Studio.Documents.MenuEditing.Debugging;
 
@@ -8,9 +9,6 @@ namespace IW4.Studio.Documents.MenuEditing.Debugging;
 /// </summary>
 internal sealed class DebugExpressionTreeCompiler
 {
-    private const int MaximumFunctionArguments = 10;
-    private const int MaximumStackDepth = 60;
-
     private readonly IReadOnlyList<ExpressionEntry> _entries;
     private readonly ExpressionSupportingData? _supportingData;
     private readonly List<List<DebugExpressionNode>> _operandLists = [];
@@ -50,7 +48,7 @@ internal sealed class DebugExpressionTreeCompiler
             }
 
             OperationEnum operation = entry.Operation;
-            if (!IsKnownOperation(operation))
+            if (!BehaviorExpressionNativeGrammar.IsKnownOperation(operation))
             {
                 Fail($"Expression entry {index} contains unsupported operator code {entry.OperationCode}.");
                 continue;
@@ -60,7 +58,7 @@ internal sealed class DebugExpressionTreeCompiler
                 RunHigherPriorityOperators(operation);
             if (_error is null)
             {
-                if (_operators.Count == MaximumStackDepth)
+                if (_operators.Count == BehaviorExpressionNativeGrammar.MaximumStackDepth)
                 {
                     Fail("Expression operators are nested beyond the engine stack limit.");
                 }
@@ -68,7 +66,9 @@ internal sealed class DebugExpressionTreeCompiler
                 {
                     _operators.Add(new OperatorFrame(
                         operation,
-                        IsFunction(operation) ? _operandLists.Count : -1));
+                        BehaviorExpressionNativeGrammar.IsFunction(operation)
+                            ? _operandLists.Count
+                            : -1));
                 }
             }
         }
@@ -97,12 +97,13 @@ internal sealed class DebugExpressionTreeCompiler
         while (_operators.Count > 0 && _error is null)
         {
             OperationEnum top = _operators[^1].Operation;
-            int topPrecedence = Precedence(top);
-            int incomingPrecedence = Precedence(incoming);
+            int topPrecedence = BehaviorExpressionNativeGrammar.Precedence(top);
+            int incomingPrecedence = BehaviorExpressionNativeGrammar.Precedence(incoming);
             bool stop =
                 (topPrecedence >= incomingPrecedence ||
-                 topPrecedence == 5 && incoming != OperationEnum.OP_RIGHTPAREN) &&
-                (IsAssociative(incoming) || top != incoming);
+                 BehaviorExpressionNativeGrammar.HasDefaultPrecedence(top) &&
+                 incoming != OperationEnum.OP_RIGHTPAREN) &&
+                (BehaviorExpressionNativeGrammar.IsAssociative(incoming) || top != incoming);
             if (stop)
                 return;
 
@@ -154,7 +155,7 @@ internal sealed class DebugExpressionTreeCompiler
                 CompileComma();
                 return;
             default:
-                if (IsFunction(frame.Operation))
+                if (BehaviorExpressionNativeGrammar.IsFunction(frame.Operation))
                 {
                     CompileFunction(frame);
                     return;
@@ -170,7 +171,7 @@ internal sealed class DebugExpressionTreeCompiler
         {
             OperationEnum paired = _operators[^1].Operation;
             RunOperator();
-            if (PairsWithRightParenthesis(paired))
+            if (BehaviorExpressionNativeGrammar.PairsWithRightParenthesis(paired))
                 return;
         }
 
@@ -230,10 +231,10 @@ internal sealed class DebugExpressionTreeCompiler
             Fail("Comma does not have two operand lists to combine.");
             return;
         }
-        if (left.Count + right.Count > MaximumFunctionArguments)
+        if (left.Count + right.Count > BehaviorExpressionNativeGrammar.MaximumFunctionArguments)
         {
             Fail(
-                $"A function argument list exceeds the engine limit of {MaximumFunctionArguments} values.");
+                $"A function argument list exceeds the engine limit of {BehaviorExpressionNativeGrammar.MaximumFunctionArguments} values.");
             return;
         }
 
@@ -329,7 +330,7 @@ internal sealed class DebugExpressionTreeCompiler
 
     private void PushSingle(DebugExpressionNode node)
     {
-        if (_operandLists.Count == MaximumStackDepth)
+        if (_operandLists.Count == BehaviorExpressionNativeGrammar.MaximumStackDepth)
         {
             Fail("Expression contains more operands than the engine stack accepts.");
             return;
@@ -341,55 +342,11 @@ internal sealed class DebugExpressionTreeCompiler
 
     private static DebugInvalidExpressionNode Invalid(string message) => new(message);
 
-    private static bool IsKnownOperation(OperationEnum operation) =>
-        (int)operation >= (int)OperationEnum.OP_NOOP &&
-        (int)operation <= (int)OperationEnum.OP_DOWEHAVEMAPPACK;
-
-    private static bool IsFunction(OperationEnum operation) =>
-        (int)operation >= (int)OperationEnum.OP_STATICDVARINT &&
-        (int)operation <= (int)OperationEnum.OP_DOWEHAVEMAPPACK;
-
     private static bool IsStaticDvar(OperationEnum operation) => operation is
         OperationEnum.OP_STATICDVARINT or
         OperationEnum.OP_STATICDVARBOOL or
         OperationEnum.OP_STATICDVARFLOAT or
         OperationEnum.OP_STATICDVARSTRING;
-
-    private static bool PairsWithRightParenthesis(OperationEnum operation) =>
-        operation == OperationEnum.OP_LEFTPAREN || IsFunction(operation);
-
-    private static bool IsAssociative(OperationEnum operation) =>
-        (int)operation < (int)OperationEnum.OP_DIVIDE ||
-        (int)operation > (int)OperationEnum.OP_MODULUS &&
-        operation != OperationEnum.OP_SUBTRACT;
-
-    private static int Precedence(OperationEnum operation) => operation switch
-    {
-        OperationEnum.OP_NOOP => int.MaxValue,
-        OperationEnum.OP_RIGHTPAREN => 0,
-        OperationEnum.OP_MULTIPLY or
-        OperationEnum.OP_DIVIDE or
-        OperationEnum.OP_MODULUS => 11,
-        OperationEnum.OP_ADD or
-        OperationEnum.OP_SUBTRACT => 13,
-        OperationEnum.OP_NOT => 9,
-        OperationEnum.OP_LESSTHAN or
-        OperationEnum.OP_LESSTHANEQUALTO or
-        OperationEnum.OP_GREATERTHAN or
-        OperationEnum.OP_GREATERTHANEQUALTO => 15,
-        OperationEnum.OP_EQUALS or
-        OperationEnum.OP_NOTEQUAL => 16,
-        OperationEnum.OP_AND or
-        OperationEnum.OP_OR => 25,
-        OperationEnum.OP_LEFTPAREN => 99,
-        OperationEnum.OP_COMMA => 80,
-        OperationEnum.OP_BITWISEAND => 17,
-        OperationEnum.OP_BITWISEOR => 18,
-        OperationEnum.OP_BITWISENOT => 9,
-        OperationEnum.OP_BITSHIFTLEFT or
-        OperationEnum.OP_BITSHIFTRIGHT => 14,
-        _ => 5
-    };
 
     private readonly record struct OperatorFrame(
         OperationEnum Operation,

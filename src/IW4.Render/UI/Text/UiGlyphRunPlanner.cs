@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Font;
+using IW4.Render.UI;
 
 namespace IW4.Render.UI.Text;
 
@@ -55,7 +56,7 @@ public static class UiGlyphRunPlanner
             {
                 diagnostics.Add(new UiTextDiagnostic(
                     UiTextDiagnosticCode.UnsupportedInlineMaterialCommand,
-                    UiTextDiagnosticSeverity.Blocker,
+                    UiDiagnosticSeverity.Blocker,
                     "The native ^<type 1/2><width><height><Material*> " +
                     "inline-material command requires canonical runtime " +
                     "pointer virtualization and is not rendered as glyphs.",
@@ -113,7 +114,7 @@ public static class UiGlyphRunPlanner
                 {
                     diagnostics.Add(new UiTextDiagnostic(
                         code,
-                        UiTextDiagnosticSeverity.Warning,
+                        UiDiagnosticSeverity.Warning,
                         code == UiTextDiagnosticCode.UnsupportedUnicodeScalar
                             ? $"Unicode scalar U+{scalar:X} cannot be represented by the Font asset's 16-bit letter field."
                             : $"Font '{DisplayName(font)}' has no glyph for U+{scalar:X4}; the native fallback glyph will be used when available.",
@@ -144,7 +145,7 @@ public static class UiGlyphRunPlanner
                 {
                     diagnostics.Add(new UiTextDiagnostic(
                         UiTextDiagnosticCode.InvalidGlyphTextureCoordinates,
-                        UiTextDiagnosticSeverity.Warning,
+                        UiDiagnosticSeverity.Warning,
                         $"Font '{DisplayName(font)}' glyph U+{glyph.Letter:X4} has invalid atlas coordinates.",
                         sourceIndex,
                         scalar));
@@ -206,7 +207,7 @@ public static class UiGlyphRunPlanner
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.InvalidTextScale,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Text scale {request.TextScale} must be finite and non-negative."));
         }
         if (!float.IsFinite(request.BaselineX) ||
@@ -214,28 +215,28 @@ public static class UiGlyphRunPlanner
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.InvalidTextOrigin,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Text baseline ({request.BaselineX}, {request.BaselineY}) must be finite."));
         }
         if (font.PixelHeight <= 0)
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.InvalidFontPixelHeight,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Font '{DisplayName(font)}' has invalid pixel height {font.PixelHeight}."));
         }
         if (font.Glyphs is null || font.Glyphs.Count == 0)
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.FontGlyphTableEmpty,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Font '{DisplayName(font)}' has no glyph table."));
         }
         else if (font.GlyphCount != font.Glyphs.Count)
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.FontGlyphCountMismatch,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Font '{DisplayName(font)}' declares {font.GlyphCount} glyphs but exposes {font.Glyphs.Count}."));
         }
 
@@ -243,14 +244,14 @@ public static class UiGlyphRunPlanner
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.FontMaterialMissing,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Font '{DisplayName(font)}' has no resolved material."));
         }
         else if (string.IsNullOrWhiteSpace(font.Material.Info.Name))
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.FontMaterialNameMissing,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Font '{DisplayName(font)}' resolves a material without an identity."));
         }
     }
@@ -263,7 +264,7 @@ public static class UiGlyphRunPlanner
         {
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.InvalidNativeGlyphTable,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 "The native Font glyph table requires 96 direct ASCII " +
                 $"entries before its searchable suffix; found {glyphs.Count}."));
             return false;
@@ -277,7 +278,7 @@ public static class UiGlyphRunPlanner
 
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.InvalidNativeGlyphTable,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Native Font glyph ordinal {ordinal} contains " +
                 $"U+{glyphs[ordinal].Letter:X4}; expected U+{expected:X4}."));
             return false;
@@ -292,7 +293,7 @@ public static class UiGlyphRunPlanner
 
             diagnostics.Add(new UiTextDiagnostic(
                 UiTextDiagnosticCode.InvalidNativeGlyphTable,
-                UiTextDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 "The native Font glyph suffix must be sorted by letter for " +
                 $"binary search, but ordinal {ordinal - 1} is " +
                 $"U+{glyphs[ordinal - 1].Letter:X4} and ordinal {ordinal} is " +

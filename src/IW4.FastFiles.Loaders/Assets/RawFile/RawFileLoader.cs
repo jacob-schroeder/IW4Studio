@@ -26,11 +26,11 @@ public sealed class RawFileLoader
             RawFileAsset canonical = context.ResolveRawFile(pointer)
                 ?? throw new InvalidDataException(
                     $"Top-level RawFile pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical RawFile asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed RawFile pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical RawFile has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed RawFile pointer has no destination cell.",
+                "Canonical RawFile has no runtime address.");
             return canonical;
         }
 

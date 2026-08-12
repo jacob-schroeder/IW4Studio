@@ -548,9 +548,9 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 XFileBlockType.LARGE,
                 static (writer, item, _) =>
                 {
-                    WriteSingle(writer, item.OffsetX);
-                    WriteSingle(writer, item.OffsetY);
-                    WriteSingle(writer, item.OffsetZ);
+                    writer.WriteSingle(item.OffsetX);
+                    writer.WriteSingle(item.OffsetY);
+                    writer.WriteSingle(item.OffsetZ);
                 },
                 "GfxWorld.WorldDraw.ReflectionProbeOrigins");
             LinkStorageSymbol? reflectionTextures = Runtime(
@@ -888,16 +888,16 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                     XFileBlockType.LARGE,
                     static (childWriter, item, _) =>
                     {
-                        WriteSingle(childWriter, item.X);
-                        WriteSingle(childWriter, item.Y);
-                        WriteSingle(childWriter, item.Z);
+                        childWriter.WriteSingle(item.X);
+                        childWriter.WriteSingle(item.Y);
+                        childWriter.WriteSingle(item.Z);
                     },
                     $"{path}.Vertices");
                 writer.Skip(3 * sizeof(int));
-                WriteSingle(writer, value.Plane.NormalX);
-                WriteSingle(writer, value.Plane.NormalY);
-                WriteSingle(writer, value.Plane.NormalZ);
-                WriteSingle(writer, value.Plane.Distance);
+                writer.WriteSingle(value.Plane.NormalX);
+                writer.WriteSingle(value.Plane.NormalY);
+                writer.WriteSingle(value.Plane.NormalZ);
+                writer.WriteSingle(value.Plane.Distance);
                 writer.Skip(sizeof(int));
                 writer.WriteUInt16(value.CellIndex);
                 writer.WriteByte(value.VertexCount);
@@ -1715,22 +1715,22 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
         {
             writer.WriteUInt32(value.HasValidData);
             writer.Skip(2 * sizeof(int));
-            WriteSingle(writer, value.SpriteSize);
-            WriteSingle(writer, value.FlareMinSize);
-            WriteSingle(writer, value.FlareMinDot);
-            WriteSingle(writer, value.FlareMaxSize);
-            WriteSingle(writer, value.FlareMaxDot);
-            WriteSingle(writer, value.FlareMaxAlpha);
+            writer.WriteSingle(value.SpriteSize);
+            writer.WriteSingle(value.FlareMinSize);
+            writer.WriteSingle(value.FlareMinDot);
+            writer.WriteSingle(value.FlareMaxSize);
+            writer.WriteSingle(value.FlareMaxDot);
+            writer.WriteSingle(value.FlareMaxAlpha);
             writer.WriteInt32(value.FlareFadeInTime);
             writer.WriteInt32(value.FlareFadeOutTime);
-            WriteSingle(writer, value.BlindMinDot);
-            WriteSingle(writer, value.BlindMaxDot);
-            WriteSingle(writer, value.BlindMaxDarken);
+            writer.WriteSingle(value.BlindMinDot);
+            writer.WriteSingle(value.BlindMaxDot);
+            writer.WriteSingle(value.BlindMaxDarken);
             writer.WriteInt32(value.BlindFadeInTime);
             writer.WriteInt32(value.BlindFadeOutTime);
-            WriteSingle(writer, value.GlareMinDot);
-            WriteSingle(writer, value.GlareMaxDot);
-            WriteSingle(writer, value.GlareMaxLighten);
+            writer.WriteSingle(value.GlareMinDot);
+            writer.WriteSingle(value.GlareMaxDot);
+            writer.WriteSingle(value.GlareMaxLighten);
             writer.WriteInt32(value.GlareFadeInTime);
             writer.WriteInt32(value.GlareFadeOutTime);
             WriteFloats(writer, value.SunFxPosition, 3, "GfxWorld.Sun.SunFxPosition");
@@ -1756,10 +1756,10 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
 
         private static void WritePlane(LinkTemplateWriter writer, DpvsPlane value, string _)
         {
-            WriteSingle(writer, value.NormalX);
-            WriteSingle(writer, value.NormalY);
-            WriteSingle(writer, value.NormalZ);
-            WriteSingle(writer, value.Distance);
+            writer.WriteSingle(value.NormalX);
+            writer.WriteSingle(value.NormalY);
+            writer.WriteSingle(value.NormalZ);
+            writer.WriteSingle(value.Distance);
             writer.WriteByte(value.Type);
             writer.WriteByte(value.SignBits);
             writer.WriteUInt16(value.Pad12);
@@ -1771,7 +1771,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             WriteFloats(writer, value.WritableMaxs, 3, $"{path}.WritableMaxs");
             WriteFloats(writer, value.BoundsMins, 3, $"{path}.BoundsMins");
             WriteFloats(writer, value.BoundsMaxs, 3, $"{path}.BoundsMaxs");
-            WriteSingle(writer, value.Radius);
+            writer.WriteSingle(value.Radius);
             writer.WriteUInt16(value.SurfaceCount);
             writer.WriteUInt16(value.StartSurfIndex);
         }
@@ -1785,16 +1785,16 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
         private static void WriteLightRegionAxis(LinkTemplateWriter writer, GfxLightRegionAxis value, string path)
         {
             WriteFloats(writer, value.Dir, 3, $"{path}.Dir");
-            WriteSingle(writer, value.MidPoint);
-            WriteSingle(writer, value.HalfSize);
+            writer.WriteSingle(value.MidPoint);
+            writer.WriteSingle(value.HalfSize);
         }
 
         private static void WriteStaticModelInst(LinkTemplateWriter writer, GfxStaticModelInst value, string path)
         {
             WriteBounds(writer, value.Bounds, $"{path}.Bounds");
-            WriteSingle(writer, value.LightingOrigin.X);
-            WriteSingle(writer, value.LightingOrigin.Y);
-            WriteSingle(writer, value.LightingOrigin.Z);
+            writer.WriteSingle(value.LightingOrigin.X);
+            writer.WriteSingle(value.LightingOrigin.Y);
+            writer.WriteSingle(value.LightingOrigin.Z);
         }
 
         private static void WriteSurfaceBounds(LinkTemplateWriter writer, GfxSurfaceBounds value, string path)
@@ -1818,18 +1818,18 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
         {
             WriteFloats(writer, value.Origin, 3, $"{path}.Origin");
             WriteUInt32s(writer, value.PackedAxis, 3, $"{path}.PackedAxis");
-            WriteSingle(writer, value.Scale);
+            writer.WriteSingle(value.Scale);
         }
 
         private static void WriteBounds(LinkTemplateWriter writer, Bounds value, string fieldPath)
         {
             ArgumentNullException.ThrowIfNull(value);
-            WriteSingle(writer, value.MidPoint.X);
-            WriteSingle(writer, value.MidPoint.Y);
-            WriteSingle(writer, value.MidPoint.Z);
-            WriteSingle(writer, value.HalfSize.X);
-            WriteSingle(writer, value.HalfSize.Y);
-            WriteSingle(writer, value.HalfSize.Z);
+            writer.WriteSingle(value.MidPoint.X);
+            writer.WriteSingle(value.MidPoint.Y);
+            writer.WriteSingle(value.MidPoint.Z);
+            writer.WriteSingle(value.HalfSize.X);
+            writer.WriteSingle(value.HalfSize.Y);
+            writer.WriteSingle(value.HalfSize.Z);
         }
 
         private static void WriteFloats(LinkTemplateWriter writer, IReadOnlyList<float> values, int count, string fieldPath)
@@ -1840,11 +1840,9 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 writer.Skip(checked(count * sizeof(float)));
                 return;
             }
-            foreach (float value in values) WriteSingle(writer, value);
+            foreach (float value in values) writer.WriteSingle(value);
         }
 
-        private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
         private static void WriteUInt32s(LinkTemplateWriter writer, IReadOnlyList<uint> values, int count, string fieldPath)
         {

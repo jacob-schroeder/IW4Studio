@@ -26,11 +26,11 @@ public sealed class LocalizeLoader
             LocalizeAsset canonical = context.ResolveLocalize(pointer)
                 ?? throw new InvalidDataException(
                     $"Top-level Localize pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Localize asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed Localize pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical Localize has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed Localize pointer has no destination cell.",
+                "Canonical Localize has no runtime address.");
             return canonical;
         }
 

@@ -142,7 +142,7 @@ internal static class GscDocumentIndexer
                 return existing;
 
             var location = new GscSourceLocation(snapshot.Path, symbol.DeclarationSpan);
-            var id = new GscSymbolId(location, ConvertSymbolKind(symbol.Kind));
+            var id = new GscSymbolId(location, symbol.Kind);
             var definition = new GscSymbolDefinition(
                 id,
                 symbol.Name,
@@ -161,7 +161,7 @@ internal static class GscDocumentIndexer
             GscTextSpan declarationSpan)
         {
             var location = new GscSourceLocation(snapshot.Path, declarationSpan);
-            var id = new GscSymbolId(location, GscWorkspaceSymbolKind.Parameter);
+            var id = new GscSymbolId(location, GscSymbolKind.Parameter);
             var definition = new GscSymbolDefinition(
                 id,
                 symbol.Name,
@@ -220,8 +220,8 @@ internal static class GscDocumentIndexer
                 reference.Symbol,
                 out GscSymbolDefinition? definition) ||
             definition.Kind is not (
-                GscWorkspaceSymbolKind.Local or
-                GscWorkspaceSymbolKind.Parameter))
+                GscSymbolKind.Local or
+                GscSymbolKind.Parameter))
         {
             return null;
         }
@@ -358,15 +358,6 @@ internal static class GscDocumentIndexer
                 yield return descendant;
         }
     }
-
-    private static GscWorkspaceSymbolKind ConvertSymbolKind(GscSymbolKind kind) => kind switch
-    {
-        GscSymbolKind.Function => GscWorkspaceSymbolKind.Function,
-        GscSymbolKind.Define => GscWorkspaceSymbolKind.Define,
-        GscSymbolKind.Parameter => GscWorkspaceSymbolKind.Parameter,
-        GscSymbolKind.Local => GscWorkspaceSymbolKind.Local,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind))
-    };
 
     private static GscWorkspaceReferenceKind ConvertReferenceKind(
         GscBoundReferenceKind kind) => kind switch

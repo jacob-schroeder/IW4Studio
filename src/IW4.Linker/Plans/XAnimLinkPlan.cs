@@ -99,8 +99,8 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
         writer.WriteByte(definition.Pad1F);
         writer.WriteInt32(definition.RandomDataShortCount);
         writer.WriteInt32(definition.IndexCount);
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.Framerate));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.Frequency));
+        writer.WriteSingle(definition.Framerate);
+        writer.WriteSingle(definition.Frequency);
         writer.Skip(10 * sizeof(int));
 
         Root = LinkStorageSymbol.SourceBytes(
@@ -159,25 +159,25 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
     {
         yield return NameOperation(root, 0);
         if (names is { } namesTarget)
-            yield return Direct(root, 0x30, namesTarget, "XAnimParts.Names");
+            yield return DirectOperation(root, 0x30, namesTarget, "XAnimParts.Names");
         if (notify is { } notifyTarget)
-            yield return Direct(root, 0x50, notifyTarget, "XAnimParts.Notify");
+            yield return DirectOperation(root, 0x50, notifyTarget, "XAnimParts.Notify");
         if (delta is { } deltaTarget)
-            yield return Direct(root, 0x54, deltaTarget, "XAnimParts.DeltaPart");
+            yield return DirectOperation(root, 0x54, deltaTarget, "XAnimParts.DeltaPart");
         if (dataBytes is { } dataBytesTarget)
-            yield return Direct(root, 0x34, dataBytesTarget, "XAnimParts.DataByte");
+            yield return DirectOperation(root, 0x34, dataBytesTarget, "XAnimParts.DataByte");
         if (dataShorts is { } dataShortsTarget)
-            yield return Direct(root, 0x38, dataShortsTarget, "XAnimParts.DataShort");
+            yield return DirectOperation(root, 0x38, dataShortsTarget, "XAnimParts.DataShort");
         if (dataInts is { } dataIntsTarget)
-            yield return Direct(root, 0x3c, dataIntsTarget, "XAnimParts.DataInt");
+            yield return DirectOperation(root, 0x3c, dataIntsTarget, "XAnimParts.DataInt");
         if (randomShorts is { } randomShortsTarget)
-            yield return Direct(root, 0x40, randomShortsTarget, "XAnimParts.RandomDataShort");
+            yield return DirectOperation(root, 0x40, randomShortsTarget, "XAnimParts.RandomDataShort");
         if (randomBytes is { } randomBytesTarget)
-            yield return Direct(root, 0x44, randomBytesTarget, "XAnimParts.RandomDataByte");
+            yield return DirectOperation(root, 0x44, randomBytesTarget, "XAnimParts.RandomDataByte");
         if (randomInts is { } randomIntsTarget)
-            yield return Direct(root, 0x48, randomIntsTarget, "XAnimParts.RandomDataInt");
+            yield return DirectOperation(root, 0x48, randomIntsTarget, "XAnimParts.RandomDataInt");
         if (indices is { } indicesTarget)
-            yield return Direct(root, 0x4c, indicesTarget, "XAnimParts.Indices");
+            yield return DirectOperation(root, 0x4c, indicesTarget, "XAnimParts.Indices");
     }
 
     private static LinkStorageTarget? CreateScriptStringArray(
@@ -220,7 +220,7 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
                 $"XAnimParts.Notify[{index}] cannot be null.");
             writer.Skip(sizeof(ushort));
             writer.Skip(sizeof(ushort));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Time));
+            writer.WriteSingle(value.Time);
         }
 
         return freeze.FreezeStorage(
@@ -297,9 +297,9 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
     private static LinkStorageSymbol CreateTransFrame0(XAnimPartTransFrame0 value)
     {
         var writer = new LinkTemplateWriter(XAnimPartTransFrame0.SerializedSize);
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.X));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Y));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Z));
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
         return LinkStorageSymbol.SourceBytes(
             XFileBlockType.LARGE,
             writer.Complete(),
@@ -339,7 +339,7 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
                 new MaterializeStorageLinkOperation(
                     dynamic,
                     "XAnimParts.DeltaPart.Trans.Frames.DynamicFrames"),
-                Direct(
+                DirectOperation(
                     root,
                     0x18,
                     payload,
@@ -394,7 +394,7 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
                 new MaterializeStorageLinkOperation(
                     dynamic,
                     "XAnimParts.DeltaPart.Quat2.Frames.DynamicFrames"),
-                Direct(
+                DirectOperation(
                     root,
                     0,
                     payload,
@@ -449,7 +449,7 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
                 new MaterializeStorageLinkOperation(
                     dynamic,
                     "XAnimParts.DeltaPart.Quat.Frames.DynamicFrames"),
-                Direct(
+                DirectOperation(
                     root,
                     0,
                     payload,
@@ -682,31 +682,11 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
         foreach ((int offset, LinkStorageTarget? storage, string fieldPath) in children)
         {
             if (storage is { } target)
-                yield return Direct(owner, offset, target, fieldPath);
+                yield return DirectOperation(owner, offset, target, fieldPath);
         }
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageSymbol target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            LinkStorageView.Whole(target),
-            CanMaterializeRoot: true,
-            fieldPath);
 
     private static byte[] EncodeUInt16s(IReadOnlyList<ushort> values)
     {
@@ -718,9 +698,9 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
 
     private static void WriteVec3(LinkTemplateWriter writer, XAnimVec3 value)
     {
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.X));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Y));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Z));
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
     private static void ValidateOwned(XAnimPartsAsset definition)

@@ -13,6 +13,7 @@ using IW4.Runtime.Database;
 using IW4.Runtime.IO;
 using FxEffectDefAsset = IW4.Assets.Assets.Fx.FxEffectDefAsset;
 using MaterialAsset = IW4.Assets.Assets.Material.MaterialAsset;
+using PhysCollmapAsset = IW4.Assets.Assets.Physics.PhysCollmapAsset;
 using TracerDefAsset = IW4.Assets.Assets.Tracer.TracerDefAsset;
 using XModelAsset = IW4.Assets.Assets.XModel.XModelAsset;
 using XString = IW4.FastFiles.Pointers.XPointer<string>;
@@ -45,11 +46,11 @@ public sealed class WeaponLoader
                 ?? throw new InvalidDataException(
                     $"Top-level Weapon pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical Weapon asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed Weapon pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical Weapon has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed Weapon pointer has no destination cell.",
+                "Canonical Weapon has no runtime address.");
             return canonical;
         }
 
@@ -112,12 +113,10 @@ public sealed class WeaponLoader
             if (canonical is null)
                 return null;
 
-            if (pointer.CellAddress is { } pointerCellAddress)
-            {
-                int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                    ?? throw new InvalidDataException("Canonical Weapon has no runtime address.");
-                context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-            }
+            context.PatchCanonicalAssetPointerCellIfPresent(
+                pointer,
+                canonical,
+                "Canonical Weapon has no runtime address.");
 
             return canonical;
         }
@@ -140,16 +139,16 @@ public sealed class WeaponLoader
             DisplayNamePointer: ReadXStringPointer(rootCursor, context),
             HideTagsPointer: ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct),
             AnimationNamesPointer: ReadPointer<XString[]>(rootCursor, context, XPointerResolutionMode.Direct),
-            AdsZoomFov: ReadSingle(rootCursor),
+            AdsZoomFov: rootCursor.ReadSingle(),
             AdsTransitionInTime: rootCursor.ReadInt32(),
             AdsTransitionOutTime: rootCursor.ReadInt32(),
             ClipSize: rootCursor.ReadInt32(),
             ImpactType: rootCursor.ReadInt32(),
             FireTime: rootCursor.ReadInt32(),
             DpadIconRatio: rootCursor.ReadInt32(),
-            PenetrateMultiplier: ReadSingle(rootCursor),
-            AdsViewKickCenterSpeed: ReadSingle(rootCursor),
-            HipViewKickCenterSpeed: ReadSingle(rootCursor),
+            PenetrateMultiplier: rootCursor.ReadSingle(),
+            AdsViewKickCenterSpeed: rootCursor.ReadSingle(),
+            HipViewKickCenterSpeed: rootCursor.ReadSingle(),
             AlternateWeaponNamePointer: ReadXStringPointer(rootCursor, context),
             AlternateWeaponIndex: rootCursor.ReadUInt32(),
             AlternateRaiseTime: rootCursor.ReadInt32(),
@@ -158,8 +157,8 @@ public sealed class WeaponLoader
             DropAmmoMin: rootCursor.ReadInt32(),
             FirstRaiseTime: rootCursor.ReadInt32(),
             DropAmmoMax: rootCursor.ReadInt32(),
-            AdsDofStart: ReadSingle(rootCursor),
-            AdsDofEnd: ReadSingle(rootCursor),
+            AdsDofStart: rootCursor.ReadSingle(),
+            AdsDofEnd: rootCursor.ReadSingle(),
             AccuracyGraphKnotCount: rootCursor.ReadUInt16(),
             OriginalAccuracyGraphKnotCount: rootCursor.ReadUInt16(),
             AccuracyGraphKnotsPointer: ReadPointer<Vec2[]>(rootCursor, context, XPointerResolutionMode.Direct),
@@ -345,16 +344,16 @@ public sealed class WeaponLoader
         root.ViewMovement = ReadViewMovementFields(c);
         root.PositionalMovement = new WeaponPositionalMovementFields
         {
-            PositionMoveRate = ReadSingle(c),
-            PositionProneMoveRate = ReadSingle(c),
-            StandMoveMinSpeed = ReadSingle(c),
-            DuckedMoveMinSpeed = ReadSingle(c),
-            ProneMoveMinSpeed = ReadSingle(c),
-            PositionRotationRate = ReadSingle(c),
-            PositionProneRotationRate = ReadSingle(c),
-            StandRotationMinSpeed = ReadSingle(c),
-            DuckedRotationMinSpeed = ReadSingle(c),
-            ProneRotationMinSpeed = ReadSingle(c)
+            PositionMoveRate = c.ReadSingle(),
+            PositionProneMoveRate = c.ReadSingle(),
+            StandMoveMinSpeed = c.ReadSingle(),
+            DuckedMoveMinSpeed = c.ReadSingle(),
+            ProneMoveMinSpeed = c.ReadSingle(),
+            PositionRotationRate = c.ReadSingle(),
+            PositionProneRotationRate = c.ReadSingle(),
+            StandRotationMinSpeed = c.ReadSingle(),
+            DuckedRotationMinSpeed = c.ReadSingle(),
+            ProneRotationMinSpeed = c.ReadSingle()
         };
 
         Seek(c, 0x1d8);
@@ -434,53 +433,53 @@ public sealed class WeaponLoader
         root.LocalGraphKnotCount = c.ReadUInt16();
         root.LocalOriginalGraphKnotCount = c.ReadUInt16();
         root.AnimationNotifyComparison = c.ReadInt32();
-        root.LeftArc = ReadSingle(c);
-        root.RightArc = ReadSingle(c);
-        root.TopArc = ReadSingle(c);
-        root.BottomArc = ReadSingle(c);
-        root.Accuracy = ReadSingle(c);
-        root.AiSpread = ReadSingle(c);
-        root.PlayerSpread = ReadSingle(c);
+        root.LeftArc = c.ReadSingle();
+        root.RightArc = c.ReadSingle();
+        root.TopArc = c.ReadSingle();
+        root.BottomArc = c.ReadSingle();
+        root.Accuracy = c.ReadSingle();
+        root.AiSpread = c.ReadSingle();
+        root.PlayerSpread = c.ReadSingle();
         root.TurnSpeedAndRange = ReadWeaponTurnSpeedAndRangeFields(c);
 
         root.UseHintStringPointer = ReadXStringPointer(c, context);
         root.DropHintStringPointer = ReadXStringPointer(c, context);
         root.UseHintStringIndex = c.ReadInt32();
         root.DropHintStringIndex = c.ReadInt32();
-        root.HorizontalViewJitter = ReadSingle(c);
-        root.VerticalViewJitter = ReadSingle(c);
-        root.ScanSpeed = ReadSingle(c);
-        root.ScanAcceleration = ReadSingle(c);
+        root.HorizontalViewJitter = c.ReadSingle();
+        root.VerticalViewJitter = c.ReadSingle();
+        root.ScanSpeed = c.ReadSingle();
+        root.ScanAcceleration = c.ReadSingle();
         root.ScanPauseTime = c.ReadInt32();
 
         root.ScriptNamePointer = ReadXStringPointer(c, context);
-        root.OOPosAnimLength = ReadSingle(c);
-        root.MinDamage = ReadSingle(c);
+        root.OOPosAnimLength = c.ReadSingle();
+        root.MinDamage = c.ReadSingle();
         root.MinPlayerDamage = c.ReadInt32();
-        root.MaxDamageRange = ReadSingle(c);
-        root.MinDamageRange = ReadSingle(c);
-        root.DestabilizationRateTime = ReadSingle(c);
-        root.DestabilizationCurvatureMax = ReadSingle(c);
-        root.DestabilizeDistance = ReadSingle(c);
+        root.MaxDamageRange = c.ReadSingle();
+        root.MinDamageRange = c.ReadSingle();
+        root.DestabilizationRateTime = c.ReadSingle();
+        root.DestabilizationCurvatureMax = c.ReadSingle();
+        root.DestabilizeDistance = c.ReadSingle();
         root.DestabilizeDistanceToTimeScale = c.ReadInt32();
 
         root.LocationDamageMultipliersPointer = ReadPointer<float[]>(c, context, XPointerResolutionMode.Direct);
         root.FireRumblePointer = ReadXStringPointer(c, context);
         root.MeleeImpactRumblePointer = ReadXStringPointer(c, context);
         root.TracerPointer = ReadPointer<TracerDefAsset>(c, context, XPointerResolutionMode.AliasCell);
-        root.TurretScopeZoomRate = ReadSingle(c);
-        root.TurretScopeZoomMin = ReadSingle(c);
-        root.TurretScopeZoomMax = ReadSingle(c);
-        root.TurretOverheatUpRate = ReadSingle(c);
-        root.TurretOverheatDownRate = ReadSingle(c);
-        root.TurretOverheatPenalty = ReadSingle(c);
+        root.TurretScopeZoomRate = c.ReadSingle();
+        root.TurretScopeZoomMin = c.ReadSingle();
+        root.TurretScopeZoomMax = c.ReadSingle();
+        root.TurretOverheatUpRate = c.ReadSingle();
+        root.TurretOverheatDownRate = c.ReadSingle();
+        root.TurretOverheatPenalty = c.ReadSingle();
 
         root.TurretOverheatSoundPointer = ReadXStringPointer(c, context);
         root.TurretOverheatEffectPointer = ReadPointer<FxEffectDefAsset>(c, context, XPointerResolutionMode.AliasCell);
         root.TurretBarrelSpinRumblePointer = ReadXStringPointer(c, context);
-        root.TurretBarrelSpinSpeed = ReadSingle(c);
-        root.TurretBarrelSpinUpTime = ReadSingle(c);
-        root.TurretBarrelSpinDownTime = ReadSingle(c);
+        root.TurretBarrelSpinSpeed = c.ReadSingle();
+        root.TurretBarrelSpinUpTime = c.ReadSingle();
+        root.TurretBarrelSpinDownTime = c.ReadSingle();
         root.TurretBarrelSpinMaxSoundPointer = ReadXStringPointer(c, context);
         root.TurretBarrelSpinUpSoundPointers = ReadSoundAliasCellPointers(c, WeaponDef.TurretBarrelSpinSoundCount, context);
         root.TurretBarrelSpinDownSoundPointers = ReadSoundAliasCellPointers(c, WeaponDef.TurretBarrelSpinSoundCount, context);
@@ -585,7 +584,7 @@ public sealed class WeaponLoader
         string? clipName = ReadXString(cursor, root.Ammo.ClipNamePointer, context);
         string? sharedAmmoCapName = ReadXString(cursor, root.Ammo.SharedAmmoCapNamePointer, context);
         IReadOnlyList<MaterialAsset?> overlayMaterials = ReadMaterialPointers(cursor, root.Overlay.OverlayMaterials, "WeaponDef.overlayMaterials", context);
-        IW4.Assets.Assets.Physics.PhysCollmapAsset? physCollmap = ReadPhysCollmapPointer(cursor, root.PhysCollmapPointer.Untyped, context);
+        PhysCollmapAsset? physCollmap = ReadPhysCollmapPointer(cursor, root.PhysCollmapPointer.Untyped, context);
 
         XModelAsset? projectileModel = ReadXModelPointer(cursor, root.ProjectileModelPointer.Untyped, context);
         IReadOnlyList<FxEffectDefAsset?> projectileEffects = ReadFxPointers(cursor, root.ProjectileEffectPointers, context);
@@ -1145,8 +1144,8 @@ public sealed class WeaponLoader
         {
             values[i] = new Vec2
             {
-                a = ReadSingle(arrayCursor),
-                b = ReadSingle(arrayCursor)
+                a = arrayCursor.ReadSingle(),
+                b = arrayCursor.ReadSingle()
             };
         }
 
@@ -1380,7 +1379,7 @@ public sealed class WeaponLoader
         return TracerDefLoader.LoadFromPointer(cursor, pointer, context);
     }
 
-    private static IW4.Assets.Assets.Physics.PhysCollmapAsset? ReadPhysCollmapPointer(
+    private static PhysCollmapAsset? ReadPhysCollmapPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context)
@@ -1574,16 +1573,16 @@ public sealed class WeaponLoader
     {
         return new WeaponAimMovementTuningFields
         {
-            AutoAimRange = ReadSingle(cursor),
-            AimAssistRange = ReadSingle(cursor),
-            AimAssistRangeAds = ReadSingle(cursor),
-            AimPadding = ReadSingle(cursor),
-            EnemyCrosshairRange = ReadSingle(cursor),
-            MoveSpeedScale = ReadSingle(cursor),
-            AdsMoveSpeedScale = ReadSingle(cursor),
-            SprintDurationScale = ReadSingle(cursor),
-            AdsZoomInFraction = ReadSingle(cursor),
-            AdsZoomOutFraction = ReadSingle(cursor)
+            AutoAimRange = cursor.ReadSingle(),
+            AimAssistRange = cursor.ReadSingle(),
+            AimAssistRangeAds = cursor.ReadSingle(),
+            AimPadding = cursor.ReadSingle(),
+            EnemyCrosshairRange = cursor.ReadSingle(),
+            MoveSpeedScale = cursor.ReadSingle(),
+            AdsMoveSpeedScale = cursor.ReadSingle(),
+            SprintDurationScale = cursor.ReadSingle(),
+            AdsZoomInFraction = cursor.ReadSingle(),
+            AdsZoomOutFraction = cursor.ReadSingle()
         };
     }
 
@@ -1591,44 +1590,44 @@ public sealed class WeaponLoader
     {
         return new WeaponAdsViewAndSpreadFields
         {
-            AdsBobFactor = ReadSingle(cursor),
-            AdsViewBobMultiplier = ReadSingle(cursor),
-            HipSpreadStandMin = ReadSingle(cursor),
-            HipSpreadDuckedMin = ReadSingle(cursor),
-            HipSpreadProneMin = ReadSingle(cursor),
-            HipSpreadStandMax = ReadSingle(cursor),
-            HipSpreadDuckedMax = ReadSingle(cursor),
-            HipSpreadProneMax = ReadSingle(cursor),
-            HipSpreadDecayRate = ReadSingle(cursor),
-            HipSpreadFireAdd = ReadSingle(cursor),
-            HipSpreadTurnAdd = ReadSingle(cursor),
-            HipSpreadMoveAdd = ReadSingle(cursor),
-            HipSpreadDuckedDecay = ReadSingle(cursor),
-            HipSpreadProneDecay = ReadSingle(cursor),
-            HipReticleSidePosition = ReadSingle(cursor),
-            AdsIdleAmount = ReadSingle(cursor),
-            HipIdleAmount = ReadSingle(cursor),
-            AdsIdleSpeed = ReadSingle(cursor),
-            HipIdleSpeed = ReadSingle(cursor),
-            IdleCrouchFactor = ReadSingle(cursor),
-            IdleProneFactor = ReadSingle(cursor),
-            GunMaxPitch = ReadSingle(cursor),
-            GunMaxYaw = ReadSingle(cursor),
-            SwayMaxAngle = ReadSingle(cursor),
-            SwayLerpSpeed = ReadSingle(cursor),
-            SwayPitchScale = ReadSingle(cursor),
-            SwayYawScale = ReadSingle(cursor),
-            SwayHorizontalScale = ReadSingle(cursor),
-            SwayVerticalScale = ReadSingle(cursor),
-            SwayShellShockScale = ReadSingle(cursor),
-            AdsSwayMaxAngle = ReadSingle(cursor),
-            AdsSwayLerpSpeed = ReadSingle(cursor),
-            AdsSwayPitchScale = ReadSingle(cursor),
-            AdsSwayYawScale = ReadSingle(cursor),
-            AdsSwayHorizontalScale = ReadSingle(cursor),
-            AdsSwayVerticalScale = ReadSingle(cursor),
-            AdsViewErrorMin = ReadSingle(cursor),
-            AdsViewErrorMax = ReadSingle(cursor)
+            AdsBobFactor = cursor.ReadSingle(),
+            AdsViewBobMultiplier = cursor.ReadSingle(),
+            HipSpreadStandMin = cursor.ReadSingle(),
+            HipSpreadDuckedMin = cursor.ReadSingle(),
+            HipSpreadProneMin = cursor.ReadSingle(),
+            HipSpreadStandMax = cursor.ReadSingle(),
+            HipSpreadDuckedMax = cursor.ReadSingle(),
+            HipSpreadProneMax = cursor.ReadSingle(),
+            HipSpreadDecayRate = cursor.ReadSingle(),
+            HipSpreadFireAdd = cursor.ReadSingle(),
+            HipSpreadTurnAdd = cursor.ReadSingle(),
+            HipSpreadMoveAdd = cursor.ReadSingle(),
+            HipSpreadDuckedDecay = cursor.ReadSingle(),
+            HipSpreadProneDecay = cursor.ReadSingle(),
+            HipReticleSidePosition = cursor.ReadSingle(),
+            AdsIdleAmount = cursor.ReadSingle(),
+            HipIdleAmount = cursor.ReadSingle(),
+            AdsIdleSpeed = cursor.ReadSingle(),
+            HipIdleSpeed = cursor.ReadSingle(),
+            IdleCrouchFactor = cursor.ReadSingle(),
+            IdleProneFactor = cursor.ReadSingle(),
+            GunMaxPitch = cursor.ReadSingle(),
+            GunMaxYaw = cursor.ReadSingle(),
+            SwayMaxAngle = cursor.ReadSingle(),
+            SwayLerpSpeed = cursor.ReadSingle(),
+            SwayPitchScale = cursor.ReadSingle(),
+            SwayYawScale = cursor.ReadSingle(),
+            SwayHorizontalScale = cursor.ReadSingle(),
+            SwayVerticalScale = cursor.ReadSingle(),
+            SwayShellShockScale = cursor.ReadSingle(),
+            AdsSwayMaxAngle = cursor.ReadSingle(),
+            AdsSwayLerpSpeed = cursor.ReadSingle(),
+            AdsSwayPitchScale = cursor.ReadSingle(),
+            AdsSwayYawScale = cursor.ReadSingle(),
+            AdsSwayHorizontalScale = cursor.ReadSingle(),
+            AdsSwayVerticalScale = cursor.ReadSingle(),
+            AdsViewErrorMin = cursor.ReadSingle(),
+            AdsViewErrorMax = cursor.ReadSingle()
         };
     }
 
@@ -1636,16 +1635,16 @@ public sealed class WeaponLoader
     {
         return new WeaponTurnSpeedAndRangeFields
         {
-            MinTurnSpeed = ReadSingle(cursor),
-            MaxTurnSpeed = ReadSingle(cursor),
-            PitchConvergenceTime = ReadSingle(cursor),
-            YawConvergenceTime = ReadSingle(cursor),
-            SuppressTime = ReadSingle(cursor),
-            MaxRange = ReadSingle(cursor),
-            AnimationHorizontalRotateIncrement = ReadSingle(cursor),
-            PlayerPositionDistance = ReadSingle(cursor),
-            ScanSpeed = ReadSingle(cursor),
-            ScanAcceleration = ReadSingle(cursor)
+            MinTurnSpeed = cursor.ReadSingle(),
+            MaxTurnSpeed = cursor.ReadSingle(),
+            PitchConvergenceTime = cursor.ReadSingle(),
+            YawConvergenceTime = cursor.ReadSingle(),
+            SuppressTime = cursor.ReadSingle(),
+            MaxRange = cursor.ReadSingle(),
+            AnimationHorizontalRotateIncrement = cursor.ReadSingle(),
+            PlayerPositionDistance = cursor.ReadSingle(),
+            ScanSpeed = cursor.ReadSingle(),
+            ScanAcceleration = cursor.ReadSingle()
         };
     }
 
@@ -1653,27 +1652,27 @@ public sealed class WeaponLoader
     {
         return new WeaponPhysicsFields
         {
-            DualWieldViewModelOffset = ReadSingle(cursor),
+            DualWieldViewModelOffset = cursor.ReadSingle(),
             KillIconRatio = cursor.ReadInt32(),
             ReloadAmmoAdd = cursor.ReadInt32(),
             ReloadStartAdd = cursor.ReadInt32(),
             AmmoDropStockMin = cursor.ReadInt32(),
-            AmmoDropClipPercentMin = ReadSingle(cursor),
-            AmmoDropClipPercentMax = ReadSingle(cursor),
+            AmmoDropClipPercentMin = cursor.ReadSingle(),
+            AmmoDropClipPercentMax = cursor.ReadSingle(),
             ExplosionRadius = cursor.ReadInt32(),
             ExplosionRadiusMin = cursor.ReadInt32(),
             ExplosionInnerDamage = cursor.ReadInt32(),
             ExplosionOuterDamage = cursor.ReadInt32(),
-            DamageConeAngle = ReadSingle(cursor),
-            BulletExplosionDamageMultiplier = ReadSingle(cursor),
-            BulletExplosionRadiusMultiplier = ReadSingle(cursor),
+            DamageConeAngle = cursor.ReadSingle(),
+            BulletExplosionDamageMultiplier = cursor.ReadSingle(),
+            BulletExplosionRadiusMultiplier = cursor.ReadSingle(),
             ProjectileSpeed = cursor.ReadInt32(),
             ProjectileSpeedUp = cursor.ReadInt32(),
             ProjectileSpeedForward = cursor.ReadInt32(),
             ProjectileActivateDistance = cursor.ReadInt32(),
             ProjectileLifetime = cursor.ReadInt32(),
             TimeToAccelerate = cursor.ReadInt32(),
-            ProjectileCurvature = ReadSingle(cursor)
+            ProjectileCurvature = cursor.ReadSingle()
         };
     }
 
@@ -1740,18 +1739,14 @@ public sealed class WeaponLoader
         return BitConverter.Int32BitsToSingle(value);
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static Vec3 ReadVec3(FastFileCursor cursor)
     {
         return new Vec3
         {
-            X = ReadSingle(cursor),
-            Y = ReadSingle(cursor),
-            Z = ReadSingle(cursor)
+            X = cursor.ReadSingle(),
+            Y = cursor.ReadSingle(),
+            Z = cursor.ReadSingle()
         };
     }
 
@@ -1759,7 +1754,7 @@ public sealed class WeaponLoader
     {
         var values = new float[count];
         for (int i = 0; i < values.Length; i++)
-            values[i] = ReadSingle(cursor);
+            values[i] = cursor.ReadSingle();
 
         return values;
     }

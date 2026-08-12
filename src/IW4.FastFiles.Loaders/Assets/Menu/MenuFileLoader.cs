@@ -48,11 +48,11 @@ public sealed class MenuFileLoader
             MenuFileAsset canonical = context.ResolveMenuFile(pointer)
                 ?? throw new InvalidDataException(
                     $"Top-level MenuFile pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical MenuFile asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed MenuFile pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical MenuFile has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed MenuFile pointer has no destination cell.",
+                "Canonical MenuFile has no runtime address.");
             return canonical;
         }
 
@@ -172,7 +172,7 @@ public sealed class MenuFileLoader
             // Menu pointer cell, not directly to a Menu root.
             XPointer<MenuDefAsset> typedMenuPointer = context.PointerReader.ReadPointer<MenuDefAsset>(
                 pointerCursor,
-                XPointerOffsetMode.AliasCell,
+                XPointerResolutionMode.AliasCell,
                 XPointerNullability.Required);
             XPointerReference menuPointer = typedMenuPointer.Untyped;
             MenuDefAsset? menu = ReadMenuDefPointer(cursor, menuPointer, context);
@@ -199,11 +199,11 @@ public sealed class MenuFileLoader
             MenuDefAsset canonical = context.ResolveMenuDef(pointer)
                 ?? throw new InvalidDataException(
                     $"MenuDef pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical type-0x19 asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed MenuDef pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical MenuDef has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed MenuDef pointer has no destination cell.",
+                "Canonical MenuDef has no runtime address.");
             return canonical;
         }
 
@@ -267,10 +267,10 @@ public sealed class MenuFileLoader
             FontIndex = rootCursor.ReadInt32(),
             CursorItems = ReadInt32Array(rootCursor, 4),
             FadeCycle = rootCursor.ReadInt32(),
-            FadeClamp = ReadSingle(rootCursor),
-            FadeAmount = ReadSingle(rootCursor),
-            FadeInAmount = ReadSingle(rootCursor),
-            BlurRadius = ReadSingle(rootCursor),
+            FadeClamp = rootCursor.ReadSingle(),
+            FadeAmount = rootCursor.ReadSingle(),
+            FadeInAmount = rootCursor.ReadSingle(),
+            BlurRadius = rootCursor.ReadSingle(),
             OnOpen = ReadNullablePointer<MenuEventHandlerSet>(rootCursor, context, XPointerResolutionMode.Direct),
             OnCloseRequest = ReadNullablePointer<MenuEventHandlerSet>(rootCursor, context, XPointerResolutionMode.Direct),
             OnClose = ReadNullablePointer<MenuEventHandlerSet>(rootCursor, context, XPointerResolutionMode.Direct),
@@ -409,7 +409,7 @@ public sealed class MenuFileLoader
         {
             XPointer<ItemDefAsset> typedItemPointer = context.PointerReader.ReadPointer<ItemDefAsset>(
                 pointerCursor,
-                XPointerOffsetMode.Direct,
+                XPointerResolutionMode.Direct,
                 XPointerNullability.Required);
             XPointerReference itemPointer = typedItemPointer.Untyped;
             ItemDefAsset? item;
@@ -502,9 +502,9 @@ public sealed class MenuFileLoader
             Align = (ItemHorizontalAlignment)rootCursor.ReadInt32(),
             FontEnum = (ItemFont)rootCursor.ReadInt32(),
             TextAlignMode = rootCursor.ReadInt32(),
-            TextAlignX = ReadSingle(rootCursor),
-            TextAlignY = ReadSingle(rootCursor),
-            TextScale = ReadSingle(rootCursor),
+            TextAlignX = rootCursor.ReadSingle(),
+            TextAlignY = rootCursor.ReadSingle(),
+            TextScale = rootCursor.ReadSingle(),
             TextStyle = (ItemTextStyle)rootCursor.ReadInt32(),
             GameMsgWindowIndex = rootCursor.ReadInt32(),
             GameMsgWindowMode = rootCursor.ReadInt32(),
@@ -525,7 +525,7 @@ public sealed class MenuFileLoader
             EnableDvar = ReadXStringPointer(rootCursor, context),
             DvarFlags = (ItemDvarFlags)rootCursor.ReadInt32(),
             FocusSound = ReadNullablePointer<SoundAliasListAssetModel>(rootCursor, context, XPointerResolutionMode.AliasCell),
-            Special = ReadSingle(rootCursor),
+            Special = rootCursor.ReadSingle(),
             CursorPos = ReadInt32Array(rootCursor, 4),
             TypeData = ReadItemDefData(rootCursor, itemType: (ItemDefType)BinaryPrimitives.ReadInt32BigEndian(rootBytes.Span.Slice(0x100, sizeof(int))), context),
             ImageTrack = rootCursor.ReadInt32(),
@@ -624,7 +624,7 @@ public sealed class MenuFileLoader
             Border = (WindowBorder)cursor.ReadInt32(),
             OwnerDraw = (WindowOwnerDraw)cursor.ReadInt32(),
             OwnerDrawFlags = cursor.ReadInt32(),
-            BorderSize = ReadSingle(cursor),
+            BorderSize = cursor.ReadSingle(),
             StaticFlags = (WindowStaticFlags)cursor.ReadInt32(),
             DynamicFlags = ReadWindowDynamicFlags(cursor),
             NextTime = cursor.ReadInt32(),
@@ -651,10 +651,10 @@ public sealed class MenuFileLoader
         int start = cursor.Offset;
         var rectangle = new RectangleDef
         {
-            X = ReadSingle(cursor),
-            Y = ReadSingle(cursor),
-            W = ReadSingle(cursor),
-            H = ReadSingle(cursor),
+            X = cursor.ReadSingle(),
+            Y = cursor.ReadSingle(),
+            W = cursor.ReadSingle(),
+            H = cursor.ReadSingle(),
             HorzAlign = (HorizontalAlign)cursor.ReadByte(),
             VertAlign = (VerticalAlign)cursor.ReadByte(),
             Pad12 = cursor.ReadUInt16()
@@ -688,9 +688,9 @@ public sealed class MenuFileLoader
                 TransitionType = (MenuTransitionType)cursor.ReadInt32(),
                 TargetField = cursor.ReadInt32(),
                 StartTime = cursor.ReadInt32(),
-                StartValue = ReadSingle(cursor),
-                EndValue = ReadSingle(cursor),
-                Time = ReadSingle(cursor),
+                StartValue = cursor.ReadSingle(),
+                EndValue = cursor.ReadSingle(),
+                Time = cursor.ReadSingle(),
                 EndTriggerType = (MenuTransitionEndTrigger)cursor.ReadInt32()
             };
         }
@@ -772,7 +772,7 @@ public sealed class MenuFileLoader
 
         for (int i = 0; i < count; i++)
         {
-            XPointerReference handlerPointer = context.PointerReader.ReadCell(pointerCursor, XPointerOffsetMode.Direct);
+            XPointerReference handlerPointer = context.PointerReader.ReadCell(pointerCursor, XPointerResolutionMode.Direct);
             MenuEventHandler? handler = ReadMenuEventHandlerPointer(cursor, handlerPointer, context);
             handlers[i] = new MenuEventHandlerReference(i, handlerPointer.AsPointer<MenuEventHandler>(), handler);
         }
@@ -800,8 +800,8 @@ public sealed class MenuFileLoader
         int eventDataRaw = rootCursor.ReadInt32();
         var eventType = (MenuEventHandlerType)rootCursor.ReadByte();
         XPointerReference eventDataPointer = IsPointerEventData(eventType)
-            ? context.PointerReader.ReadCell(new FastFileCursor(rootBytes[..sizeof(int)], rootAddress), XPointerOffsetMode.Direct)
-            : XPointerReference.FromRaw(eventDataRaw, XPointerOffsetMode.Direct, rootAddress);
+            ? context.PointerReader.ReadCell(new FastFileCursor(rootBytes[..sizeof(int)], rootAddress), XPointerResolutionMode.Direct)
+            : XPointerReference.FromRaw(eventDataRaw, XPointerResolutionMode.Direct, rootAddress);
 
         var handler = new MenuEventHandler
         {
@@ -1100,7 +1100,7 @@ public sealed class MenuFileLoader
             {
                 operandPointer = context.PointerReader.ReadCell(
                     entryCursor,
-                    XPointerOffsetMode.Direct);
+                    XPointerResolutionMode.Direct);
                 encodedValueOrTail = operandPointer.Value.Raw;
             }
             else
@@ -1185,7 +1185,7 @@ public sealed class MenuFileLoader
 
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
-        XPointerOffsetMode offsetMode)
+        XPointerResolutionMode offsetMode)
     {
         int cellOffset = cursor.Offset;
         return XPointerReference.FromRaw(
@@ -1216,8 +1216,8 @@ public sealed class MenuFileLoader
             or ItemDefType.NewsTicker
             or ItemDefType.TextScroll;
         XPointerReference pointer = hasPointerPayload
-            ? context.PointerReader.ReadCell(cursor, XPointerOffsetMode.Direct)
-            : ReadRawCell(cursor, XPointerOffsetMode.Direct);
+            ? context.PointerReader.ReadCell(cursor, XPointerResolutionMode.Direct)
+            : ReadRawCell(cursor, XPointerResolutionMode.Direct);
         ItemDefDataValue value = itemType switch
         {
             ItemDefType.Text
@@ -1484,7 +1484,7 @@ public sealed class MenuFileLoader
 
         for (int i = 0; i < count; i++)
         {
-            XPointerReference elementPointer = context.PointerReader.ReadCell(pointerCursor, XPointerOffsetMode.Direct);
+            XPointerReference elementPointer = context.PointerReader.ReadCell(pointerCursor, XPointerResolutionMode.Direct);
             try
             {
                 if (context.PointerReader.HasInlinePayload(elementPointer))
@@ -1579,10 +1579,10 @@ public sealed class MenuFileLoader
 
         var edit = new EditFieldDef
         {
-            MinVal = ReadSingle(rootCursor),
-            MaxVal = ReadSingle(rootCursor),
-            DefVal = ReadSingle(rootCursor),
-            Range = ReadSingle(rootCursor),
+            MinVal = rootCursor.ReadSingle(),
+            MaxVal = rootCursor.ReadSingle(),
+            DefVal = rootCursor.ReadSingle(),
+            Range = rootCursor.ReadSingle(),
             MaxChars = rootCursor.ReadInt32(),
             MaxCharsGotoNext = rootCursor.ReadInt32(),
             MaxPaintChars = rootCursor.ReadInt32(),
@@ -1620,8 +1620,8 @@ public sealed class MenuFileLoader
             StartPos = ReadInt32Array(rootCursor, 4),
             EndPos = ReadInt32Array(rootCursor, 4),
             DrawPadding = rootCursor.ReadInt32(),
-            ElementWidth = ReadSingle(rootCursor),
-            ElementHeight = ReadSingle(rootCursor),
+            ElementWidth = rootCursor.ReadSingle(),
+            ElementHeight = rootCursor.ReadSingle(),
             ElementStyle = rootCursor.ReadInt32(),
             NumColumns = rootCursor.ReadInt32(),
             ColumnInfo = ReadColumnInfoArray(rootCursor, 16),
@@ -1724,7 +1724,7 @@ public sealed class MenuFileLoader
     {
         var values = new float[count];
         for (int i = 0; i < values.Length; i++)
-            values[i] = ReadSingle(cursor);
+            values[i] = cursor.ReadSingle();
 
         return values;
     }
@@ -1755,7 +1755,7 @@ public sealed class MenuFileLoader
             LastTime = rootCursor.ReadInt32(),
             Start = rootCursor.ReadInt32(),
             End = rootCursor.ReadInt32(),
-            X = ReadSingle(rootCursor)
+            X = rootCursor.ReadSingle()
         };
 
         if (rootCursor.Offset != NewsTickerDef.SerializedSize)
@@ -1913,17 +1913,13 @@ public sealed class MenuFileLoader
     {
         return new Vec4
         {
-            A = ReadSingle(cursor),
-            R = ReadSingle(cursor),
-            G = ReadSingle(cursor),
-            B = ReadSingle(cursor)
+            A = cursor.ReadSingle(),
+            R = cursor.ReadSingle(),
+            G = cursor.ReadSingle(),
+            B = cursor.ReadSingle()
         };
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static bool ResolveMenuObjectWithoutSource<T>(
         XPointerReference pointer,

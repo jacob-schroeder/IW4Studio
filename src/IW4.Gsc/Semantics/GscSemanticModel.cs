@@ -2,7 +2,7 @@ using IW4.Gsc.Syntax;
 
 namespace IW4.Gsc.Semantics;
 
-internal enum GscSymbolKind
+public enum GscSymbolKind
 {
     Function,
     Define,

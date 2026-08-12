@@ -75,7 +75,9 @@ public sealed class MapTriggersLoader
         var rows = new TriggerModel[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, TriggerModel.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * TriggerModel.SerializedSize),
+                TriggerModel.SerializedSize);
             rows[i] = new TriggerModel
             {
                 Contents = rowCursor.ReadInt32(),
@@ -106,7 +108,9 @@ public sealed class MapTriggersLoader
         var rows = new TriggerHull[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, TriggerHull.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * TriggerHull.SerializedSize),
+                TriggerHull.SerializedSize);
             rows[i] = new TriggerHull
             {
                 Bounds = ReadBounds(rowCursor),
@@ -138,12 +142,14 @@ public sealed class MapTriggersLoader
         var rows = new TriggerSlab[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, TriggerSlab.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * TriggerSlab.SerializedSize),
+                TriggerSlab.SerializedSize);
             rows[i] = new TriggerSlab
             {
                 Dir = ReadVec3(rowCursor),
-                MidPoint = ReadSingle(rowCursor),
-                HalfSize = ReadSingle(rowCursor)
+                MidPoint = rowCursor.ReadSingle(),
+                HalfSize = rowCursor.ReadSingle()
             };
         }
 
@@ -194,15 +200,6 @@ public sealed class MapTriggersLoader
             cursor,
             XPointerResolutionMode.Direct);
 
-    private static FastFileCursor RowCursor(
-        byte[] bytes,
-        XBlockAddress address,
-        int index,
-        int stride)
-    {
-        int offset = checked(index * stride);
-        return new FastFileCursor(bytes.AsSpan(offset, stride).ToArray(), address.Add(offset));
-    }
 
     private static Bounds ReadBounds(FastFileCursor cursor) => new()
     {
@@ -212,13 +209,11 @@ public sealed class MapTriggersLoader
 
     private static Vec3 ReadVec3(FastFileCursor cursor) => new()
     {
-        X = ReadSingle(cursor),
-        Y = ReadSingle(cursor),
-        Z = ReadSingle(cursor)
+        X = cursor.ReadSingle(),
+        Y = cursor.ReadSingle(),
+        Z = cursor.ReadSingle()
     };
 
-    private static float ReadSingle(FastFileCursor cursor) =>
-        BitConverter.Int32BitsToSingle(cursor.ReadInt32());
 
     private static int Count(uint count, string name)
     {

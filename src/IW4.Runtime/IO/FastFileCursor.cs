@@ -52,6 +52,11 @@ public sealed class FastFileCursor
         return value;
     }
 
+    internal float ReadSingle()
+    {
+        return BitConverter.Int32BitsToSingle(ReadInt32());
+    }
+
     public uint ReadUInt32()
     {
         EnsureAvailable(sizeof(uint));
@@ -105,6 +110,21 @@ public sealed class FastFileCursor
         ReadOnlyMemory<byte> value = _memory.Slice(Offset, length);
         Offset += length;
         return value;
+    }
+
+    /// <summary>
+    /// Returns a bounded, zero-copy view with coordinates relative to this cursor.
+    /// The source bytes remain read-only and the returned cursor starts at offset zero.
+    /// </summary>
+    internal FastFileCursor Slice(int offset, int length)
+    {
+        if (offset < 0 || length < 0 || offset > Length - length)
+            throw new ArgumentOutOfRangeException(nameof(offset));
+
+        return new FastFileCursor(
+            _memory.Slice(offset, length),
+            BaseAddress?.Add(offset),
+            DecodedTapeOffsetAt(offset));
     }
 
     /// <summary>

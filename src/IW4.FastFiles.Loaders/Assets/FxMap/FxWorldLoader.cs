@@ -32,7 +32,11 @@ public sealed class FxWorldLoader
                 ?? throw new InvalidDataException(
                     $"Top-level FxWorld pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical FxMap asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context, "FxWorld");
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed FxWorld pointer has no destination cell.",
+                "Canonical FxWorld has no runtime address.");
             return canonical;
         }
 
@@ -100,18 +104,6 @@ public sealed class FxWorldLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        FxWorldAsset canonical,
-        DbLoadExecutionContext context,
-        string targetName)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException($"Packed {targetName} pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException($"Canonical {targetName} has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private static FxGlassSystem ReadFxGlassSystemHeader(
         FastFileCursor cursor,
@@ -148,7 +140,7 @@ public sealed class FxWorldLoader
         byte needToCompactData = cursor.ReadByte();
         byte initCount = cursor.ReadByte();
         ushort pad66 = cursor.ReadUInt16();
-        float effectChanceAccum = ReadSingle(cursor);
+        float effectChanceAccum = cursor.ReadSingle();
         int lastPieceDeletionTime = cursor.ReadInt32();
 
         if (cursor.Offset - start != FxGlassSystem.SerializedSize)
@@ -334,15 +326,15 @@ public sealed class FxWorldLoader
         int start = rowCursor.Offset;
         XBlockAddress rowAddress = rowCursor.AddressAt(start)
             ?? throw new InvalidDataException("FxGlassDef cursor has no destination block address.");
-        float halfThickness = ReadSingle(rowCursor);
+        float halfThickness = rowCursor.ReadSingle();
         FxVec2 texVec0 = ReadVec2(rowCursor);
         FxVec2 texVec1 = ReadVec2(rowCursor);
         uint color = rowCursor.ReadUInt32();
         XPointer<MaterialAsset> materialPointer = context.PointerReader.ReadPointer<MaterialAsset>(rowCursor, XPointerResolutionMode.AliasCell);
         XPointer<MaterialAsset> materialShatteredPointer = context.PointerReader.ReadPointer<MaterialAsset>(rowCursor, XPointerResolutionMode.AliasCell);
         XPointer<PhysPresetAsset> physPresetPointer = context.PointerReader.ReadPointer<PhysPresetAsset>(rowCursor, XPointerResolutionMode.AliasCell);
-        float invHighMipRadius = ReadSingle(rowCursor);
-        float shatteredInvHighMipRadius = ReadSingle(rowCursor);
+        float invHighMipRadius = rowCursor.ReadSingle();
+        float shatteredInvHighMipRadius = rowCursor.ReadSingle();
 
         if (rowCursor.Offset - start != FxGlassDef.SerializedSize)
             throw new InvalidDataException($"FxGlassDef consumed 0x{rowCursor.Offset - start:X} bytes instead of 0x{FxGlassDef.SerializedSize:X}.");
@@ -391,7 +383,7 @@ public sealed class FxWorldLoader
         for (int i = 0; i < rows.Length; i++)
         {
             FxSpatialFrame frame = ReadSpatialFrame(c);
-            float radius = ReadSingle(c);
+            float radius = c.ReadSingle();
             uint nextFree = BitConverter.SingleToUInt32Bits(frame.Quat.X);
             rows[i] = new FxGlassPiecePlace(frame, radius, nextFree);
         }
@@ -423,7 +415,7 @@ public sealed class FxWorldLoader
                 CrackDataCount = c.ReadByte(),
                 FanDataCount = c.ReadByte(),
                 Flags = c.ReadUInt16(),
-                AreaX2 = ReadSingle(c)
+                AreaX2 = c.ReadSingle()
             };
         }
 
@@ -466,10 +458,10 @@ public sealed class FxWorldLoader
             rows[i] = new FxGlassInitPieceState
             {
                 Frame = ReadSpatialFrame(c),
-                Radius = ReadSingle(c),
+                Radius = c.ReadSingle(),
                 TexCoordOrigin = ReadVec2(c),
                 SupportMask = c.ReadUInt32(),
-                AreaX2 = ReadSingle(c),
+                AreaX2 = c.ReadSingle(),
                 DefIndex = c.ReadByte(),
                 VertCount = c.ReadByte(),
                 FanDataCount = c.ReadByte(),
@@ -542,7 +534,7 @@ public sealed class FxWorldLoader
         var c = new FastFileCursor(bytes);
         var values = new float[count];
         for (int i = 0; i < values.Length; i++)
-            values[i] = ReadSingle(c);
+            values[i] = c.ReadSingle();
 
         return values;
     }
@@ -629,24 +621,20 @@ public sealed class FxWorldLoader
     private static FxSpatialFrame ReadSpatialFrame(FastFileCursor cursor)
     {
         return new FxSpatialFrame(
-            new FxQuat(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor)),
+            new FxQuat(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle()),
             ReadVec3(cursor));
     }
 
     private static FxVec3 ReadVec3(FastFileCursor cursor)
     {
-        return new FxVec3(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor));
+        return new FxVec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
     }
 
     private static FxVec2 ReadVec2(FastFileCursor cursor)
     {
-        return new FxVec2(ReadSingle(cursor), ReadSingle(cursor));
+        return new FxVec2(cursor.ReadSingle(), cursor.ReadSingle());
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static int Count(uint value, string name)
     {

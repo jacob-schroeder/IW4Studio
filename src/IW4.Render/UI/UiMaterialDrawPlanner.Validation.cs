@@ -1,6 +1,7 @@
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Materials;
+using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Shaders;
 
 namespace IW4.Render.UI;
@@ -107,13 +108,18 @@ public static partial class UiMaterialDrawPlanner
         }
         if (state.PolygonMode != 0x1B02)
             yield return $"polygon mode 0x{state.PolygonMode:X4}";
-        if (!state.BlendEnabled ||
-            state.BlendEquationRgb != 0x8006 ||
-            state.BlendEquationAlpha != 0x8006 ||
-            state.BlendSourceRgb != 0x0302 ||
-            state.BlendSourceAlpha != 0x0302 ||
-            state.BlendDestinationRgb != 0x0303 ||
-            state.BlendDestinationAlpha != 0x0303)
+        if (!MapRenderBlend.TryResolve(
+                state,
+                out RenderBlendStateDescriptor blend) ||
+            !blend.Enabled ||
+            blend.ColorOperation != RenderBlendOperation.Add ||
+            blend.AlphaOperation != RenderBlendOperation.Add ||
+            blend.SourceColorFactor != RenderBlendFactor.SourceAlpha ||
+            blend.SourceAlphaFactor != RenderBlendFactor.SourceAlpha ||
+            blend.DestinationColorFactor !=
+                RenderBlendFactor.OneMinusSourceAlpha ||
+            blend.DestinationAlphaFactor !=
+                RenderBlendFactor.OneMinusSourceAlpha)
         {
             yield return "non-source-alpha blend tuple";
         }
@@ -136,7 +142,7 @@ public static partial class UiMaterialDrawPlanner
         {
             diagnostics.Add(new UiMaterialExecutionDiagnostic(
                 UiMaterialExecutionDiagnosticCode.InvalidTextureAtlas,
-                UiMaterialExecutionDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Material atlas dimensions {rows}x{columns} are incomplete."));
             return new UiMaterialAtlasState(
                 rows,
@@ -162,7 +168,7 @@ public static partial class UiMaterialDrawPlanner
             diagnostics.Add(new UiMaterialExecutionDiagnostic(
                 UiMaterialExecutionDiagnosticCode
                     .TextureAtlasEvaluationRequired,
-                UiMaterialExecutionDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 $"Material atlas {rows}x{columns} requires evaluated frame " +
                 "UVs before exact execution."));
             return new UiMaterialAtlasState(
@@ -198,7 +204,7 @@ public static partial class UiMaterialDrawPlanner
     {
         diagnostics.Add(new UiMaterialExecutionDiagnostic(
             code,
-            UiMaterialExecutionDiagnosticSeverity.Blocker,
+            UiDiagnosticSeverity.Blocker,
             message));
         return new UiMaterialDrawPlan(null, diagnostics.ToArray());
     }

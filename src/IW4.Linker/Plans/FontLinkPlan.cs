@@ -143,10 +143,10 @@ internal sealed class FontLinkPlan : AssetLinkPlan
             writer.WriteByte(glyph.PixelWidth);
             writer.WriteByte(glyph.PixelHeight);
             writer.WriteByte(glyph.Padding);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(glyph.S0));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(glyph.T0));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(glyph.S1));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(glyph.T1));
+            writer.WriteSingle(glyph.S0);
+            writer.WriteSingle(glyph.T0);
+            writer.WriteSingle(glyph.S1);
+            writer.WriteSingle(glyph.T1);
         }
 
         return freeze.FreezeStorage(

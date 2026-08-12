@@ -663,7 +663,7 @@ public sealed class RenderFramePlan
                     programs,
                     draw.Pipeline.ShaderProgram.Identity,
                     draw.Pipeline.ShaderProgram,
-                    ProgramEquivalent,
+                    static (left, right) => left.ContentEquals(right),
                     "shader program");
                 RequireConsistentShaderAbi(
                     shaderAbis,
@@ -672,13 +672,13 @@ public sealed class RenderFramePlan
                     fixedStates,
                     draw.Pipeline.FixedState.Identity,
                     draw.Pipeline.FixedState,
-                    FixedStateEquivalent,
+                    static (left, right) => left.ContentEquals(right),
                     "fixed state");
                 RequireConsistent(
                     materials,
                     draw.Material.Identity,
                     draw.Material,
-                    MaterialEquivalent,
+                    static (left, right) => left.ContentEquals(right),
                     "material");
             }
         }
@@ -731,8 +731,7 @@ public sealed class RenderFramePlan
         }
         if (left.Pipeline.ShaderProgram.Identity ==
                 right.Pipeline.ShaderProgram.Identity &&
-            !ProgramEquivalent(
-                left.Pipeline.ShaderProgram,
+            !left.Pipeline.ShaderProgram.ContentEquals(
                 right.Pipeline.ShaderProgram))
         {
             throw new ArgumentException(
@@ -741,8 +740,7 @@ public sealed class RenderFramePlan
         }
         if (left.Pipeline.ShaderProgram.Abi.Identity ==
                 right.Pipeline.ShaderProgram.Abi.Identity &&
-            !ShaderAbiEquivalent(
-                left.Pipeline.ShaderProgram.Abi,
+            !left.Pipeline.ShaderProgram.Abi.ContentEquals(
                 right.Pipeline.ShaderProgram.Abi))
         {
             throw new ArgumentException(
@@ -751,8 +749,7 @@ public sealed class RenderFramePlan
         }
         if (left.Pipeline.FixedState.Identity ==
                 right.Pipeline.FixedState.Identity &&
-            !FixedStateEquivalent(
-                left.Pipeline.FixedState,
+            !left.Pipeline.FixedState.ContentEquals(
                 right.Pipeline.FixedState))
         {
             throw new ArgumentException(
@@ -760,7 +757,7 @@ public sealed class RenderFramePlan
                 "passes");
         }
         if (left.Material.Identity == right.Material.Identity &&
-            !MaterialEquivalent(left.Material, right.Material))
+            !left.Material.ContentEquals(right.Material))
         {
             throw new ArgumentException(
                 $"Semantic material identity {right.Material.Identity} describes conflicting state.",
@@ -778,7 +775,7 @@ public sealed class RenderFramePlan
                 out RenderShaderAbiDescriptor? existing))
         {
             if (existing is null ||
-                !ShaderAbiEquivalent(existing, descriptor))
+                !existing.ContentEquals(descriptor))
             {
                 throw new ArgumentException(
                     $"Shader ABI identity {descriptor.Identity} describes conflicting bindings.",
@@ -965,10 +962,10 @@ public sealed class RenderFramePlan
         RenderPipelineDescriptor left,
         RenderPipelineDescriptor right) =>
         left.Identity == right.Identity &&
-        ProgramEquivalent(left.ShaderProgram, right.ShaderProgram) &&
+        left.ShaderProgram.ContentEquals(right.ShaderProgram) &&
         left.VertexLayout == right.VertexLayout &&
         left.InstanceLayout == right.InstanceLayout &&
-        FixedStateEquivalent(left.FixedState, right.FixedState) &&
+        left.FixedState.ContentEquals(right.FixedState) &&
         left.Topology == right.Topology &&
         left.ColorAttachmentFormats.SequenceEqual(
             right.ColorAttachmentFormats) &&
@@ -976,52 +973,4 @@ public sealed class RenderFramePlan
             right.DepthStencilAttachmentFormat &&
         left.Multisample == right.Multisample;
 
-    private static bool ProgramEquivalent(
-        RenderShaderProgramDescriptor left,
-        RenderShaderProgramDescriptor right) =>
-        left.Identity == right.Identity &&
-        string.Equals(
-            left.VertexProgramIdentity,
-            right.VertexProgramIdentity,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            left.FragmentProgramIdentity,
-            right.FragmentProgramIdentity,
-            StringComparison.Ordinal) &&
-        ShaderAbiEquivalent(left.Abi, right.Abi) &&
-        Equals(left.AuthoredRsxProgram, right.AuthoredRsxProgram);
-
-    private static bool ShaderAbiEquivalent(
-        RenderShaderAbiDescriptor left,
-        RenderShaderAbiDescriptor right) =>
-        left.ContentEquals(right);
-
-    private static bool FixedStateEquivalent(
-        RenderFixedStateDescriptor left,
-        RenderFixedStateDescriptor right) =>
-        left.Identity == right.Identity &&
-        left.Raster == right.Raster &&
-        left.Depth == right.Depth &&
-        left.Stencil == right.Stencil &&
-        left.Blend == right.Blend &&
-        left.ColorWriteMask == right.ColorWriteMask &&
-        left.FragmentOutputTransfer == right.FragmentOutputTransfer;
-
-    private static bool MaterialEquivalent(
-        RenderMaterialDescriptor left,
-        RenderMaterialDescriptor right) =>
-        left.Identity == right.Identity &&
-        string.Equals(
-            left.MaterialName,
-            right.MaterialName,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            left.TechniqueName,
-            right.TechniqueName,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            left.PassClass,
-            right.PassClass,
-            StringComparison.Ordinal) &&
-        left.PassIndex == right.PassIndex;
 }

@@ -25,20 +25,20 @@ public sealed class XFilePointerReader
 
     public XPointerReference ReadCell(
         FastFileCursor cursor,
-        XPointerOffsetMode offsetMode = XPointerOffsetMode.None)
+        XPointerResolutionMode resolutionMode = XPointerResolutionMode.None)
     {
-        return ReadCellWithCaptureHandle(cursor, offsetMode).Pointer;
+        return ReadCellWithCaptureHandle(cursor, resolutionMode).Pointer;
     }
 
     internal XPointerRead ReadCellWithCaptureHandle(
         FastFileCursor cursor,
-        XPointerOffsetMode offsetMode = XPointerOffsetMode.None)
+        XPointerResolutionMode resolutionMode = XPointerResolutionMode.None)
     {
         int cellOffset = cursor.Offset;
         int raw = cursor.ReadInt32();
         XPointerReference pointer = XPointerReference.FromRaw(
             raw,
-            offsetMode,
+            resolutionMode,
             cursor.AddressAt(cellOffset));
         XPointerReadHandle? captureHandle = RecordRead(cursor, cellOffset, pointer);
         ValidateOffsetPointer(pointer, null);
@@ -47,10 +47,10 @@ public sealed class XFilePointerReader
 
     public XPointerReference FromRaw(
         int raw,
-        XPointerOffsetMode offsetMode = XPointerOffsetMode.None,
+        XPointerResolutionMode resolutionMode = XPointerResolutionMode.None,
         XBlockAddress? cellAddress = null)
     {
-        XPointerReference pointer = XPointerReference.FromRaw(raw, offsetMode, cellAddress);
+        XPointerReference pointer = XPointerReference.FromRaw(raw, resolutionMode, cellAddress);
         ValidateOffsetPointer(pointer, null);
         return pointer;
     }
@@ -76,27 +76,6 @@ public sealed class XFilePointerReader
         return new XPointer<T>(raw, resolutionMode, cellAddress);
     }
 
-    public XPointer<T> FromRaw<T>(
-        int raw,
-        XPointerOffsetMode resolutionMode,
-        XBlockAddress? cellAddress = null)
-    {
-        return FromRaw<T>(raw, resolutionMode, cellAddress, XPointerNullability.Unspecified);
-    }
-
-    public XPointer<T> FromRaw<T>(
-        int raw,
-        XPointerOffsetMode resolutionMode,
-        XBlockAddress? cellAddress,
-        XPointerNullability nullability)
-    {
-        ValidateNullability(nullability);
-        XPointerReference pointer = XPointerReference.FromRaw(raw, resolutionMode, cellAddress);
-        ValidateNullObjectPointer(pointer, typeof(T), nullability);
-        ValidateOffsetPointer(pointer, typeof(T), nullability);
-        return new XPointer<T>(raw, resolutionMode.ToResolutionMode(), cellAddress);
-    }
-
     public XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
         XPointerResolutionMode resolutionMode = XPointerResolutionMode.None)
@@ -119,34 +98,6 @@ public sealed class XFilePointerReader
         int raw = cursor.ReadInt32();
         ValidateNullability(nullability);
         XPointerReference pointer = XPointerReference.FromRaw(raw, resolutionMode, cursor.AddressAt(cellOffset));
-        RecordRead(cursor, cellOffset, pointer);
-        ValidateNullObjectPointer(pointer, typeof(T), nullability);
-        ValidateOffsetPointer(pointer, typeof(T), nullability);
-        return pointer.AsPointer<T>();
-    }
-
-    public XPointer<T> ReadPointer<T>(
-        FastFileCursor cursor,
-        XPointerOffsetMode offsetMode)
-    {
-        int cellOffset = cursor.Offset;
-        int raw = cursor.ReadInt32();
-        XPointerReference pointer = XPointerReference.FromRaw(raw, offsetMode, cursor.AddressAt(cellOffset));
-        RecordRead(cursor, cellOffset, pointer);
-        ValidateNullObjectPointer(pointer, typeof(T), XPointerNullability.Unspecified);
-        ValidateOffsetPointer(pointer, typeof(T), XPointerNullability.Unspecified);
-        return pointer.AsPointer<T>();
-    }
-
-    public XPointer<T> ReadPointer<T>(
-        FastFileCursor cursor,
-        XPointerOffsetMode offsetMode,
-        XPointerNullability nullability)
-    {
-        int cellOffset = cursor.Offset;
-        int raw = cursor.ReadInt32();
-        ValidateNullability(nullability);
-        XPointerReference pointer = XPointerReference.FromRaw(raw, offsetMode, cursor.AddressAt(cellOffset));
         RecordRead(cursor, cellOffset, pointer);
         ValidateNullObjectPointer(pointer, typeof(T), nullability);
         ValidateOffsetPointer(pointer, typeof(T), nullability);

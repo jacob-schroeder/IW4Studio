@@ -58,7 +58,11 @@ public sealed class FxEffectDefLoader
                     $"FxEffectDef pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Fx asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed FxEffectDef pointer has no destination cell.",
+                "Canonical FxEffectDef has no runtime address.");
             return canonical;
         }
 
@@ -155,17 +159,6 @@ public sealed class FxEffectDefLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        FxEffectDefAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed FxEffectDef pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical FxEffectDef has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private IReadOnlyList<FxElemDef> ReadFxElemDefArray(
         FastFileCursor cursor,
@@ -204,7 +197,7 @@ public sealed class FxEffectDefLoader
         FxFloatRange spawnRange = ReadFxFloatRange(cursor);
         FxFloatRange fadeInRange = ReadFxFloatRange(cursor);
         FxFloatRange fadeOutRange = ReadFxFloatRange(cursor);
-        float spawnFrustumCullRadius = ReadSingle(cursor);
+        float spawnFrustumCullRadius = cursor.ReadSingle();
         FxIntRange spawnDelayMsec = ReadFxIntRange(cursor);
         FxIntRange lifeSpanMsec = ReadFxIntRange(cursor);
         IReadOnlyList<FxFloatRange> spawnOrigin = ReadFxFloatRanges(cursor, 3);
@@ -602,9 +595,9 @@ public sealed class FxEffectDefLoader
 
         int scrollTimeMsec = trailCursor.ReadInt32();
         int repeatDist = trailCursor.ReadInt32();
-        float invSplitDist = ReadSingle(trailCursor);
-        float invSplitArcDist = ReadSingle(trailCursor);
-        float invSplitTime = ReadSingle(trailCursor);
+        float invSplitDist = trailCursor.ReadSingle();
+        float invSplitArcDist = trailCursor.ReadSingle();
+        float invSplitTime = trailCursor.ReadSingle();
         int vertCount = trailCursor.ReadInt32();
         XPointer<FxTrailVertex[]> vertsPointer = ReadPointer<FxTrailVertex[]>(trailCursor, context, XPointerResolutionMode.Direct);
         int indCount = trailCursor.ReadInt32();
@@ -638,19 +631,19 @@ public sealed class FxEffectDefLoader
         byte[] bytes = context.Blocks.Load(cursor, FxSparkFountainDef.SerializedSize);
         var c = new FastFileCursor(bytes);
         return new FxSparkFountainDef(
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
             c.ReadInt32(),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c),
-            ReadSingle(c));
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle(),
+            c.ReadSingle());
     }
 
     private static byte ReadFxExtendedDefaultByte(
@@ -676,7 +669,7 @@ public sealed class FxEffectDefLoader
         var c = new FastFileCursor(bytes, address);
         var verts = new FxTrailVertex[count];
         for (int i = 0; i < verts.Length; i++)
-            verts[i] = new FxTrailVertex(ReadSingle(c), ReadSingle(c), ReadSingle(c), ReadSingle(c), ReadSingle(c));
+            verts[i] = new FxTrailVertex(c.ReadSingle(), c.ReadSingle(), c.ReadSingle(), c.ReadSingle(), c.ReadSingle());
         return verts;
     }
 
@@ -802,7 +795,7 @@ public sealed class FxEffectDefLoader
 
     private static FxFloatRange ReadFxFloatRange(FastFileCursor cursor)
     {
-        return new FxFloatRange(ReadSingle(cursor), ReadSingle(cursor));
+        return new FxFloatRange(cursor.ReadSingle(), cursor.ReadSingle());
     }
 
     private static IReadOnlyList<FxFloatRange> ReadFxFloatRanges(
@@ -834,7 +827,7 @@ public sealed class FxEffectDefLoader
 
     private static Vec3 ReadVec3(FastFileCursor cursor)
     {
-        return new Vec3(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor));
+        return new Vec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
     }
 
     private static FxElemVelStateInFrame ReadFxElemVelStateInFrame(FastFileCursor cursor)
@@ -848,16 +841,12 @@ public sealed class FxEffectDefLoader
     {
         return new FxElemVisualState(
             new FxElemColor(cursor.ReadByte(), cursor.ReadByte(), cursor.ReadByte(), cursor.ReadByte()),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor));
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle());
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
 }

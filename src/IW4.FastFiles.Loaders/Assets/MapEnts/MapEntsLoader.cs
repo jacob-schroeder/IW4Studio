@@ -64,7 +64,11 @@ public sealed class MapEntsLoader
                     "does not resolve to a canonical MapEnts asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed MapEnts pointer has no destination cell.",
+                "Canonical MapEnts has no runtime address.");
             return canonical;
         }
 
@@ -199,7 +203,9 @@ public sealed class MapEntsLoader
         var rows = new Stage[count];
         for (int i = 0; i < rows.Length; i++)
         {
-            var rowCursor = RowCursor(bytes, address, i, Stage.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(i * Stage.SerializedSize),
+                Stage.SerializedSize);
             XPointer<string> stageNamePointer = ReadPointer<string>(
                 rowCursor,
                 context,
@@ -277,42 +283,20 @@ public sealed class MapEntsLoader
         return (bytes, targetAddress, HasPayload: true);
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        MapEntsAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed MapEnts pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical MapEnts has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
         DbLoadExecutionContext context,
         XPointerResolutionMode mode) => context.PointerReader.ReadPointer<T>(cursor, mode);
 
-    private static FastFileCursor RowCursor(
-        byte[] bytes,
-        XBlockAddress address,
-        int index,
-        int stride)
-    {
-        int offset = checked(index * stride);
-        return new FastFileCursor(bytes.AsSpan(offset, stride).ToArray(), address.Add(offset));
-    }
 
     private static Vec3 ReadVec3(FastFileCursor cursor) => new()
     {
-        X = ReadSingle(cursor),
-        Y = ReadSingle(cursor),
-        Z = ReadSingle(cursor)
+        X = cursor.ReadSingle(),
+        Y = cursor.ReadSingle(),
+        Z = cursor.ReadSingle()
     };
 
-    private static float ReadSingle(FastFileCursor cursor) =>
-        BitConverter.Int32BitsToSingle(cursor.ReadInt32());
 
     private static int NonNegative(int count, string name)
     {

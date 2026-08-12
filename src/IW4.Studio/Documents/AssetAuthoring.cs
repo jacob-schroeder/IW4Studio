@@ -9,13 +9,6 @@ using IW4.Studio.Documents.MenuEditing;
 
 namespace IW4.Studio.Documents;
 
-public enum AssetEditorMode
-{
-    Editable,
-    ReadOnly,
-    ContentUnavailable
-}
-
 public sealed class AssetEditorValidationState
 {
     internal AssetEditorValidationState(IEnumerable<AssetValidationIssue> issues) =>
@@ -155,13 +148,8 @@ public sealed class AssetEditorSession : AssetEditorSurface
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
-        Mode = entry.Access switch
-        {
-            WorkspaceAssetAccess.Editable => AssetEditorMode.Editable,
-            WorkspaceAssetAccess.ReadOnly => AssetEditorMode.ReadOnly,
-            _ => AssetEditorMode.ContentUnavailable
-        };
-        _rowIdentity = Mode == AssetEditorMode.Editable
+        Mode = entry.Access;
+        _rowIdentity = Mode == WorkspaceAssetAccess.Editable
             ? entry.TargetRowIdentity ?? throw new InvalidDataException(
                 "An editable editor requires a stable target row.")
             : null;
@@ -173,8 +161,8 @@ public sealed class AssetEditorSession : AssetEditorSurface
         Validation = new AssetEditorValidationState(_adapter.Validate(draft));
     }
 
-    public AssetEditorMode Mode { get; }
-    public bool CanEdit => Mode == AssetEditorMode.Editable;
+    public WorkspaceAssetAccess Mode { get; }
+    public bool CanEdit => Mode == WorkspaceAssetAccess.Editable;
     public AssetEditorValidationState Validation { get; private set; }
     public FastFileWorkspace Workspace => _session.Workspace;
     public TargetZoneRowIdentity? RowIdentity => _rowIdentity;

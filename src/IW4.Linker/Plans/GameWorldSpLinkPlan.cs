@@ -24,7 +24,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
         PathStorage path = CreatePath(definition.Path, freeze);
-        DirectTarget? vehicle = CreateVehicleTrack(definition.VehicleTrack, freeze);
+        LinkStorageTarget? vehicle = CreateVehicleTrack(definition.VehicleTrack, freeze);
         LinkStorageSymbol? glass = definition.GlassData is null
             ? null
             : GameWorldGlassLinkStorage.Create(definition.GlassData, freeze);
@@ -73,14 +73,14 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
     private IEnumerable<LinkOperation> CreateRootOperations(
         LinkStorageSymbol root,
         PathStorage path,
-        DirectTarget? vehicle,
+        LinkStorageTarget? vehicle,
         LinkStorageSymbol? glass)
     {
         yield return NameOperation(root, 0);
         foreach (LinkOperation operation in path.CreateRootOperations(root))
             yield return operation;
         if (vehicle is { } segments)
-            yield return Direct(root, 0x2c, segments, "GameWorldSp.VehicleTrack.Segments");
+            yield return DirectOperation(root, 0x2c, segments, "GameWorldSp.VehicleTrack.Segments");
         if (glass is not null)
         {
             yield return PresenceOperation(
@@ -149,11 +149,11 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             writer.Skip(5 * sizeof(ushort));
             writer.WriteInt32(constant.AnimScriptFunc);
             WriteVec3(writer, constant.Origin);
-            WriteSingle(writer, constant.Angle);
-            WriteSingle(writer, constant.ForwardX);
-            WriteSingle(writer, constant.ForwardY);
-            WriteSingle(writer, constant.Radius);
-            WriteSingle(writer, constant.MinUseDistSq);
+            writer.WriteSingle(constant.Angle);
+            writer.WriteSingle(constant.ForwardX);
+            writer.WriteSingle(constant.ForwardY);
+            writer.WriteSingle(constant.Radius);
+            writer.WriteSingle(constant.MinUseDistSq);
             writer.WriteUInt16(unchecked((ushort)constant.OverlapNode0));
             writer.WriteUInt16(unchecked((ushort)constant.OverlapNode1));
             writer.WriteUInt16(constant.TotalLinkCount);
@@ -178,8 +178,8 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             writer.WriteUInt32(transient.NextOpenRuntimePointer);
             writer.WriteUInt32(transient.PreviousOpenRuntimePointer);
             writer.WriteUInt32(transient.ParentRuntimePointer);
-            WriteSingle(writer, transient.Cost);
-            WriteSingle(writer, transient.Heuristic);
+            writer.WriteSingle(transient.Cost);
+            writer.WriteSingle(transient.Heuristic);
             writer.WriteUInt32(transient.NodeCostOrLinkIndexBits);
         }
 
@@ -228,7 +228,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         for (int index = 0; index < values.Count; index++)
         {
             PathLink value = values[index];
-            WriteSingle(writer, value.Distance);
+            writer.WriteSingle(value.Distance);
             writer.WriteUInt16(value.NodeNumber);
             writer.WriteByte(value.DisconnectCount);
             writer.WriteByte(value.NegotiationLink);
@@ -277,7 +277,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             WriteTreeTemplate(writer, root);
         }
 
-        var targets = new Dictionary<PathNodeTree, DirectTarget>(
+        var targets = new Dictionary<PathNodeTree, LinkStorageTarget>(
             ReferenceEqualityComparer.Instance);
         return freeze.FreezeStorage(
             path.NodeTreePointer.Untyped,
@@ -295,12 +295,12 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             {
                 targets.Add(
                     roots[index],
-                    new DirectTarget(
+                    new LinkStorageTarget(
                         new LinkStorageView(
                             table,
                             checked(baseAddend + index * PathNodeTree.SerializedSize),
                             PathNodeTree.SerializedSize),
-                        CanMaterialize: false));
+                        CanMaterializeRoot: false));
             }
 
             for (int index = 0; index < roots.Count; index++)
@@ -324,7 +324,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         LinkStorageSymbol owner,
         int baseOffset,
         PathNodeTree tree,
-        IDictionary<PathNodeTree, DirectTarget> targets,
+        IDictionary<PathNodeTree, LinkStorageTarget> targets,
         uint pathNodeCount,
         LinkAssetFreezeScope freeze,
         string fieldPath)
@@ -352,14 +352,14 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             (tree.Child1!, tree.Child1Pointer.Untyped, 0x0c, $"{fieldPath}.Child1")
         })
         {
-            DirectTarget target = EnsureTreeTarget(
+            LinkStorageTarget target = EnsureTreeTarget(
                 child,
                 pointer,
                 targets,
                 pathNodeCount,
                 freeze,
                 childPath);
-            yield return Direct(
+            yield return DirectOperation(
                 owner,
                 checked(baseOffset + pointerOffset),
                 target,
@@ -367,20 +367,20 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         }
     }
 
-    private static DirectTarget EnsureTreeTarget(
+    private static LinkStorageTarget EnsureTreeTarget(
         PathNodeTree tree,
         XPointerReference pointer,
-        IDictionary<PathNodeTree, DirectTarget> targets,
+        IDictionary<PathNodeTree, LinkStorageTarget> targets,
         uint pathNodeCount,
         LinkAssetFreezeScope freeze,
         string fieldPath)
     {
-        if (targets.TryGetValue(tree, out DirectTarget existing))
+        if (targets.TryGetValue(tree, out LinkStorageTarget existing))
             return existing;
 
         var writer = new LinkTemplateWriter(PathNodeTree.SerializedSize);
         WriteTreeTemplate(writer, tree);
-        DirectTarget? published = null;
+        LinkStorageTarget? published = null;
         LinkStorageTarget storage = freeze.FreezeStorageView(
             pointer,
             writer.Complete(),
@@ -392,7 +392,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         if (published is null)
             throw new InvalidOperationException(
                 $"{fieldPath} did not publish its recursive direct target.");
-        var target = new DirectTarget(storage.View, storage.CanMaterializeRoot);
+        LinkStorageTarget target = storage;
         targets[tree] = target;
         return target;
 
@@ -400,12 +400,12 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             LinkStorageSymbol owner,
             int baseAddend)
         {
-            published = new DirectTarget(
+            published = new LinkStorageTarget(
                 new LinkStorageView(
                     owner,
                     baseAddend,
                     PathNodeTree.SerializedSize),
-                baseAddend == 0 &&
+                CanMaterializeRoot: baseAddend == 0 &&
                 owner.Definition.ByteLength == PathNodeTree.SerializedSize);
             targets.Add(tree, published.Value);
             return CreateTreeOperations(
@@ -424,7 +424,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         PathNodeTree tree)
     {
         writer.WriteInt32(tree.Axis);
-        WriteSingle(writer, tree.Distance);
+        writer.WriteSingle(tree.Distance);
         if (tree.Axis < 0)
         {
             writer.WriteInt32(tree.NodeCount);
@@ -436,7 +436,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         }
     }
 
-    private static DirectTarget? CreateVehicleTrack(
+    private static LinkStorageTarget? CreateVehicleTrack(
         VehicleTrack track,
         LinkAssetFreezeScope freeze)
     {
@@ -456,7 +456,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             WriteVehicleSegmentTemplate(writer, root);
         }
 
-        var targets = new Dictionary<VehicleTrackSegment, DirectTarget>(
+        var targets = new Dictionary<VehicleTrackSegment, LinkStorageTarget>(
             ReferenceEqualityComparer.Instance);
         LinkStorageTarget table = freeze.FreezeStorage(
             track.SegmentsPointer.Untyped,
@@ -465,7 +465,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             alignment: 4,
             (owner, baseAddend) => CreateOperations(owner, baseAddend),
             "GameWorldSp.VehicleTrack.Segments");
-        return new DirectTarget(table.View, table.CanMaterializeRoot);
+        return table;
 
         IEnumerable<LinkOperation> CreateOperations(
             LinkStorageSymbol owner,
@@ -475,12 +475,12 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             {
                 targets.Add(
                     roots[index],
-                    new DirectTarget(
+                    new LinkStorageTarget(
                         new LinkStorageView(
                             owner,
                             checked(baseAddend + index * VehicleTrackSegment.SerializedSize),
                             VehicleTrackSegment.SerializedSize),
-                        CanMaterialize: false));
+                        CanMaterializeRoot: false));
             }
 
             for (int index = 0; index < roots.Count; index++)
@@ -503,7 +503,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         LinkStorageSymbol owner,
         int baseOffset,
         VehicleTrackSegment segment,
-        IDictionary<VehicleTrackSegment, DirectTarget> targets,
+        IDictionary<VehicleTrackSegment, LinkStorageTarget> targets,
         LinkAssetFreezeScope freeze,
         string fieldPath)
     {
@@ -542,10 +542,10 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             $"{fieldPath}.NextBranches");
         if (next is { } nextTable)
         {
-            yield return new DirectStorageLinkOperation(
-                new LinkStorageCell(owner, checked(baseOffset + 0x0c)),
-                nextTable.View,
-                nextTable.CanMaterializeRoot,
+            yield return DirectOperation(
+                owner,
+                checked(baseOffset + 0x0c),
+                nextTable,
                 $"{fieldPath}.NextBranches");
         }
 
@@ -558,10 +558,10 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             $"{fieldPath}.PreviousBranches");
         if (previous is { } previousTable)
         {
-            yield return new DirectStorageLinkOperation(
-                new LinkStorageCell(owner, checked(baseOffset + 0x14)),
-                previousTable.View,
-                previousTable.CanMaterializeRoot,
+            yield return DirectOperation(
+                owner,
+                checked(baseOffset + 0x14),
+                previousTable,
                 $"{fieldPath}.PreviousBranches");
         }
     }
@@ -570,7 +570,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         IReadOnlyList<VehicleTrackSegment?> branches,
         IReadOnlyList<XPointer<VehicleTrackSegment>> branchPointers,
         XPointerReference pointer,
-        IDictionary<VehicleTrackSegment, DirectTarget> targets,
+        IDictionary<VehicleTrackSegment, LinkStorageTarget> targets,
         LinkAssetFreezeScope freeze,
         string fieldPath)
     {
@@ -596,13 +596,13 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
                 XPointerReference branchPointer = branchPointers.Count == 0
                     ? default
                     : branchPointers[index].Untyped;
-                DirectTarget target = EnsureVehicleSegmentTarget(
+                LinkStorageTarget target = EnsureVehicleSegmentTarget(
                     branch,
                     branchPointer,
                     targets,
                     freeze,
                     $"{fieldPath}[{index}]");
-                yield return Direct(
+                yield return DirectOperation(
                     table,
                     checked(baseAddend + index * sizeof(int)),
                     target,
@@ -611,19 +611,19 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         }
     }
 
-    private static DirectTarget EnsureVehicleSegmentTarget(
+    private static LinkStorageTarget EnsureVehicleSegmentTarget(
         VehicleTrackSegment segment,
         XPointerReference pointer,
-        IDictionary<VehicleTrackSegment, DirectTarget> targets,
+        IDictionary<VehicleTrackSegment, LinkStorageTarget> targets,
         LinkAssetFreezeScope freeze,
         string fieldPath)
     {
-        if (targets.TryGetValue(segment, out DirectTarget existing))
+        if (targets.TryGetValue(segment, out LinkStorageTarget existing))
             return existing;
 
         var writer = new LinkTemplateWriter(VehicleTrackSegment.SerializedSize);
         WriteVehicleSegmentTemplate(writer, segment);
-        DirectTarget? published = null;
+        LinkStorageTarget? published = null;
         LinkStorageTarget storage = freeze.FreezeStorageView(
             pointer,
             writer.Complete(),
@@ -635,7 +635,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         if (published is null)
             throw new InvalidOperationException(
                 $"{fieldPath} did not publish its recursive direct target.");
-        var target = new DirectTarget(storage.View, storage.CanMaterializeRoot);
+        LinkStorageTarget target = storage;
         targets[segment] = target;
         return target;
 
@@ -643,12 +643,12 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             LinkStorageSymbol owner,
             int baseAddend)
         {
-            published = new DirectTarget(
+            published = new LinkStorageTarget(
                 new LinkStorageView(
                     owner,
                     baseAddend,
                     VehicleTrackSegment.SerializedSize),
-                baseAddend == 0 &&
+                CanMaterializeRoot: baseAddend == 0 &&
                 owner.Definition.ByteLength == VehicleTrackSegment.SerializedSize);
             targets.Add(segment, published.Value);
             return CreateVehicleSegmentOperations(
@@ -673,9 +673,9 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         writer.Skip(sizeof(int));
         writer.WriteInt32(segment.PreviousBranchCount);
         foreach (float value in segment.EndEdgeDirection)
-            WriteSingle(writer, value);
-        WriteSingle(writer, segment.EndEdgeDistance);
-        WriteSingle(writer, segment.TotalLength);
+            writer.WriteSingle(value);
+        writer.WriteSingle(segment.EndEdgeDistance);
+        writer.WriteSingle(segment.TotalLength);
     }
 
     private static LinkStorageSymbol? CreateVehicleSectors(
@@ -697,18 +697,18 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
                 sector.ObstaclesPointer.Untyped,
                 $"{fieldPath}[{index}].Obstacles");
             foreach (float value in sector.StartEdgeDirection)
-                WriteSingle(writer, value);
-            WriteSingle(writer, sector.StartEdgeDistance);
+                writer.WriteSingle(value);
+            writer.WriteSingle(sector.StartEdgeDistance);
             foreach (float value in sector.LeftEdgeDirection)
-                WriteSingle(writer, value);
-            WriteSingle(writer, sector.LeftEdgeDistance);
+                writer.WriteSingle(value);
+            writer.WriteSingle(sector.LeftEdgeDistance);
             foreach (float value in sector.RightEdgeDirection)
-                WriteSingle(writer, value);
-            WriteSingle(writer, sector.RightEdgeDistance);
-            WriteSingle(writer, sector.SectorLength);
-            WriteSingle(writer, sector.SectorWidth);
-            WriteSingle(writer, sector.TotalPriorLength);
-            WriteSingle(writer, sector.TotalFollowingLength);
+                writer.WriteSingle(value);
+            writer.WriteSingle(sector.RightEdgeDistance);
+            writer.WriteSingle(sector.SectorLength);
+            writer.WriteSingle(sector.SectorWidth);
+            writer.WriteSingle(sector.TotalPriorLength);
+            writer.WriteSingle(sector.TotalFollowingLength);
             writer.Skip(sizeof(int));
             writer.WriteInt32(sector.ObstacleCount);
         }
@@ -738,8 +738,8 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         foreach (VehicleTrackObstacle obstacle in obstacles)
         {
             foreach (float value in obstacle.Origin)
-                WriteSingle(writer, value);
-            WriteSingle(writer, obstacle.Radius);
+                writer.WriteSingle(value);
+            writer.WriteSingle(obstacle.Radius);
         }
         return LinkStorageSymbol.SourceBytes(
             XFileBlockType.LARGE,
@@ -1019,17 +1019,6 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         writer.Skip(sizeof(int));
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        DirectTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterialize,
-            fieldPath);
-
     private static ScriptStringLinkOperation Script(
         LinkStorageSymbol owner,
         int offset,
@@ -1039,22 +1028,16 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
 
     private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
-        WriteSingle(writer, value.X);
-        WriteSingle(writer, value.Y);
-        WriteSingle(writer, value.Z);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
-    private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
     private static bool IsZero(Vec3 value) =>
         BitConverter.SingleToInt32Bits(value.X) == 0 &&
         BitConverter.SingleToInt32Bits(value.Y) == 0 &&
         BitConverter.SingleToInt32Bits(value.Z) == 0;
-
-    private readonly record struct DirectTarget(
-        LinkStorageView View,
-        bool CanMaterialize);
 
     private sealed record PathStorage(
         LinkStorageSymbol? Nodes,

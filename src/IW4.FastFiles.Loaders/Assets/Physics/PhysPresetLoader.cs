@@ -57,7 +57,11 @@ public sealed class PhysPresetLoader
                     "does not resolve to a canonical PhysPreset asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed PhysPreset pointer has no destination cell.",
+                "Canonical PhysPreset has no runtime address.");
             return canonical;
         }
 
@@ -107,16 +111,16 @@ public sealed class PhysPresetLoader
             rootCursor,
             XPointerResolutionMode.Direct);
         int type = rootCursor.ReadInt32();
-        float mass = ReadSingle(rootCursor);
-        float bounce = ReadSingle(rootCursor);
-        float friction = ReadSingle(rootCursor);
-        float bulletForceScale = ReadSingle(rootCursor);
-        float explosiveForceScale = ReadSingle(rootCursor);
+        float mass = rootCursor.ReadSingle();
+        float bounce = rootCursor.ReadSingle();
+        float friction = rootCursor.ReadSingle();
+        float bulletForceScale = rootCursor.ReadSingle();
+        float explosiveForceScale = rootCursor.ReadSingle();
         XPointer<string> sndAliasPrefixPointer = context.PointerReader.ReadPointer<string>(
             rootCursor,
             XPointerResolutionMode.Direct);
-        float piecesSpreadFraction = ReadSingle(rootCursor);
-        float piecesUpwardVelocity = ReadSingle(rootCursor);
+        float piecesSpreadFraction = rootCursor.ReadSingle();
+        float piecesUpwardVelocity = rootCursor.ReadSingle();
         byte tempDefaultToCylinder = rootCursor.ReadByte();
         byte perSurfaceSndAlias = rootCursor.ReadByte();
         ushort pad2A = rootCursor.ReadUInt16();
@@ -164,20 +168,5 @@ public sealed class PhysPresetLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        PhysPresetAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed PhysPreset pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical PhysPreset has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 }

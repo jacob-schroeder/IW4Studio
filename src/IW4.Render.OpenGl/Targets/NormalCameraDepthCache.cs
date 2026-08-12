@@ -93,7 +93,7 @@ public sealed class SilkMapRenderOpenGlNormalCameraDepthStencilTargetResourceAll
         uint previousReadFramebuffer = _api.GetBoundReadFramebuffer();
         uint depthStencilTexture = 0;
         uint combinedFramebuffer = 0;
-        List<Exception>? failures = null;
+        var failures = new GlResourceFailureCollector();
         try
         {
             depthStencilTexture = _api.CreateTexture();
@@ -142,18 +142,21 @@ public sealed class SilkMapRenderOpenGlNormalCameraDepthStencilTargetResourceAll
         }
         catch (Exception exception)
         {
-            (failures ??= []).Add(exception);
+            failures.Add(exception);
         }
         finally
         {
-            Restore(() => _api.BindTexture(textureTarget, previousTexture));
-            Restore(() => _api.BindDrawFramebuffer(previousDrawFramebuffer));
-            Restore(() => _api.BindReadFramebuffer(previousReadFramebuffer));
+            failures.TryExecute(
+                () => _api.BindTexture(textureTarget, previousTexture));
+            failures.TryExecute(
+                () => _api.BindDrawFramebuffer(previousDrawFramebuffer));
+            failures.TryExecute(
+                () => _api.BindReadFramebuffer(previousReadFramebuffer));
         }
 
-        if (failures is not null)
+        if (failures.HasFailures)
         {
-            DeletePartial(() =>
+            failures.TryExecute(() =>
             {
                 if (combinedFramebuffer != 0 &&
                     combinedFramebuffer != colorResource.FramebufferHandle)
@@ -161,7 +164,7 @@ public sealed class SilkMapRenderOpenGlNormalCameraDepthStencilTargetResourceAll
                     _api.DeleteFramebuffer(combinedFramebuffer);
                 }
             });
-            DeletePartial(() =>
+            failures.TryExecute(() =>
             {
                 if (depthStencilTexture != 0 &&
                     depthStencilTexture != colorResource.TextureHandle)
@@ -169,9 +172,8 @@ public sealed class SilkMapRenderOpenGlNormalCameraDepthStencilTargetResourceAll
                     _api.DeleteTexture(depthStencilTexture);
                 }
             });
-            throw new AggregateException(
-                "Silk normal-camera depth/stencil allocation failed; partial owned objects were deleted when possible.",
-                failures);
+            failures.ThrowAggregate(
+                "Silk normal-camera depth/stencil allocation failed; partial owned objects were deleted when possible.");
         }
 
         return new MapRenderOpenGlNormalCameraDepthStencilTargetResource(
@@ -179,30 +181,6 @@ public sealed class SilkMapRenderOpenGlNormalCameraDepthStencilTargetResourceAll
             colorResource,
             depthStencilTexture,
             combinedFramebuffer);
-
-        void Restore(Action restore)
-        {
-            try
-            {
-                restore();
-            }
-            catch (Exception exception)
-            {
-                (failures ??= []).Add(exception);
-            }
-        }
-
-        void DeletePartial(Action delete)
-        {
-            try
-            {
-                delete();
-            }
-            catch (Exception exception)
-            {
-                failures!.Add(exception);
-            }
-        }
     }
 
     public void DeleteTexture(uint textureHandle)
@@ -419,32 +397,19 @@ public sealed class MapRenderOpenGlNormalCameraDepthStencilTargetResourceCache :
         if (!_scope.BeginDispose())
             return;
 
-        List<Exception>? failures = null;
+        var failures = new GlResourceFailureCollector();
         foreach (uint framebuffer in _ownedCombinedFramebuffers)
-            TryDelete(() => _allocator.DeleteFramebuffer(framebuffer));
+            failures.TryExecute(() => _allocator.DeleteFramebuffer(framebuffer));
         foreach (uint texture in _ownedDepthStencilTextures)
-            TryDelete(() => _allocator.DeleteTexture(texture));
+            failures.TryExecute(() => _allocator.DeleteTexture(texture));
 
         _resources.Clear();
         _ownedCombinedFramebuffers.Clear();
         _ownedDepthStencilTextures.Clear();
-        if (failures is not null)
+        if (failures.HasFailures)
         {
-            throw new AggregateException(
-                "One or more normal-camera depth/stencil objects could not be deleted.",
-                failures);
-        }
-
-        void TryDelete(Action delete)
-        {
-            try
-            {
-                delete();
-            }
-            catch (Exception exception)
-            {
-                (failures ??= []).Add(exception);
-            }
+            failures.ThrowAggregate(
+                "One or more normal-camera depth/stencil objects could not be deleted.");
         }
     }
 
@@ -471,33 +436,22 @@ public sealed class MapRenderOpenGlNormalCameraDepthStencilTargetResourceCache :
         bool framebufferCollision)
     {
         var mismatch = new InvalidOperationException(message);
-        var failures = new List<Exception> { mismatch };
+        var failures = new GlResourceFailureCollector();
+        failures.Add(mismatch);
         if (!framebufferCollision)
         {
-            try
-            {
-                _allocator.DeleteFramebuffer(resource.CombinedFramebufferHandle);
-            }
-            catch (Exception cleanup)
-            {
-                failures.Add(cleanup);
-            }
+            failures.TryExecute(
+                () => _allocator.DeleteFramebuffer(resource.CombinedFramebufferHandle));
         }
         if (!textureCollision)
         {
-            try
-            {
-                _allocator.DeleteTexture(resource.DepthStencilTextureHandle);
-            }
-            catch (Exception cleanup)
-            {
-                failures.Add(cleanup);
-            }
+            failures.TryExecute(
+                () => _allocator.DeleteTexture(resource.DepthStencilTextureHandle));
         }
 
         if (failures.Count == 1)
             throw mismatch;
-        throw new AggregateException(message, failures);
+        failures.ThrowAggregate(message);
     }
 
     private void ValidateLimits(

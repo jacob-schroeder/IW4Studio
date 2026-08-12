@@ -108,14 +108,20 @@ public sealed class RawFileDraft
         content.CopyTo(_serializedPayload);
     }
 
-    private static byte[] Content(RawFileAsset asset) => asset.Buffer is null
-        ? []
-        : asset.Buffer.Take(Math.Min(asset.Len, asset.Buffer.Length)).ToArray();
+    private static byte[] Content(RawFileAsset asset) =>
+        TolerantUncompressedContent(asset.Buffer, asset.Len);
 
-    private static byte[] Content(RawFileDraft draft) => !draft.HasBuffer
-        ? []
-        : draft._serializedPayload.Take(
-            Math.Min(draft.UncompressedLength, draft._serializedPayload.Length)).ToArray();
+    private static byte[] Content(RawFileDraft draft) =>
+        TolerantUncompressedContent(
+            draft.HasBuffer ? draft._serializedPayload : null,
+            draft.UncompressedLength);
+
+    private static byte[] TolerantUncompressedContent(
+        byte[]? serializedPayload,
+        int declaredContentLength) => serializedPayload is null
+            ? []
+            : serializedPayload.Take(
+                Math.Min(declaredContentLength, serializedPayload.Length)).ToArray();
 }
 
 public sealed class RawFileReadOnlySnapshot

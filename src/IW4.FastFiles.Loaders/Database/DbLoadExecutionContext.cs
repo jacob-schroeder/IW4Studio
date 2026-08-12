@@ -74,6 +74,38 @@ public class DbLoadExecutionContext
 
     public LoadDiagnostics Diagnostics { get; }
 
+    /// <summary>Patches a packed asset-pointer cell to its canonical runtime address.</summary>
+    internal void PatchCanonicalAssetPointerCell(
+        XPointerReference pointer,
+        BaseAsset canonical,
+        string missingCellMessage,
+        string missingRuntimeMessage)
+    {
+        ArgumentNullException.ThrowIfNull(canonical);
+        XBlockAddress destinationCell = pointer.CellAddress
+            ?? throw new InvalidDataException(missingCellMessage);
+        int canonicalRaw = canonical.RuntimeAddress?.RawValue
+            ?? throw new InvalidDataException(missingRuntimeMessage);
+        Blocks.WriteInt32(destinationCell, canonicalRaw);
+    }
+
+    /// <summary>
+    /// Patches a packed asset-pointer cell when this pointer owns one.
+    /// </summary>
+    internal void PatchCanonicalAssetPointerCellIfPresent(
+        XPointerReference pointer,
+        BaseAsset canonical,
+        string missingRuntimeMessage)
+    {
+        ArgumentNullException.ThrowIfNull(canonical);
+        if (pointer.CellAddress is not { } destinationCell)
+            return;
+
+        int canonicalRaw = canonical.RuntimeAddress?.RawValue
+            ?? throw new InvalidDataException(missingRuntimeMessage);
+        Blocks.WriteInt32(destinationCell, canonicalRaw);
+    }
+
     /// <summary>
     /// Captures one serialized XAsset provider source before loading its body.
     /// The source lifetime is recorded at this boundary, before nested TEMP

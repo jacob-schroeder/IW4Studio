@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 
@@ -194,12 +192,12 @@ public sealed class RsxShaderSemanticIdentity :
         string.Equals(leftDigest, rightDigest, StringComparison.Ordinal) &&
         leftContent.SequenceEqual(rightContent);
 
-    private static CanonicalContentWriter Begin(
+    private static RsxCanonicalContentWriter Begin(
         RenderShaderStage stage,
         string decoderVersion,
         string semanticTranslationVersion)
     {
-        var writer = new CanonicalContentWriter();
+        var writer = new RsxCanonicalContentWriter();
         writer.WriteString(CanonicalEncodingVersion);
         writer.WriteByte((byte)stage);
         writer.WriteString(decoderVersion);
@@ -208,7 +206,7 @@ public sealed class RsxShaderSemanticIdentity :
     }
 
     private static void WriteProgramControl(
-        CanonicalContentWriter writer,
+        RsxCanonicalContentWriter writer,
         RsxFragmentProgramControl control)
     {
         writer.WriteBoolean(control.IsValid);
@@ -221,7 +219,7 @@ public sealed class RsxShaderSemanticIdentity :
     }
 
     private static void WriteFragmentInstruction(
-        CanonicalContentWriter writer,
+        RsxCanonicalContentWriter writer,
         RsxFragmentInstruction instruction)
     {
         writer.WriteInt32(instruction.Index);
@@ -244,7 +242,7 @@ public sealed class RsxShaderSemanticIdentity :
     }
 
     private static void WriteDirectCodeConstantBinding(
-        CanonicalContentWriter writer,
+        RsxCanonicalContentWriter writer,
         RsxFragmentDirectCodeConstantBinding binding)
     {
         writer.WriteInt32(binding.ArgumentOrdinal);
@@ -261,81 +259,4 @@ public sealed class RsxShaderSemanticIdentity :
         }
     }
 
-    private sealed class CanonicalContentWriter
-    {
-        private readonly ArrayBufferWriter<byte> _buffer = new();
-
-        internal void WriteByte(byte value)
-        {
-            Span<byte> destination = _buffer.GetSpan(1);
-            destination[0] = value;
-            _buffer.Advance(1);
-        }
-
-        internal void WriteBoolean(bool value) =>
-            WriteByte(value ? (byte)1 : (byte)0);
-
-        internal void WriteUInt16(ushort value)
-        {
-            Span<byte> destination = _buffer.GetSpan(sizeof(ushort));
-            BinaryPrimitives.WriteUInt16LittleEndian(destination, value);
-            _buffer.Advance(sizeof(ushort));
-        }
-
-        internal void WriteInt32(int value)
-        {
-            Span<byte> destination = _buffer.GetSpan(sizeof(int));
-            BinaryPrimitives.WriteInt32LittleEndian(destination, value);
-            _buffer.Advance(sizeof(int));
-        }
-
-        internal void WriteUInt32(uint value)
-        {
-            Span<byte> destination = _buffer.GetSpan(sizeof(uint));
-            BinaryPrimitives.WriteUInt32LittleEndian(destination, value);
-            _buffer.Advance(sizeof(uint));
-        }
-
-        internal void WriteNullableInt32(int? value)
-        {
-            WriteBoolean(value.HasValue);
-            if (value.HasValue)
-                WriteInt32(value.Value);
-        }
-
-        internal void WriteNullableUInt16(ushort? value)
-        {
-            WriteBoolean(value.HasValue);
-            if (value.HasValue)
-                WriteUInt16(value.Value);
-        }
-
-        internal void WriteBytes(ReadOnlySpan<byte> value)
-        {
-            WriteInt32(value.Length);
-            value.CopyTo(_buffer.GetSpan(value.Length));
-            _buffer.Advance(value.Length);
-        }
-
-        internal void WriteString(string value)
-        {
-            ArgumentNullException.ThrowIfNull(value);
-            // Canonical UTF-16 code units are encoded explicitly instead of
-            // using a replacement-fallback text encoder. This remains
-            // injective even for arbitrary .NET strings.
-            WriteInt32(value.Length);
-            int byteCount = checked(value.Length * sizeof(char));
-            Span<byte> destination = _buffer.GetSpan(byteCount);
-            for (var index = 0; index < value.Length; index++)
-            {
-                BinaryPrimitives.WriteUInt16LittleEndian(
-                    destination[(index * sizeof(char))..],
-                    value[index]);
-            }
-            _buffer.Advance(byteCount);
-        }
-
-        internal ImmutableArray<byte> ToImmutable() =>
-            ImmutableArray.CreateRange(_buffer.WrittenSpan.ToArray());
-    }
 }

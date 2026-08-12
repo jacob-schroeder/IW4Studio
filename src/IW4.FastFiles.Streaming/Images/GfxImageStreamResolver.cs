@@ -12,7 +12,7 @@ namespace IW4.FastFiles.Streaming.Images;
 
 public sealed class GfxImageStreamResolver : IDisposable
 {
-    private const int PackageHeaderSize = 0x0c;
+    private const int PackageHeaderSize = DbHeader.UnsignedPrefixLength;
     private const int FullBlockSize = 0x10000;
     private const ushort BlockTerminator = 1;
     private const int PackageReadAttemptCount = 3;
@@ -606,13 +606,13 @@ public sealed class GfxImageStreamResolver : IDisposable
                 $"unexpected end of {Path.GetFileName(path)} while reading image package header";
             return false;
         }
-        string magic = Encoding.Latin1.GetString(header[..8]);
-        if (magic is not ("IWffu100" or "S1ffu100"))
+        string magic = Encoding.Latin1.GetString(header[..DbHeader.MagicByteLength]);
+        if (magic is not (DbHeader.UnsignedMagic or "S1ffu100"))
         {
             reason = $"{Path.GetFileName(path)} has unexpected package magic '{magic}'";
             return false;
         }
-        uint version = BinaryPrimitives.ReadUInt32BigEndian(header[8..]);
+        uint version = BinaryPrimitives.ReadUInt32BigEndian(header[DbHeader.MagicByteLength..]);
         if (version != (uint)XFileVersion.ModernWarfare2)
         {
             reason =

@@ -33,7 +33,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
                 ? [NameOperation(root, 0)]
                 : [
                     NameOperation(root, 0),
-                    Direct(
+                    DirectOperation(
                         root,
                         0x08,
                         definitions,
@@ -132,7 +132,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             int row = checked(index * StructuredDataDef.SerializedSize);
             if (enums[index] is { } enumTable)
             {
-                yield return Direct(
+                yield return DirectOperation(
                     table,
                     checked(row + 0x0c),
                     enumTable,
@@ -140,7 +140,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             }
             if (structs[index] is { } structTable)
             {
-                yield return Direct(
+                yield return DirectOperation(
                     table,
                     checked(row + 0x14),
                     structTable,
@@ -148,7 +148,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             }
             if (indexedArrays[index] is { } indexedTable)
             {
-                yield return Direct(
+                yield return DirectOperation(
                     table,
                     checked(row + 0x1c),
                     indexedTable,
@@ -156,7 +156,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             }
             if (enumedArrays[index] is { } enumedTable)
             {
-                yield return Direct(
+                yield return DirectOperation(
                     table,
                     checked(row + 0x24),
                     enumedTable,
@@ -196,7 +196,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             table => entries
                 .Select((storage, index) => (storage, index))
                 .Where(item => item.storage is not null)
-                .Select(item => Direct(
+                .Select(item => DirectOperation(
                     table,
                     checked(item.index * StructuredDataEnum.SerializedSize + 0x08),
                     item.storage!,
@@ -273,7 +273,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             table => properties
                 .Select((storage, index) => (storage, index))
                 .Where(item => item.storage is not null)
-                .Select(item => Direct(
+                .Select(item => DirectOperation(
                     table,
                     checked(item.index * StructuredDataStruct.SerializedSize + 0x04),
                     item.storage!,
@@ -574,16 +574,6 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
         writer.WriteInt32(value.UnionValue);
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageSymbol target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            LinkStorageView.Whole(target),
-            CanMaterializeRoot: true,
-            fieldPath);
 
     private static void RequireCount(int declared, int actual, string fieldPath)
     {

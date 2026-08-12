@@ -68,7 +68,10 @@ public sealed class SoundAliasListLoader
                     "does not resolve to a canonical Sound asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCellIfPresent(
+                pointer,
+                canonical,
+                "Canonical Sound has no runtime address.");
             return canonical;
         }
 
@@ -205,23 +208,23 @@ public sealed class SoundAliasListLoader
             ReadXStringPointer(cursor, context),
             ReadPointerCellNoValidation<SoundFile[]>(cursor, context, XPointerResolutionMode.AliasCell),
             cursor.ReadInt32(),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
             cursor.ReadInt32(),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
             cursor.ReadInt32(),
             ReadPointerCellNoValidation<SndCurve>(cursor, context, XPointerResolutionMode.AliasCell),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
             ReadPointerCellNoValidation<SpeakerMap>(cursor, context, XPointerResolutionMode.Direct));
 
         if (cursor.Offset - start != SndAlias.SerializedSize)
@@ -687,8 +690,8 @@ public sealed class SoundAliasListLoader
                     {
                         Speaker = cursor.ReadInt32(),
                         NumLevels = cursor.ReadInt32(),
-                        Level0 = ReadSingle(cursor),
-                        Level1 = ReadSingle(cursor)
+                        Level0 = cursor.ReadSingle(),
+                        Level1 = cursor.ReadSingle()
                     };
                 }
 
@@ -747,18 +750,6 @@ public sealed class SoundAliasListLoader
         return value;
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        SoundAliasListAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        if (pointer.CellAddress is not { } pointerCellAddress)
-            return;
-
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical Sound has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,
@@ -773,9 +764,5 @@ public sealed class SoundAliasListLoader
         DbLoadExecutionContext context,
         XPointerResolutionMode resolutionMode) => context.PointerReader.ReadDeferredPointer<T>(cursor, resolutionMode);
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
 }

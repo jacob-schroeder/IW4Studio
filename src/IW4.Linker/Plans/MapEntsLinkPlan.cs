@@ -307,8 +307,8 @@ internal static class MapEntsPlanStorage
         foreach (TriggerSlab value in values)
         {
             WriteVec3(writer, value.Dir);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(value.MidPoint));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(value.HalfSize));
+            writer.WriteSingle(value.MidPoint);
+            writer.WriteSingle(value.HalfSize);
         }
         return LinkStorageSymbol.SourceBytes(
             XFileBlockType.LARGE,
@@ -330,9 +330,9 @@ internal static class MapEntsPlanStorage
 
     public static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.X));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Y));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Z));
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
     public static PresenceStorageLinkOperation Presence(

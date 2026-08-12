@@ -107,12 +107,12 @@ internal sealed class ComWorldLinkPlan : AssetLinkPlan
             WriteVec3(writer, light.Color);
             WriteVec3(writer, light.Dir);
             WriteVec3(writer, light.Origin);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(light.Radius));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(light.CosHalfFovOuter));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(light.CosHalfFovInner));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(light.CosHalfFovExpanded));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(light.RotationLimit));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(light.TranslationLimit));
+            writer.WriteSingle(light.Radius);
+            writer.WriteSingle(light.CosHalfFovOuter);
+            writer.WriteSingle(light.CosHalfFovInner);
+            writer.WriteSingle(light.CosHalfFovExpanded);
+            writer.WriteSingle(light.RotationLimit);
+            writer.WriteSingle(light.TranslationLimit);
             writer.Skip(sizeof(int));
         }
 
@@ -132,8 +132,8 @@ internal sealed class ComWorldLinkPlan : AssetLinkPlan
 
     private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.X));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Y));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Z));
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using IW4.Gsc.Analysis;
+using IW4.Gsc.Semantics;
 using IW4.Gsc.Syntax;
 
 namespace IW4.Gsc.Workspace;
@@ -56,7 +57,7 @@ internal static class GscWorkspaceResolver
         IReadOnlyDictionary<
             GscScriptPath,
             Dictionary<
-                (GscWorkspaceSymbolKind Kind, string Name),
+                (GscSymbolKind Kind, string Name),
                 GscSymbolDefinition[]>> definitions,
         CancellationToken cancellationToken)
     {
@@ -68,7 +69,7 @@ internal static class GscWorkspaceResolver
             GscSymbolDefinition[] targets =
                 definitions.TryGetValue(targetPath, out var byName) &&
                 byName.TryGetValue(
-                    (GscWorkspaceSymbolKind.Function, pending.Name),
+                    (GscSymbolKind.Function, pending.Name),
                     out GscSymbolDefinition[]? matching)
                     ? matching
                     : [];
@@ -97,7 +98,7 @@ internal static class GscWorkspaceResolver
             cancellationToken.ThrowIfCancellationRequested();
             if (reference.Targets.Count == 1 &&
                 reference.Targets[0] is
-                    { Kind: GscWorkspaceSymbolKind.Local or GscWorkspaceSymbolKind.Parameter } local &&
+                    { Kind: GscSymbolKind.Local or GscSymbolKind.Parameter } local &&
                 importedDefines.TryGetValue(
                     reference.Name,
                     out GscSymbolDefinition[]? imported))
@@ -110,7 +111,7 @@ internal static class GscWorkspaceResolver
                     imported.Select(definition => definition.Id),
                     reference.QualifiedTargetPath));
                 suppressedUninitialisedSpans.Add(reference.Location.Span);
-                if (local.Kind == GscWorkspaceSymbolKind.Parameter ||
+                if (local.Kind == GscSymbolKind.Parameter ||
                     reference.Kind is GscWorkspaceReferenceKind.Write or
                         GscWorkspaceReferenceKind.ReadWrite)
                 {
@@ -195,7 +196,7 @@ internal static class GscWorkspaceResolver
                 }
 
                 foreach (GscSymbolDefinition define in included.Definitions.Where(
-                             definition => definition.Kind == GscWorkspaceSymbolKind.Define))
+                             definition => definition.Kind == GscSymbolKind.Define))
                 {
                     if (!collected.TryGetValue(
                             define.Name,

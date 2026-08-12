@@ -49,8 +49,8 @@ public sealed class MaterialShaderLoader
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        XAssetType assetType = GetAssetType(kind);
-        int rootSize = GetRootSize(kind);
+        XAssetType assetType = MaterialShaderAsset.GetAssetType(kind);
+        int rootSize = MaterialShaderAsset.GetSerializedSize(kind);
 
         // The native pointer wrappers push stream 0 before resolving null,
         // packed, inline, or insert-pointer cases. Nested calls can originate
@@ -85,7 +85,11 @@ public sealed class MaterialShaderLoader
                         $"0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical {assetType} asset.");
                 }
 
-                PatchCanonicalPointerCell(pointer, canonical, context);
+                context.PatchCanonicalAssetPointerCell(
+                    pointer,
+                    canonical,
+                    $"Packed {GetDisplayName(canonical.Kind)} pointer has no destination cell.",
+                    $"Canonical {GetDisplayName(canonical.Kind)} has no runtime address.");
                 return canonical;
             }
 
@@ -123,7 +127,7 @@ public sealed class MaterialShaderLoader
         DbLoadExecutionContext context)
     {
         int sourceOffset = cursor.Offset;
-        int rootSize = GetRootSize(kind);
+        int rootSize = MaterialShaderAsset.GetSerializedSize(kind);
         byte[] rootBytes = context.Blocks.Load(cursor, rootSize, out XBlockAddress rootAddress);
         if (rootAddress != expectedRootAddress)
         {
@@ -142,14 +146,13 @@ public sealed class MaterialShaderLoader
         // +0x04: GfxShaderLoadDef programLoadDef (alias-cell pointer + byte count).
         XPointerReference dataPointer = context.PointerReader.ReadCell(
             rootCursor,
-            XPointerOffsetMode.AliasCell);
+            XPointerResolutionMode.AliasCell);
         uint dataSize = rootCursor.ReadUInt32();
 
         // Pixel programs contain the 0x08-byte load definition plus 0x0C
         // trailing bytes. Vertex programs contain only the load definition.
-        byte[] programBytes = kind == MaterialShaderKind.Pixel
-            ? rootCursor.ReadBytes(0x0c)
-            : [];
+        byte[] programBytes = rootCursor.ReadBytes(
+            MaterialShaderAsset.GetProgramByteCount(kind));
 
         if (rootCursor.Offset != rootSize)
         {
@@ -274,32 +277,6 @@ public sealed class MaterialShaderLoader
             : throw new InvalidDataException(
                 $"Shader bytecode alias cell resolved to non-block pointer 0x{unchecked((uint)aliasedRaw):X8}.");
     }
-
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        MaterialShaderAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException($"Packed {GetDisplayName(canonical.Kind)} pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException($"Canonical {GetDisplayName(canonical.Kind)} has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
-
-    private static XAssetType GetAssetType(MaterialShaderKind kind) => kind switch
-    {
-        MaterialShaderKind.Pixel => XAssetType.PixelShader,
-        MaterialShaderKind.Vertex => XAssetType.VertexShader,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-    };
-
-    private static int GetRootSize(MaterialShaderKind kind) => kind switch
-    {
-        MaterialShaderKind.Pixel => MaterialShaderAsset.PixelShaderSerializedSize,
-        MaterialShaderKind.Vertex => MaterialShaderAsset.VertexShaderSerializedSize,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-    };
 
     private static string GetDisplayName(MaterialShaderKind kind) => kind switch
     {

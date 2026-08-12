@@ -40,7 +40,10 @@ public sealed class GfxWorldLoader
                     XAssetType.GfxMap)
                 ?? throw new InvalidDataException(
                     $"Top-level GfxWorld pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical GfxMap asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCellIfPresent(
+                pointer,
+                canonical,
+                "Canonical GfxWorld has no runtime address.");
             return canonical;
         }
 
@@ -71,18 +74,6 @@ public sealed class GfxWorldLoader
         }
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        GfxWorldAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        if (pointer.CellAddress is not { } pointerCellAddress)
-            return;
-
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical GfxWorld has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private GfxWorldAsset ReadGfxWorld(
         FastFileCursor cursor,
@@ -421,22 +412,22 @@ public sealed class GfxWorldLoader
             HasValidData = cursor.ReadUInt32(),
             SpriteMaterialPointer = context.PointerReader.ReadPointer<MaterialAsset>(cursor, XPointerResolutionMode.AliasCell),
             FlareMaterialPointer = context.PointerReader.ReadPointer<MaterialAsset>(cursor, XPointerResolutionMode.AliasCell),
-            SpriteSize = ReadSingle(cursor),
-            FlareMinSize = ReadSingle(cursor),
-            FlareMinDot = ReadSingle(cursor),
-            FlareMaxSize = ReadSingle(cursor),
-            FlareMaxDot = ReadSingle(cursor),
-            FlareMaxAlpha = ReadSingle(cursor),
+            SpriteSize = cursor.ReadSingle(),
+            FlareMinSize = cursor.ReadSingle(),
+            FlareMinDot = cursor.ReadSingle(),
+            FlareMaxSize = cursor.ReadSingle(),
+            FlareMaxDot = cursor.ReadSingle(),
+            FlareMaxAlpha = cursor.ReadSingle(),
             FlareFadeInTime = cursor.ReadInt32(),
             FlareFadeOutTime = cursor.ReadInt32(),
-            BlindMinDot = ReadSingle(cursor),
-            BlindMaxDot = ReadSingle(cursor),
-            BlindMaxDarken = ReadSingle(cursor),
+            BlindMinDot = cursor.ReadSingle(),
+            BlindMaxDot = cursor.ReadSingle(),
+            BlindMaxDarken = cursor.ReadSingle(),
             BlindFadeInTime = cursor.ReadInt32(),
             BlindFadeOutTime = cursor.ReadInt32(),
-            GlareMinDot = ReadSingle(cursor),
-            GlareMaxDot = ReadSingle(cursor),
-            GlareMaxLighten = ReadSingle(cursor),
+            GlareMinDot = cursor.ReadSingle(),
+            GlareMaxDot = cursor.ReadSingle(),
+            GlareMaxLighten = cursor.ReadSingle(),
             GlareFadeInTime = cursor.ReadInt32(),
             GlareFadeOutTime = cursor.ReadInt32(),
             SunFxPosition = ReadFloatValues(cursor, 3)
@@ -622,15 +613,15 @@ public sealed class GfxWorldLoader
             {
                 MidPoint = new ModelVec3
                 {
-                    X = ReadSingle(rowCursor),
-                    Y = ReadSingle(rowCursor),
-                    Z = ReadSingle(rowCursor)
+                    X = rowCursor.ReadSingle(),
+                    Y = rowCursor.ReadSingle(),
+                    Z = rowCursor.ReadSingle()
                 },
                 HalfSize = new ModelVec3
                 {
-                    X = ReadSingle(rowCursor),
-                    Y = ReadSingle(rowCursor),
-                    Z = ReadSingle(rowCursor)
+                    X = rowCursor.ReadSingle(),
+                    Y = rowCursor.ReadSingle(),
+                    Z = rowCursor.ReadSingle()
                 }
             };
             ushort childCount = rowCursor.ReadUInt16();
@@ -672,15 +663,15 @@ public sealed class GfxWorldLoader
             {
                 MidPoint = new ModelVec3
                 {
-                    X = ReadSingle(rowCursor),
-                    Y = ReadSingle(rowCursor),
-                    Z = ReadSingle(rowCursor)
+                    X = rowCursor.ReadSingle(),
+                    Y = rowCursor.ReadSingle(),
+                    Z = rowCursor.ReadSingle()
                 },
                 HalfSize = new ModelVec3
                 {
-                    X = ReadSingle(rowCursor),
-                    Y = ReadSingle(rowCursor),
-                    Z = ReadSingle(rowCursor)
+                    X = rowCursor.ReadSingle(),
+                    Y = rowCursor.ReadSingle(),
+                    Z = rowCursor.ReadSingle()
                 }
             };
             int portalCount = rowCursor.ReadInt32();
@@ -726,10 +717,10 @@ public sealed class GfxWorldLoader
             int hullPointsRuntimePointer = rowCursor.ReadInt32();
             int queuedParentRuntimePointer = rowCursor.ReadInt32();
             var plane = new GfxPortalPlane(
-                ReadSingle(rowCursor),
-                ReadSingle(rowCursor),
-                ReadSingle(rowCursor),
-                ReadSingle(rowCursor));
+                rowCursor.ReadSingle(),
+                rowCursor.ReadSingle(),
+                rowCursor.ReadSingle(),
+                rowCursor.ReadSingle());
             XPointer<GfxPortalVertex[]> verticesPointer = context.PointerReader.ReadPointer<GfxPortalVertex[]>(rowCursor, XPointerResolutionMode.Direct);
             ushort cellIndex = rowCursor.ReadUInt16();
             byte vertexCount = rowCursor.ReadByte();
@@ -769,7 +760,7 @@ public sealed class GfxWorldLoader
         var c = new FastFileCursor(bytes);
         var rows = new GfxPortalVertex[count];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = new GfxPortalVertex(ReadSingle(c), ReadSingle(c), ReadSingle(c));
+            rows[i] = new GfxPortalVertex(c.ReadSingle(), c.ReadSingle(), c.ReadSingle());
 
         return rows;
     }
@@ -938,7 +929,7 @@ public sealed class GfxWorldLoader
         var c = new FastFileCursor(bytes);
         var rows = new GfxReflectionProbe[count];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = new GfxReflectionProbe(ReadSingle(c), ReadSingle(c), ReadSingle(c));
+            rows[i] = new GfxReflectionProbe(c.ReadSingle(), c.ReadSingle(), c.ReadSingle());
 
         return rows;
     }
@@ -1084,7 +1075,7 @@ public sealed class GfxWorldLoader
                 WritableMaxs = ReadFloatValues(c, 3),
                 BoundsMins = ReadFloatValues(c, 3),
                 BoundsMaxs = ReadFloatValues(c, 3),
-                Radius = ReadSingle(c),
+                Radius = c.ReadSingle(),
                 SurfaceCount = c.ReadUInt16(),
                 StartSurfIndex = c.ReadUInt16()
             };
@@ -1298,8 +1289,8 @@ public sealed class GfxWorldLoader
             rows[i] = new GfxLightRegionAxis
             {
                 Dir = ReadFloatValues(c, 3),
-                MidPoint = ReadSingle(c),
-                HalfSize = ReadSingle(c)
+                MidPoint = c.ReadSingle(),
+                HalfSize = c.ReadSingle()
             };
         }
 
@@ -1509,22 +1500,22 @@ public sealed class GfxWorldLoader
                 {
                     MidPoint = new ModelVec3
                     {
-                        X = ReadSingle(c),
-                        Y = ReadSingle(c),
-                        Z = ReadSingle(c)
+                        X = c.ReadSingle(),
+                        Y = c.ReadSingle(),
+                        Z = c.ReadSingle()
                     },
                     HalfSize = new ModelVec3
                     {
-                        X = ReadSingle(c),
-                        Y = ReadSingle(c),
-                        Z = ReadSingle(c)
+                        X = c.ReadSingle(),
+                        Y = c.ReadSingle(),
+                        Z = c.ReadSingle()
                     }
                 },
                 LightingOrigin = new ModelVec3
                 {
-                    X = ReadSingle(c),
-                    Y = ReadSingle(c),
-                    Z = ReadSingle(c)
+                    X = c.ReadSingle(),
+                    Y = c.ReadSingle(),
+                    Z = c.ReadSingle()
                 }
             };
         }
@@ -1558,15 +1549,15 @@ public sealed class GfxWorldLoader
                 {
                     MidPoint = new ModelVec3
                     {
-                        X = ReadSingle(c),
-                        Y = ReadSingle(c),
-                        Z = ReadSingle(c)
+                        X = c.ReadSingle(),
+                        Y = c.ReadSingle(),
+                        Z = c.ReadSingle()
                     },
                     HalfSize = new ModelVec3
                     {
-                        X = ReadSingle(c),
-                        Y = ReadSingle(c),
-                        Z = ReadSingle(c)
+                        X = c.ReadSingle(),
+                        Y = c.ReadSingle(),
+                        Z = c.ReadSingle()
                     }
                 },
                 Unknown18To1F = c.ReadBytes(8)
@@ -1661,7 +1652,7 @@ public sealed class GfxWorldLoader
         {
             Origin = ReadFloatValues(cursor, 3),
             PackedAxis = [cursor.ReadUInt32(), cursor.ReadUInt32(), cursor.ReadUInt32()],
-            Scale = ReadSingle(cursor)
+            Scale = cursor.ReadSingle()
         };
     }
 
@@ -1684,10 +1675,10 @@ public sealed class GfxWorldLoader
     private static DpvsPlane ReadDpvsPlane(FastFileCursor cursor)
     {
         return new DpvsPlane(
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
-            ReadSingle(cursor),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
+            cursor.ReadSingle(),
             cursor.ReadByte(),
             cursor.ReadByte(),
             cursor.ReadUInt16());
@@ -1926,7 +1917,7 @@ public sealed class GfxWorldLoader
     {
         var values = new float[count];
         for (int i = 0; i < values.Length; i++)
-            values[i] = ReadSingle(cursor);
+            values[i] = cursor.ReadSingle();
 
         return values;
     }
@@ -1940,10 +1931,6 @@ public sealed class GfxWorldLoader
         return values;
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static int Count(uint value, string name)
     {

@@ -90,7 +90,7 @@ public static class RawFileContentClassifier
         ReadOnlySpan<byte> logicalContent,
         RawFileTextEncoding encoding)
     {
-        Encoding codec = GetEncoding(encoding);
+        Encoding codec = GetTextEncoding(encoding);
         string text = codec.GetString(logicalContent);
         if (!IsText(text))
         {
@@ -111,7 +111,7 @@ public static class RawFileContentClassifier
 
         try
         {
-            return GetEncoding(preferredEncoding).GetBytes(text);
+            return GetTextEncoding(preferredEncoding).GetBytes(text);
         }
         catch (EncoderFallbackException) when (preferredEncoding == RawFileTextEncoding.Windows1252)
         {
@@ -147,7 +147,7 @@ public static class RawFileContentClassifier
         character is '\t' or '\r' or '\n' or '\f' ||
         !char.IsControl(character));
 
-    private static Encoding GetEncoding(RawFileTextEncoding encoding) => encoding switch
+    public static Encoding GetTextEncoding(RawFileTextEncoding encoding) => encoding switch
     {
         RawFileTextEncoding.Utf8 => StrictUtf8,
         RawFileTextEncoding.Windows1252 => StrictWindows1252,

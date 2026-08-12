@@ -26,11 +26,11 @@ public sealed class StringTableLoader
             StringTableAsset canonical = context.ResolveStringTable(pointer)
                 ?? throw new InvalidDataException(
                     $"Top-level StringTable pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical StringTable asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed StringTable pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical StringTable has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed StringTable pointer has no destination cell.",
+                "Canonical StringTable has no runtime address.");
             return canonical;
         }
 

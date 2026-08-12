@@ -150,9 +150,6 @@ public static class BehaviorExpressionStatementCodec
 
     private sealed class StatementImporter
     {
-        private const int MaximumFunctionArguments = 10;
-        private const int MaximumStackDepth = 60;
-
         private readonly IReadOnlyList<ExpressionEntry> _entries;
         private readonly BehaviorExpressionSupport _support;
         private readonly BehaviorExpressionCatalog _catalog;
@@ -189,17 +186,22 @@ public static class BehaviorExpressionStatementCodec
                     PushSingle(operand);
                     continue;
                 }
-                if (!entry.IsOperator || !_catalog.TryGet(entry.Operation, out _))
+                if (!entry.IsOperator ||
+                    !BehaviorExpressionNativeGrammar.IsKnownOperation(entry.Operation) ||
+                    !_catalog.TryGet(entry.Operation, out _))
                     return Fail($"Expression entry {index} has an unknown representation or opcode {entry.OperationCode}.");
 
                 if (entry.Operation != OperationEnum.OP_LEFTPAREN)
                     RunHigherPriorityOperators(entry.Operation);
-                if (_failure is null && _operators.Count == MaximumStackDepth)
+                if (_failure is null &&
+                    _operators.Count == BehaviorExpressionNativeGrammar.MaximumStackDepth)
                     Fail("Expression operators are nested beyond the engine stack limit.");
                 else if (_failure is null)
                     _operators.Add(new OperatorFrame(
                         entry.Operation,
-                        IsFunction(entry.Operation) ? _operandLists.Count : -1));
+                        BehaviorExpressionNativeGrammar.IsFunction(entry.Operation)
+                            ? _operandLists.Count
+                            : -1));
             }
 
             while (_operators.Count > 0 && _failure is null)
@@ -228,9 +230,11 @@ public static class BehaviorExpressionStatementCodec
             {
                 OperationEnum top = _operators[^1].Operation;
                 bool stop =
-                    (NativePrecedence(top) >= NativePrecedence(incoming) ||
-                     NativePrecedence(top) == 5 && incoming != OperationEnum.OP_RIGHTPAREN) &&
-                    (IsAssociative(incoming) || top != incoming);
+                    (BehaviorExpressionNativeGrammar.Precedence(top) >=
+                     BehaviorExpressionNativeGrammar.Precedence(incoming) ||
+                     BehaviorExpressionNativeGrammar.HasDefaultPrecedence(top) &&
+                     incoming != OperationEnum.OP_RIGHTPAREN) &&
+                    (BehaviorExpressionNativeGrammar.IsAssociative(incoming) || top != incoming);
                 if (stop)
                     return;
                 RunOperator();
@@ -280,7 +284,7 @@ public static class BehaviorExpressionStatementCodec
                     CompileBinary(frame.Operation);
                     return;
                 default:
-                    if (IsFunction(frame.Operation))
+                    if (BehaviorExpressionNativeGrammar.IsFunction(frame.Operation))
                         CompileFunction(frame);
                     else
                         Fail($"Unsupported expression operation '{frame.Operation}'.");
@@ -294,7 +298,7 @@ public static class BehaviorExpressionStatementCodec
             {
                 OperationEnum paired = _operators[^1].Operation;
                 RunOperator();
-                if (paired == OperationEnum.OP_LEFTPAREN || IsFunction(paired))
+                if (BehaviorExpressionNativeGrammar.PairsWithRightParenthesis(paired))
                     return;
             }
             Fail("A right parenthesis has no matching group or function.");
@@ -347,7 +351,7 @@ public static class BehaviorExpressionStatementCodec
                 Fail("Comma does not have two operand lists to combine.");
                 return;
             }
-            if (left.Count + right.Count > MaximumFunctionArguments)
+            if (left.Count + right.Count > BehaviorExpressionNativeGrammar.MaximumFunctionArguments)
             {
                 Fail("A function argument list exceeds the engine limit of 10 values.");
                 return;
@@ -411,7 +415,7 @@ public static class BehaviorExpressionStatementCodec
 
         private void PushSingle(BehaviorExpression expression)
         {
-            if (_operandLists.Count == MaximumStackDepth)
+            if (_operandLists.Count == BehaviorExpressionNativeGrammar.MaximumStackDepth)
             {
                 Fail("Expression contains more operands than the engine stack accepts.");
                 return;
@@ -433,34 +437,6 @@ public static class BehaviorExpressionStatementCodec
 
             return new BehaviorOpaqueExpression(_failure);
         }
-
-        private static bool IsFunction(OperationEnum operation) =>
-            (int)operation >= (int)OperationEnum.OP_STATICDVARINT &&
-            (int)operation <= (int)OperationEnum.OP_DOWEHAVEMAPPACK;
-
-        private static bool IsAssociative(OperationEnum operation) =>
-            (int)operation < (int)OperationEnum.OP_DIVIDE ||
-            (int)operation > (int)OperationEnum.OP_MODULUS &&
-            operation != OperationEnum.OP_SUBTRACT;
-
-        private static int NativePrecedence(OperationEnum operation) => operation switch
-        {
-            OperationEnum.OP_NOOP => int.MaxValue,
-            OperationEnum.OP_RIGHTPAREN => 0,
-            OperationEnum.OP_MULTIPLY or OperationEnum.OP_DIVIDE or OperationEnum.OP_MODULUS => 11,
-            OperationEnum.OP_ADD or OperationEnum.OP_SUBTRACT => 13,
-            OperationEnum.OP_NOT => 9,
-            OperationEnum.OP_LESSTHAN or OperationEnum.OP_LESSTHANEQUALTO or OperationEnum.OP_GREATERTHAN or OperationEnum.OP_GREATERTHANEQUALTO => 15,
-            OperationEnum.OP_EQUALS or OperationEnum.OP_NOTEQUAL => 16,
-            OperationEnum.OP_AND or OperationEnum.OP_OR => 25,
-            OperationEnum.OP_LEFTPAREN => 99,
-            OperationEnum.OP_COMMA => 80,
-            OperationEnum.OP_BITWISEAND => 17,
-            OperationEnum.OP_BITWISEOR => 18,
-            OperationEnum.OP_BITWISENOT => 9,
-            OperationEnum.OP_BITSHIFTLEFT or OperationEnum.OP_BITSHIFTRIGHT => 14,
-            _ => 5
-        };
 
         private readonly record struct OperatorFrame(OperationEnum Operation, int OperandDepth);
     }
@@ -599,7 +575,7 @@ public static class BehaviorExpressionValidation
         ICollection<BehaviorExpressionDiagnostic> diagnostics,
         int depth)
     {
-        if (depth >= 60)
+        if (depth >= BehaviorExpressionNativeGrammar.MaximumStackDepth)
         {
             diagnostics.Add(new(BehaviorExpressionDiagnosticCode.InvalidStatementShape, BehaviorExpressionDiagnosticSeverity.Error, "The expression exceeds the engine's 60-level stack limit."));
             return;
@@ -639,9 +615,11 @@ public static class BehaviorExpressionValidation
                 Visit(value.Right, support, catalog, diagnostics, depth + 1);
                 return;
             case BehaviorCallExpression value:
-                if (!catalog.TryGet(value.Operation, out BehaviorExpressionOperationMetadata metadata) || metadata.Category != BehaviorExpressionOperationCategory.Function)
+                if (!BehaviorExpressionNativeGrammar.IsKnownOperation(value.Operation) ||
+                    !catalog.TryGet(value.Operation, out BehaviorExpressionOperationMetadata metadata) ||
+                    metadata.Category != BehaviorExpressionOperationCategory.Function)
                     diagnostics.Add(new(BehaviorExpressionDiagnosticCode.UnknownOperation, BehaviorExpressionDiagnosticSeverity.Error, $"'{value.Operation}' is not a callable expression operation."));
-                else if (value.Arguments.Count > 10 || !metadata.SupportsArgumentCount(value.Arguments.Count))
+                else if (value.Arguments.Count > BehaviorExpressionNativeGrammar.MaximumFunctionArguments || !metadata.SupportsArgumentCount(value.Arguments.Count))
                     diagnostics.Add(new(BehaviorExpressionDiagnosticCode.InvalidArity, BehaviorExpressionDiagnosticSeverity.Error, $"'{metadata.FormulaName}' does not support {value.Arguments.Count} argument(s)."));
                 foreach (BehaviorExpression argument in value.Arguments)
                     Visit(argument, support, catalog, diagnostics, depth + 1);

@@ -1,4 +1,5 @@
 using IW4.FastFiles.Loaders.Database;
+using IW4.FastFiles.Loaders.Database.Planning;
 using IW4.Linker.Contracts;
 using IW4.Linker.Plans;
 
@@ -40,7 +41,7 @@ public sealed class FastFileWorkspace : IDisposable
         DependencyGraph = dependencyGraph ?? (document.IsBlank
             ? null
             : new FastFileDependencyGraph([new FastFileDependencyNode(
-                document.SourcePath, FastFileDependencyLoadStatus.Loaded, true)]));
+                document.SourcePath, DbDependencyRequestLoadStatus.Loaded, true)]));
         AssetCatalog = WorkspaceAssetCatalog.Create(document, LoadedZones);
     }
 

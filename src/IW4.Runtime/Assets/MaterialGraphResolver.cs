@@ -306,9 +306,7 @@ internal sealed class MaterialGraphResolver
         XPointerReference pointer,
         MaterialShaderKind kind)
     {
-        XAssetType assetType = kind == MaterialShaderKind.Vertex
-            ? XAssetType.VertexShader
-            : XAssetType.PixelShader;
+        XAssetType assetType = MaterialShaderAsset.GetAssetType(kind);
         XAssetPool assetPool = _assetPool!;
         if (assetPool.TryResolve(pointer.Raw, assetType, out MaterialShaderAsset? canonical))
             return canonical;
@@ -336,9 +334,7 @@ internal sealed class MaterialGraphResolver
         if (_shaders.TryGetValue(key, out MaterialShaderAsset? cached))
             return cached;
 
-        int size = kind == MaterialShaderKind.Vertex
-            ? MaterialShaderAsset.VertexShaderSerializedSize
-            : MaterialShaderAsset.PixelShaderSerializedSize;
+        int size = MaterialShaderAsset.GetSerializedSize(kind);
         MaterialShaderAsset? shader;
         try
         {

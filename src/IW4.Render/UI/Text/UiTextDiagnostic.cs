@@ -1,11 +1,6 @@
-namespace IW4.Render.UI.Text;
+using IW4.Render.UI;
 
-public enum UiTextDiagnosticSeverity
-{
-    Information = 0,
-    Warning = 1,
-    Blocker = 2
-}
+namespace IW4.Render.UI.Text;
 
 public enum UiTextDiagnosticCode
 {
@@ -34,7 +29,7 @@ public enum UiTextDiagnosticCode
 /// </summary>
 public sealed record UiTextDiagnostic(
     UiTextDiagnosticCode Code,
-    UiTextDiagnosticSeverity Severity,
+    UiDiagnosticSeverity Severity,
     string Message,
     int? SourceUtf16Index = null,
     int? UnicodeScalar = null);

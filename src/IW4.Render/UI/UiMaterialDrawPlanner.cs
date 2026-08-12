@@ -281,7 +281,7 @@ public static partial class UiMaterialDrawPlanner
             diagnostics);
         if (diagnostics.Any(diagnostic =>
                 diagnostic.Severity ==
-                UiMaterialExecutionDiagnosticSeverity.Blocker))
+                UiDiagnosticSeverity.Blocker))
         {
             return new UiMaterialDrawPlan(null, diagnostics);
         }

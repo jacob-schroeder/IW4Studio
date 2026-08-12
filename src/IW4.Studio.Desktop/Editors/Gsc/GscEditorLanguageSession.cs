@@ -2,14 +2,15 @@ using IW4.Gsc.Analysis;
 using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
+using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.Gsc;
 
 namespace IW4.Studio.Desktop.Editors.Gsc;
 
 /// <summary>
-/// Editor-local façade over the immutable Studio workspace. It overlays one
-/// unsaved buffer and invalidates its derived snapshot for either a buffer or
-/// XAssetPool revision change.
+/// Editor-local façade over the immutable Studio workspace. It replaces one
+/// unsaved buffer document and invalidates its derived snapshot for either a
+/// buffer or XAssetPool revision change.
 /// </summary>
 internal sealed class GscEditorLanguageSession
 {
@@ -32,7 +33,7 @@ internal sealed class GscEditorLanguageSession
         long bufferVersion,
         CancellationToken cancellationToken) =>
         GetSnapshots(assetName, source, bufferVersion, cancellationToken)
-            .Overlay
+            .Editor
             .GetAnalysis(assetName);
 
     internal void FindDefinitions(
@@ -48,7 +49,7 @@ internal sealed class GscEditorLanguageSession
             assetName,
             source,
             bufferVersion,
-            cancellationToken).Overlay;
+            cancellationToken).Editor;
         GscScriptPath path = GscScriptPath.FromAssetName(assetName);
         definitions = snapshot.Index.FindDefinitions(path, sourceOffset).ToArray();
         if (definitions.Length == 0 && sourceOffset > 0)
@@ -294,7 +295,7 @@ internal sealed class GscEditorLanguageSession
             call.ActiveParameter);
     }
 
-    private (GscWorkspaceSnapshot Base, GscWorkspaceSnapshot Overlay) GetSnapshots(
+    private (GscWorkspaceSnapshot Base, GscWorkspaceSnapshot Editor) GetSnapshots(
         string assetName,
         GscSourceText source,
         long bufferVersion,
@@ -315,15 +316,19 @@ internal sealed class GscEditorLanguageSession
                 return (_cachedBaseSnapshot!, _cachedSnapshot);
             }
 
-            GscWorkspaceSnapshot overlaySnapshot = baseSnapshot.WithOverlay(
-                new GscWorkspaceBufferOverlay(assetName, source),
+            var document = new GscDocumentSnapshot(
+                GscScriptPath.FromAssetName(
+                    XAssetStableIdentity.GetLookupSpelling(assetName)),
+                source);
+            GscWorkspaceSnapshot editorSnapshot = baseSnapshot.WithDocument(
+                document,
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            _cachedSnapshot = overlaySnapshot;
+            _cachedSnapshot = editorSnapshot;
             _cachedBaseSnapshot = baseSnapshot;
             _cachedPath = path;
             _cachedBufferVersion = bufferVersion;
-            return (baseSnapshot, overlaySnapshot);
+            return (baseSnapshot, editorSnapshot);
         }
     }
 

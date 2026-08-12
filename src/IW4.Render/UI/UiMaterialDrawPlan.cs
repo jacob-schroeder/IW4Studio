@@ -19,7 +19,7 @@ public sealed class UiMaterialDrawPlan
         }
         bool blocked = _diagnostics.Any(diagnostic =>
             diagnostic.Severity ==
-            UiMaterialExecutionDiagnosticSeverity.Blocker);
+            UiDiagnosticSeverity.Blocker);
         if ((packet is null) != blocked)
         {
             throw new ArgumentException(

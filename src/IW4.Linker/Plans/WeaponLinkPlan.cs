@@ -776,7 +776,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         RequireExactCount(values, expectedCount, fieldPath);
         var writer = new LinkTemplateWriter(checked(values.Count * sizeof(float)));
         foreach (float value in values)
-            WriteSingle(writer, value);
+            writer.WriteSingle(value);
         return freeze.FreezeStorageView(
             pointer,
             writer.Complete(),
@@ -799,8 +799,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         var writer = new LinkTemplateWriter(checked(values.Count * 2 * sizeof(float)));
         foreach (Vec2 value in values)
         {
-            WriteSingle(writer, value.a);
-            WriteSingle(writer, value.b);
+            writer.WriteSingle(value.a);
+            writer.WriteSingle(value.b);
         }
         return freeze.FreezeStorageView(
             pointer,
@@ -850,7 +850,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             (table, addend) => cells
                 .Select((cell, index) => (cell, index))
                 .Where(item => item.cell is not null)
-                .Select(item => (LinkOperation)Direct(
+                .Select(item => (LinkOperation)DirectOperation(
                     table,
                     checked(addend + item.index * sizeof(int)),
                     item.cell!.Value,
@@ -1043,22 +1043,12 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         int offset,
         LinkStorageTarget target,
         string fieldPath) =>
-        operations.Add((owner, addend) => Direct(
+        operations.Add((owner, addend) => DirectOperation(
             owner,
             checked(addend + offset),
             target,
             fieldPath));
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int offset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, offset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private static void RequireExactCount<T>(
         IReadOnlyList<T> values,
@@ -1164,16 +1154,16 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
     {
         var writer = new LinkTemplateWriter(WeaponVariantDef.SerializedSize);
         writer.Skip(sizeof(int) * 5);
-        WriteSingle(writer, value.AdsZoomFov);
+        writer.WriteSingle(value.AdsZoomFov);
         writer.WriteInt32(value.AdsTransitionInTime);
         writer.WriteInt32(value.AdsTransitionOutTime);
         writer.WriteInt32(value.ClipSize);
         writer.WriteInt32(value.ImpactType);
         writer.WriteInt32(value.FireTime);
         writer.WriteInt32(value.DpadIconRatio);
-        WriteSingle(writer, value.PenetrateMultiplier);
-        WriteSingle(writer, value.AdsViewKickCenterSpeed);
-        WriteSingle(writer, value.HipViewKickCenterSpeed);
+        writer.WriteSingle(value.PenetrateMultiplier);
+        writer.WriteSingle(value.AdsViewKickCenterSpeed);
+        writer.WriteSingle(value.HipViewKickCenterSpeed);
         writer.Skip(sizeof(int));
         writer.WriteUInt32(value.AlternateWeaponIndex);
         writer.WriteInt32(value.AlternateRaiseTime);
@@ -1181,8 +1171,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteInt32(value.DropAmmoMin);
         writer.WriteInt32(value.FirstRaiseTime);
         writer.WriteInt32(value.DropAmmoMax);
-        WriteSingle(writer, value.AdsDofStart);
-        WriteSingle(writer, value.AdsDofEnd);
+        writer.WriteSingle(value.AdsDofStart);
+        writer.WriteSingle(value.AdsDofEnd);
         writer.WriteUInt16(value.AccuracyGraphKnotCount);
         writer.WriteUInt16(value.OriginalAccuracyGraphKnotCount);
         writer.Skip(sizeof(int) * 2);
@@ -1271,22 +1261,22 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WriteTurn(writer, turn);
         WriteHints(writer, hints);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, value.OOPosAnimLength);
-        WriteSingle(writer, value.MinDamage);
+        writer.WriteSingle(value.OOPosAnimLength);
+        writer.WriteSingle(value.MinDamage);
         writer.WriteInt32(value.MinPlayerDamage);
-        WriteSingle(writer, value.MaxDamageRange);
-        WriteSingle(writer, value.MinDamageRange);
-        WriteSingle(writer, value.DestabilizationRateTime);
-        WriteSingle(writer, value.DestabilizationCurvatureMax);
-        WriteSingle(writer, value.DestabilizeDistance);
+        writer.WriteSingle(value.MaxDamageRange);
+        writer.WriteSingle(value.MinDamageRange);
+        writer.WriteSingle(value.DestabilizationRateTime);
+        writer.WriteSingle(value.DestabilizationCurvatureMax);
+        writer.WriteSingle(value.DestabilizeDistance);
         writer.WriteInt32(value.DestabilizeDistanceToTimeScale);
         writer.Skip(sizeof(int) * 4);
-        WriteSingle(writer, value.TurretScopeZoomRate);
-        WriteSingle(writer, value.TurretScopeZoomMin);
-        WriteSingle(writer, value.TurretScopeZoomMax);
-        WriteSingle(writer, value.TurretOverheatUpRate);
-        WriteSingle(writer, value.TurretOverheatDownRate);
-        WriteSingle(writer, value.TurretOverheatPenalty);
+        writer.WriteSingle(value.TurretScopeZoomRate);
+        writer.WriteSingle(value.TurretScopeZoomMin);
+        writer.WriteSingle(value.TurretScopeZoomMax);
+        writer.WriteSingle(value.TurretOverheatUpRate);
+        writer.WriteSingle(value.TurretOverheatDownRate);
+        writer.WriteSingle(value.TurretOverheatPenalty);
         WriteTurret(writer, turret);
         WriteMissile(writer, missile);
         WriteTail(writer, tail);
@@ -1480,24 +1470,24 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         LinkTemplateWriter writer,
         WeaponPhysicsFields value)
     {
-        WriteSingle(writer, value.DualWieldViewModelOffset);
+        writer.WriteSingle(value.DualWieldViewModelOffset);
         WriteInts(
             writer,
             value.KillIconRatio,
             value.ReloadAmmoAdd,
             value.ReloadStartAdd,
             value.AmmoDropStockMin);
-        WriteSingle(writer, value.AmmoDropClipPercentMin);
-        WriteSingle(writer, value.AmmoDropClipPercentMax);
+        writer.WriteSingle(value.AmmoDropClipPercentMin);
+        writer.WriteSingle(value.AmmoDropClipPercentMax);
         WriteInts(
             writer,
             value.ExplosionRadius,
             value.ExplosionRadiusMin,
             value.ExplosionInnerDamage,
             value.ExplosionOuterDamage);
-        WriteSingle(writer, value.DamageConeAngle);
-        WriteSingle(writer, value.BulletExplosionDamageMultiplier);
-        WriteSingle(writer, value.BulletExplosionRadiusMultiplier);
+        writer.WriteSingle(value.DamageConeAngle);
+        writer.WriteSingle(value.BulletExplosionDamageMultiplier);
+        writer.WriteSingle(value.BulletExplosionRadiusMultiplier);
         WriteInts(
             writer,
             value.ProjectileSpeed,
@@ -1506,7 +1496,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             value.ProjectileActivateDistance,
             value.ProjectileLifetime,
             value.TimeToAccelerate);
-        WriteSingle(writer, value.ProjectileCurvature);
+        writer.WriteSingle(value.ProjectileCurvature);
     }
 
     private static void WriteProjectile(
@@ -1518,16 +1508,16 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.Skip(sizeof(int) * 4);
         writer.WriteInt32((int)value.Stickiness);
         writer.WriteInt32(value.LowAmmoWarningThreshold);
-        WriteSingle(writer, value.RicochetChance);
+        writer.WriteSingle(value.RicochetChance);
         writer.Skip(sizeof(int) * 4);
         WriteVec3(writer, value.ProjectileColor);
         writer.WriteInt32((int)value.GuidedMissileType);
-        WriteSingle(writer, value.MaxSteeringAcceleration);
+        writer.WriteSingle(value.MaxSteeringAcceleration);
         writer.WriteInt32(value.IgnitionDelay);
         writer.Skip(sizeof(int) * 2);
-        WriteSingle(writer, value.AdsAimPitch);
-        WriteSingle(writer, value.AdsCrosshairInFraction);
-        WriteSingle(writer, value.AdsCrosshairOutFraction);
+        writer.WriteSingle(value.AdsAimPitch);
+        writer.WriteSingle(value.AdsCrosshairInFraction);
+        writer.WriteSingle(value.AdsCrosshairOutFraction);
         WriteKick(writer, value.GunKickAndDistance ??
             throw new InvalidDataException(
                 "Weapon.Definition.Projectile.GunKickAndDistance cannot be null."));
@@ -1620,10 +1610,10 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.Skip(sizeof(int) * 2);
         writer.WriteInt32(value.UseHintStringIndex);
         writer.WriteInt32(value.DropHintStringIndex);
-        WriteSingle(writer, value.HorizontalViewJitter);
-        WriteSingle(writer, value.VerticalViewJitter);
-        WriteSingle(writer, value.ScanSpeed);
-        WriteSingle(writer, value.ScanAcceleration);
+        writer.WriteSingle(value.HorizontalViewJitter);
+        writer.WriteSingle(value.VerticalViewJitter);
+        writer.WriteSingle(value.ScanSpeed);
+        writer.WriteSingle(value.ScanAcceleration);
         writer.WriteInt32(value.ScanPauseTime);
     }
 
@@ -1632,9 +1622,9 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WeaponTurretFields value)
     {
         writer.Skip(sizeof(int) * 3);
-        WriteSingle(writer, value.BarrelSpinSpeed);
-        WriteSingle(writer, value.BarrelSpinUpTime);
-        WriteSingle(writer, value.BarrelSpinDownTime);
+        writer.WriteSingle(value.BarrelSpinSpeed);
+        writer.WriteSingle(value.BarrelSpinUpTime);
+        writer.WriteSingle(value.BarrelSpinDownTime);
         writer.Skip(sizeof(int));
         writer.Skip(sizeof(int) * WeaponDef.TurretBarrelSpinSoundCount);
         writer.Skip(sizeof(int) * WeaponDef.TurretBarrelSpinSoundCount);
@@ -1717,20 +1707,18 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
 
     private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
-        WriteSingle(writer, value.X);
-        WriteSingle(writer, value.Y);
-        WriteSingle(writer, value.Z);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
-    private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
     private static void WriteSingles(
         LinkTemplateWriter writer,
         params float[] values)
     {
         foreach (float value in values)
-            WriteSingle(writer, value);
+            writer.WriteSingle(value);
     }
 
     private static void WriteInts(

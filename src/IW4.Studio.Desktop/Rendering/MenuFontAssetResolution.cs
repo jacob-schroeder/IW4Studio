@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Font;
+using IW4.Render.UI;
 using IW4.Render.UI.Text;
 
 namespace IW4.Studio.Desktop.Rendering;
@@ -70,7 +71,7 @@ public sealed class MenuFontAssetResolution
             [
                 new UiTextDiagnostic(
                     UiTextDiagnosticCode.UnknownFontEnum,
-                    UiTextDiagnosticSeverity.Blocker,
+                    UiDiagnosticSeverity.Blocker,
                     mapping.Failure ??
                     $"Font enum {mapping.FontEnum} cannot be mapped.")
             ]);
@@ -86,7 +87,7 @@ public sealed class MenuFontAssetResolution
             [
                 new UiTextDiagnostic(
                     UiTextDiagnosticCode.FontAssetNotFound,
-                    UiTextDiagnosticSeverity.Blocker,
+                    UiDiagnosticSeverity.Blocker,
                     $"Font '{mapping.LookupName}' is not available from a complete active provider in the asset pool.")
             ]);
 
@@ -101,7 +102,7 @@ public sealed class MenuFontAssetResolution
             [
                 new UiTextDiagnostic(
                     UiTextDiagnosticCode.TextResourcesChanged,
-                    UiTextDiagnosticSeverity.Blocker,
+                    UiDiagnosticSeverity.Blocker,
                     $"Menu text resources changed while Font " +
                     $"'{mapping.LookupName}' was being resolved.")
             ]);

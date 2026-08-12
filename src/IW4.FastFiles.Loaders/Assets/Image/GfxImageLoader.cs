@@ -73,7 +73,7 @@ public sealed class GfxImageLoader
             ushort baseDepth = rootCursor.ReadUInt16();
             byte baseLevelCount = rootCursor.ReadByte();
             byte cached = rootCursor.ReadByte();
-            XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerOffsetMode.Direct);
+            XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
             IReadOnlyList<GfxImageStreamData> streamData = ReadStreamData(rootCursor);
             int[] streamPartByteCounts =
                 GfxImageStreamData.ValidateProfileAndComputePartByteCounts(streamData);
@@ -222,7 +222,7 @@ public sealed class GfxImageLoader
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
         DbLoadExecutionContext context,
-        XPointerOffsetMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
+        XPointerResolutionMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
 
     private static bool ResolveAliasCellOffset<T>(
         XPointerReference pointer,

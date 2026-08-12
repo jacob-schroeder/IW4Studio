@@ -1,3 +1,5 @@
+using IW4.Render.UI;
+
 namespace IW4.Render.UI.Text;
 
 /// <summary>
@@ -86,7 +88,7 @@ public sealed class UiGlyphRunPlan
         _diagnostics = diagnostics.ToArray();
         _blockers = _diagnostics
             .Where(value =>
-                value.Severity == UiTextDiagnosticSeverity.Blocker)
+                value.Severity == UiDiagnosticSeverity.Blocker)
             .ToArray();
         Quads = Array.AsReadOnly(_quads);
         ColorRuns = Array.AsReadOnly(_colorRuns);

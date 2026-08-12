@@ -29,7 +29,11 @@ public sealed class LightDefLoader
                 ?? throw new InvalidDataException(
                     $"Top-level LightDef pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical LightDef asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context, "LightDef");
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed LightDef pointer has no destination cell.",
+                "Canonical LightDef has no runtime address.");
             return canonical;
         }
 
@@ -108,16 +112,4 @@ public sealed class LightDefLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        LightDefAsset canonical,
-        DbLoadExecutionContext context,
-        string targetName)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException($"Packed {targetName} pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException($"Canonical {targetName} has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
     }
-}

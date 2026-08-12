@@ -1299,7 +1299,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         int index)
     {
         WriteVec3(writer, value.Normal);
-        WriteSingle(writer, value.Dist);
+        writer.WriteSingle(value.Dist);
         writer.WriteByte(value.Type);
         writer.WriteByte(value.SignBits);
         RequireOptionalFixedCount(value.Pad12, 2, $"CPlane[{index}].Pad12");
@@ -1353,8 +1353,8 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         CLeafBrushNodeChildren children = value.Data.Children ??
             throw new InvalidDataException(
                 $"ClipMap.LeafBrushNodes[{index}] requires the child union arm.");
-        WriteSingle(writer, children.Dist);
-        WriteSingle(writer, children.Range);
+        writer.WriteSingle(children.Dist);
+        writer.WriteSingle(children.Range);
         foreach (ushort offset in children.ChildOffsets)
             writer.WriteUInt16(offset);
     }
@@ -1366,11 +1366,11 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
     {
         RequireCount(value.DistEq, 3, $"CollisionBorder[{index}].DistEq");
         foreach (float item in value.DistEq)
-            WriteSingle(writer, item);
-        WriteSingle(writer, value.ZBase);
-        WriteSingle(writer, value.ZSlope);
-        WriteSingle(writer, value.Start);
-        WriteSingle(writer, value.Length);
+            writer.WriteSingle(item);
+        writer.WriteSingle(value.ZBase);
+        writer.WriteSingle(value.ZSlope);
+        writer.WriteSingle(value.Start);
+        writer.WriteSingle(value.Length);
     }
 
     private static void WriteAabbTree(
@@ -1392,7 +1392,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
     {
         WriteVec3(writer, value.Mins);
         WriteVec3(writer, value.Maxs);
-        WriteSingle(writer, value.Radius);
+        writer.WriteSingle(value.Radius);
         WriteLeaf(writer, value.Leaf, index);
     }
 
@@ -1435,7 +1435,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         writer.WriteInt32(value.Type);
         RequireCount(value.Pose.Quat, 4, $"DynEntityDef[{index}].Pose.Quat");
         foreach (float item in value.Pose.Quat)
-            WriteSingle(writer, item);
+            writer.WriteSingle(item);
         WriteVec3(writer, value.Pose.Origin);
         writer.Skip(sizeof(int));
         writer.WriteUInt16(value.BrushModel);
@@ -1450,13 +1450,11 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
 
     private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
-        WriteSingle(writer, value.X);
-        WriteSingle(writer, value.Y);
-        WriteSingle(writer, value.Z);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
-    private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
     private static int RequiredAdjacencyByteCount(CBrush brush)
     {

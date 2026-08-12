@@ -1,3 +1,4 @@
+using IW4.FastFiles.Loaders.Database.Planning;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
@@ -27,16 +28,16 @@ public sealed class DependencyGraphNodeViewModel
 
     public bool HasSuccessor { get; }
 
-    public FastFileDependencyLoadStatus Status { get; }
+    public DbDependencyRequestLoadStatus Status { get; }
 
-    public bool IsLoaded => Status == FastFileDependencyLoadStatus.Loaded;
+    public bool IsLoaded => Status == DbDependencyRequestLoadStatus.Loaded;
 
-    public bool IsSkippedOptional => Status == FastFileDependencyLoadStatus.SkippedOptional;
+    public bool IsSkippedOptional => Status == DbDependencyRequestLoadStatus.SkippedOptional;
 
     public string StatusText => Status switch
     {
-        FastFileDependencyLoadStatus.Loaded => IsTarget ? "Target · loaded" : "Loaded",
-        FastFileDependencyLoadStatus.SkippedOptional => "Optional · not needed",
+        DbDependencyRequestLoadStatus.Loaded => IsTarget ? "Target · loaded" : "Loaded",
+        DbDependencyRequestLoadStatus.SkippedOptional => "Optional · not needed",
         _ => throw new ArgumentOutOfRangeException()
     };
 }

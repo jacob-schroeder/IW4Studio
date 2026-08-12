@@ -44,7 +44,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
                 :
                 [
                     NameOperation(root, 0),
-                    Direct(root, 0x1c, elements.Value, "Fx.ElemDefs")
+                    DirectOperation(root, 0x1c, elements.Value, "Fx.ElemDefs")
                 ]);
     }
 
@@ -369,9 +369,9 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
         var writer = new LinkTemplateWriter(FxTrailDef.SerializedSize);
         writer.WriteInt32(trail.ScrollTimeMsec);
         writer.WriteInt32(trail.RepeatDist);
-        WriteSingle(writer, trail.InvSplitDist);
-        WriteSingle(writer, trail.InvSplitArcDist);
-        WriteSingle(writer, trail.InvSplitTime);
+        writer.WriteSingle(trail.InvSplitDist);
+        writer.WriteSingle(trail.InvSplitArcDist);
+        writer.WriteSingle(trail.InvSplitTime);
         writer.WriteInt32(trail.VertCount);
         writer.Skip(sizeof(int));
         writer.WriteInt32(trail.IndCount);
@@ -386,7 +386,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
                 var operations = new List<LinkOperation>();
                 if (vertexStorage is not null)
                 {
-                    operations.Add(Direct(
+                    operations.Add(DirectOperation(
                         storage,
                         checked(addend + 0x18),
                         vertexStorage.Value,
@@ -394,7 +394,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
                 }
                 if (indexStorage is not null)
                 {
-                    operations.Add(Direct(
+                    operations.Add(DirectOperation(
                         storage,
                         checked(addend + 0x20),
                         indexStorage.Value,
@@ -419,11 +419,11 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
         {
             FxTrailVertex vertex = vertices[index] ??
                 throw new InvalidDataException($"{fieldPath}[{index}] cannot be null.");
-            WriteSingle(writer, vertex.Pos0);
-            WriteSingle(writer, vertex.Pos1);
-            WriteSingle(writer, vertex.Normal0);
-            WriteSingle(writer, vertex.Normal1);
-            WriteSingle(writer, vertex.TexCoord);
+            writer.WriteSingle(vertex.Pos0);
+            writer.WriteSingle(vertex.Pos1);
+            writer.WriteSingle(vertex.Normal0);
+            writer.WriteSingle(vertex.Normal1);
+            writer.WriteSingle(vertex.TexCoord);
         }
         return freeze.FreezeStorage(
             pointer,
@@ -464,19 +464,19 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
         if (owner.TrailDef is not null || owner.DefaultBytePayload is not null)
             throw new InvalidDataException($"{fieldPath} retains more than one payload arm.");
         var writer = new LinkTemplateWriter(FxSparkFountainDef.SerializedSize);
-        WriteSingle(writer, spark.Gravity);
-        WriteSingle(writer, spark.BounceFrac);
-        WriteSingle(writer, spark.BounceRand);
-        WriteSingle(writer, spark.SparkSpacing);
-        WriteSingle(writer, spark.SparkLength);
+        writer.WriteSingle(spark.Gravity);
+        writer.WriteSingle(spark.BounceFrac);
+        writer.WriteSingle(spark.BounceRand);
+        writer.WriteSingle(spark.SparkSpacing);
+        writer.WriteSingle(spark.SparkLength);
         writer.WriteInt32(spark.SparkCount);
-        WriteSingle(writer, spark.LoopTime);
-        WriteSingle(writer, spark.VelMin);
-        WriteSingle(writer, spark.VelMax);
-        WriteSingle(writer, spark.VelConeFrac);
-        WriteSingle(writer, spark.RestSpeed);
-        WriteSingle(writer, spark.BoostTime);
-        WriteSingle(writer, spark.BoostFactor);
+        writer.WriteSingle(spark.LoopTime);
+        writer.WriteSingle(spark.VelMin);
+        writer.WriteSingle(spark.VelMax);
+        writer.WriteSingle(spark.VelConeFrac);
+        writer.WriteSingle(spark.RestSpeed);
+        writer.WriteSingle(spark.BoostTime);
+        writer.WriteSingle(spark.BoostFactor);
         return freeze.FreezeStorage(
             pointer,
             writer.Complete(),
@@ -553,16 +553,6 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             new AssetDependency(key, XAssetType.Fx, fieldPath));
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private readonly record struct FrozenFxReference(
         LinkStorageSymbol? Text,
@@ -601,17 +591,17 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
         writer.WriteByte(color.G);
         writer.WriteByte(color.B);
         writer.WriteByte(color.A);
-        WriteSingle(writer, state.RotationDelta);
-        WriteSingle(writer, state.RotationTotal);
-        WriteSingle(writer, state.Size0);
-        WriteSingle(writer, state.Size1);
-        WriteSingle(writer, state.Scale);
+        writer.WriteSingle(state.RotationDelta);
+        writer.WriteSingle(state.RotationTotal);
+        writer.WriteSingle(state.Size0);
+        writer.WriteSingle(state.Size1);
+        writer.WriteSingle(state.Scale);
     }
 
     private static void WriteRange(LinkTemplateWriter writer, FxFloatRange range)
     {
-        WriteSingle(writer, range.Base);
-        WriteSingle(writer, range.Amplitude);
+        writer.WriteSingle(range.Base);
+        writer.WriteSingle(range.Amplitude);
     }
 
     private static void WriteIntRange(LinkTemplateWriter writer, FxIntRange range)
@@ -622,13 +612,11 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
 
     private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
-        WriteSingle(writer, value.X);
-        WriteSingle(writer, value.Y);
-        WriteSingle(writer, value.Z);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
     }
 
-    private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
     private sealed class FrozenElement
     {
@@ -815,7 +803,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             WriteRange(writer, Required(element.SpawnRange, $"{path}.SpawnRange"));
             WriteRange(writer, Required(element.FadeInRange, $"{path}.FadeInRange"));
             WriteRange(writer, Required(element.FadeOutRange, $"{path}.FadeOutRange"));
-            WriteSingle(writer, element.SpawnFrustumCullRadius);
+            writer.WriteSingle(element.SpawnFrustumCullRadius);
             WriteIntRange(writer, Required(element.SpawnDelayMsec, $"{path}.SpawnDelayMsec"));
             WriteIntRange(writer, Required(element.LifeSpanMsec, $"{path}.LifeSpanMsec"));
             foreach (FxFloatRange range in spawnOrigin)
@@ -878,7 +866,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             string path = $"Fx.ElemDefs[{Index}]";
             if (VelocitySamples is { } velocitySamples)
             {
-                operations.Add(Direct(
+                operations.Add(DirectOperation(
                     table,
                     checked(baseOffset + 0xb4),
                     velocitySamples,
@@ -886,7 +874,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             }
             if (VisualSamples is { } visualSamples)
             {
-                operations.Add(Direct(
+                operations.Add(DirectOperation(
                     table,
                     checked(baseOffset + 0xb8),
                     visualSamples,
@@ -894,7 +882,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             }
             if (VisualTable is { } visualTable)
             {
-                operations.Add(Direct(
+                operations.Add(DirectOperation(
                     table,
                     checked(baseOffset + 0xbc),
                     visualTable,
@@ -912,7 +900,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             AddFxReference(EffectEmitted, 0xe0, "EffectEmitted");
             if (Extended is { } extended)
             {
-                operations.Add(Direct(
+                operations.Add(DirectOperation(
                     table,
                     checked(baseOffset + 0xf4),
                     extended,

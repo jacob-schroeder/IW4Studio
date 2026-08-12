@@ -13,11 +13,43 @@ public sealed class MaterialShaderAsset : BaseAsset
     // Managed discriminator for the two native XAsset pool families; not a
     // serialized root field.
     public MaterialShaderKind Kind { get; init; }
-    public override XAssetType SerializedAssetType => Kind switch
+    public override XAssetType SerializedAssetType
+    {
+        get
+        {
+            try
+            {
+                return GetAssetType(Kind);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                throw new InvalidOperationException(
+                    $"Unsupported material shader kind {Kind}.");
+            }
+        }
+    }
+
+    public static XAssetType GetAssetType(MaterialShaderKind kind) => kind switch
     {
         MaterialShaderKind.Pixel => XAssetType.PixelShader,
         MaterialShaderKind.Vertex => XAssetType.VertexShader,
-        _ => throw new InvalidOperationException($"Unsupported material shader kind {Kind}.")
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
+
+    public static int GetSerializedSize(MaterialShaderKind kind) => kind switch
+    {
+        MaterialShaderKind.Pixel => PixelShaderSerializedSize,
+        MaterialShaderKind.Vertex => VertexShaderSerializedSize,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
+
+    public static int GetProgramByteCount(MaterialShaderKind kind) => kind switch
+    {
+        MaterialShaderKind.Pixel => PixelShaderSerializedSize -
+            (sizeof(int) + ShaderLoadDefSerializedSize),
+        MaterialShaderKind.Vertex => VertexShaderSerializedSize -
+            (sizeof(int) + ShaderLoadDefSerializedSize),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
     };
 
     // 0x00: XString. Both PS3 bodies push LARGE and call Load_XString.

@@ -62,9 +62,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         byte[] programBytes = definition.ProgramBytes?.ToArray()
             ?? throw new InvalidDataException(
                 $"{GetDisplayName(kind)} program bytes cannot be null.");
-        int expectedProgramByteCount = kind == MaterialShaderKind.Pixel
-            ? 0x0c
-            : 0;
+        int expectedProgramByteCount = GetProgramByteCount(kind);
         if (programBytes.Length != expectedProgramByteCount)
         {
             throw new InvalidDataException(
@@ -125,22 +123,6 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
             freeze);
     }
 
-    private static XAssetType GetAssetType(MaterialShaderKind kind) => kind switch
-    {
-        MaterialShaderKind.Pixel => XAssetType.PixelShader,
-        MaterialShaderKind.Vertex => XAssetType.VertexShader,
-        _ => throw new InvalidDataException(
-            $"Unsupported material shader kind {kind}.")
-    };
-
-    private static int GetRootSize(MaterialShaderKind kind) => kind switch
-    {
-        MaterialShaderKind.Pixel => MaterialShaderAsset.PixelShaderSerializedSize,
-        MaterialShaderKind.Vertex => MaterialShaderAsset.VertexShaderSerializedSize,
-        _ => throw new InvalidDataException(
-            $"Unsupported material shader kind {kind}.")
-    };
-
     private static string GetDisplayName(MaterialShaderKind kind) => kind switch
     {
         MaterialShaderKind.Pixel => "MaterialPixelShader",
@@ -148,4 +130,43 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         _ => throw new InvalidDataException(
             $"Unsupported material shader kind {kind}.")
     };
+
+    private static XAssetType GetAssetType(MaterialShaderKind kind)
+    {
+        try
+        {
+            return MaterialShaderAsset.GetAssetType(kind);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new InvalidDataException(
+                $"Unsupported material shader kind {kind}.");
+        }
+    }
+
+    private static int GetRootSize(MaterialShaderKind kind)
+    {
+        try
+        {
+            return MaterialShaderAsset.GetSerializedSize(kind);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new InvalidDataException(
+                $"Unsupported material shader kind {kind}.");
+        }
+    }
+
+    private static int GetProgramByteCount(MaterialShaderKind kind)
+    {
+        try
+        {
+            return MaterialShaderAsset.GetProgramByteCount(kind);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new InvalidDataException(
+                $"Unsupported material shader kind {kind}.");
+        }
+    }
 }

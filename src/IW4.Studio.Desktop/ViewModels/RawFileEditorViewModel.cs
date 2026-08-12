@@ -90,13 +90,13 @@ public sealed class RawFileEditorViewModel
 
         switch (editorSession.Mode)
         {
-            case AssetEditorMode.Editable:
+            case WorkspaceAssetAccess.Editable:
                 _draft = editorSession.OpenDraft<RawFileDraft>();
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage = "Detached target-owned draft.";
                 break;
 
-            case AssetEditorMode.ReadOnly:
+            case WorkspaceAssetAccess.ReadOnly:
                 try
                 {
                     _readOnlySnapshot = RawFileReadOnlySnapshot.CaptureResolvedProvider(editorSession);
@@ -112,7 +112,7 @@ public sealed class RawFileEditorViewModel
                 }
                 break;
 
-            case AssetEditorMode.ContentUnavailable:
+            case WorkspaceAssetAccess.ContentUnavailable:
                 _statusMessage = "RawFile content is unavailable because this reference has no resolved provider.";
                 break;
 
@@ -127,13 +127,13 @@ public sealed class RawFileEditorViewModel
         RefreshPresentation();
     }
 
-    public AssetEditorMode Mode => _editorSession.Mode;
+    public WorkspaceAssetAccess Mode => _editorSession.Mode;
 
-    public bool IsEditable => Mode == AssetEditorMode.Editable;
+    public bool IsEditable => Mode == WorkspaceAssetAccess.Editable;
 
-    public bool IsReadOnly => Mode == AssetEditorMode.ReadOnly;
+    public bool IsReadOnly => Mode == WorkspaceAssetAccess.ReadOnly;
 
-    public bool IsContentUnavailable => Mode == AssetEditorMode.ContentUnavailable;
+    public bool IsContentUnavailable => Mode == WorkspaceAssetAccess.ContentUnavailable;
 
     public bool IsInputReadOnly => !IsEditable;
 
@@ -185,9 +185,9 @@ public sealed class RawFileEditorViewModel
 
     public string ModeText => Mode switch
     {
-        AssetEditorMode.Editable => "EDITABLE TARGET DEFINITION",
-        AssetEditorMode.ReadOnly => "READ-ONLY RESOLVED PROVIDER",
-        AssetEditorMode.ContentUnavailable => "CONTENT UNAVAILABLE",
+        WorkspaceAssetAccess.Editable => "EDITABLE TARGET DEFINITION",
+        WorkspaceAssetAccess.ReadOnly => "READ-ONLY RESOLVED PROVIDER",
+        WorkspaceAssetAccess.ContentUnavailable => "CONTENT UNAVAILABLE",
         _ => throw new InvalidDataException($"Unknown RawFile editor mode '{Mode}'.")
     };
 
@@ -1124,14 +1124,11 @@ public sealed class RawFileEditorViewModel
     {
         if (encoding == RawFileTextEncoding.Windows1252)
         {
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            Encoding windows1252 = Encoding.GetEncoding(
-                1252,
-                EncoderFallback.ExceptionFallback,
-                DecoderFallback.ExceptionFallback);
             try
             {
-                return new GscSourceText(source, windows1252);
+                return new GscSourceText(
+                    source,
+                    RawFileContentClassifier.GetTextEncoding(encoding.Value));
             }
             catch (EncoderFallbackException)
             {

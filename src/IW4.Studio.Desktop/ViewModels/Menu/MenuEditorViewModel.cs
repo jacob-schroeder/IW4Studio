@@ -64,8 +64,8 @@ public sealed class MenuEditorViewModel
         MenuEditorSnapshot? snapshot = InitializeSnapshot();
         Designer = new MenuDesignerViewModel(
             snapshot,
-            Mode == AssetEditorMode.Editable ? ApplyEdit : null,
-            Mode == AssetEditorMode.Editable && canSelectAssetReferences
+            Mode == WorkspaceAssetAccess.Editable ? ApplyEdit : null,
+            Mode == WorkspaceAssetAccess.Editable && canSelectAssetReferences
                 ? RequestAssetReferenceSelection
                 : null,
             materialResolver,
@@ -80,10 +80,10 @@ public sealed class MenuEditorViewModel
         RevertCommand = new ViewModelCommand(RevertDraft, CanRevert);
     }
 
-    public AssetEditorMode Mode => _session.Mode;
+    public WorkspaceAssetAccess Mode => _session.Mode;
 
     public bool IsEditable =>
-        Mode == AssetEditorMode.Editable && _resolution?.CanEdit == true;
+        Mode == WorkspaceAssetAccess.Editable && _resolution?.CanEdit == true;
 
     public string Name =>
         Designer.Snapshot?.Name
@@ -179,7 +179,7 @@ public sealed class MenuEditorViewModel
     {
         if (_rowIdentity is { } rowIdentity)
         {
-            if (Mode == AssetEditorMode.Editable)
+            if (Mode == WorkspaceAssetAccess.Editable)
                 _ = _session.OpenDraft<MenuDraft>();
             _resolution = _coordinator.ResolveTopLevelMenu(rowIdentity);
             RefreshValidation();
@@ -187,7 +187,7 @@ public sealed class MenuEditorViewModel
             return _resolution.Menu;
         }
 
-        if (Mode == AssetEditorMode.ReadOnly)
+        if (Mode == WorkspaceAssetAccess.ReadOnly)
         {
             try
             {
@@ -251,7 +251,7 @@ public sealed class MenuEditorViewModel
         PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
 
     private bool CanRevert() =>
-        Mode == AssetEditorMode.Editable &&
+        Mode == WorkspaceAssetAccess.Editable &&
         _session.HasUnsavedChanges &&
         !Designer.HasStagedInput &&
         _rowIdentity is { } rowIdentity &&

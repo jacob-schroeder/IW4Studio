@@ -40,7 +40,7 @@ public static class UiMaterialPreviewPlanner
                 diagnostics.Add(new UiMaterialPreviewDiagnostic(
                     UiMaterialPreviewDiagnosticCode
                         .TextureImageResolutionFailed,
-                    UiMaterialPreviewDiagnosticSeverity.Warning,
+                    UiDiagnosticSeverity.Warning,
                     resolution.Failure ??
                     "The material texture row has no resolved image provider.",
                     ordinal));
@@ -61,7 +61,7 @@ public static class UiMaterialPreviewPlanner
         {
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.InvalidTextureAtlas,
-                UiMaterialPreviewDiagnosticSeverity.Warning,
+                UiDiagnosticSeverity.Warning,
                 $"Material atlas dimensions {atlas.AuthoredRowCount}x" +
                 $"{atlas.AuthoredColumnCount} are incomplete; the full " +
                 "texture will be shown."));
@@ -70,7 +70,7 @@ public static class UiMaterialPreviewPlanner
         {
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.TextureAtlasFrameNotEvaluated,
-                UiMaterialPreviewDiagnosticSeverity.Warning,
+                UiDiagnosticSeverity.Warning,
                 "Material atlas frame selection is not evaluated; the full " +
                 $"{atlas.AuthoredRowCount}x{atlas.AuthoredColumnCount} " +
                 "texture atlas will be shown."));
@@ -88,7 +88,7 @@ public static class UiMaterialPreviewPlanner
                 textures.Count == 0
                     ? UiMaterialPreviewDiagnosticCode.MaterialHasNoTextures
                     : UiMaterialPreviewDiagnosticCode.NoResolvedTextureImage,
-                UiMaterialPreviewDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 textures.Count == 0
                     ? "The material has no texture rows to preview."
                     : "None of the material texture rows resolves to an image that can be previewed."));
@@ -107,7 +107,7 @@ public static class UiMaterialPreviewPlanner
                 diagnostics.Add(new UiMaterialPreviewDiagnostic(
                     UiMaterialPreviewDiagnosticCode
                         .NonCanonicalImageFallback,
-                    UiMaterialPreviewDiagnosticSeverity.Warning,
+                    UiDiagnosticSeverity.Warning,
                     "The selected image comes from the material row without " +
                     "proof that it is the active canonical asset provider.",
                     selected.TextureTableOrdinal));
@@ -116,7 +116,7 @@ public static class UiMaterialPreviewPlanner
             {
                 diagnostics.Add(new UiMaterialPreviewDiagnostic(
                     UiMaterialPreviewDiagnosticCode.InvalidImageDimensions,
-                    UiMaterialPreviewDiagnosticSeverity.Blocker,
+                    UiDiagnosticSeverity.Blocker,
                     $"The selected image has invalid dimensions {image.Width}x{image.Height}.",
                     selected.TextureTableOrdinal));
             }
@@ -124,7 +124,7 @@ public static class UiMaterialPreviewPlanner
             {
                 diagnostics.Add(new UiMaterialPreviewDiagnostic(
                     UiMaterialPreviewDiagnosticCode.UnsupportedImageDepth,
-                    UiMaterialPreviewDiagnosticSeverity.Blocker,
+                    UiDiagnosticSeverity.Blocker,
                     $"The selected image is a depth-{image.Depth} texture; " +
                     "UI texture approximation supports only a single 2D " +
                     "slice.",
@@ -134,7 +134,7 @@ public static class UiMaterialPreviewPlanner
             {
                 diagnostics.Add(new UiMaterialPreviewDiagnostic(
                     UiMaterialPreviewDiagnosticCode.NonTwoDimensionalImage,
-                    UiMaterialPreviewDiagnosticSeverity.Warning,
+                    UiDiagnosticSeverity.Warning,
                     "The selected image descriptor is not a standard PS3 2D " +
                     $"texture (map type 0x{image.MapType:X2}, dimensions " +
                     $"{image.DimensionCount}, multi-face " +
@@ -144,7 +144,7 @@ public static class UiMaterialPreviewPlanner
 
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.MaterialTechniqueNotEvaluated,
-                UiMaterialPreviewDiagnosticSeverity.Information,
+                UiDiagnosticSeverity.Information,
                 "The preview shows a texture approximation; the material " +
                 "technique, shaders, constants, and render state are not " +
                 "evaluated.",
@@ -153,7 +153,7 @@ public static class UiMaterialPreviewPlanner
 
         bool blocked = diagnostics.Any(diagnostic =>
             diagnostic.Severity ==
-            UiMaterialPreviewDiagnosticSeverity.Blocker);
+            UiDiagnosticSeverity.Blocker);
         return new UiMaterialPreviewPlan(
             SnapshotMaterial(material),
             atlas,
@@ -193,7 +193,7 @@ public static class UiMaterialPreviewPlanner
         {
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.BaseColorBindingAmbiguous,
-                UiMaterialPreviewDiagnosticSeverity.Warning,
+                UiDiagnosticSeverity.Warning,
                 $"The material has {baseColorBindings.Length} base-color " +
                 "texture rows; the first resolved row in deterministic " +
                 "table order will be shown."));
@@ -205,7 +205,7 @@ public static class UiMaterialPreviewPlanner
         {
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.BaseColorImageUnavailable,
-                UiMaterialPreviewDiagnosticSeverity.Warning,
+                UiDiagnosticSeverity.Warning,
                 "The material's base-color texture rows do not resolve to an image."));
         }
 
@@ -216,7 +216,7 @@ public static class UiMaterialPreviewPlanner
         {
             diagnostics.Add(new UiMaterialPreviewDiagnostic(
                 UiMaterialPreviewDiagnosticCode.FallbackTextureSelected,
-                UiMaterialPreviewDiagnosticSeverity.Warning,
+                UiDiagnosticSeverity.Warning,
                 $"Texture role '{fallback.Role}' is shown because no resolved base-color row is available.",
                 fallback.TextureTableOrdinal));
         }

@@ -1,4 +1,5 @@
 using IW4.Render.Materials;
+using IW4.Render.Scheduling.FramePlans;
 
 namespace IW4.Render.UI;
 
@@ -80,7 +81,7 @@ public sealed class UiMaterialCpuPreviewPlan
 
         bool blocked = _diagnostics.Any(diagnostic =>
             diagnostic.Severity ==
-            UiMaterialExecutionDiagnosticSeverity.Blocker);
+            UiDiagnosticSeverity.Blocker);
         if ((compositeState is null) != blocked)
         {
             throw new ArgumentException(
@@ -106,7 +107,7 @@ public sealed class UiMaterialCpuPreviewPlan
             [new UiMaterialExecutionDiagnostic(
                 UiMaterialExecutionDiagnosticCode
                     .UnsupportedCpuPreviewCompositeState,
-                UiMaterialExecutionDiagnosticSeverity.Blocker,
+                UiDiagnosticSeverity.Blocker,
                 message)]);
     }
 
@@ -202,7 +203,7 @@ public sealed class UiMaterialCpuPreviewPlan
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity ==
-                UiMaterialExecutionDiagnosticSeverity.Blocker))
+                UiDiagnosticSeverity.Blocker))
         {
             return new UiMaterialCpuPreviewPlan(null, diagnostics);
         }
@@ -230,75 +231,58 @@ public sealed class UiMaterialCpuPreviewPlan
     private static UiMaterialCpuPreviewBlendState? DecodeBlend(
         MapRenderState state)
     {
-        if (!state.BlendEnabled)
-        {
-            return new UiMaterialCpuPreviewBlendState(
-                false,
-                UiMaterialCpuPreviewBlendEquation.Add,
-                UiMaterialCpuPreviewBlendEquation.Add,
-                UiMaterialCpuPreviewBlendFactor.One,
-                UiMaterialCpuPreviewBlendFactor.Zero,
-                UiMaterialCpuPreviewBlendFactor.One,
-                UiMaterialCpuPreviewBlendFactor.Zero);
-        }
-
-        UiMaterialCpuPreviewBlendEquation? rgbEquation = DecodeEquation(
-            state.BlendEquationRgb);
-        UiMaterialCpuPreviewBlendEquation? alphaEquation = DecodeEquation(
-            state.BlendEquationAlpha);
-        UiMaterialCpuPreviewBlendFactor? sourceRgb = DecodeFactor(
-            state.BlendSourceRgb);
-        UiMaterialCpuPreviewBlendFactor? destinationRgb = DecodeFactor(
-            state.BlendDestinationRgb);
-        UiMaterialCpuPreviewBlendFactor? sourceAlpha = DecodeFactor(
-            state.BlendSourceAlpha);
-        UiMaterialCpuPreviewBlendFactor? destinationAlpha = DecodeFactor(
-            state.BlendDestinationAlpha);
-        if (rgbEquation is null || alphaEquation is null ||
-            sourceRgb is null || destinationRgb is null ||
-            sourceAlpha is null || destinationAlpha is null)
-        {
+        if (!MapRenderBlend.TryResolve(state, out RenderBlendStateDescriptor blend))
             return null;
-        }
 
         return new UiMaterialCpuPreviewBlendState(
-            true,
-            rgbEquation.Value,
-            alphaEquation.Value,
-            sourceRgb.Value,
-            destinationRgb.Value,
-            sourceAlpha.Value,
-            destinationAlpha.Value);
+            blend.Enabled,
+            ToCpuPreviewBlendEquation(blend.ColorOperation),
+            ToCpuPreviewBlendEquation(blend.AlphaOperation),
+            ToCpuPreviewBlendFactor(blend.SourceColorFactor),
+            ToCpuPreviewBlendFactor(blend.DestinationColorFactor),
+            ToCpuPreviewBlendFactor(blend.SourceAlphaFactor),
+            ToCpuPreviewBlendFactor(blend.DestinationAlphaFactor));
     }
 
-    private static UiMaterialCpuPreviewBlendEquation? DecodeEquation(
-        uint value) =>
-        value switch
+    private static UiMaterialCpuPreviewBlendEquation ToCpuPreviewBlendEquation(
+        RenderBlendOperation operation) =>
+        operation switch
         {
-            0x8006 => UiMaterialCpuPreviewBlendEquation.Add,
-            0x800A => UiMaterialCpuPreviewBlendEquation.Subtract,
-            0x800B => UiMaterialCpuPreviewBlendEquation.ReverseSubtract,
-            0x8007 => UiMaterialCpuPreviewBlendEquation.Minimum,
-            0x8008 => UiMaterialCpuPreviewBlendEquation.Maximum,
-            _ => null
+            RenderBlendOperation.Add => UiMaterialCpuPreviewBlendEquation.Add,
+            RenderBlendOperation.Subtract =>
+                UiMaterialCpuPreviewBlendEquation.Subtract,
+            RenderBlendOperation.ReverseSubtract =>
+                UiMaterialCpuPreviewBlendEquation.ReverseSubtract,
+            RenderBlendOperation.Minimum =>
+                UiMaterialCpuPreviewBlendEquation.Minimum,
+            RenderBlendOperation.Maximum =>
+                UiMaterialCpuPreviewBlendEquation.Maximum,
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
 
-    private static UiMaterialCpuPreviewBlendFactor? DecodeFactor(uint value) =>
-        value switch
+    private static UiMaterialCpuPreviewBlendFactor ToCpuPreviewBlendFactor(
+        RenderBlendFactor factor) =>
+        factor switch
         {
-            0 => UiMaterialCpuPreviewBlendFactor.Zero,
-            1 => UiMaterialCpuPreviewBlendFactor.One,
-            0x0300 => UiMaterialCpuPreviewBlendFactor.SourceColor,
-            0x0301 => UiMaterialCpuPreviewBlendFactor.OneMinusSourceColor,
-            0x0302 => UiMaterialCpuPreviewBlendFactor.SourceAlpha,
-            0x0303 => UiMaterialCpuPreviewBlendFactor.OneMinusSourceAlpha,
-            0x0304 => UiMaterialCpuPreviewBlendFactor.DestinationAlpha,
-            0x0305 =>
+            RenderBlendFactor.Zero => UiMaterialCpuPreviewBlendFactor.Zero,
+            RenderBlendFactor.One => UiMaterialCpuPreviewBlendFactor.One,
+            RenderBlendFactor.SourceColor =>
+                UiMaterialCpuPreviewBlendFactor.SourceColor,
+            RenderBlendFactor.OneMinusSourceColor =>
+                UiMaterialCpuPreviewBlendFactor.OneMinusSourceColor,
+            RenderBlendFactor.SourceAlpha =>
+                UiMaterialCpuPreviewBlendFactor.SourceAlpha,
+            RenderBlendFactor.OneMinusSourceAlpha =>
+                UiMaterialCpuPreviewBlendFactor.OneMinusSourceAlpha,
+            RenderBlendFactor.DestinationAlpha =>
+                UiMaterialCpuPreviewBlendFactor.DestinationAlpha,
+            RenderBlendFactor.OneMinusDestinationAlpha =>
                 UiMaterialCpuPreviewBlendFactor.OneMinusDestinationAlpha,
-            0x0306 => UiMaterialCpuPreviewBlendFactor.DestinationColor,
-            0x0307 =>
+            RenderBlendFactor.DestinationColor =>
+                UiMaterialCpuPreviewBlendFactor.DestinationColor,
+            RenderBlendFactor.OneMinusDestinationColor =>
                 UiMaterialCpuPreviewBlendFactor.OneMinusDestinationColor,
-            _ => null
+            _ => throw new ArgumentOutOfRangeException(nameof(factor))
         };
 
     /// <summary>
@@ -354,6 +338,6 @@ public sealed class UiMaterialCpuPreviewPlan
         diagnostics.Add(new UiMaterialExecutionDiagnostic(
             UiMaterialExecutionDiagnosticCode
                 .UnsupportedCpuPreviewCompositeState,
-            UiMaterialExecutionDiagnosticSeverity.Blocker,
+            UiDiagnosticSeverity.Blocker,
             message));
 }

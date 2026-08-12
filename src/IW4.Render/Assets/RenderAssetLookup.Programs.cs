@@ -213,9 +213,7 @@ public sealed partial class RenderAssetLookup
         MaterialShaderKind kind,
         XAssetPool? assetPool)
     {
-        XAssetType expectedType = kind == MaterialShaderKind.Vertex
-            ? XAssetType.VertexShader
-            : XAssetType.PixelShader;
+        XAssetType expectedType = MaterialShaderAsset.GetAssetType(kind);
         if (assetPool?.TryResolve(
                 pointer.Raw,
                 expectedType,

@@ -134,7 +134,9 @@ public sealed class PathDataLoader
         var nodes = new PathNode[count];
         for (int index = 0; index < count; index++)
         {
-            var rowCursor = RowCursor(bytes, address, index, PathNode.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(index * PathNode.SerializedSize),
+                PathNode.SerializedSize);
             XBlockAddress rowAddress = address.Add(checked(index * PathNode.SerializedSize));
             nodes[index] = ReadPathNode(cursor, rowCursor, rowAddress, context, index);
         }
@@ -160,11 +162,11 @@ public sealed class PathDataLoader
         ScriptStringReference animScript = ReadScriptString(rowCursor, rowAddress, 0x0E, context, $"PathData.nodes[{index}].animScript");
         int animScriptFunc = rowCursor.ReadInt32();
         Vec3 origin = ReadVec3(rowCursor);
-        float angle = ReadSingle(rowCursor);
-        float forwardX = ReadSingle(rowCursor);
-        float forwardY = ReadSingle(rowCursor);
-        float radius = ReadSingle(rowCursor);
-        float minUseDistSq = ReadSingle(rowCursor);
+        float angle = rowCursor.ReadSingle();
+        float forwardX = rowCursor.ReadSingle();
+        float forwardY = rowCursor.ReadSingle();
+        float radius = rowCursor.ReadSingle();
+        float minUseDistSq = rowCursor.ReadSingle();
         short overlapNode0 = unchecked((short)rowCursor.ReadUInt16());
         short overlapNode1 = unchecked((short)rowCursor.ReadUInt16());
         ushort totalLinkCount = rowCursor.ReadUInt16();
@@ -197,8 +199,8 @@ public sealed class PathDataLoader
             NextOpenRuntimePointer = rowCursor.ReadUInt32(),
             PreviousOpenRuntimePointer = rowCursor.ReadUInt32(),
             ParentRuntimePointer = rowCursor.ReadUInt32(),
-            Cost = ReadSingle(rowCursor),
-            Heuristic = ReadSingle(rowCursor),
+            Cost = rowCursor.ReadSingle(),
+            Heuristic = rowCursor.ReadSingle(),
             NodeCostOrLinkIndexBits = rowCursor.ReadUInt32()
         };
 
@@ -283,7 +285,7 @@ public sealed class PathDataLoader
         {
             links[index] = new PathLink
             {
-                Distance = ReadSingle(linkCursor),
+                Distance = linkCursor.ReadSingle(),
                 NodeNumber = linkCursor.ReadUInt16(),
                 DisconnectCount = linkCursor.ReadByte(),
                 NegotiationLink = linkCursor.ReadByte(),
@@ -404,7 +406,9 @@ public sealed class PathDataLoader
         }
         for (int index = 0; index < trees.Length; index++)
         {
-            var rowCursor = RowCursor(bytes, address, index, PathNodeTree.SerializedSize);
+            var rowCursor = new FastFileCursor(bytes, address).Slice(
+                checked(index * PathNodeTree.SerializedSize),
+                PathNodeTree.SerializedSize);
             XBlockAddress rowAddress = address.Add(checked(index * PathNodeTree.SerializedSize));
             ReadNodeTreeBody(cursor, rowCursor, rowAddress, context, $"PathData.nodeTree[{index}]", trees[index], byAddress, materialized, active);
         }
@@ -432,7 +436,7 @@ public sealed class PathDataLoader
         if (!materialized.Add(rowAddress))
             throw new InvalidDataException($"{memberName} materializes tree payload {rowAddress} more than once.");
         int axis = rowCursor.ReadInt32();
-        float distance = ReadSingle(rowCursor);
+        float distance = rowCursor.ReadSingle();
         target.Offset = rowAddress.Offset;
         target.Axis = axis;
         target.Distance = distance;
@@ -577,25 +581,14 @@ public sealed class PathDataLoader
     private static XPointer<PathNodeTree> ReadTreePointerCell(FastFileCursor cursor, DbLoadExecutionContext context) =>
         context.PointerReader.ReadPointer<PathNodeTree>(cursor, XPointerResolutionMode.Direct);
 
-    private static FastFileCursor RowCursor(
-        byte[] bytes,
-        XBlockAddress address,
-        int index,
-        int stride)
-    {
-        int offset = checked(index * stride);
-        return new FastFileCursor(bytes.AsSpan(offset, stride).ToArray(), address.Add(offset));
-    }
 
     private static Vec3 ReadVec3(FastFileCursor cursor) => new()
     {
-        X = ReadSingle(cursor),
-        Y = ReadSingle(cursor),
-        Z = ReadSingle(cursor)
+        X = cursor.ReadSingle(),
+        Y = cursor.ReadSingle(),
+        Z = cursor.ReadSingle()
     };
 
-    private static float ReadSingle(FastFileCursor cursor) =>
-        BitConverter.Int32BitsToSingle(cursor.ReadInt32());
 
     private static int Count(uint count, string name)
     {

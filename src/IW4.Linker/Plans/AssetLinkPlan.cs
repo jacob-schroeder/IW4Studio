@@ -136,6 +136,28 @@ internal abstract class AssetLinkPlan
             LinkStorageView.Whole(value),
             fieldPath);
 
+    protected static DirectStorageLinkOperation DirectOperation(
+        LinkStorageSymbol owner,
+        int pointerOffset,
+        LinkStorageTarget target,
+        string fieldPath) =>
+        new(
+            new LinkStorageCell(owner, pointerOffset),
+            target.View,
+            target.CanMaterializeRoot,
+            fieldPath);
+
+    protected static DirectStorageLinkOperation DirectOperation(
+        LinkStorageSymbol owner,
+        int pointerOffset,
+        LinkStorageSymbol target,
+        string fieldPath) =>
+        new(
+            new LinkStorageCell(owner, pointerOffset),
+            LinkStorageView.Whole(target),
+            CanMaterializeRoot: true,
+            fieldPath);
+
     protected static ProviderLinkOperation ProviderOperation(
         LinkStorageSymbol owner,
         int pointerOffset,

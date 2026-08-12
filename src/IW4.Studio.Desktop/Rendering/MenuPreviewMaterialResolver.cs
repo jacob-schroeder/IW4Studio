@@ -374,7 +374,7 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
         plan.Diagnostics[0].Code ==
             UiMaterialExecutionDiagnosticCode.UnsupportedMaterialState &&
         plan.Diagnostics[0].Severity ==
-            UiMaterialExecutionDiagnosticSeverity.Blocker;
+            UiDiagnosticSeverity.Blocker;
 
     private static IMaterialExecutionLookup CreateMaterialExecutionLookup(
         FastFileWorkspace workspace)

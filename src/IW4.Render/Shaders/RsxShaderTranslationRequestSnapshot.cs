@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Buffers.Binary;
 using System.Security.Cryptography;
 
 using IW4.Assets.Assets.Material;
@@ -194,7 +192,7 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
 
     private byte[] BuildCanonicalContent()
     {
-        var writer = new CanonicalContentWriter();
+        var writer = new RsxCanonicalContentWriter();
         writer.WriteString(CanonicalEncodingVersion);
         writer.WriteString(Versions.TranslatorSemanticVersion);
         writer.WriteString(Versions.VertexDecoderVersion);
@@ -271,7 +269,7 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
     }
 
     private static void WriteSet(
-        CanonicalContentWriter writer,
+        RsxCanonicalContentWriter writer,
         IReadOnlyList<int> values)
     {
         writer.WriteInt32(values.Count);
@@ -319,7 +317,7 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
                     FloatValue(LiteralW))
                 : null);
 
-        internal void WriteTo(CanonicalContentWriter writer)
+        internal void WriteTo(RsxCanonicalContentWriter writer)
         {
             writer.WriteInt32(Offset);
             writer.WriteUInt16(Type);
@@ -360,7 +358,7 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
                 FloatValue(W))
         };
 
-        internal void WriteTo(CanonicalContentWriter writer)
+        internal void WriteTo(RsxCanonicalContentWriter writer)
         {
             writer.WriteUInt32(NameHash);
             writer.WriteUInt32(X);
@@ -375,66 +373,6 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
 
     private static float FloatValue(uint bits) =>
         BitConverter.Int32BitsToSingle(unchecked((int)bits));
-
-    private sealed class CanonicalContentWriter
-    {
-        private readonly ArrayBufferWriter<byte> _buffer = new();
-
-        internal void WriteByte(byte value)
-        {
-            Span<byte> destination = _buffer.GetSpan(1);
-            destination[0] = value;
-            _buffer.Advance(1);
-        }
-
-        internal void WriteBoolean(bool value) =>
-            WriteByte(value ? (byte)1 : (byte)0);
-
-        internal void WriteUInt16(ushort value)
-        {
-            Span<byte> destination = _buffer.GetSpan(sizeof(ushort));
-            BinaryPrimitives.WriteUInt16LittleEndian(destination, value);
-            _buffer.Advance(sizeof(ushort));
-        }
-
-        internal void WriteInt32(int value)
-        {
-            Span<byte> destination = _buffer.GetSpan(sizeof(int));
-            BinaryPrimitives.WriteInt32LittleEndian(destination, value);
-            _buffer.Advance(sizeof(int));
-        }
-
-        internal void WriteUInt32(uint value)
-        {
-            Span<byte> destination = _buffer.GetSpan(sizeof(uint));
-            BinaryPrimitives.WriteUInt32LittleEndian(destination, value);
-            _buffer.Advance(sizeof(uint));
-        }
-
-        internal void WriteBytes(ReadOnlySpan<byte> value)
-        {
-            WriteInt32(value.Length);
-            value.CopyTo(_buffer.GetSpan(value.Length));
-            _buffer.Advance(value.Length);
-        }
-
-        internal void WriteString(string value)
-        {
-            ArgumentNullException.ThrowIfNull(value);
-            WriteInt32(value.Length);
-            int byteCount = checked(value.Length * sizeof(char));
-            Span<byte> destination = _buffer.GetSpan(byteCount);
-            for (var index = 0; index < value.Length; index++)
-            {
-                BinaryPrimitives.WriteUInt16LittleEndian(
-                    destination[(index * sizeof(char))..],
-                    value[index]);
-            }
-            _buffer.Advance(byteCount);
-        }
-
-        internal byte[] ToArray() => _buffer.WrittenSpan.ToArray();
-    }
 
 }
 

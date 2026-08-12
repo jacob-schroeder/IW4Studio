@@ -38,7 +38,7 @@ public sealed class UiMaterialPreviewPlan
         _blockers = _diagnostics
             .Where(diagnostic =>
                 diagnostic.Severity ==
-                UiMaterialPreviewDiagnosticSeverity.Blocker)
+                UiDiagnosticSeverity.Blocker)
             .ToArray();
         Diagnostics = Array.AsReadOnly(_diagnostics);
         Blockers = Array.AsReadOnly(_blockers);

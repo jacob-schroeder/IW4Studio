@@ -27,7 +27,11 @@ public sealed class GameWorldMpLoader
                 ?? throw new InvalidDataException(
                     $"Top-level GameWorldMp pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical GameMapMp asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed GameWorldMp pointer has no destination cell.",
+                "Canonical GameWorldMp has no runtime address.");
             return canonical;
         }
 
@@ -118,15 +122,4 @@ public sealed class GameWorldMpLoader
         return context.PointerReader.ReadDeferredPointer<T>(cursor, XPointerResolutionMode.Direct);
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        GameWorldMpAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed GameWorldMp pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical GameWorldMp has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
     }
-}

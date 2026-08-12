@@ -6,6 +6,7 @@ using IW4.FastFiles.Zone;
 using FxEffectDefAsset = IW4.Assets.Assets.Fx.FxEffectDefAsset;
 using TracerDefAsset = IW4.Assets.Assets.Tracer.TracerDefAsset;
 using XModelAsset = IW4.Assets.Assets.XModel.XModelAsset;
+using PhysCollmapAsset = IW4.Assets.Assets.Physics.PhysCollmapAsset;
 using XString = IW4.FastFiles.Pointers.XPointer<string>;
 
 namespace IW4.FastFiles.Loaders.Assets.Weapon;

@@ -104,7 +104,7 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
                 ? [NameOperation(root, 0)]
                 : [
                     NameOperation(root, 0),
-                    Direct(root, 0x08, geoms.Value, "PhysCollmap.Geoms")
+                    DirectOperation(root, 0x08, geoms.Value, "PhysCollmap.Geoms")
                 ]);
     }
 
@@ -150,7 +150,7 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
             (owner, addend) => wrappers
                 .Select((target, index) => (target, index))
                 .Where(item => item.target is not null)
-                .Select(item => Direct(
+                .Select(item => DirectOperation(
                     owner,
                     checked(addend + item.index * PhysGeomInfo.SerializedSize),
                     item.target!.Value,
@@ -307,7 +307,7 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
             (owner, addend) => planeTargets
                 .Select((target, index) => (target, index))
                 .Where(item => item.target is not null)
-                .Select(item => Direct(
+                .Select(item => DirectOperation(
                     owner,
                     checked(addend + item.index * CBrushSide.SerializedSize),
                     item.target!.Value,
@@ -466,20 +466,10 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
         foreach ((int offset, LinkStorageTarget? target, string path) in values)
         {
             if (target is { } value)
-                yield return Direct(owner, offset, value, path);
+                yield return DirectOperation(owner, offset, value, path);
         }
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int offset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, offset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private static void WritePlane(
         LinkTemplateWriter writer,
@@ -523,7 +513,7 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
     {
         if (!float.IsFinite(value))
             throw new InvalidDataException($"{fieldPath} must be finite.");
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
+        writer.WriteSingle(value);
     }
 
     private static bool IsZero(Vec3 value) =>

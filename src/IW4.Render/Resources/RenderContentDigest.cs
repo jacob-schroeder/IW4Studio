@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 
+using IW4.Render.Materials;
 using IW4.Render.Scheduling.FramePlans;
 
 namespace IW4.Render.Resources;
@@ -88,6 +89,39 @@ internal sealed class RenderContentDigestWriter : IDisposable
         _hash.AppendData(values.AsSpan());
     }
 
+    internal void AppendMapRenderStateV1(MapRenderState state)
+    {
+        WriteBoolean(state.HasState);
+        WriteUInt32(state.LoadBits0);
+        WriteUInt32(state.LoadBits1);
+        WriteUInt32(state.Tail);
+        WriteBoolean(state.ShaderPackerSrgbEnabled);
+        WriteUInt32(state.ColorMask);
+        WriteBoolean(state.AlphaTestEnabled);
+        WriteUInt32(state.AlphaFunc);
+        WriteByte(state.AlphaRef);
+        WriteBoolean(state.CullEnabled);
+        WriteUInt32(state.CullFace);
+        WriteUInt32(state.PolygonMode);
+        WriteBoolean(state.BlendEnabled);
+        WriteUInt32(state.BlendEquationRgb);
+        WriteUInt32(state.BlendEquationAlpha);
+        WriteUInt32(state.BlendSourceRgb);
+        WriteUInt32(state.BlendSourceAlpha);
+        WriteUInt32(state.BlendDestinationRgb);
+        WriteUInt32(state.BlendDestinationAlpha);
+        WriteBoolean(state.DepthTestEnabled);
+        WriteBoolean(state.DepthWriteEnabled);
+        WriteUInt32(state.DepthFunc);
+        WriteBoolean(state.Stencil.Enabled);
+        WriteBoolean(state.Stencil.BackFaceStateIsIndependent);
+        AppendMapRenderStencilFaceV1(state.Stencil.Front);
+        AppendMapRenderStencilFaceV1(state.Stencil.Back);
+        WriteBoolean(state.PolygonOffsetEnabled);
+        WriteSingle(state.PolygonOffsetFactor);
+        WriteSingle(state.PolygonOffsetUnits);
+    }
+
     internal string FinishHex()
     {
         if (_finished)
@@ -97,6 +131,16 @@ internal sealed class RenderContentDigestWriter : IDisposable
     }
 
     public void Dispose() => _hash.Dispose();
+
+    private void AppendMapRenderStencilFaceV1(MapRenderStencilFaceState state)
+    {
+        WriteUInt32(state.Function);
+        WriteInt32(state.Reference);
+        WriteUInt32(state.CompareMask);
+        WriteUInt32(state.FailOperation);
+        WriteUInt32(state.DepthFailOperation);
+        WriteUInt32(state.PassOperation);
+    }
 }
 
 internal static class RenderSnapshotCollections

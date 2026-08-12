@@ -154,14 +154,14 @@ public sealed class StringTableEditorViewModel
 
         switch (editorSession.Mode)
         {
-            case AssetEditorMode.Editable:
+            case WorkspaceAssetAccess.Editable:
                 _draft = editorSession.OpenDraft<StringTableDraft>();
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage =
                     "Cell edits are staged until Apply. Stored hashes are preserved.";
                 break;
 
-            case AssetEditorMode.ReadOnly:
+            case WorkspaceAssetAccess.ReadOnly:
                 try
                 {
                     _readOnlySnapshot =
@@ -183,7 +183,7 @@ public sealed class StringTableEditorViewModel
                 }
                 break;
 
-            case AssetEditorMode.ContentUnavailable:
+            case WorkspaceAssetAccess.ContentUnavailable:
                 _statusMessage =
                     "StringTable content is unavailable because this reference has no resolved provider.";
                 break;
@@ -196,8 +196,8 @@ public sealed class StringTableEditorViewModel
         RefreshTable();
     }
 
-    public AssetEditorMode Mode => _editorSession.Mode;
-    public bool IsEditable => Mode == AssetEditorMode.Editable;
+    public WorkspaceAssetAccess Mode => _editorSession.Mode;
+    public bool IsEditable => Mode == WorkspaceAssetAccess.Editable;
     public bool CanApply =>
         IsEditable && _draft is not null && _pendingOriginalValues.Count != 0;
     public bool HasUnappliedChanges => CanApply;
@@ -217,9 +217,9 @@ public sealed class StringTableEditorViewModel
         $"{RowCount:N0} rows × {ColumnCount:N0} columns · {CellCount:N0} cells";
     public string ModeText => Mode switch
     {
-        AssetEditorMode.Editable => "EDITABLE TARGET DEFINITION",
-        AssetEditorMode.ReadOnly => "READ-ONLY RESOLVED PROVIDER",
-        AssetEditorMode.ContentUnavailable => "CONTENT UNAVAILABLE",
+        WorkspaceAssetAccess.Editable => "EDITABLE TARGET DEFINITION",
+        WorkspaceAssetAccess.ReadOnly => "READ-ONLY RESOLVED PROVIDER",
+        WorkspaceAssetAccess.ContentUnavailable => "CONTENT UNAVAILABLE",
         _ => throw new InvalidDataException(
             $"Unknown StringTable editor mode '{Mode}'.")
     };

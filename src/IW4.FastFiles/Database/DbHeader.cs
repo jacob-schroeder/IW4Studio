@@ -113,6 +113,11 @@ public sealed class DbHeaderImageStreamLanguageTable
 /// </summary>
 public sealed class DbHeader
 {
+    public const string UnsignedMagic = "IWffu100";
+    public const int MagicByteLength = 8;
+    public const int UnsignedPrefixLength = MagicByteLength + sizeof(uint);
+    public const uint MaximumImageStreamEntryCount = 0x3800;
+
     public DbHeader(
         string magic,
         XFileVersion version,
@@ -201,7 +206,7 @@ public sealed class DbHeader
 
     public string MagicType => Magic switch
     {
-        "IWffu100" => "Unsigned",
+        UnsignedMagic => "Unsigned",
         "IWff0100" => "Signed",
         _ => throw new ArgumentOutOfRangeException()
     };

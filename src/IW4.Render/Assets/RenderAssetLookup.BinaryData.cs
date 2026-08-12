@@ -116,9 +116,7 @@ public sealed partial class RenderAssetLookup
 
     private MaterialShaderAsset? ReadShader(XBlockAddress address, MaterialShaderKind kind)
     {
-        int rootSize = kind == MaterialShaderKind.Vertex
-            ? MaterialShaderAsset.VertexShaderSerializedSize
-            : MaterialShaderAsset.PixelShaderSerializedSize;
+        int rootSize = MaterialShaderAsset.GetSerializedSize(kind);
         byte[] rootBytes;
         try
         {
@@ -134,9 +132,8 @@ public sealed partial class RenderAssetLookup
         XBlockAddress dataPointerCell = address.Add(4);
         int dataPointerRaw = rootCursor.ReadInt32();
         uint dataSize = rootCursor.ReadUInt32();
-        byte[] programBytes = kind == MaterialShaderKind.Pixel
-            ? rootCursor.ReadBytes(0x0c)
-            : [];
+        byte[] programBytes = rootCursor.ReadBytes(
+            MaterialShaderAsset.GetProgramByteCount(kind));
 
         if (dataSize > int.MaxValue)
             return null;
@@ -215,7 +212,7 @@ public sealed partial class RenderAssetLookup
         bool vertexProviderResolved = TryResolveActiveShaderProvider(
             assetPool,
             pass.VertexShaderPointer.Raw,
-            XAssetType.VertexShader,
+            MaterialShaderAsset.GetAssetType(MaterialShaderKind.Vertex),
             MaterialShaderKind.Vertex,
             out MaterialShaderAsset? vertexProvider);
         if (vertexProviderResolved)
@@ -224,7 +221,7 @@ public sealed partial class RenderAssetLookup
         bool pixelProviderResolved = TryResolveActiveShaderProvider(
             assetPool,
             pass.PixelShaderPointer.Raw,
-            XAssetType.PixelShader,
+            MaterialShaderAsset.GetAssetType(MaterialShaderKind.Pixel),
             MaterialShaderKind.Pixel,
             out MaterialShaderAsset? pixelProvider);
         if (pixelProviderResolved)

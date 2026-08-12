@@ -578,6 +578,16 @@ public sealed class RenderFixedStateDescriptor
     /// before the blend operation. It does not request an sRGB attachment.
     /// </summary>
     public RenderFragmentOutputTransfer FragmentOutputTransfer { get; }
+
+    internal bool ContentEquals(RenderFixedStateDescriptor? other) =>
+        other is not null &&
+        Identity == other.Identity &&
+        Raster == other.Raster &&
+        Depth == other.Depth &&
+        Stencil == other.Stencil &&
+        Blend == other.Blend &&
+        ColorWriteMask == other.ColorWriteMask &&
+        FragmentOutputTransfer == other.FragmentOutputTransfer;
 }
 
 public static class RenderFixedStatePresets

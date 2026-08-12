@@ -3,6 +3,7 @@ using System.Numerics;
 
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Transforms;
 
 namespace IW4.Render.OpenGl.Diagnostics;
 
@@ -52,7 +53,7 @@ internal sealed class MapRenderOpenGlNormalCameraDiagnosticPlan
         ArgumentNullException.ThrowIfNull(framePlan);
         ArgumentNullException.ThrowIfNull(diagnosticsPass);
         ArgumentNullException.ThrowIfNull(resources);
-        if (!IsFinite(preparedHostViewProjection))
+        if (!MapRenderMatrixValidation.IsFinite(preparedHostViewProjection))
             throw new ArgumentOutOfRangeException(
                 nameof(preparedHostViewProjection));
         if (commands.IsDefault || commands.Any(command => command is null))
@@ -105,21 +106,4 @@ internal sealed class MapRenderOpenGlNormalCameraDiagnosticPlan
     public ImmutableArray<MapRenderOpenGlNormalCameraDiagnosticDrawCommand>
         Commands { get; }
 
-    private static bool IsFinite(Matrix4x4 matrix) =>
-        float.IsFinite(matrix.M11) &&
-        float.IsFinite(matrix.M12) &&
-        float.IsFinite(matrix.M13) &&
-        float.IsFinite(matrix.M14) &&
-        float.IsFinite(matrix.M21) &&
-        float.IsFinite(matrix.M22) &&
-        float.IsFinite(matrix.M23) &&
-        float.IsFinite(matrix.M24) &&
-        float.IsFinite(matrix.M31) &&
-        float.IsFinite(matrix.M32) &&
-        float.IsFinite(matrix.M33) &&
-        float.IsFinite(matrix.M34) &&
-        float.IsFinite(matrix.M41) &&
-        float.IsFinite(matrix.M42) &&
-        float.IsFinite(matrix.M43) &&
-        float.IsFinite(matrix.M44);
 }

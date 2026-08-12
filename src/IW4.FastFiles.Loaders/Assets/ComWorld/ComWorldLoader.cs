@@ -26,7 +26,11 @@ public sealed class ComWorldLoader
                 ?? throw new InvalidDataException(
                     $"Top-level ComWorld pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical ComMap asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context, "ComWorld");
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed ComWorld pointer has no destination cell.",
+                "Canonical ComWorld has no runtime address.");
             return canonical;
         }
 
@@ -109,18 +113,6 @@ public sealed class ComWorldLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        ComWorldAsset canonical,
-        DbLoadExecutionContext context,
-        string targetName)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException($"Packed {targetName} pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException($"Canonical {targetName} has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private static IReadOnlyList<ComPrimaryLight> ReadPrimaryLights(
         FastFileCursor cursor,
@@ -169,12 +161,12 @@ public sealed class ComWorldLoader
             Vec3 color = ReadVec3(lightCursor);
             Vec3 dir = ReadVec3(lightCursor);
             Vec3 origin = ReadVec3(lightCursor);
-            float radius = ReadSingle(lightCursor);
-            float cosHalfFovOuter = ReadSingle(lightCursor);
-            float cosHalfFovInner = ReadSingle(lightCursor);
-            float cosHalfFovExpanded = ReadSingle(lightCursor);
-            float rotationLimit = ReadSingle(lightCursor);
-            float translationLimit = ReadSingle(lightCursor);
+            float radius = lightCursor.ReadSingle();
+            float cosHalfFovOuter = lightCursor.ReadSingle();
+            float cosHalfFovInner = lightCursor.ReadSingle();
+            float cosHalfFovExpanded = lightCursor.ReadSingle();
+            float rotationLimit = lightCursor.ReadSingle();
+            float translationLimit = lightCursor.ReadSingle();
             XPointer<string> defNamePointer = context.PointerReader.ReadPointer<string>(lightCursor, XPointerResolutionMode.Direct);
 
             if (lightCursor.Offset - rowStart != ComPrimaryLight.SerializedSize)
@@ -211,14 +203,10 @@ public sealed class ComWorldLoader
     {
         return new Vec3
         {
-            X = ReadSingle(cursor),
-            Y = ReadSingle(cursor),
-            Z = ReadSingle(cursor)
+            X = cursor.ReadSingle(),
+            Y = cursor.ReadSingle(),
+            Z = cursor.ReadSingle()
         };
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 }

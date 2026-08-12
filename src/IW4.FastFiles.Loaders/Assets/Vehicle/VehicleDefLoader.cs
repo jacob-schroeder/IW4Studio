@@ -41,7 +41,11 @@ public sealed class VehicleDefLoader
                     XAssetType.Vehicle)
                 ?? throw new InvalidDataException(
                     $"Top-level Vehicle pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Vehicle asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed Vehicle pointer has no destination cell.",
+                "Canonical Vehicle has no runtime address.");
             return canonical;
         }
 
@@ -88,16 +92,16 @@ public sealed class VehicleDefLoader
         XString useHintPointer = ReadXStringPointer(rootCursor, context);
         int health = rootCursor.ReadInt32();
         int quadBarrel = rootCursor.ReadInt32();
-        float texScrollScale = ReadSingle(rootCursor);
-        float topSpeed = ReadSingle(rootCursor);
-        float accel = ReadSingle(rootCursor);
-        float rotRate = ReadSingle(rootCursor);
-        float rotAccel = ReadSingle(rootCursor);
-        float maxBodyPitch = ReadSingle(rootCursor);
-        float maxBodyRoll = ReadSingle(rootCursor);
+        float texScrollScale = rootCursor.ReadSingle();
+        float topSpeed = rootCursor.ReadSingle();
+        float accel = rootCursor.ReadSingle();
+        float rotRate = rootCursor.ReadSingle();
+        float rotAccel = rootCursor.ReadSingle();
+        float maxBodyPitch = rootCursor.ReadSingle();
+        float maxBodyRoll = rootCursor.ReadSingle();
         VehicleFakeBodyTuning fakeBody = ReadVehicleFakeBodyTuning(rootCursor);
-        float collisionDamage = ReadSingle(rootCursor);
-        float collisionSpeed = ReadSingle(rootCursor);
+        float collisionDamage = rootCursor.ReadSingle();
+        float collisionSpeed = rootCursor.ReadSingle();
         VehicleVec3 killcamOffset = ReadVec3(rootCursor);
         int playerProtected = rootCursor.ReadInt32();
         int bulletDamage = rootCursor.ReadInt32();
@@ -107,53 +111,53 @@ public sealed class VehicleDefLoader
         int projectileSplashDamage = rootCursor.ReadInt32();
         int heavyExplosiveDamage = rootCursor.ReadInt32();
         VehiclePhysDef phys = ReadVehiclePhysDefRoot(rootCursor, context);
-        float boostDuration = ReadSingle(rootCursor);
-        float boostRechargeTime = ReadSingle(rootCursor);
-        float boostAcceleration = ReadSingle(rootCursor);
-        float suspensionTravel = ReadSingle(rootCursor);
-        float maxSteeringAngle = ReadSingle(rootCursor);
-        float steeringLerp = ReadSingle(rootCursor);
-        float minSteeringScale = ReadSingle(rootCursor);
-        float minSteeringSpeed = ReadSingle(rootCursor);
+        float boostDuration = rootCursor.ReadSingle();
+        float boostRechargeTime = rootCursor.ReadSingle();
+        float boostAcceleration = rootCursor.ReadSingle();
+        float suspensionTravel = rootCursor.ReadSingle();
+        float maxSteeringAngle = rootCursor.ReadSingle();
+        float steeringLerp = rootCursor.ReadSingle();
+        float minSteeringScale = rootCursor.ReadSingle();
+        float minSteeringSpeed = rootCursor.ReadSingle();
         int camLookEnabled = rootCursor.ReadInt32();
-        float camLerp = ReadSingle(rootCursor);
-        float camPitchInfluence = ReadSingle(rootCursor);
-        float camRollInfluence = ReadSingle(rootCursor);
-        float camFovIncrease = ReadSingle(rootCursor);
-        float camFovOffset = ReadSingle(rootCursor);
-        float camFovSpeed = ReadSingle(rootCursor);
+        float camLerp = rootCursor.ReadSingle();
+        float camPitchInfluence = rootCursor.ReadSingle();
+        float camRollInfluence = rootCursor.ReadSingle();
+        float camFovIncrease = rootCursor.ReadSingle();
+        float camFovOffset = rootCursor.ReadSingle();
+        float camFovSpeed = rootCursor.ReadSingle();
         XString turretWeaponNamePointer = ReadXStringPointer(rootCursor, context);
         XPointer<WeaponAsset> turretWeaponPointer = ReadPointer<WeaponAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
-        float turretHorizSpanLeft = ReadSingle(rootCursor);
-        float turretHorizSpanRight = ReadSingle(rootCursor);
-        float turretVertSpanUp = ReadSingle(rootCursor);
-        float turretVertSpanDown = ReadSingle(rootCursor);
-        float turretRotRate = ReadSingle(rootCursor);
+        float turretHorizSpanLeft = rootCursor.ReadSingle();
+        float turretHorizSpanRight = rootCursor.ReadSingle();
+        float turretVertSpanUp = rootCursor.ReadSingle();
+        float turretVertSpanDown = rootCursor.ReadSingle();
+        float turretRotRate = rootCursor.ReadSingle();
         VehicleSoundAliasField turretSpinSoundRoot = ReadSoundAliasRoot(rootCursor, 0x1B4, context);
         VehicleSoundAliasField turretStopSoundRoot = ReadSoundAliasRoot(rootCursor, 0x1B8, context);
         int trophyEnabled = rootCursor.ReadInt32();
-        float trophyRadius = ReadSingle(rootCursor);
-        float trophyInactiveRadius = ReadSingle(rootCursor);
+        float trophyRadius = rootCursor.ReadSingle();
+        float trophyInactiveRadius = rootCursor.ReadSingle();
         int trophyAmmoCount = rootCursor.ReadInt32();
-        float trophyReloadTime = ReadSingle(rootCursor);
+        float trophyReloadTime = rootCursor.ReadSingle();
         rootCursor.Skip(VehicleDefAsset.ScriptStringCount * sizeof(ushort));
         XBlockAddress scriptStringsAddress = rootAddress.Add(VehicleDefAsset.ScriptStringOffset);
         XPointer<MaterialAsset> compassFriendlyIconPointer = ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
         XPointer<MaterialAsset> compassEnemyIconPointer = ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
-        float compassIconWidth = ReadSingle(rootCursor);
-        float compassIconHeight = ReadSingle(rootCursor);
+        float compassIconWidth = rootCursor.ReadSingle();
+        float compassIconHeight = rootCursor.ReadSingle();
         VehicleEngineSoundFields engineSoundRoots = ReadEngineSoundRoots(rootCursor, context);
         VehicleSuspensionSoundFields suspensionSoundRoots = ReadSuspensionSoundRoots(rootCursor, context);
         VehicleSoundAliasField collisionSoundRoot = ReadSoundAliasRoot(rootCursor, 0x230, context);
-        float collisionBlendSpeed = ReadSingle(rootCursor);
+        float collisionBlendSpeed = rootCursor.ReadSingle();
         VehicleSoundAliasField speedSoundRoot = ReadSoundAliasRoot(rootCursor, 0x238, context);
-        float speedSoundBlendSpeed = ReadSingle(rootCursor);
+        float speedSoundBlendSpeed = rootCursor.ReadSingle();
         XString surfaceSoundPrefixPointer = ReadXStringPointer(rootCursor, context);
         IReadOnlyList<XString> surfaceSoundAliasPointers = ReadEmbeddedSoundAliasRoots(rootCursor, VehicleDefAsset.SurfaceSoundOffset, VehicleDefAsset.SurfaceSoundCount, context);
-        float surfaceSoundBlendSpeed = ReadSingle(rootCursor);
-        float slideVolume = ReadSingle(rootCursor);
-        float slideBlendSpeed = ReadSingle(rootCursor);
-        float inAirPitch = ReadSingle(rootCursor);
+        float surfaceSoundBlendSpeed = rootCursor.ReadSingle();
+        float slideVolume = rootCursor.ReadSingle();
+        float slideBlendSpeed = rootCursor.ReadSingle();
+        float inAirPitch = rootCursor.ReadSingle();
         if (rootCursor.Offset != VehicleDefAsset.SerializedSize)
             throw new InvalidDataException($"VehicleDef root parser stopped at 0x{rootCursor.Offset:X}, expected 0x{VehicleDefAsset.SerializedSize:X}.");
 
@@ -294,18 +298,6 @@ public sealed class VehicleDefLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        VehicleDefAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed Vehicle pointer has no destination cell.");
-
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical Vehicle has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private static VehiclePhysDef ReadVehiclePhysDefRoot(
         FastFileCursor cursor,
@@ -328,44 +320,44 @@ public sealed class VehicleDefLoader
             SteeringAxle = (VehicleAxleType)cursor.ReadInt32(),
             PowerAxle = (VehicleAxleType)cursor.ReadInt32(),
             BrakingAxle = (VehicleAxleType)cursor.ReadInt32(),
-            TopSpeed = ReadSingle(cursor),
-            ReverseSpeed = ReadSingle(cursor),
-            MaxVelocity = ReadSingle(cursor),
-            MaxPitch = ReadSingle(cursor),
-            MaxRoll = ReadSingle(cursor),
-            SuspensionTravelFront = ReadSingle(cursor),
-            SuspensionTravelRear = ReadSingle(cursor),
-            SuspensionStrengthFront = ReadSingle(cursor),
-            SuspensionDampingFront = ReadSingle(cursor),
-            SuspensionStrengthRear = ReadSingle(cursor),
-            SuspensionDampingRear = ReadSingle(cursor),
-            FrictionBraking = ReadSingle(cursor),
-            FrictionCoasting = ReadSingle(cursor),
-            FrictionTopSpeed = ReadSingle(cursor),
-            FrictionSide = ReadSingle(cursor),
-            FrictionSideRear = ReadSingle(cursor),
-            VelocityDependentSlip = ReadSingle(cursor),
-            RollStability = ReadSingle(cursor),
-            RollResistance = ReadSingle(cursor),
-            PitchResistance = ReadSingle(cursor),
-            YawResistance = ReadSingle(cursor),
-            UprightStrengthPitch = ReadSingle(cursor),
-            UprightStrengthRoll = ReadSingle(cursor),
-            TargetAirPitch = ReadSingle(cursor),
-            AirYawTorque = ReadSingle(cursor),
-            AirPitchTorque = ReadSingle(cursor),
-            MinimumMomentumForCollision = ReadSingle(cursor),
-            CollisionLaunchForceScale = ReadSingle(cursor),
-            WreckedMassScale = ReadSingle(cursor),
-            WreckedBodyFriction = ReadSingle(cursor),
-            MinimumJoltForNotify = ReadSingle(cursor),
-            SlipThresholdFront = ReadSingle(cursor),
-            SlipThresholdRear = ReadSingle(cursor),
-            SlipFricScaleFront = ReadSingle(cursor),
-            SlipFricScaleRear = ReadSingle(cursor),
-            SlipFricRateFront = ReadSingle(cursor),
-            SlipFricRateRear = ReadSingle(cursor),
-            SlipYawTorque = ReadSingle(cursor)
+            TopSpeed = cursor.ReadSingle(),
+            ReverseSpeed = cursor.ReadSingle(),
+            MaxVelocity = cursor.ReadSingle(),
+            MaxPitch = cursor.ReadSingle(),
+            MaxRoll = cursor.ReadSingle(),
+            SuspensionTravelFront = cursor.ReadSingle(),
+            SuspensionTravelRear = cursor.ReadSingle(),
+            SuspensionStrengthFront = cursor.ReadSingle(),
+            SuspensionDampingFront = cursor.ReadSingle(),
+            SuspensionStrengthRear = cursor.ReadSingle(),
+            SuspensionDampingRear = cursor.ReadSingle(),
+            FrictionBraking = cursor.ReadSingle(),
+            FrictionCoasting = cursor.ReadSingle(),
+            FrictionTopSpeed = cursor.ReadSingle(),
+            FrictionSide = cursor.ReadSingle(),
+            FrictionSideRear = cursor.ReadSingle(),
+            VelocityDependentSlip = cursor.ReadSingle(),
+            RollStability = cursor.ReadSingle(),
+            RollResistance = cursor.ReadSingle(),
+            PitchResistance = cursor.ReadSingle(),
+            YawResistance = cursor.ReadSingle(),
+            UprightStrengthPitch = cursor.ReadSingle(),
+            UprightStrengthRoll = cursor.ReadSingle(),
+            TargetAirPitch = cursor.ReadSingle(),
+            AirYawTorque = cursor.ReadSingle(),
+            AirPitchTorque = cursor.ReadSingle(),
+            MinimumMomentumForCollision = cursor.ReadSingle(),
+            CollisionLaunchForceScale = cursor.ReadSingle(),
+            WreckedMassScale = cursor.ReadSingle(),
+            WreckedBodyFriction = cursor.ReadSingle(),
+            MinimumJoltForNotify = cursor.ReadSingle(),
+            SlipThresholdFront = cursor.ReadSingle(),
+            SlipThresholdRear = cursor.ReadSingle(),
+            SlipFricScaleFront = cursor.ReadSingle(),
+            SlipFricScaleRear = cursor.ReadSingle(),
+            SlipFricRateFront = cursor.ReadSingle(),
+            SlipFricRateRear = cursor.ReadSingle(),
+            SlipYawTorque = cursor.ReadSingle()
         };
     }
 
@@ -443,24 +435,24 @@ public sealed class VehicleDefLoader
     {
         return new VehicleFakeBodyTuning
         {
-            AccelPitch = ReadSingle(cursor),
-            AccelRoll = ReadSingle(cursor),
-            VelPitch = ReadSingle(cursor),
-            VelRoll = ReadSingle(cursor),
-            SideVelPitch = ReadSingle(cursor),
-            PitchStrength = ReadSingle(cursor),
-            RollStrength = ReadSingle(cursor),
-            PitchDampening = ReadSingle(cursor),
-            RollDampening = ReadSingle(cursor),
-            BoatRockingAmplitude = ReadSingle(cursor),
-            BoatRockingPeriod = ReadSingle(cursor),
-            BoatRockingRotationPeriod = ReadSingle(cursor),
-            BoatRockingFadeoutSpeed = ReadSingle(cursor),
-            BoatBouncingMinForce = ReadSingle(cursor),
-            BoatBouncingMaxForce = ReadSingle(cursor),
-            BoatBouncingRate = ReadSingle(cursor),
-            BoatBouncingFadeinSpeed = ReadSingle(cursor),
-            BoatBouncingFadeoutSteeringAngle = ReadSingle(cursor)
+            AccelPitch = cursor.ReadSingle(),
+            AccelRoll = cursor.ReadSingle(),
+            VelPitch = cursor.ReadSingle(),
+            VelRoll = cursor.ReadSingle(),
+            SideVelPitch = cursor.ReadSingle(),
+            PitchStrength = cursor.ReadSingle(),
+            RollStrength = cursor.ReadSingle(),
+            PitchDampening = cursor.ReadSingle(),
+            RollDampening = cursor.ReadSingle(),
+            BoatRockingAmplitude = cursor.ReadSingle(),
+            BoatRockingPeriod = cursor.ReadSingle(),
+            BoatRockingRotationPeriod = cursor.ReadSingle(),
+            BoatRockingFadeoutSpeed = cursor.ReadSingle(),
+            BoatBouncingMinForce = cursor.ReadSingle(),
+            BoatBouncingMaxForce = cursor.ReadSingle(),
+            BoatBouncingRate = cursor.ReadSingle(),
+            BoatBouncingFadeinSpeed = cursor.ReadSingle(),
+            BoatBouncingFadeoutSteeringAngle = cursor.ReadSingle()
         };
     }
 
@@ -472,16 +464,16 @@ public sealed class VehicleDefLoader
             IdleHighSound = ReadSoundAliasRoot(cursor, 0x1EC, context),
             EngineLowSound = ReadSoundAliasRoot(cursor, 0x1F0, context),
             EngineHighSound = ReadSoundAliasRoot(cursor, 0x1F4, context),
-            EngineSoundSpeed = ReadSingle(cursor),
+            EngineSoundSpeed = cursor.ReadSingle(),
             EngineStartUpSound = ReadSoundAliasRoot(cursor, 0x1FC, context),
-            EngineStartUpLength = ReadSingle(cursor),
+            EngineStartUpLength = cursor.ReadSingle(),
             EngineShutdownSound = ReadSoundAliasRoot(cursor, 0x204, context),
             EngineIdleSound = ReadSoundAliasRoot(cursor, 0x208, context),
             EngineSustainSound = ReadSoundAliasRoot(cursor, 0x20C, context),
             EngineRampUpSound = ReadSoundAliasRoot(cursor, 0x210, context),
-            EngineRampUpLength = ReadSingle(cursor),
+            EngineRampUpLength = cursor.ReadSingle(),
             EngineRampDownSound = ReadSoundAliasRoot(cursor, 0x218, context),
-            EngineRampDownLength = ReadSingle(cursor)
+            EngineRampDownLength = cursor.ReadSingle()
         };
     }
 
@@ -514,9 +506,9 @@ public sealed class VehicleDefLoader
         return new VehicleSuspensionSoundFields
         {
             SuspensionSoftSound = ReadSoundAliasRoot(cursor, 0x220, context),
-            SuspensionSoftCompression = ReadSingle(cursor),
+            SuspensionSoftCompression = cursor.ReadSingle(),
             SuspensionHardSound = ReadSoundAliasRoot(cursor, 0x228, context),
-            SuspensionHardCompression = ReadSingle(cursor)
+            SuspensionHardCompression = cursor.ReadSingle()
         };
     }
 
@@ -682,16 +674,12 @@ public sealed class VehicleDefLoader
 
     private static VehicleVec3 ReadVec3(FastFileCursor cursor)
     {
-        return new VehicleVec3(ReadSingle(cursor), ReadSingle(cursor), ReadSingle(cursor));
+        return new VehicleVec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
     }
 
     private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
         ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 
     private static XPointer<T> ReadPointer<T>(
         FastFileCursor cursor,

@@ -34,11 +34,11 @@ public sealed class MaterialTechniqueSetLoader
             MaterialTechniqueSetAsset canonical = context.ResolveTechniqueSet(pointer)
                 ?? throw new InvalidDataException(
                     $"Top-level Techset pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Techset asset.");
-            XBlockAddress pointerCellAddress = pointer.CellAddress
-                ?? throw new InvalidDataException("Packed Techset pointer has no destination cell.");
-            int canonicalRaw = canonical.RuntimeAddress?.RawValue
-                ?? throw new InvalidDataException("Canonical Techset has no runtime address.");
-            context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed Techset pointer has no destination cell.",
+                "Canonical Techset has no runtime address.");
             return canonical;
         }
 
@@ -150,7 +150,7 @@ public sealed class MaterialTechniqueSetLoader
         DbLoadExecutionContext context,
         XPointerResolutionMode resolutionMode) => context.PointerReader.ReadCell(
             cursor,
-            resolutionMode.ToOffsetMode());
+            resolutionMode);
 
     private static MaterialTechniqueAsset ReadTechnique(
         FastFileCursor cursor,
@@ -334,8 +334,8 @@ public sealed class MaterialTechniqueSetLoader
             var type = (MaterialShaderArgumentType)argCursor.ReadUInt16();
             ushort dest = argCursor.ReadUInt16();
             XPointerReference argumentPointer = type is MaterialShaderArgumentType.LiteralVertexConst or MaterialShaderArgumentType.LiteralPixelConst
-                ? context.PointerReader.ReadCell(argCursor, XPointerOffsetMode.Direct)
-                : ReadRawCell(argCursor, XPointerOffsetMode.Direct);
+                ? context.PointerReader.ReadCell(argCursor, XPointerResolutionMode.Direct)
+                : ReadRawCell(argCursor, XPointerResolutionMode.Direct);
 
             if (argCursor.Offset - argStart != ShaderArgSize)
                 throw new InvalidDataException($"MaterialShaderArgument consumed 0x{argCursor.Offset - argStart:X} bytes instead of 0x{ShaderArgSize:X}.");
@@ -373,7 +373,7 @@ public sealed class MaterialTechniqueSetLoader
 
     private static XPointerReference ReadRawCell(
         FastFileCursor cursor,
-        XPointerOffsetMode offsetMode)
+        XPointerResolutionMode offsetMode)
     {
         int cellOffset = cursor.Offset;
         return XPointerReference.FromRaw(
@@ -418,10 +418,10 @@ public sealed class MaterialTechniqueSetLoader
     {
         var literalCursor = new FastFileCursor(literalBytes, literalAddress);
         var literal = new MaterialShaderLiteralConstant(
-            ReadSingle(literalCursor),
-            ReadSingle(literalCursor),
-            ReadSingle(literalCursor),
-            ReadSingle(literalCursor));
+            literalCursor.ReadSingle(),
+            literalCursor.ReadSingle(),
+            literalCursor.ReadSingle(),
+            literalCursor.ReadSingle());
 
         if (literalCursor.Offset != LiteralFloat4Size)
             throw new InvalidDataException($"MaterialShaderLiteralConstant consumed 0x{literalCursor.Offset:X} bytes instead of 0x{LiteralFloat4Size:X}.");
@@ -444,8 +444,4 @@ public sealed class MaterialTechniqueSetLoader
         return context.PointerReader.LoadXString(cursor, pointer);
     }
 
-    private static float ReadSingle(FastFileCursor cursor)
-    {
-        return BitConverter.Int32BitsToSingle(cursor.ReadInt32());
-    }
 }

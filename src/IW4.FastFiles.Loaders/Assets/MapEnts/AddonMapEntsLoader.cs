@@ -32,7 +32,11 @@ public sealed class AddonMapEntsLoader
                 ?? throw new InvalidDataException(
                     $"Top-level AddonMapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} " +
                     "does not resolve to a canonical AddonMapEnts asset.");
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed AddonMapEnts pointer has no destination cell.",
+                "Canonical AddonMapEnts has no runtime address.");
             return canonical;
         }
 
@@ -175,15 +179,4 @@ public sealed class AddonMapEntsLoader
             cursor,
             XPointerResolutionMode.Direct);
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        AddonMapEntsAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed AddonMapEnts pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical AddonMapEnts has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
     }
-}

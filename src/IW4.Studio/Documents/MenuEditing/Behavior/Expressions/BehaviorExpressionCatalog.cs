@@ -273,8 +273,7 @@ public sealed class BehaviorExpressionCatalog
         OperationEnum.OP_AND or OperationEnum.OP_OR or
         OperationEnum.OP_BITWISEAND or OperationEnum.OP_BITWISEOR or
         OperationEnum.OP_BITSHIFTLEFT or OperationEnum.OP_BITSHIFTRIGHT => BehaviorExpressionOperationCategory.Binary,
-        _ when (int)operation >= (int)OperationEnum.OP_STATICDVARINT &&
-               (int)operation <= (int)OperationEnum.OP_DOWEHAVEMAPPACK => BehaviorExpressionOperationCategory.Function,
+        _ when BehaviorExpressionNativeGrammar.IsFunction(operation) => BehaviorExpressionOperationCategory.Function,
         _ => BehaviorExpressionOperationCategory.Opaque
     };
 

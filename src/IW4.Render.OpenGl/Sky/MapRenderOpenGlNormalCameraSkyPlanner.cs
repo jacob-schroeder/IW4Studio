@@ -191,14 +191,12 @@ internal static class MapRenderOpenGlNormalCameraSkyPlanner
                 RenderAttachmentPixelFormat.Depth24Stencil8 ||
             pipeline.Multisample !=
                 RenderMultisampleStateDescriptor.Ps3Target2 ||
-            !IsExactFixedState(
-                pipeline.FixedState,
-                RenderFixedStatePresets.SkyV1))
+            !pipeline.FixedState.ContentEquals(RenderFixedStatePresets.SkyV1))
         {
             throw InvalidDraw(drawIndex, "pipeline or fixed state differs from the exact sky contract");
         }
-        if (!IsExactProgram(program, RenderFramePlanner.SkyShaderProgram) ||
-            !IsExactMaterial(draw.Material, RenderFramePlanner.SkyMaterial))
+        if (!program.ContentEquals(RenderFramePlanner.SkyShaderProgram) ||
+            !draw.Material.ContentEquals(RenderFramePlanner.SkyMaterial))
         {
             throw InvalidDraw(drawIndex, "shader ABI, program, or material differs from the exact sky contract");
         }
@@ -268,65 +266,6 @@ internal static class MapRenderOpenGlNormalCameraSkyPlanner
             rows[3].Z,
             rows[3].W);
     }
-
-    private static bool IsExactFixedState(
-        RenderFixedStateDescriptor actual,
-        RenderFixedStateDescriptor expected) =>
-        actual.Identity == expected.Identity &&
-        actual.Raster == expected.Raster &&
-        actual.Depth == expected.Depth &&
-        actual.Stencil == expected.Stencil &&
-        actual.Blend == expected.Blend &&
-        actual.ColorWriteMask == expected.ColorWriteMask &&
-        actual.FragmentOutputTransfer == expected.FragmentOutputTransfer;
-
-    private static bool IsExactProgram(
-        RenderShaderProgramDescriptor actual,
-        RenderShaderProgramDescriptor expected) =>
-        actual.Identity == expected.Identity &&
-        string.Equals(
-            actual.VertexProgramIdentity,
-            expected.VertexProgramIdentity,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            actual.FragmentProgramIdentity,
-            expected.FragmentProgramIdentity,
-            StringComparison.Ordinal) &&
-        actual.Abi.Identity == expected.Abi.Identity &&
-        actual.Abi.Requirements.Length == expected.Abi.Requirements.Length &&
-        actual.Abi.Requirements.Zip(expected.Abi.Requirements)
-            .All(pair => IsExactRequirement(pair.First, pair.Second));
-
-    private static bool IsExactRequirement(
-        RenderShaderBindingRequirement actual,
-        RenderShaderBindingRequirement expected) =>
-        actual.BindingPoint == expected.BindingPoint &&
-        actual.Kind == expected.Kind &&
-        actual.ExpectedTextureDimension ==
-            expected.ExpectedTextureDimension &&
-        actual.ExpectedConstantEncoding ==
-            expected.ExpectedConstantEncoding &&
-        actual.ExpectedCoordinateSpace ==
-            expected.ExpectedCoordinateSpace &&
-        actual.ExpectedVectorCount == expected.ExpectedVectorCount;
-
-    private static bool IsExactMaterial(
-        RenderMaterialDescriptor actual,
-        RenderMaterialDescriptor expected) =>
-        actual.Identity == expected.Identity &&
-        string.Equals(
-            actual.MaterialName,
-            expected.MaterialName,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            actual.TechniqueName,
-            expected.TechniqueName,
-            StringComparison.Ordinal) &&
-        string.Equals(
-            actual.PassClass,
-            expected.PassClass,
-            StringComparison.Ordinal) &&
-        actual.PassIndex == expected.PassIndex;
 
     private static ArgumentException InvalidDraw(
         int drawIndex,

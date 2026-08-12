@@ -35,7 +35,7 @@ internal sealed class FxImpactTableLinkPlan : AssetLinkPlan
             root =>
             [
                 NameOperation(root, 0),
-                Direct(root, 0x04, table, "ImpactFx.Entries")
+                DirectOperation(root, 0x04, table, "ImpactFx.Entries")
             ]);
     }
 
@@ -112,16 +112,6 @@ internal sealed class FxImpactTableLinkPlan : AssetLinkPlan
             "ImpactFx.Entries");
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private sealed class FrozenEntry
     {

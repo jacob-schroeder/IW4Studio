@@ -300,22 +300,7 @@ internal static class MapRenderDerivedMatrixResolver
         Matrix4x4 value,
         string parameterName)
     {
-        if (!float.IsFinite(value.M11) ||
-            !float.IsFinite(value.M12) ||
-            !float.IsFinite(value.M13) ||
-            !float.IsFinite(value.M14) ||
-            !float.IsFinite(value.M21) ||
-            !float.IsFinite(value.M22) ||
-            !float.IsFinite(value.M23) ||
-            !float.IsFinite(value.M24) ||
-            !float.IsFinite(value.M31) ||
-            !float.IsFinite(value.M32) ||
-            !float.IsFinite(value.M33) ||
-            !float.IsFinite(value.M34) ||
-            !float.IsFinite(value.M41) ||
-            !float.IsFinite(value.M42) ||
-            !float.IsFinite(value.M43) ||
-            !float.IsFinite(value.M44))
+        if (!MapRenderMatrixValidation.IsFinite(value))
         {
             throw new ArgumentException(
                 "Matrix source values must be finite.",

@@ -52,12 +52,12 @@ internal sealed class LoadedSoundLinkPlan : AssetLinkPlan
                 };
                 if (seekTable is { } seek)
                 {
-                    operations.Add(Direct(
+                    operations.Add(DirectOperation(
                         root, 0x14, seek, "LoadedSound.SeekTable"));
                 }
                 if (physicalData is { } physical)
                 {
-                    operations.Add(Direct(
+                    operations.Add(DirectOperation(
                         root, 0x18, physical, "LoadedSound.PhysicalData"));
                 }
 
@@ -205,14 +205,4 @@ internal sealed class LoadedSoundLinkPlan : AssetLinkPlan
         }
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 }

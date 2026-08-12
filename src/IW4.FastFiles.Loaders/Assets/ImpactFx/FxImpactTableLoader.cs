@@ -60,7 +60,11 @@ public sealed class FxImpactTableLoader
                     $"ImpactFx pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical ImpactFx asset.");
             }
 
-            PatchCanonicalPointerCell(pointer, canonical, context);
+            context.PatchCanonicalAssetPointerCell(
+                pointer,
+                canonical,
+                "Packed ImpactFx pointer has no destination cell.",
+                "Canonical ImpactFx has no runtime address.");
             return canonical;
         }
 
@@ -139,17 +143,6 @@ public sealed class FxImpactTableLoader
         };
     }
 
-    private static void PatchCanonicalPointerCell(
-        XPointerReference pointer,
-        FxImpactTableAsset canonical,
-        DbLoadExecutionContext context)
-    {
-        XBlockAddress pointerCellAddress = pointer.CellAddress
-            ?? throw new InvalidDataException("Packed ImpactFx pointer has no destination cell.");
-        int canonicalRaw = canonical.RuntimeAddress?.RawValue
-            ?? throw new InvalidDataException("Canonical ImpactFx has no runtime address.");
-        context.Blocks.WriteInt32(pointerCellAddress, canonicalRaw);
-    }
 
     private IReadOnlyList<FxImpactEntry> ReadFxImpactEntryArray(
         FastFileCursor cursor,

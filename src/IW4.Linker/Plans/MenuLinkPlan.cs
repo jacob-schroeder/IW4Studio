@@ -209,10 +209,10 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.WriteInt32(definition.FontIndex);
             WriteInts(writer, definition.CursorItems, 4, "Menu.CursorItems");
             writer.WriteInt32(definition.FadeCycle);
-            WriteSingle(writer, definition.FadeClamp);
-            WriteSingle(writer, definition.FadeAmount);
-            WriteSingle(writer, definition.FadeInAmount);
-            WriteSingle(writer, definition.BlurRadius);
+            writer.WriteSingle(definition.FadeClamp);
+            writer.WriteSingle(definition.FadeAmount);
+            writer.WriteSingle(definition.FadeInAmount);
+            writer.WriteSingle(definition.BlurRadius);
             writer.Skip(6 * sizeof(int));
             writer.Skip(2 * sizeof(int));
             writer.WriteInt32(definition.ImageTrack);
@@ -329,9 +329,9 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.WriteInt32((int)item.Align);
             writer.WriteInt32((int)item.FontEnum);
             writer.WriteInt32(item.TextAlignMode);
-            WriteSingle(writer, item.TextAlignX);
-            WriteSingle(writer, item.TextAlignY);
-            WriteSingle(writer, item.TextScale);
+            writer.WriteSingle(item.TextAlignX);
+            writer.WriteSingle(item.TextAlignY);
+            writer.WriteSingle(item.TextScale);
             writer.WriteInt32((int)item.TextStyle);
             writer.WriteInt32(item.GameMsgWindowIndex);
             writer.WriteInt32(item.GameMsgWindowMode);
@@ -344,7 +344,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.Skip(sizeof(int));
             writer.WriteInt32((int)item.DvarFlags);
             writer.Skip(sizeof(int));
-            WriteSingle(writer, item.Special);
+            writer.WriteSingle(item.Special);
             WriteInts(writer, item.CursorPos, 4, $"{fieldPath}.CursorPos");
             writer.Skip(sizeof(int));
             writer.WriteInt32(item.ImageTrack);
@@ -780,10 +780,10 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             if (value.MaxCharsGotoNext is not (0 or 1))
                 throw new InvalidDataException($"{fieldPath}.MaxCharsGotoNext must be 0 or 1.");
             var writer = new LinkTemplateWriter(EditFieldDef.SerializedSize);
-            WriteSingle(writer, value.MinVal);
-            WriteSingle(writer, value.MaxVal);
-            WriteSingle(writer, value.DefVal);
-            WriteSingle(writer, value.Range);
+            writer.WriteSingle(value.MinVal);
+            writer.WriteSingle(value.MaxVal);
+            writer.WriteSingle(value.DefVal);
+            writer.WriteSingle(value.Range);
             writer.WriteInt32(value.MaxChars);
             writer.WriteInt32(value.MaxCharsGotoNext);
             writer.WriteInt32(value.MaxPaintChars);
@@ -822,8 +822,8 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             var writer = new LinkTemplateWriter(ListBoxDef.SerializedSize);
             writer.Skip(8 * sizeof(int)); // Per-client visible-range cursors.
             writer.WriteInt32(value.DrawPadding);
-            WriteSingle(writer, value.ElementWidth);
-            WriteSingle(writer, value.ElementHeight);
+            writer.WriteSingle(value.ElementWidth);
+            writer.WriteSingle(value.ElementHeight);
             writer.WriteInt32(value.ElementStyle);
             writer.WriteInt32(value.NumColumns);
             foreach (ColumnInfo column in value.ColumnInfo)
@@ -891,7 +891,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             foreach (float number in value.DvarValue)
             {
                 ValidateFinite(number, $"{fieldPath}.DvarValue");
-                WriteSingle(writer, number);
+                writer.WriteSingle(number);
             }
             writer.WriteInt32(value.Count);
             writer.WriteInt32(value.StrDef);
@@ -1765,7 +1765,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.WriteInt32((int)value.Border);
             writer.WriteInt32((int)value.OwnerDraw);
             writer.WriteInt32(value.OwnerDrawFlags);
-            WriteSingle(writer, value.BorderSize);
+            writer.WriteSingle(value.BorderSize);
             writer.WriteInt32((int)value.StaticFlags);
             WriteFlags(writer, value.DynamicFlags, 4,
                 "Window.DynamicFlags");
@@ -1782,10 +1782,10 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             LinkTemplateWriter writer,
             RectangleDef value)
         {
-            WriteSingle(writer, value.X);
-            WriteSingle(writer, value.Y);
-            WriteSingle(writer, value.W);
-            WriteSingle(writer, value.H);
+            writer.WriteSingle(value.X);
+            writer.WriteSingle(value.Y);
+            writer.WriteSingle(value.W);
+            writer.WriteSingle(value.H);
             writer.WriteByte((byte)value.HorzAlign);
             writer.WriteByte((byte)value.VertAlign);
             writer.WriteUInt16(value.Pad12);
@@ -1808,10 +1808,10 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
 
         private static void WriteVec4(LinkTemplateWriter writer, Vec4 value)
         {
-            WriteSingle(writer, value.A);
-            WriteSingle(writer, value.R);
-            WriteSingle(writer, value.G);
-            WriteSingle(writer, value.B);
+            writer.WriteSingle(value.A);
+            writer.WriteSingle(value.R);
+            writer.WriteSingle(value.G);
+            writer.WriteSingle(value.B);
         }
 
         private static void WriteInts(
@@ -1847,14 +1847,12 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                 writer.WriteInt32((int)value.TransitionType);
                 writer.WriteInt32(value.TargetField);
                 writer.WriteInt32(value.StartTime);
-                WriteSingle(writer, value.StartValue);
-                WriteSingle(writer, value.EndValue);
-                WriteSingle(writer, value.Time);
+                writer.WriteSingle(value.StartValue);
+                writer.WriteSingle(value.EndValue);
+                writer.WriteSingle(value.Time);
                 writer.WriteInt32((int)value.EndTriggerType);
             }
         }
 
-        private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
     }
 }

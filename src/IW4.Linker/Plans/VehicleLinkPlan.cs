@@ -209,7 +209,7 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
         foreach (FrozenSoundField sound in soundFields.Take(2))
         {
             if (sound.Target is { } target)
-                yield return Direct(root, sound.Offset, target, sound.Path);
+                yield return DirectOperation(root, sound.Offset, target, sound.Path);
         }
         for (int index = 0; index < trophyTags.Count; index++)
         {
@@ -228,7 +228,7 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
         foreach (FrozenSoundField sound in soundFields.Skip(2).Take(14))
         {
             if (sound.Target is { } target)
-                yield return Direct(root, sound.Offset, target, sound.Path);
+                yield return DirectOperation(root, sound.Offset, target, sound.Path);
         }
         if (surfaceSoundPrefix is not null)
         {
@@ -241,7 +241,7 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
         foreach (FrozenSoundField sound in soundFields.Skip(16))
         {
             if (sound.Target is { } target)
-                yield return Direct(root, sound.Offset, target, sound.Path);
+                yield return DirectOperation(root, sound.Offset, target, sound.Path);
         }
     }
 
@@ -445,10 +445,10 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
             definition.TurretRotRate);
         writer.Skip(2 * sizeof(int));
         writer.WriteInt32(definition.TrophyEnabled);
-        WriteSingle(writer, definition.TrophyRadius);
-        WriteSingle(writer, definition.TrophyInactiveRadius);
+        writer.WriteSingle(definition.TrophyRadius);
+        writer.WriteSingle(definition.TrophyInactiveRadius);
         writer.WriteInt32(definition.TrophyAmmoCount);
-        WriteSingle(writer, definition.TrophyReloadTime);
+        writer.WriteSingle(definition.TrophyReloadTime);
         writer.Skip(VehicleDefAsset.ScriptStringCount * sizeof(ushort));
         writer.Skip(2 * sizeof(int));
         WriteSingles(
@@ -456,21 +456,21 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
             definition.CompassIconWidth,
             definition.CompassIconHeight);
         writer.Skip(4 * sizeof(int));
-        WriteSingle(writer, engine.EngineSoundSpeed);
+        writer.WriteSingle(engine.EngineSoundSpeed);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, engine.EngineStartUpLength);
+        writer.WriteSingle(engine.EngineStartUpLength);
         writer.Skip(4 * sizeof(int));
-        WriteSingle(writer, engine.EngineRampUpLength);
+        writer.WriteSingle(engine.EngineRampUpLength);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, engine.EngineRampDownLength);
+        writer.WriteSingle(engine.EngineRampDownLength);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, suspension.SuspensionSoftCompression);
+        writer.WriteSingle(suspension.SuspensionSoftCompression);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, suspension.SuspensionHardCompression);
+        writer.WriteSingle(suspension.SuspensionHardCompression);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, definition.CollisionBlendSpeed);
+        writer.WriteSingle(definition.CollisionBlendSpeed);
         writer.Skip(sizeof(int));
-        WriteSingle(writer, definition.SpeedSoundBlendSpeed);
+        writer.WriteSingle(definition.SpeedSoundBlendSpeed);
         writer.Skip(sizeof(int));
         writer.Skip(VehicleDefAsset.SurfaceSoundCount * sizeof(int));
         WriteSingles(writer,
@@ -568,27 +568,15 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
         field.ValuePointer.Raw == 0 &&
         field.Value is null;
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private static void WriteSingles(
         LinkTemplateWriter writer,
         params float[] values)
     {
         foreach (float value in values)
-            WriteSingle(writer, value);
+            writer.WriteSingle(value);
     }
 
-    private static void WriteSingle(LinkTemplateWriter writer, float value) =>
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
 
     private readonly record struct FrozenSoundField(
         int Offset,

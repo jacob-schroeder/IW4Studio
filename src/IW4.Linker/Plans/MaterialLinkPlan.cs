@@ -174,7 +174,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             yield return ProviderOperation(root, 0x94, dependency);
         if (textureTable is not null)
         {
-            yield return Direct(
+            yield return DirectOperation(
                 root,
                 0x98,
                 textureTable.Value,
@@ -182,7 +182,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         }
         if (constantTable is not null)
         {
-            yield return Direct(
+            yield return DirectOperation(
                 root,
                 0x9c,
                 constantTable.Value,
@@ -190,7 +190,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         }
         if (stateBitsTable is not null)
         {
-            yield return Direct(
+            yield return DirectOperation(
                 root,
                 0xa0,
                 stateBitsTable.Value,
@@ -447,25 +447,15 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         return values.Count != 0;
     }
 
-    private static DirectStorageLinkOperation Direct(
-        LinkStorageSymbol owner,
-        int pointerOffset,
-        LinkStorageTarget target,
-        string fieldPath) =>
-        new(
-            new LinkStorageCell(owner, pointerOffset),
-            target.View,
-            target.CanMaterializeRoot,
-            fieldPath);
 
     private static void WriteVec4(
         LinkTemplateWriter writer,
         MaterialVec4 value)
     {
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.X));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Y));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.Z));
-        writer.WriteInt32(BitConverter.SingleToInt32Bits(value.W));
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
+        writer.WriteSingle(value.W);
     }
 
     private sealed class StorageFreezer
@@ -622,13 +612,13 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             writer.Skip(3 * sizeof(int));
             writer.WriteInt32(definition.M);
             writer.WriteInt32(definition.N);
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.Lx));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.Lz));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.Gravity));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.WindVelocity));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.WindDirection.X));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.WindDirection.Y));
-            writer.WriteInt32(BitConverter.SingleToInt32Bits(definition.Amplitude));
+            writer.WriteSingle(definition.Lx);
+            writer.WriteSingle(definition.Lz);
+            writer.WriteSingle(definition.Gravity);
+            writer.WriteSingle(definition.WindVelocity);
+            writer.WriteSingle(definition.WindDirection.X);
+            writer.WriteSingle(definition.WindDirection.Y);
+            writer.WriteSingle(definition.Amplitude);
             WriteVec4(writer, definition.CodeConstant);
             writer.Skip(sizeof(int));
             return _freeze.FreezeStorage(
@@ -666,7 +656,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             var writer = new LinkTemplateWriter(
                 checked(source.Count * sizeof(float)));
             foreach (float value in source)
-                writer.WriteInt32(BitConverter.SingleToInt32Bits(value));
+                writer.WriteSingle(value);
             return _freeze.FreezeStorage(
                 pointer,
                 writer.Complete(),
@@ -705,7 +695,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                     addend + index * MaterialTextureDef.SerializedSize + 0x08);
                 if (texture.Water is not null)
                 {
-                    yield return Direct(
+                    yield return DirectOperation(
                         table,
                         pointerOffset,
                         texture.Water.Value,
@@ -728,11 +718,11 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             string fieldPath)
         {
             if (h0x is not null)
-                yield return Direct(root, addend + 0x04, h0x.Value, $"{fieldPath}.H0X");
+                yield return DirectOperation(root, addend + 0x04, h0x.Value, $"{fieldPath}.H0X");
             if (h0y is not null)
-                yield return Direct(root, addend + 0x08, h0y.Value, $"{fieldPath}.H0Y");
+                yield return DirectOperation(root, addend + 0x08, h0y.Value, $"{fieldPath}.H0Y");
             if (wTerm is not null)
-                yield return Direct(root, addend + 0x0c, wTerm.Value, $"{fieldPath}.WTerm");
+                yield return DirectOperation(root, addend + 0x0c, wTerm.Value, $"{fieldPath}.WTerm");
             if (image is { } dependency)
                 yield return ProviderOperation(root, addend + 0x44, dependency);
         }
