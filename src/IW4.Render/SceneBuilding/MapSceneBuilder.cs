@@ -26,7 +26,6 @@ namespace IW4.Render.SceneBuilding;
 
 public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
 {
-    private const int XSurfaceVertexStride = 0x10;
     private const int RsxVertexInputCount = 16;
     private const int RsxVertexInputComponentCount = 4;
     private const float MaxReasonableCoordinate = 1_000_000f;
@@ -40,7 +39,6 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
     private const string BaseSurfaceTexturePassClass = "MaterialColor";
     private const string GenericMaterialFallbackPassClass = "GenericMaterialFallback";
     private const string AuthoredMaterialCandidatePassClass = "AuthoredMaterialCandidate";
-    private const MaterialWorldVertexFormat StaticXSurfaceSourceFormat = MaterialWorldVertexFormat.MTL_WORLDVERT_TEX_2_NRM_2;
     private static readonly MapRenderState GenericMaterialState = MapRenderState.Default with
     {
         HasState = true,

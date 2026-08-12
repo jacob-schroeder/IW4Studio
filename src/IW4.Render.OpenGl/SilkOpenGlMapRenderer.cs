@@ -43,20 +43,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         MapRenderScene.MaxColorLayerCount + 1 + 4 + 3;
     private const string EditorPreviewLinkProfileIdentity =
         MapRenderOpenGlSharedProgramCache.EditorPreviewLinkProfileIdentity;
-    private const TextureParameterName TextureMaxAnisotropyExt = (TextureParameterName)0x84FE;
-    private const TextureParameterName TextureLodBias = (TextureParameterName)0x8501;
-    private const int GlTextureSwizzleZero = 0;
-    private const int GlTextureSwizzleOne = 1;
-    private const int GlTextureSwizzleRed = 0x1903;
-    private const int GlTextureSwizzleGreen = 0x1904;
-    private const int GlTextureSwizzleBlue = 0x1905;
-    private const int GlTextureSwizzleAlpha = 0x1906;
     private const long DefaultTextureResidencyBudgetBytes =
         384L * 1024L * 1024L;
     private const long DefaultTextureUploadBudgetBytesPerFrame =
         24L * 1024L * 1024L;
     private const int DefaultTextureEvictionGraceFrames = 8;
     private readonly GL _gl;
+    private readonly SilkOpenGlTextureParameters _textureParameters;
     private readonly SilkOpenGlStateShadow _state;
     private readonly MapRenderFrameTelemetry _frameTelemetry = new();
     private readonly MapRenderOpenGlShaderCompilationCounter
@@ -287,13 +280,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _wireframeResourceCatalog;
     private int? _loadedIsolatedWorldSurfaceIndex;
     private readonly MapRenderOpenGlTextureHandleCache _textureHandles = new();
-    // Backend-owned GLSL lowering is cached for the renderer lifetime. The
-    // draw path performs only an exact IR lookup and allocation-free legacy
-    // oracle comparison after the first encounter with a program.
-    private readonly RsxVertexGlsl330ProgramResolver
-        _rsxVertexProgramResolver = new();
-    private readonly RsxFragmentGlsl330ProgramResolver
-        _rsxFragmentProgramResolver = new();
+    private readonly SilkOpenGlAuthoredMaterialExecutor _authoredMaterials;
     private MapRenderStaticModelLightingAtlas?
         _staticModelLightingAtlas;
     private MapRenderStaticModelLightingWorkingSet?
@@ -302,17 +289,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private int[] _conservativeUnscheduledStaticObjectIndices = [];
     private byte[]? _staticModelLightingPhysicalRgbaBytes;
     private uint _staticModelLightingAtlasTexture;
-    private readonly Dictionary<MapRenderOpenGlProgramKey, GlRsxProgram>
-        _rsxPrograms = [];
-    private long _rsxProgramSemanticRequestCount;
-    private long _rsxProgramUniqueLinkCount;
-    private long _rsxProgramLinkReuseCount;
-    private readonly MapRenderOpenGlUniformLocationCache
-        _rsxUniformLocations;
-    private readonly Dictionary<MapRenderOpenGlProgramKey, string>
-        _rsxProgramFailures = [];
-    private readonly Dictionary<string, string> _rsxProgramFailureDiagnostics =
-        new(StringComparer.Ordinal);
     private readonly Dictionary<uint, StaticInstanceBufferRuntime>
         _staticInstanceBuffers = [];
     private readonly Dictionary<int, List<StaticInstanceBufferRuntime>>
@@ -345,7 +321,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private bool _loaded;
     private bool _contextAbandoned;
     private bool _disposed;
-    private bool? _anisotropicFilteringSupported;
     private MapRenderEditorPreviewLightingPlan? _editorPreviewLighting;
     private MapRenderWorldEvent20SceneLightFrameInput?
         _editorPreviewSceneLightFrame;
@@ -493,11 +468,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     public long ShaderProgramCompilationCount =>
         _shaderCompilationCounter.ProgramCompilationCount;
     public long RsxProgramSemanticRequestCount =>
-        _rsxProgramSemanticRequestCount;
+        _authoredMaterials.SemanticRequestCount;
     public long RsxProgramUniqueLinkCount =>
-        _rsxProgramUniqueLinkCount;
+        _authoredMaterials.UniqueLinkCount;
     public long RsxProgramLinkReuseCount =>
-        _rsxProgramLinkReuseCount;
+        _authoredMaterials.LinkReuseCount;
     public int SharedProgramCachedEntryCount =>
         _sharedProgramCache.CachedEntryCount;
     public int SharedProgramCachedHandleCount =>
@@ -513,11 +488,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     public long SharedProgramCapacityBypassCount =>
         _sharedProgramCache.CapacityBypassCount;
     public long RsxUniformLocationRequestCount =>
-        _rsxUniformLocations.CreateTelemetry().RequestCount;
+        _authoredMaterials.UniformLocationTelemetry.RequestCount;
     public long RsxUniformLocationQueryCount =>
-        _rsxUniformLocations.CreateTelemetry().QueryCount;
+        _authoredMaterials.UniformLocationTelemetry.QueryCount;
     public long RsxUniformLocationCacheHitCount =>
-        _rsxUniformLocations.CreateTelemetry().CacheHitCount;
+        _authoredMaterials.UniformLocationTelemetry.CacheHitCount;
     public string SunShadowPipelineStatus { get; private set; } =
         "SUN_SHADOW_PIPELINE_NOT_INITIALIZED";
     public MapRenderSurfaceExtents SurfaceExtents => new(
@@ -616,16 +591,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         ArgumentNullException.ThrowIfNull(gl);
         ArgumentNullException.ThrowIfNull(sharedProgramCache);
         _gl = gl;
+        _textureParameters = new SilkOpenGlTextureParameters(gl);
         _sharedProgramCache = sharedProgramCache;
         _ownsSharedProgramCache = ownsSharedProgramCache;
         _sharedProgramUsage =
             sharedProgramCache.AcquireUsageLease();
         try
         {
-            _rsxUniformLocations =
-                new MapRenderOpenGlUniformLocationCache(
-                    gl.GetUniformLocation);
             _state = new SilkOpenGlStateShadow(gl);
+            _authoredMaterials =
+                new SilkOpenGlAuthoredMaterialExecutor(
+                    gl,
+                    _state,
+                    ResolveLinkedProgram);
             bool supportsS3tc = gl.IsExtensionPresent(
                 "GL_EXT_texture_compression_s3tc");
             _compressedTextureSupport =
@@ -740,7 +718,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             rendererLoadPhases.Add(
                 $"{name}={System.Diagnostics.Stopwatch.GetElapsedTime(rendererLoadPhaseStarted, now).TotalMilliseconds:0}ms" +
-                $"(programs={_rsxPrograms.Count}," +
+                $"(programs={_authoredMaterials.ProgramCount}," +
                 $"sharedLinks={_sharedProgramCache.CreateTelemetry().SuccessfulUniqueLinkCount}," +
                 $"textures={_textureHandles.Count})");
             rendererLoadPhaseStarted = now;
@@ -1147,15 +1125,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 StringComparer.Ordinal)
             .Select(group => group.First().ShaderExecution)
             .Count(execution =>
-                _rsxVertexProgramResolver.Resolve(execution).IsReady &&
-                _rsxFragmentProgramResolver.Resolve(execution).IsReady);
+                _authoredMaterials.IsVertexProgramLowerable(execution) &&
+                _authoredMaterials.IsFragmentProgramLowerable(execution));
         int renderCapableBatchCount = scene.TexturedBatches.Count(batch => batch.ShaderExecution.ProgramExecutionReady);
         Console.WriteLine(
             $"Renderer pipeline: RSX GLSL validation: openGlLoweringReady={openGlLoweringReadyProgramCount} " +
-            $"semanticPrograms={_rsxPrograms.Count} " +
+            $"semanticPrograms={_authoredMaterials.ProgramCount} " +
             $"sharedUniqueLinks={_sharedProgramCache.CreateTelemetry().SuccessfulUniqueLinkCount} " +
             $"sharedLinkReuses={_sharedProgramCache.CreateTelemetry().LinkReuseCount} " +
-            $"failed={_rsxProgramFailures.Count + _rsxProgramFailureDiagnostics.Count} " +
+            $"failed={_authoredMaterials.FailureCount} " +
             $"renderCapableBatches={renderCapableBatchCount} " +
             $"vertexPlacementDiagnostic={UseRsxVertexPlacementDiagnostic} " +
             $"fragmentOutputDiagnostic={RsxFragmentOutputDiagnostic?.ToString() ?? "none"} " +
@@ -1199,7 +1177,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 _sharedProgramCache.CreateTelemetry();
         MapRenderOpenGlUniformLocationCacheTelemetry
             uniformLocationTelemetry =
-                _rsxUniformLocations.CreateTelemetry();
+                _authoredMaterials.UniformLocationTelemetry;
         Console.WriteLine(
             $"Renderer load timing: " +
             $"{string.Join(", ", rendererLoadPhases)}, " +

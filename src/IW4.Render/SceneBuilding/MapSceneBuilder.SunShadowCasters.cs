@@ -466,7 +466,7 @@ public sealed partial class MapSceneBuilder
             {
                 UsesVertexColor: true
             };
-        StaticVertexDecoder? uvDecoder = null;
+        XSurfaceVertexDecoder? uvDecoder = null;
         cutoutUvRoute = null;
         cutoutTexture = null;
         if (cutout)
@@ -625,7 +625,7 @@ public sealed partial class MapSceneBuilder
 
     internal static bool TryBuildStaticSunShadowCasterGeometry(
         XSurface surface,
-        StaticVertexDecoder? cutoutUvDecoder,
+        XSurfaceVertexDecoder? cutoutUvDecoder,
         bool cutout,
         bool usesVertexColor,
         out MapRenderSunShadowCasterGeometry? geometry)
@@ -687,8 +687,8 @@ public sealed partial class MapSceneBuilder
                 destinationIndex = checked((uint)existing);
                 return true;
             }
-            if (!TryReadXSurfaceLocalPosition(
-                    surface.Verts0,
+            if (!XSurfaceVertexDecoder.TryReadPosition(
+                    surface,
                     sourceIndex,
                     out Vector3 position))
             {

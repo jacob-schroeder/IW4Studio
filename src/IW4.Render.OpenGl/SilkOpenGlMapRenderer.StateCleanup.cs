@@ -216,13 +216,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _gl.DeleteProgram(program);
         _sceneOwnedProgramHandles.Clear();
         _sceneProgramResolutions.Clear();
-        _rsxPrograms.Clear();
-        _rsxProgramSemanticRequestCount = 0;
-        _rsxProgramUniqueLinkCount = 0;
-        _rsxProgramLinkReuseCount = 0;
-        _rsxUniformLocations.Clear();
-        _rsxProgramFailures.Clear();
-        _rsxProgramFailureDiagnostics.Clear();
+        _authoredMaterials.Clear();
         DeleteMesh(_wire);
         _wire = default;
         DeleteMesh(_editorSelectionOutlineMesh);
@@ -323,135 +317,16 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ApplyDefaultRenderState();
             return;
         }
-
-        // EditorPreview stores the RSX-packed result in GL_RGBA8. Translated
-        // program variants perform the authored packer conversion explicitly;
-        // host fixed-function sRGB would either be inert for this attachment or
-        // double-convert if a context owner changed the target format.
-        _state.SetEnabled(EnableCap.FramebufferSrgb, false);
-        _state.FrontFace(EditorPreviewTexturedFrontFace());
-
-        if (state.DepthTestEnabled)
+        if (!_authoredMaterials.TryApplyRenderState(
+                state,
+                out string? blocker))
         {
-            _state.SetEnabled(EnableCap.DepthTest, true);
-            _state.DepthFunc(ToDepthFunction(state.DepthFunc));
-        }
-        else
-        {
-            _state.SetEnabled(EnableCap.DepthTest, false);
-        }
-
-        _state.DepthMask(state.DepthWriteEnabled);
-        if (state.Stencil.Enabled)
-        {
-            // The per-pass decoder and target-2 clear timing are implemented, but this
-            // EditorPreview does not own the exact MRT attachments,
-            // inherited stencil write mask, resolve resources, or RSX-to-GL
-            // front-face convention. Refuse execution instead of producing
-            // face-swapped or history-dependent output.
             throw new InvalidOperationException(
-                "Stencil state reached the OpenGL preview backend without supported MRT resources, write-mask ownership, and face convention.");
-        }
-        _state.SetEnabled(EnableCap.StencilTest, false);
-        switch (MapRenderCull.Resolve(state))
-        {
-            case MapRenderCullMode.Disabled:
-                _state.SetEnabled(EnableCap.CullFace, false);
-                break;
-            case MapRenderCullMode.Front:
-                _state.SetEnabled(EnableCap.CullFace, true);
-                _state.CullFace(TriangleFace.Front);
-                break;
-            case MapRenderCullMode.Back:
-                _state.SetEnabled(EnableCap.CullFace, true);
-                _state.CullFace(TriangleFace.Back);
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"Unsupported authored cull tuple " +
-                    $"{state.CullEnabled}/0x{state.CullFace:X4} reached " +
-                    "the OpenGL backend.");
-        }
-        _state.PolygonMode(
-            state.PolygonMode == 0x1B01 ? PolygonMode.Line : PolygonMode.Fill);
-        bool rgbWriteEnabled = (state.ColorMask & 0x00010101) != 0;
-        bool alphaWriteEnabled = (state.ColorMask & 0x01000000) != 0;
-        _state.ColorMask(rgbWriteEnabled, rgbWriteEnabled, rgbWriteEnabled, alphaWriteEnabled);
-
-        if (state.BlendEnabled)
-        {
-            _state.SetEnabled(EnableCap.Blend, true);
-            _state.BlendEquationSeparate(ToBlendEquation(state.BlendEquationRgb), ToBlendEquation(state.BlendEquationAlpha));
-            _state.BlendFuncSeparate(
-                ToBlendFactor(state.BlendSourceRgb),
-                ToBlendFactor(state.BlendDestinationRgb),
-                ToBlendFactor(state.BlendSourceAlpha),
-                ToBlendFactor(state.BlendDestinationAlpha));
-        }
-        else
-        {
-            _state.SetEnabled(EnableCap.Blend, false);
-        }
-
-        if (state.PolygonOffsetEnabled)
-        {
-            _state.SetEnabled(EnableCap.PolygonOffsetFill, true);
-            _state.PolygonOffset(state.PolygonOffsetFactor, state.PolygonOffsetUnits);
-        }
-        else
-        {
-            _state.SetEnabled(EnableCap.PolygonOffsetFill, false);
+                blocker ?? "Authored OpenGL state is not executable.");
         }
     }
 
     internal static FrontFaceDirection EditorPreviewTexturedFrontFace() =>
         FrontFaceDirection.Ccw;
-
-    private static DepthFunction ToDepthFunction(uint value)
-    {
-        return value switch
-        {
-            0x0200 => DepthFunction.Never,
-            0x0201 => DepthFunction.Less,
-            0x0202 => DepthFunction.Equal,
-            0x0203 => DepthFunction.Lequal,
-            0x0204 => DepthFunction.Greater,
-            0x0205 => DepthFunction.Notequal,
-            0x0206 => DepthFunction.Gequal,
-            0x0207 => DepthFunction.Always,
-            _ => DepthFunction.Lequal
-        };
-    }
-
-    private static BlendEquationModeEXT ToBlendEquation(uint value)
-    {
-        return value switch
-        {
-            0x8006 => BlendEquationModeEXT.FuncAdd,
-            0x800a => BlendEquationModeEXT.FuncSubtract,
-            0x800b => BlendEquationModeEXT.FuncReverseSubtract,
-            0x8007 => BlendEquationModeEXT.Min,
-            0x8008 => BlendEquationModeEXT.Max,
-            _ => BlendEquationModeEXT.FuncAdd
-        };
-    }
-
-    private static BlendingFactor ToBlendFactor(uint value)
-    {
-        return value switch
-        {
-            0 => BlendingFactor.Zero,
-            1 => BlendingFactor.One,
-            0x0300 => BlendingFactor.SrcColor,
-            0x0301 => BlendingFactor.OneMinusSrcColor,
-            0x0302 => BlendingFactor.SrcAlpha,
-            0x0303 => BlendingFactor.OneMinusSrcAlpha,
-            0x0304 => BlendingFactor.DstAlpha,
-            0x0305 => BlendingFactor.OneMinusDstAlpha,
-            0x0306 => BlendingFactor.DstColor,
-            0x0307 => BlendingFactor.OneMinusDstColor,
-            _ => BlendingFactor.One
-        };
-    }
 
 }

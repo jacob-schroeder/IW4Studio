@@ -1,18 +1,21 @@
 using System.Globalization;
 using IW4.Assets.Assets.XModel;
+using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
 using IW4.Render;
+using IW4.Render.OpenGl.XModel;
 using IW4.Render.SceneBuilding;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Inspector;
+using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
 /// <summary>
-/// Read-only checkpoint projection of the current session-owned XModel draft.
+/// Read-only preview projection of the current session-owned XModel draft.
 /// Authoring controls are deliberately scaffolded but disabled until a later
-/// checkpoint defines supported XModel mutations.
+/// change defines supported XModel mutations.
 /// </summary>
 public sealed class XModelEditorViewModel
     : ObservableObject,
@@ -24,15 +27,22 @@ public sealed class XModelEditorViewModel
       IDisposable
 {
     private readonly AssetEditorSession _session;
-    private readonly MapSceneBuilder _sceneBuilder = new();
+    private readonly XModelSceneBuilder _sceneBuilder = new();
+    private readonly WorkspaceGfxImagePayloadResolver _imagePayloads;
     private XModelAsset? _model;
     private XModelRenderScene? _scene;
     private IReadOnlyList<XModelLodItemViewModel> _lods = [];
     private XModelLodItemViewModel? _selectedLod;
     private InspectorSelectionViewModel? _inspectorSelection;
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
+    private IReadOnlyList<AssetValidationIssue> _buildDiagnostics = [];
     private string _statusMessage = string.Empty;
+    private string? _buildFailure;
+    private int _rendererLodIndex = -1;
+    private XModelViewerUploadResult? _rendererUploadResult;
+    private string? _rendererFailure;
     private bool _isWireframeEnabled;
+    private bool _showBoneTags;
     private bool _disposed;
 
     public XModelEditorViewModel(AssetEditorSession session)
@@ -44,6 +54,7 @@ public sealed class XModelEditorViewModel
                 "The XModel view model can host only XModel editor sessions.");
         }
 
+        _imagePayloads = new WorkspaceGfxImagePayloadResolver(session.Workspace);
         CaptureAndBuild();
     }
 
@@ -76,9 +87,13 @@ public sealed class XModelEditorViewModel
             if (!SetProperty(ref _selectedLod, value))
                 return;
 
+            ResetRendererStatus();
             OnPropertyChanged(nameof(SelectedLodIndex));
+            OnPropertyChanged(nameof(MaterialExecutionBadge));
             RefreshInspector();
             OnPropertyChanged(nameof(EditorProperties));
+            OnPropertyChanged(nameof(Diagnostics));
+            RefreshStatusMessage();
             PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -91,6 +106,12 @@ public sealed class XModelEditorViewModel
         set => SetProperty(ref _isWireframeEnabled, value);
     }
 
+    public bool ShowBoneTags
+    {
+        get => _showBoneTags;
+        set => SetProperty(ref _showBoneTags, value);
+    }
+
     public bool CanRevert => IsEditable && _session.HasUnsavedChanges;
 
     public bool CanApply => false;
@@ -99,14 +120,55 @@ public sealed class XModelEditorViewModel
 
     public string PropertySectionName => "XModel preview";
 
-    public IReadOnlyList<AssetEditorProperty> EditorProperties =>
-    [
-        new("Checkpoint", "Material-slot shading"),
-        new("Selected LOD", SelectedLod?.DisplayName ?? "None"),
-        new("Triangles", SelectedLod?.TriangleCount.ToString("N0") ?? "0"),
-        new("Vertices", SelectedLod?.VertexCount.ToString("N0") ?? "0"),
-        new("Texture fidelity", "Not applied")
-    ];
+    public string MaterialExecutionBadge
+    {
+        get
+        {
+            LodAuthoredMaterialSummary summary =
+                SummarizeAuthoredMaterials(SelectedLod?.Lod);
+            if (summary.GroupCount == 0 ||
+                summary.TechniqueSlots.Count == 0)
+                return "NO AUTHORED CAMERA PASS";
+
+            string slot = summary.TechniqueSlots.Count == 1
+                ? $"SLOT {summary.TechniqueSlots[0]}"
+                : $"SLOTS {string.Join("/", summary.TechniqueSlots)}";
+            if (_rendererFailure is not null)
+                return $"AUTHORED PASS · {slot} · OPENGL BLOCKED";
+            if (_rendererUploadResult is { } upload)
+            {
+                int total = upload.ExecutableGroupCount +
+                    upload.BlockedGroupCount;
+                return $"AUTHORED PASS · {slot} · " +
+                    $"{upload.ExecutableGroupCount}/{total} EXECUTABLE";
+            }
+            return $"AUTHORED PASS · {slot} · " +
+                $"{summary.ReadyGroupCount}/{summary.GroupCount} PREPARED";
+        }
+    }
+
+    public IReadOnlyList<AssetEditorProperty> EditorProperties
+    {
+        get
+        {
+            LodAuthoredMaterialSummary summary =
+                SummarizeAuthoredMaterials(SelectedLod?.Lod);
+            return
+            [
+                new("Material execution", "Authored normal-camera pass group"),
+                new("Selected LOD", SelectedLod?.DisplayName ?? "None"),
+                new("Triangles", SelectedLod?.TriangleCount.ToString("N0") ?? "0"),
+                new("Vertices", SelectedLod?.VertexCount.ToString("N0") ?? "0"),
+                new("Selected technique", summary.TechniqueDisplay),
+                new("Authored passes", summary.PassCount.ToString("N0")),
+                new("Scene-ready groups", $"{summary.ReadyGroupCount:N0} / {summary.GroupCount:N0}"),
+                new("Scene-blocked groups", summary.BlockedGroupCount.ToString("N0")),
+                new("OpenGL-executable groups", RendererExecutableGroupsText()),
+                new("OpenGL-blocked groups", RendererBlockedGroupsText()),
+                new("Renderer status", RendererStatusText())
+            ];
+        }
+    }
 
     public InspectorSelectionViewModel? InspectorSelection =>
         _inspectorSelection;
@@ -114,6 +176,35 @@ public sealed class XModelEditorViewModel
     public IReadOnlyList<AssetValidationIssue> Diagnostics => _diagnostics;
 
     public event EventHandler? PropertiesRevealRequested;
+
+    internal void UpdateRendererStatus(
+        int lodIndex,
+        XModelViewerUploadResult? uploadResult,
+        string? rendererFailure)
+    {
+        if (_disposed)
+            return;
+        if (lodIndex >= 0 && lodIndex != SelectedLodIndex)
+            return;
+        if (_rendererLodIndex == lodIndex &&
+            string.Equals(
+                _rendererFailure,
+                rendererFailure,
+                StringComparison.Ordinal) &&
+            UploadResultsEqual(_rendererUploadResult, uploadResult))
+        {
+            return;
+        }
+
+        _rendererLodIndex = lodIndex;
+        _rendererUploadResult = uploadResult;
+        _rendererFailure = rendererFailure;
+        RebuildDiagnostics();
+        OnPropertyChanged(nameof(Diagnostics));
+        OnPropertyChanged(nameof(EditorProperties));
+        OnPropertyChanged(nameof(MaterialExecutionBadge));
+        RefreshStatusMessage();
+    }
 
     public void RevertDraft()
     {
@@ -125,8 +216,8 @@ public sealed class XModelEditorViewModel
         bool changed = _session.Revert();
         CaptureAndBuild();
         StatusMessage = changed
-            ? "Reverted the XModel draft and rebuilt the material-slot preview."
-            : "The XModel draft already matched its authored baseline.";
+            ? $"Reverted the XModel draft. {StatusMessage}"
+            : $"The XModel draft already matched its authored baseline. {StatusMessage}";
     }
 
     public void Dispose()
@@ -143,12 +234,18 @@ public sealed class XModelEditorViewModel
         int? previousLodIndex = SelectedLod?.LodIndex;
         XModelDraft draft = _session.OpenDraft<XModelDraft>();
         _model = draft.Model;
+        ResetRendererStatus();
 
         XModelRenderScene? scene = null;
         string? buildFailure = null;
         try
         {
-            scene = _sceneBuilder.BuildXModel(_model);
+            MapRenderAssetSource source = CreateAssetSource(
+                _session.Workspace);
+            scene = _sceneBuilder.Build(
+                _model,
+                source,
+                _imagePayloads);
         }
         catch (Exception exception) when (exception is
                    InvalidOperationException or
@@ -160,6 +257,7 @@ public sealed class XModelEditorViewModel
         }
 
         _scene = scene;
+        _buildFailure = buildFailure;
         _lods = scene?.Lods
             .Select(lod => new XModelLodItemViewModel(lod))
             .ToArray() ?? [];
@@ -174,30 +272,49 @@ public sealed class XModelEditorViewModel
             _session.Validation.Issues);
         if (scene is not null)
         {
-            issues.AddRange(scene.Diagnostics.Select(message =>
-                new AssetValidationIssue(
-                    "xmodel.preview",
+            var authoredDiagnosticMessages = new HashSet<string>(
+                StringComparer.Ordinal);
+            foreach (XModelRenderLod lod in scene.Lods)
+            {
+                foreach (XModelRenderSurface surface in lod.Surfaces
+                             .Where(surface => !surface.AuthoredGroupReady))
+                {
+                    string sceneMessage =
+                        $"LOD {lod.LodIndex} surface " +
+                        $"{surface.GeometrySurfaceIndex}: " +
+                        $"{surface.AuthoredMaterialStatus}.";
+                    authoredDiagnosticMessages.Add(sceneMessage);
+                    issues.Add(new AssetValidationIssue(
+                        AuthoredMaterialPath(surface),
+                        $"LOD {lod.LodIndex} surface " +
+                        $"{surface.GeometrySurfaceIndex} " +
+                        $"'{surface.MaterialName}': " +
+                        surface.AuthoredMaterialStatus,
+                        AssetValidationSeverity.Warning));
+                }
+            }
+            issues.AddRange(scene.Diagnostics
+                .Where(message =>
+                    !authoredDiagnosticMessages.Contains(message))
+                .Select(message => new AssetValidationIssue(
+                    "xmodel.preview.scene",
                     message,
                     AssetValidationSeverity.Warning)));
         }
         if (!string.IsNullOrWhiteSpace(buildFailure))
         {
             issues.Add(new AssetValidationIssue(
-                "xmodel.preview",
+                "xmodel.preview.scene",
                 buildFailure,
                 AssetValidationSeverity.Error));
         }
-        _diagnostics = Array.AsReadOnly(issues
+        _buildDiagnostics = Array.AsReadOnly(issues
             .GroupBy(issue =>
                 (issue.FieldPath, issue.Message, issue.Severity))
             .Select(group => group.First())
             .ToArray());
-
-        StatusMessage = buildFailure is not null
-            ? $"Preview unavailable: {buildFailure}"
-            : scene?.Lods.Count > 0
-                ? $"{AccessText(Mode)} · Checkpoint 1 material-slot shading; textures are not applied."
-                : $"{AccessText(Mode)} · No renderable LOD geometry is available.";
+        RebuildDiagnostics();
+        RefreshStatusMessage();
         RefreshInspector(notify: false);
         NotifyProjectionChanged();
     }
@@ -218,6 +335,7 @@ public sealed class XModelEditorViewModel
         OnPropertyChanged(nameof(Lods));
         OnPropertyChanged(nameof(SelectedLod));
         OnPropertyChanged(nameof(SelectedLodIndex));
+        OnPropertyChanged(nameof(MaterialExecutionBadge));
         OnPropertyChanged(nameof(InspectorSelection));
         OnPropertyChanged(nameof(EditorProperties));
         OnPropertyChanged(nameof(Diagnostics));
@@ -225,6 +343,232 @@ public sealed class XModelEditorViewModel
         OnPropertyChanged(nameof(CanApply));
         OnPropertyChanged(nameof(HasUnappliedChanges));
     }
+
+    private void RefreshStatusMessage()
+    {
+        if (_buildFailure is not null)
+        {
+            StatusMessage = $"Preview unavailable: {_buildFailure}";
+            return;
+        }
+        if (SelectedLod?.Lod is not { } lod)
+        {
+            StatusMessage =
+                $"{AccessText(Mode)} · No renderable LOD geometry is available.";
+            return;
+        }
+
+        LodAuthoredMaterialSummary summary = SummarizeAuthoredMaterials(lod);
+        string authoredStatus =
+            $"{AccessText(Mode)} · {summary.TechniqueDisplay}; " +
+            $"{summary.PassCount:N0} authored pass" +
+            (summary.PassCount == 1 ? string.Empty : "es") +
+            $", {summary.ReadyGroupCount:N0} of {summary.GroupCount:N0} " +
+            "surface groups scene-ready";
+        if (_rendererFailure is not null)
+        {
+            StatusMessage =
+                $"{authoredStatus}; OpenGL blocked: {_rendererFailure}";
+            return;
+        }
+        if (_rendererUploadResult is { } upload)
+        {
+            int total = upload.ExecutableGroupCount +
+                upload.BlockedGroupCount;
+            StatusMessage =
+                $"{authoredStatus}; {upload.ExecutableGroupCount:N0} of " +
+                $"{total:N0} groups OpenGL-executable, " +
+                $"{upload.BlockedGroupCount:N0} blocked.";
+            return;
+        }
+
+        StatusMessage = $"{authoredStatus}; OpenGL preflight pending.";
+    }
+
+    private void ResetRendererStatus()
+    {
+        _rendererLodIndex = -1;
+        _rendererUploadResult = null;
+        _rendererFailure = null;
+        _diagnostics = _buildDiagnostics;
+    }
+
+    private void RebuildDiagnostics()
+    {
+        var issues = new List<AssetValidationIssue>(_buildDiagnostics);
+        XModelRenderLod? lod = _rendererLodIndex == SelectedLodIndex
+            ? SelectedLod?.Lod
+            : null;
+        if (lod is not null && _rendererUploadResult is { } upload)
+        {
+            foreach (string diagnostic in upload.Diagnostics)
+            {
+                XModelRenderSurface? surface =
+                    ResolveRendererDiagnosticSurface(lod, diagnostic);
+                issues.Add(new AssetValidationIssue(
+                    surface is null
+                        ? "xmodel.preview.opengl"
+                        : $"{AuthoredMaterialPath(surface)}.opengl",
+                    $"OpenGL preflight: {diagnostic}",
+                    AssetValidationSeverity.Warning));
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(_rendererFailure))
+        {
+            XModelRenderSurface? surface = lod is null
+                ? null
+                : ResolveRendererDiagnosticSurface(
+                    lod,
+                    _rendererFailure);
+            issues.Add(new AssetValidationIssue(
+                surface is null
+                    ? "xmodel.preview.opengl"
+                    : $"{AuthoredMaterialPath(surface)}.opengl",
+                $"OpenGL execution: {_rendererFailure}",
+                AssetValidationSeverity.Error));
+        }
+
+        _diagnostics = Array.AsReadOnly(issues
+            .GroupBy(issue =>
+                (issue.FieldPath, issue.Message, issue.Severity))
+            .Select(group => group.First())
+            .ToArray());
+    }
+
+    private string RendererExecutableGroupsText()
+    {
+        if (_rendererUploadResult is not { } upload)
+            return _rendererFailure is null ? "Pending" : "Unavailable";
+
+        int total = upload.ExecutableGroupCount + upload.BlockedGroupCount;
+        return $"{upload.ExecutableGroupCount:N0} / {total:N0}";
+    }
+
+    private string RendererBlockedGroupsText() =>
+        _rendererUploadResult is { } upload
+            ? upload.BlockedGroupCount.ToString("N0")
+            : _rendererFailure is null
+                ? "Pending"
+                : "Unavailable";
+
+    private string RendererStatusText() =>
+        _rendererFailure is not null
+            ? $"Blocked · {_rendererFailure}"
+            : _rendererUploadResult is not null
+                ? "Preflight complete"
+                : "Awaiting renderer preflight";
+
+    private static MapRenderAssetSource CreateAssetSource(
+        FastFileWorkspace workspace)
+    {
+        WorkspaceZone targetZone = workspace.LoadedZones.Single(zone =>
+            zone.IsTarget);
+        if (!targetZone.IsActive)
+        {
+            throw new InvalidOperationException(
+                "The target fastfile is inactive and cannot supply XModel material assets.");
+        }
+
+        LoadedXZone target = targetZone.LoadResult;
+        return new MapRenderAssetSource(
+            target.Header,
+            target.Context.Blocks,
+            target.Context.AssetPool,
+            target.Context.AssetRuntimeLifecycle.GfxWorld,
+            target.Context.GfxImagesByAddress,
+            target.LoadedAssets,
+            target.XAssetList.Assets);
+    }
+
+    private static LodAuthoredMaterialSummary SummarizeAuthoredMaterials(
+        XModelRenderLod? lod)
+    {
+        if (lod is null)
+            return LodAuthoredMaterialSummary.Empty;
+
+        XModelRenderSurface[] groups = lod.Surfaces.ToArray();
+        int ready = groups.Count(surface => surface.AuthoredGroupReady);
+        int passes = groups.Sum(surface => surface.AuthoredPassCount);
+        int[] slots = groups
+            .Where(surface => surface.SelectedTechniqueSlot >= 0)
+            .Select(surface => surface.SelectedTechniqueSlot)
+            .Distinct()
+            .Order()
+            .ToArray();
+        (int Slot, string Name)[] selections = groups
+            .Where(surface => surface.SelectedTechniqueSlot >= 0)
+            .Select(surface => (
+                Slot: surface.SelectedTechniqueSlot,
+                Name: surface.SelectedTechniqueName))
+            .Distinct()
+            .OrderBy(selection => selection.Slot)
+            .ThenBy(selection => selection.Name, StringComparer.Ordinal)
+            .ToArray();
+        string techniqueDisplay = selections.Length == 0
+            ? "No authored camera-color technique selected"
+            : string.Join(
+                "; ",
+                selections.Select(selection =>
+                    $"Slot {selection.Slot}" +
+                    (string.IsNullOrWhiteSpace(selection.Name)
+                        ? string.Empty
+                        : $" · {selection.Name}")));
+        return new LodAuthoredMaterialSummary(
+            groups.Length,
+            ready,
+            passes,
+            slots,
+            techniqueDisplay);
+    }
+
+    private static string AuthoredMaterialPath(
+        XModelRenderSurface surface) =>
+        surface.SelectedTechniqueSlot >= 0
+            ? $"xmodel.materials[{surface.ParentMaterialIndex}]." +
+              $"techniques[{surface.SelectedTechniqueSlot}]"
+            : $"xmodel.materials[{surface.ParentMaterialIndex}].cameraColor";
+
+    private static XModelRenderSurface? ResolveRendererDiagnosticSurface(
+        XModelRenderLod lod,
+        string diagnostic)
+    {
+        foreach (XModelRenderSurface surface in lod.Surfaces)
+        {
+            string identity =
+                $"surface{surface.GeometrySurfaceIndex}:" +
+                $"{surface.MaterialName}:";
+            if (diagnostic.StartsWith(
+                    identity,
+                    StringComparison.Ordinal))
+            {
+                return surface;
+            }
+
+            int groupId = checked(
+                lod.LodIndex * 0x10000 +
+                surface.GeometrySurfaceIndex);
+            if (diagnostic.Contains(
+                    $"group {groupId} ",
+                    StringComparison.Ordinal))
+            {
+                return surface;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool UploadResultsEqual(
+        XModelViewerUploadResult? left,
+        XModelViewerUploadResult? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null &&
+        right is not null &&
+        left.ExecutableGroupCount == right.ExecutableGroupCount &&
+        left.BlockedGroupCount == right.BlockedGroupCount &&
+        left.Diagnostics.SequenceEqual(
+            right.Diagnostics,
+            StringComparer.Ordinal);
 
     private InspectorSelectionViewModel CreateInspectorSelection(
         XModelAsset model,
@@ -259,6 +603,24 @@ public sealed class XModelEditorViewModel
                     ReadOnly("Triangles", "xmodel.lod.triangles", selectedLod.TriangleCount.ToString("N0")),
                     ReadOnly("Bounds", "xmodel.lod.bounds", FormatBounds(selectedLod.Bounds))
                 ]));
+
+            var authoredMaterialRows = selectedLod.Surfaces
+                .Select(surface => (InspectorPropertyRowViewModel)ReadOnly(
+                    $"Surface {surface.GeometrySurfaceIndex} · material {surface.ParentMaterialIndex}",
+                    AuthoredMaterialPath(surface),
+                    surface.SelectedTechniqueSlot >= 0
+                        ? $"Slot {surface.SelectedTechniqueSlot} · " +
+                          $"{surface.SelectedTechniqueName} · " +
+                          $"{surface.AuthoredPassCount:N0} pass" +
+                          (surface.AuthoredPassCount == 1
+                              ? string.Empty
+                              : "es") +
+                          $" · {(surface.AuthoredGroupReady ? "scene-ready" : "blocked")}"
+                        : surface.AuthoredMaterialStatus))
+                .ToArray();
+            sections.Add(new InspectorSectionViewModel(
+                "Authored camera material groups",
+                authoredMaterialRows));
         }
 
         var materialRows = new List<InspectorPropertyRowViewModel>();
@@ -318,7 +680,7 @@ public sealed class XModelEditorViewModel
             selectedLod is null ? Name : $"{Name} · LOD {selectedLod.LodIndex}",
             "XMODEL",
             sections,
-            "Read-only model metadata for the material-slot shaded checkpoint preview.");
+            "Read-only model metadata and authored normal-camera material execution status.");
     }
 
     private static InspectorReadOnlyPropertyRowViewModel ReadOnly(
@@ -342,6 +704,23 @@ public sealed class XModelEditorViewModel
             ? $"({FormatFloat(bounds.Min.X)}, {FormatFloat(bounds.Min.Y)}, {FormatFloat(bounds.Min.Z)}) – " +
               $"({FormatFloat(bounds.Max.X)}, {FormatFloat(bounds.Max.Y)}, {FormatFloat(bounds.Max.Z)})"
             : "Unavailable";
+
+    private sealed record LodAuthoredMaterialSummary(
+        int GroupCount,
+        int ReadyGroupCount,
+        int PassCount,
+        IReadOnlyList<int> TechniqueSlots,
+        string TechniqueDisplay)
+    {
+        internal static LodAuthoredMaterialSummary Empty { get; } = new(
+            0,
+            0,
+            0,
+            [],
+            "No authored camera-color technique selected");
+
+        internal int BlockedGroupCount => GroupCount - ReadyGroupCount;
+    }
 }
 
 public sealed class XModelLodItemViewModel

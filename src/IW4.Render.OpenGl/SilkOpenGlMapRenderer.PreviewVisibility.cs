@@ -1052,44 +1052,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             matrix.M44);
     }
 
-    private static bool TryResolveCodeMatrixRow(
-        GlRsxConstantBinding binding,
-        MapRenderDerivedMatrixState matrices,
-        out Vector4 row)
-    {
-        if (!binding.CodeMatrixSemantic.HasValue ||
-            !MapRenderDerivedMatrixResolver.TryResolve(matrices, binding.CodeMatrixSemantic.Value, out Matrix4x4 matrix))
-        {
-            row = default;
-            return false;
-        }
-
-        if (binding.CodeMatrixTransform is MapRenderCodeMatrixTransform.Inverse or
-            MapRenderCodeMatrixTransform.InverseTranspose)
-        {
-            if (!Matrix4x4.Invert(matrix, out matrix))
-            {
-                row = default;
-                return false;
-            }
-        }
-        if (binding.CodeMatrixTransform is MapRenderCodeMatrixTransform.Transpose or
-            MapRenderCodeMatrixTransform.InverseTranspose)
-        {
-            matrix = Matrix4x4.Transpose(matrix);
-        }
-
-        row = binding.CodeMatrixRow switch
-        {
-            0 => new Vector4(matrix.M11, matrix.M12, matrix.M13, matrix.M14),
-            1 => new Vector4(matrix.M21, matrix.M22, matrix.M23, matrix.M24),
-            2 => new Vector4(matrix.M31, matrix.M32, matrix.M33, matrix.M34),
-            3 => new Vector4(matrix.M41, matrix.M42, matrix.M43, matrix.M44),
-            _ => default
-        };
-        return binding.CodeMatrixRow is >= 0 and <= 3;
-    }
-
     private readonly record struct DpvsWorkKey(
         long SceneGeneration,
         MapRenderCamera Camera,

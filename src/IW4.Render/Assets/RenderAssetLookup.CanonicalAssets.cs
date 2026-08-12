@@ -1,4 +1,5 @@
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.LightDef;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.RawFile;
@@ -14,6 +15,37 @@ namespace IW4.Render.Assets;
 
 public sealed partial class RenderAssetLookup
 {
+    internal bool TryResolveCanonicalImage(
+        GfxImageAsset seed,
+        [NotNullWhen(true)] out GfxImageAsset? image)
+    {
+        ArgumentNullException.ThrowIfNull(seed);
+
+        XAssetPool? pool = _assetPool;
+        if (pool is null)
+        {
+            image = null;
+            return false;
+        }
+
+        long poolRevision = pool.Revision;
+        if (!MapRenderAssetProviderSnapshotFactory.TryCapture(
+                pool,
+                seed,
+                XAssetType.Image,
+                poolRevision,
+                out image,
+                out _) ||
+            image is null ||
+            pool.Revision != poolRevision)
+        {
+            image = null;
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Resolves the PS3 ComPrimaryLight.defName adapter lookup against one
     /// exact active canonical LightDef provider revision.
@@ -118,13 +150,28 @@ public sealed partial class RenderAssetLookup
             return false;
         }
 
+        XAssetPool? pool = _assetPool;
+        if (pool is null)
+            return false;
+        MaterialAsset? activeMaterial = AddPooledMaterialGraph(
+            material,
+            pool);
+        if (!ReferenceEquals(activeMaterial, material) ||
+            pool.Revision != expectedPoolRevision)
+        {
+            return false;
+        }
+        HydrateDependencyTechniqueGraphs();
+        if (pool.Revision != expectedPoolRevision)
+            return false;
+
         MaterialTechniqueSetAsset? techniqueSet =
             _techniqueSetsByMaterial.TryGetValue(
-                material,
+                activeMaterial,
                 out MaterialTechniqueSetAsset? ownedTechniqueSet)
                 ? ownedTechniqueSet
-                : material.TechniqueSet ??
-                  ResolveTechniqueSet(material.TechniqueSetPointer);
+                : activeMaterial.TechniqueSet ??
+                  ResolveTechniqueSet(activeMaterial.TechniqueSetPointer);
         if (techniqueSet is null ||
             !TryResolveCurrentPoolAsset(
                 techniqueSet,
@@ -142,10 +189,15 @@ public sealed partial class RenderAssetLookup
             HydrateDependencyTechniqueGraphs();
         }
 
+        IReadOnlyList<MaterialTechniqueSlot> slots =
+            ResolveTechniqueSlots(currentTechniqueSet);
+        if (pool.Revision != expectedPoolRevision)
+            return false;
+
         binding = new MapRenderMaterialTechniqueBinding(
-            material,
+            activeMaterial,
             currentTechniqueSet,
-            ResolveTechniqueSlots(currentTechniqueSet));
+            slots);
         return true;
     }
 

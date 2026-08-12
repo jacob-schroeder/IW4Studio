@@ -1709,89 +1709,48 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderDerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
-        for (int bindingIndex = 0;
-             bindingIndex < bindings.Count;
-             bindingIndex++)
+        if (!_authoredMaterials.TryApplyConstantBindings(
+                bindings,
+                rsxMatrices,
+                editorTimeSeconds,
+                (sourceRow, sceneLightIndex) =>
+                    ResolveMapDynamicCodeConstant(
+                        sourceRow,
+                        sceneLightIndex,
+                        rsxMatrices.EyeOffset),
+                out string? blocker))
         {
-            GlRsxConstantBinding binding = bindings[bindingIndex];
-            if (binding.CodeMatrixSemantic.HasValue)
-            {
-                if (!TryResolveCodeMatrixRow(
-                        binding,
-                        rsxMatrices,
-                        out Vector4 row))
-                {
-                    throw new InvalidOperationException(
-                        $"Selected RSX execution reached unresolved dynamic matrix {binding.CodeMatrixSemantic}:{binding.CodeMatrixTransform}:row{binding.CodeMatrixRow}.");
-                }
-                _state.Uniform4(
-                    binding.Location,
-                    row.X,
-                    row.Y,
-                    row.Z,
-                    row.W);
-            }
-            else if (binding.DynamicCodeConstantSourceRow is { } sourceRow)
-            {
-                MapRenderShaderConstantValue value = sourceRow switch
-                {
-                    FrameDirectCodeConstants
-                        .DirectionalLightDirectionRowIndex
-                        when binding.SceneLightIndex is int sceneLightIndex =>
-                        ResolveSceneLightPositionCodeConstant(
-                            sceneLightIndex,
-                            rsxMatrices.EyeOffset),
-                    FrameDirectCodeConstants.GameTimeRowIndex =>
-                        FrameDirectCodeConstants.ProduceGameTime(
-                                editorTimeSeconds)
-                            .Value,
-                    FrameDirectCodeConstants
-                        .SunShadowSwitchPartitionRowIndex =>
-                        ResolveSunShadowProjectionCodeConstant(
-                            sourceRow,
-                            switchPartition: true),
-                    FrameDirectCodeConstants
-                        .SunShadowMapScaleRowIndex =>
-                        ResolveSunShadowProjectionCodeConstant(
-                            sourceRow,
-                            switchPartition: false),
-                    FrameDirectCodeConstants
-                        .ClipSpaceLookupScaleRowIndex =>
-                        _frameClipSpaceLookupScaleCodeConstant,
-                    FrameDirectCodeConstants
-                        .ClipSpaceLookupOffsetRowIndex =>
-                        _frameClipSpaceLookupOffsetCodeConstant,
-                    FrameDirectCodeConstants.ZNearRowIndex =>
-                        _frameZNearCodeConstant,
-                    _ => throw new InvalidOperationException(
-                        $"Selected RSX execution reached unsupported dynamic direct code row 0x{sourceRow:X2}.")
-                };
-                _state.Uniform4(
-                    binding.Location,
-                    value.X,
-                    value.Y,
-                    value.Z,
-                    value.W);
-            }
-            else if (binding.X.HasValue &&
-                     binding.Y.HasValue &&
-                     binding.Z.HasValue &&
-                     binding.W.HasValue)
-            {
-                _state.Uniform4(
-                    binding.Location,
-                    binding.X.Value,
-                    binding.Y.Value,
-                    binding.Z.Value,
-                    binding.W.Value);
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    "Selected RSX execution reached an unresolved vertex constant value.");
-            }
+            throw new InvalidOperationException(
+                blocker ?? "Authored RSX constant execution failed.");
         }
     }
+
+    private MapRenderShaderConstantValue? ResolveMapDynamicCodeConstant(
+        ushort sourceRow,
+        int? sceneLightIndex,
+        Vector3 eyeOffset) => sourceRow switch
+    {
+        FrameDirectCodeConstants.DirectionalLightDirectionRowIndex
+            when sceneLightIndex is int index =>
+            ResolveSceneLightPositionCodeConstant(
+                index,
+                eyeOffset),
+        FrameDirectCodeConstants.SunShadowSwitchPartitionRowIndex =>
+            ResolveSunShadowProjectionCodeConstant(
+                sourceRow,
+                switchPartition: true),
+        FrameDirectCodeConstants.SunShadowMapScaleRowIndex =>
+            ResolveSunShadowProjectionCodeConstant(
+                sourceRow,
+                switchPartition: false),
+        FrameDirectCodeConstants.ClipSpaceLookupScaleRowIndex =>
+            _frameClipSpaceLookupScaleCodeConstant,
+        FrameDirectCodeConstants.ClipSpaceLookupOffsetRowIndex =>
+            _frameClipSpaceLookupOffsetCodeConstant,
+        FrameDirectCodeConstants.ZNearRowIndex =>
+            _frameZNearCodeConstant,
+        _ => null
+    };
 
     private MapRenderShaderConstantValue
         ResolveSceneLightPositionCodeConstant(

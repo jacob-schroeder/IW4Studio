@@ -98,7 +98,8 @@ internal static class MapRenderShaderExecutionContractFactory
                 binding.SamplerDest,
                 binding.SamplerHash,
                 binding.TextureName,
-                IsOperationallyResolved: false,
+                IsOperationallyResolved:
+                    binding.IsOperationallyResolved,
                 TextureTarget:
                     explicitCubeSamplerDestinations?.Contains(
                         binding.SamplerDest) == true ||
@@ -229,6 +230,11 @@ internal static class MapRenderShaderExecutionContractFactory
             rendererBlockers.Add("authoredTechniquePass=missing");
         if (translation?.ProgramIrReady != true)
             rendererBlockers.Add("rsxProgramIr=notReady");
+        if (translation is not null)
+        {
+            rendererBlockers.AddRange(translation.Blockers.Select(blocker =>
+                $"rsxTranslation={blocker}"));
+        }
         if (vertexDecl is null)
             rendererBlockers.Add("vertexDeclaration=missing");
         if (!vertexInputPayloadReady)

@@ -4,7 +4,7 @@ using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Editors.XModel;
 
-/// <summary>Desktop host for the checkpoint-one XModel viewer.</summary>
+/// <summary>Desktop host for the XModel asset editor.</summary>
 public sealed class XModelViewFactory : IAssetEditorViewFactory
 {
     public XAssetType AssetType => XAssetType.XModel;

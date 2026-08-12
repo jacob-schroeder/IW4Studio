@@ -84,3 +84,44 @@ public static class MapRenderEditorMaterialTexturePlanner
     }
 
 }
+
+internal static class MapRenderMaterialTextureSelector
+{
+    internal static bool TryResolveFirst(
+        IReadOnlyList<MaterialTextureDef> textures,
+        uint? preferredHash,
+        byte? requiredSemantic,
+        Func<MaterialTextureDef, GfxImageAsset?> resolveImage,
+        out MaterialTextureDef? texture,
+        out GfxImageAsset? image)
+    {
+        ArgumentNullException.ThrowIfNull(textures);
+        ArgumentNullException.ThrowIfNull(resolveImage);
+
+        foreach (MaterialTextureDef candidate in textures)
+        {
+            if (preferredHash.HasValue &&
+                candidate.NameHash != preferredHash.Value)
+            {
+                continue;
+            }
+            if (requiredSemantic.HasValue &&
+                candidate.Semantic != requiredSemantic.Value)
+            {
+                continue;
+            }
+
+            GfxImageAsset? candidateImage = resolveImage(candidate);
+            if (candidateImage is null)
+                continue;
+
+            texture = candidate;
+            image = candidateImage;
+            return true;
+        }
+
+        texture = null;
+        image = null;
+        return false;
+    }
+}

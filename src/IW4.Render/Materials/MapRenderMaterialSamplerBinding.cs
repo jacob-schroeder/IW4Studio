@@ -28,9 +28,12 @@ public sealed record MapRenderMaterialSamplerBinding(
     /// share translated shader contracts without embedding image bytes.
     /// </summary>
     public bool IsOperationallyResolved =>
-        UvRoute is not null &&
         (Texture is not null ||
-         !string.IsNullOrWhiteSpace(ExternalResourceIdentity));
+         !string.IsNullOrWhiteSpace(ExternalResourceIdentity)) &&
+        // Material samplers consume declaration-routed coordinates. Custom
+        // cube/runtime samplers use shader-produced directions or coordinates
+        // and therefore correctly carry no host UV route.
+        (SamplerArgIndex < 0 || UvRoute is not null);
 
     public string ResourceBindingIdentity =>
         Texture?.BindingIdentity ??

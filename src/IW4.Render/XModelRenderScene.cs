@@ -1,4 +1,6 @@
 using System.Numerics;
+using IW4.Render.Execution;
+using IW4.Render.Materials;
 
 namespace IW4.Render;
 
@@ -9,16 +11,19 @@ public sealed class XModelRenderScene
         IReadOnlyList<XModelRenderLod> lods,
         int defaultLodIndex,
         MapRenderBounds bounds,
+        IReadOnlyList<XModelRenderBone> bones,
         IReadOnlyList<string> diagnostics)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(lods);
+        ArgumentNullException.ThrowIfNull(bones);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
         Name = name;
         Lods = Array.AsReadOnly(lods.ToArray());
         DefaultLodIndex = defaultLodIndex;
         Bounds = bounds;
+        Bones = Array.AsReadOnly(bones.ToArray());
         Diagnostics = Array.AsReadOnly(diagnostics.ToArray());
     }
 
@@ -29,6 +34,8 @@ public sealed class XModelRenderScene
     public int DefaultLodIndex { get; }
 
     public MapRenderBounds Bounds { get; }
+
+    public IReadOnlyList<XModelRenderBone> Bones { get; }
 
     public IReadOnlyList<string> Diagnostics { get; }
 }
@@ -73,38 +80,49 @@ public sealed class XModelRenderSurface
         int parentMaterialIndex,
         string materialName,
         IReadOnlyList<Vector3> positions,
-        IReadOnlyList<Vector3> normals,
-        IReadOnlyList<Vector2> uvs,
         IReadOnlyList<uint> indices,
-        MapRenderBounds bounds)
+        MapRenderBounds bounds,
+        int selectedTechniqueSlot,
+        string selectedTechniqueName,
+        IReadOnlyList<XModelRenderAuthoredPass> authoredPasses,
+        bool authoredGroupReady,
+        string authoredMaterialStatus)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(materialName);
         ArgumentNullException.ThrowIfNull(positions);
-        ArgumentNullException.ThrowIfNull(normals);
-        ArgumentNullException.ThrowIfNull(uvs);
         ArgumentNullException.ThrowIfNull(indices);
-        if (positions.Count != normals.Count ||
-            positions.Count != uvs.Count)
-        {
-            throw new ArgumentException(
-                "XModel surface vertex channels must have equal lengths.",
-                nameof(positions));
-        }
+        ArgumentNullException.ThrowIfNull(authoredPasses);
+        ArgumentNullException.ThrowIfNull(authoredMaterialStatus);
         if (indices.Count % 3 != 0)
         {
             throw new ArgumentException(
                 "XModel surface indices must contain complete triangles.",
                 nameof(indices));
         }
+        int exactRsxPayloadLength = checked(
+            positions.Count *
+            Geometry.XSurfaceVertexDecoder.RsxVertexInputCount *
+            Geometry.XSurfaceVertexDecoder.RsxVertexInputComponentCount);
+        if (authoredPasses.Any(pass =>
+                pass.RsxVertexInputs.Length != 0 &&
+                pass.RsxVertexInputs.Length != exactRsxPayloadLength))
+        {
+            throw new ArgumentException(
+                "XModel authored-pass RSX vertex payloads must be empty when blocked or contain one 16-vec4 slab per projected vertex.",
+                nameof(authoredPasses));
+        }
 
         GeometrySurfaceIndex = geometrySurfaceIndex;
         ParentMaterialIndex = parentMaterialIndex;
         MaterialName = materialName;
         Positions = Array.AsReadOnly(positions.ToArray());
-        Normals = Array.AsReadOnly(normals.ToArray());
-        UVs = Array.AsReadOnly(uvs.ToArray());
         Indices = Array.AsReadOnly(indices.ToArray());
         Bounds = bounds;
+        SelectedTechniqueSlot = selectedTechniqueSlot;
+        SelectedTechniqueName = selectedTechniqueName;
+        AuthoredPasses = Array.AsReadOnly(authoredPasses.ToArray());
+        AuthoredGroupReady = authoredGroupReady;
+        AuthoredMaterialStatus = authoredMaterialStatus;
     }
 
     public int GeometrySurfaceIndex { get; }
@@ -115,11 +133,92 @@ public sealed class XModelRenderSurface
 
     public IReadOnlyList<Vector3> Positions { get; }
 
-    public IReadOnlyList<Vector3> Normals { get; }
-
-    public IReadOnlyList<Vector2> UVs { get; }
-
     public IReadOnlyList<uint> Indices { get; }
 
     public MapRenderBounds Bounds { get; }
+
+    public int SelectedTechniqueSlot { get; }
+
+    public string SelectedTechniqueName { get; }
+
+    public int AuthoredPassCount => AuthoredPasses.Count;
+
+    public bool AuthoredGroupReady { get; }
+
+    public string AuthoredMaterialStatus { get; }
+
+    internal IReadOnlyList<XModelRenderAuthoredPass> AuthoredPasses { get; }
+}
+
+internal sealed class XModelRenderAuthoredPass
+{
+    internal XModelRenderAuthoredPass(
+        int groupId,
+        int groupPassIndex,
+        MapRenderMaterialPass pass,
+        MapRenderState state,
+        MapRenderShaderExecutionContract shaderExecution,
+        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
+        float[] rsxVertexInputs,
+        string diagnostic)
+    {
+        if (groupId < 0)
+            throw new ArgumentOutOfRangeException(nameof(groupId));
+        if (groupPassIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(groupPassIndex));
+        ArgumentNullException.ThrowIfNull(pass);
+        ArgumentNullException.ThrowIfNull(shaderExecution);
+        ArgumentNullException.ThrowIfNull(materialSamplers);
+        ArgumentNullException.ThrowIfNull(rsxVertexInputs);
+        ArgumentNullException.ThrowIfNull(diagnostic);
+
+        GroupId = groupId;
+        GroupPassIndex = groupPassIndex;
+        Pass = pass;
+        State = state;
+        ShaderExecution = shaderExecution;
+        MaterialSamplers = Array.AsReadOnly(materialSamplers.ToArray());
+        RsxVertexInputs = rsxVertexInputs.ToArray();
+        Diagnostic = diagnostic;
+    }
+
+    internal int GroupId { get; }
+
+    internal int GroupPassIndex { get; }
+
+    internal MapRenderMaterialPass Pass { get; }
+
+    internal MapRenderState State { get; }
+
+    internal MapRenderShaderExecutionContract ShaderExecution { get; }
+
+    internal IReadOnlyList<MapRenderMaterialSamplerBinding>
+        MaterialSamplers { get; }
+
+    internal float[] RsxVertexInputs { get; }
+
+    internal string Diagnostic { get; }
+}
+
+public sealed class XModelRenderBone
+{
+    internal XModelRenderBone(
+        int boneIndex,
+        string name,
+        Vector3 position)
+    {
+        if (boneIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(boneIndex));
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        BoneIndex = boneIndex;
+        Name = name;
+        Position = position;
+    }
+
+    public int BoneIndex { get; }
+
+    public string Name { get; }
+
+    public Vector3 Position { get; }
 }

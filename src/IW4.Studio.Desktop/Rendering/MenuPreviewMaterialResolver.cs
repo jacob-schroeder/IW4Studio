@@ -9,7 +9,6 @@ using IW4.Render.Materials;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Runtime.Assets;
-using IW4.Runtime.Assets.Images;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Rendering;
@@ -27,6 +26,7 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
     private const long MaxCachedPayloadBytes = 64L * 1024 * 1024;
 
     private readonly FastFileWorkspace _workspace;
+    private readonly WorkspaceGfxImagePayloadResolver _imagePayloads;
     private readonly IMaterialExecutionLookup _materialExecution;
     private readonly Dictionary<MaterialCacheKey,
         MaterialCacheEntry> _cache = [];
@@ -39,6 +39,7 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
     public MenuPreviewMaterialResolver(FastFileWorkspace workspace)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        _imagePayloads = new WorkspaceGfxImagePayloadResolver(workspace);
         _materialExecution = CreateMaterialExecutionLookup(workspace);
     }
 
@@ -296,11 +297,10 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
             material,
             plan,
             executionPlan);
-        IGfxImagePayloadResolver payloadResolver =
-            ResolvePayloadResolver(pool, image, out string payloadSource);
+        string payloadSource = _imagePayloads.DescribeSource(image);
         if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(
                 image,
-                payloadResolver,
+                _imagePayloads,
                 out GfxImagePreviewSnapshot? preview,
                 out string reason) ||
             preview is null)
@@ -469,32 +469,6 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
         }
 
         return UiMaterialPreviewImageResolution.Canonical(canonical);
-    }
-
-    private IGfxImagePayloadResolver ResolvePayloadResolver(
-        XAssetPool pool,
-        GfxImageAsset image,
-        out string source)
-    {
-        if (image.RuntimeAddress?.AssetPoolAddress is not { } address ||
-            !pool.TryGetSlot(address, out XAssetSlot? slot) ||
-            slot is null ||
-            slot.ActiveProvider.Owner.IsNone)
-        {
-            source = "the embedded image payload";
-            return UnavailableGfxImagePayloadResolver.Instance;
-        }
-
-        WorkspaceZone? ownerZone = _workspace.LoadedZones.FirstOrDefault(zone =>
-            zone.LoadResult.Context.ZoneOwner == slot.ActiveProvider.Owner);
-        if (ownerZone is null)
-        {
-            source = "an unavailable provider-zone image package";
-            return UnavailableGfxImagePayloadResolver.Instance;
-        }
-
-        source = $"image package for zone '{ownerZone.LogicalZoneName}'";
-        return ownerZone.LoadResult.ImagePayloadResolver;
     }
 
     private readonly record struct MaterialCacheKey(

@@ -220,148 +220,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderEditorTranslatedProgramVertexConstantBindingPlan
             vertexConstantPlan)
     {
-        ArgumentNullException.ThrowIfNull(execution);
-        ArgumentNullException.ThrowIfNull(directCodePlan);
-        ArgumentNullException.ThrowIfNull(vertexConstantPlan);
-        if (program.Handle == 0)
-            throw new ArgumentException("An RSX constant plan requires a linked program.", nameof(program));
-
-        var bindings = new List<GlRsxConstantBinding>();
-        foreach (MapRenderEditorTranslatedProgramVertexConstantBinding
-                 constant in vertexConstantPlan.Bindings)
+        if (_authoredMaterials.TryCreateConstantBindings(
+                execution,
+                program,
+                directCodePlan,
+                vertexConstantPlan,
+                out GlRsxConstantBinding[] bindings,
+                out string? blocker))
         {
-            int location = _rsxUniformLocations.Get(
-                program.Handle,
-                $"rsxVertexConst[{constant.Destination}]");
-            if (constant.Kind ==
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .DerivedMatrixRow)
-            {
-                bindings.Add(new GlRsxConstantBinding(
-                    location,
-                    null,
-                    null,
-                    null,
-                    null,
-                    constant.CodeMatrixSemantic,
-                    constant.CodeMatrixTransform,
-                    constant.CodeMatrixRow));
-                continue;
-            }
-
-            if (constant.Kind is
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .DynamicGameTime or
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .DynamicSceneLightPosition or
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .DynamicSunShadowProjection or
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .DynamicClipSpaceLookup or
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .DynamicZNear)
-            {
-                bindings.Add(new GlRsxConstantBinding(
-                    location,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    MapRenderCodeMatrixTransform.None,
-                    -1,
-                    constant.DynamicCodeConstantSourceRow,
-                    constant.Kind ==
-                        MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                            .DynamicSceneLightPosition
-                        ? directCodePlan.SceneLightIndex
-                        : null));
-                continue;
-            }
-
-            if (constant.Kind is
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .PerInstanceStaticModelBaseLightingCoords or
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
-                    .PerInstanceStaticModelLightProbeAmbient)
-            {
-                // The static-model composer replaces either per-instance row
-                // uniform with divisor attribute 12. It must not be uploaded
-                // once per draw.
-                continue;
-            }
-
-            if (constant.StaticValue is not { } value)
-            {
-                throw new InvalidOperationException(
-                    $"Selected RSX execution reached unresolved planned vertex constant c{constant.Destination}.");
-            }
-            bindings.Add(new GlRsxConstantBinding(
-                location,
-                value.X,
-                value.Y,
-                value.Z,
-                value.W,
-                null,
-                MapRenderCodeMatrixTransform.None,
-                -1));
+            return bindings;
         }
 
-        foreach (MapRenderCodePixelConstantPatchPlan patchPlan in execution
-                     .CodePixelConstantPatchPlans
-                     .GroupBy(plan => plan.CodeIndex)
-                     .Select(group => group.First()))
-        {
-            if (!patchPlan.IsDirectSourceResolved)
-            {
-                throw new InvalidOperationException(
-                    $"Selected RSX execution reached unresolved direct CodePixel row 0x{patchPlan.CodeIndex:X2}.");
-            }
-
-            int location = _rsxUniformLocations.Get(
-                program.Handle,
-                MapRenderOpenGlCodePixelConstantUniformLayout.ElementName(
-                    patchPlan.CodeIndex));
-            if (directCodePlan.IsDynamicSourceRow(patchPlan.CodeIndex))
-            {
-                bindings.Add(new GlRsxConstantBinding(
-                    location,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    MapRenderCodeMatrixTransform.None,
-                    -1,
-                    patchPlan.CodeIndex,
-                    patchPlan.CodeIndex ==
-                        FrameDirectCodeConstants
-                            .DirectionalLightDirectionRowIndex
-                        ? directCodePlan.SceneLightIndex
-                        : null));
-                continue;
-            }
-            if (!directCodePlan.TryGetRow(
-                    patchPlan.CodeIndex,
-                    out MapRenderDirectCodeConstantRow? row))
-            {
-                throw new InvalidOperationException(
-                    $"Selected RSX execution reached unresolved direct CodePixel row 0x{patchPlan.CodeIndex:X2}.");
-            }
-
-            MapRenderShaderConstantValue value = row!.Value;
-            bindings.Add(new GlRsxConstantBinding(
-                location,
-                value.X,
-                value.Y,
-                value.Z,
-                value.W,
-                null,
-                MapRenderCodeMatrixTransform.None,
-                -1));
-        }
-
-        return bindings.ToArray();
+        throw new InvalidOperationException(
+            blocker ?? "Authored RSX constant binding failed.");
     }
 
     private static AuthoredProgramGroupKey AuthoredProgramGroup(MapRenderTexturedBatch batch) =>
@@ -383,292 +254,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderShaderExecutionContract execution,
         MapRenderState state,
         MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
-            staticModelVertexConstantPlan = null)
-    {
-        RsxVertexGlsl330ProgramResolution vertexResolution =
-            _rsxVertexProgramResolver.Resolve(execution);
-        if (!vertexResolution.IsReady)
-        {
-            string failedKey =
-                $"{execution.ProgramCacheKey}|openGlVertexLowering";
-            _rsxProgramFailureDiagnostics.TryAdd(
-                failedKey,
-                vertexResolution.FailureReason);
-            return default;
-        }
-        RsxFragmentGlsl330ProgramResolution fragmentResolution =
-            _rsxFragmentProgramResolver.Resolve(execution);
-        if (!fragmentResolution.IsReady)
-        {
-            string failedKey =
-                $"{execution.ProgramCacheKey}|openGlFragmentLowering";
-            _rsxProgramFailureDiagnostics.TryAdd(
-                failedKey,
-                fragmentResolution.FailureReason);
-            return default;
-        }
-
-        if (!MapRenderOpenGlFixedFunctionEpilogue.TryCompose(
-                state,
-                execution.FragmentProgramControl,
-                suppressShaderPackerForDiagnosticOutput:
-                    UseRsxVertexPlacementDiagnostic,
-                out MapRenderAlphaTestMode alphaTestMode,
-                out MapRenderOpenGlRsxShaderPackerMode shaderPackerMode,
-                out string fixedFunctionEpilogue))
-        {
-            return default;
-        }
-
-        // Both sources are produced here from immutable RSX IR.
-        string vertexGlsl = vertexResolution.Glsl!;
-        MapRenderOpenGlAuthoredFragmentSource fragmentSource =
-            fragmentResolution.Source!;
-        bool staticModelInstancingReady = false;
-        string staticModelInstancingIdentity = string.Empty;
-        if (staticModelVertexConstantPlan is not null)
-        {
-            if (!MapRenderOpenGlStaticModelInstancedVertexComposer.TryCompose(
-                    vertexGlsl,
-                    execution.VertexInputs,
-                    staticModelVertexConstantPlan,
-                    out vertexGlsl,
-                    out staticModelInstancingIdentity,
-                    out string staticModelInstancingBlocker))
-            {
-                string failedKey =
-                    $"{execution.ProgramCacheKey}|staticModelInstancing";
-                if (!_rsxProgramFailureDiagnostics.ContainsKey(failedKey))
-                {
-                    _rsxProgramFailureDiagnostics.Add(
-                        failedKey,
-                        staticModelInstancingBlocker);
-                }
-                return default;
-            }
-            staticModelInstancingReady = true;
-        }
-
-        string fixedFunctionQualifiedDiagnosticIdentity =
-            $"{execution.ProgramCacheKey}|alphaTest={alphaTestMode}" +
-            $"|rsxShaderPacker={shaderPackerMode}" +
-            (staticModelInstancingReady
-                ? $"|staticModelInstancing={staticModelInstancingIdentity}"
-                : string.Empty);
-        string diagnosticIdentity = UseRsxVertexPlacementDiagnostic
-            ? $"VERTEX_PLACEMENT_DIAGNOSTIC|{fixedFunctionQualifiedDiagnosticIdentity}"
-            : RsxFragmentOutputDiagnostic.HasValue
-                ? $"FRAGMENT_OUTPUT_{RsxFragmentOutputDiagnostic.Value}_DIAGNOSTIC|{fixedFunctionQualifiedDiagnosticIdentity}"
-                : fixedFunctionQualifiedDiagnosticIdentity;
-
-        MapRenderOpenGlAuthoredFragmentSource finalPixelSource;
-        try
-        {
-            MapRenderOpenGlAuthoredFragmentSource translatedPixelSource =
-                MapRenderOpenGlFixedFunctionEpilogue
-                .Apply(
-                fragmentSource,
-                fixedFunctionEpilogue);
-            finalPixelSource = UseRsxVertexPlacementDiagnostic
-                ? translatedPixelSource.WithBackendComposition(
-                    RsxVertexPlacementDiagnosticFragmentSource)
-                : RemapFragmentOutputForDiagnostic(
-                    translatedPixelSource,
-                    RsxFragmentOutputDiagnostic);
-        }
-        catch (InvalidOperationException exception)
-        {
-            string diagnostic =
-                $"RSX GLSL source composition failed for {diagnosticIdentity}: {exception.Message}";
-            _rsxProgramFailureDiagnostics.TryAdd(
-                $"{diagnosticIdentity}|sourceComposition",
-                diagnostic);
-            Console.Error.WriteLine(diagnostic);
-            return default;
-        }
-
-        int[] samplerDestinations = UseRsxVertexPlacementDiagnostic
-            ? []
-            : execution.MaterialSamplerDestinations
-                .Concat(execution.CustomSamplerDestinations)
-                .Concat(execution.CodeSamplerDestinations)
-                .Select(binding => (int)binding.Destination)
-                .Distinct()
-                .Order()
-                .ToArray();
-        MapRenderOpenGlProgramKey programKey =
-            MapRenderOpenGlDirectProgramKeyFactory.Create(
-                vertexGlsl,
-                finalPixelSource.ExactGlsl,
-                EditorPreviewLinkProfileIdentity,
-                staticModelInstancingReady,
-                samplerDestinations);
-        if (_rsxPrograms.TryGetValue(programKey, out GlRsxProgram cached))
-            return cached;
-        if (_rsxProgramFailures.ContainsKey(programKey))
-            return default;
-
-        _rsxProgramSemanticRequestCount =
-            checked(_rsxProgramSemanticRequestCount + 1);
-        MapRenderOpenGlLinkedProgramHandleResolution linkResolution =
-            ResolveLinkedProgram(
-                vertexGlsl,
-                finalPixelSource.ExactGlsl);
-        if (linkResolution.IsReuse)
-        {
-            _rsxProgramLinkReuseCount =
-                checked(_rsxProgramLinkReuseCount + 1);
-        }
-        else if (linkResolution.IsReady)
-        {
-            _rsxProgramUniqueLinkCount =
-                checked(_rsxProgramUniqueLinkCount + 1);
-        }
-        if (!linkResolution.IsReady)
-        {
-            string diagnostic =
-                $"RSX GLSL validation failed for {diagnosticIdentity} " +
-                $"({programKey}): {linkResolution.FailureReason}";
-            _rsxProgramFailures.TryAdd(programKey, diagnostic);
-            Console.Error.WriteLine(diagnostic);
-            return default;
-        }
-        uint handle = linkResolution.Handle;
-
-        int[] samplerLocations = samplerDestinations
-            .Select(destination => _rsxUniformLocations.Get(
-                handle,
-                $"rsxSampler{destination}"))
-            .ToArray();
-        _gl.UseProgram(handle);
-        for (int index = 0; index < samplerDestinations.Length; index++)
-            _gl.Uniform1(samplerLocations[index], samplerDestinations[index]);
-        GlRsxVegetationUniformLocations? vegetationUniformLocations =
-            staticModelInstancingReady
-                ? new(
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationWindEnabledUniform),
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationTimeUniform),
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationAmplitudeUniform),
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationAngularFrequencyUniform),
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationSpatialFrequencyUniform),
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationLocalMinimumHeightUniform),
-                    _rsxUniformLocations.Get(
-                        handle,
-                        MapRenderOpenGlStaticModelInstancedVertexComposer
-                            .VegetationLocalHeightRangeUniform))
-                : null;
-        if (vegetationUniformLocations is { IsReady: false })
-        {
-            // The exact linked handle can already back another semantic
-            // wrapper. Keep ownership in the exact-pair cache and reject only
-            // this wrapper; renderer cleanup deletes every unique handle once.
-            _rsxProgramFailures.TryAdd(
-                programKey,
-                "Translated static-model program lost its Live Preview vegetation uniform bridge.");
-            return default;
-        }
-
-        var program = new GlRsxProgram(
-            handle,
-            samplerDestinations,
-            samplerLocations)
-        {
-            StaticModelInstancingReady = staticModelInstancingReady,
-            StaticModelViewRowLocations = staticModelInstancingReady
-                ? Enumerable.Range(0, 4)
-                    .Select(row => _rsxUniformLocations.Get(
-                        handle,
-                        $"{MapRenderOpenGlStaticModelInstancedVertexComposer.ViewRowsUniform}[{row}]"))
-                    .ToArray()
-                : null,
-            StaticModelViewProjectionRowLocations =
-                staticModelInstancingReady
-                    ? Enumerable.Range(0, 4)
-                        .Select(row => _rsxUniformLocations.Get(
-                            handle,
-                            $"{MapRenderOpenGlStaticModelInstancedVertexComposer.ViewProjectionRowsUniform}[{row}]"))
-                        .ToArray()
-                    : null,
-            StaticModelEyeOffsetLocation = staticModelInstancingReady
-                ? _rsxUniformLocations.Get(
-                    handle,
-                    MapRenderOpenGlStaticModelInstancedVertexComposer.EyeOffsetUniform)
-                : -1,
-            StaticModelVegetationUniformLocations =
-                vegetationUniformLocations
-        };
-        _rsxPrograms.Add(programKey, program);
-        return program;
-    }
-
-    private static MapRenderOpenGlAuthoredFragmentSource
-        RemapFragmentOutputForDiagnostic(
-            MapRenderOpenGlAuthoredFragmentSource fragmentSource,
-            int? outputIndex)
-    {
-        ArgumentNullException.ThrowIfNull(fragmentSource);
-        if (!outputIndex.HasValue || outputIndex.Value == 0)
-            return fragmentSource;
-        if (outputIndex.Value is < 0 or > 3)
-            throw new ArgumentOutOfRangeException(nameof(outputIndex));
-
-        string fragmentGlsl = fragmentSource.ExactGlsl;
-        string[] names = ["FragColor", "rsxMrtColor1", "rsxMrtColor2", "rsxMrtColor3"];
-        int selected = outputIndex.Value;
-        for (int index = 0; index < names.Length; index++)
-        {
-            int location = index == selected
-                ? 0
-                : index == 0
-                    ? selected
-                    : index;
-            fragmentGlsl = fragmentGlsl.Replace(
-                $"layout(location = {index}) out vec4 {names[index]};",
-                $"layout(location = {location}) out vec4 {names[index]};",
-                StringComparison.Ordinal);
-        }
-        return fragmentSource.WithBackendComposition(fragmentGlsl);
-    }
-
-    // Explicit diagnostic only: it preserves the exact selected vertex program,
-    // vertex inputs, and constants while replacing fragment execution with a flat
-    // marker. It must never be treated as an authored-program translation.
-    private const string RsxVertexPlacementDiagnosticFragmentSource = """
-        #version 330 core
-        in vec4 rsxColor0;
-        in vec4 rsxColor1;
-        in vec4 rsxTexcoord0;
-        in vec4 rsxTexcoord1;
-        in vec4 rsxTexcoord2;
-        in vec4 rsxTexcoord3;
-        in vec4 rsxTexcoord4;
-        in vec4 rsxTexcoord5;
-        in vec4 rsxTexcoord6;
-        in vec4 rsxTexcoord7;
-        out vec4 FragColor;
-        void main()
-        {
-            FragColor = vec4(1.0, 0.0, 1.0, 1.0);
-        }
-        """;
+            staticModelVertexConstantPlan = null) =>
+        _authoredMaterials.GetOrCreateProgram(
+            execution,
+            state,
+            staticModelVertexConstantPlan,
+            UseRsxVertexPlacementDiagnostic,
+            RsxFragmentOutputDiagnostic,
+            out _);
 
     private uint CreateTexture(
         MapRenderTexture texture,
@@ -697,10 +290,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return cachedHandle;
         }
 
-        MapRenderRsxTextureSwizzle swizzle =
-            MapRenderRsxTextureSwizzleDecoder.Decode(
-                texture.RsxTextureCommandState.TexSwizzlePayload);
-
         uint handle = _gl.GenTexture();
         TextureTarget textureTarget = ToGlTextureTarget(texture.Target);
         bool isPinned = pinForRendererLifetime;
@@ -728,9 +317,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 InitializeTextureFallbackStorageBound(
                     textureTarget,
                     faceCount);
-                ApplyTextureSwizzle(swizzle, textureTarget);
-                ApplyTextureSampler(
-                    texture.DecodedSamplerState,
+                _textureParameters.Apply(
+                    texture,
                     maxMipLevel: 0,
                     textureTarget);
 
@@ -929,12 +517,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             UploadDecodedRgbaStorageBound(entry);
         }
 
-        MapRenderRsxTextureSwizzle swizzle =
-            MapRenderRsxTextureSwizzleDecoder.Decode(
-                entry.Source.RsxTextureCommandState.TexSwizzlePayload);
-        ApplyTextureSwizzle(swizzle, entry.Target);
-        ApplyTextureSampler(
-            entry.Source.DecodedSamplerState,
+        _textureParameters.Apply(
+            entry.Source,
             checked(entry.StorageLevelCount - 1),
             entry.Target);
     }
@@ -1288,100 +872,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void ApplyTextureSwizzle(
         MapRenderRsxTextureSwizzle swizzle,
-        TextureTarget textureTarget)
-    {
-        _gl.TexParameter(
-            textureTarget,
-            TextureParameterName.TextureSwizzleR,
-            ToGlTextureSwizzle(swizzle.Red));
-        _gl.TexParameter(
-            textureTarget,
-            TextureParameterName.TextureSwizzleG,
-            ToGlTextureSwizzle(swizzle.Green));
-        _gl.TexParameter(
-            textureTarget,
-            TextureParameterName.TextureSwizzleB,
-            ToGlTextureSwizzle(swizzle.Blue));
-        _gl.TexParameter(
-            textureTarget,
-            TextureParameterName.TextureSwizzleA,
-            ToGlTextureSwizzle(swizzle.Alpha));
-    }
+        TextureTarget textureTarget) =>
+        _textureParameters.ApplySwizzle(swizzle, textureTarget);
 
-    private static int ToGlTextureSwizzle(
-        MapRenderRsxTextureSwizzleSource source)
-    {
-        return source switch
-        {
-            MapRenderRsxTextureSwizzleSource.Zero => GlTextureSwizzleZero,
-            MapRenderRsxTextureSwizzleSource.One => GlTextureSwizzleOne,
-            MapRenderRsxTextureSwizzleSource.Red => GlTextureSwizzleRed,
-            MapRenderRsxTextureSwizzleSource.Green => GlTextureSwizzleGreen,
-            MapRenderRsxTextureSwizzleSource.Blue => GlTextureSwizzleBlue,
-            MapRenderRsxTextureSwizzleSource.Alpha => GlTextureSwizzleAlpha,
-            _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
-        };
-    }
-
-    private void ApplyTextureSampler(MapRenderSamplerState sampler, int maxMipLevel, TextureTarget textureTarget)
-    {
-        bool useMipChain = maxMipLevel > 0 && sampler.MipFilter != MapRenderTextureFilter.None;
-        _gl.TexParameter(
-            textureTarget,
-            TextureParameterName.TextureMinFilter,
-            (int)ToMinFilter(sampler, useMipChain));
-        _gl.TexParameter(textureTarget, TextureParameterName.TextureMagFilter, (int)ToMagFilter(sampler.MagFilter));
-        _gl.TexParameter(textureTarget, TextureParameterName.TextureBaseLevel, 0);
-        _gl.TexParameter(textureTarget, TextureParameterName.TextureMaxLevel, useMipChain ? maxMipLevel : 0);
-        _gl.TexParameter(textureTarget, TextureLodBias, sampler.MipLodBias);
-        _gl.TexParameter(textureTarget, TextureParameterName.TextureWrapS, (int)ToWrapMode(sampler.AddressU));
-        _gl.TexParameter(textureTarget, TextureParameterName.TextureWrapT, (int)ToWrapMode(sampler.AddressV));
-        _gl.TexParameter(textureTarget, TextureParameterName.TextureWrapR, (int)ToWrapMode(sampler.AddressW));
-
-        if (sampler.MaxAnisotropy > 1 && IsAnisotropicFilteringSupported())
-        {
-            _gl.TexParameter(
-                textureTarget,
-                TextureMaxAnisotropyExt,
-                Math.Clamp((float)sampler.MaxAnisotropy, 1f, 16f));
-        }
-    }
-
-    private bool IsAnisotropicFilteringSupported()
-    {
-        _anisotropicFilteringSupported ??=
-            _gl.IsExtensionPresent("GL_EXT_texture_filter_anisotropic") ||
-            _gl.IsExtensionPresent("GL_ARB_texture_filter_anisotropic");
-        return _anisotropicFilteringSupported.Value;
-    }
-
-    private static TextureMinFilter ToMinFilter(MapRenderSamplerState sampler, bool useMipChain)
-    {
-        bool point = sampler.MinFilter == MapRenderTextureFilter.Point;
-        if (!useMipChain)
-            return point ? TextureMinFilter.Nearest : TextureMinFilter.Linear;
-
-        return sampler.MipFilter switch
-        {
-            MapRenderTextureFilter.Point => point ? TextureMinFilter.NearestMipmapNearest : TextureMinFilter.LinearMipmapNearest,
-            MapRenderTextureFilter.Linear => point ? TextureMinFilter.NearestMipmapLinear : TextureMinFilter.LinearMipmapLinear,
-            _ => point ? TextureMinFilter.Nearest : TextureMinFilter.Linear
-        };
-    }
-
-    private static TextureMagFilter ToMagFilter(MapRenderTextureFilter filter)
-    {
-        return filter == MapRenderTextureFilter.Point
-            ? TextureMagFilter.Nearest
-            : TextureMagFilter.Linear;
-    }
-
-    private static TextureWrapMode ToWrapMode(MapRenderTextureAddressMode mode)
-    {
-        return mode == MapRenderTextureAddressMode.Clamp
-            ? TextureWrapMode.ClampToEdge
-            : TextureWrapMode.Repeat;
-    }
+    private void ApplyTextureSampler(
+        MapRenderSamplerState sampler,
+        int maxMipLevel,
+        TextureTarget textureTarget) =>
+        _textureParameters.ApplySampler(
+            sampler,
+            maxMipLevel,
+            textureTarget);
 
     private static int MaxMipLevel(int width, int height)
     {

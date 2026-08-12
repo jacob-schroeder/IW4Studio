@@ -48,7 +48,7 @@
           <Button Classes="ghost"
                   MinHeight="30"
                   Padding="9,4"
-                  ToolTip.Tip="Reset the orbit camera and fit the selected LOD"
+                  ToolTip.Tip="Reset orbit, pan, and zoom to fit the selected LOD"
                   Click="FitButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="15" Height="15" />
@@ -58,6 +58,9 @@
           <CheckBox Content="Wireframe"
                     VerticalAlignment="Center"
                     IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
+          <CheckBox Content="Bone tags"
+                    VerticalAlignment="Center"
+                    IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
           <Button Classes="ghost"
                   MinHeight="30"
                   Padding="7,4"
@@ -71,7 +74,7 @@
                   MinHeight="30"
                   Padding="12,5"
                   IsEnabled="{Binding CanApply}"
-                  ToolTip.Tip="XModel authoring is not available in checkpoint 1">
+                  ToolTip.Tip="No supported XModel draft mutations are staged">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
               <TextBlock Text="Apply" />
@@ -89,9 +92,18 @@
             BorderThickness="1">
       <Grid>
         <xmodel:XModelPreviewControl x:Name="Preview"
-                                         Scene="{Binding Scene}"
-                                         SelectedLodIndex="{Binding SelectedLodIndex}"
-                                         ShowWireframe="{Binding IsWireframeEnabled}" />
+                                    Scene="{Binding Scene}"
+                                    SelectedLodIndex="{Binding SelectedLodIndex}"
+                                    ShowWireframe="{Binding IsWireframeEnabled}"
+                                    ShowBoneTags="{Binding ShowBoneTags}" />
+
+        <Border x:Name="PreviewInputSurface"
+                Background="Transparent"
+                ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
+
+        <xmodel:XModelBoneTagOverlay x:Name="BoneTagOverlay"
+                                    IsHitTestVisible="False"
+                                    ClipToBounds="True" />
 
         <Border HorizontalAlignment="Left"
                 VerticalAlignment="Bottom"
@@ -102,10 +114,26 @@
                 Background="#C816191F"
                 BorderBrush="#506D7683"
                 BorderThickness="1">
-          <TextBlock Text="CHECKPOINT 1 · MATERIAL-SLOT SHADING · TEXTURES NOT APPLIED"
+          <TextBlock Text="{Binding MaterialExecutionBadge}"
                      FontSize="8"
                      FontWeight="Bold"
                      LetterSpacing="0.7"
+                     Foreground="#CDD5DF" />
+        </Border>
+
+        <Border HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="12"
+                Padding="8,4"
+                CornerRadius="4"
+                IsHitTestVisible="False"
+                Background="#C816191F"
+                BorderBrush="#506D7683"
+                BorderThickness="1">
+          <TextBlock Text="LEFT DRAG · ORBIT   RIGHT/MIDDLE DRAG · PAN   SCROLL · ZOOM"
+                     FontSize="8"
+                     FontWeight="SemiBold"
+                     LetterSpacing="0.4"
                      Foreground="#CDD5DF" />
         </Border>
       </Grid>

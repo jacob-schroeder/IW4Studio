@@ -25,7 +25,7 @@ public sealed partial class MapSceneBuilder
     private readonly record struct StaticMaterialSelection(
         MaterialTechniqueSetAsset? Techset,
         SelectedColorPass? Pass,
-        StaticVertexDecoder? VertexDecoder,
+        XSurfaceVertexDecoder? VertexDecoder,
         bool IsGenericFallback,
         bool IsExactTechniquePass,
         MapRenderEditorDepthPrepassPlan? EditorDepthPrepass);
@@ -533,9 +533,9 @@ public sealed partial class MapSceneBuilder
             int i1 = surface.TriIndices[indexOffset + 1];
             int i2 = surface.TriIndices[indexOffset + 2];
             if (i0 >= surface.VertCount || i1 >= surface.VertCount || i2 >= surface.VertCount ||
-                !TryReadXSurfaceLocalPosition(surface.Verts0, i0, out Vector3 p0) ||
-                !TryReadXSurfaceLocalPosition(surface.Verts0, i1, out Vector3 p1) ||
-                !TryReadXSurfaceLocalPosition(surface.Verts0, i2, out Vector3 p2))
+                !XSurfaceVertexDecoder.TryReadPosition(surface, i0, out Vector3 p0) ||
+                !XSurfaceVertexDecoder.TryReadPosition(surface, i1, out Vector3 p1) ||
+                !XSurfaceVertexDecoder.TryReadPosition(surface, i2, out Vector3 p2))
             {
                 skippedTriangles++;
                 readFailureTriangles++;
@@ -717,7 +717,7 @@ public sealed partial class MapSceneBuilder
                 {
                     MaterialTechniqueSetAsset? techset = selection.Techset;
                     SelectedColorPass? selectedPass = selection.Pass;
-                    StaticVertexDecoder? vertexDecoder = selection.VertexDecoder;
+                    XSurfaceVertexDecoder? vertexDecoder = selection.VertexDecoder;
                     if (selectedPass is null || vertexDecoder is null)
                     {
                         selectedGroupReady = false;
@@ -801,7 +801,7 @@ public sealed partial class MapSceneBuilder
                                     techset,
                                     lookup,
                                     selectedPass,
-                                    StaticXSurfaceVertexLayout.BackendRow)
+                                    XSurfaceVertexDecoder.BackendRow)
                                 : [];
                         SelectedColorPass? depthPrepassSelection =
                             hasAuthoredSourcePass &&
@@ -817,8 +817,7 @@ public sealed partial class MapSceneBuilder
                                         techset,
                                         lookup,
                                         depthPrepassSelection,
-                                        StaticXSurfaceVertexLayout
-                                            .BackendRow)
+                                        XSurfaceVertexDecoder.BackendRow)
                                     : [];
                         bool depthPrepassVertexInputsCompatible =
                             TryMergeVertexInputBindings(
@@ -879,7 +878,7 @@ public sealed partial class MapSceneBuilder
                             shaderTranslationCache:
                                 shaderTranslationCache,
                             fixedVertexSourceBackendRow:
-                                StaticXSurfaceVertexLayout.BackendRow);
+                                XSurfaceVertexDecoder.BackendRow);
                         MapRenderShaderExecutionContract?
                             depthPrepassShaderExecution = null;
                         if (depthPrepassSelection is not null)
@@ -907,8 +906,7 @@ public sealed partial class MapSceneBuilder
                                     shaderTranslationCache:
                                         shaderTranslationCache,
                                     fixedVertexSourceBackendRow:
-                                        StaticXSurfaceVertexLayout
-                                            .BackendRow);
+                                        XSurfaceVertexDecoder.BackendRow);
                             if (candidate.ProgramExecutionReady)
                             {
                                 depthPrepassShaderExecution = candidate;
@@ -1108,9 +1106,9 @@ public sealed partial class MapSceneBuilder
             int i1 = surface.TriIndices[indexOffset + 1];
             int i2 = surface.TriIndices[indexOffset + 2];
             if (i0 >= surface.VertCount || i1 >= surface.VertCount || i2 >= surface.VertCount ||
-                !TryReadXSurfaceLocalPosition(surface.Verts0, i0, out Vector3 p0) ||
-                !TryReadXSurfaceLocalPosition(surface.Verts0, i1, out Vector3 p1) ||
-                !TryReadXSurfaceLocalPosition(surface.Verts0, i2, out Vector3 p2) ||
+                !XSurfaceVertexDecoder.TryReadPosition(surface, i0, out Vector3 p0) ||
+                !XSurfaceVertexDecoder.TryReadPosition(surface, i1, out Vector3 p1) ||
+                !XSurfaceVertexDecoder.TryReadPosition(surface, i2, out Vector3 p2) ||
                 !TryReadStaticLayerUvs(surface, i0, colorLayers, out Vector2[] layerUvs0) ||
                 !TryReadStaticLayerUvs(surface, i1, colorLayers, out Vector2[] layerUvs1) ||
                 !TryReadStaticLayerUvs(surface, i2, colorLayers, out Vector2[] layerUvs2))
@@ -1286,54 +1284,16 @@ public sealed partial class MapSceneBuilder
         Span<Vector4> values,
         out string blocker)
     {
-        if (values.Length != RsxVertexInputCount)
-        {
-            throw new ArgumentException(
-                $"RSX vertex input destination must contain exactly {RsxVertexInputCount} values.",
-                nameof(values));
-        }
-
-        values.Fill(DefaultRsxVertexInput);
-        blocker = string.Empty;
-        foreach (MapRenderShaderVertexInputBinding binding in bindings)
-        {
-            if (binding.Destination >= values.Length)
-            {
-                blocker = $"dest0x{binding.Destination:X2}:OUT_OF_RANGE";
-                return false;
-            }
-            if (binding.IsDisabledDefaultAttribute)
-            {
-                values[binding.Destination] = DefaultRsxVertexInput;
-                continue;
-            }
-            if (binding.StreamIndex > 1)
-            {
-                blocker =
-                    $"dest0x{binding.Destination:X2}:STREAM{binding.StreamIndex}_UNAVAILABLE";
-                return false;
-            }
-
-            int offset = checked(
-                vertexIndex * binding.Stride + binding.Offset);
-            if (!TryDecodeRsxVertexInput(
-                    verts0,
-                    surface.Verts1,
-                    binding.StreamIndex,
-                    offset,
-                    binding.ComponentCount,
-                    binding.RsxType,
-                    out Vector4 value,
-                    out string decodeBlocker))
-            {
-                blocker =
-                    $"dest0x{binding.Destination:X2}:{decodeBlocker}:offset0x{offset:X}";
-                return false;
-            }
-            values[binding.Destination] = value;
-        }
-
-        return bindings.Count > 0;
+        // verts0 is retained in this signature because map batching already
+        // materializes it once for its triangle loop. XSurface owns the same
+        // bytes; the centralized decoder is the sole route authority.
+        _ = verts0;
+        return XSurfaceVertexDecoder.TryReadRsxVertexInputs(
+            surface,
+            vertexIndex,
+            bindings,
+            values,
+            out blocker);
     }
 
     private static bool TryReadStaticLayerUvs(
@@ -1468,23 +1428,6 @@ public sealed partial class MapSceneBuilder
     {
         int sign = 1 << (bits - 1);
         return (value ^ sign) - sign;
-    }
-
-    private static bool TryReadXSurfaceLocalPosition(
-        IReadOnlyList<byte> verts0,
-        int vertexIndex,
-        out Vector3 position)
-    {
-        position = default;
-        int offset = vertexIndex * XSurfaceVertexStride;
-        if (vertexIndex < 0 || offset < 0 || offset + 12 > verts0.Count)
-            return false;
-
-        position = new Vector3(
-            VertexElementDecoder.ReadSingleBigEndian(verts0, offset),
-            VertexElementDecoder.ReadSingleBigEndian(verts0, offset + 4),
-            VertexElementDecoder.ReadSingleBigEndian(verts0, offset + 8));
-        return IsReasonable(position);
     }
 
     private static MapRenderStaticModelInstance CreateStaticModelInstance(

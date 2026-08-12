@@ -24,7 +24,7 @@ public sealed partial class MapSceneBuilder
 
     private sealed record PreparedStaticColorLayer(
         MapRenderColorLayer Layer,
-        StaticVertexDecoder Decoder);
+        XSurfaceVertexDecoder Decoder);
 
     private static void AppendTexturedSurface(
         Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder> batches,
@@ -443,7 +443,7 @@ public sealed partial class MapSceneBuilder
         SelectedColorPass selectedPass,
         MapRenderTexture primaryTexture,
         MapRenderUvRoute primaryUvRoute,
-        StaticVertexDecoder primaryDecoder,
+        XSurfaceVertexDecoder primaryDecoder,
         IGfxImagePayloadResolver imageStreams,
         MapRenderTextureCache textureCache,
         HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
@@ -534,7 +534,7 @@ public sealed partial class MapSceneBuilder
                 return;
 
             (MaterialShaderArgumentAsset arg, int argIndex) = matchingArgs[0];
-            StaticVertexDecoder decoder = primaryDecoder;
+            XSurfaceVertexDecoder decoder = primaryDecoder;
             MapRenderUvRoute uvRoute = primaryUvRoute with
             {
                 Label = $"static color layer {layerIndex} reuses base UV"

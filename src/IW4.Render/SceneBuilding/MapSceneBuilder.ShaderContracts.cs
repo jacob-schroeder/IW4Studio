@@ -24,14 +24,13 @@ public sealed partial class MapSceneBuilder
         MapRenderShaderTranslationCache? shaderTranslationCache = null,
         int? fixedVertexSourceBackendRow = null,
         IReadOnlySet<int>? explicitCubeSamplerDestinations = null) =>
-        MapRenderShaderExecutionContractFactory.Create(
+        AuthoredMaterialExecutionPlanner.CreateContract(
             material,
             techset,
             lookup,
-            new MapRenderShaderExecutionPassSelection(
-                selectedPass.Pass,
-                selectedPass.State,
-                selectedPass.Image.Name ?? string.Empty),
+            selectedPass.Pass,
+            selectedPass.State,
+            selectedPass.Image.Name ?? string.Empty,
             materialSamplers,
             vertexInputPayloadReady,
             vertexInputPayloadBlocker,
@@ -41,36 +40,16 @@ public sealed partial class MapSceneBuilder
             fixedVertexSourceBackendRow,
             explicitCubeSamplerDestinations);
 
-    private static MapRenderShaderVertexInputBinding[] ResolveSelectedVertexInputs(
+    internal static MapRenderShaderVertexInputBinding[] ResolveSelectedVertexInputs(
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup,
         SelectedColorPass selectedPass,
         int? fixedVertexSourceBackendRow = null)
     {
-        if (techset is null || selectedPass.Pass.TechniqueSlot < 0 || selectedPass.Pass.PassIndex < 0)
-            return [];
-        MaterialTechniqueSlot? slot = lookup.ResolveTechniqueSlots(techset)
-            .FirstOrDefault(candidate => candidate.Index == selectedPass.Pass.TechniqueSlot);
-        if (slot?.Technique is not { } technique ||
-            (uint)selectedPass.Pass.PassIndex >= (uint)technique.Passes.Count)
-        {
-            return [];
-        }
-        MaterialPassAsset sourcePass = technique.Passes[selectedPass.Pass.PassIndex];
-        MapRenderSelectedPassProgramSources programSources = lookup.ResolveSources(
+        return AuthoredMaterialExecutionPlanner.ResolveVertexInputs(
             techset,
-            technique,
-            new MapRenderSelectedTechniquePass(
-                selectedPass.Pass.PassIndex,
-                sourcePass));
-        return MapRenderShaderExecutionContractFactory.CreateVertexInputBindings(
-            techset,
-            technique.Flags,
-            programSources.VertexDeclaration,
-            programSources.VertexProgram.HasProgramData
-                ? RsxShaderTranslator.ReadVertexInputDestinations(
-                    programSources.VertexProgram.Data.ToArray())
-                : null,
+            lookup,
+            selectedPass.Pass,
             fixedVertexSourceBackendRow);
     }
 

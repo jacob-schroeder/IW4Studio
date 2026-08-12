@@ -219,8 +219,21 @@ internal static class RsxFragmentGlsl330Lowerer
                 if (conditionProducer)
                 {
                     string ccMask = FragmentWriteMask(instruction.WriteMask);
-                    builder.AppendLine(
-                        $"  rsxCc0.{ccMask} = {value}.{ccMask};");
+                    if (!instruction.NoDest)
+                    {
+                        string destination = instruction.DestFp16
+                            ? $"H[{instruction.DestRegister}]"
+                            : $"R[{instruction.DestRegister}]";
+                        builder.AppendLine(
+                            $"  {destination}.{ccMask} = {value}.{ccMask};");
+                        builder.AppendLine(
+                            $"  rsxCc0.{ccMask} = {destination}.{ccMask};");
+                    }
+                    else
+                    {
+                        builder.AppendLine(
+                            $"  rsxCc0.{ccMask} = {value}.{ccMask};");
+                    }
                 }
                 else
                 {
@@ -367,8 +380,7 @@ internal static class RsxFragmentGlsl330Lowerer
                     halfRegisters);
             }
 
-            if (!conditionProducer &&
-                !instruction.NoDest &&
+            if (!instruction.NoDest &&
                 instruction.WriteMask != 0)
             {
                 (instruction.DestFp16
@@ -432,11 +444,13 @@ internal static class RsxFragmentGlsl330Lowerer
         instruction.ConditionTest == RsxFragmentConditionTest.True &&
         !instruction.ConditionWriteRegister1 &&
         !instruction.ConditionReadRegister1 &&
-        instruction.NoDest &&
         instruction.WriteMask is 0x1 or 0x4 or 0x8 &&
-        (instruction.Opcode is 0x01 or 0x0b or 0x0e ||
-         (instruction.Opcode == 0x0a &&
-          instruction.WriteMask == 0x1));
+        (instruction.NoDest
+            ? instruction.Opcode is 0x01 or 0x0b or 0x0e ||
+              (instruction.Opcode == 0x0a &&
+               instruction.WriteMask == 0x1)
+            : instruction.Opcode == 0x01 &&
+              instruction.WriteMask == 0x08);
 
     private static bool IsSelectedFragmentConditionConsumer(
         RsxFragmentInstruction instruction) =>
@@ -452,6 +466,10 @@ internal static class RsxFragmentGlsl330Lowerer
          ConditionSwizzleIsComponent(instruction, 2) ||
          ConditionSwizzleIsComponent(instruction, 3)) &&
         (instruction.Opcode is 0x01 or 0x02 or 0x04 or 0x0b or 0x1c ||
+         (instruction.Opcode == 0x17 &&
+          instruction.ConditionTest == RsxFragmentConditionTest.NotEqual &&
+          ConditionSwizzleIsComponent(instruction, 3) &&
+          instruction.WriteMask == 0x07) ||
          (instruction.Opcode == 0x3a &&
           instruction.ConditionTest == RsxFragmentConditionTest.Equal &&
           ConditionSwizzleIsComponent(instruction, 0) &&
