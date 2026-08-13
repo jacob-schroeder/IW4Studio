@@ -18,10 +18,49 @@
       <Setter Property="BorderThickness" Value="0" />
     </Style>
     <Style Selector="ListBox.lodRail > ListBoxItem">
-      <Setter Property="MinHeight" Value="44" />
-      <Setter Property="Margin" Value="0,0,0,5" />
-      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="LodRailItemBackground"
+                  MinHeight="48"
+                  Padding="11,8"
+                  CornerRadius="7"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  BorderThickness="1">
+            <Grid ColumnDefinitions="3,9,*">
+              <Border Name="LodRailSelectionIndicator"
+                      Width="3"
+                      CornerRadius="2"
+                      Background="Transparent" />
+              <ContentPresenter Grid.Column="2"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Center" />
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Setter Property="Margin" Value="0,0,0,3" />
+      <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ListBox.lodRail > ListBoxItem:pointerover /template/ Border#LodRailItemBackground">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.lodRail > ListBoxItem:selected /template/ Border#LodRailItemBackground">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    </Style>
+    <Style Selector="ListBox.lodRail > ListBoxItem:selected /template/ Border#LodRailSelectionIndicator">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="Button.lodAction">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="FontSize" Value="10" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
   </UserControl.Styles>
@@ -194,12 +233,13 @@
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid ColumnDefinitions="210,1,*">
-        <Grid RowDefinitions="Auto,8,*">
-          <TextBlock Text="LODS"
-                     FontSize="9"
+      <Grid ColumnDefinitions="150,24,*">
+        <Grid RowDefinitions="Auto,6,*">
+          <TextBlock Margin="10,0,0,0"
+                     Text="LEVEL OF DETAIL"
+                     FontSize="8"
                      FontWeight="Bold"
-                     LetterSpacing="0.8"
+                     LetterSpacing="0.7"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <ListBox Grid.Row="2"
                    Classes="lodRail"
@@ -207,88 +247,166 @@
                    SelectedItem="{Binding SelectedAssemblyLod, Mode=TwoWay}">
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <TextBlock Text="{Binding DisplayName}"
-                           FontSize="10"
-                           TextTrimming="CharacterEllipsis" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{Binding Title}"
+                               FontSize="11"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Detail}"
+                               FontSize="9"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                  <materialIcons:MaterialIcon Grid.Column="1"
+                                              Kind="ChevronRight"
+                                              Width="13"
+                                              Height="13"
+                                              VerticalAlignment="Center"
+                                              Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
         </Grid>
 
         <Border Grid.Column="1"
-                Margin="12,0"
+                Width="1"
+                HorizontalAlignment="Center"
                 Background="{DynamicResource StudioBorderBrush}" />
 
         <Grid Grid.Column="2"
-              RowDefinitions="Auto,10,Auto,8,Auto">
-          <StackPanel Spacing="2">
-            <TextBlock Text="LOD assembly"
-                       FontSize="10"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextBrush}" />
-            <TextBlock Text="{Binding ImportedLodNotice}"
-                       IsVisible="{Binding IsImportedLodSelected}"
-                       FontSize="10"
-                       FontWeight="Bold"
-                       Foreground="#FFE1A4A4" />
-            <TextBlock Text="{Binding SelectedLodExportSummary}"
-                       FontSize="11"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-          </StackPanel>
+              RowDefinitions="Auto,12,Auto,10,Auto">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding SelectedAssemblyLod.Title}"
+                         FontSize="14"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+              <TextBlock Text="{Binding SelectedLodExportSummary}"
+                         FontSize="10"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+              <Button Classes="ghost"
+                      MinHeight="32"
+                      Padding="10,5"
+                      VerticalContentAlignment="Center"
+                      IsEnabled="{Binding CanReplaceAssemblyLod}"
+                      ToolTip.Tip="Replace every LOD in the XModel"
+                      Click="ReplaceModelButton_Click">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <materialIcons:MaterialIcon Kind="CubeOutline"
+                                              Width="14"
+                                              Height="14"
+                                              VerticalAlignment="Center" />
+                  <TextBlock Text="Replace Model"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Classes="primary"
+                      MinHeight="32"
+                      Padding="12,5"
+                      VerticalContentAlignment="Center"
+                      IsEnabled="{Binding CanExportXModel}"
+                      ToolTip.Tip="Export the selected loaded LOD"
+                      AutomationProperties.Name="Export selected XModel LOD">
+                <Button.Flyout>
+                  <MenuFlyout Placement="BottomEdgeAlignedRight">
+                    <MenuItem Header="XModel v6"
+                              ToolTip.Tip="Export as XMODEL_EXPORT version 6"
+                              Click="ExportXModelMenuItem_Click" />
+                    <MenuItem Header="GLB"
+                              ToolTip.Tip="Export as portable binary glTF"
+                              Click="ExportGlbMenuItem_Click" />
+                  </MenuFlyout>
+                </Button.Flyout>
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <materialIcons:MaterialIcon Kind="Export"
+                                              Width="15"
+                                              Height="15"
+                                              VerticalAlignment="Center" />
+                  <TextBlock Text="Export"
+                             VerticalAlignment="Center" />
+                  <materialIcons:MaterialIcon Kind="ChevronDown"
+                                              Width="13"
+                                              Height="13"
+                                              VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </Grid>
 
-          <WrapPanel Grid.Row="2"
-                     Orientation="Horizontal">
-            <Button Classes="ghost"
-                    Margin="0,0,8,0"
-                    IsEnabled="{Binding CanAddAssemblyLod}"
-                    Click="AddLodButton_Click">
-              <TextBlock Text="Add LOD" />
-            </Button>
-            <Button Classes="ghost"
-                    Margin="0,0,8,0"
-                    IsEnabled="{Binding CanReplaceAssemblyLod}"
-                    Click="ReplaceLodButton_Click">
-              <TextBlock Text="Replace LOD" />
-            </Button>
-            <Button Classes="ghost"
-                    Margin="0,0,8,0"
-                    IsEnabled="{Binding CanReplaceAssemblyLod}"
-                    Click="ReplaceModelButton_Click">
-              <TextBlock Text="Replace Model" />
-            </Button>
-            <Button Classes="ghost"
-                    Margin="0,0,8,0"
-                    IsEnabled="{Binding CanRemoveAssemblyLod}"
-                    Click="RemoveLodButton_Click">
-              <TextBlock Text="Remove" />
-            </Button>
-            <Button Classes="primary"
-                    MinHeight="30"
-                    Padding="12,5"
-                    IsEnabled="{Binding CanExportXModel}"
-                    ToolTip.Tip="Export the selected loaded LOD"
-                    AutomationProperties.Name="Export selected XModel LOD">
-              <Button.Flyout>
-                <MenuFlyout Placement="BottomEdgeAlignedRight">
-                  <MenuItem Header="XModel v6"
-                            ToolTip.Tip="Export as XMODEL_EXPORT version 6"
-                            Click="ExportXModelMenuItem_Click" />
-                  <MenuItem Header="GLB"
-                            ToolTip.Tip="Export as portable binary glTF"
-                            Click="ExportGlbMenuItem_Click" />
-                </MenuFlyout>
-              </Button.Flyout>
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <materialIcons:MaterialIcon Kind="Export" Width="15" Height="15" />
-                <TextBlock Text="Export" />
-                <materialIcons:MaterialIcon Kind="ChevronDown" Width="14" Height="14" />
-              </StackPanel>
-            </Button>
-          </WrapPanel>
+          <Border Grid.Row="2"
+                  Padding="5"
+                  CornerRadius="8"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <StackPanel Orientation="Horizontal">
+              <Button Classes="ghost lodAction"
+                      IsEnabled="{Binding CanAddAssemblyLod}"
+                      Click="AddLodButton_Click">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <materialIcons:MaterialIcon Kind="Plus"
+                                              Width="14"
+                                              Height="14"
+                                              VerticalAlignment="Center" />
+                  <TextBlock Text="Add LOD"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Classes="ghost lodAction"
+                      IsEnabled="{Binding CanReplaceAssemblyLod}"
+                      Click="ReplaceLodButton_Click">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <materialIcons:MaterialIcon Kind="Refresh"
+                                              Width="14"
+                                              Height="14"
+                                              VerticalAlignment="Center" />
+                  <TextBlock Text="Replace LOD"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Border Width="1"
+                      Height="20"
+                      Margin="3,6,9,6"
+                      Background="{DynamicResource StudioBorderBrush}" />
+              <Button Classes="ghost lodAction"
+                      Margin="0"
+                      IsEnabled="{Binding CanRemoveAssemblyLod}"
+                      ToolTip.Tip="Remove the selected LOD"
+                      Click="RemoveLodButton_Click">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <materialIcons:MaterialIcon Kind="DeleteOutline"
+                                              Width="14"
+                                              Height="14"
+                                              VerticalAlignment="Center" />
+                  <TextBlock Text="Remove"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </Border>
 
           <StackPanel Grid.Row="4"
                       IsVisible="{Binding IsImportedLodSelected}"
                       Spacing="4">
+            <TextBlock Text="{Binding ImportedLodNotice}"
+                       FontSize="10"
+                       FontWeight="Bold"
+                       Foreground="#FFE1A4A4" />
             <TextBlock Text="Import GLB materials"
                        FontSize="10"
                        FontWeight="SemiBold"

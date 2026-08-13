@@ -1507,6 +1507,8 @@ public sealed class XModelLodAssemblyItemViewModel
     public int TriangleCount { get; }
     public int MaterialCount { get; }
     public string SourceDisplay { get; }
+    public string Title => $"LOD {LodIndex}";
+    public string Detail => IsOccupied ? $"{TriangleCount:N0} tris" : "Empty";
     public string DisplayName => !IsOccupied ? $"LOD {LodIndex} · Empty" : $"LOD {LodIndex} · {TriangleCount:N0} tris · {SourceDisplay}";
     public override string ToString() => DisplayName;
 }
