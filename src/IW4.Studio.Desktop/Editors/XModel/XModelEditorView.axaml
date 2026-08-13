@@ -10,7 +10,7 @@
              mc:Ignorable="d"
              d:DesignWidth="1120"
              d:DesignHeight="720">
-  <Grid RowDefinitions="Auto,8,Auto,10,*">
+  <Grid RowDefinitions="Auto,8,Auto,10,*,10,Auto">
     <Border Padding="12,9"
             CornerRadius="7"
             Background="{DynamicResource StudioSurfaceBrush}"
@@ -46,7 +46,7 @@
                   MinHeight="30"
                   Padding="12,5"
                   IsEnabled="{Binding CanApply}"
-                  ToolTip.Tip="No supported XModel draft mutations are staged">
+                  ToolTip.Tip="Runtime XSurface compilation and material remapping are required before Apply">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
               <TextBlock Text="Apply" />
@@ -72,8 +72,8 @@
         <ComboBox Grid.Column="1"
                   MinHeight="30"
                   Padding="8,3"
-                  ItemsSource="{Binding Lods}"
-                  SelectedItem="{Binding SelectedLod, Mode=TwoWay}" />
+                  ItemsSource="{Binding ActiveAssemblyLods}"
+                  SelectedItem="{Binding SelectedAssemblyLod, Mode=TwoWay}" />
         <Button Grid.Column="2"
                 Classes="ghost"
                 MinHeight="30"
@@ -139,6 +139,20 @@
                      Foreground="#CDD5DF" />
         </Border>
 
+        <Border Background="#E6191D23"
+                IsHitTestVisible="False"
+                IsVisible="{Binding IsImportedLodSelected}"
+                BorderBrush="#80FF8B8B"
+                BorderThickness="1">
+          <TextBlock Text="{Binding ImportedLodNotice}"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     TextAlignment="Center"
+                     FontSize="11"
+                     FontWeight="Bold"
+                     Foreground="#FFE1A4A4" />
+        </Border>
+
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="12"
@@ -154,6 +168,78 @@
                      LetterSpacing="0.4"
                      Foreground="#CDD5DF" />
         </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="6"
+            MinHeight="82"
+            Padding="12,9"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,8,Auto">
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto"
+            ColumnSpacing="14">
+        <StackPanel Spacing="2"
+                    VerticalAlignment="Center">
+          <TextBlock Text="LOD assembly · XMODEL_EXPORT"
+                     FontSize="10"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding SelectedLodExportSummary}"
+                     FontSize="11"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </StackPanel>
+        <Button Grid.Column="1"
+                Classes="ghost"
+                IsEnabled="{Binding CanAddAssemblyLod}"
+                Click="AddLodButton_Click">
+          <TextBlock Text="Add LOD…" />
+        </Button>
+        <Button Grid.Column="2"
+                Classes="ghost"
+                IsEnabled="{Binding CanReplaceAssemblyLod}"
+                Click="ReplaceLodButton_Click">
+          <TextBlock Text="Replace…" />
+        </Button>
+        <Button Grid.Column="3"
+                Classes="ghost"
+                IsEnabled="{Binding CanRemoveAssemblyLod}"
+                Click="RemoveLodButton_Click">
+          <TextBlock Text="Remove" />
+        </Button>
+        <Button Grid.Column="4"
+                Classes="primary"
+                MinHeight="30"
+                Padding="12,5"
+                IsEnabled="{Binding CanExportXModel}"
+                ToolTip.Tip="Validate and export the selected loaded LOD as XMODEL_EXPORT version 6"
+                AutomationProperties.Name="Export selected XModel LOD as XMODEL_EXPORT"
+                Click="ExportXModelButton_Click">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="Export" Width="15" Height="15" />
+            <TextBlock Text="Export XMODEL_EXPORT…" />
+          </StackPanel>
+        </Button>
+      </Grid>
+      <ListBox Grid.Row="2"
+               Height="28"
+               Background="Transparent"
+               BorderThickness="0"
+               ItemsSource="{Binding AssemblyLods}"
+               SelectedItem="{Binding SelectedAssemblyLod, Mode=TwoWay}">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="6" />
+          </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding DisplayName}" FontSize="10" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
       </Grid>
     </Border>
   </Grid>

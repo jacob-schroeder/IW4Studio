@@ -1,18 +1,114 @@
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Math;
+using IW4.Assets.XModel.Export;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Studio.Documents;
 
 public sealed class XModelDraft
 {
-    internal XModelDraft(XModelAsset value) => Model = CopyRoot(value);
+    private readonly List<XModelLodDraft> _lodAssembly;
+
+    internal XModelDraft(XModelAsset value)
+    {
+        Model = CopyRoot(value);
+        _lodAssembly = CreateAssembly(Model);
+        CollisionLod = Model.CollLod;
+    }
+
+    private XModelDraft(XModelDraft value)
+    {
+        Model = CopyRoot(value.Model);
+        _lodAssembly = value._lodAssembly.Select(lod => lod.Clone()).ToList();
+        CollisionLod = value.CollisionLod;
+    }
 
     public XModelAsset Model { get; }
+    public IReadOnlyList<XModelLodDraft> LodAssembly => _lodAssembly.AsReadOnly();
+    public byte CollisionLod { get; private set; }
+    public bool HasStagedAssemblyChanges => !AssemblyEquals(CreateAssembly(Model), Model.CollLod, _lodAssembly, CollisionLod);
 
-    internal XModelDraft Clone() => new(Model);
+    internal XModelDraft Clone() => new(this);
 
     internal XModelAsset ToAsset() => CopyRoot(Model);
+
+    public void AppendImportedLod(XModelExportDocument document, string? source)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        int index = _lodAssembly.FindIndex(lod => !lod.IsOccupied);
+        if (index < 0) throw new InvalidOperationException("An XModel contains at most four LODs.");
+        float distance = index == 0 ? 0f : MathF.Max(_lodAssembly[index - 1].Distance + 1f, 1f);
+        _lodAssembly[index] = new XModelLodDraft(index, distance, null, XModelLodDraft.Freeze(document), source);
+    }
+
+    public void ReplaceLod(int index, XModelExportDocument document, string? source)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ValidateIndex(index);
+        if (!_lodAssembly[index].IsOccupied) throw new InvalidOperationException("Only an active LOD can be replaced.");
+        XModelLodDraft previous = _lodAssembly[index];
+        _lodAssembly[index] = new XModelLodDraft(index, previous.Distance, null, XModelLodDraft.Freeze(document), source);
+    }
+
+    public void RemoveLod(int index)
+    {
+        ValidateIndex(index);
+        if (!_lodAssembly[index].IsOccupied) throw new InvalidOperationException("Only an active LOD can be removed.");
+        for (int i = index; i < _lodAssembly.Count - 1; i++)
+        {
+            XModelLodDraft next = _lodAssembly[i + 1];
+            _lodAssembly[i] = new XModelLodDraft(i, next.Distance, next.BaselineLod, next.ImportedDocument is null ? null : XModelLodDraft.Freeze(next.ImportedDocument), next.ImportSource);
+        }
+        _lodAssembly[^1] = new XModelLodDraft(_lodAssembly.Count - 1, 0f, null, null, null);
+        if (CollisionLod == index) CollisionLod = 0xFF;
+        else if (CollisionLod > index && CollisionLod != 0xFF) CollisionLod--;
+    }
+
+    public void SetLodDistance(int index, float distance)
+    {
+        ValidateIndex(index);
+        if (!_lodAssembly[index].IsOccupied) throw new InvalidOperationException("Only an active LOD has a distance.");
+        if (!float.IsFinite(distance) || distance < 0) throw new ArgumentOutOfRangeException(nameof(distance), "LOD distance must be finite and nonnegative.");
+        XModelLodDraft previous = _lodAssembly[index];
+        _lodAssembly[index] = new XModelLodDraft(index, distance, previous.BaselineLod, previous.ImportedDocument, previous.ImportSource);
+    }
+
+    public void SetCollisionLod(byte collisionLod)
+    {
+        if (collisionLod != 0xFF && (collisionLod >= _lodAssembly.Count || !_lodAssembly[collisionLod].IsOccupied)) throw new ArgumentOutOfRangeException(nameof(collisionLod), "Collision LOD must select an active LOD or None.");
+        CollisionLod = collisionLod;
+    }
+
+    private void ValidateIndex(int index)
+    {
+        if ((uint)index >= (uint)_lodAssembly.Count) throw new ArgumentOutOfRangeException(nameof(index));
+    }
+
+    private static List<XModelLodDraft> CreateAssembly(XModelAsset model)
+    {
+        var result = new List<XModelLodDraft>(4);
+        for (int i = 0; i < 4; i++)
+        {
+            XModelLodInfo? lod = i < model.NumLods ? model.Lods.ElementAtOrDefault(i) : null;
+            result.Add(new XModelLodDraft(i, lod?.Dist ?? 0f, lod, null, null));
+        }
+        return result;
+    }
+
+    private static bool AssemblyEquals(IReadOnlyList<XModelLodDraft> left, byte leftCollision, IReadOnlyList<XModelLodDraft> right, byte rightCollision) =>
+        leftCollision == rightCollision && left.Count == right.Count && left.Zip(right).All(pair =>
+            pair.First.Distance.Equals(pair.Second.Distance) &&
+            ReferenceEquals(pair.First.BaselineLod, pair.Second.BaselineLod) &&
+            DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument));
+
+    private static bool DocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
+        XModelExportDocumentsEqual(left, right);
+
+    internal static bool XModelExportDocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
+        ReferenceEquals(left, right) || left is not null && right is not null &&
+        left.Bones.SequenceEqual(right.Bones) && left.Objects.SequenceEqual(right.Objects) && left.Materials.SequenceEqual(right.Materials) &&
+        left.Triangles.SequenceEqual(right.Triangles) && left.Vertices.Count == right.Vertices.Count &&
+        left.Vertices.Zip(right.Vertices).All(pair => pair.First.Position.Equals(pair.Second.Position) && pair.First.Weights.SequenceEqual(pair.Second.Weights));
 
     private static XModelAsset CopyRoot(XModelAsset value)
     {
@@ -106,6 +202,9 @@ internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelD
 
     public override XModelAsset CreateDefinition(XModelDraft value) => value.ToAsset();
 
+    public override IReadOnlyList<AssetValidationIssue> Validate(XModelDraft value) =>
+        XModelLodAssemblyValidator.Validate(value);
+
     public override bool SemanticallyEquals(XModelDraft left, XModelDraft right)
     {
         XModelAsset x = left.Model;
@@ -156,8 +255,20 @@ internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelD
             x.PhysPresetPointer == y.PhysPresetPointer &&
             ReferenceEquals(x.PhysPreset, y.PhysPreset) &&
             x.PhysCollmapPointer == y.PhysCollmapPointer &&
-            ReferenceEquals(x.PhysCollmap, y.PhysCollmap);
+            ReferenceEquals(x.PhysCollmap, y.PhysCollmap) &&
+            AssemblyEqual(left, right);
     }
+
+    private static bool AssemblyEqual(XModelDraft left, XModelDraft right) =>
+        left.CollisionLod == right.CollisionLod &&
+        left.LodAssembly.Count == right.LodAssembly.Count &&
+        left.LodAssembly.Zip(right.LodAssembly).All(pair =>
+            pair.First.Distance.Equals(pair.Second.Distance) &&
+            ReferenceEquals(pair.First.BaselineLod, pair.Second.BaselineLod) &&
+            DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument));
+
+    private static bool DocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
+        XModelDraft.XModelExportDocumentsEqual(left, right);
 
     private static bool CollSurfsEqual(
         IReadOnlyList<XModelCollSurf> left,

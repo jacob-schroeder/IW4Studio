@@ -1,9 +1,11 @@
 using System.Globalization;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.XModel.Export;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
 using IW4.Render;
 using IW4.Render.Assets;
+using IW4.Render.Geometry.XModel;
 using IW4.Render.OpenGl.XModel;
 using IW4.Render.SceneBuilding;
 using IW4.Studio.Desktop.Editors;
@@ -14,9 +16,9 @@ using IW4.Studio.Documents;
 namespace IW4.Studio.Desktop.ViewModels;
 
 /// <summary>
-/// Read-only preview projection of the current session-owned XModel draft.
-/// Authoring controls are deliberately scaffolded but disabled until a later
-/// change defines supported XModel mutations.
+/// Runtime preview plus a local XMODEL_EXPORT LOD assembly candidate. The
+/// candidate is validated without publication until the runtime XSurface
+/// compiler and material-remap checkpoint enables Apply.
 /// </summary>
 public sealed class XModelEditorViewModel
     : ObservableObject,
@@ -31,12 +33,17 @@ public sealed class XModelEditorViewModel
     private readonly XModelSceneBuilder _sceneBuilder = new();
     private readonly WorkspaceGfxImagePayloadResolver _imagePayloads;
     private XModelAsset? _model;
+    private XModelDraft? _workingDraft;
     private XModelRenderScene? _scene;
     private IReadOnlyList<XModelLodItemViewModel> _lods = [];
     private XModelLodItemViewModel? _selectedLod;
+    private IReadOnlyList<XModelLodAssemblyItemViewModel> _assemblyLods = [];
+    private XModelLodAssemblyItemViewModel? _selectedAssemblyLod;
     private InspectorSelectionViewModel? _inspectorSelection;
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
     private IReadOnlyList<AssetValidationIssue> _buildDiagnostics = [];
+    private IReadOnlyList<AssetValidationIssue> _candidateDiagnostics = [];
+    private IReadOnlyList<AssetValidationIssue> _exportDiagnostics = [];
     private string _statusMessage = string.Empty;
     private string? _buildFailure;
     private int _rendererLodIndex = -1;
@@ -79,6 +86,40 @@ public sealed class XModelEditorViewModel
 
     public IReadOnlyList<XModelLodItemViewModel> Lods => _lods;
 
+    public IReadOnlyList<XModelLodAssemblyItemViewModel> AssemblyLods => _assemblyLods;
+
+    public IReadOnlyList<XModelLodAssemblyItemViewModel> ActiveAssemblyLods =>
+        _assemblyLods.Where(lod => lod.IsOccupied).ToArray();
+
+    public XModelLodAssemblyItemViewModel? SelectedAssemblyLod
+    {
+        get => _selectedAssemblyLod;
+        set
+        {
+            if (value is not null && !AssemblyLods.Contains(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (!SetProperty(ref _selectedAssemblyLod, value)) return;
+            if (value is { IsBaseline: true })
+                SelectedLod = Lods.FirstOrDefault(lod => lod.LodIndex == value.LodIndex) ?? SelectedLod;
+            ResetRendererStatus();
+            RefreshCandidateState();
+            RefreshInspector();
+            OnPropertyChanged(nameof(IsImportedLodSelected));
+            OnPropertyChanged(nameof(ImportedLodNotice));
+            OnPropertyChanged(nameof(MaterialExecutionBadge));
+            OnPropertyChanged(nameof(EditorProperties));
+            OnPropertyChanged(nameof(CanExportXModel));
+            OnPropertyChanged(nameof(SelectedLodExportSummary));
+            RefreshStatusMessage();
+            PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public bool IsImportedLodSelected => SelectedAssemblyLod?.IsImported == true;
+
+    public string ImportedLodNotice => IsImportedLodSelected
+        ? "STAGED XMODEL_EXPORT · PREVIEW AWAITS CHECKPOINT-3 RUNTIME COMPILER / MATERIAL REMAP"
+        : string.Empty;
+
     public XModelLodItemViewModel? SelectedLod
     {
         get => _selectedLod;
@@ -89,8 +130,11 @@ public sealed class XModelEditorViewModel
             if (!SetProperty(ref _selectedLod, value))
                 return;
 
+            _exportDiagnostics = [];
             ResetRendererStatus();
             OnPropertyChanged(nameof(SelectedLodIndex));
+            OnPropertyChanged(nameof(CanExportXModel));
+            OnPropertyChanged(nameof(SelectedLodExportSummary));
             OnPropertyChanged(nameof(MaterialExecutionBadge));
             RefreshInspector();
             OnPropertyChanged(nameof(EditorProperties));
@@ -126,11 +170,19 @@ public sealed class XModelEditorViewModel
         set => SetProperty(ref _showBoneTags, value);
     }
 
-    public bool CanRevert => IsEditable && _session.HasUnsavedChanges;
+    public bool CanRevert => IsEditable && _workingDraft is not null && !_session.CandidateMatchesCurrent(_workingDraft);
 
     public bool CanApply => false;
 
-    public bool HasUnappliedChanges => false;
+    public bool CanExportXModel => !IsImportedLodSelected && _model is not null && SelectedLod is not null;
+
+    public string SelectedLodExportSummary => IsImportedLodSelected
+        ? "Imported geometry is staged locally; export remains available after runtime compilation."
+        : SelectedLod is null
+        ? "No loaded LOD selected"
+        : $"LOD {SelectedLod.LodIndex} · {SelectedLod.VertexCount:N0} vertices · {SelectedLod.TriangleCount:N0} triangles";
+
+    public bool HasUnappliedChanges => _workingDraft is not null && !_session.CandidateMatchesCurrent(_workingDraft);
 
     public string PropertySectionName => "XModel preview";
 
@@ -138,6 +190,9 @@ public sealed class XModelEditorViewModel
     {
         get
         {
+            if (IsImportedLodSelected)
+                return "STAGED XMODEL_EXPORT · NOT COMPILED";
+
             LodAuthoredMaterialSummary summary =
                 SummarizeAuthoredMaterials(SelectedLod?.Lod);
             if (summary.GroupCount == 0 ||
@@ -165,6 +220,20 @@ public sealed class XModelEditorViewModel
     {
         get
         {
+            if (SelectedAssemblyLod is { IsImported: true } imported)
+            {
+                return
+                [
+                    new("Assembly source", imported.SourceDisplay),
+                    new("Selected LOD", $"LOD {imported.LodIndex} · staged import"),
+                    new("Triangles", imported.TriangleCount.ToString("N0")),
+                    new("Vertices", imported.VertexCount.ToString("N0")),
+                    new("Materials", imported.MaterialCount.ToString("N0")),
+                    new("Runtime preview", "Awaiting XSurface compilation"),
+                    new("Apply", "Blocked until runtime compilation and material remapping")
+                ];
+            }
+
             LodAuthoredMaterialSummary summary =
                 SummarizeAuthoredMaterials(SelectedLod?.Lod);
             return
@@ -232,11 +301,82 @@ public sealed class XModelEditorViewModel
         if (!CanRevert)
             return;
 
-        bool changed = _session.Revert();
+        bool changed = HasUnappliedChanges;
         CaptureAndBuild();
         StatusMessage = changed
-            ? $"Reverted the XModel draft. {StatusMessage}"
-            : $"The XModel draft already matched its authored baseline. {StatusMessage}";
+            ? $"Discarded the staged XModel LOD assembly. {StatusMessage}"
+            : $"The staged XModel LOD assembly already matched the current draft. {StatusMessage}";
+    }
+
+    public bool TryStageImportedLod(XModelExportDocument document, string? source, bool replaceSelected, out string? error)
+    {
+        error = null;
+        if (!IsEditable || _workingDraft is null) { error = "This XModel is not editable."; return false; }
+        try
+        {
+            if (replaceSelected && SelectedAssemblyLod is { IsOccupied: true } selected)
+                _workingDraft.ReplaceLod(selected.LodIndex, document, source);
+            else _workingDraft.AppendImportedLod(document, source);
+            RefreshAssemblyProjection(replaceSelected ? SelectedAssemblyLod?.LodIndex : _workingDraft.LodAssembly.Count(lod => lod.IsOccupied) - 1);
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        { error = exception.Message; return false; }
+    }
+
+    public void RemoveSelectedAssemblyLod()
+    {
+        if (!IsEditable || _workingDraft is null || SelectedAssemblyLod is not { IsOccupied: true } selected) return;
+        _workingDraft.RemoveLod(selected.LodIndex);
+        RefreshAssemblyProjection(Math.Min(selected.LodIndex, _workingDraft.LodAssembly.Count - 1));
+    }
+
+    public bool CanAddAssemblyLod => IsEditable && _workingDraft?.LodAssembly.Any(lod => !lod.IsOccupied) == true;
+    public bool CanReplaceAssemblyLod => IsEditable && SelectedAssemblyLod?.IsOccupied == true;
+    public bool CanRemoveAssemblyLod => IsEditable && SelectedAssemblyLod?.IsOccupied == true;
+
+    /// <summary>Creates the complete export document before the desktop asks for a destination.</summary>
+    public bool TryCreateXModelExportDocument(
+        out XModelExportDocument? document,
+        out IReadOnlyList<string> blockers)
+    {
+        document = null;
+        if (_disposed || IsImportedLodSelected || _model is null || SelectedLod is null)
+        {
+            blockers = [IsImportedLodSelected
+                ? "The selected imported LOD awaits runtime compilation and cannot be re-exported from the runtime preview."
+                : "No loaded XModel LOD is selected for export."];
+            return false;
+        }
+
+        return XModelExportProjector.TryProjectLoadedLod(
+            _model,
+            SelectedLod.LodIndex,
+            out document,
+            out blockers);
+    }
+
+    public void ReportXModelExportStatus(
+        string message,
+        AssetValidationSeverity severity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        _exportDiagnostics =
+        [
+            new AssetValidationIssue("xmodel.export", message, severity)
+        ];
+        RebuildDiagnostics();
+        OnPropertyChanged(nameof(Diagnostics));
+        StatusMessage = message;
+    }
+
+    public void ReportXModelExportSuccess(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        _exportDiagnostics = [];
+        RebuildDiagnostics();
+        OnPropertyChanged(nameof(Diagnostics));
+        StatusMessage = message;
     }
 
     public void Dispose()
@@ -250,9 +390,11 @@ public sealed class XModelEditorViewModel
 
     private void CaptureAndBuild()
     {
-        int? previousLodIndex = SelectedLod?.LodIndex;
+        int? previousLodIndex = SelectedAssemblyLod?.LodIndex ?? SelectedLod?.LodIndex;
         XModelDraft draft = _session.OpenDraft<XModelDraft>();
+        _workingDraft = draft;
         _model = draft.Model;
+        _exportDiagnostics = [];
         ResetRendererStatus();
 
         XModelRenderScene? scene = null;
@@ -286,9 +428,12 @@ public sealed class XModelEditorViewModel
         _selectedLod = _lods.FirstOrDefault(lod =>
                 lod.LodIndex == preferredLodIndex)
             ?? _lods.FirstOrDefault();
+        _assemblyLods = draft.LodAssembly.Select(lod => new XModelLodAssemblyItemViewModel(lod)).ToArray();
+        _selectedAssemblyLod = _assemblyLods.FirstOrDefault(lod => lod.LodIndex == previousLodIndex && lod.IsOccupied)
+            ?? _assemblyLods.FirstOrDefault(lod => lod.IsOccupied);
 
-        var issues = new List<AssetValidationIssue>(
-            _session.Validation.Issues);
+        _candidateDiagnostics = _session.ValidateCandidate(draft).Issues;
+        var issues = new List<AssetValidationIssue>();
         if (scene is not null)
         {
             var authoredDiagnosticMessages = new HashSet<string>(
@@ -338,11 +483,41 @@ public sealed class XModelEditorViewModel
         NotifyProjectionChanged();
     }
 
+    private void RefreshAssemblyProjection(int? preferredIndex)
+    {
+        if (_workingDraft is null) return;
+        _assemblyLods = _workingDraft.LodAssembly.Select(lod => new XModelLodAssemblyItemViewModel(lod)).ToArray();
+        _selectedAssemblyLod = preferredIndex is int index
+            ? _assemblyLods.FirstOrDefault(lod => lod.LodIndex == index && lod.IsOccupied)
+            : _assemblyLods.FirstOrDefault(lod => lod.IsOccupied);
+        if (_selectedAssemblyLod is { IsBaseline: true } baseline)
+            _selectedLod = _lods.FirstOrDefault(lod => lod.LodIndex == baseline.LodIndex) ?? _selectedLod;
+        RefreshCandidateState();
+        RefreshInspector(notify: false);
+        NotifyProjectionChanged();
+    }
+
+    private void RefreshCandidateState()
+    {
+        if (_workingDraft is null) return;
+        _candidateDiagnostics = _session.ValidateCandidate(_workingDraft).Issues;
+        RebuildDiagnostics();
+        OnPropertyChanged(nameof(Diagnostics));
+        OnPropertyChanged(nameof(CanRevert));
+        OnPropertyChanged(nameof(HasUnappliedChanges));
+        OnPropertyChanged(nameof(CanAddAssemblyLod));
+        OnPropertyChanged(nameof(CanReplaceAssemblyLod));
+        OnPropertyChanged(nameof(CanRemoveAssemblyLod));
+    }
+
     private void RefreshInspector(bool notify = true)
     {
+        XModelRenderLod? inspectedLod = SelectedAssemblyLod?.IsBaseline == true
+            ? SelectedLod?.Lod
+            : null;
         _inspectorSelection = _model is null
             ? null
-            : CreateInspectorSelection(_model, SelectedLod?.Lod);
+            : CreateInspectorSelection(_model, inspectedLod, SelectedAssemblyLod);
         if (notify)
             OnPropertyChanged(nameof(InspectorSelection));
     }
@@ -352,6 +527,9 @@ public sealed class XModelEditorViewModel
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Scene));
         OnPropertyChanged(nameof(Lods));
+        OnPropertyChanged(nameof(AssemblyLods));
+        OnPropertyChanged(nameof(ActiveAssemblyLods));
+        OnPropertyChanged(nameof(SelectedAssemblyLod));
         OnPropertyChanged(nameof(SelectedLod));
         OnPropertyChanged(nameof(SelectedLodIndex));
         OnPropertyChanged(nameof(MaterialExecutionBadge));
@@ -360,11 +538,26 @@ public sealed class XModelEditorViewModel
         OnPropertyChanged(nameof(Diagnostics));
         OnPropertyChanged(nameof(CanRevert));
         OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(CanExportXModel));
+        OnPropertyChanged(nameof(SelectedLodExportSummary));
         OnPropertyChanged(nameof(HasUnappliedChanges));
+        OnPropertyChanged(nameof(IsImportedLodSelected));
+        OnPropertyChanged(nameof(ImportedLodNotice));
+        OnPropertyChanged(nameof(CanAddAssemblyLod));
+        OnPropertyChanged(nameof(CanReplaceAssemblyLod));
+        OnPropertyChanged(nameof(CanRemoveAssemblyLod));
     }
 
     private void RefreshStatusMessage()
     {
+        if (SelectedAssemblyLod is { IsImported: true } imported)
+        {
+            StatusMessage =
+                $"Editable draft · LOD {imported.LodIndex} staged from " +
+                $"'{imported.SourceDisplay}'; runtime XSurface compilation " +
+                "and material remapping are required before Apply.";
+            return;
+        }
         if (_buildFailure is not null)
         {
             StatusMessage = $"Preview unavailable: {_buildFailure}";
@@ -409,12 +602,17 @@ public sealed class XModelEditorViewModel
         _rendererLodIndex = -1;
         _rendererUploadResult = null;
         _rendererFailure = null;
-        _diagnostics = _buildDiagnostics;
+        _diagnostics = _buildDiagnostics
+            .Concat(_candidateDiagnostics)
+            .Concat(_exportDiagnostics)
+            .ToArray();
     }
 
     private void RebuildDiagnostics()
     {
         var issues = new List<AssetValidationIssue>(_buildDiagnostics);
+        issues.AddRange(_candidateDiagnostics);
+        issues.AddRange(_exportDiagnostics);
         XModelRenderLod? lod = _rendererLodIndex == SelectedLodIndex
             ? SelectedLod?.Lod
             : null;
@@ -589,7 +787,8 @@ public sealed class XModelEditorViewModel
 
     private InspectorSelectionViewModel CreateInspectorSelection(
         XModelAsset model,
-        XModelRenderLod? selectedLod)
+        XModelRenderLod? selectedLod,
+        XModelLodAssemblyItemViewModel? selectedAssembly)
     {
         var modelRows = new List<InspectorPropertyRowViewModel>
         {
@@ -638,6 +837,38 @@ public sealed class XModelEditorViewModel
             sections.Add(new InspectorSectionViewModel(
                 "Authored camera material groups",
                 authoredMaterialRows));
+        }
+
+        if (selectedAssembly is not null)
+        {
+            var assemblyRows = new List<InspectorPropertyRowViewModel>
+            {
+                ReadOnly("Slot", "xmodel.lods.slot", selectedAssembly.LodIndex.ToString(CultureInfo.InvariantCulture)),
+                ReadOnly("Source", "xmodel.lods.source", selectedAssembly.SourceDisplay),
+                ReadOnly("Vertices", "xmodel.lods.vertices", selectedAssembly.VertexCount.ToString("N0")),
+                ReadOnly("Triangles", "xmodel.lods.triangles", selectedAssembly.TriangleCount.ToString("N0")),
+                ReadOnly("Materials", "xmodel.lods.materials", selectedAssembly.MaterialCount.ToString("N0")),
+                new InspectorFloatPropertyRowViewModel(
+                    "Distance", "xmodel.lods.distance", selectedAssembly.Distance,
+                    IsEditable && _workingDraft is not null
+                        ? value => { _workingDraft.SetLodDistance(selectedAssembly.LodIndex, value); RefreshAssemblyProjection(selectedAssembly.LodIndex); }
+                        : null,
+                    "Active LOD distances must be finite, nonnegative, and strictly increasing.")
+            };
+            sections.Add(new InspectorSectionViewModel("LOD assembly", assemblyRows));
+        }
+
+        if (_workingDraft is not null)
+        {
+            var choices = new List<InspectorChoice> { new("none", "None") };
+            choices.AddRange(_workingDraft.LodAssembly.Where(lod => lod.IsOccupied).Select(lod => new InspectorChoice(lod.SlotIndex.ToString(CultureInfo.InvariantCulture), $"LOD {lod.SlotIndex}")));
+            sections.Add(new InspectorSectionViewModel("Collision", [
+                new InspectorChoicePropertyRowViewModel(
+                    "Collision LOD", "xmodel.collLod", choices,
+                    _workingDraft.CollisionLod == 0xFF ? "none" : _workingDraft.CollisionLod.ToString(CultureInfo.InvariantCulture),
+                    IsEditable ? value => { _workingDraft.SetCollisionLod(value == "none" ? (byte)0xFF : byte.Parse(value, CultureInfo.InvariantCulture)); RefreshAssemblyProjection(SelectedAssemblyLod?.LodIndex); } : null,
+                    "Imported collision geometry cannot Apply until collision tree compilation is available.")
+            ]));
         }
 
         var materialRows = new List<InspectorPropertyRowViewModel>();
@@ -693,8 +924,11 @@ public sealed class XModelEditorViewModel
             boneRows,
             isExpanded: false));
 
+        string selectionName = selectedAssembly is null
+            ? Name
+            : $"{Name} · LOD {selectedAssembly.LodIndex}";
         return new InspectorSelectionViewModel(
-            selectedLod is null ? Name : $"{Name} · LOD {selectedLod.LodIndex}",
+            selectionName,
             "XMODEL",
             sections,
             "Read-only model metadata and authored normal-camera material execution status.");
@@ -756,5 +990,41 @@ public sealed class XModelLodItemViewModel
     public string DisplayName =>
         $"LOD {LodIndex} · {TriangleCount:N0} tris";
 
+    public override string ToString() => DisplayName;
+}
+
+public sealed class XModelLodAssemblyItemViewModel
+{
+    internal XModelLodAssemblyItemViewModel(XModelLodDraft lod)
+    {
+        Draft = lod;
+        LodIndex = lod.SlotIndex;
+        Distance = lod.Distance;
+        IsOccupied = lod.IsOccupied;
+        IsImported = lod.IsImported;
+        IsBaseline = lod.BaselineLod is not null;
+        SourceDisplay = lod.IsImported
+            ? Path.GetFileName(lod.ImportSource) ?? "Imported XMODEL_EXPORT"
+            : IsBaseline ? "Current XModel geometry" : "Empty slot";
+        if (lod.ImportedDocument is { } imported)
+        {
+            VertexCount = imported.Vertices.Count; TriangleCount = imported.Triangles.Count; MaterialCount = imported.Materials.Count;
+        }
+        else if (lod.BaselineLod?.ModelSurfs is { } surfaces)
+        {
+            VertexCount = surfaces.Surfaces.Sum(surface => surface.VertCount); TriangleCount = surfaces.Surfaces.Sum(surface => surface.TriCount); MaterialCount = surfaces.Surfaces.Count;
+        }
+    }
+    internal XModelLodDraft Draft { get; }
+    public int LodIndex { get; }
+    public float Distance { get; }
+    public bool IsOccupied { get; }
+    public bool IsImported { get; }
+    public bool IsBaseline { get; }
+    public int VertexCount { get; }
+    public int TriangleCount { get; }
+    public int MaterialCount { get; }
+    public string SourceDisplay { get; }
+    public string DisplayName => !IsOccupied ? $"LOD {LodIndex} · Empty" : $"LOD {LodIndex} · {TriangleCount:N0} tris · {SourceDisplay}";
     public override string ToString() => DisplayName;
 }

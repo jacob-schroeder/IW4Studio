@@ -183,6 +183,24 @@ public sealed class AssetEditorSession : AssetEditorSurface
 
     public T ReadDraft<T>() where T : notnull => OpenDraft<T>();
 
+    /// <summary>Validates a local candidate without publishing it to the editing session.</summary>
+    public AssetEditorValidationState ValidateCandidate<T>(T candidate) where T : notnull
+    {
+        ThrowIfClosed();
+        return new AssetEditorValidationState(_adapter.Validate(candidate));
+    }
+
+    /// <summary>Compares a local candidate with the current session draft without publishing it.</summary>
+    public bool CandidateMatchesCurrent<T>(T candidate) where T : notnull
+    {
+        ThrowIfClosed();
+        ArgumentNullException.ThrowIfNull(candidate);
+        object current = _rowIdentity is { } identity
+            ? _session.CloneCurrentDraft(identity, _adapter)
+            : _adapter.CloneDraft(_readOnlyDraft);
+        return _adapter.SemanticallyEquals(current, candidate);
+    }
+
     public bool Apply<T>(Action<T> mutation) where T : notnull
     {
         if (!CanEdit)
