@@ -3,6 +3,9 @@ using IW4.Assets.Assets.Localize;
 using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Menu;
+using IW4.Assets.Assets.Material;
+using IW4.Assets.Assets.XModel;
+using IW4.Assets.XModel.Export;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Studio.Documents.MenuEditing;
@@ -197,6 +200,114 @@ public sealed class AssetEditorSession : AssetEditorSurface
         return definition is not null;
     }
 
+    /// <summary>
+    /// Resolves a live material together with the only XModel inv-high value
+    /// proven by loaded XModel usages of that material.
+    /// </summary>
+    public bool TryResolveWorkspaceXModelMaterialUsage(
+        string? name,
+        out MaterialAsset? material,
+        out ushort invHighMipRadius)
+    {
+        material = null;
+        invHighMipRadius = 0;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        XModelMaterialMapping[] matches = ResolveWorkspaceXModelMaterialUsages(name);
+        if (matches.Length != 1)
+            return false;
+        material = matches[0].Material;
+        invHighMipRadius = matches[0].InvHighMipRadius;
+        return true;
+    }
+
+    /// <summary>Returns live workspace materials whose XModel inv-high value is unambiguous.</summary>
+    public IReadOnlyList<XModelMaterialMapping> ResolveWorkspaceXModelMaterialUsages() =>
+        Array.AsReadOnly(ResolveWorkspaceXModelMaterialUsages(null));
+
+    /// <summary>Captures the owned provider closure retained by an applied XModel revision.</summary>
+    public IReadOnlyList<BaseAsset> CaptureAppliedXModelProviders()
+    {
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.XModel || _rowIdentity is not { } identity)
+            return [];
+        return _session.CaptureAppliedXModelProviders(identity);
+    }
+
+    private XModelMaterialMapping[] ResolveWorkspaceXModelMaterialUsages(string? requestedName)
+    {
+        long revision = Workspace.LoadedZone.Context.AssetPool.Revision;
+        IGrouping<string, (MaterialAsset Material, ushort InvHigh)>[] usages =
+            Workspace.AssetCatalog.Entries
+                .Select(entry => entry.Definition)
+                .OfType<XModelAsset>()
+                .SelectMany(model => model.Materials
+                    .Select((material, index) => (material, index))
+                    .Where(row => row.material is not null &&
+                        row.index < model.InvHighMipRadius.Count &&
+                        !string.IsNullOrWhiteSpace(row.material.Info.Name))
+                    .Select(row => (
+                        Material: row.material!,
+                        InvHigh: model.InvHighMipRadius[row.index])))
+                .Where(row => requestedName is null || string.Equals(
+                    row.Material.Info.Name,
+                    requestedName,
+                    StringComparison.Ordinal))
+                .GroupBy(row => row.Material.Info.Name!, StringComparer.Ordinal)
+                .ToArray();
+        var result = new List<XModelMaterialMapping>(usages.Length);
+        foreach (IGrouping<string, (MaterialAsset Material, ushort InvHigh)> usage in usages)
+        {
+            ushort[] values = usage.Select(row => row.InvHigh).Distinct().Take(2).ToArray();
+            if (values.Length != 1 ||
+                !Workspace.LoadedZone.Context.AssetPool.TryResolve(
+                    XAssetType.Material,
+                    usage.Key,
+                    out MaterialAsset? current) ||
+                current is null ||
+                current.RuntimeAddress?.AssetPoolAddress is not { } address ||
+                !Workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) ||
+                slot is null ||
+                slot.ActiveProvider.IsReferencePlaceholder)
+            {
+                continue;
+            }
+            result.Add(new XModelMaterialMapping(current, values[0]));
+        }
+        return Workspace.LoadedZone.Context.AssetPool.Revision == revision
+            ? result.ToArray()
+            : [];
+    }
+
+    /// <summary>Resolves a Material name to its current non-placeholder pool definition.</summary>
+    public bool TryResolveWorkspaceMaterial(
+        string? name,
+        out MaterialAsset? material)
+    {
+        material = null;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        long revision = Workspace.LoadedZone.Context.AssetPool.Revision;
+        if (!Workspace.LoadedZone.Context.AssetPool.TryResolve(
+                XAssetType.Material,
+                name,
+                out MaterialAsset? current) ||
+            current is null ||
+            current.RuntimeAddress?.AssetPoolAddress is not { } address ||
+            !Workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) ||
+            slot is null ||
+            slot.ActiveProvider.IsReferencePlaceholder ||
+            Workspace.LoadedZone.Context.AssetPool.Revision != revision)
+        {
+            return false;
+        }
+
+        material = current;
+        return true;
+    }
+
     /// <summary>Validates a local candidate without publishing it to the editing session.</summary>
     public AssetEditorValidationState ValidateCandidate<T>(T candidate) where T : notnull
     {
@@ -238,7 +349,7 @@ public sealed class AssetEditorSession : AssetEditorSurface
         return changed;
     }
 
-    /// <summary>Publishes a fully compiled XModel and its generated XModelSurfs in one revision.</summary>
+    /// <summary>Publishes a compiled XModel and its owned dependency closure in one revision.</summary>
     public bool ApplyCompiledXModel(
         XModelDraft candidate,
         out IReadOnlyList<AssetValidationIssue> issues)

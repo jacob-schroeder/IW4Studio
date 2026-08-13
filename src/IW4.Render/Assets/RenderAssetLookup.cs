@@ -41,6 +41,10 @@ public sealed partial class RenderAssetLookup :
     private readonly Dictionary<XBlockAddress, MaterialTechniqueSetAsset> _techsetsByAddress = new();
     private readonly Dictionary<int, MaterialTechniqueSetAsset> _techsetsByRuntimePointer = new();
     private readonly Dictionary<MaterialAsset, MaterialTechniqueSetAsset> _techniqueSetsByMaterial = new();
+    private readonly HashSet<MaterialAsset> _stagedMaterials =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<GfxImageAsset> _stagedImages =
+        new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<MaterialAsset> _materialsWithUnresolvedTechniqueSet = [];
     private readonly Dictionary<MaterialTechniqueSetAsset, IReadOnlyList<MaterialTechniqueSlot>> _resolvedTechniqueSlotsBySet = new();
     private readonly Dictionary<XBlockAddress, MaterialVertexDeclarationAsset> _vertexDeclsByAddress = new();
@@ -82,7 +86,15 @@ public sealed partial class RenderAssetLookup :
     public RenderAssetLookup(
         RenderAssetSource source,
         IGfxImagePayloadResolver? imageStreams = null)
-        : this(source, imageStreams, gfxWorldRuntimeState: null)
+        : this(source, imageStreams, gfxWorldRuntimeState: null, stagedAssets: [])
+    {
+    }
+
+    internal RenderAssetLookup(
+        RenderAssetSource source,
+        IGfxImagePayloadResolver? imageStreams,
+        IReadOnlyList<BaseAsset> stagedAssets)
+        : this(source, imageStreams, gfxWorldRuntimeState: null, stagedAssets)
     {
     }
 
@@ -94,16 +106,19 @@ public sealed partial class RenderAssetLookup :
             source,
             imageStreams,
             gfxWorldRuntimeState ?? throw new ArgumentNullException(
-                nameof(gfxWorldRuntimeState)))
+                nameof(gfxWorldRuntimeState)),
+            stagedAssets: [])
     {
     }
 
     private RenderAssetLookup(
         RenderAssetSource source,
         IGfxImagePayloadResolver? imageStreams,
-        GfxWorldRuntimeState? gfxWorldRuntimeState)
+        GfxWorldRuntimeState? gfxWorldRuntimeState,
+        IReadOnlyList<BaseAsset> stagedAssets)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(stagedAssets);
         _blocks = source.Blocks;
         _assetPool = source.AssetPool;
         _gfxWorldRuntimeState = gfxWorldRuntimeState;
@@ -111,6 +126,8 @@ public sealed partial class RenderAssetLookup :
         _materialTechniqueGraph = new MaterialTechniqueGraphCache(
             source.Blocks,
             ReadCString);
+        _stagedMaterials.UnionWith(stagedAssets.OfType<MaterialAsset>());
+        _stagedImages.UnionWith(stagedAssets.OfType<GfxImageAsset>());
         foreach ((XBlockAddress address, GfxImageAsset image) in source.GfxImagesByAddress)
             _imagesByAddress[address] = image;
 

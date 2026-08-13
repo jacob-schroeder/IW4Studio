@@ -10,16 +10,14 @@ public static class XModelExportLodCompiler
     private const int DObjSkelMatSize = 0x40;
 
     public static XModelExportLodCompileResult Compile(
-        XModelExportDocument document, IReadOnlyList<int?> materialSlots, int boneCount,
+        XModelExportDocument document, int boneCount,
         bool compileCollisionTrees)
     {
         ArgumentNullException.ThrowIfNull(document);
-        ArgumentNullException.ThrowIfNull(materialSlots);
         var blockers = new List<string>();
-        if (materialSlots.Count != document.Materials.Count) blockers.Add("Material mapping count does not match imported material count.");
         if (boneCount is < 1 or > 192) blockers.Add("The XModel bone count cannot be represented by six PartBits words.");
         var result = new List<XSurface>();
-        var slots = new List<int>();
+        var materialIndices = new List<int>();
         foreach ((XModelExportObject _, int objectIndex) in document.Objects.Select((value, index) => (value, index)))
         {
             XModelExportTriangle[] objectTriangles = document.Triangles.Where(triangle => triangle.ObjectIndex == objectIndex).ToArray();
@@ -31,7 +29,6 @@ public static class XModelExportLodCompiler
                 XModelExportTriangle[] triangles = partition.ToArray();
                 string partitionPrefix = $"{prefix} material {materialIndex}";
                 if (materialIndex < 0 || materialIndex >= document.Materials.Count) { blockers.Add($"{partitionPrefix}: is outside imported material rows."); continue; }
-                if (materialIndex >= materialSlots.Count || materialSlots[materialIndex] is not int sourceSlot || sourceSlot < 0) { blockers.Add($"{partitionPrefix} '{document.Materials[materialIndex].Name}': select an existing XModel material slot."); continue; }
                 if (triangles.Length > ushort.MaxValue) { blockers.Add($"{partitionPrefix}: triangle count exceeds UInt16."); continue; }
                 if (!TryCompileSurface(document, triangles, boneCount, partitionPrefix, out XSurface? surface, out IReadOnlyList<string> errors) || surface is null)
                 {
@@ -48,7 +45,7 @@ public static class XModelExportLodCompiler
                     continue;
                 }
                 result.Add(surface);
-                slots.Add(sourceSlot);
+                materialIndices.Add(materialIndex);
             }
         }
         if (document.Objects.Count == 0) blockers.Add("The imported LOD has no objects.");
@@ -56,7 +53,7 @@ public static class XModelExportLodCompiler
         uint[] partBits = new uint[6];
         foreach (XSurface surface in result)
             for (int i = 0; i < partBits.Length; i++) partBits[i] |= surface.PartBits[i];
-        return new XModelExportLodCompileResult(Array.AsReadOnly(result.ToArray()), Array.AsReadOnly(slots.ToArray()), Array.AsReadOnly(partBits), Array.AsReadOnly(blockers.ToArray()));
+        return new XModelExportLodCompileResult(Array.AsReadOnly(result.ToArray()), Array.AsReadOnly(materialIndices.ToArray()), Array.AsReadOnly(partBits), Array.AsReadOnly(blockers.ToArray()));
     }
 
     private static bool TryCompileSurface(XModelExportDocument document, IReadOnlyList<XModelExportTriangle> triangles, int boneCount, string prefix, out XSurface? surface, out IReadOnlyList<string> blockers)
@@ -177,7 +174,7 @@ public static class XModelExportLodCompiler
     private readonly record struct Weight(int BoneIndex, ushort QuantizedWeight);
 }
 
-public sealed record XModelExportLodCompileResult(IReadOnlyList<XSurface> Surfaces, IReadOnlyList<int> SourceMaterialSlots, IReadOnlyList<uint> PartBits, IReadOnlyList<string> Blockers)
+public sealed record XModelExportLodCompileResult(IReadOnlyList<XSurface> Surfaces, IReadOnlyList<int> ImportedMaterialIndices, IReadOnlyList<uint> PartBits, IReadOnlyList<string> Blockers)
 {
     public bool IsSuccess => Blockers.Count == 0;
 }

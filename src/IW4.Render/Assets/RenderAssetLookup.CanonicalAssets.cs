@@ -21,6 +21,14 @@ public sealed partial class RenderAssetLookup
     {
         ArgumentNullException.ThrowIfNull(seed);
 
+        if (_stagedImages.Contains(seed) &&
+            seed.RuntimeAddress?.AssetPoolAddress is null &&
+            seed.PayloadBytes.Count > 0)
+        {
+            image = seed;
+            return true;
+        }
+
         XAssetPool? pool = _assetPool;
         if (pool is null)
         {
@@ -43,6 +51,55 @@ public sealed partial class RenderAssetLookup
             return false;
         }
 
+        return true;
+    }
+
+    internal bool TryResolveStagedMaterialTechniqueBinding(
+        MaterialAsset material,
+        long expectedPoolRevision,
+        [NotNullWhen(true)] out MaterialTechniqueBinding? binding)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        binding = null;
+        XAssetPool? pool = _assetPool;
+        if (pool is null || pool.Revision != expectedPoolRevision ||
+            !_stagedMaterials.Contains(material) ||
+            material.RuntimeAddress?.AssetPoolAddress is not null)
+        {
+            return false;
+        }
+
+        MaterialAsset? stagedMaterial = AddPooledMaterialGraph(material, pool);
+        if (!ReferenceEquals(stagedMaterial, material))
+            return false;
+        MaterialTechniqueSetAsset? techniqueSet =
+            _techniqueSetsByMaterial.TryGetValue(
+                material,
+                out MaterialTechniqueSetAsset? resolved)
+                ? resolved
+                : material.TechniqueSet;
+        if (techniqueSet is null ||
+            !TryResolveCurrentPoolAsset(
+                techniqueSet,
+                XAssetType.Techset,
+                out MaterialTechniqueSetAsset? currentTechniqueSet,
+                out IXAssetSourceMemory? currentTechniqueSetBlocks))
+        {
+            return false;
+        }
+        if (currentTechniqueSetBlocks is not null &&
+            !_hydratedDependencyTechsets.Contains(currentTechniqueSet))
+        {
+            AddDependencyTechset(currentTechniqueSet, currentTechniqueSetBlocks);
+            HydrateDependencyTechniqueGraphs();
+        }
+        if (pool.Revision != expectedPoolRevision)
+            return false;
+
+        binding = new MaterialTechniqueBinding(
+            material,
+            currentTechniqueSet,
+            ResolveTechniqueSlots(currentTechniqueSet));
         return true;
     }
 

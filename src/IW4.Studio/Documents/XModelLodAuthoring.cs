@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.Assets.Material;
 using IW4.Assets.XModel.Export;
 using System.Numerics;
 
@@ -6,14 +7,14 @@ namespace IW4.Studio.Documents;
 
 public sealed class XModelLodDraft
 {
-    internal XModelLodDraft(int slotIndex, float distance, XModelLodInfo? baselineLod, XModelExportDocument? importedDocument, string? importSource, IReadOnlyList<int?>? materialSlots = null)
+    internal XModelLodDraft(int slotIndex, float distance, XModelLodInfo? baselineLod, XModelExportDocument? importedDocument, string? importSource, IReadOnlyList<XModelMaterialMapping?>? materialMappings = null)
     {
         SlotIndex = slotIndex;
         Distance = distance;
         BaselineLod = baselineLod;
         ImportedDocument = importedDocument;
         ImportSource = importSource;
-        MaterialSlots = Array.AsReadOnly((materialSlots ?? importedDocument?.Materials.Select(_ => (int?)null).ToArray() ?? []).ToArray());
+        MaterialMappings = Array.AsReadOnly((materialMappings ?? importedDocument?.Materials.Select(_ => (XModelMaterialMapping?)null).ToArray() ?? []).ToArray());
     }
 
     public int SlotIndex { get; }
@@ -21,18 +22,33 @@ public sealed class XModelLodDraft
     public XModelLodInfo? BaselineLod { get; }
     public XModelExportDocument? ImportedDocument { get; }
     public string? ImportSource { get; }
-    /// <summary>One explicit current-XModel material slot per imported material row.</summary>
-    public IReadOnlyList<int?> MaterialSlots { get; }
+    /// <summary>One explicit material and proven XModel inv-high value per imported material row.</summary>
+    public IReadOnlyList<XModelMaterialMapping?> MaterialMappings { get; }
     public bool IsOccupied => BaselineLod is not null || ImportedDocument is not null;
     public bool IsImported => ImportedDocument is not null;
-    internal XModelLodDraft Clone() => new(SlotIndex, Distance, BaselineLod, ImportedDocument is null ? null : Freeze(ImportedDocument), ImportSource, MaterialSlots);
+    internal XModelLodDraft Clone() => new(SlotIndex, Distance, BaselineLod, ImportedDocument is null ? null : Freeze(ImportedDocument), ImportSource, MaterialMappings);
 
     internal static XModelExportDocument Freeze(XModelExportDocument document) => new(
         Array.AsReadOnly(document.Bones.Select(b => new XModelExportBone(b.Name, b.ParentIndex, b.GlobalOffset, b.GlobalRotation)).ToArray()),
         Array.AsReadOnly(document.Vertices.Select(v => new XModelExportVertex(v.Position, Array.AsReadOnly(v.Weights.Select(w => new XModelExportBoneWeight(w.BoneIndex, w.Weight)).ToArray()))).ToArray()),
         Array.AsReadOnly(document.Triangles.Select(t => new XModelExportTriangle(t.ObjectIndex, t.MaterialIndex, Copy(t.First), Copy(t.Second), Copy(t.Third))).ToArray()),
         Array.AsReadOnly(document.Objects.Select(o => new XModelExportObject(o.SurfaceIdentity)).ToArray()),
-        Array.AsReadOnly(document.Materials.Select(m => new XModelExportMaterial(m.Name, m.ColorMapPath)).ToArray()));
+        Array.AsReadOnly(document.Materials.Select(m => new XModelExportMaterial(m.Name, m.ColorMapPath)
+        {
+            ImportMaterial = m.ImportMaterial is null
+                ? null
+                : new XModelImportMaterial(
+                    m.ImportMaterial.BaseColorFactor,
+                    m.ImportMaterial.BaseColorImage is null
+                        ? null
+                        : new XModelImportImage(
+                            m.ImportMaterial.BaseColorImage.Width,
+                            m.ImportMaterial.BaseColorImage.Height,
+                            Array.AsReadOnly(m.ImportMaterial.BaseColorImage.RgbaBytes.ToArray())),
+                    m.ImportMaterial.AlphaMode,
+                    m.ImportMaterial.AlphaCutoff,
+                    Array.AsReadOnly(m.ImportMaterial.Warnings.ToArray()))
+        }).ToArray()));
 
     private static XModelExportCorner Copy(XModelExportCorner c) => new(c.VertexIndex, c.Normal, c.Color, c.Uv0);
 }
@@ -100,8 +116,8 @@ internal static class XModelLodAssemblyValidator
         }
         for (int i = 0; i < doc.Materials.Count; i++)
         {
-            if (i >= lod.MaterialSlots.Count || lod.MaterialSlots[i] is not int slot || slot < 0 || slot >= model.Materials.Count || model.Materials[slot] is null)
-                Error(issues, $"xmodel.lods[{lodIndex}].materials[{i}]", "Select an existing XModel material slot.");
+            if (i >= lod.MaterialMappings.Count || lod.MaterialMappings[i]?.Material is null)
+                Error(issues, $"xmodel.lods[{lodIndex}].materials[{i}]", "No compatible IW4 XModel render template with a proven inv-high value is available.");
         }
         foreach ((XModelExportVertex vertex, int index) in doc.Vertices.Select((value, index) => (value, index)))
             if (vertex.Weights.Count > 4) Error(issues, $"xmodel.lods[{lodIndex}].vertices[{index}]", "Imported vertices may use at most four bone influences.");
@@ -129,3 +145,8 @@ internal static class XModelLodAssemblyValidator
     }
     private static void Error(List<AssetValidationIssue> issues, string path, string message) => issues.Add(new(path, message, AssetValidationSeverity.Error));
 }
+
+public sealed record XModelMaterialMapping(
+    MaterialAsset Material,
+    ushort InvHighMipRadius,
+    bool CreateOwnedMaterial = false);

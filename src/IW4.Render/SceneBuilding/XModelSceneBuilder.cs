@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.Assets.Assets;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
@@ -23,11 +24,19 @@ public sealed class XModelSceneBuilder
     public XModelRenderScene Build(
         XModelAsset model,
         RenderAssetSource assetSource,
-        IGfxImagePayloadResolver imagePayloadResolver)
+        IGfxImagePayloadResolver imagePayloadResolver) =>
+        Build(model, assetSource, imagePayloadResolver, []);
+
+    public XModelRenderScene Build(
+        XModelAsset model,
+        RenderAssetSource assetSource,
+        IGfxImagePayloadResolver imagePayloadResolver,
+        IReadOnlyList<BaseAsset> stagedAssets)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(assetSource);
         ArgumentNullException.ThrowIfNull(imagePayloadResolver);
+        ArgumentNullException.ThrowIfNull(stagedAssets);
         string modelName = !string.IsNullOrWhiteSpace(model.Name)
             ? model.Name
             : throw new InvalidOperationException(
@@ -62,7 +71,8 @@ public sealed class XModelSceneBuilder
         long poolRevision = assetSource.AssetPool.Revision;
         var lookup = new RenderAssetLookup(
             assetSource,
-            imagePayloadResolver);
+            imagePayloadResolver,
+            stagedAssets);
         var textureCache = new RenderTextureCache(
             preferProvenAuthoredPayloads: false);
         var failedTextureCacheKeys =
@@ -106,10 +116,14 @@ public sealed class XModelSceneBuilder
                         $"surface {surfaceOffset} has no parent material at index {parentMaterialIndex}");
                 }
 
-                if (!lookup.TryResolveCanonicalMaterialTechniqueBinding(
-                        loadedMaterialName,
-                        poolRevision,
-                        out MaterialTechniqueBinding? binding) ||
+                if ((!lookup.TryResolveCanonicalMaterialTechniqueBinding(
+                         loadedMaterialName,
+                         poolRevision,
+                         out MaterialTechniqueBinding? binding) &&
+                     !lookup.TryResolveStagedMaterialTechniqueBinding(
+                         loadedMaterial,
+                         poolRevision,
+                         out binding)) ||
                     binding is null)
                 {
                     XSurface blockedSurface =

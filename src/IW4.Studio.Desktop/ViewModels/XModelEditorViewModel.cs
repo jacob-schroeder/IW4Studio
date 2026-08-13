@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Numerics;
+using IW4.Assets.Assets;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
@@ -23,7 +25,7 @@ using IW4.Studio.Documents;
 namespace IW4.Studio.Desktop.ViewModels;
 
 /// <summary>
-/// Runtime preview plus a local XMODEL_EXPORT LOD assembly candidate. The
+/// Runtime preview plus a local imported-geometry LOD assembly candidate. The
 /// candidate compiles locally and publishes only when Apply succeeds.
 /// </summary>
 public sealed class XModelEditorViewModel
@@ -45,7 +47,6 @@ public sealed class XModelEditorViewModel
     private XModelLodItemViewModel? _selectedLod;
     private IReadOnlyList<XModelLodAssemblyItemViewModel> _assemblyLods = [];
     private IReadOnlyList<XModelImportedMaterialMappingItemViewModel> _importedMaterialMappings = [];
-    private IReadOnlyList<XModelMaterialSlotOptionViewModel> _materialSlotOptions = [];
     private XModelAssemblyCompileResult? _compiledCandidate;
     private XModelLodAssemblyItemViewModel? _selectedAssemblyLod;
     private InspectorSelectionViewModel? _inspectorSelection;
@@ -108,6 +109,17 @@ public sealed class XModelEditorViewModel
         get => _selectedAssemblyLod;
         set
         {
+            // Both the toolbar ComboBox and the assembly ListBox observe the
+            // same selection. Replacing their ItemsSource collections causes
+            // Avalonia to transiently write null before the new selected row
+            // is published. Preserve the live selection through that refresh;
+            // there is no user-facing "no assembly LOD" choice.
+            if (value is null &&
+                _selectedAssemblyLod is not null &&
+                _assemblyLods.Contains(_selectedAssemblyLod))
+            {
+                return;
+            }
             if (value is not null && !AssemblyLods.Contains(value)) throw new ArgumentOutOfRangeException(nameof(value));
             if (!SetProperty(ref _selectedAssemblyLod, value)) return;
             if (value is { IsBaseline: true })
@@ -131,8 +143,8 @@ public sealed class XModelEditorViewModel
     public string ImportedLodNotice => !IsImportedLodSelected
         ? string.Empty
         : _compiledCandidate?.IsSuccess == true
-            ? "STAGED XMODEL_EXPORT · COMPILED PREVIEW · APPLY TO PUBLISH"
-            : "STAGED XMODEL_EXPORT · COMPILATION BLOCKED · REVIEW DIAGNOSTICS";
+            ? "STAGED GEOMETRY · COMPILED PREVIEW · APPLY TO PUBLISH"
+            : "STAGED GEOMETRY · COMPILATION BLOCKED · REVIEW DIAGNOSTICS";
 
     public XModelLodItemViewModel? SelectedLod
     {
@@ -201,7 +213,6 @@ public sealed class XModelEditorViewModel
     public bool CanApply => IsEditable && _workingDraft is not null && HasUnappliedChanges && _compiledCandidate?.IsSuccess == true;
 
     public IReadOnlyList<XModelImportedMaterialMappingItemViewModel> ImportedMaterialMappings => _importedMaterialMappings;
-    public IReadOnlyList<XModelMaterialSlotOptionViewModel> MaterialSlotOptions => _materialSlotOptions;
 
     public bool CanExportXModel => !IsImportedLodSelected && _model is not null && SelectedLod is not null;
 
@@ -221,8 +232,8 @@ public sealed class XModelEditorViewModel
         {
             if (IsImportedLodSelected)
                 return _compiledCandidate?.IsSuccess == true
-                    ? "STAGED XMODEL_EXPORT · COMPILED PREVIEW"
-                    : "STAGED XMODEL_EXPORT · COMPILATION BLOCKED";
+                    ? "STAGED GEOMETRY · COMPILED PREVIEW"
+                    : "STAGED GEOMETRY · COMPILATION BLOCKED";
 
             LodAuthoredMaterialSummary summary =
                 SummarizeAuthoredMaterials(SelectedLod?.Lod);
@@ -342,7 +353,7 @@ public sealed class XModelEditorViewModel
         bool reverted = _session.Revert();
         CaptureAndBuild();
         StatusMessage = reverted
-            ? $"Reverted the applied XModel and generated providers to the saved baseline. {StatusMessage}"
+            ? $"Reverted the XModel and its owned XModelSurfs, Materials, and Images to the saved baseline. {StatusMessage}"
             : $"The XModel already matched its saved baseline. {StatusMessage}";
     }
 
@@ -368,7 +379,7 @@ public sealed class XModelEditorViewModel
         if (applied)
         {
             CaptureAndBuild();
-            StatusMessage = "Applied the compiled XModel and generated XModelSurfs providers.";
+            StatusMessage = "Applied the XModel, XModelSurfs, imported Materials, and Images atomically.";
         }
         else
         {
@@ -386,14 +397,52 @@ public sealed class XModelEditorViewModel
         if (!IsEditable || _workingDraft is null) { error = "This XModel is not editable."; return false; }
         try
         {
+            int lodIndex;
             if (replaceSelected && SelectedAssemblyLod is { IsOccupied: true } selected)
-                _workingDraft.ReplaceLod(selected.LodIndex, document, source);
-            else _workingDraft.AppendImportedLod(document, source);
-            RefreshAssemblyProjection(replaceSelected ? SelectedAssemblyLod?.LodIndex : _workingDraft.LodAssembly.Count(lod => lod.IsOccupied) - 1);
+            {
+                lodIndex = selected.LodIndex;
+                _workingDraft.ReplaceLod(lodIndex, document, source);
+            }
+            else
+            {
+                lodIndex = _workingDraft.LodAssembly
+                    .First(lod => !lod.IsOccupied)
+                    .SlotIndex;
+                _workingDraft.AppendImportedLod(document, source);
+            }
+            ResolveWorkspaceMaterialUsages(_workingDraft, lodIndex);
+            ResolveImportedMaterialTemplates(_workingDraft, lodIndex);
+            RefreshAssemblyProjection(lodIndex);
             return true;
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         { error = exception.Message; return false; }
+    }
+
+    public bool TryStageReplacementModel(
+        XModelExportDocument document,
+        string? source,
+        out string? error)
+    {
+        error = null;
+        if (!IsEditable || _workingDraft is null)
+        {
+            error = "This XModel is not editable.";
+            return false;
+        }
+        try
+        {
+            _workingDraft.ReplaceVisualModel(document, source);
+            ResolveWorkspaceMaterialUsages(_workingDraft, 0);
+            ResolveImportedMaterialTemplates(_workingDraft, 0);
+            RefreshAssemblyProjection(0);
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            error = exception.Message;
+            return false;
+        }
     }
 
     public void RemoveSelectedAssemblyLod()
@@ -591,7 +640,8 @@ public sealed class XModelEditorViewModel
             scene = _sceneBuilder.Build(
                 _model,
                 source,
-                _imagePayloads);
+                _imagePayloads,
+                CapturePreviewProviders());
         }
         catch (Exception exception) when (exception is
                    InvalidOperationException or
@@ -681,10 +731,10 @@ public sealed class XModelEditorViewModel
         NotifyProjectionChanged();
     }
 
-    private void RefreshCandidateState()
+    private void RefreshCandidateState(bool rebuildMaterialProjection = true)
     {
         if (_workingDraft is null) return;
-        RefreshCompilation(_workingDraft);
+        RefreshCompilation(_workingDraft, rebuildMaterialProjection);
         bool importedCandidate = _workingDraft.LodAssembly.Any(lod => lod.IsImported);
         if (importedCandidate && _compiledCandidate?.IsSuccess != true)
         {
@@ -731,7 +781,11 @@ public sealed class XModelEditorViewModel
         try
         {
             _model = candidate;
-            _scene = _sceneBuilder.Build(candidate, CreateAssetSource(_session.Workspace), _imagePayloads);
+            _scene = _sceneBuilder.Build(
+                candidate,
+                CreateAssetSource(_session.Workspace),
+                _imagePayloads,
+                CapturePreviewProviders());
             _buildFailure = null;
             _lods = _scene.Lods.Select(lod => new XModelLodItemViewModel(lod)).ToArray();
             _selectedLod = _lods.FirstOrDefault(lod => lod.LodIndex == selectedIndex) ?? _lods.FirstOrDefault();
@@ -758,43 +812,139 @@ public sealed class XModelEditorViewModel
         RefreshCollisionCapability();
     }
 
-    private void RefreshCompilation(XModelDraft draft)
+    private IReadOnlyList<BaseAsset> CapturePreviewProviders() =>
+        (_compiledCandidate?.Providers ?? [])
+            .Concat(_session.CaptureAppliedXModelProviders())
+            .DistinctBy(provider => (
+                provider.SerializedAssetType,
+                provider.SerializedAssetName))
+            .ToArray();
+
+    private void RefreshCompilation(XModelDraft draft, bool rebuildMaterialProjection = true)
     {
         _compiledCandidate = XModelAssemblyCompiler.Compile(draft);
         _candidateDiagnostics = _session.ValidateCandidate(draft).Issues
             .Concat(_compiledCandidate.Issues)
             .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))
             .Select(group => group.First()).ToArray();
-        BuildMaterialMappingProjection(draft);
+        if (rebuildMaterialProjection)
+            BuildMaterialMappingProjection(draft);
     }
 
     private void BuildMaterialMappingProjection(XModelDraft draft)
     {
-        _materialSlotOptions = draft.Model.Materials.Select((material, index) =>
-            new XModelMaterialSlotOptionViewModel(index, material?.Info.Name ?? "<unresolved>"))
-            .Where(option => draft.Model.Materials[option.SlotIndex] is not null).ToArray();
         XModelLodDraft? lod = SelectedAssemblyLod is { IsImported: true } selected
             ? draft.LodAssembly[selected.LodIndex] : null;
         _importedMaterialMappings = lod?.ImportedDocument?.Materials.Select((material, index) =>
-            new XModelImportedMaterialMappingItemViewModel(index, material.Name,
-                index < lod.MaterialSlots.Count
-                    ? _materialSlotOptions.FirstOrDefault(option =>
-                        option.SlotIndex == lod.MaterialSlots[index])
-                    : null,
-                selectedOption => SetImportedMaterialSlot(
-                    lod.SlotIndex,
-                    index,
-                    selectedOption?.SlotIndex))).ToArray() ?? [];
+            new XModelImportedMaterialMappingItemViewModel(
+                draft.Model.Name,
+                index,
+                material,
+                _candidateDiagnostics.Where(issue => string.Equals(
+                        issue.FieldPath,
+                        $"xmodel.lods[{lod.SlotIndex}].materials[{index}]",
+                        StringComparison.Ordinal) &&
+                    issue.Severity == AssetValidationSeverity.Error)
+                    .ToArray(),
+                index < lod.MaterialMappings.Count
+                    ? lod.MaterialMappings[index]
+                    : null)).ToArray() ?? [];
         OnPropertyChanged(nameof(ImportedMaterialMappings));
-        OnPropertyChanged(nameof(MaterialSlotOptions));
     }
 
-    private void SetImportedMaterialSlot(int lodIndex, int materialIndex, int? sourceSlot)
+    private void ResolveWorkspaceMaterialUsages(XModelDraft draft, int lodIndex)
     {
-        if (!IsEditable || _workingDraft is null) return;
-        try { _workingDraft.SetImportedMaterialSlot(lodIndex, materialIndex, sourceSlot); }
-        catch (Exception exception) when (exception is ArgumentOutOfRangeException or InvalidOperationException) { ReportXModelExportStatus(exception.Message, AssetValidationSeverity.Error); return; }
-        RefreshAssemblyProjection(lodIndex);
+        XModelLodDraft lod = draft.LodAssembly[lodIndex];
+        if (lod.ImportedDocument is null)
+            return;
+        for (int materialIndex = 0; materialIndex < lod.ImportedDocument.Materials.Count; materialIndex++)
+        {
+            if (materialIndex < lod.MaterialMappings.Count && lod.MaterialMappings[materialIndex] is not null)
+                continue;
+            string name = lod.ImportedDocument.Materials[materialIndex].Name;
+            if (_session.TryResolveWorkspaceXModelMaterialUsage(
+                    name,
+                    out MaterialAsset? material,
+                    out ushort invHighMipRadius) &&
+                material is not null)
+            {
+                draft.SetImportedMaterialMapping(
+                    lodIndex,
+                    materialIndex,
+                    new XModelMaterialMapping(material, invHighMipRadius));
+            }
+        }
+    }
+
+    private void ResolveImportedMaterialTemplates(XModelDraft draft, int lodIndex)
+    {
+        XModelLodDraft importedLod = draft.LodAssembly[lodIndex];
+        if (importedLod.ImportedDocument is null)
+            return;
+
+        MaterialAsset[] baselineMaterials = draft.Model.Materials
+            .OfType<MaterialAsset>()
+            .DistinctBy(material => material.Info.Name, StringComparer.Ordinal)
+            .ToArray();
+        MaterialAsset[] workspaceTemplates = _session
+            .ResolveWorkspaceXModelMaterialUsages()
+            .Select(mapping => mapping.Material)
+            .ToArray();
+
+        for (int materialIndex = 0;
+             materialIndex < importedLod.ImportedDocument.Materials.Count;
+             materialIndex++)
+        {
+            XModelExportMaterial source = importedLod.ImportedDocument.Materials[materialIndex];
+            if (source.ImportMaterial is null)
+                continue;
+            XModelLodDraft currentLod = draft.LodAssembly[lodIndex];
+            XModelMaterialMapping? current = materialIndex < currentLod.MaterialMappings.Count
+                ? currentLod.MaterialMappings[materialIndex]
+                : null;
+            if (current is null && draft.Model.InvHighMipRadius.Count == 0)
+                continue;
+            ushort invHighMipRadius = current?.InvHighMipRadius ??
+                draft.Model.InvHighMipRadius.ElementAtOrDefault(
+                    Math.Min(materialIndex, Math.Max(0, draft.Model.InvHighMipRadius.Count - 1)));
+
+            MaterialAsset? template = baselineMaterials
+                .Concat(workspaceTemplates)
+                .Where(candidate => XModelAssemblyCompiler.IsCompatibleImportTemplate(
+                    source,
+                    candidate,
+                    out _))
+                .DistinctBy(candidate => candidate.Info.Name, StringComparer.Ordinal)
+                .OrderBy(candidate => ImportTemplateScore(candidate, baselineMaterials))
+                .ThenBy(candidate => candidate.Info.Name, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (template is not null)
+            {
+                draft.SetImportedMaterialMapping(
+                    lodIndex,
+                    materialIndex,
+                    new XModelMaterialMapping(
+                        template,
+                        invHighMipRadius,
+                        CreateOwnedMaterial: true));
+            }
+            else
+            {
+                draft.SetImportedMaterialMapping(lodIndex, materialIndex, null);
+            }
+        }
+    }
+
+    private static int ImportTemplateScore(
+        MaterialAsset material,
+        IReadOnlyList<MaterialAsset> baselineMaterials)
+    {
+        int score = material.Textures.Count == 1 ? 0 : 100 + material.Textures.Count * 10;
+        if (material.Info.SortKey is not (MaterialSortKey.Opaque or MaterialSortKey.OpaqueAmbient))
+            score += 50;
+        if (!baselineMaterials.Contains(material, ReferenceEqualityComparer.Instance))
+            score += 5;
+        return score;
     }
 
     private void RefreshInspector(bool notify = true)
@@ -835,7 +985,6 @@ public sealed class XModelEditorViewModel
         OnPropertyChanged(nameof(CanReplaceAssemblyLod));
         OnPropertyChanged(nameof(CanRemoveAssemblyLod));
         OnPropertyChanged(nameof(ImportedMaterialMappings));
-        OnPropertyChanged(nameof(MaterialSlotOptions));
         RefreshCollisionCapability();
     }
 
@@ -1337,7 +1486,7 @@ public sealed class XModelLodAssemblyItemViewModel
         IsImported = lod.IsImported;
         IsBaseline = lod.BaselineLod is not null;
         SourceDisplay = lod.IsImported
-            ? Path.GetFileName(lod.ImportSource) ?? "Imported XMODEL_EXPORT"
+            ? Path.GetFileName(lod.ImportSource) ?? "Imported geometry"
             : IsBaseline ? "Current XModel geometry" : "Empty slot";
         if (lod.ImportedDocument is { } imported)
         {
@@ -1362,38 +1511,73 @@ public sealed class XModelLodAssemblyItemViewModel
     public override string ToString() => DisplayName;
 }
 
-public sealed class XModelMaterialSlotOptionViewModel
+public sealed class XModelImportedMaterialMappingItemViewModel
 {
-    internal XModelMaterialSlotOptionViewModel(int slotIndex, string materialName)
-    {
-        SlotIndex = slotIndex;
-        DisplayName = $"Slot {slotIndex} · {materialName}";
-    }
-    public int SlotIndex { get; }
-    public string DisplayName { get; }
-    public override string ToString() => DisplayName;
-}
+    private readonly string? _modelName;
+    private readonly XModelExportMaterial _source;
+    private readonly IReadOnlyList<AssetValidationIssue> _compilationIssues;
+    private readonly XModelMaterialMapping? _mapping;
 
-public sealed class XModelImportedMaterialMappingItemViewModel : ObservableObject
-{
-    private readonly Action<XModelMaterialSlotOptionViewModel?> _select;
-    private XModelMaterialSlotOptionViewModel? _selectedSourceSlot;
-    internal XModelImportedMaterialMappingItemViewModel(int materialIndex, string materialName, XModelMaterialSlotOptionViewModel? selectedSourceSlot, Action<XModelMaterialSlotOptionViewModel?> select)
+    internal XModelImportedMaterialMappingItemViewModel(
+        string? modelName,
+        int materialIndex,
+        XModelExportMaterial source,
+        IReadOnlyList<AssetValidationIssue> compilationIssues,
+        XModelMaterialMapping? mapping)
     {
+        _modelName = modelName;
+        _source = source;
+        _compilationIssues = compilationIssues;
+        _mapping = mapping;
         MaterialIndex = materialIndex;
-        MaterialName = materialName;
-        _selectedSourceSlot = selectedSourceSlot;
-        _select = select;
     }
+
     public int MaterialIndex { get; }
-    public string MaterialName { get; }
-    public XModelMaterialSlotOptionViewModel? SelectedSourceSlot
+    public string MaterialName => _source.Name;
+    public string TargetMaterialName => _source.ImportMaterial is not null &&
+        _mapping is { } mapping
+            ? XModelAssemblyCompiler.ImportedMaterialName(
+                _modelName,
+                _source,
+                mapping.Material)
+            : _mapping?.Material.Info.Name ?? "Automatic material unavailable";
+
+    public string PreviewColor
     {
-        get => _selectedSourceSlot;
-        set
+        get
         {
-            if (!SetProperty(ref _selectedSourceSlot, value)) return;
-            _select(value);
+            XModelImportMaterial? imported = _source.ImportMaterial;
+            if (imported is null)
+                return "#FFFFFFFF";
+            Vector4 factor = imported.BaseColorFactor;
+            XModelImportImage? image = imported.BaseColorImage;
+            float imageRed = image is { RgbaBytes.Count: >= 4 } ? image.RgbaBytes[0] / 255f : 1f;
+            float imageGreen = image is { RgbaBytes.Count: >= 4 } ? image.RgbaBytes[1] / 255f : 1f;
+            float imageBlue = image is { RgbaBytes.Count: >= 4 } ? image.RgbaBytes[2] / 255f : 1f;
+            float imageAlpha = image is { RgbaBytes.Count: >= 4 } ? image.RgbaBytes[3] / 255f : 1f;
+            byte red = (byte)MathF.Round(Math.Clamp(factor.X * imageRed, 0f, 1f) * 255f);
+            byte green = (byte)MathF.Round(Math.Clamp(factor.Y * imageGreen, 0f, 1f) * 255f);
+            byte blue = (byte)MathF.Round(Math.Clamp(factor.Z * imageBlue, 0f, 1f) * 255f);
+            byte alpha = imported.AlphaMode == XModelImportAlphaMode.Opaque
+                ? byte.MaxValue
+                : (byte)MathF.Round(Math.Clamp(factor.W * imageAlpha, 0f, 1f) * 255f);
+            return $"#{alpha:X2}{red:X2}{green:X2}{blue:X2}";
         }
     }
+    public string ImportStatus => _source.ImportMaterial is null
+        ? "Existing material mapping"
+        : _compilationIssues.FirstOrDefault(issue =>
+            issue.Severity == AssetValidationSeverity.Error) is { } error
+            ? $"Blocked · {error.Message}"
+        : _mapping is null
+            ? "Blocked · no compatible IW4 render template found"
+            : _source.ImportMaterial.Warnings.Count == 0
+                ? "Ready · owned Material + Image"
+                : $"Ready with {_source.ImportMaterial.Warnings.Count} warning(s)";
+    public string WarningsText => string.Join(
+        " ",
+        _compilationIssues.Select(issue => issue.Message)
+            .Concat(_source.ImportMaterial?.Warnings ?? []));
+    public bool HasWarnings => _compilationIssues.Count > 0 ||
+        _source.ImportMaterial?.Warnings.Count > 0;
 }

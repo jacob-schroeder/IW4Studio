@@ -49,4 +49,36 @@ public sealed record XModelExportObject(string SurfaceIdentity);
 /// </summary>
 public sealed record XModelExportMaterial(
     string Name,
-    string ColorMapPath);
+    string ColorMapPath)
+{
+    /// <summary>
+    /// Optional glTF material facts retained for Studio import. XMODEL_EXPORT
+    /// rows leave this null because that format does not carry shader facts.
+    /// </summary>
+    public XModelImportMaterial? ImportMaterial { get; init; }
+}
+
+/// <summary>
+/// The initial glTF-to-IW4 material boundary. Base color and alpha are
+/// authorable; the warning list records source properties that cannot be
+/// represented by the selected IW4 template contract.
+/// </summary>
+public sealed record XModelImportMaterial(
+    Vector4 BaseColorFactor,
+    XModelImportImage? BaseColorImage,
+    XModelImportAlphaMode AlphaMode,
+    float AlphaCutoff,
+    IReadOnlyList<string> Warnings);
+
+/// <summary>Decoded, straight-alpha RGBA8 pixels from an embedded GLB image.</summary>
+public sealed record XModelImportImage(
+    int Width,
+    int Height,
+    IReadOnlyList<byte> RgbaBytes);
+
+public enum XModelImportAlphaMode
+{
+    Opaque,
+    Mask,
+    Blend
+}

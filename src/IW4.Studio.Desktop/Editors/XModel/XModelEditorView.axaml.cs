@@ -4,11 +4,15 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.Runtime.InteropServices;
 using IW4.Assets.XModel.Export;
+using IW4.FastFiles.Zone;
 using IW4.Render;
+using IW4.Render.Export;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Editors.AssetReferences;
+using SkiaSharp;
 
 namespace IW4.Studio.Desktop.Editors.XModel;
 
@@ -16,6 +20,7 @@ public sealed partial class XModelEditorView : UserControl
 {
     private readonly XModelPreviewControl? _preview;
     private readonly XModelBoneTagOverlay? _boneTagOverlay;
+    private AssetReferencePickerService? _assetReferencePicker;
     private bool _isAttached;
     private bool _isExportInProgress;
     private bool _isGlbExportInProgress;
@@ -37,6 +42,7 @@ public sealed partial class XModelEditorView : UserControl
     internal XModelEditorView(XModelEditorViewModel viewModel, AssetReferencePickerService assetReferencePicker)
         : this()
     {
+        _assetReferencePicker = assetReferencePicker ?? throw new ArgumentNullException(nameof(assetReferencePicker));
         DataContext = viewModel;
         viewModel.AssetReferenceSelectionRequested += async (_, args) =>
         {
@@ -92,10 +98,13 @@ public sealed partial class XModelEditorView : UserControl
     private async void ReplaceLodButton_Click(object? sender, RoutedEventArgs e) =>
         await ImportLodAsync(replaceSelected: true);
 
+    private async void ReplaceModelButton_Click(object? sender, RoutedEventArgs e) =>
+        await ImportLodAsync(replaceSelected: true, replaceModel: true);
+
     private void RemoveLodButton_Click(object? sender, RoutedEventArgs e) =>
         (DataContext as XModelEditorViewModel)?.RemoveSelectedAssemblyLod();
 
-    private async Task ImportLodAsync(bool replaceSelected)
+    private async Task ImportLodAsync(bool replaceSelected, bool replaceModel = false)
     {
         if (_isImportInProgress || DataContext is not XModelEditorViewModel viewModel)
             return;
@@ -104,37 +113,105 @@ public sealed partial class XModelEditorView : UserControl
         {
             if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)
             {
-                viewModel.ReportXModelExportStatus("XMODEL_EXPORT import blocked: the desktop file picker is unavailable.", IW4.Studio.Documents.AssetValidationSeverity.Error);
+                viewModel.ReportXModelExportStatus("XModel geometry import blocked: the desktop file picker is unavailable.", IW4.Studio.Documents.AssetValidationSeverity.Error);
                 return;
             }
             IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = replaceSelected ? "Replace XModel LOD from XMODEL_EXPORT" : "Add XModel LOD from XMODEL_EXPORT",
+                Title = replaceModel
+                    ? "Replace complete XModel visual geometry"
+                    : replaceSelected ? "Replace XModel LOD geometry" : "Add XModel LOD geometry",
                 AllowMultiple = false,
-                FileTypeFilter = [new FilePickerFileType("XMODEL_EXPORT files") { Patterns = ["*.XMODEL_EXPORT", "*.xmodel_export"] }]
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("XModel geometry") { Patterns = ["*.glb", "*.GLB", "*.XMODEL_EXPORT", "*.xmodel_export"] },
+                    new FilePickerFileType("Binary glTF 2.0") { Patterns = ["*.glb", "*.GLB"] },
+                    new FilePickerFileType("XMODEL_EXPORT files") { Patterns = ["*.XMODEL_EXPORT", "*.xmodel_export"] }
+                ]
             });
             IStorageFile? file = files.FirstOrDefault();
             if (file is null) return;
-            string contents;
+
+            XModelExportDocument? document;
             await using (Stream stream = await file.OpenReadAsync())
-            using (var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true))
-                contents = await reader.ReadToEndAsync();
-            if (!XModelExportReader.TryRead(new StringReader(contents), out XModelExportDocument? document, out IReadOnlyList<XModelExportParseIssue> issues) || document is null)
             {
-                string detail = string.Join(" ", issues.Take(3).Select(issue => $"Line {issue.Line}: {issue.Message}"));
-                viewModel.ReportXModelExportStatus($"XMODEL_EXPORT import blocked: {detail}", IW4.Studio.Documents.AssetValidationSeverity.Error);
-                return;
+                if (string.Equals(Path.GetExtension(file.Name), ".glb", StringComparison.OrdinalIgnoreCase))
+                {
+                    bool read = replaceModel
+                        ? XModelGlbReader.TryReadRigidModel(
+                            stream,
+                            DecodeGlbImage,
+                            out document,
+                            out IReadOnlyList<string> blockers)
+                        : XModelGlbReader.TryRead(
+                            stream,
+                            DecodeGlbImage,
+                            out document,
+                            out blockers);
+                    if (!read || document is null)
+                    {
+                        viewModel.ReportXModelExportStatus(
+                            $"GLB import blocked: {string.Join(" ", blockers.Take(3))}",
+                            IW4.Studio.Documents.AssetValidationSeverity.Error);
+                        return;
+                    }
+                }
+                else
+                {
+                    using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
+                    string contents = await reader.ReadToEndAsync();
+                    if (!XModelExportReader.TryRead(new StringReader(contents), out document, out IReadOnlyList<XModelExportParseIssue> issues) || document is null)
+                    {
+                        string detail = string.Join(" ", issues.Take(3).Select(issue => $"Line {issue.Line}: {issue.Message}"));
+                        viewModel.ReportXModelExportStatus($"XMODEL_EXPORT import blocked: {detail}", IW4.Studio.Documents.AssetValidationSeverity.Error);
+                        return;
+                    }
+                }
             }
-            if (!viewModel.TryStageImportedLod(document, file.TryGetLocalPath() ?? file.Name, replaceSelected, out string? error))
-                viewModel.ReportXModelExportStatus($"XMODEL_EXPORT import blocked: {error}", IW4.Studio.Documents.AssetValidationSeverity.Error);
+            bool staged = replaceModel
+                ? viewModel.TryStageReplacementModel(document, file.TryGetLocalPath() ?? file.Name, out string? error)
+                : viewModel.TryStageImportedLod(document, file.TryGetLocalPath() ?? file.Name, replaceSelected, out error);
+            if (!staged)
+                viewModel.ReportXModelExportStatus($"XModel geometry import blocked: {error}", IW4.Studio.Documents.AssetValidationSeverity.Error);
             else
-                viewModel.ReportXModelExportSuccess($"Staged {file.Name}; runtime compilation and material remapping are required before Apply.");
+                viewModel.ReportXModelExportSuccess(replaceModel
+                    ? $"Staged {file.Name} as a complete rigid model replacement; review rebuilt bounds, collision, materials, and validation before Apply."
+                    : $"Staged {file.Name}; review material remapping and validation before Apply.");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException)
         {
-            viewModel.ReportXModelExportStatus($"XMODEL_EXPORT import failed: {exception.Message}", IW4.Studio.Documents.AssetValidationSeverity.Error);
+            viewModel.ReportXModelExportStatus($"XModel geometry import failed: {exception.Message}", IW4.Studio.Documents.AssetValidationSeverity.Error);
         }
         finally { _isImportInProgress = false; }
+    }
+
+    private static XModelImportImage DecodeGlbImage(
+        string mimeType,
+        ReadOnlyMemory<byte> encoded)
+    {
+        using SKData data = SKData.CreateCopy(encoded.ToArray());
+        using SKCodec codec = SKCodec.Create(data) ??
+            throw new InvalidDataException($"The embedded {mimeType} image could not be decoded.");
+        if (codec.Info.Width is <= 0 or > ushort.MaxValue ||
+            codec.Info.Height is <= 0 or > ushort.MaxValue)
+        {
+            throw new InvalidDataException("The embedded GLB image dimensions exceed IW4 limits.");
+        }
+        var info = new SKImageInfo(
+            codec.Info.Width,
+            codec.Info.Height,
+            SKColorType.Rgba8888,
+            SKAlphaType.Unpremul);
+        using var bitmap = new SKBitmap(info);
+        SKCodecResult result = codec.GetPixels(info, bitmap.GetPixels());
+        if (result != SKCodecResult.Success)
+            throw new InvalidDataException($"The embedded {mimeType} image could not be decoded ({result}).");
+        byte[] rgba = new byte[checked(info.Width * info.Height * 4)];
+        Marshal.Copy(bitmap.GetPixels(), rgba, 0, rgba.Length);
+        return new XModelImportImage(
+            info.Width,
+            info.Height,
+            Array.AsReadOnly(rgba));
     }
 
     private async void ExportXModelButton_Click(

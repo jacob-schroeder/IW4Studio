@@ -29,6 +29,7 @@ public sealed class XModelDraft
         CollisionLod = value.CollisionLod;
         PhysPreset = value.PhysPreset;
         PhysCollmap = value.PhysCollmap;
+        RebuildVisualBounds = value.RebuildVisualBounds;
     }
 
     public XModelAsset Model { get; }
@@ -37,6 +38,7 @@ public sealed class XModelDraft
     public IReadOnlyList<XModelCollSurf> CollisionSurfaces => _collisionSurfaces.AsReadOnly();
     public PhysPresetAsset? PhysPreset { get; private set; }
     public PhysCollmapAsset? PhysCollmap { get; private set; }
+    public bool RebuildVisualBounds { get; private set; }
     public bool HasStagedAssemblyChanges => !AssemblyEquals(CreateAssembly(Model), Model.CollLod, _lodAssembly, CollisionLod) || !CollSurfsEqual(Model.CollSurfs, _collisionSurfaces) || !ReferenceEquals(Model.PhysPreset, PhysPreset) || !ReferenceEquals(Model.PhysCollmap, PhysCollmap);
 
     internal XModelDraft Clone() => new(this);
@@ -66,6 +68,65 @@ public sealed class XModelDraft
         _lodAssembly[index] = new XModelLodDraft(index, previous.Distance, null, XModelLodDraft.Freeze(document), source, CreateMaterialMappings(document));
     }
 
+    public void ReplaceVisualModel(XModelExportDocument document, string? source)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (!XModelExportSkeletonProjector.TryProject(
+                Model,
+                out IReadOnlyList<XModelExportBone> targetBones,
+                out IReadOnlyList<string> blockers))
+        {
+            throw new InvalidOperationException(string.Join(" ", blockers));
+        }
+        int[] weightedBones = document.Vertices
+            .SelectMany(vertex => vertex.Weights)
+            .Where(weight => weight.Weight > 0f)
+            .Select(weight => weight.BoneIndex)
+            .Distinct()
+            .ToArray();
+        if (weightedBones.Length != 1 ||
+            weightedBones[0] < 0 ||
+            weightedBones[0] >= document.Bones.Count ||
+            document.Bones[weightedBones[0]].ParentIndex != -1 ||
+            document.Vertices.Any(vertex => vertex.Weights.Count != 1))
+        {
+            throw new InvalidOperationException(
+                "Whole-model replacement currently requires geometry rigidly weighted to one root bone. Animated replacements require explicit bone retargeting.");
+        }
+
+        var retargeted = new XModelExportDocument(
+            targetBones,
+            Array.AsReadOnly(document.Vertices.Select(vertex => new XModelExportVertex(
+                vertex.Position,
+                [new XModelExportBoneWeight(0, 1f)])).ToArray()),
+            document.Triangles,
+            document.Objects,
+            document.Materials);
+        float distance = _lodAssembly.FirstOrDefault()?.Distance ?? 0f;
+        _lodAssembly.Clear();
+        _lodAssembly.Add(new XModelLodDraft(
+            0,
+            distance,
+            null,
+            XModelLodDraft.Freeze(retargeted),
+            source,
+            CreateReplacementMaterialMappings(retargeted)));
+        for (int index = 1; index < 4; index++)
+            _lodAssembly.Add(new XModelLodDraft(index, 0f, null, null, null));
+
+        if (_collisionSurfaces.Count != 0)
+        {
+            Bounds visualBounds = BoundsFromVertices(retargeted.Vertices, Model.BaseMat.ElementAtOrDefault(0));
+            int contents = _collisionSurfaces.Aggregate(0, (value, row) => value | row.Contents);
+            int surfaceFlags = _collisionSurfaces[0].SurfaceFlags;
+            _collisionSurfaces.Clear();
+            _collisionSurfaces.Add(new XModelCollSurf(visualBounds, 0, contents, surfaceFlags));
+        }
+        CollisionLod = Model.CollLod == 0xFF ? (byte)0xFF : (byte)0;
+        PhysCollmap = null;
+        RebuildVisualBounds = true;
+    }
+
     public void RemoveLod(int index)
     {
         ValidateIndex(index);
@@ -73,7 +134,7 @@ public sealed class XModelDraft
         for (int i = index; i < _lodAssembly.Count - 1; i++)
         {
             XModelLodDraft next = _lodAssembly[i + 1];
-            _lodAssembly[i] = new XModelLodDraft(i, next.Distance, next.BaselineLod, next.ImportedDocument is null ? null : XModelLodDraft.Freeze(next.ImportedDocument), next.ImportSource, next.MaterialSlots);
+            _lodAssembly[i] = new XModelLodDraft(i, next.Distance, next.BaselineLod, next.ImportedDocument is null ? null : XModelLodDraft.Freeze(next.ImportedDocument), next.ImportSource, next.MaterialMappings);
         }
         _lodAssembly[^1] = new XModelLodDraft(_lodAssembly.Count - 1, 0f, null, null, null);
         if (CollisionLod == index) CollisionLod = 0xFF;
@@ -86,7 +147,7 @@ public sealed class XModelDraft
         if (!_lodAssembly[index].IsOccupied) throw new InvalidOperationException("Only an active LOD has a distance.");
         if (!float.IsFinite(distance) || distance < 0) throw new ArgumentOutOfRangeException(nameof(distance), "LOD distance must be finite and nonnegative.");
         XModelLodDraft previous = _lodAssembly[index];
-        _lodAssembly[index] = new XModelLodDraft(index, distance, previous.BaselineLod, previous.ImportedDocument, previous.ImportSource, previous.MaterialSlots);
+        _lodAssembly[index] = new XModelLodDraft(index, distance, previous.BaselineLod, previous.ImportedDocument, previous.ImportSource, previous.MaterialMappings);
     }
 
     public void SetCollisionLod(byte collisionLod)
@@ -95,17 +156,23 @@ public sealed class XModelDraft
         CollisionLod = collisionLod;
     }
 
-    public void SetImportedMaterialSlot(int lodIndex, int materialIndex, int? sourceSlot)
+    public void SetImportedMaterialMapping(int lodIndex, int materialIndex, XModelMaterialMapping? mapping)
     {
         ValidateIndex(lodIndex);
         XModelLodDraft previous = _lodAssembly[lodIndex];
-        if (previous.ImportedDocument is null || (uint)materialIndex >= (uint)previous.MaterialSlots.Count)
+        if (previous.ImportedDocument is null || (uint)materialIndex >= (uint)previous.MaterialMappings.Count)
             throw new InvalidOperationException("The selected row has no imported material mapping.");
-        if (sourceSlot is < 0 || sourceSlot >= Model.Materials.Count || sourceSlot is int slot && Model.Materials[slot] is null)
-            throw new ArgumentOutOfRangeException(nameof(sourceSlot));
-        int?[] slots = previous.MaterialSlots.ToArray();
-        slots[materialIndex] = sourceSlot;
-        _lodAssembly[lodIndex] = new XModelLodDraft(lodIndex, previous.Distance, null, previous.ImportedDocument, previous.ImportSource, slots);
+        if (mapping is not null && string.IsNullOrWhiteSpace(mapping.Material.Info.Name))
+            throw new ArgumentException("The selected material has no asset name.", nameof(mapping));
+        XModelMaterialMapping?[] mappings = previous.MaterialMappings.ToArray();
+        mappings[materialIndex] = mapping is null
+            ? null
+            : mapping with
+            {
+                CreateOwnedMaterial = previous.ImportedDocument.Materials[materialIndex]
+                    .ImportMaterial is not null
+            };
+        _lodAssembly[lodIndex] = new XModelLodDraft(lodIndex, previous.Distance, null, previous.ImportedDocument, previous.ImportSource, mappings);
     }
     public void SetCollisionSurface(int index, Bounds bounds, int boneIndex, int contents, int surfaceFlags)
     {
@@ -133,15 +200,44 @@ public sealed class XModelDraft
         return result;
     }
 
-    private IReadOnlyList<int?> CreateMaterialMappings(XModelExportDocument document)
+    private IReadOnlyList<XModelMaterialMapping?> CreateMaterialMappings(XModelExportDocument document)
     {
         return document.Materials.Select(imported =>
         {
-            int[] matches = Model.Materials.Select((material, index) => (material, index))
-                .Where(value => value.material is not null && string.Equals(value.material.Info.Name, imported.Name, StringComparison.Ordinal))
-                .Select(value => value.index).ToArray();
-            return matches.Length == 1 ? (int?)matches[0] : null;
+            XModelMaterialMapping[] matches = Model.Materials.Select((material, index) => (material, index))
+                .Where(value => value.material is not null &&
+                    value.index < Model.InvHighMipRadius.Count &&
+                    string.Equals(value.material.Info.Name, imported.Name, StringComparison.Ordinal))
+                .Select(value => new XModelMaterialMapping(
+                    value.material!,
+                    Model.InvHighMipRadius[value.index],
+                    imported.ImportMaterial is not null))
+                .Distinct()
+                .ToArray();
+            return matches.Length == 1 ? matches[0] : null;
         }).ToArray();
+    }
+
+    private IReadOnlyList<XModelMaterialMapping?> CreateReplacementMaterialMappings(
+        XModelExportDocument document)
+    {
+        XModelMaterialMapping?[] mappings = CreateMaterialMappings(document).ToArray();
+        XModelMaterialMapping[] targetMappings = Model.Materials.Select((material, index) => (material, index))
+            .Where(value => value.material is not null && value.index < Model.InvHighMipRadius.Count)
+            .Select(value => new XModelMaterialMapping(value.material!, Model.InvHighMipRadius[value.index]))
+            .Distinct()
+            .ToArray();
+        if (targetMappings.Length == 1)
+        {
+            for (int index = 0; index < mappings.Length; index++)
+            {
+                mappings[index] ??= targetMappings[0] with
+                {
+                    CreateOwnedMaterial = document.Materials[index].ImportMaterial is not null
+                };
+            }
+        }
+        return mappings;
     }
 
     private static bool AssemblyEquals(IReadOnlyList<XModelLodDraft> left, byte leftCollision, IReadOnlyList<XModelLodDraft> right, byte rightCollision) =>
@@ -149,16 +245,32 @@ public sealed class XModelDraft
             pair.First.Distance.Equals(pair.Second.Distance) &&
             ReferenceEquals(pair.First.BaselineLod, pair.Second.BaselineLod) &&
             DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument) &&
-            pair.First.MaterialSlots.SequenceEqual(pair.Second.MaterialSlots));
+            pair.First.MaterialMappings.SequenceEqual(pair.Second.MaterialMappings));
 
     private static bool DocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
         XModelExportDocumentsEqual(left, right);
 
     internal static bool XModelExportDocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
         ReferenceEquals(left, right) || left is not null && right is not null &&
-        left.Bones.SequenceEqual(right.Bones) && left.Objects.SequenceEqual(right.Objects) && left.Materials.SequenceEqual(right.Materials) &&
+        left.Bones.SequenceEqual(right.Bones) && left.Objects.SequenceEqual(right.Objects) &&
+        left.Materials.Count == right.Materials.Count &&
+        left.Materials.Zip(right.Materials).All(pair => MaterialsEqual(pair.First, pair.Second)) &&
         left.Triangles.SequenceEqual(right.Triangles) && left.Vertices.Count == right.Vertices.Count &&
         left.Vertices.Zip(right.Vertices).All(pair => pair.First.Position.Equals(pair.Second.Position) && pair.First.Weights.SequenceEqual(pair.Second.Weights));
+
+    private static bool MaterialsEqual(XModelExportMaterial left, XModelExportMaterial right) =>
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        string.Equals(left.ColorMapPath, right.ColorMapPath, StringComparison.Ordinal) &&
+        (ReferenceEquals(left.ImportMaterial, right.ImportMaterial) ||
+         left.ImportMaterial is { } x && right.ImportMaterial is { } y &&
+         x.BaseColorFactor.Equals(y.BaseColorFactor) &&
+         x.AlphaMode == y.AlphaMode &&
+         x.AlphaCutoff.Equals(y.AlphaCutoff) &&
+         x.Warnings.SequenceEqual(y.Warnings, StringComparer.Ordinal) &&
+         (ReferenceEquals(x.BaseColorImage, y.BaseColorImage) ||
+          x.BaseColorImage is { } xi && y.BaseColorImage is { } yi &&
+          xi.Width == yi.Width && xi.Height == yi.Height &&
+          xi.RgbaBytes.SequenceEqual(yi.RgbaBytes)));
 
     private static XModelAsset CopyRoot(
         XModelAsset value,
@@ -250,6 +362,46 @@ public sealed class XModelDraft
         };
     }
 
+    private static Bounds BoundsFromVertices(
+        IReadOnlyList<XModelExportVertex> vertices,
+        DObjAnimMat? bindPose)
+    {
+        if (vertices.Count == 0)
+            throw new InvalidOperationException("Whole-model replacement requires vertices.");
+        System.Numerics.Vector3 Local(System.Numerics.Vector3 position)
+        {
+            if (bindPose is null)
+                return position;
+            var rotation = new System.Numerics.Quaternion(
+                bindPose.Quat.X,
+                bindPose.Quat.Y,
+                bindPose.Quat.Z,
+                bindPose.Quat.W);
+            var translation = new System.Numerics.Vector3(
+                bindPose.Trans.X,
+                bindPose.Trans.Y,
+                bindPose.Trans.Z);
+            return System.Numerics.Vector3.Transform(
+                position - translation,
+                System.Numerics.Quaternion.Inverse(System.Numerics.Quaternion.Normalize(rotation)));
+        }
+        System.Numerics.Vector3 minimum = Local(vertices[0].Position);
+        System.Numerics.Vector3 maximum = minimum;
+        foreach (XModelExportVertex vertex in vertices.Skip(1))
+        {
+            System.Numerics.Vector3 position = Local(vertex.Position);
+            minimum = System.Numerics.Vector3.Min(minimum, position);
+            maximum = System.Numerics.Vector3.Max(maximum, position);
+        }
+        System.Numerics.Vector3 midpoint = (minimum + maximum) * 0.5f;
+        System.Numerics.Vector3 halfSize = (maximum - minimum) * 0.5f;
+        return new Bounds
+        {
+            MidPoint = new Vec3 { X = midpoint.X, Y = midpoint.Y, Z = midpoint.Z },
+            HalfSize = new Vec3 { X = halfSize.X, Y = halfSize.Y, Z = halfSize.Z }
+        };
+    }
+
     private static bool CollSurfsEqual(IReadOnlyList<XModelCollSurf> left, IReadOnlyList<XModelCollSurf> right) =>
         left.Count == right.Count && left.Zip(right).All(pair =>
             pair.First.BoneIndex == pair.Second.BoneIndex &&
@@ -336,7 +488,7 @@ internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelD
             pair.First.Distance.Equals(pair.Second.Distance) &&
             ReferenceEquals(pair.First.BaselineLod, pair.Second.BaselineLod) &&
             DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument) &&
-            pair.First.MaterialSlots.SequenceEqual(pair.Second.MaterialSlots));
+            pair.First.MaterialMappings.SequenceEqual(pair.Second.MaterialMappings));
 
     private static bool DocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
         XModelDraft.XModelExportDocumentsEqual(left, right);

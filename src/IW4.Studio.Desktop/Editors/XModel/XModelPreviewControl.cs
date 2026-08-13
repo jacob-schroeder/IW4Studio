@@ -44,6 +44,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     private const float FieldOfView = MathF.PI / 4f;
     private SilkXModelViewerRenderer? _renderer;
     private XModelRenderLod? _uploadedLod;
+    private bool _uploadRequired = true;
     private int _reportedLodIndex = -1;
     private XModelViewerUploadResult? _uploadResult;
     private string? _rendererFailure;
@@ -161,6 +162,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         {
             _renderer = new SilkXModelViewerRenderer(
                 GL.GetApi(gl.GetProcAddress));
+            _uploadRequired = true;
         }
         catch (Exception exception) when (exception is
                    InvalidOperationException or
@@ -180,6 +182,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         _renderer?.Dispose();
         _renderer = null;
         _uploadedLod = null;
+        _uploadRequired = true;
         PublishRendererStatus(-1, null, null);
     }
 
@@ -187,6 +190,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     {
         _renderer = null;
         _uploadedLod = null;
+        _uploadRequired = true;
         PublishRendererStatus(-1, null, null);
     }
 
@@ -196,8 +200,9 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             return;
         XModelRenderLod? lod = Scene?.Lods.FirstOrDefault(candidate =>
             candidate.LodIndex == SelectedLodIndex);
-        if (!ReferenceEquals(_uploadedLod, lod))
+        if (_uploadRequired || !ReferenceEquals(_uploadedLod, lod))
         {
+            _uploadRequired = false;
             _uploadedLod = lod;
             try
             {
@@ -272,6 +277,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             change.Property == SelectedLodIndexProperty)
         {
             _uploadedLod = null;
+            _uploadRequired = true;
             PublishRendererStatus(-1, null, null);
             Fit();
         }

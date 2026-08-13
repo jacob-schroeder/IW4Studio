@@ -146,19 +146,11 @@
                      Foreground="#CDD5DF" />
         </Border>
 
-        <Border Background="#E6191D23"
+        <Border Background="Transparent"
                 IsHitTestVisible="False"
                 IsVisible="{Binding IsImportedLodSelected}"
                 BorderBrush="#80FF8B8B"
-                BorderThickness="1">
-          <TextBlock Text="{Binding ImportedLodNotice}"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"
-                     TextAlignment="Center"
-                     FontSize="11"
-                     FontWeight="Bold"
-                     Foreground="#FFE1A4A4" />
-        </Border>
+                BorderThickness="1" />
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
@@ -186,14 +178,19 @@
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
       <Grid RowDefinitions="Auto,8,Auto,6,Auto">
-      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto"
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="14">
         <StackPanel Spacing="2"
                     VerticalAlignment="Center">
-          <TextBlock Text="LOD assembly · XMODEL_EXPORT"
+          <TextBlock Text="LOD assembly · GLB / XMODEL_EXPORT"
                      FontSize="10"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding ImportedLodNotice}"
+                     IsVisible="{Binding IsImportedLodSelected}"
+                     FontSize="10"
+                     FontWeight="Bold"
+                     Foreground="#FFE1A4A4" />
           <TextBlock Text="{Binding SelectedLodExportSummary}"
                      FontSize="11"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
@@ -212,11 +209,17 @@
         </Button>
         <Button Grid.Column="3"
                 Classes="ghost"
+                IsEnabled="{Binding CanReplaceAssemblyLod}"
+                Click="ReplaceModelButton_Click">
+          <TextBlock Text="Replace Model…" />
+        </Button>
+        <Button Grid.Column="4"
+                Classes="ghost"
                 IsEnabled="{Binding CanRemoveAssemblyLod}"
                 Click="RemoveLodButton_Click">
           <TextBlock Text="Remove" />
         </Button>
-        <Button Grid.Column="4"
+        <Button Grid.Column="5"
                 Classes="primary"
                 MinHeight="30"
                 Padding="12,5"
@@ -229,7 +232,7 @@
             <TextBlock Text="Export GLB…" />
           </StackPanel>
         </Button>
-        <Button Grid.Column="5"
+        <Button Grid.Column="6"
                 Classes="ghost"
                 MinHeight="30"
                 Padding="12,5"
@@ -257,23 +260,56 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
-      <ItemsControl Grid.Row="4"
-                    IsVisible="{Binding IsImportedLodSelected}"
-                    ItemsSource="{Binding ImportedMaterialMappings}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Grid ColumnDefinitions="*,220" ColumnSpacing="8" Margin="0,2">
-              <TextBlock Text="{Binding MaterialName}"
-                         VerticalAlignment="Center"
-                         FontSize="10" />
-              <ComboBox Grid.Column="1"
-                        ItemsSource="{Binding $parent[UserControl].DataContext.MaterialSlotOptions}"
-                        SelectedItem="{Binding SelectedSourceSlot, Mode=TwoWay}"
-                        MinHeight="26" />
-            </Grid>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <StackPanel Grid.Row="4"
+                  IsVisible="{Binding IsImportedLodSelected}"
+                  Spacing="4">
+        <TextBlock Text="Import GLB materials"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <ItemsControl ItemsSource="{Binding ImportedMaterialMappings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="22,180,*"
+                    RowDefinitions="Auto,Auto"
+                    ColumnSpacing="8"
+                    RowSpacing="2"
+                    Margin="0,2">
+                <Border Width="18"
+                        Height="18"
+                        CornerRadius="3"
+                        Background="{Binding PreviewColor}"
+                        BorderBrush="#506D7683"
+                        BorderThickness="1" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                  <TextBlock Text="{Binding MaterialName}"
+                             FontSize="10"
+                             FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding ImportStatus}"
+                             FontSize="9"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="1">
+                  <TextBlock Text="{Binding TargetMaterialName}"
+                             FontSize="10"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="New owned IW4 Material"
+                             FontSize="9"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+                <TextBlock Grid.Row="1"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="2"
+                           Text="{Binding WarningsText}"
+                           IsVisible="{Binding HasWarnings}"
+                           TextWrapping="Wrap"
+                           FontSize="9"
+                           Foreground="#FFE1A4A4" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
       </Grid>
     </Border>
   </Grid>
