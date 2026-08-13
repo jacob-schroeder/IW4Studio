@@ -475,12 +475,52 @@
           </Border>
         </StackPanel>
 
-        <Border Padding="12"
-                CornerRadius="7"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="1">
-          <StackPanel Spacing="12">
+        <StackPanel IsVisible="{Binding HasEditorProperties}"
+                    Spacing="8">
+          <TextBlock Text="{Binding EditorPropertySectionName}"
+                     FontSize="9"
+                     FontWeight="Bold"
+                     LetterSpacing="0.8"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <Border Padding="12"
+                  CornerRadius="7"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <ItemsControl ItemsSource="{Binding EditorProperties}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="editors:AssetEditorProperty">
+                  <Grid ColumnDefinitions="92,*"
+                        Margin="0,0,0,8">
+                    <TextBlock Text="{Binding Name}"
+                               Classes="propertyLabel" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding Value}"
+                               Classes="propertyValue"
+                               TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Border>
+        </StackPanel>
+
+        <Expander IsExpanded="False"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch">
+          <Expander.Header>
+            <TextBlock Text="ASSET DETAILS"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.8"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </Expander.Header>
+          <Border Margin="0,9,0,0"
+                  Padding="12"
+                  CornerRadius="7"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
             <Grid RowDefinitions="Auto,9,Auto,9,Auto,9,Auto,9,Auto,9,Auto,9,Auto"
                   ColumnDefinitions="92,*">
               <TextBlock Text="Navigator" Classes="propertyLabel" />
@@ -498,33 +538,8 @@
               <TextBlock Grid.Row="12" Text="Serialized type" Classes="propertyLabel" />
               <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding AssetType}" Classes="propertyValue" />
             </Grid>
-
-            <StackPanel IsVisible="{Binding HasEditorProperties}" Spacing="10">
-              <Border Height="1"
-                      Background="{DynamicResource StudioBorderBrush}" />
-              <TextBlock Text="{Binding EditorPropertySectionName}"
-                         FontSize="9"
-                         FontWeight="Bold"
-                         LetterSpacing="0.8"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <ItemsControl ItemsSource="{Binding EditorProperties}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="editors:AssetEditorProperty">
-                    <Grid ColumnDefinitions="92,*"
-                          Margin="0,0,0,8">
-                      <TextBlock Text="{Binding Name}"
-                                 Classes="propertyLabel" />
-                      <TextBlock Grid.Column="1"
-                                 Text="{Binding Value}"
-                                 Classes="propertyValue"
-                                 TextWrapping="Wrap" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </StackPanel>
-        </Border>
+          </Border>
+        </Expander>
 
         <StackPanel IsVisible="{Binding HasInspector}"
                     Spacing="10">

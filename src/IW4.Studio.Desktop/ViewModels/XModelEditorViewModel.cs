@@ -224,7 +224,7 @@ public sealed class XModelEditorViewModel
 
     public bool HasUnappliedChanges => _workingDraft is not null && !_session.CandidateMatchesCurrent(_workingDraft);
 
-    public string PropertySectionName => "XModel preview";
+    public string PropertySectionName => "Overview";
 
     public string MaterialExecutionBadge
     {
@@ -262,17 +262,21 @@ public sealed class XModelEditorViewModel
     {
         get
         {
+            string skeleton = _model is null
+                ? "Unavailable"
+                : $"{_model.NumBones:N0} " +
+                  (_model.NumBones == 1 ? "bone" : "bones") +
+                  " · read-only";
             if (SelectedAssemblyLod is { IsImported: true } imported)
             {
                 return
                 [
-                    new("Assembly source", imported.SourceDisplay),
+                    new("Source", imported.SourceDisplay),
                     new("Selected LOD", $"LOD {imported.LodIndex} · staged import"),
-                    new("Triangles", imported.TriangleCount.ToString("N0")),
-                    new("Vertices", imported.VertexCount.ToString("N0")),
+                    new("Geometry", $"{imported.VertexCount:N0} vertices · {imported.TriangleCount:N0} triangles"),
                     new("Materials", imported.MaterialCount.ToString("N0")),
-                    new("Runtime preview", _compiledCandidate?.IsSuccess == true ? "Compiled candidate" : "Compilation blocked"),
-                    new("Apply", _compiledCandidate?.IsSuccess == true ? "Ready to publish" : "Resolve compilation diagnostics")
+                    new("Skeleton", skeleton),
+                    new("Status", _compiledCandidate?.IsSuccess == true ? "Ready to apply" : "Resolve compilation diagnostics")
                 ];
             }
 
@@ -280,22 +284,10 @@ public sealed class XModelEditorViewModel
                 SummarizeAuthoredMaterials(SelectedLod?.Lod);
             return
             [
-                new("Material execution", "Authored normal-camera pass group"),
-                new(
-                    "Viewer environment",
-                    IsStudioEnvironmentEnabled
-                        ? "Studio reflection · preview-only"
-                        : "Neutral black reflection · preview-only"),
-                new("Selected LOD", SelectedLod?.DisplayName ?? "None"),
-                new("Triangles", SelectedLod?.TriangleCount.ToString("N0") ?? "0"),
-                new("Vertices", SelectedLod?.VertexCount.ToString("N0") ?? "0"),
-                new("Selected technique", summary.TechniqueDisplay),
-                new("Authored passes", summary.PassCount.ToString("N0")),
-                new("Scene-ready groups", $"{summary.ReadyGroupCount:N0} / {summary.GroupCount:N0}"),
-                new("Scene-blocked groups", summary.BlockedGroupCount.ToString("N0")),
-                new("OpenGL-executable groups", RendererExecutableGroupsText()),
-                new("OpenGL-blocked groups", RendererBlockedGroupsText()),
-                new("Renderer status", RendererStatusText())
+                new("Selected LOD", SelectedLod is null ? "None" : $"LOD {SelectedLod.LodIndex}"),
+                new("Geometry", SelectedLod is null ? "No loaded geometry" : $"{SelectedLod.VertexCount:N0} vertices · {SelectedLod.TriangleCount:N0} triangles"),
+                new("Materials", summary.GroupCount == 0 ? "No authored render groups" : $"{summary.ReadyGroupCount:N0} of {summary.GroupCount:N0} render groups ready"),
+                new("Skeleton", skeleton)
             ];
         }
     }
@@ -1102,29 +1094,6 @@ public sealed class XModelEditorViewModel
             .ToArray());
     }
 
-    private string RendererExecutableGroupsText()
-    {
-        if (_rendererUploadResult is not { } upload)
-            return _rendererFailure is null ? "Pending" : "Unavailable";
-
-        int total = upload.ExecutableGroupCount + upload.BlockedGroupCount;
-        return $"{upload.ExecutableGroupCount:N0} / {total:N0}";
-    }
-
-    private string RendererBlockedGroupsText() =>
-        _rendererUploadResult is { } upload
-            ? upload.BlockedGroupCount.ToString("N0")
-            : _rendererFailure is null
-                ? "Pending"
-                : "Unavailable";
-
-    private string RendererStatusText() =>
-        _rendererFailure is not null
-            ? $"Blocked · {_rendererFailure}"
-            : _rendererUploadResult is not null
-                ? "Preflight complete"
-                : "Awaiting renderer preflight";
-
     private static RenderAssetSource CreateAssetSource(
         FastFileWorkspace workspace)
     {
@@ -1396,7 +1365,7 @@ public sealed class XModelEditorViewModel
                 "None"));
         }
         sections.Add(new InspectorSectionViewModel(
-            "Resolved bone names",
+            "Skeleton · read-only",
             boneRows,
             isExpanded: false));
 
@@ -1407,7 +1376,7 @@ public sealed class XModelEditorViewModel
             selectionName,
             "XMODEL",
             sections,
-            "Read-only model metadata and authored normal-camera material execution status.");
+            "Detailed XModel fields. Skeleton names, hierarchy, and bind pose are currently read-only.");
     }
 
     private static InspectorReadOnlyPropertyRowViewModel ReadOnly(
@@ -1452,7 +1421,6 @@ public sealed class XModelEditorViewModel
             [],
             "No authored camera-color technique selected");
 
-        internal int BlockedGroupCount => GroupCount - ReadyGroupCount;
     }
 }
 
