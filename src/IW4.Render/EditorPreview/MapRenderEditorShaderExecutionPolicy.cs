@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Materials;
 
 namespace IW4.Render.EditorPreview;
@@ -48,10 +49,10 @@ public static class MapRenderEditorShaderExecutionPolicy
                     input.DecodedState);
             }
 
-            MapRenderState effectiveState =
+            RenderState effectiveState =
                 input.DecodedState with
                 {
-                    Stencil = MapRenderStencilState.Disabled
+                    Stencil = StencilState.Disabled
                 };
             MapRenderEditorShaderExecutionReason genericReason =
                 (alphaTest, stencil) switch
@@ -110,7 +111,7 @@ public static class MapRenderEditorShaderExecutionPolicy
     private static MapRenderEditorShaderExecutionDecision Decision(
         MapRenderEditorShaderExecutionChoice choice,
         MapRenderEditorShaderExecutionReason reason,
-        MapRenderState originalState,
-        MapRenderState effectiveState) =>
+        RenderState originalState,
+        RenderState effectiveState) =>
         new(choice, reason, originalState, effectiveState);
 }

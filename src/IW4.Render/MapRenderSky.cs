@@ -9,7 +9,7 @@ public sealed record MapRenderSky(
     MapRenderSkySource Source,
     IReadOnlyList<int> SkyStartSurfPositions,
     IReadOnlyList<int> SurfaceIndices,
-    MapRenderTexture Texture,
+    Texture Texture,
     float[] Vertices,
     uint[] Indices)
 {
@@ -18,11 +18,15 @@ public sealed record MapRenderSky(
     /// execution. This remains absent when the surfaces in this submission do
     /// not resolve to one identical authored pass.
     /// </summary>
-    internal MapRenderMaterialPass? ShaderPass { get; init; }
+    internal MaterialPassIdentity? ShaderPass { get; init; }
+
+    internal MaterialSamplerIdentity? ShaderPrimarySampler { get; init; }
+
+    internal byte ShaderTexCoordSource { get; init; }
 
     /// <summary>
     /// Exact translated RSX pair selected by <see cref="ShaderPass"/>. The
     /// compatibility sky path does not require this optional provenance.
     /// </summary>
-    internal MapRenderShaderExecutionContract? ShaderExecution { get; init; }
+    internal ShaderExecutionContract? ShaderExecution { get; init; }
 }

@@ -139,7 +139,7 @@ public sealed partial class RenderAssetLookup
     public bool TryResolveCanonicalMaterialTechniqueBinding(
         string name,
         long expectedPoolRevision,
-        [NotNullWhen(true)] out MapRenderMaterialTechniqueBinding? binding)
+        [NotNullWhen(true)] out MaterialTechniqueBinding? binding)
     {
         binding = null;
         if (!TryResolveCanonicalMaterial(
@@ -194,7 +194,7 @@ public sealed partial class RenderAssetLookup
         if (pool.Revision != expectedPoolRevision)
             return false;
 
-        binding = new MapRenderMaterialTechniqueBinding(
+        binding = new MaterialTechniqueBinding(
             activeMaterial,
             currentTechniqueSet,
             slots);

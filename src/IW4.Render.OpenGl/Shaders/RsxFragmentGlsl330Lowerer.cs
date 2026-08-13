@@ -98,7 +98,7 @@ internal static class RsxFragmentGlsl330Lowerer
                 instruction.DirectCodeConstantIndex.HasValue))
         {
             builder.AppendLine(
-                $"uniform vec4 {MapRenderOpenGlCodePixelConstantUniformLayout.ArrayName}[{MapRenderOpenGlCodePixelConstantUniformLayout.Count}];");
+                $"uniform vec4 {OpenGlCodePixelConstantUniformLayout.ArrayName}[{OpenGlCodePixelConstantUniformLayout.Count}];");
         }
         for (int i = 0; i < 16; i++)
         {
@@ -647,7 +647,7 @@ internal static class RsxFragmentGlsl330Lowerer
             0 => $"{(FragmentSourceFp16(source) ? "H" : "R")}[{FragmentSourceIndex(source)}]",
             1 => FragmentInput(instruction.SourceAttribute),
             2 => instruction.DirectCodeConstantIndex is { } codeIndex
-                ? MapRenderOpenGlCodePixelConstantUniformLayout.ElementName(
+                ? OpenGlCodePixelConstantUniformLayout.ElementName(
                     codeIndex)
                 : instruction.Constant is { } constant
                     ? FormatInlineConstant(constant)

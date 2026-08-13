@@ -29,8 +29,8 @@ internal sealed class MapRenderSunShadowWorldCasterPackedBatch
     internal MapRenderSunShadowWorldCasterPackedBatch(
         MapRenderSunShadowCasterMaterialPlan material,
         MapRenderSunShadowCasterGeometry geometry,
-        MapRenderUvRoute? cutoutUvRoute,
-        MapRenderTexture? cutoutTexture,
+        UvRoute? cutoutUvRoute,
+        Texture? cutoutTexture,
         IReadOnlyList<MapRenderSunShadowWorldCasterSurfaceSpan> spans)
     {
         ArgumentNullException.ThrowIfNull(material);
@@ -61,9 +61,9 @@ internal sealed class MapRenderSunShadowWorldCasterPackedBatch
 
     public MapRenderSunShadowCasterGeometry Geometry { get; }
 
-    public MapRenderUvRoute? CutoutUvRoute { get; }
+    public UvRoute? CutoutUvRoute { get; }
 
-    public MapRenderTexture? CutoutTexture { get; }
+    public Texture? CutoutTexture { get; }
 
     public IReadOnlyList<MapRenderSunShadowWorldCasterSurfaceSpan> Spans
     { get; }

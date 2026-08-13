@@ -219,7 +219,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         var pixelSize = new PixelSize(
             Math.Max(1, (int)(Bounds.Width * scaling)),
             Math.Max(1, (int)(Bounds.Height * scaling)));
-        MapRenderCamera camera = lod is not null && lod.Bounds.IsValid
+        RenderCamera camera = lod is not null && lod.Bounds.IsValid
             ? CreateCamera(lod.Bounds, pixelSize)
             : CreateEmptyCamera();
         try
@@ -396,7 +396,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         var pixelSize = new PixelSize(
             Math.Max(1, (int)Math.Ceiling(Bounds.Width)),
             Math.Max(1, (int)Math.Ceiling(Bounds.Height)));
-        MapRenderCamera camera = CreateCamera(lod.Bounds, pixelSize);
+        RenderCamera camera = CreateCamera(lod.Bounds, pixelSize);
         float distance = Vector3.Distance(
             camera.Position,
             lod.Bounds.Center + _panOffset);
@@ -408,8 +408,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             camera.Up * (float)delta.Y) * worldUnitsPerPixel;
     }
 
-    private MapRenderCamera CreateCamera(
-        MapRenderBounds bounds,
+    private RenderCamera CreateCamera(
+        RenderBounds bounds,
         PixelSize pixelSize)
     {
         Vector3 center = bounds.Center + _panOffset;
@@ -430,7 +430,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             0.0001f,
             MathF.Min(radius * 0.01f, (distance - radius) * 0.5f));
         float far = MathF.Max(near + 1f, distance + radius * 2f);
-        return new MapRenderCamera(
+        return new RenderCamera(
             eye,
             cameraYaw,
             cameraPitch,
@@ -439,7 +439,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             far);
     }
 
-    private static MapRenderCamera CreateEmptyCamera() => new(
+    private static RenderCamera CreateEmptyCamera() => new(
         new Vector3(0f, 0f, 1f),
         YawRadians: 0f,
         PitchRadians: 0f,
@@ -494,7 +494,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             return;
         }
 
-        MapRenderCamera camera = CreateCamera(lod.Bounds, pixelSize);
+        RenderCamera camera = CreateCamera(lod.Bounds, pixelSize);
         float aspect = pixelSize.Width /
             (float)Math.Max(1, pixelSize.Height);
         Matrix4x4 viewProjection =

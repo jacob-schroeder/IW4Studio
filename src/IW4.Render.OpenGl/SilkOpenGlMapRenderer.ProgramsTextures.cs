@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using Silk.NET.OpenGL;
 
 using IW4.Render.Execution;
@@ -8,6 +9,9 @@ using IW4.Render.Lighting;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Shaders;
 using IW4.Render.Textures;
+using Texture = IW4.Render.Textures.Texture;
+using TextureTarget = Silk.NET.OpenGL.TextureTarget;
+using RenderTextureTarget = IW4.Render.Textures.TextureTarget;
 using IW4.Render.OpenGl.Programs;
 using IW4.Render.OpenGl.Shaders;
 
@@ -15,9 +19,14 @@ namespace IW4.Render.OpenGl;
 
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
+    private readonly Dictionary<
+        OpenGlProgramKey,
+        MapRenderOpenGlStaticModelProgramUniforms>
+        _staticModelProgramUniforms = [];
+
     private uint[] CreateEditorRoleTextures(
-        IReadOnlyList<MapRenderMaterialSamplerBinding> bindings,
-        IReadOnlyList<MapRenderEditorMaterialTextureRole> roles)
+        IReadOnlyList<MaterialSamplerBinding> bindings,
+        IReadOnlyList<EditorMaterialTextureRole> roles)
     {
         var result = new uint[roles.Count];
         for (int roleIndex = 0; roleIndex < roles.Count; roleIndex++)
@@ -34,18 +43,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return result;
     }
 
-    internal static MapRenderTexture? SelectUniqueEditorRoleTexture(
-        IReadOnlyList<MapRenderMaterialSamplerBinding> bindings,
-        MapRenderEditorMaterialTextureRole role)
+    internal static Texture? SelectUniqueEditorRoleTexture(
+        IReadOnlyList<MaterialSamplerBinding> bindings,
+        EditorMaterialTextureRole role)
     {
         ArgumentNullException.ThrowIfNull(bindings);
         if (!Enum.IsDefined(role) ||
-            role == MapRenderEditorMaterialTextureRole.Unknown)
+            role == EditorMaterialTextureRole.Unknown)
         {
             return null;
         }
 
-        MapRenderMaterialSamplerBinding[] candidates = bindings
+        MaterialSamplerBinding[] candidates = bindings
             .Where(binding => binding.EditorTextureRole == role)
             .Take(2)
             .ToArray();
@@ -62,8 +71,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlRsxProgram program) =>
         program.Handle != 0;
 
-    private static bool HasAuthoredTechniquePass(MapRenderMaterialPass pass) =>
-        pass.TechniqueSlot >= 0 && pass.PassIndex >= 0;
+    private static bool HasAuthoredTechniquePass(MaterialPassIdentity pass) =>
+        pass.TechniquePass.TechniqueSlot >= 0 &&
+        pass.TechniquePass.PassIndex >= 0;
 
     internal static IReadOnlySet<TKey> AuthorizeAtomicProgramGroups<T, TKey>(
         IReadOnlyList<T> batches,
@@ -115,17 +125,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (!TryCreateEditorDirectCodeConstantPlan(
                 batch.ShaderExecution,
                 batch.SceneLightIndex,
-                out MapRenderEditorTranslatedProgramDirectCodeConstantPlan?
+                out TranslatedProgramDirectCodeConstantPlan?
                     directCodePlan) ||
             !TryCreateEditorVertexConstantBindingPlan(
                 batch.ShaderExecution,
                 directCodePlan!,
-                out MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
+                out TranslatedProgramVertexConstantBindingPlan?
                     vertexPlan) ||
             vertexPlan!.Bindings.Any(binding => binding.Kind is
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
+                TranslatedProgramVertexConstantBindingKind
                     .PerInstanceStaticModelBaseLightingCoords or
-                MapRenderEditorTranslatedProgramVertexConstantBindingKind
+                TranslatedProgramVertexConstantBindingKind
                     .PerInstanceStaticModelLightProbeAmbient))
         {
             return false;
@@ -133,7 +143,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         return GetOrCreateRsxProgram(
             batch.ShaderExecution,
-            batch.State).Handle != 0;
+            batch.State,
+            compositionVertexConstantPlan: null,
+            out _).Handle != 0;
     }
 
     private bool PreflightAuthoredProgram(
@@ -151,7 +163,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (!TryCreateEditorDirectCodeConstantPlan(
                 batch.ShaderExecution,
                 batch.SceneLightIndex,
-                out MapRenderEditorTranslatedProgramDirectCodeConstantPlan?
+                out TranslatedProgramDirectCodeConstantPlan?
                     directCodePlan) ||
             !TryCreateEditorVertexConstantBindingPlan(
                 batch.ShaderExecution,
@@ -163,18 +175,20 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         return GetOrCreateRsxProgram(
             batch.ShaderExecution,
-            batch.State).Handle != 0;
+            batch.State,
+            compositionVertexConstantPlan: null,
+            out _).Handle != 0;
     }
 
     private bool TryCreateEditorDirectCodeConstantPlan(
-        MapRenderShaderExecutionContract execution,
+        ShaderExecutionContract execution,
         byte sceneLightIndex,
-        out MapRenderEditorTranslatedProgramDirectCodeConstantPlan? plan)
+        out TranslatedProgramDirectCodeConstantPlan? plan)
     {
         plan = null;
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlanBuildResult
+        TranslatedProgramDirectCodeConstantPlanBuildResult
             result =
-                MapRenderEditorTranslatedProgramDirectCodeConstantPlanner
+                TranslatedProgramDirectCodeConstantPlanner
                     .TryPlan(
                         execution.ConstantDestinations,
                         execution.CodePixelConstantPatchPlans,
@@ -197,13 +211,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static bool TryCreateEditorVertexConstantBindingPlan(
-        MapRenderShaderExecutionContract execution,
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlan directCodePlan,
-        out MapRenderEditorTranslatedProgramVertexConstantBindingPlan? plan)
+        ShaderExecutionContract execution,
+        TranslatedProgramDirectCodeConstantPlan directCodePlan,
+        out TranslatedProgramVertexConstantBindingPlan? plan)
     {
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlanBuildResult
+        TranslatedProgramVertexConstantBindingPlanBuildResult
             result =
-                MapRenderEditorTranslatedProgramVertexConstantBindingPlanner
+                TranslatedProgramVertexConstantBindingPlanner
                     .TryPlan(
                         execution.ProgramVertexConstantDestinations,
                         execution.ConstantDestinations,
@@ -214,11 +228,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private GlRsxConstantBinding[] CreateRsxConstantBindings(
-        MapRenderShaderExecutionContract execution,
+        ShaderExecutionContract execution,
         GlRsxProgram program,
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlan directCodePlan,
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlan
-            vertexConstantPlan)
+        TranslatedProgramDirectCodeConstantPlan directCodePlan,
+        TranslatedProgramVertexConstantBindingPlan
+            vertexConstantPlan,
+        IReadOnlySet<int>? externallyBoundVertexConstantDestinations = null)
     {
         if (_authoredMaterials.TryCreateConstantBindings(
                 execution,
@@ -226,7 +241,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 directCodePlan,
                 vertexConstantPlan,
                 out GlRsxConstantBinding[] bindings,
-                out string? blocker))
+                out string? blocker,
+                externallyBoundVertexConstantDestinations:
+                    externallyBoundVertexConstantDestinations))
         {
             return bindings;
         }
@@ -238,39 +255,262 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private static AuthoredProgramGroupKey AuthoredProgramGroup(MapRenderTexturedBatch batch) =>
         new(
             batch.Pass.MaterialName,
-            batch.Pass.TechniqueSetName,
-            batch.Pass.TechniqueSlot,
-            batch.Pass.TechniqueName);
+            batch.Pass.TechniquePass.TechniqueSetName,
+            batch.Pass.TechniquePass.TechniqueSlot,
+            batch.Pass.TechniquePass.TechniqueName);
 
     private static AuthoredProgramGroupKey AuthoredProgramGroup(
         MapRenderInstancedTexturedBatch batch) =>
         new(
             batch.Pass.MaterialName,
-            batch.Pass.TechniqueSetName,
-            batch.Pass.TechniqueSlot,
-            batch.Pass.TechniqueName);
+            batch.Pass.TechniquePass.TechniqueSetName,
+            batch.Pass.TechniquePass.TechniqueSlot,
+            batch.Pass.TechniquePass.TechniqueName);
 
     private GlRsxProgram GetOrCreateRsxProgram(
-        MapRenderShaderExecutionContract execution,
-        MapRenderState state,
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
-            staticModelVertexConstantPlan = null) =>
-        _authoredMaterials.GetOrCreateProgram(
-            execution,
-            state,
-            staticModelVertexConstantPlan,
-            UseRsxVertexPlacementDiagnostic,
-            RsxFragmentOutputDiagnostic,
+        ShaderExecutionContract execution,
+        RenderState state,
+        TranslatedProgramVertexConstantBindingPlan?
+            compositionVertexConstantPlan,
+        out MapRenderOpenGlStaticModelProgramUniforms?
+            staticModelUniforms)
+    {
+        staticModelUniforms = null;
+        if (!_authoredMaterials.TryResolveRawProgramSources(
+                execution,
+                state,
+                out string vertexGlsl,
+                out OpenGlAuthoredFragmentSource fragmentSource,
+                out string? blocker))
+        {
+            return default;
+        }
+
+        if (!OpenGlFixedFunctionEpilogue.TryCompose(
+                state,
+                execution.FragmentProgramControl,
+                suppressShaderPackerForDiagnosticOutput:
+                    UseRsxVertexPlacementDiagnostic,
+                out AlphaTestMode alphaTestMode,
+                out OpenGlRsxShaderPackerMode shaderPackerMode,
+                out string fixedFunctionEpilogue))
+        {
+            return default;
+        }
+
+        bool compositionReady = false;
+        string compositionIdentity = string.Empty;
+        if (compositionVertexConstantPlan is not null)
+        {
+            if (!MapRenderOpenGlStaticModelInstancedVertexComposer.TryCompose(
+                    vertexGlsl,
+                    execution.VertexInputs,
+                    compositionVertexConstantPlan,
+                    out vertexGlsl,
+                    out compositionIdentity,
+                    out string compositionBlocker))
+            {
+                _authoredMaterials.RecordPreparationFailure(
+                    $"{execution.ProgramCacheKey}|staticModelInstancing",
+                    compositionBlocker);
+                return default;
+            }
+            compositionReady = true;
+        }
+
+        string fixedFunctionIdentity =
+            $"{execution.ProgramCacheKey}|alphaTest={alphaTestMode}" +
+            $"|rsxShaderPacker={shaderPackerMode}" +
+            (compositionReady
+                ? $"|staticModelInstancing={compositionIdentity}"
+                : string.Empty);
+        string diagnosticIdentity = UseRsxVertexPlacementDiagnostic
+            ? $"VERTEX_PLACEMENT_DIAGNOSTIC|{fixedFunctionIdentity}"
+            : RsxFragmentOutputDiagnostic.HasValue
+                ? $"FRAGMENT_OUTPUT_{RsxFragmentOutputDiagnostic.Value}_DIAGNOSTIC|{fixedFunctionIdentity}"
+                : fixedFunctionIdentity;
+
+        OpenGlAuthoredFragmentSource finalPixelSource;
+        try
+        {
+            OpenGlAuthoredFragmentSource translatedPixelSource =
+                OpenGlFixedFunctionEpilogue.Apply(
+                    fragmentSource,
+                    fixedFunctionEpilogue);
+            finalPixelSource = UseRsxVertexPlacementDiagnostic
+                ? translatedPixelSource.WithBackendComposition(
+                    VertexPlacementDiagnosticFragmentSource)
+                : RemapFragmentOutputForDiagnostic(
+                    translatedPixelSource,
+                    RsxFragmentOutputDiagnostic);
+        }
+        catch (InvalidOperationException exception)
+        {
+            blocker =
+                $"RSX GLSL source composition failed for {diagnosticIdentity}: {exception.Message}";
+            _authoredMaterials.RecordPreparationFailure(
+                $"{diagnosticIdentity}|sourceComposition",
+                blocker);
+            return default;
+        }
+
+        int[] samplerDestinations = UseRsxVertexPlacementDiagnostic
+            ? []
+            : execution.MaterialSamplerDestinations
+                .Concat(execution.CustomSamplerDestinations)
+                .Concat(execution.CodeSamplerDestinations)
+                .Select(binding => (int)binding.Destination)
+                .Distinct()
+                .Order()
+                .ToArray();
+        GlRsxProgram program = _authoredMaterials.GetOrCreateComposedProgram(
+            vertexGlsl,
+            finalPixelSource,
+            compositionReady,
+            samplerDestinations,
+            diagnosticIdentity,
+            compositionReady
+                ? ValidateAndCaptureStaticModelProgramUniforms
+                : null,
+            out OpenGlProgramKey programKey,
             out _);
+        if (program.Handle != 0 && compositionReady)
+        {
+            if (!_staticModelProgramUniforms.TryGetValue(
+                    programKey,
+                    out MapRenderOpenGlStaticModelProgramUniforms uniforms))
+            {
+                const string missingUniformsBlocker =
+                    "Translated static-model program lost its cached uniform bridge.";
+                _authoredMaterials.RecordPreparationFailure(
+                    $"{programKey}|staticModelUniforms",
+                    missingUniformsBlocker);
+                return default;
+            }
+            staticModelUniforms = uniforms;
+        }
+        return program;
+    }
+
+    private string? ValidateAndCaptureStaticModelProgramUniforms(
+        uint handle,
+        OpenGlProgramKey programKey)
+    {
+        var vegetation = new MapRenderOpenGlStaticModelVegetationUniforms(
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionWindEnabledUniform),
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionTimeUniform),
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionAmplitudeUniform),
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionAngularFrequencyUniform),
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionSpatialFrequencyUniform),
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionLocalMinimumHeightUniform),
+            _authoredMaterials.GetUniformLocation(
+                handle,
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .CompositionLocalHeightRangeUniform));
+        if (!vegetation.IsReady)
+        {
+            return "Translated static-model program lost its Live Preview vegetation uniform bridge.";
+        }
+
+        int[] viewRows = Enumerable.Range(0, 4)
+            .Select(row => _authoredMaterials.GetUniformLocation(
+                handle,
+                $"{MapRenderOpenGlStaticModelInstancedVertexComposer.ViewRowsUniform}[{row}]"))
+            .ToArray();
+        int[] viewProjectionRows = Enumerable.Range(0, 4)
+            .Select(row => _authoredMaterials.GetUniformLocation(
+                handle,
+                $"{MapRenderOpenGlStaticModelInstancedVertexComposer.ViewProjectionRowsUniform}[{row}]"))
+            .ToArray();
+        int eyeOffset = _authoredMaterials.GetUniformLocation(
+            handle,
+            MapRenderOpenGlStaticModelInstancedVertexComposer
+                .EyeOffsetUniform);
+        _staticModelProgramUniforms.TryAdd(
+            programKey,
+            new MapRenderOpenGlStaticModelProgramUniforms(
+                viewRows,
+                viewProjectionRows,
+                eyeOffset,
+                vegetation));
+        return null;
+    }
+
+    private static OpenGlAuthoredFragmentSource
+        RemapFragmentOutputForDiagnostic(
+            OpenGlAuthoredFragmentSource fragmentSource,
+            int? outputIndex)
+    {
+        ArgumentNullException.ThrowIfNull(fragmentSource);
+        if (!outputIndex.HasValue || outputIndex.Value == 0)
+            return fragmentSource;
+        if (outputIndex.Value is < 0 or > 3)
+            throw new ArgumentOutOfRangeException(nameof(outputIndex));
+
+        string fragmentGlsl = fragmentSource.ExactGlsl;
+        string[] names =
+            ["FragColor", "rsxMrtColor1", "rsxMrtColor2", "rsxMrtColor3"];
+        int selected = outputIndex.Value;
+        for (int index = 0; index < names.Length; index++)
+        {
+            int location = index == selected
+                ? 0
+                : index == 0
+                    ? selected
+                    : index;
+            fragmentGlsl = fragmentGlsl.Replace(
+                $"layout(location = {index}) out vec4 {names[index]};",
+                $"layout(location = {location}) out vec4 {names[index]};",
+                StringComparison.Ordinal);
+        }
+        return fragmentSource.WithBackendComposition(fragmentGlsl);
+    }
+
+    private const string VertexPlacementDiagnosticFragmentSource = """
+        #version 330 core
+        in vec4 rsxColor0;
+        in vec4 rsxColor1;
+        in vec4 rsxTexcoord0;
+        in vec4 rsxTexcoord1;
+        in vec4 rsxTexcoord2;
+        in vec4 rsxTexcoord3;
+        in vec4 rsxTexcoord4;
+        in vec4 rsxTexcoord5;
+        in vec4 rsxTexcoord6;
+        in vec4 rsxTexcoord7;
+        out vec4 FragColor;
+        void main()
+        {
+            FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+        }
+        """;
 
     private uint CreateTexture(
-        MapRenderTexture texture,
+        Texture texture,
         bool pinForRendererLifetime = false)
     {
         AccountTexturePayload(texture);
         if (!TryDescribeTextureUpload(
                 texture,
-                out MapRenderOpenGlAuthoredBcUploadPlan? authoredBcPlan,
+                out OpenGlAuthoredBcUploadPlan? authoredBcPlan,
                 out bool usesDirectAuthoredBcUpload,
                 out int faceCount,
                 out int storageLevelCount,
@@ -409,8 +649,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private bool TryDescribeTextureUpload(
-        MapRenderTexture? texture,
-        out MapRenderOpenGlAuthoredBcUploadPlan? authoredBcPlan,
+        Texture? texture,
+        out OpenGlAuthoredBcUploadPlan? authoredBcPlan,
         out bool usesDirectAuthoredBcUpload,
         out int faceCount,
         out int storageLevelCount,
@@ -424,9 +664,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (texture is null)
             return false;
 
-        if (MapRenderOpenGlAuthoredBcUploadPlan.TryCreate(
+        if (OpenGlAuthoredBcUploadPlan.TryCreate(
                 texture,
-                out MapRenderOpenGlAuthoredBcUploadPlan provenPlan))
+                out OpenGlAuthoredBcUploadPlan provenPlan))
         {
             if (_compressedTextureSupport.Supports(
                     provenPlan.BlockCompression))
@@ -462,7 +702,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return false;
 
         faceCount = texture.Target ==
-            MapRenderTextureTarget.TextureCube
+            RenderTextureTarget.TextureCube
                 ? 6
                 : 1;
         storageLevelCount = texture.MipLevels.Count > 0
@@ -495,7 +735,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return checked(faceBytes * faceCount);
     }
 
-    private bool CanUploadTexture(MapRenderTexture? texture) =>
+    private bool CanUploadTexture(Texture? texture) =>
         TryDescribeTextureUpload(
             texture,
             out _,
@@ -525,7 +765,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void UploadAuthoredBcStorageBound(
         MapRenderOpenGlTextureResidencyEntry entry,
-        MapRenderOpenGlAuthoredBcUploadPlan plan)
+        OpenGlAuthoredBcUploadPlan plan)
     {
         InternalFormat internalFormat =
             ToGlCompressedInternalFormat(plan.BlockCompression);
@@ -537,7 +777,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 : TextureTarget.Texture2D;
             for (int mip = 0; mip < plan.MipLevelCount; mip++)
             {
-                MapRenderTextureAuthoredSubresource subresource =
+                TextureAuthoredSubresource subresource =
                     plan.Subresources[
                         checked(face * plan.MipLevelCount + mip)];
                 fixed (byte* payload = subresource.SharedPayload)
@@ -559,9 +799,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void UploadDecodedRgbaStorageBound(
         MapRenderOpenGlTextureResidencyEntry entry)
     {
-        MapRenderTexture texture =
+        Texture texture =
             ResolveDecodedRgbaUploadTexture(entry);
-        if (texture.Target == MapRenderTextureTarget.TextureCube)
+        if (texture.Target == RenderTextureTarget.TextureCube)
         {
             if (texture.CubeFaces is not { Count: 6 } cubeFaces)
             {
@@ -572,7 +812,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                  faceIndex < cubeFaces.Count;
                  faceIndex++)
             {
-                MapRenderTextureCubeFace face = cubeFaces[faceIndex];
+                TextureCubeFace face = cubeFaces[faceIndex];
                 TextureTarget faceTarget = (TextureTarget)(
                     (int)TextureTarget.TextureCubeMapPositiveX +
                     faceIndex);
@@ -586,7 +826,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                      level < face.MipLevels.Count;
                      level++)
                 {
-                    MapRenderTextureMip mip = face.MipLevels[level];
+                    TextureMip mip = face.MipLevels[level];
                     UploadDecodedRgbaLevelBound(
                         faceTarget,
                         checked(level + 1),
@@ -613,7 +853,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
              level < texture.MipLevels.Count;
              level++)
         {
-            MapRenderTextureMip mip = texture.MipLevels[level];
+            TextureMip mip = texture.MipLevels[level];
             UploadDecodedRgbaLevelBound(
                 TextureTarget.Texture2D,
                 checked(level + 1),
@@ -628,7 +868,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private MapRenderTexture ResolveDecodedRgbaUploadTexture(
+    private Texture ResolveDecodedRgbaUploadTexture(
         MapRenderOpenGlTextureResidencyEntry entry)
     {
         if (entry.Source.HasCompleteDecodedRgbaPayload)
@@ -641,7 +881,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 $"Texture {entry.Source.Name} has neither a complete decoded payload nor a proven authored BC plan.");
         }
 
-        MapRenderTexture decodedFallback =
+        Texture decodedFallback =
             DecodeRendererOwnedAuthoredBcFallback(
                 entry.Source,
                 plan);
@@ -652,29 +892,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return decodedFallback;
     }
 
-    private static MapRenderTexture
+    private static Texture
         DecodeRendererOwnedAuthoredBcFallback(
-            MapRenderTexture source,
-            MapRenderOpenGlAuthoredBcUploadPlan plan)
+            Texture source,
+            OpenGlAuthoredBcUploadPlan plan)
     {
         if (plan.FaceCount == 1)
         {
             byte[] top = Decode(faceOrdinal: 0, mipLevel: 0);
-            var mips = new MapRenderTextureMip[
+            var mips = new TextureMip[
                 checked(plan.MipLevelCount - 1)];
             for (int mipLevel = 1;
                  mipLevel < plan.MipLevelCount;
                  mipLevel++)
             {
-                MapRenderTextureAuthoredSubresource subresource =
+                TextureAuthoredSubresource subresource =
                     plan.Subresources[mipLevel];
-                mips[mipLevel - 1] = new MapRenderTextureMip(
+                mips[mipLevel - 1] = new TextureMip(
                     subresource.Width,
                     subresource.Height,
                     Decode(faceOrdinal: 0, mipLevel));
             }
 
-            MapRenderTexture result = source with
+            Texture result = source with
             {
                 RgbaBytes = top,
                 MipLevels = mips,
@@ -688,13 +928,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return result;
         }
 
-        var faces = new MapRenderTextureCubeFace[plan.FaceCount];
+        var faces = new TextureCubeFace[plan.FaceCount];
         for (int faceOrdinal = 0;
              faceOrdinal < plan.FaceCount;
              faceOrdinal++)
         {
             byte[] top = Decode(faceOrdinal, mipLevel: 0);
-            var mips = new MapRenderTextureMip[
+            var mips = new TextureMip[
                 checked(plan.MipLevelCount - 1)];
             for (int mipLevel = 1;
                  mipLevel < plan.MipLevelCount;
@@ -703,19 +943,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 int coordinate = checked(
                     faceOrdinal * plan.MipLevelCount +
                     mipLevel);
-                MapRenderTextureAuthoredSubresource subresource =
+                TextureAuthoredSubresource subresource =
                     plan.Subresources[coordinate];
-                mips[mipLevel - 1] = new MapRenderTextureMip(
+                mips[mipLevel - 1] = new TextureMip(
                     subresource.Width,
                     subresource.Height,
                     Decode(faceOrdinal, mipLevel));
             }
             faces[faceOrdinal] =
-                new MapRenderTextureCubeFace(top, mips);
+                new TextureCubeFace(top, mips);
         }
 
-        MapRenderTextureCubeFace firstFace = faces[0];
-        MapRenderTexture cubeResult = source with
+        TextureCubeFace firstFace = faces[0];
+        Texture cubeResult = source with
         {
             RgbaBytes = firstFace.RgbaBytes,
             MipLevels = firstFace.MipLevels,
@@ -733,7 +973,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             int coordinate = checked(
                 faceOrdinal * plan.MipLevelCount +
                 mipLevel);
-            MapRenderTextureAuthoredSubresource subresource =
+            TextureAuthoredSubresource subresource =
                 plan.Subresources[coordinate];
             return GfxImageDecoder.DecodeProvenAuthoredBc(
                 plan.BlockCompression,
@@ -793,14 +1033,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static InternalFormat ToGlCompressedInternalFormat(
-        MapRenderAuthoredBlockCompression compression) =>
+        AuthoredBlockCompression compression) =>
         compression switch
         {
-            MapRenderAuthoredBlockCompression.Bc1 =>
+            AuthoredBlockCompression.Bc1 =>
                 InternalFormat.CompressedRgbaS3TCDxt1Ext,
-            MapRenderAuthoredBlockCompression.Bc2 =>
+            AuthoredBlockCompression.Bc2 =>
                 InternalFormat.CompressedRgbaS3TCDxt3Ext,
-            MapRenderAuthoredBlockCompression.Bc3 =>
+            AuthoredBlockCompression.Bc3 =>
                 InternalFormat.CompressedRgbaS3TCDxt5Ext,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(compression),
@@ -871,12 +1111,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void ApplyTextureSwizzle(
-        MapRenderRsxTextureSwizzle swizzle,
+        RsxTextureSwizzle swizzle,
         TextureTarget textureTarget) =>
         _textureParameters.ApplySwizzle(swizzle, textureTarget);
 
     private void ApplyTextureSampler(
-        MapRenderSamplerState sampler,
+        RsxSamplerState sampler,
         int maxMipLevel,
         TextureTarget textureTarget) =>
         _textureParameters.ApplySampler(
@@ -899,7 +1139,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private uint CreateProgram(string vertexSource, string fragmentSource)
     {
-        MapRenderOpenGlLinkedProgramHandleResolution resolution =
+        OpenGlLinkedProgramHandleResolution resolution =
             ResolveLinkedProgram(vertexSource, fragmentSource);
         if (resolution.IsReady)
             return resolution.Handle;
@@ -909,25 +1149,25 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             "OpenGL shared-program linking failed.");
     }
 
-    private MapRenderOpenGlLinkedProgramHandleResolution
+    private OpenGlLinkedProgramHandleResolution
         ResolveLinkedProgram(
             string vertexSource,
             string fragmentSource)
     {
-        MapRenderOpenGlProgramKey key =
-            MapRenderOpenGlProgramKey.Create(
+        OpenGlProgramKey key =
+            OpenGlProgramKey.Create(
                 vertexSource,
                 fragmentSource,
-                EditorPreviewLinkProfileIdentity);
+                LinkProfileIdentity);
         if (_sceneProgramResolutions.TryGetValue(
                 key,
-                out MapRenderOpenGlLinkedProgramHandleResolution
+                out OpenGlLinkedProgramHandleResolution
                     sceneResolution))
         {
             return sceneResolution with { IsReuse = true };
         }
 
-        MapRenderOpenGlLinkedProgramHandleResolution resolution =
+        OpenGlLinkedProgramHandleResolution resolution =
             _sharedProgramUsage.GetOrLink(
                 vertexSource,
                 fragmentSource,
@@ -1011,10 +1251,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return shader;
     }
 
-    private static TextureTarget ToGlTextureTarget(MapRenderTextureTarget target) => target switch
+    private static TextureTarget ToGlTextureTarget(RenderTextureTarget target) => target switch
     {
-        MapRenderTextureTarget.Texture2D => TextureTarget.Texture2D,
-        MapRenderTextureTarget.TextureCube => TextureTarget.TextureCubeMap,
+        RenderTextureTarget.Texture2D => TextureTarget.Texture2D,
+        RenderTextureTarget.TextureCube => TextureTarget.TextureCubeMap,
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, null)
     };
 

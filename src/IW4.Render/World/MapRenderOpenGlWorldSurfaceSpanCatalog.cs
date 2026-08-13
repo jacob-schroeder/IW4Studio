@@ -67,7 +67,7 @@ internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
                 range.SurfaceIndex,
                 range.FirstIndex,
                 range.IndexCount,
-                MapRenderBounds.Empty);
+                RenderBounds.Empty);
             expectedFirstIndex = endIndex;
         }
 
@@ -124,7 +124,7 @@ internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
             if (endIndex > batch.Indices.Length)
                 return false;
 
-            MapRenderBounds bounds = MapRenderBounds.Empty;
+            RenderBounds bounds = RenderBounds.Empty;
             if (includeDecodedBounds &&
                 !TryResolveBounds(batch, range, out bounds))
             {
@@ -149,9 +149,9 @@ internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
     private static bool TryResolveBounds(
         MapRenderTexturedBatch batch,
         MapRenderPickRange range,
-        out MapRenderBounds bounds)
+        out RenderBounds bounds)
     {
-        bounds = MapRenderBounds.Empty;
+        bounds = RenderBounds.Empty;
         for (int indexOffset = range.FirstIndex;
              indexOffset < range.FirstIndex + range.IndexCount;
              indexOffset++)

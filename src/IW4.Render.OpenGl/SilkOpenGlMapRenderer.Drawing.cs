@@ -3,8 +3,8 @@ using Silk.NET.OpenGL;
 using IW4.Render.Diagnostics;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
+using IW4.Render.Geometry;
 using IW4.Render.Lighting;
-using IW4.Render.Scheduling.Fog;
 using IW4.Render.Scheduling.Lighting;
 using IW4.Render.SceneBuilding;
 using IW4.Render.World;
@@ -78,7 +78,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void DrawVisibleDepthPrepassGroups(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
         using MapRenderOpenGlGpuPhaseScope gpuTiming =
@@ -290,7 +290,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlTexturedDrawCommand command,
         MapRenderEditorDepthPrepassPlan plan,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
         if (command.Mesh.InstanceCount == 0 &&
@@ -362,7 +362,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlTexturedMesh mesh,
         MapRenderEditorDepthPrepassPlan plan,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         float editorTimeSeconds,
         int? instanceIndex,
         int multiDrawCount = 0)
@@ -391,7 +391,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     "Translated world color execution was authorized without its resolved authored depth owner.");
             }
 
-            MapRenderDerivedMatrixState drawMatrices =
+            DerivedMatrixState drawMatrices =
                 ResolveTranslatedDrawMatrices(
                     mesh,
                     instanceIndex,
@@ -399,10 +399,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ApplyRenderState(plan.State);
             _state.UseProgram(mesh.DepthPrepassRsxProgram.Handle);
             ApplyStaticModelInstancingFrame(
-                mesh.DepthPrepassRsxProgram,
+                mesh.DepthStaticModelProgramUniforms,
                 rsxMatrices);
-            ApplyTranslatedStaticVegetation(
-                mesh.DepthPrepassRsxProgram,
+            ApplyTranslatedStaticComposition(
+                mesh.DepthStaticModelProgramUniforms,
                 mesh,
                 editorTimeSeconds);
             ApplyRsxConstantBindings(
@@ -491,7 +491,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void DrawVisibleTexturedGroups(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds)
     {
@@ -676,10 +676,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             command.Mesh.ShaderExecution?.RuntimeSamplerRequirements.Any(
                 requirement =>
                     requirement.ResourceKind ==
-                        MapRenderShaderRuntimeSamplerResourceKind
+                        ShaderRuntimeSamplerResourceKind
                             .ProcessedFloatZ &&
                     requirement.Status ==
-                        MapRenderShaderRuntimeSamplerRequirementStatus
+                        ShaderRuntimeSamplerRequirementStatus
                             .SameRevisionTextureRequired) == true);
 
     private bool RequiresVisibleProcessedFloatZ(
@@ -1004,7 +1004,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (mesh.ShaderExecution is { } execution)
         {
             hash.Add(execution.RuntimeSamplerRequirements.Count);
-            foreach (MapRenderShaderRuntimeSamplerRequirement requirement in
+            foreach (ShaderRuntimeSamplerRequirement requirement in
                      execution.RuntimeSamplerRequirements)
             {
                 hash.Add(requirement);
@@ -1092,7 +1092,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                first.NormalTextures.AsSpan().SequenceEqual(next.NormalTextures) &&
                first.SpecularTextures.AsSpan().SequenceEqual(
                    next.SpecularTextures) &&
-               VegetationPlansMatch(
+               CompositionPlansMatch(
                    first.VegetationAnimation,
                    next.VegetationAnimation) &&
                (first.VegetationAnimation?.IsEnabled != true ||
@@ -1126,7 +1126,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (first.RsxProgram.Handle != 0)
             return true;
 
-        return VegetationPlansMatch(
+        return CompositionPlansMatch(
                    first.VegetationAnimation,
                    next.VegetationAnimation) &&
                (first.VegetationAnimation?.IsEnabled != true ||
@@ -1138,9 +1138,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlTexturedMesh first,
         GlTexturedMesh next)
     {
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement> firstValues =
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> firstValues =
             first.ShaderExecution?.RuntimeSamplerRequirements ?? [];
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement> nextValues =
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> nextValues =
             next.ShaderExecution?.RuntimeSamplerRequirements ?? [];
         if (firstValues.Count != nextValues.Count)
             return false;
@@ -1153,7 +1153,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return true;
     }
 
-    private static bool VegetationPlansMatch(
+    private static bool CompositionPlansMatch(
         MapRenderEditorVegetationAnimationPlan? first,
         MapRenderEditorVegetationAnimationPlan? next) =>
         ReferenceEquals(first, next) ||
@@ -1198,7 +1198,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void Draw(
         GlTexturedDrawCommand command,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds)
     {
@@ -1321,7 +1321,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void Draw(
         GlTexturedMesh mesh,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds,
         int? instanceIndex,
@@ -1342,17 +1342,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         ApplyRenderState(mesh.State);
         if (executeTranslatedAuthored)
         {
-            MapRenderDerivedMatrixState drawMatrices =
+            DerivedMatrixState drawMatrices =
                 ResolveTranslatedDrawMatrices(
                     mesh,
                     instanceIndex,
                     rsxMatrices);
             _state.UseProgram(mesh.RsxProgram.Handle);
             ApplyStaticModelInstancingFrame(
-                mesh.RsxProgram,
+                mesh.StaticModelProgramUniforms,
                 rsxMatrices);
-            ApplyTranslatedStaticVegetation(
-                mesh.RsxProgram,
+            ApplyTranslatedStaticComposition(
+                mesh.StaticModelProgramUniforms,
                 mesh,
                 editorTimeSeconds);
             ApplyRsxConstantBindings(
@@ -1390,14 +1390,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _state.Uniform1(_texturedAlphaTestEnabledLocation, mesh.State.AlphaTestEnabled ? 1 : 0);
         _state.Uniform1(_texturedAlphaFuncLocation, unchecked((int)mesh.State.AlphaFunc));
         _state.Uniform1(_texturedAlphaRefLocation, mesh.State.AlphaRef / 255f);
-        MapRenderOpenGlRsxShaderPackerMode genericShaderPackerMode =
-            MapRenderOpenGlFixedFunctionEpilogue.ResolveShaderPackerMode(
+        OpenGlRsxShaderPackerMode genericShaderPackerMode =
+            OpenGlFixedFunctionEpilogue.ResolveShaderPackerMode(
                 mesh.FragmentProgramControl,
                 mesh.State,
                 suppressForDiagnosticOutput: UseRsxVertexPlacementDiagnostic);
         _state.Uniform1(
             _texturedShaderPackerSrgbEnabledLocation,
-            genericShaderPackerMode == MapRenderOpenGlRsxShaderPackerMode
+            genericShaderPackerMode == OpenGlRsxShaderPackerMode
                 .LinearToSrgbProgramEpilogue
                 ? 1
                 : 0);
@@ -1406,7 +1406,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             mesh.ColorInputLinearizationMask);
         _state.Uniform1(
             _texturedPremultiplyAlphaLocation,
-            MapRenderOpenGlFixedFunctionEpilogue
+            OpenGlFixedFunctionEpilogue
                 .RequiresPremultipliedSourceRgb(mesh.State)
                 ? 1
                 : 0);
@@ -1484,7 +1484,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _editorPreviewAtmosphereEnabled
                     ? _editorPreviewAtmosphere
                     : null,
-                MapRenderOpenGlFixedFunctionEpilogue
+                OpenGlFixedFunctionEpilogue
                     .ConsumesLinearFogColor(genericShaderPackerMode));
         _state.Uniform1(
             _texturedFogEnabledLocation,
@@ -1668,10 +1668,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private MapRenderDerivedMatrixState ResolveTranslatedDrawMatrices(
+    private DerivedMatrixState ResolveTranslatedDrawMatrices(
         GlTexturedMesh mesh,
         int? instanceIndex,
-        MapRenderDerivedMatrixState frameMatrices)
+        DerivedMatrixState frameMatrices)
     {
         if (mesh.InstanceCount == 0)
         {
@@ -1685,7 +1685,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         if (instanceIndex is not int index)
         {
-            if (mesh.RsxProgram.StaticModelInstancingReady)
+            if (mesh.StaticModelProgramUniforms is not null)
                 return frameMatrices;
             throw new InvalidOperationException(
                 "A translated static-model draw requires one isolated placement.");
@@ -1699,14 +1699,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 "A translated static-model draw lost its exact placement runtime.");
         }
 
-        return MapRenderDerivedMatrixResolver.WithStaticModelPlacement(
+        return MapRenderStaticModelDerivedMatrixResolver.WithPlacement(
             frameMatrices,
             runtime.Instances[index]);
     }
 
     private void ApplyRsxConstantBindings(
         IReadOnlyList<GlRsxConstantBinding> bindings,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
         if (!_authoredMaterials.TryApplyConstantBindings(
@@ -1725,7 +1725,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private MapRenderShaderConstantValue? ResolveMapDynamicCodeConstant(
+    private ShaderConstantValue? ResolveMapDynamicCodeConstant(
         ushort sourceRow,
         int? sceneLightIndex,
         Vector3 eyeOffset) => sourceRow switch
@@ -1752,7 +1752,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _ => null
     };
 
-    private MapRenderShaderConstantValue
+    private ShaderConstantValue
         ResolveSceneLightPositionCodeConstant(
             int sceneLightIndex,
             Vector3 eyeOffset)
@@ -1778,26 +1778,26 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private bool TryBindRuntimeSamplers(GlTexturedMesh mesh)
     {
-        MapRenderShaderExecutionContract? execution = mesh.ShaderExecution;
+        ShaderExecutionContract? execution = mesh.ShaderExecution;
         if (execution is null ||
             execution.RuntimeSamplerRequirements.Count == 0)
         {
             return true;
         }
 
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement> requirements =
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements =
             execution.RuntimeSamplerRequirements;
         for (int requirementIndex = 0;
              requirementIndex < requirements.Count;
              requirementIndex++)
         {
-            MapRenderShaderRuntimeSamplerRequirement requirement =
+            ShaderRuntimeSamplerRequirement requirement =
                 requirements[requirementIndex];
             if (requirement.ResourceKind ==
-                    MapRenderShaderRuntimeSamplerResourceKind
-                        .StaticModelLightingAtlas &&
+                    ShaderRuntimeSamplerResourceKind
+                        .ModelLightingAtlas &&
                 requirement.Status ==
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .ImmutableSceneAtlasRequired)
             {
                 if (_staticModelLightingAtlasTexture == 0)
@@ -1806,10 +1806,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
 
             if (requirement.ResourceKind ==
-                    MapRenderShaderRuntimeSamplerResourceKind
+                    ShaderRuntimeSamplerResourceKind
                         .ProcessedFloatZ &&
                 requirement.Status ==
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .SameRevisionTextureRequired)
             {
                 if (_currentProcessedFloatZFrame is not { } floatZFrame ||
@@ -1822,10 +1822,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
 
             if (requirement.ResourceKind !=
-                    MapRenderShaderRuntimeSamplerResourceKind
+                    ShaderRuntimeSamplerResourceKind
                         .SunShadowAtlas ||
                 requirement.Status !=
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .SameRevisionAtlasRequired ||
                 _currentSunShadowReceiverFrame is not { } frame ||
                 _sunShadowAtlas is null)
@@ -1833,19 +1833,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 return false;
             }
             bool bindingReady = false;
-            IReadOnlyList<MapRenderShaderRuntimeSamplerBinding> bindings =
+            IReadOnlyList<ShaderRuntimeSamplerBinding> bindings =
                 frame.RuntimeSamplerBindings;
             for (int bindingIndex = 0;
                  bindingIndex < bindings.Count;
                  bindingIndex++)
             {
-                MapRenderShaderRuntimeSamplerBinding binding =
+                ShaderRuntimeSamplerBinding binding =
                     bindings[bindingIndex];
                 if (binding.Destination == requirement.Destination &&
                     binding.ResourceKind == requirement.ResourceKind &&
                     binding.Revision == frame.Revision &&
                     binding.Status ==
-                        MapRenderShaderRuntimeSamplerBindingStatus.Ready)
+                        ShaderRuntimeSamplerBindingStatus.Ready)
                 {
                     bindingReady = true;
                     break;
@@ -1859,26 +1859,26 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void BindRuntimeSamplers(GlTexturedMesh mesh)
     {
-        MapRenderShaderExecutionContract? execution = mesh.ShaderExecution;
+        ShaderExecutionContract? execution = mesh.ShaderExecution;
         if (execution is null ||
             execution.RuntimeSamplerRequirements.Count == 0)
         {
             return;
         }
 
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement> requirements =
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements =
             execution.RuntimeSamplerRequirements;
         for (int requirementIndex = 0;
              requirementIndex < requirements.Count;
              requirementIndex++)
         {
-            MapRenderShaderRuntimeSamplerRequirement requirement =
+            ShaderRuntimeSamplerRequirement requirement =
                 requirements[requirementIndex];
             if (requirement.ResourceKind ==
-                    MapRenderShaderRuntimeSamplerResourceKind
-                        .StaticModelLightingAtlas &&
+                    ShaderRuntimeSamplerResourceKind
+                        .ModelLightingAtlas &&
                 requirement.Status ==
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .ImmutableSceneAtlasRequired)
             {
                 if (_staticModelLightingAtlasTexture == 0)
@@ -1898,10 +1898,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
 
             if (requirement.ResourceKind ==
-                    MapRenderShaderRuntimeSamplerResourceKind
+                    ShaderRuntimeSamplerResourceKind
                         .ProcessedFloatZ &&
                 requirement.Status ==
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .SameRevisionTextureRequired)
             {
                 MapRenderOpenGlProcessedFloatZFrame floatZPublication =
@@ -1926,10 +1926,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
 
             if (requirement.ResourceKind !=
-                    MapRenderShaderRuntimeSamplerResourceKind
+                    ShaderRuntimeSamplerResourceKind
                         .SunShadowAtlas ||
                 requirement.Status !=
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .SameRevisionAtlasRequired)
             {
                 throw new InvalidOperationException(
@@ -1949,7 +1949,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private MapRenderShaderConstantValue
+    private ShaderConstantValue
         ResolveSunShadowProjectionCodeConstant(
             ushort sourceRow,
             bool switchPartition)
@@ -1961,7 +1961,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         Vector4 value = switchPartition
             ? frame.Projection.CodeConstants.SwitchPartition
             : frame.Projection.CodeConstants.ShadowMapScale;
-        return new MapRenderShaderConstantValue(
+        return new ShaderConstantValue(
             value.X,
             value.Y,
             value.Z,

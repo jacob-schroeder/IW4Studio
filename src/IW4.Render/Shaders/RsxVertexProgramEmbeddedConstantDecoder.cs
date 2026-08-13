@@ -19,7 +19,7 @@ internal static class RsxVertexProgramEmbeddedConstantDecoder
     public static RsxVertexProgramEmbeddedConstantDecodeResult Decode(
         ReadOnlySpan<byte> data)
     {
-        var constants = new List<MapRenderEmbeddedVertexConstant>();
+        var constants = new List<EmbeddedVertexConstant>();
         var blockers = new SortedSet<string>(StringComparer.Ordinal);
         if (data.Length < ProgramHeaderSize ||
             BinaryPrimitives.ReadUInt32BigEndian(data) != VertexProfile)
@@ -70,7 +70,7 @@ internal static class RsxVertexProgramEmbeddedConstantDecoder
                 blockers.Add($"{prefix}=unsupportedResource0x{resource:X4}");
                 continue;
             }
-            if (rawResourceIndex >= MapRenderRsxVertexConstantLayout.Count)
+            if (rawResourceIndex >= RsxVertexConstantLayout.Count)
             {
                 blockers.Add($"{prefix}=unsupportedResourceIndex0x{rawResourceIndex:X8}");
                 continue;
@@ -95,7 +95,7 @@ internal static class RsxVertexProgramEmbeddedConstantDecoder
 
             ushort destination = checked((ushort)rawResourceIndex);
             int valueOffset = checked((int)defaultValueOffset);
-            var value = new MapRenderShaderConstantValue(
+            var value = new ShaderConstantValue(
                 ReadSingle(data, valueOffset),
                 ReadSingle(data, valueOffset + 4),
                 ReadSingle(data, valueOffset + 8),
@@ -111,7 +111,7 @@ internal static class RsxVertexProgramEmbeddedConstantDecoder
                 continue;
             }
 
-            constants.Add(new MapRenderEmbeddedVertexConstant(
+            constants.Add(new EmbeddedVertexConstant(
                 ordinal,
                 destination,
                 rawResourceIndex,
@@ -156,7 +156,7 @@ internal static class RsxVertexProgramEmbeddedConstantDecoder
         return true;
     }
 
-    private static bool IsFinite(MapRenderShaderConstantValue value) =>
+    private static bool IsFinite(ShaderConstantValue value) =>
         float.IsFinite(value.X) &&
         float.IsFinite(value.Y) &&
         float.IsFinite(value.Z) &&
@@ -164,5 +164,5 @@ internal static class RsxVertexProgramEmbeddedConstantDecoder
 }
 
 internal sealed record RsxVertexProgramEmbeddedConstantDecodeResult(
-    IReadOnlyList<MapRenderEmbeddedVertexConstant> Constants,
+    IReadOnlyList<EmbeddedVertexConstant> Constants,
     IReadOnlyList<string> Blockers);

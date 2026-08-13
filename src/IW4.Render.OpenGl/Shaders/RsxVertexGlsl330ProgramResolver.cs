@@ -39,7 +39,7 @@ internal sealed class RsxVertexGlsl330ProgramResolver
     internal int Count => _count;
 
     internal RsxVertexGlsl330ProgramResolution Resolve(
-        MapRenderShaderExecutionContract execution)
+        ShaderExecutionContract execution)
     {
         ArgumentNullException.ThrowIfNull(execution);
         RsxVertexGlsl330ProgramResolution vertex = Resolve(

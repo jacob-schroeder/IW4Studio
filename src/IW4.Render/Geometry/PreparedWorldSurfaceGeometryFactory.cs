@@ -34,7 +34,7 @@ internal static class PreparedWorldSurfaceGeometryFactory
                 0,
                 0,
                 0,
-                MapRenderBounds.Empty);
+                RenderBounds.Empty);
         }
 
         for (int sourceVertexSlot = 0;
@@ -58,7 +58,7 @@ internal static class PreparedWorldSurfaceGeometryFactory
         int sourceTopologyReadFailures = 0;
         int positionReadFailures = 0;
         int skyboxTriangles = 0;
-        MapRenderBounds bounds = MapRenderBounds.Empty;
+        RenderBounds bounds = RenderBounds.Empty;
         for (int triangle = 0; triangle < source.TriCount; triangle++)
         {
             int indexOffset = source.BaseIndex + triangle * 3;
@@ -161,7 +161,7 @@ internal static class PreparedWorldSurfaceGeometryFactory
             BinaryPrimitives.ReadSingleBigEndian(vertexBytes[offset..]),
             BinaryPrimitives.ReadSingleBigEndian(vertexBytes[(offset + 4)..]),
             BinaryPrimitives.ReadSingleBigEndian(vertexBytes[(offset + 8)..]));
-        position = MapRenderCoordinateConverter.GameToRenderPosition(gamePosition);
+        position = RenderCoordinateConverter.GameToRenderPosition(gamePosition);
         return IsReasonable(position);
     }
 

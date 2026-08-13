@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Materials;
 
 namespace IW4.Render.EditorPreview;
@@ -11,7 +12,7 @@ public static class MapRenderEditorDrawIsolationPlanner
 {
     public static MapRenderEditorDrawIsolationPlan Create(
         MapRenderEditorDrawSourceKind sourceKind,
-        IReadOnlyList<MapRenderState> completePassStates)
+        IReadOnlyList<RenderState> completePassStates)
     {
         if (!Enum.IsDefined(sourceKind))
         {

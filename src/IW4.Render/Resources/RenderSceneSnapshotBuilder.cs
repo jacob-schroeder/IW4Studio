@@ -10,6 +10,7 @@ using IW4.Render.Scheduling.StaticModels;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 using IW4.Render.Textures;
 
 namespace IW4.Render.Resources;
@@ -97,7 +98,7 @@ public static class RenderSceneSnapshotBuilder
         var submissions = new List<RenderSkySubmissionSnapshot>(sourceSkies.Length);
         var diagnostics = new List<RenderDiagnosticSubmissionSnapshot>();
         RenderWireframeSubmissionSnapshot? wireframe = null;
-        var textureResources = new Dictionary<MapRenderTexture, TextureResources>(
+        var textureResources = new Dictionary<Texture, TextureResources>(
             ReferenceEqualityComparer.Instance);
 
         RenderVertexLayoutDescriptor? skyVertexLayout = null;
@@ -175,6 +176,8 @@ public static class RenderSceneSnapshotBuilder
                     resources.Texture.Identity,
                     resources.Sampler.Identity,
                     source.ShaderPass,
+                    source.ShaderPrimarySampler,
+                    source.ShaderTexCoordSource,
                     source.ShaderExecution));
             }
             catch (Exception exception) when (
@@ -363,7 +366,7 @@ public static class RenderSceneSnapshotBuilder
             return codes;
         }
 
-        MapRenderMaterialPass? pass = source.Pass;
+        MaterialPassIdentity? pass = source.Pass;
         if (pass is null)
         {
             Add(RenderWorldDrawPacketCandidateRejectionCode.MissingPass);
@@ -371,15 +374,17 @@ public static class RenderSceneSnapshotBuilder
         else
         {
             if (string.IsNullOrWhiteSpace(pass.MaterialName) ||
-                string.IsNullOrWhiteSpace(pass.TechniqueSetName) ||
-                string.IsNullOrWhiteSpace(pass.TechniqueName))
+                string.IsNullOrWhiteSpace(
+                    pass.TechniquePass.TechniqueSetName) ||
+                string.IsNullOrWhiteSpace(
+                    pass.TechniquePass.TechniqueName))
             {
                 Add(RenderWorldDrawPacketCandidateRejectionCode
                     .MissingMaterialIdentity);
             }
             if (!string.Equals(
-                    pass.PassClass,
-                    MapRenderPassClassifier.CameraColor,
+                    pass.TechniquePass.PassClass,
+                    MaterialPassClassifier.CameraColor,
                     StringComparison.Ordinal))
             {
                 Add(RenderWorldDrawPacketCandidateRejectionCode
@@ -393,7 +398,7 @@ public static class RenderSceneSnapshotBuilder
             }
         }
 
-        MapRenderShaderExecutionContract? shader = source.ShaderExecution;
+        ShaderExecutionContract? shader = source.ShaderExecution;
         if (shader is null)
         {
             Add(RenderWorldDrawPacketCandidateRejectionCode
@@ -402,7 +407,7 @@ public static class RenderSceneSnapshotBuilder
         else
         {
             if (shader.Purpose !=
-                MapRenderShaderExecutionPurpose.CameraColor)
+                ShaderExecutionPurpose.CameraColor)
             {
                 Add(RenderWorldDrawPacketCandidateRejectionCode
                     .ShaderPurposeNotCameraColor);
@@ -459,7 +464,9 @@ public static class RenderSceneSnapshotBuilder
             }
             if (pass is not null &&
                 (!RenderLoadedCameraColorCompatibilityProfile.MatchesPass(
-                     pass) ||
+                     pass,
+                     source.PrimarySampler,
+                     source.UvRoute.TexCoordSource) ||
                  shader.MaterialSamplerDestinations.Count != 1 ||
                  shader.MaterialSamplerDestinations.Count == 1 &&
                  (shader.MaterialSamplerDestinations[0].ArgumentIndex !=
@@ -556,9 +563,9 @@ public static class RenderSceneSnapshotBuilder
             }
         }
 
-        MapRenderTexture? texture = source.Texture;
+        Texture? texture = source.Texture;
         if (texture is null ||
-            texture.Target != MapRenderTextureTarget.Texture2D)
+            texture.Target != TextureTarget.Texture2D)
         {
             Add(RenderWorldDrawPacketCandidateRejectionCode
                 .TextureNotTwoDimensional);
@@ -576,8 +583,8 @@ public static class RenderSceneSnapshotBuilder
                  source,
                  pass,
                  layers[0],
-                 materialSamplers[0]) ||
-             materialSamplers[0].WorldRuntimeTextureIdentity is not null))
+                 materialSamplers[0].Binding) ||
+             materialSamplers[0].RuntimeTextureIdentity is not null))
         {
             Add(RenderWorldDrawPacketCandidateRejectionCode
                 .BaseTextureBindingMismatch);
@@ -712,10 +719,14 @@ public static class RenderSceneSnapshotBuilder
             RenderWorldDrawPacketCompatibilityProfile
                 .LoadedCameraColorBaseTextureAlphaGequal128CullFrontDepthLequalV1,
             sourceOrdinal,
-            new RenderMaterialPassProvenanceSnapshot(source.Pass),
+            new RenderMaterialPassProvenanceSnapshot(
+                source.Pass,
+                source.PrimarySampler,
+                source.UvRoute.TexCoordSource),
             new RenderMaterialTextureBindingProvenanceSnapshot(
                 source.ColorLayers[0],
-                source.MaterialSamplers[0]),
+                source.MaterialSamplers[0].Binding,
+                source.MaterialSamplers[0].RuntimeTextureIdentity),
             new RenderMaterialUvRouteSnapshot(source.UvRoute),
             source.State,
             source.SceneLightIndex,
@@ -839,7 +850,7 @@ public static class RenderSceneSnapshotBuilder
             return codes;
         }
 
-        MapRenderMaterialPass? pass = source.Pass;
+        MaterialPassIdentity? pass = source.Pass;
         if (pass is null)
         {
             codes.Add(
@@ -848,22 +859,22 @@ public static class RenderSceneSnapshotBuilder
         else
         {
             if (string.IsNullOrWhiteSpace(pass.MaterialName) ||
-                pass.TechniqueSetName is null ||
-                pass.TechniqueName is null ||
-                pass.PassClass is null)
+                pass.TechniquePass.TechniqueSetName is null ||
+                pass.TechniquePass.TechniqueName is null ||
+                pass.TechniquePass.PassClass is null)
             {
                 codes.Add(
                     RenderMaterialDrawPacketCandidateRejectionCode
                         .MissingMaterialIdentity);
             }
-            if (pass.TechniqueSlot != -1 ||
-                pass.PassIndex != -1 ||
+            if (pass.TechniquePass.TechniqueSlot != -1 ||
+                pass.TechniquePass.PassIndex != -1 ||
                 !string.Equals(
-                    pass.TechniqueName,
+                    pass.TechniquePass.TechniqueName,
                     "material.texture[semantic=0x02]",
                     StringComparison.Ordinal) ||
                 !string.Equals(
-                    pass.PassClass,
+                    pass.TechniquePass.PassClass,
                     "MaterialColor",
                     StringComparison.Ordinal))
             {
@@ -920,9 +931,9 @@ public static class RenderSceneSnapshotBuilder
                     .GeometryMissingOrMalformed);
         }
 
-        MapRenderTexture? texture = source.Texture;
+        Texture? texture = source.Texture;
         if (texture is null ||
-            texture.Target != MapRenderTextureTarget.Texture2D)
+            texture.Target != TextureTarget.Texture2D)
         {
             codes.Add(
                 RenderMaterialDrawPacketCandidateRejectionCode
@@ -942,7 +953,7 @@ public static class RenderSceneSnapshotBuilder
                 source,
                 pass,
                 layers[0],
-                materialSamplers[0]))
+                materialSamplers[0].Binding))
         {
             codes.Add(
                 RenderMaterialDrawPacketCandidateRejectionCode
@@ -954,9 +965,9 @@ public static class RenderSceneSnapshotBuilder
 
     private static bool HasMatchingBaseTextureBinding(
         MapRenderTexturedBatch source,
-        MapRenderMaterialPass pass,
-        MapRenderColorLayer? layer,
-        MapRenderMaterialSamplerBinding? sampler)
+        MaterialPassIdentity pass,
+        MaterialColorLayer? layer,
+        MaterialSamplerBinding? sampler)
     {
         if (layer is null || sampler is null ||
             source.Texture is null || source.UvRoute is null ||
@@ -968,24 +979,18 @@ public static class RenderSceneSnapshotBuilder
 
         return layer.LayerIndex == 0 &&
             layer.BlendWeightComponent == -1 &&
-            layer.SamplerArgIndex == pass.SamplerArgIndex &&
-            layer.SamplerDest == pass.SamplerDest &&
-            layer.SamplerHash == pass.SamplerHash &&
-            layer.TextureSemantic == pass.TextureSemantic &&
+            layer.Identity == source.PrimarySampler &&
             ReferenceEquals(layer.Texture, source.Texture) &&
             layer.UvRoute == source.UvRoute &&
-            sampler.SamplerArgIndex == layer.SamplerArgIndex &&
-            sampler.SamplerDest == layer.SamplerDest &&
-            sampler.SamplerHash == layer.SamplerHash &&
-            sampler.TextureSemantic == layer.TextureSemantic &&
+            sampler.Identity == layer.Identity &&
             string.Equals(
                 sampler.TextureName,
                 source.Texture.Name,
                 StringComparison.Ordinal) &&
             ReferenceEquals(sampler.Texture, source.Texture) &&
             sampler.UvRoute == source.UvRoute &&
-            sampler.WorldRuntimeTextureIdentity is null &&
-            pass.TexCoordSource == source.UvRoute.TexCoordSource;
+            source.UvRoute.TexCoordSource ==
+                layer.UvRoute.TexCoordSource;
     }
 
     private static bool HasValidMaterialDrawGeometry(
@@ -1054,14 +1059,18 @@ public static class RenderSceneSnapshotBuilder
                 prefix + ".sampler"),
             source.Texture.DecodedSamplerState);
 
-        MapRenderColorLayer layer = source.ColorLayers[0];
-        MapRenderMaterialSamplerBinding binding = source.MaterialSamplers[0];
+        MaterialColorLayer layer = source.ColorLayers[0];
+        MaterialSamplerBinding binding = source.MaterialSamplers[0].Binding;
         return new RenderMaterialDrawPacketSnapshot(
             sourceOrdinal,
-            new RenderMaterialPassProvenanceSnapshot(source.Pass),
+            new RenderMaterialPassProvenanceSnapshot(
+                source.Pass,
+                source.PrimarySampler,
+                source.UvRoute.TexCoordSource),
             new RenderMaterialTextureBindingProvenanceSnapshot(
                 layer,
-                binding),
+                binding,
+                source.MaterialSamplers[0].RuntimeTextureIdentity),
             new RenderMaterialUvRouteSnapshot(source.UvRoute),
             source.State,
             source.SceneLightIndex,
@@ -1499,23 +1508,23 @@ public static class RenderSceneSnapshotBuilder
             ]);
 
     public static RenderTextureDescriptor CreateTextureDescriptor(
-        MapRenderTexture texture,
+        Texture texture,
         RenderSemanticIdentity identity,
         bool preferProvenAuthoredPayload = false)
     {
         ValidateTextureSource(texture);
         int arrayLayerCount = texture.Target switch
         {
-            MapRenderTextureTarget.Texture2D => 1,
-            MapRenderTextureTarget.TextureCube => 6,
+            TextureTarget.Texture2D => 1,
+            TextureTarget.TextureCube => 6,
             _ => throw new InvalidDataException(
                 $"unsupported texture target {texture.Target}"),
         };
         Dictionary<(int Face, int Mip), DecodedTextureSubresource>
             decodedBySubresource = CollectDecodedSubresources(texture);
-        Dictionary<(int Face, int Mip), MapRenderTextureAuthoredSubresource>
+        Dictionary<(int Face, int Mip), TextureAuthoredSubresource>
             authoredBySubresource = [];
-        foreach (MapRenderTextureAuthoredSubresource? authored in
+        foreach (TextureAuthoredSubresource? authored in
                  texture.EffectiveAuthoredSubresources)
         {
             if (authored is null)
@@ -1559,7 +1568,7 @@ public static class RenderSceneSnapshotBuilder
             {
                 authoredBySubresource.TryGetValue(
                     (layer, mipLevel),
-                    out MapRenderTextureAuthoredSubresource? authored);
+                    out TextureAuthoredSubresource? authored);
                 decodedBySubresource.TryGetValue(
                     (layer, mipLevel),
                     out DecodedTextureSubresource? decoded);
@@ -1602,7 +1611,7 @@ public static class RenderSceneSnapshotBuilder
             identity,
             texture.Name,
             texture.Format,
-            texture.Target == MapRenderTextureTarget.TextureCube
+            texture.Target == TextureTarget.TextureCube
                 ? RenderTextureDimension.TextureCube
                 : RenderTextureDimension.Texture2D,
             texture.Width,
@@ -1615,12 +1624,12 @@ public static class RenderSceneSnapshotBuilder
     }
 
     private static Dictionary<(int Face, int Mip), DecodedTextureSubresource>
-        CollectDecodedSubresources(MapRenderTexture texture)
+        CollectDecodedSubresources(Texture texture)
     {
         var decoded = new Dictionary<
             (int Face, int Mip),
             DecodedTextureSubresource>();
-        if (texture.Target == MapRenderTextureTarget.Texture2D)
+        if (texture.Target == TextureTarget.Texture2D)
         {
             if (texture.RgbaBytes.Length == 0)
             {
@@ -1639,7 +1648,7 @@ public static class RenderSceneSnapshotBuilder
                  mipIndex < texture.MipLevels.Count;
                  mipIndex++)
             {
-                MapRenderTextureMip mip = texture.MipLevels[mipIndex] ??
+                TextureMip mip = texture.MipLevels[mipIndex] ??
                     throw new InvalidDataException(
                         $"2D texture mip {mipIndex + 1} is null");
                 width = Math.Max(1, width / 2);
@@ -1675,12 +1684,12 @@ public static class RenderSceneSnapshotBuilder
                 "Decoded cubemap payload must contain exactly six faces.");
         }
 
-        IReadOnlyList<MapRenderTextureCubeFace> faces = texture.CubeFaces;
+        IReadOnlyList<TextureCubeFace> faces = texture.CubeFaces;
         int expectedMipLevels = faces[0].MipLevels?.Count ??
             throw new InvalidDataException("cubemap face mip list is null");
         for (int layer = 0; layer < faces.Count; layer++)
         {
-            MapRenderTextureCubeFace face = faces[layer];
+            TextureCubeFace face = faces[layer];
             if (face.MipLevels is null ||
                 face.MipLevels.Count != expectedMipLevels)
             {
@@ -1697,7 +1706,7 @@ public static class RenderSceneSnapshotBuilder
             int height = texture.Height;
             for (int mipIndex = 0; mipIndex < face.MipLevels.Count; mipIndex++)
             {
-                MapRenderTextureMip mip = face.MipLevels[mipIndex] ??
+                TextureMip mip = face.MipLevels[mipIndex] ??
                     throw new InvalidDataException(
                         $"cubemap face {layer} mip {mipIndex + 1} is null");
                 width = Math.Max(1, width / 2);
@@ -1716,7 +1725,7 @@ public static class RenderSceneSnapshotBuilder
             }
         }
 
-        MapRenderTextureCubeFace firstFace = faces[0];
+        TextureCubeFace firstFace = faces[0];
         if (!texture.RgbaBytes.AsSpan().SequenceEqual(firstFace.RgbaBytes))
         {
             throw new InvalidDataException(
@@ -1729,10 +1738,10 @@ public static class RenderSceneSnapshotBuilder
         }
         for (int mipIndex = 0; mipIndex < texture.MipLevels.Count; mipIndex++)
         {
-            MapRenderTextureMip topLevelMip = texture.MipLevels[mipIndex] ??
+            TextureMip topLevelMip = texture.MipLevels[mipIndex] ??
                 throw new InvalidDataException(
                     $"top-level cubemap mip {mipIndex + 1} is null");
-            MapRenderTextureMip faceMip = firstFace.MipLevels[mipIndex];
+            TextureMip faceMip = firstFace.MipLevels[mipIndex];
             if (topLevelMip.Width != faceMip.Width ||
                 topLevelMip.Height != faceMip.Height ||
                 !topLevelMip.RgbaBytes.AsSpan().SequenceEqual(
@@ -1772,7 +1781,7 @@ public static class RenderSceneSnapshotBuilder
         int width,
         int height,
         byte[]? rgbaBytes,
-        MapRenderTextureAuthoredSubresource? authored,
+        TextureAuthoredSubresource? authored,
         bool preferProvenAuthoredPayload = false)
     {
         var payloads = new List<RenderTexturePayloadDescriptor>(
@@ -1859,11 +1868,11 @@ public static class RenderSceneSnapshotBuilder
             throw new InvalidDataException("index payload references a missing vertex");
 
         ArgumentNullException.ThrowIfNull(sky.Texture);
-        if (sky.Texture.Target != MapRenderTextureTarget.TextureCube)
+        if (sky.Texture.Target != TextureTarget.TextureCube)
             throw new InvalidDataException("sky texture must be a cubemap");
     }
 
-    private static void ValidateTextureSource(MapRenderTexture texture)
+    private static void ValidateTextureSource(Texture texture)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(texture.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(texture.Format);
@@ -1871,7 +1880,7 @@ public static class RenderSceneSnapshotBuilder
             throw new InvalidDataException("texture dimensions must be positive");
         if (!Enum.IsDefined(texture.Target))
             throw new InvalidDataException($"undefined texture target {texture.Target}");
-        if (texture.Target == MapRenderTextureTarget.TextureCube &&
+        if (texture.Target == TextureTarget.TextureCube &&
             texture.Width != texture.Height)
         {
             throw new InvalidDataException("cubemap faces must be square");
@@ -2077,7 +2086,8 @@ public static class RenderSceneSnapshotBuilder
                      value.CollectionOrdinal)))
         {
             NormalCameraWorldSourceEntry[] orderedEntries = sourceGroup
-                .OrderBy(value => value.Batch?.Pass?.PassIndex ?? int.MaxValue)
+                .OrderBy(value => value.Batch?.Pass?.TechniquePass.PassIndex ??
+                    int.MaxValue)
                 .ThenBy(value => value.CollectionOrdinal)
                 .ToArray();
             int authoredSourceOrdinal = orderedEntries.Min(value =>
@@ -2142,8 +2152,8 @@ public static class RenderSceneSnapshotBuilder
                 MapRenderEditorDrawBucketClassifier.Classify(
                     candidates.Select(value =>
                         value.Pass.SourceState).ToArray());
-            MapRenderBounds bounds = candidates.Aggregate(
-                MapRenderBounds.Empty,
+            RenderBounds bounds = candidates.Aggregate(
+                RenderBounds.Empty,
                 (current, value) => IncludeNormalCameraBounds(
                     current,
                     value.Pass.LocalBounds));
@@ -2221,7 +2231,8 @@ public static class RenderSceneSnapshotBuilder
                          value.CollectionOrdinal)))
         {
             NormalCameraStaticSourceEntry[] orderedEntries = sourceGroup
-                .OrderBy(value => value.Batch?.Pass?.PassIndex ?? int.MaxValue)
+                .OrderBy(value => value.Batch?.Pass?.TechniquePass.PassIndex ??
+                    int.MaxValue)
                 .ThenBy(value => value.CollectionOrdinal)
                 .ToArray();
             int authoredSourceOrdinal = checked(
@@ -2380,7 +2391,7 @@ public static class RenderSceneSnapshotBuilder
                             scheduledSourceOrdinal,
                             plan.InstanceIndex))
                     .ToArray();
-                MapRenderBounds bounds = CalculateNormalCameraStaticBounds(
+                RenderBounds bounds = CalculateNormalCameraStaticBounds(
                     first.Pass.LocalBounds,
                     first.Pass.StaticInstances,
                     plan.InstanceIndex);
@@ -2440,10 +2451,14 @@ public static class RenderSceneSnapshotBuilder
         CreateNormalCameraCandidate(
             RenderNormalCameraDrawSourceKind.World,
             source.Pass,
+            source.PrimarySampler,
             source.Texture,
             source.LightmapTexture,
             source.ColorLayers,
-            source.MaterialSamplers,
+            source.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
+            source.MaterialSamplers
+                .Select(binding => binding.RuntimeTextureIdentity)
+                .ToArray(),
             source.ShaderExecution,
             source.ShaderExecutionStatus,
             source.UvRoute,
@@ -2473,10 +2488,14 @@ public static class RenderSceneSnapshotBuilder
         CreateNormalCameraCandidate(
             RenderNormalCameraDrawSourceKind.StaticModel,
             source.Pass,
+            source.PrimarySampler,
             source.Texture,
             lightmapTexture: null,
             source.ColorLayers,
-            source.MaterialSamplers,
+            source.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
+            source.MaterialSamplers
+                .Select(binding => binding.RuntimeTextureIdentity)
+                .ToArray(),
             source.ShaderExecution,
             source.ShaderExecution.ProgramExecutionStatus,
             source.UvRoute,
@@ -2499,15 +2518,18 @@ public static class RenderSceneSnapshotBuilder
 
     private static NormalCameraDrawCandidate CreateNormalCameraCandidate(
         RenderNormalCameraDrawSourceKind sourceKind,
-        MapRenderMaterialPass pass,
-        MapRenderTexture baseTexture,
-        MapRenderTexture? lightmapTexture,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
-        MapRenderShaderExecutionContract shader,
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity primarySampler,
+        Texture baseTexture,
+        Texture? lightmapTexture,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
+        IReadOnlyList<MaterialSamplerBinding> materialSamplers,
+        IReadOnlyList<MapRenderWorldRuntimeTextureIdentity?>
+            runtimeTextureIdentities,
+        ShaderExecutionContract shader,
         string shaderExecutionStatus,
-        MapRenderUvRoute uvRoute,
-        MapRenderState state,
+        UvRoute uvRoute,
+        RenderState state,
         byte sceneLightIndex,
         int unresolvedCodeSamplerCount,
         IReadOnlyList<MapRenderPickRange> pickRanges,
@@ -2518,7 +2540,7 @@ public static class RenderSceneSnapshotBuilder
         int? editorDrawGroupId,
         int? lodIndex,
         MapRenderEditorDepthPrepassPlan? depthPrepass,
-        MapRenderShaderExecutionContract? depthPrepassShader,
+        ShaderExecutionContract? depthPrepassShader,
         MapRenderEditorVegetationAnimationPlan? vegetationAnimation,
         int authoredSourceOrdinal,
         int collectionOrdinal,
@@ -2605,14 +2627,14 @@ public static class RenderSceneSnapshotBuilder
                 RenderPayloadByteOrder.LittleEndian);
         }
 
-        var sourceTextures = new List<MapRenderTexture>();
-        var textureOrdinals = new Dictionary<MapRenderTexture, int>(
+        var sourceTextures = new List<Texture>();
+        var textureOrdinals = new Dictionary<Texture, int>(
             ReferenceEqualityComparer.Instance);
         AddTexture(baseTexture);
         AddTexture(lightmapTexture);
-        foreach (MapRenderColorLayer layer in colorLayers)
+        foreach (MaterialColorLayer layer in colorLayers)
             AddTexture(layer.Texture);
-        foreach (MapRenderMaterialSamplerBinding sampler in materialSamplers)
+        foreach (MaterialSamplerBinding sampler in materialSamplers)
             AddTexture(sampler.Texture);
 
         var textureResources =
@@ -2620,12 +2642,12 @@ public static class RenderSceneSnapshotBuilder
                 sourceTextures.Count);
         for (int ordinal = 0; ordinal < sourceTextures.Count; ordinal++)
         {
-            MapRenderTexture sourceTexture = sourceTextures[ordinal];
+            Texture sourceTexture = sourceTextures[ordinal];
             textureResources.Add(textureCache.GetOrCreate(sourceTexture));
         }
 
         RenderNormalCameraTextureResourceSnapshot Resource(
-            MapRenderTexture texture) =>
+            Texture texture) =>
             textureResources[textureOrdinals[texture]];
 
         RenderNormalCameraTextureResourceSnapshot baseResource =
@@ -2637,11 +2659,18 @@ public static class RenderSceneSnapshotBuilder
                 layer,
                 Resource(layer.Texture)))
             .ToArray();
+        if (runtimeTextureIdentities.Count != materialSamplers.Count)
+        {
+            throw new ArgumentException(
+                "Normal-camera sampler identities must remain aligned with bindings.",
+                nameof(runtimeTextureIdentities));
+        }
         RenderNormalCameraMaterialSamplerSnapshot[] frozenSamplers =
             materialSamplers
-                .Select(sampler =>
+                .Select((sampler, index) =>
                     new RenderNormalCameraMaterialSamplerSnapshot(
                         sampler,
+                        runtimeTextureIdentities[index],
                         sampler.Texture is null
                             ? null
                             : Resource(sampler.Texture)))
@@ -2652,8 +2681,8 @@ public static class RenderSceneSnapshotBuilder
                 : new RenderWorldShaderProvenanceSnapshot(
                     depthPrepassShader,
                     depthPrepassShader.ProgramExecutionStatus);
-        MapRenderBounds localBounds = IncludeNormalCameraVertexBounds(
-            MapRenderBounds.Empty,
+        RenderBounds localBounds = IncludeNormalCameraVertexBounds(
+            RenderBounds.Empty,
             vertices);
         var preparedPass = new RenderNormalCameraPreparedPassSnapshot(
             sourceKind,
@@ -2661,7 +2690,10 @@ public static class RenderSceneSnapshotBuilder
             collectionOrdinal,
             editorDrawGroupId,
             lodIndex,
-            new RenderMaterialPassProvenanceSnapshot(pass),
+            new RenderMaterialPassProvenanceSnapshot(
+                pass,
+                primarySampler,
+                uvRoute.TexCoordSource),
             new RenderMaterialUvRouteSnapshot(uvRoute),
             state,
             sceneLightIndex,
@@ -2703,7 +2735,7 @@ public static class RenderSceneSnapshotBuilder
             instanceDescriptor,
             textureResources);
 
-        void AddTexture(MapRenderTexture? texture)
+        void AddTexture(Texture? texture)
         {
             if (texture is null || textureOrdinals.ContainsKey(texture))
                 return;
@@ -2760,7 +2792,7 @@ public static class RenderSceneSnapshotBuilder
             source?.Pass,
             source?.Texture,
             source?.ColorLayers,
-            source?.MaterialSamplers,
+            source?.MaterialSamplers?.Select(binding => binding.Binding).ToArray(),
             source?.ShaderExecution,
             source?.UvRoute,
             source?.Vertices,
@@ -2801,7 +2833,7 @@ public static class RenderSceneSnapshotBuilder
             source?.Pass,
             source?.Texture,
             source?.ColorLayers,
-            source?.MaterialSamplers,
+            source?.MaterialSamplers?.Select(binding => binding.Binding).ToArray(),
             source?.ShaderExecution,
             source?.UvRoute,
             source?.Vertices,
@@ -2834,12 +2866,12 @@ public static class RenderSceneSnapshotBuilder
     }
 
     private static void ValidateNormalCameraCommonSource(
-        MapRenderMaterialPass? pass,
-        MapRenderTexture? texture,
-        IReadOnlyList<MapRenderColorLayer>? colorLayers,
-        IReadOnlyList<MapRenderMaterialSamplerBinding>? materialSamplers,
-        MapRenderShaderExecutionContract? shader,
-        MapRenderUvRoute? uvRoute,
+        MaterialPassIdentity? pass,
+        Texture? texture,
+        IReadOnlyList<MaterialColorLayer>? colorLayers,
+        IReadOnlyList<MaterialSamplerBinding>? materialSamplers,
+        ShaderExecutionContract? shader,
+        UvRoute? uvRoute,
         float[]? vertices,
         float[]? rsxVertexInputs,
         uint[]? indices,
@@ -2904,7 +2936,7 @@ public static class RenderSceneSnapshotBuilder
             MapRenderScene.TexturedVertexFloatCount;
         return indices.All(index => index < vertexCount) &&
             IncludeNormalCameraVertexBounds(
-                MapRenderBounds.Empty,
+                RenderBounds.Empty,
                 vertices).IsValid;
     }
 
@@ -2933,7 +2965,7 @@ public static class RenderSceneSnapshotBuilder
             MapRenderTexturedBatch? batch,
             int collectionOrdinal)
     {
-        MapRenderMaterialPass? pass = batch?.Pass;
+        MaterialPassIdentity? pass = batch?.Pass;
         if (pass is null)
         {
             return new NormalCameraWorldGroupKey(
@@ -2945,9 +2977,9 @@ public static class RenderSceneSnapshotBuilder
         }
         return new NormalCameraWorldGroupKey(
             pass.MaterialName ?? "<null>",
-            pass.TechniqueSetName ?? "<null>",
-            pass.TechniqueSlot,
-            pass.TechniqueName ?? "<null>",
+            pass.TechniquePass.TechniqueSetName ?? "<null>",
+            pass.TechniquePass.TechniqueSlot,
+            pass.TechniquePass.TechniqueName ?? "<null>",
             ResolveNormalCameraWorldSurfaceIndex(batch!));
     }
 
@@ -3018,15 +3050,15 @@ public static class RenderSceneSnapshotBuilder
         }
     }
 
-    private static MapRenderBounds IncludeNormalCameraBounds(
-        MapRenderBounds current,
-        MapRenderBounds added) =>
+    private static RenderBounds IncludeNormalCameraBounds(
+        RenderBounds current,
+        RenderBounds added) =>
         added.IsValid
             ? current.Include(added.Min).Include(added.Max)
             : current;
 
-    private static MapRenderBounds IncludeNormalCameraVertexBounds(
-        MapRenderBounds bounds,
+    private static RenderBounds IncludeNormalCameraVertexBounds(
+        RenderBounds bounds,
         IReadOnlyList<float> vertices)
     {
         for (int offset = 0;
@@ -3043,18 +3075,18 @@ public static class RenderSceneSnapshotBuilder
         return bounds;
     }
 
-    private static MapRenderBounds CalculateNormalCameraStaticBounds(
-        MapRenderBounds localBounds,
+    private static RenderBounds CalculateNormalCameraStaticBounds(
+        RenderBounds localBounds,
         IReadOnlyList<MapRenderStaticModelInstance> instances,
         int? selectedInstanceIndex)
     {
         if (!localBounds.IsValid)
-            return MapRenderBounds.Empty;
-        MapRenderBounds result = MapRenderBounds.Empty;
+            return RenderBounds.Empty;
+        RenderBounds result = RenderBounds.Empty;
         if (selectedInstanceIndex is { } instanceIndex)
         {
             if ((uint)instanceIndex >= (uint)instances.Count)
-                return MapRenderBounds.Empty;
+                return RenderBounds.Empty;
             return IncludeNormalCameraTransformedBounds(
                 result,
                 localBounds,
@@ -3070,9 +3102,9 @@ public static class RenderSceneSnapshotBuilder
         return result;
     }
 
-    private static MapRenderBounds IncludeNormalCameraTransformedBounds(
-        MapRenderBounds result,
-        MapRenderBounds localBounds,
+    private static RenderBounds IncludeNormalCameraTransformedBounds(
+        RenderBounds result,
+        RenderBounds localBounds,
         MapRenderStaticModelInstance instance)
     {
         for (int corner = 0; corner < 8; corner++)
@@ -3120,7 +3152,7 @@ public static class RenderSceneSnapshotBuilder
 
     /// <summary>
     /// Scene-local identity cache for normal-camera textures. Material passes
-    /// frequently share the exact MapRenderTexture object; snapshotting that
+    /// frequently share the exact Texture object; snapshotting that
     /// payload once avoids multiplying immutable RGBA/authored byte arrays by
     /// surface and authored-pass count. Resources are committed only when a
     /// candidate group is admitted, so typed omissions do not leave orphaned
@@ -3128,14 +3160,14 @@ public static class RenderSceneSnapshotBuilder
     /// </summary>
     private sealed class NormalCameraTextureResourceCache
     {
-        private readonly Dictionary<MapRenderTexture,
+        private readonly Dictionary<Texture,
             RenderNormalCameraTextureResourceSnapshot> _resources = new(
                 ReferenceEqualityComparer.Instance);
         private readonly HashSet<RenderSemanticIdentity> _committed = [];
         private int _nextResourceOrdinal;
 
         internal RenderNormalCameraTextureResourceSnapshot GetOrCreate(
-            MapRenderTexture source)
+            Texture source)
         {
             ArgumentNullException.ThrowIfNull(source);
             if (_resources.TryGetValue(source, out

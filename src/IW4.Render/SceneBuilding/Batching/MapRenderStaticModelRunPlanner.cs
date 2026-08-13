@@ -82,7 +82,8 @@ internal static class MapRenderStaticModelRunPlanner
                  sourceGroups)
         {
             SourceBatch[] orderedPasses = sourceGroup
-                .OrderBy(source => source.Batch.Pass.PassIndex)
+                .OrderBy(source =>
+                    source.Batch.Pass.TechniquePass.PassIndex)
                 .ThenBy(source => source.SourceOrdinal)
                 .ToArray();
             if (orderedPasses.Length == 0)

@@ -3,6 +3,7 @@ using Silk.NET.OpenGL;
 
 using IW4.Render.Diagnostics;
 using IW4.Render.EditorPreview;
+using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.OpenGl.StaticModels;
 using IW4.Render.Shaders;
@@ -59,7 +60,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     command.InstanceIndex is int sourceIndex &&
                     command.Mesh.StaticCameraRegion is 0 or 4 &&
                     (command.Mesh.RsxProgram.Handle == 0 ||
-                     command.Mesh.RsxProgram.StaticModelInstancingReady))
+                     command.Mesh.StaticModelProgramUniforms is not null))
                 {
                     runtime.GetReceiverDrawCompactionPlan()
                         .ObserveCandidate(
@@ -114,7 +115,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         int groupIndex,
         MapRenderEditorDrawGroup<GlTexturedDrawCommand> group,
         Matrix4x4 viewProjection,
-        MapRenderDerivedMatrixState rsxMatrices,
+        DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds)
     {

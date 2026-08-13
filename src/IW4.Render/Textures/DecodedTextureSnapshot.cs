@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using IW4.Render.Shaders;
 
 namespace IW4.Render.Textures;
 
@@ -9,27 +8,27 @@ namespace IW4.Render.Textures;
 /// Immutable decoded texture allocation input. It contains no GL handle and
 /// cannot consult an image package after capture.
 /// </summary>
-public sealed class MapRenderDecodedTextureResourceSnapshot
+public sealed class DecodedTextureResourceSnapshot
 {
-    private readonly MapRenderDecodedTextureSubresourceSnapshot[] _subresources;
+    private readonly DecodedTextureSubresourceSnapshot[] _subresources;
 
-    internal MapRenderDecodedTextureResourceSnapshot(
+    internal DecodedTextureResourceSnapshot(
         string name,
-        MapRenderSelectedPassSamplerShape shape,
+        TextureSamplerShape shape,
         string format,
         bool hasTransparency,
-        IReadOnlyList<MapRenderDecodedTextureSubresourceSnapshot> subresources)
+        IReadOnlyList<DecodedTextureSubresourceSnapshot> subresources)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        if (shape is not (MapRenderSelectedPassSamplerShape.TwoDimensional or
-                          MapRenderSelectedPassSamplerShape.Cube))
+        if (shape is not (TextureSamplerShape.TwoDimensional or
+                          TextureSamplerShape.Cube))
         {
             throw new ArgumentOutOfRangeException(nameof(shape));
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(format);
         ArgumentNullException.ThrowIfNull(subresources);
         _subresources = subresources.ToArray();
-        int expectedFaceCount = shape == MapRenderSelectedPassSamplerShape.Cube
+        int expectedFaceCount = shape == TextureSamplerShape.Cube
             ? 6
             : 1;
         if (_subresources.Length == 0 ||
@@ -60,7 +59,7 @@ public sealed class MapRenderDecodedTextureResourceSnapshot
         }
         for (int mip = 0; mip < mipCount; mip++)
         {
-            MapRenderDecodedTextureSubresourceSnapshot reference =
+            DecodedTextureSubresourceSnapshot reference =
                 _subresources[mip];
             int expectedWidth = Math.Max(1, _subresources[0].Width >> mip);
             int expectedHeight = Math.Max(1, _subresources[0].Height >> mip);
@@ -68,7 +67,7 @@ public sealed class MapRenderDecodedTextureResourceSnapshot
                 reference.Height != expectedHeight ||
                 Enumerable.Range(1, expectedFaceCount - 1).Any(face =>
                 {
-                    MapRenderDecodedTextureSubresourceSnapshot candidate =
+                    DecodedTextureSubresourceSnapshot candidate =
                         _subresources[face * mipCount + mip];
                     return candidate.Width != reference.Width ||
                         candidate.Height != reference.Height;
@@ -80,7 +79,7 @@ public sealed class MapRenderDecodedTextureResourceSnapshot
             }
         }
 
-        MapRenderDecodedTextureSubresourceSnapshot top = _subresources[0];
+        DecodedTextureSubresourceSnapshot top = _subresources[0];
         Name = name;
         Shape = shape;
         Format = format;
@@ -97,7 +96,7 @@ public sealed class MapRenderDecodedTextureResourceSnapshot
 
     public string Name { get; }
 
-    public MapRenderSelectedPassSamplerShape Shape { get; }
+    public TextureSamplerShape Shape { get; }
 
     public string Format { get; }
 
@@ -107,21 +106,21 @@ public sealed class MapRenderDecodedTextureResourceSnapshot
 
     public bool HasTransparency { get; }
 
-    public IReadOnlyList<MapRenderDecodedTextureSubresourceSnapshot> Subresources { get; }
+    public IReadOnlyList<DecodedTextureSubresourceSnapshot> Subresources { get; }
 
     public string ContentSha256 { get; }
 
     private static string ComputeContentHash(
-        MapRenderSelectedPassSamplerShape shape,
+        TextureSamplerShape shape,
         string format,
         bool hasTransparency,
-        IReadOnlyList<MapRenderDecodedTextureSubresourceSnapshot> subresources)
+        IReadOnlyList<DecodedTextureSubresourceSnapshot> subresources)
     {
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         hash.AppendData([(byte)shape, hasTransparency ? (byte)1 : (byte)0]);
         hash.AppendData(Encoding.UTF8.GetBytes(format));
         Span<byte> metadata = stackalloc byte[16];
-        foreach (MapRenderDecodedTextureSubresourceSnapshot subresource in subresources)
+        foreach (DecodedTextureSubresourceSnapshot subresource in subresources)
         {
             BinaryPrimitives.WriteInt32BigEndian(metadata[0..4], subresource.FaceOrdinal);
             BinaryPrimitives.WriteInt32BigEndian(metadata[4..8], subresource.MipLevel);
@@ -139,11 +138,11 @@ public sealed class MapRenderDecodedTextureResourceSnapshot
 /// One immutable decoded face/mip payload in canonical
 /// face-major/mip-major resource order.
 /// </summary>
-public sealed class MapRenderDecodedTextureSubresourceSnapshot
+public sealed class DecodedTextureSubresourceSnapshot
 {
     private readonly byte[] _rgbaBytes;
 
-    internal MapRenderDecodedTextureSubresourceSnapshot(
+    internal DecodedTextureSubresourceSnapshot(
         int faceOrdinal,
         int mipLevel,
         int width,
@@ -188,7 +187,7 @@ public sealed class MapRenderDecodedTextureSubresourceSnapshot
 
     internal ReadOnlySpan<byte> RgbaSpan => _rgbaBytes;
 
-    // MapRenderTexture and the canonical snapshot are both retained by the
+    // Texture and the canonical snapshot are both retained by the
     // scene. The renderer treats texture payloads as immutable upload input,
     // so sharing this owned array avoids retaining a second full RGBA copy.
     internal byte[] SharedRgbaBytes => _rgbaBytes;

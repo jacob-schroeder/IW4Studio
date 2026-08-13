@@ -12,7 +12,7 @@ public static class MapRenderWorldDpvsVisibilityProducer
 {
     public static MapRenderWorldDpvsVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsCameraTraversal cameraTraversal,
         MapRenderWorldDpvsSunShadowTraversal sunShadowTraversal,
         MapRenderWorldDpvsSunShadowFullProjectionState?
@@ -36,7 +36,7 @@ public static class MapRenderWorldDpvsVisibilityProducer
 
     internal static MapRenderWorldDpvsVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsCameraTraversal cameraTraversal,
         MapRenderWorldDpvsSunShadowTraversal sunShadowTraversal,
         MapRenderWorldDpvsSunShadowFullProjectionState?
@@ -59,7 +59,7 @@ public static class MapRenderWorldDpvsVisibilityProducer
 
     public static MapRenderWorldDpvsVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsViewCommandSet? cameraPortalCommands = null,
         MapRenderWorldDpvsCameraSkyCullInput? cameraSkyCullInput = null,
         MapRenderWorldDpvsViewCommandSet? sunShadowPartition0Commands = null,
@@ -72,7 +72,7 @@ public static class MapRenderWorldDpvsVisibilityProducer
         MapRenderWorldDpvsCameraCellResolutionResult cameraCell =
             MapRenderWorldDpvsCameraCellResolver.Resolve(
                 world,
-                MapRenderCoordinateConverter.RenderToGamePosition(
+                RenderCoordinateConverter.RenderToGamePosition(
                     camera.Position),
                 workingSet.CameraCellResolver);
         return BuildCore(

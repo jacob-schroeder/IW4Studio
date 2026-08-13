@@ -5,9 +5,10 @@ using IW4.Assets.Assets.XModel;
 using IW4.Render.Assets;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
+using IW4.Render.Geometry.XModel;
 using IW4.Render.Materials;
-using IW4.Render.Scheduling.StaticModels;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 using IW4.Render.Textures;
 using IW4.Render.Transforms;
 using IW4.Runtime.Assets.Images;
@@ -21,7 +22,7 @@ public sealed class XModelSceneBuilder
 {
     public XModelRenderScene Build(
         XModelAsset model,
-        MapRenderAssetSource assetSource,
+        RenderAssetSource assetSource,
         IGfxImagePayloadResolver imagePayloadResolver)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -44,13 +45,13 @@ public sealed class XModelSceneBuilder
                 modelName,
                 [],
                 defaultLodIndex: -1,
-                MapRenderBounds.Empty,
+                RenderBounds.Empty,
                 bones,
                 diagnostics);
         }
-        if (!MapRenderStaticModelLodGeometryCatalog.TryCreate(
+        if (!XModelLodGeometryCatalog.TryCreate(
                 model,
-                out IReadOnlyList<MapRenderStaticModelLodGeometry>
+                out IReadOnlyList<XModelLodGeometry>
                     lodGeometries))
         {
             throw new InvalidOperationException(
@@ -62,15 +63,15 @@ public sealed class XModelSceneBuilder
         var lookup = new RenderAssetLookup(
             assetSource,
             imagePayloadResolver);
-        var textureCache = new MapRenderTextureCache(
+        var textureCache = new RenderTextureCache(
             preferProvenAuthoredPayloads: false);
         var failedTextureCacheKeys =
-            new HashSet<MapRenderTextureCacheKey>();
-        var shaderTranslationCache = new MapRenderShaderTranslationCache();
+            new HashSet<RenderTextureCacheKey>();
+        var shaderTranslationCache = new ShaderTranslationCache();
         var lods = new List<XModelRenderLod>(lodGeometries.Count);
-        MapRenderBounds aggregateBounds = MapRenderBounds.Empty;
+        RenderBounds aggregateBounds = RenderBounds.Empty;
 
-        foreach (MapRenderStaticModelLodGeometry lodGeometry in lodGeometries)
+        foreach (XModelLodGeometry lodGeometry in lodGeometries)
         {
             EnsurePoolRevision();
             if (!float.IsFinite(lodGeometry.Lod.Dist))
@@ -83,7 +84,7 @@ public sealed class XModelSceneBuilder
 
             var surfaces = new List<XModelRenderSurface>(
                 lodGeometry.SurfaceCount);
-            MapRenderBounds lodBounds = MapRenderBounds.Empty;
+            RenderBounds lodBounds = RenderBounds.Empty;
             for (int surfaceOffset = 0;
                  surfaceOffset < lodGeometry.SurfaceCount;
                  surfaceOffset++)
@@ -108,7 +109,7 @@ public sealed class XModelSceneBuilder
                 if (!lookup.TryResolveCanonicalMaterialTechniqueBinding(
                         loadedMaterialName,
                         poolRevision,
-                        out MapRenderMaterialTechniqueBinding? binding) ||
+                        out MaterialTechniqueBinding? binding) ||
                     binding is null)
                 {
                     XSurface blockedSurface =
@@ -210,9 +211,9 @@ public sealed class XModelSceneBuilder
         AuthoredCameraColorTechniqueSelection selectedTechnique,
         RenderAssetLookup lookup,
         IGfxImagePayloadResolver imagePayloads,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
-        MapRenderShaderTranslationCache shaderTranslationCache,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        ShaderTranslationCache shaderTranslationCache,
         List<string> diagnostics)
     {
         if (selectedTechnique.Passes.Count == 0)
@@ -246,19 +247,36 @@ public sealed class XModelSceneBuilder
         foreach (AuthoredCameraColorPassSelection selectedPass in
                  selectedTechnique.Passes)
         {
-            IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers =
-                AuthoredMaterialSamplerResolver.Resolve(
+            AuthoredMaterialSamplerResolver.TrySelectPrimary(
+                material,
+                selectedPass.SourcePass,
+                selectedPass.Arguments,
+                lookup,
+                XSurfaceVertexDecoder.DefaultTexCoordSourceIndex,
+                out AuthoredMaterialPrimarySamplerSelection? primarySampler);
+            var materialPass = new MaterialPassIdentity(
+                material.Info.Name ?? string.Empty,
+                new TechniquePassIdentity(
+                    techniqueSet.Name ?? string.Empty,
+                    selectedTechnique.TechniqueSlot,
+                    selectedTechnique.TechniqueName,
+                    selectedPass.PassClass,
+                    selectedPass.PassIndex,
+                    selectedPass.SourcePass.CustomSamplerFlags));
+            IReadOnlyList<MaterialSamplerBinding> materialSamplers =
+                XModelMaterialSamplerBindingBuilder.Build(
                     material,
-                    selectedPass,
+                    selectedPass.SourcePass,
+                    selectedPass.Arguments,
                     lookup,
                     imagePayloads,
                     textureCache,
                     failedTextureCacheKeys);
-            MapRenderShaderVertexInputBinding[] vertexInputs =
-                AuthoredMaterialExecutionPlanner.ResolveVertexInputs(
+            ShaderVertexInputBinding[] vertexInputs =
+                MaterialVertexInputBindingPlanner.Resolve(
                     techniqueSet,
                     lookup,
-                    selectedPass.Pass,
+                    materialPass,
                     XSurfaceVertexDecoder.BackendRow);
             bool vertexPayloadReady = TryBuildRsxVertexInputs(
                 surface,
@@ -266,21 +284,23 @@ public sealed class XModelSceneBuilder
                 vertexInputs,
                 out float[] rsxVertexInputs,
                 out string vertexPayloadBlocker);
-            MapRenderShaderExecutionContract execution =
+            ShaderExecutionContract execution =
                 AuthoredMaterialExecutionPlanner.CreateContract(
                     material,
                     techniqueSet,
                     lookup,
-                    selectedPass.Pass,
+                    materialPass,
+                    primarySampler?.Identity,
                     selectedPass.State,
-                    selectedPass.PrimaryImage?.Name ?? string.Empty,
+                    primarySampler?.Image.Name ?? string.Empty,
                     materialSamplers,
                     vertexPayloadReady,
                     vertexPayloadBlocker,
                     authoredSourcePassAvailable: true,
                     shaderTranslationCache: shaderTranslationCache,
                     fixedVertexSourceBackendRow:
-                        XSurfaceVertexDecoder.BackendRow);
+                        XSurfaceVertexDecoder.BackendRow,
+                    explicitVertexInputs: vertexInputs);
             var blockers = new List<string>();
             if (!selectedPass.StateReady)
                 blockers.Add("renderState=unresolved");
@@ -297,12 +317,13 @@ public sealed class XModelSceneBuilder
             if (blockers.Count > 0)
             {
                 groupBlockers.Add(
-                    $"pass{selectedPass.Pass.PassIndex}({diagnostic})");
+                    $"pass{selectedPass.PassIndex}({diagnostic})");
             }
             packets.Add(new XModelRenderAuthoredPass(
                 groupId,
                 passOrdinal++,
-                selectedPass.Pass,
+                materialPass,
+                primarySampler?.Identity,
                 selectedPass.State,
                 execution,
                 materialSamplers,
@@ -394,8 +415,8 @@ public sealed class XModelSceneBuilder
         }
 
         var indices = new List<uint>(surface.TriCount * 3);
-        MapRenderBounds topologyBounds = MapRenderBounds.Empty;
-        MapRenderBounds visibleBounds = MapRenderBounds.Empty;
+        RenderBounds topologyBounds = RenderBounds.Empty;
+        RenderBounds visibleBounds = RenderBounds.Empty;
         int skippedTriangles = 0;
         int transparentTriangles = 0;
         bool canApplyTransparentFitSemantics =
@@ -524,7 +545,7 @@ public sealed class XModelSceneBuilder
     private static bool TryBuildRsxVertexInputs(
         XSurface surface,
         IReadOnlyList<int> retainedSourceVertices,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> bindings,
+        IReadOnlyList<ShaderVertexInputBinding> bindings,
         out float[] values,
         out string blocker)
     {
@@ -574,14 +595,14 @@ public sealed class XModelSceneBuilder
     private static bool PassProvesVertexAlphaTest(
         XModelRenderAuthoredPass pass)
     {
-        MapRenderShaderExecutionContract execution = pass.ShaderExecution;
-        if (execution.Purpose != MapRenderShaderExecutionPurpose.CameraColor ||
+        ShaderExecutionContract execution = pass.ShaderExecution;
+        if (execution.Purpose != ShaderExecutionPurpose.CameraColor ||
             !execution.ProgramIrReady ||
             execution.VertexProgramIr is not { HasValidUpload: true } vertex ||
             execution.FragmentProgramIr is not { HasValidUpload: true } fragment ||
-            MapRenderAlphaTest.Resolve(pass.State) is not (
-                MapRenderAlphaTestMode.GreaterZero or
-                MapRenderAlphaTestMode.GreaterEqual128) ||
+            AlphaTest.Resolve(pass.State) is not (
+                AlphaTestMode.GreaterZero or
+                AlphaTestMode.GreaterEqual128) ||
             !HasExactVertexColorBinding(execution.VertexInputs) ||
             !HasCompleteBaseColorSampler(pass, execution) ||
             !VertexProgramCopiesColorAlpha(vertex) ||
@@ -594,9 +615,9 @@ public sealed class XModelSceneBuilder
     }
 
     private static bool HasExactVertexColorBinding(
-        IReadOnlyList<MapRenderShaderVertexInputBinding> bindings)
+        IReadOnlyList<ShaderVertexInputBinding> bindings)
     {
-        MapRenderShaderVertexInputBinding[] colorBindings = bindings
+        ShaderVertexInputBinding[] colorBindings = bindings
             .Where(binding => binding.Destination == 0x03)
             .ToArray();
         return colorBindings.Length == 1 &&
@@ -611,17 +632,17 @@ public sealed class XModelSceneBuilder
 
     private static bool HasCompleteBaseColorSampler(
         XModelRenderAuthoredPass pass,
-        MapRenderShaderExecutionContract execution)
+        ShaderExecutionContract execution)
     {
-        MapRenderMaterialSamplerBinding[] samplerBindings = pass
+        MaterialSamplerBinding[] samplerBindings = pass
             .MaterialSamplers
-            .Where(binding => binding.SamplerDest == 0)
+            .Where(binding => binding.Identity.SamplerDest == 0)
             .ToArray();
         if (samplerBindings.Length != 1 ||
-            samplerBindings[0].SamplerArgIndex < 0 ||
+            samplerBindings[0].Identity.SamplerArgIndex < 0 ||
             samplerBindings[0].Texture is not
             {
-                Target: MapRenderTextureTarget.Texture2D,
+                Target: TextureTarget.Texture2D,
                 HasCompleteDecodedRgbaPayload: true
             })
         {
@@ -833,11 +854,11 @@ public sealed class XModelSceneBuilder
         float.IsFinite(value.Z);
 
     private static Vector3 ToRenderCoordinates(Vector3 value) =>
-        MapRenderCoordinateConverter.GameToRenderPosition(value);
+        RenderCoordinateConverter.GameToRenderPosition(value);
 
-    private static MapRenderBounds IncludeBounds(
-        MapRenderBounds bounds,
-        MapRenderBounds other) =>
+    private static RenderBounds IncludeBounds(
+        RenderBounds bounds,
+        RenderBounds other) =>
         other.IsValid
             ? bounds.Include(other.Min).Include(other.Max)
             : bounds;

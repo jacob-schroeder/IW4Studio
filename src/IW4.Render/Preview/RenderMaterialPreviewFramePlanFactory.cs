@@ -1,5 +1,8 @@
+using IW4.Render.Execution.FixedFunction;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Shaders;
+using IW4.Render.Textures;
 
 namespace IW4.Render.Preview;
 

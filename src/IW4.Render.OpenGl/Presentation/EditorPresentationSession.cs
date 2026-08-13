@@ -11,7 +11,7 @@ using IW4.Render.Preview;
 using IW4.Render.Resources;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.Clear;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl.Presentation;
@@ -97,7 +97,7 @@ internal sealed class EditorPresentationSession : IDisposable
             MapRenderWorldSceneSource source,
             RenderSceneSnapshot sceneSnapshot,
             MapRenderOpenGlShaderCompilationCounter compilationCounter,
-            MapRenderOpenGlSharedProgramCache.UsageLease
+            OpenGlSharedProgramCache.UsageLease
                 sharedProgramUsage,
             MapRenderEditorPreviewEffectivePostState? effectivePost = null,
             SilkOpenGlStateShadow? stateShadow = null)
@@ -246,7 +246,7 @@ internal sealed class EditorPresentationSession : IDisposable
 
     public EditorPresentationFrame
         BeginFrame(
-            MapRenderCamera camera,
+            RenderCamera camera,
             Vector3 fallbackClearColor,
             MapRenderActiveFogState? activeFog,
             RenderPreviewSettings previewSettings)
@@ -443,14 +443,14 @@ internal sealed class EditorPresentationSession : IDisposable
             pass.ShaderProvenance.RuntimeSamplerRequirements.Any(
                 requirement =>
                     requirement.ResourceKind ==
-                        MapRenderShaderRuntimeSamplerResourceKind
+                        ShaderRuntimeSamplerResourceKind
                             .ProcessedFloatZ &&
                     requirement.Status ==
-                        MapRenderShaderRuntimeSamplerRequirementStatus
+                        ShaderRuntimeSamplerRequirementStatus
                             .SameRevisionTextureRequired));
 
     private static MapRenderNormalCameraClearColorResult CreateClearColor(
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector3 fallbackClearColor,
         MapRenderActiveFogState? activeFog)
     {

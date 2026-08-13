@@ -1,5 +1,7 @@
 using Silk.NET.OpenGL;
 using IW4.Render.Textures;
+using Texture = IW4.Render.Textures.Texture;
+using TextureTarget = Silk.NET.OpenGL.TextureTarget;
 
 namespace IW4.Render.OpenGl;
 
@@ -11,7 +13,7 @@ namespace IW4.Render.OpenGl;
 internal sealed class MapRenderOpenGlTextureHandleCache
 {
     private readonly Dictionary<
-        MapRenderTexture,
+        Texture,
         MapRenderOpenGlTextureResidencyEntry> _entriesByTexture =
             new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<
@@ -34,7 +36,7 @@ internal sealed class MapRenderOpenGlTextureHandleCache
         CountResidentEntries();
 
     internal bool TryGetHandle(
-        MapRenderTexture texture,
+        Texture texture,
         out uint handle)
     {
         ArgumentNullException.ThrowIfNull(texture);
@@ -55,14 +57,14 @@ internal sealed class MapRenderOpenGlTextureHandleCache
         _entriesByHandle.TryGetValue(handle, out entry!);
 
     internal MapRenderOpenGlTextureResidencyEntry Add(
-        MapRenderTexture texture,
+        Texture texture,
         uint handle,
         TextureTarget target,
         int faceCount,
         int storageLevelCount,
         long estimatedResidentBytes,
         bool isPinned,
-        MapRenderOpenGlAuthoredBcUploadPlan? authoredBcPlan,
+        OpenGlAuthoredBcUploadPlan? authoredBcPlan,
         bool usesDirectAuthoredBcUpload)
     {
         ArgumentNullException.ThrowIfNull(texture);
@@ -98,7 +100,7 @@ internal sealed class MapRenderOpenGlTextureHandleCache
         return entry;
     }
 
-    internal void Remove(MapRenderTexture texture, uint handle)
+    internal void Remove(Texture texture, uint handle)
     {
         ArgumentNullException.ThrowIfNull(texture);
         _entriesByTexture.Remove(texture);
@@ -139,14 +141,14 @@ internal sealed class MapRenderOpenGlTextureHandleCache
 internal sealed class MapRenderOpenGlTextureResidencyEntry
 {
     internal MapRenderOpenGlTextureResidencyEntry(
-        MapRenderTexture source,
+        Texture source,
         uint handle,
         TextureTarget target,
         int faceCount,
         int storageLevelCount,
         long estimatedResidentBytes,
         bool isPinned,
-        MapRenderOpenGlAuthoredBcUploadPlan? authoredBcPlan,
+        OpenGlAuthoredBcUploadPlan? authoredBcPlan,
         bool usesDirectAuthoredBcUpload,
         long creationOrdinal)
     {
@@ -168,7 +170,7 @@ internal sealed class MapRenderOpenGlTextureResidencyEntry
         CreationOrdinal = creationOrdinal;
     }
 
-    internal MapRenderTexture Source { get; }
+    internal Texture Source { get; }
 
     internal uint Handle { get; }
 
@@ -182,7 +184,7 @@ internal sealed class MapRenderOpenGlTextureResidencyEntry
 
     internal bool IsPinned { get; private set; }
 
-    internal MapRenderOpenGlAuthoredBcUploadPlan? AuthoredBcPlan { get; }
+    internal OpenGlAuthoredBcUploadPlan? AuthoredBcPlan { get; }
 
     internal bool UsesDirectAuthoredBcUpload { get; }
 
@@ -191,7 +193,7 @@ internal sealed class MapRenderOpenGlTextureResidencyEntry
     /// authored chain first becomes resident on a backend without the required
     /// S3TC format. The source scene texture remains immutable.
     /// </summary>
-    internal MapRenderTexture? DecodedAuthoredBcFallback { get; private set; }
+    internal Texture? DecodedAuthoredBcFallback { get; private set; }
 
     internal long CreationOrdinal { get; }
 
@@ -222,7 +224,7 @@ internal sealed class MapRenderOpenGlTextureResidencyEntry
     internal void Pin() =>
         IsPinned = true;
 
-    internal void SetDecodedAuthoredBcFallback(MapRenderTexture fallback)
+    internal void SetDecodedAuthoredBcFallback(Texture fallback)
     {
         ArgumentNullException.ThrowIfNull(fallback);
         if (UsesDirectAuthoredBcUpload || AuthoredBcPlan is null)

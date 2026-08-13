@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using IW4.Assets.Assets.RawFile;
 using IW4.Render.Assets;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 
 namespace IW4.Render.EditorPreview;
 

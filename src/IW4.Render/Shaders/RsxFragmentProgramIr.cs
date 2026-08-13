@@ -34,8 +34,8 @@ public sealed class RsxFragmentProgramIr
         int uploadOffset,
         int uploadSize,
         ImmutableArray<RsxFragmentInstruction> instructions,
-        IReadOnlyList<MapRenderStaticFragmentConstantPatch> staticPatches,
-        IReadOnlyList<MapRenderCodePixelConstantPatchPlan> codePixelPatchPlans,
+        IReadOnlyList<StaticFragmentConstantPatch> staticPatches,
+        IReadOnlyList<CodePixelConstantPatchPlan> codePixelPatchPlans,
         RsxFragmentProgramControl programControl,
         RsxFragmentSamplerFeatureProfile samplerFeatureProfile,
         ImmutableArray<RsxFragmentColorExport> colorExports)
@@ -162,7 +162,7 @@ public sealed class RsxFragmentProgramIr
 
     public ImmutableArray<RsxFragmentInstruction> Instructions { get; }
 
-    public ImmutableArray<MapRenderStaticFragmentConstantPatch>
+    public ImmutableArray<StaticFragmentConstantPatch>
         StaticConstantPatches { get; }
 
     public ImmutableArray<RsxFragmentDirectCodeConstantBinding>
@@ -392,7 +392,7 @@ public sealed class RsxFragmentSamplerDataflow
 public sealed class RsxFragmentDirectCodeConstantBinding
 {
     private RsxFragmentDirectCodeConstantBinding(
-        MapRenderCodePixelConstantPatchPlan plan)
+        CodePixelConstantPatchPlan plan)
     {
         ArgumentOrdinal = plan.ArgumentOrdinal;
         Destination = plan.Destination;
@@ -422,13 +422,13 @@ public sealed class RsxFragmentDirectCodeConstantBinding
 
     public ushort CodeIndex { get; }
 
-    public MapRenderCodePixelConstantPatchStatus Status { get; }
+    public CodePixelConstantPatchStatus Status { get; }
 
     public bool IsDirectSourceResolved =>
         Status ==
-            MapRenderCodePixelConstantPatchStatus.DirectSourceResolved;
+            CodePixelConstantPatchStatus.DirectSourceResolved;
 
-    public ImmutableArray<MapRenderCodePixelConstantPatchSite> PatchSites
+    public ImmutableArray<CodePixelConstantPatchSite> PatchSites
     {
         get;
     }
@@ -436,7 +436,7 @@ public sealed class RsxFragmentDirectCodeConstantBinding
     internal string IdentityMaterial { get; }
 
     internal static RsxFragmentDirectCodeConstantBinding FromPlan(
-        MapRenderCodePixelConstantPatchPlan plan)
+        CodePixelConstantPatchPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return new RsxFragmentDirectCodeConstantBinding(plan);

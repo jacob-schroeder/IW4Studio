@@ -1,6 +1,7 @@
 using System.Numerics;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Materials;
+using IW4.Render.Techniques;
 using IW4.Render.Transforms;
 
 namespace IW4.Render.Lighting;
@@ -26,11 +27,11 @@ public static class MapRenderEditorPreviewLightingPlanner
     /// plan.
     /// </summary>
     public static bool ShouldApplyGenericMaterialLighting(
-        MapRenderMaterialPass pass)
+        MaterialPassIdentity pass)
     {
         ArgumentNullException.ThrowIfNull(pass);
-        return pass.TechniqueSlot !=
-            MapRenderEditorTechniquePolicy.PreferredEmissiveTechniqueSlot;
+        return pass.TechniquePass.TechniqueSlot !=
+            EditorPreviewTechniquePolicy.PreferredEmissiveTechniqueSlot;
     }
 
     public static MapRenderEditorPreviewLightingPlan Create(
@@ -128,7 +129,7 @@ public static class MapRenderEditorPreviewLightingPlanner
         }
 
         Vector3 renderDirection =
-            MapRenderCoordinateConverter.GameToRenderPosition(gameDirection);
+            RenderCoordinateConverter.GameToRenderPosition(gameDirection);
         Vector3 codeDirection = renderDirection;
         float lengthSquared = renderDirection.LengthSquared();
         if (!float.IsFinite(lengthSquared) ||

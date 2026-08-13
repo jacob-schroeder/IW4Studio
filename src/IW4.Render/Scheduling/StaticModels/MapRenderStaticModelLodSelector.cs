@@ -155,7 +155,7 @@ public static class MapRenderStaticModelLodSelector
     /// </remarks>
     public static int SelectFrame(
         IReadOnlyList<MapRenderStaticModelSchedulingInfo> scheduling,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderCameraFrustum frustum,
         MapRenderWorldDpvsViewVisibility? cameraVisibility,
         Span<bool> visibleByObject,
@@ -187,7 +187,7 @@ public static class MapRenderStaticModelLodSelector
     /// </summary>
     public static int SelectFrame(
         IReadOnlyList<MapRenderStaticModelSchedulingInfo> scheduling,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderCameraFrustum frustum,
         MapRenderWorldDpvsViewVisibility? cameraVisibility,
         Span<bool> visibleByObject,
@@ -219,7 +219,7 @@ public static class MapRenderStaticModelLodSelector
     /// </summary>
     public static int SelectFrame(
         IReadOnlyList<MapRenderStaticModelSchedulingInfo> scheduling,
-        MapRenderCamera camera,
+        RenderCamera camera,
         ReadOnlySpan<Vector4> normalizedFrustumPlanes,
         MapRenderWorldDpvsViewVisibility? cameraVisibility,
         Span<bool> visibleByObject,
@@ -248,7 +248,7 @@ public static class MapRenderStaticModelLodSelector
     /// </summary>
     public static int SelectFrame(
         IReadOnlyList<MapRenderStaticModelSchedulingInfo> scheduling,
-        MapRenderCamera camera,
+        RenderCamera camera,
         ReadOnlySpan<Vector4> normalizedFrustumPlanes,
         MapRenderWorldDpvsViewVisibility? cameraVisibility,
         Span<bool> visibleByObject,
@@ -274,7 +274,7 @@ public static class MapRenderStaticModelLodSelector
 
     private static int SelectFrameCore(
         IReadOnlyList<MapRenderStaticModelSchedulingInfo> scheduling,
-        MapRenderCamera camera,
+        RenderCamera camera,
         ReadOnlySpan<Vector4> normalizedFrustumPlanes,
         MapRenderWorldDpvsViewVisibility? cameraVisibility,
         Span<bool> visibleByObject,

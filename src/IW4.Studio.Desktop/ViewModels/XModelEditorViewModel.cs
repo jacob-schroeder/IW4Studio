@@ -3,6 +3,7 @@ using IW4.Assets.Assets.XModel;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
 using IW4.Render;
+using IW4.Render.Assets;
 using IW4.Render.OpenGl.XModel;
 using IW4.Render.SceneBuilding;
 using IW4.Studio.Desktop.Editors;
@@ -258,7 +259,7 @@ public sealed class XModelEditorViewModel
         string? buildFailure = null;
         try
         {
-            MapRenderAssetSource source = CreateAssetSource(
+            RenderAssetSource source = CreateAssetSource(
                 _session.Workspace);
             scene = _sceneBuilder.Build(
                 _model,
@@ -476,7 +477,7 @@ public sealed class XModelEditorViewModel
                 ? "Preflight complete"
                 : "Awaiting renderer preflight";
 
-    private static MapRenderAssetSource CreateAssetSource(
+    private static RenderAssetSource CreateAssetSource(
         FastFileWorkspace workspace)
     {
         WorkspaceZone targetZone = workspace.LoadedZones.Single(zone =>
@@ -488,11 +489,9 @@ public sealed class XModelEditorViewModel
         }
 
         LoadedXZone target = targetZone.LoadResult;
-        return new MapRenderAssetSource(
-            target.Header,
+        return new RenderAssetSource(
             target.Context.Blocks,
             target.Context.AssetPool,
-            target.Context.AssetRuntimeLifecycle.GfxWorld,
             target.Context.GfxImagesByAddress,
             target.LoadedAssets,
             target.XAssetList.Assets);
@@ -717,7 +716,7 @@ public sealed class XModelEditorViewModel
     private static string FormatFloat(float value) =>
         value.ToString("G9", CultureInfo.InvariantCulture);
 
-    private static string FormatBounds(MapRenderBounds bounds) =>
+    private static string FormatBounds(RenderBounds bounds) =>
         bounds.IsValid
             ? $"({FormatFloat(bounds.Min.X)}, {FormatFloat(bounds.Min.Y)}, {FormatFloat(bounds.Min.Z)}) – " +
               $"({FormatFloat(bounds.Max.X)}, {FormatFloat(bounds.Max.Y)}, {FormatFloat(bounds.Max.Z)})"

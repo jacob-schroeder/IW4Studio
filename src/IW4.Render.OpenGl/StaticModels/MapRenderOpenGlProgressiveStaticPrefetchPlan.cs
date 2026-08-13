@@ -9,13 +9,13 @@ namespace IW4.Render.OpenGl.StaticModels;
 internal sealed class MapRenderOpenGlProgressiveStaticPrefetchPlan
 {
     private const int MaximumYawViewCount = 4096;
-    private readonly MapRenderCamera[] _yawRing;
+    private readonly RenderCamera[] _yawRing;
 
     private MapRenderOpenGlProgressiveStaticPrefetchPlan(
-        MapRenderCamera initialCamera,
+        RenderCamera initialCamera,
         float aspectRatio,
         double horizontalFieldOfViewRadians,
-        MapRenderCamera[] yawRing)
+        RenderCamera[] yawRing)
     {
         InitialCamera = initialCamera;
         AspectRatio = aspectRatio;
@@ -28,7 +28,7 @@ internal sealed class MapRenderOpenGlProgressiveStaticPrefetchPlan
     /// selected-LOD scratch must be restored to this view after walking
     /// <see cref="YawRing"/>.
     /// </summary>
-    public MapRenderCamera InitialCamera { get; }
+    public RenderCamera InitialCamera { get; }
 
     public float AspectRatio { get; }
 
@@ -39,10 +39,10 @@ internal sealed class MapRenderOpenGlProgressiveStaticPrefetchPlan
     /// first entry is exactly <see cref="InitialCamera"/>; no closing duplicate
     /// at initial yaw + 2π is included.
     /// </summary>
-    public ReadOnlySpan<MapRenderCamera> YawRing => _yawRing;
+    public ReadOnlySpan<RenderCamera> YawRing => _yawRing;
 
     public static MapRenderOpenGlProgressiveStaticPrefetchPlan CreateYawRing(
-        MapRenderCamera initialCamera,
+        RenderCamera initialCamera,
         float aspectRatio)
     {
         if (!(aspectRatio > 0f) || !float.IsFinite(aspectRatio))
@@ -78,7 +78,7 @@ internal sealed class MapRenderOpenGlProgressiveStaticPrefetchPlan
         }
 
         int viewCount = Math.Max(1, checked((int)requiredViewCount));
-        var yawRing = new MapRenderCamera[viewCount];
+        var yawRing = new RenderCamera[viewCount];
         double yawStep = Math.Tau / viewCount;
         for (int viewIndex = 0; viewIndex < yawRing.Length; viewIndex++)
         {

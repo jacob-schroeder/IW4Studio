@@ -32,11 +32,11 @@ internal sealed class MapRenderOpenGlProcessedFloatZFrame
 
     public uint SamplerHandle { get; }
 
-    public MapRenderShaderRuntimeSamplerBinding CreateBinding(
+    public ShaderRuntimeSamplerBinding CreateBinding(
         ushort destination) =>
         new(
             destination,
-            MapRenderShaderRuntimeSamplerResourceKind.ProcessedFloatZ,
+            ShaderRuntimeSamplerResourceKind.ProcessedFloatZ,
             FrameRevision,
-            MapRenderShaderRuntimeSamplerBindingStatus.Ready);
+            ShaderRuntimeSamplerBindingStatus.Ready);
 }

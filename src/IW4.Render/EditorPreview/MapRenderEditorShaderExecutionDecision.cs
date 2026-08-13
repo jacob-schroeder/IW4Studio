@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Materials;
 
 namespace IW4.Render.EditorPreview;
@@ -12,8 +13,8 @@ public sealed class MapRenderEditorShaderExecutionDecision
     internal MapRenderEditorShaderExecutionDecision(
         MapRenderEditorShaderExecutionChoice choice,
         MapRenderEditorShaderExecutionReason reason,
-        MapRenderState originalState,
-        MapRenderState effectiveState)
+        RenderState originalState,
+        RenderState effectiveState)
     {
         if (!Enum.IsDefined(choice))
             throw new ArgumentOutOfRangeException(nameof(choice));
@@ -33,9 +34,9 @@ public sealed class MapRenderEditorShaderExecutionDecision
 
     public string Status { get; }
 
-    public MapRenderState OriginalState { get; }
+    public RenderState OriginalState { get; }
 
-    public MapRenderState EffectiveState { get; }
+    public RenderState EffectiveState { get; }
 
     public bool IsExecutable => Choice != MapRenderEditorShaderExecutionChoice.Skip;
 

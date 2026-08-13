@@ -1,6 +1,7 @@
 using System.Globalization;
 using IW4.Render;
 using IW4.Render.Materials;
+using IW4.Render.Techniques;
 using IW4.Render.Picking;
 using IW4.Render.Shaders;
 using IW4.Render.Textures;
@@ -15,7 +16,7 @@ internal static class MapRenderPickClipboardFormatter
 {
     public static string Format(
         MapRenderScene scene,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderPickHit? selection,
         IReadOnlyList<MapRenderPickCandidate> overlapCandidates,
         IReadOnlyList<MapRenderPickCandidate> neighborCandidates,
@@ -83,7 +84,7 @@ internal static class MapRenderPickClipboardFormatter
             return string.Join(Environment.NewLine, lines);
         }
 
-        MapRenderState state = material.State;
+        RenderState state = material.State;
         lines.Add($"material.name={material.MaterialName}");
         lines.Add($"material.techniqueSet={material.TechniqueSetName}");
         lines.Add($"material.techniqueSlot={material.TechniqueSlot}");
@@ -95,7 +96,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"material.samplerHash=0x{material.SamplerHash:X8}");
         lines.Add($"material.textureSemantic=0x{material.TextureSemantic:X2}");
         lines.Add($"material.texCoordSource=0x{material.TexCoordSource:X2}");
-        lines.Add($"material.texCoordSourceName={MapRenderUvRoute.StreamSourceName(material.TexCoordSource)}");
+        lines.Add($"material.texCoordSourceName={UvRoute.StreamSourceName(material.TexCoordSource)}");
         lines.Add($"material.unresolvedCodeSamplerCount={material.UnresolvedCodeSamplerCount}");
         lines.Add($"material.colorLayerCount={material.ColorLayers.Count}");
         foreach (MapRenderPickColorLayerInfo layer in material.ColorLayers)
@@ -122,7 +123,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"material.shader.customSamplerCount={material.ShaderExecution.CustomSamplerDestinations.Count}");
         for (int samplerIndex = 0; samplerIndex < material.ShaderExecution.CustomSamplerDestinations.Count; samplerIndex++)
         {
-            MapRenderShaderSamplerDestination customSampler = material.ShaderExecution.CustomSamplerDestinations[samplerIndex];
+            ShaderSamplerDestination customSampler = material.ShaderExecution.CustomSamplerDestinations[samplerIndex];
             lines.Add($"material.shader.customSampler.{samplerIndex}.dest={customSampler.Destination}");
             lines.Add($"material.shader.customSampler.{samplerIndex}.resource={customSampler.ResourceIdentity}");
             lines.Add($"material.shader.customSampler.{samplerIndex}.target={customSampler.TextureTarget}");
@@ -131,7 +132,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"material.shader.vertexInputCount={material.ShaderExecution.VertexInputs.Count}");
         for (int inputIndex = 0; inputIndex < material.ShaderExecution.VertexInputs.Count; inputIndex++)
         {
-            MapRenderShaderVertexInputBinding input = material.ShaderExecution.VertexInputs[inputIndex];
+            ShaderVertexInputBinding input = material.ShaderExecution.VertexInputs[inputIndex];
             string prefix = $"material.shader.vertexInput.{inputIndex}";
             lines.Add($"{prefix}.source=0x{input.Source:X2}");
             lines.Add($"{prefix}.dest=0x{input.Destination:X2}");
@@ -150,7 +151,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"material.shader.codeSamplerCount={material.ShaderExecution.CodeSamplerDestinations.Count}");
         for (int samplerIndex = 0; samplerIndex < material.ShaderExecution.CodeSamplerDestinations.Count; samplerIndex++)
         {
-            MapRenderShaderSamplerDestination codeSampler = material.ShaderExecution.CodeSamplerDestinations[samplerIndex];
+            ShaderSamplerDestination codeSampler = material.ShaderExecution.CodeSamplerDestinations[samplerIndex];
             string prefix = $"material.shader.codeSampler.{samplerIndex}";
             lines.Add($"{prefix}.dest={codeSampler.Destination}");
             lines.Add($"{prefix}.raw=0x{codeSampler.Argument:X8}");
@@ -159,7 +160,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"material.shader.constantCount={material.ShaderExecution.ConstantDestinations.Count}");
         for (int constantIndex = 0; constantIndex < material.ShaderExecution.ConstantDestinations.Count; constantIndex++)
         {
-            MapRenderShaderSamplerDestination constant = material.ShaderExecution.ConstantDestinations[constantIndex];
+            ShaderConstantDestination constant = material.ShaderExecution.ConstantDestinations[constantIndex];
             string prefix = $"material.shader.constant.{constantIndex}";
             lines.Add($"{prefix}.type={constant.ArgumentType}");
             lines.Add($"{prefix}.dest={constant.Destination}");
@@ -196,11 +197,11 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"texture.size={material.TextureWidth}x{material.TextureHeight}");
         lines.Add($"texture.format={material.TextureFormat}");
         lines.Add($"texture.samplerState=0x{material.SamplerState:X2}");
-        lines.Add($"texture.samplerRsxTexEnableMethod=0x{MapRenderSamplerDecoder.RsxTexEnableMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.samplerRsxTexEnableMethod=0x{RsxSamplerDecoder.RsxTexEnableMethod(material.SamplerDest):X4}");
         lines.Add($"texture.samplerRsxTexEnablePayload=0x{material.SamplerRsxTexEnablePayload:X8}");
-        lines.Add($"texture.samplerRsxTexFilterMethod=0x{MapRenderSamplerDecoder.RsxTexFilterMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.samplerRsxTexFilterMethod=0x{RsxSamplerDecoder.RsxTexFilterMethod(material.SamplerDest):X4}");
         lines.Add($"texture.samplerRsxTexFilterPayload=0x{material.SamplerRsxTexFilterPayload:X8}");
-        lines.Add($"texture.samplerRsxTexWrapMethod=0x{MapRenderSamplerDecoder.RsxTexWrapMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.samplerRsxTexWrapMethod=0x{RsxSamplerDecoder.RsxTexWrapMethod(material.SamplerDest):X4}");
         lines.Add($"texture.samplerRsxTexWrapPayload=0x{material.SamplerRsxTexWrapPayload:X8}");
         lines.Add($"texture.samplerRsxClampMax={material.SamplerRsxClampMax}");
         lines.Add($"texture.samplerRsxDescriptorPad0F=0x{material.SamplerRsxDescriptorPad0F:X2}");
@@ -215,15 +216,15 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"texture.samplerAddressU={material.SamplerAddressU}");
         lines.Add($"texture.samplerAddressV={material.SamplerAddressV}");
         lines.Add($"texture.samplerAddressW={material.SamplerAddressW}");
-        lines.Add($"texture.rsxTexOffsetMethod=0x{MapRenderRsxTextureCommandBuilder.RsxTexOffsetMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.rsxTexOffsetMethod=0x{RsxTextureCommandBuilder.RsxTexOffsetMethod(material.SamplerDest):X4}");
         lines.Add($"texture.rsxTexOffsetPayload=0x{material.RsxTextureCommandState.TexOffsetPayload:X8}");
-        lines.Add($"texture.rsxTexFormatMethod=0x{MapRenderRsxTextureCommandBuilder.RsxTexFormatMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.rsxTexFormatMethod=0x{RsxTextureCommandBuilder.RsxTexFormatMethod(material.SamplerDest):X4}");
         lines.Add($"texture.rsxTexFormatPayload=0x{material.RsxTextureCommandState.TexFormatPayload:X8}");
-        lines.Add($"texture.rsxTexNpotSizeMethod=0x{MapRenderRsxTextureCommandBuilder.RsxTexNpotSizeMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.rsxTexNpotSizeMethod=0x{RsxTextureCommandBuilder.RsxTexNpotSizeMethod(material.SamplerDest):X4}");
         lines.Add($"texture.rsxTexNpotSizePayload=0x{material.RsxTextureCommandState.TexNpotSizePayload:X8}");
-        lines.Add($"texture.rsxTexSize1Method=0x{MapRenderRsxTextureCommandBuilder.RsxTexSize1Method(material.SamplerDest):X4}");
+        lines.Add($"texture.rsxTexSize1Method=0x{RsxTextureCommandBuilder.RsxTexSize1Method(material.SamplerDest):X4}");
         lines.Add($"texture.rsxTexSize1Payload=0x{material.RsxTextureCommandState.TexSize1Payload:X8}");
-        lines.Add($"texture.rsxTexSwizzleMethod=0x{MapRenderRsxTextureCommandBuilder.RsxTexSwizzleMethod(material.SamplerDest):X4}");
+        lines.Add($"texture.rsxTexSwizzleMethod=0x{RsxTextureCommandBuilder.RsxTexSwizzleMethod(material.SamplerDest):X4}");
         lines.Add($"texture.rsxTexSwizzlePayload=0x{material.RsxTextureCommandState.TexSwizzlePayload:X8}");
         lines.Add($"texture.hasTransparency={material.TextureHasTransparency}");
         lines.Add($"texture.mipLevelCount={material.TextureMipLevelCount}");
@@ -306,7 +307,7 @@ internal static class MapRenderPickClipboardFormatter
             lines.Add($"{prefix}.rendererPassClass={material?.PassClass ?? string.Empty}");
             lines.Add($"{prefix}.techniqueSlot={material?.TechniqueSlot.ToString(CultureInfo.InvariantCulture) ?? string.Empty}");
             lines.Add($"{prefix}.textureSemantic={(material is null ? string.Empty : $"0x{material.TextureSemantic:X2}")}");
-            lines.Add($"{prefix}.texCoordSource={(material is null ? string.Empty : $"0x{material.TexCoordSource:X2}/{MapRenderUvRoute.StreamSourceName(material.TexCoordSource)}")}");
+            lines.Add($"{prefix}.texCoordSource={(material is null ? string.Empty : $"0x{material.TexCoordSource:X2}/{UvRoute.StreamSourceName(material.TexCoordSource)}")}");
         }
     }
 

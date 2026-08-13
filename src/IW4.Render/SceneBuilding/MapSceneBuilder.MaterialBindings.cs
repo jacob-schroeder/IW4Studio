@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Buffers;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
@@ -19,25 +20,26 @@ namespace IW4.Render.SceneBuilding;
 public sealed partial class MapSceneBuilder
 {
     private sealed record PreparedColorLayer(
-        MapRenderColorLayer Layer,
+        MaterialColorLayer Layer,
         WorldVertexDecoder Decoder);
 
     private sealed record PreparedStaticColorLayer(
-        MapRenderColorLayer Layer,
+        MaterialColorLayer Layer,
         XSurfaceVertexDecoder Decoder);
 
     private static void AppendTexturedSurface(
         Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder> batches,
-        MapRenderMaterialPass pass,
-        MapRenderTexture texture,
-        MapRenderTexture? lightmapTexture,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
-        MapRenderShaderExecutionContract shaderExecution,
-        MapRenderUvRoute uvRoute,
-        MapRenderState state,
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity primarySampler,
+        Texture texture,
+        Texture? lightmapTexture,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
+        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> materialSamplers,
+        ShaderExecutionContract shaderExecution,
+        UvRoute uvRoute,
+        RenderState state,
         MapRenderEditorDepthPrepassPlan? editorDepthPrepass,
-        MapRenderShaderExecutionContract? depthPrepassShaderExecution,
+        ShaderExecutionContract? depthPrepassShaderExecution,
         int unresolvedCodeSamplerCount,
         List<float> vertices,
         List<float> rsxVertexInputs,
@@ -48,6 +50,7 @@ public sealed partial class MapSceneBuilder
     {
         var key = new WorldTexturedBatchKey(
             pass,
+            primarySampler,
             texture,
             lightmapTexture,
             colorLayers,
@@ -64,6 +67,7 @@ public sealed partial class MapSceneBuilder
         {
             batch = new TexturedBatchBuilder(
                 pass,
+                primarySampler,
                 texture,
                 lightmapTexture,
                 colorLayers,
@@ -94,33 +98,27 @@ public sealed partial class MapSceneBuilder
             pickRange.Name);
     }
 
-    private static IReadOnlyList<MapRenderColorLayer> CreateSingleColorLayer(
-        MapRenderMaterialPass pass,
-        MapRenderTexture texture,
-        MapRenderUvRoute uvRoute)
+    private static IReadOnlyList<MaterialColorLayer> CreateSingleColorLayer(
+        MaterialSamplerIdentity primarySampler,
+        Texture texture,
+        UvRoute uvRoute)
     {
         return
         [
-            new MapRenderColorLayer(
+            new MaterialColorLayer(
                 0,
-                pass.SamplerArgIndex,
-                pass.SamplerDest,
-                pass.SamplerHash,
-                pass.TextureSemantic,
+                primarySampler,
                 texture,
                 uvRoute,
                 -1)
         ];
     }
 
-    private static IReadOnlyList<MapRenderMaterialSamplerBinding> CreateMaterialSamplerBindings(
-        IReadOnlyList<MapRenderColorLayer> colorLayers)
+    private static IReadOnlyList<MapRenderWorldMaterialSamplerBinding> CreateMaterialSamplerBindings(
+        IReadOnlyList<MaterialColorLayer> colorLayers)
     {
-        return colorLayers.Select(layer => new MapRenderMaterialSamplerBinding(
-            layer.SamplerArgIndex,
-            layer.SamplerDest,
-            layer.SamplerHash,
-            layer.TextureSemantic,
+        return colorLayers.Select(layer => CreateWorldBinding(
+            layer.Identity,
             layer.Texture.Name,
             layer.Texture,
             layer.UvRoute)).ToArray();
@@ -130,28 +128,25 @@ public sealed partial class MapSceneBuilder
         bool enableEditorMultiTexture,
         MaterialAsset? material,
         WorldMaterialSamplerPlan samplerPlan,
-        MapRenderEditorMaterialTexturePlan? texturePlan,
+        EditorMaterialTexturePlan? texturePlan,
         SelectedColorPass selectedPass,
         WorldVertexLayoutSelection worldVertexLayout,
         WorldVertexDecoderResolver vertexDecoderResolver,
-        MapRenderTexture primaryTexture,
-        MapRenderUvRoute primaryUvRoute,
+        Texture primaryTexture,
+        UvRoute primaryUvRoute,
         WorldVertexDecoder primaryDecoder,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
         var prepared = new List<PreparedColorLayer>(MapRenderScene.MaxColorLayerCount)
         {
             new(
-                new MapRenderColorLayer(
+                new MaterialColorLayer(
                     0,
-                    selectedPass.Pass.SamplerArgIndex,
-                    selectedPass.Pass.SamplerDest,
-                    selectedPass.Pass.SamplerHash,
-                    selectedPass.Pass.TextureSemantic,
+                    selectedPass.PrimarySampler,
                     primaryTexture,
                     primaryUvRoute,
                     -1),
@@ -172,25 +167,25 @@ public sealed partial class MapSceneBuilder
         int newlyDecodedTextureCount = 0;
         int newlySkippedTextureCount = 0;
 
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer1, 1, 0);
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer2, 2, 1);
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer3, 3, 2);
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer4, 4, 3);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer1, 1, 0);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer2, 2, 1);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer3, 3, 2);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer4, 4, 3);
         decodedTextureCount += newlyDecodedTextureCount;
         skippedTextureCount += newlySkippedTextureCount;
         return prepared;
 
         void AddColorRole(
-            MapRenderEditorMaterialTextureRole role,
+            EditorMaterialTextureRole role,
             int layerIndex,
             int blendWeightComponent)
         {
             if (prepared.Count >= MapRenderScene.MaxColorLayerCount ||
                 !texturePlan.TryGetUniqueBinding(
                     role,
-                    out MapRenderEditorMaterialTextureBinding? planned) ||
+                    out EditorMaterialTextureBinding? planned) ||
                 planned is null ||
-                planned.NameHash == selectedPass.Pass.SamplerHash ||
+                planned.NameHash == selectedPass.PrimarySampler.SamplerHash ||
                 planned.Image is not { } image)
             {
                 return;
@@ -223,30 +218,31 @@ public sealed partial class MapSceneBuilder
                 texCoordSource,
                 true);
             WorldVertexDecoder? decoder = decoderSelection.Decoder;
-            MapRenderUvRoute uvRoute = decoderSelection.UvRoute;
+            UvRoute uvRoute = decoderSelection.UvRoute;
             if (decoder is null || !decoder.HasTexCoord ||
                 !TryDecodeTexture(
-                    texture,
                     image,
+                    texture.SamplerState,
                     imageStreams,
                     textureCache,
                     failedTextureCacheKeys,
                     true,
                     ref newlyDecodedTextureCount,
                     ref newlySkippedTextureCount,
-                    out MapRenderTexture? decodedTexture) ||
+                    out Texture? decodedTexture) ||
                 decodedTexture is null)
             {
                 return;
             }
 
             prepared.Add(new PreparedColorLayer(
-                new MapRenderColorLayer(
+                new MaterialColorLayer(
                     layerIndex,
-                    argIndex,
-                    arg.Dest,
-                    planned.NameHash,
-                    planned.TextureSemantic,
+                    new MaterialSamplerIdentity(
+                        argIndex,
+                        arg.Dest,
+                        planned.NameHash,
+                        planned.TextureSemantic),
                     decodedTexture,
                     uvRoute,
                     blendWeightComponent),
@@ -254,7 +250,7 @@ public sealed partial class MapSceneBuilder
         }
     }
 
-    private static IReadOnlyList<MapRenderMaterialSamplerBinding> PrepareStaticMaterialSamplerBindings(
+    private static IReadOnlyList<MapRenderWorldMaterialSamplerBinding> PrepareStaticMaterialSamplerBindings(
         MaterialAsset material,
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup,
@@ -262,29 +258,33 @@ public sealed partial class MapSceneBuilder
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         SelectedColorPass selectedPass,
         byte? reflectionProbeIndex,
-        MapRenderUvRoute uvRoute,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
+        UvRoute uvRoute,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
-        var bindings = new List<MapRenderMaterialSamplerBinding>();
+        var bindings = new List<MapRenderWorldMaterialSamplerBinding>();
         var seen = new HashSet<(ushort Dest, uint Hash)>();
         if (techset is not null &&
-            selectedPass.Pass.TechniqueSlot >= 0 &&
-            selectedPass.Pass.PassIndex >= 0)
+            selectedPass.Pass.TechniquePass.TechniqueSlot >= 0 &&
+            selectedPass.Pass.TechniquePass.PassIndex >= 0)
         {
             MaterialTechniqueSlot? slot = lookup.ResolveTechniqueSlots(techset)
                 .FirstOrDefault(candidate =>
-                    candidate.Index == selectedPass.Pass.TechniqueSlot);
+                    candidate.Index ==
+                        selectedPass.Pass.TechniquePass.TechniqueSlot);
             if (slot?.Technique is { } technique &&
-                (uint)selectedPass.Pass.PassIndex <
+                (uint)selectedPass.Pass.TechniquePass.PassIndex <
                     (uint)technique.Passes.Count)
             {
                 MaterialPassAsset sourcePass =
-                    technique.Passes[selectedPass.Pass.PassIndex];
+                    technique.Passes[
+                        selectedPass.Pass.TechniquePass.PassIndex];
                 IReadOnlyList<MaterialShaderArgumentAsset> args =
                     lookup.ResolveShaderArgs(sourcePass);
                 for (int argIndex = 0; argIndex < args.Count; argIndex++)
@@ -300,7 +300,7 @@ public sealed partial class MapSceneBuilder
                     if (!seen.Add((arg.Dest, samplerHash)))
                         continue;
 
-                    if (!TryResolveMaterialTexture(
+                    if (!MaterialTextureResolver.TryResolve(
                             material,
                             lookup,
                             samplerHash,
@@ -310,63 +310,64 @@ public sealed partial class MapSceneBuilder
                         materialTexture is null ||
                         image is null)
                     {
-                        bindings.Add(new MapRenderMaterialSamplerBinding(
-                            argIndex,
-                            arg.Dest,
-                            samplerHash,
-                            materialTexture?.Semantic ?? 0,
+                        bindings.Add(CreateWorldBinding(
+                            new MaterialSamplerIdentity(
+                                argIndex,
+                                arg.Dest,
+                                samplerHash,
+                                materialTexture?.Semantic ?? 0),
                             image?.Name ?? string.Empty,
                             null,
                             uvRoute,
                             EditorTextureRole: materialTexture is null
-                                ? MapRenderEditorMaterialTextureRole.Unknown
-                                : MapRenderEditorMaterialTextureRoleClassifier
+                                ? EditorMaterialTextureRole.Unknown
+                                : EditorMaterialTextureRoleClassifier
                                     .Classify(materialTexture).Role,
-                            TextureTableOrdinal: FindMaterialTextureOrdinal(
+                            TextureTableOrdinal: MaterialTextureResolver.FindOrdinal(
                                 material,
                                 materialTexture)));
                         continue;
                     }
 
                     bool decoded = TryDecodeTexture(
-                        materialTexture,
                         image,
+                        materialTexture.SamplerState,
                         imageStreams,
                         textureCache,
                         failedTextureCacheKeys,
                         true,
                         ref decodedTextureCount,
                         ref skippedTextureCount,
-                        out MapRenderTexture? decodedTexture) &&
+                        out Texture? decodedTexture) &&
                         decodedTexture is not null;
-                    bindings.Add(new MapRenderMaterialSamplerBinding(
-                        argIndex,
-                        arg.Dest,
-                        samplerHash,
-                        materialTexture.Semantic,
+                    bindings.Add(CreateWorldBinding(
+                        new MaterialSamplerIdentity(
+                            argIndex,
+                            arg.Dest,
+                            samplerHash,
+                            materialTexture.Semantic),
                         decodedTexture?.Name ?? image.Name ?? string.Empty,
                         decodedTexture,
                         uvRoute,
                         EditorTextureRole:
-                            MapRenderEditorMaterialTextureRoleClassifier
+                            EditorMaterialTextureRoleClassifier
                                 .Classify(materialTexture).Role,
-                        TextureTableOrdinal: FindMaterialTextureOrdinal(
+                        TextureTableOrdinal: MaterialTextureResolver.FindOrdinal(
                             material,
                             materialTexture)));
                 }
             }
         }
 
-        foreach (MapRenderColorLayer layer in colorLayers)
+        foreach (MaterialColorLayer layer in colorLayers)
         {
-            if (!seen.Add((layer.SamplerDest, layer.SamplerHash)))
+            if (!seen.Add((
+                    layer.Identity.SamplerDest,
+                    layer.Identity.SamplerHash)))
                 continue;
 
-            bindings.Add(new MapRenderMaterialSamplerBinding(
-                layer.SamplerArgIndex,
-                layer.SamplerDest,
-                layer.SamplerHash,
-                layer.TextureSemantic,
+            bindings.Add(CreateWorldBinding(
+                layer.Identity,
                 layer.Texture.Name,
                 layer.Texture,
                 layer.UvRoute));
@@ -374,12 +375,14 @@ public sealed partial class MapSceneBuilder
 
         AppendStaticCustomSamplerBindings(
             bindings,
-            selectedPass.Pass.CustomSamplerFlags,
+            selectedPass.Pass.TechniquePass.CustomSamplerFlags,
             gfxMap,
             worldTextureBindings,
             reflectionProbeIndex,
             textureCache,
+            worldTextureCache,
             failedTextureCacheKeys,
+            failedWorldTextureCacheKeys,
             ref decodedTextureCount,
             ref skippedTextureCount);
 
@@ -387,13 +390,15 @@ public sealed partial class MapSceneBuilder
     }
 
     private static void AppendStaticCustomSamplerBindings(
-        List<MapRenderMaterialSamplerBinding> bindings,
+        List<MapRenderWorldMaterialSamplerBinding> bindings,
         byte customSamplerFlags,
         GfxWorldAsset gfxMap,
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         byte? reflectionProbeIndex,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
@@ -409,7 +414,9 @@ public sealed partial class MapSceneBuilder
                 gfxMap,
                 identity),
             textureCache,
+            worldTextureCache,
             failedTextureCacheKeys,
+            failedWorldTextureCacheKeys,
             ref decodedTextureCount,
             ref skippedTextureCount));
     }
@@ -419,7 +426,7 @@ public sealed partial class MapSceneBuilder
             byte customSamplerFlags,
             byte? reflectionProbeIndex)
     {
-        var selection = new MapRenderWorldCustomSamplerSelection(
+        var selection = new MaterialCustomSamplerSelection(
             customSamplerFlags);
         if (!selection.BindsReflectionProbe)
             return null;
@@ -439,14 +446,14 @@ public sealed partial class MapSceneBuilder
         MaterialAsset material,
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup,
-        MapRenderEditorMaterialTexturePlan? texturePlan,
+        EditorMaterialTexturePlan? texturePlan,
         SelectedColorPass selectedPass,
-        MapRenderTexture primaryTexture,
-        MapRenderUvRoute primaryUvRoute,
+        Texture primaryTexture,
+        UvRoute primaryUvRoute,
         XSurfaceVertexDecoder primaryDecoder,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
@@ -455,7 +462,7 @@ public sealed partial class MapSceneBuilder
         {
             new(
                 CreateSingleColorLayer(
-                    selectedPass.Pass,
+                    selectedPass.PrimarySampler,
                     primaryTexture,
                     primaryUvRoute)[0],
                 primaryDecoder)
@@ -464,23 +471,25 @@ public sealed partial class MapSceneBuilder
         if (!enableEditorMultiTexture ||
             techset is null ||
             texturePlan is null ||
-            selectedPass.Pass.TechniqueSlot < 0 ||
-            selectedPass.Pass.PassIndex < 0)
+            selectedPass.Pass.TechniquePass.TechniqueSlot < 0 ||
+            selectedPass.Pass.TechniquePass.PassIndex < 0)
         {
             return prepared;
         }
 
         MaterialTechniqueSlot? slot = lookup.ResolveTechniqueSlots(techset)
             .FirstOrDefault(candidate =>
-                candidate.Index == selectedPass.Pass.TechniqueSlot);
+                candidate.Index ==
+                    selectedPass.Pass.TechniquePass.TechniqueSlot);
         if (slot?.Technique is not { } technique ||
-            (uint)selectedPass.Pass.PassIndex >= (uint)technique.Passes.Count)
+            (uint)selectedPass.Pass.TechniquePass.PassIndex >=
+                (uint)technique.Passes.Count)
         {
             return prepared;
         }
 
         MaterialPassAsset sourcePass =
-            technique.Passes[selectedPass.Pass.PassIndex];
+            technique.Passes[selectedPass.Pass.TechniquePass.PassIndex];
         sourcePass.VertexShader ??=
             lookup.ResolveVertexShader(sourcePass.VertexShaderPointer);
         sourcePass.PixelShader ??=
@@ -493,24 +502,24 @@ public sealed partial class MapSceneBuilder
         int newlyDecodedTextureCount = 0;
         int newlySkippedTextureCount = 0;
 
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer1, 1);
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer2, 2);
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer3, 3);
-        AddColorRole(MapRenderEditorMaterialTextureRole.ColorLayer4, 4);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer1, 1);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer2, 2);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer3, 3);
+        AddColorRole(EditorMaterialTextureRole.ColorLayer4, 4);
         decodedTextureCount += newlyDecodedTextureCount;
         skippedTextureCount += newlySkippedTextureCount;
         return prepared;
 
         void AddColorRole(
-            MapRenderEditorMaterialTextureRole role,
+            EditorMaterialTextureRole role,
             int layerIndex)
         {
             if (prepared.Count >= MapRenderScene.MaxColorLayerCount ||
                 !texturePlan.TryGetUniqueBinding(
                     role,
-                    out MapRenderEditorMaterialTextureBinding? planned) ||
+                    out EditorMaterialTextureBinding? planned) ||
                 planned is null ||
-                planned.NameHash == selectedPass.Pass.SamplerHash ||
+                planned.NameHash == selectedPass.PrimarySampler.SamplerHash ||
                 (uint)planned.TextureTableOrdinal >=
                     (uint)material.Textures.Count ||
                 planned.Image is not { } image)
@@ -535,7 +544,7 @@ public sealed partial class MapSceneBuilder
 
             (MaterialShaderArgumentAsset arg, int argIndex) = matchingArgs[0];
             XSurfaceVertexDecoder decoder = primaryDecoder;
-            MapRenderUvRoute uvRoute = primaryUvRoute with
+            UvRoute uvRoute = primaryUvRoute with
             {
                 Label = $"static color layer {layerIndex} reuses base UV"
             };
@@ -552,27 +561,28 @@ public sealed partial class MapSceneBuilder
             }
 
             if (!TryDecodeTexture(
-                    materialTexture,
                     image,
+                    materialTexture.SamplerState,
                     imageStreams,
                     textureCache,
                     failedTextureCacheKeys,
                     true,
                     ref newlyDecodedTextureCount,
                     ref newlySkippedTextureCount,
-                    out MapRenderTexture? decodedTexture) ||
+                    out Texture? decodedTexture) ||
                 decodedTexture is null)
             {
                 return;
             }
 
             prepared.Add(new PreparedStaticColorLayer(
-                new MapRenderColorLayer(
+                new MaterialColorLayer(
                     layerIndex,
-                    argIndex,
-                    arg.Dest,
-                    planned.NameHash,
-                    planned.TextureSemantic,
+                    new MaterialSamplerIdentity(
+                        argIndex,
+                        arg.Dest,
+                        planned.NameHash,
+                        planned.TextureSemantic),
                     decodedTexture,
                     uvRoute,
                     BlendWeightComponent: -1),
@@ -586,24 +596,26 @@ public sealed partial class MapSceneBuilder
         RenderAssetLookup lookup,
         SelectedColorPass selectedPass)
     {
-        if (selectedPass.Pass.TechniqueSlot < 0 ||
-            selectedPass.Pass.PassIndex < 0)
+        if (selectedPass.Pass.TechniquePass.TechniqueSlot < 0 ||
+            selectedPass.Pass.TechniquePass.PassIndex < 0)
         {
             return WorldMaterialSamplerPlan.Empty;
         }
 
         MaterialTechniqueSlot? slot = lookup.ResolveTechniqueSlots(techset)
             .FirstOrDefault(candidate =>
-                candidate.Index == selectedPass.Pass.TechniqueSlot);
+                candidate.Index ==
+                    selectedPass.Pass.TechniquePass.TechniqueSlot);
         if (slot?.Technique is not { } technique ||
-            (uint)selectedPass.Pass.PassIndex >=
+            (uint)selectedPass.Pass.TechniquePass.PassIndex >=
                 (uint)technique.Passes.Count)
         {
             return WorldMaterialSamplerPlan.Empty;
         }
 
         MaterialPassAsset sourcePass =
-            technique.Passes[selectedPass.Pass.PassIndex];
+            technique.Passes[
+                selectedPass.Pass.TechniquePass.PassIndex];
         sourcePass.VertexShader ??=
             lookup.ResolveVertexShader(sourcePass.VertexShaderPointer);
         sourcePass.PixelShader ??=
@@ -630,18 +642,18 @@ public sealed partial class MapSceneBuilder
             if (!seen.Add((argument.Dest, samplerHash)))
                 continue;
 
-            bool resolved = TryResolveMaterialTexture(
+            bool resolved = MaterialTextureResolver.TryResolve(
                 material,
                 lookup,
                 samplerHash,
                 requireColor: false,
                 out MaterialTextureDef? materialTexture,
                 out GfxImageAsset? image);
-            MapRenderEditorMaterialTextureRole editorTextureRole =
+            EditorMaterialTextureRole editorTextureRole =
                 resolved && materialTexture is not null
-                    ? MapRenderEditorMaterialTextureRoleClassifier
+                    ? EditorMaterialTextureRoleClassifier
                         .Classify(materialTexture).Role
-                    : MapRenderEditorMaterialTextureRole.Unknown;
+                    : EditorMaterialTextureRole.Unknown;
             entries.Add(new WorldMaterialSamplerPlanEntry(
                 argumentIndex,
                 argument,
@@ -650,7 +662,7 @@ public sealed partial class MapSceneBuilder
                 image,
                 editorTextureRole,
                 resolved
-                    ? FindMaterialTextureOrdinal(material, materialTexture)
+                    ? MaterialTextureResolver.FindOrdinal(material, materialTexture)
                     : -1));
         }
 
@@ -661,7 +673,7 @@ public sealed partial class MapSceneBuilder
             args);
     }
 
-    private static IReadOnlyList<MapRenderMaterialSamplerBinding> PrepareWorldMaterialSamplerBindings(
+    private static IReadOnlyList<MapRenderWorldMaterialSamplerBinding> PrepareWorldMaterialSamplerBindings(
         WorldMaterialSamplerPlan samplerPlan,
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         SelectedColorPass selectedPass,
@@ -669,14 +681,16 @@ public sealed partial class MapSceneBuilder
         WorldVertexDecoderResolver vertexDecoderResolver,
         GfxWorldAsset gfxMap,
         GfxSurface surface,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
-        var bindings = new List<MapRenderMaterialSamplerBinding>();
+        var bindings = new List<MapRenderWorldMaterialSamplerBinding>();
         var seen = new HashSet<(ushort Dest, uint Hash)>();
 
         foreach (WorldMaterialSamplerPlanEntry planned in samplerPlan.Entries)
@@ -688,11 +702,12 @@ public sealed partial class MapSceneBuilder
             GfxImageAsset? image = planned.Image;
             if (materialTexture is null || image is null)
             {
-                bindings.Add(new MapRenderMaterialSamplerBinding(
-                    planned.ArgumentIndex,
-                    arg.Dest,
-                    samplerHash,
-                    materialTexture?.Semantic ?? 0,
+                bindings.Add(CreateWorldBinding(
+                    new MaterialSamplerIdentity(
+                        planned.ArgumentIndex,
+                        arg.Dest,
+                        samplerHash,
+                        materialTexture?.Semantic ?? 0),
                     image?.Name ?? string.Empty,
                     null,
                     null,
@@ -701,17 +716,17 @@ public sealed partial class MapSceneBuilder
                 continue;
             }
 
-            MapRenderColorLayer? decodedColorLayer =
+            MaterialColorLayer? decodedColorLayer =
                 colorLayers.FirstOrDefault(layer =>
-                    layer.SamplerDest == arg.Dest &&
-                    layer.SamplerHash == samplerHash);
-            MapRenderTexture? decodedTexture = decodedColorLayer?.Texture;
+                    layer.Identity.SamplerDest == arg.Dest &&
+                    layer.Identity.SamplerHash == samplerHash);
+            Texture? decodedTexture = decodedColorLayer?.Texture;
             bool textureDecoded = decodedTexture is not null;
             if (!textureDecoded)
             {
                 textureDecoded = TryDecodeTexture(
-                    materialTexture,
                     image,
+                    materialTexture.SamplerState,
                     imageStreams,
                     textureCache,
                     failedTextureCacheKeys,
@@ -721,7 +736,7 @@ public sealed partial class MapSceneBuilder
                     out decodedTexture) && decodedTexture is not null;
             }
 
-            MapRenderUvRoute? samplerUvRoute = null;
+            UvRoute? samplerUvRoute = null;
             byte texCoordSource = 0;
             bool routeResolved = samplerPlan.SourcePass is { } sourcePass &&
                 samplerPlan.VertexDeclaration is { } vertexDeclaration &&
@@ -741,11 +756,12 @@ public sealed partial class MapSceneBuilder
                 samplerUvRoute = decoderSelection.UvRoute;
             }
 
-            bindings.Add(new MapRenderMaterialSamplerBinding(
-                planned.ArgumentIndex,
-                arg.Dest,
-                samplerHash,
-                materialTexture.Semantic,
+            bindings.Add(CreateWorldBinding(
+                new MaterialSamplerIdentity(
+                    planned.ArgumentIndex,
+                    arg.Dest,
+                    samplerHash,
+                    materialTexture.Semantic),
                 decodedTexture?.Name ?? image.Name ?? string.Empty,
                 decodedTexture,
                 samplerUvRoute,
@@ -753,16 +769,15 @@ public sealed partial class MapSceneBuilder
                 TextureTableOrdinal: planned.TextureTableOrdinal));
         }
 
-        foreach (MapRenderColorLayer layer in colorLayers)
+        foreach (MaterialColorLayer layer in colorLayers)
         {
-            if (!seen.Add((layer.SamplerDest, layer.SamplerHash)))
+            if (!seen.Add((
+                    layer.Identity.SamplerDest,
+                    layer.Identity.SamplerHash)))
                 continue;
 
-            bindings.Add(new MapRenderMaterialSamplerBinding(
-                layer.SamplerArgIndex,
-                layer.SamplerDest,
-                layer.SamplerHash,
-                layer.TextureSemantic,
+            bindings.Add(CreateWorldBinding(
+                layer.Identity,
                 layer.Texture.Name,
                 layer.Texture,
                 layer.UvRoute));
@@ -770,13 +785,15 @@ public sealed partial class MapSceneBuilder
 
         AppendWorldCustomSamplerBindings(
             bindings,
-            selectedPass.Pass.CustomSamplerFlags,
+            selectedPass.Pass.TechniquePass.CustomSamplerFlags,
             gfxMap,
             worldTextureBindings,
             surface,
             imageStreams,
             textureCache,
+            worldTextureCache,
             failedTextureCacheKeys,
+            failedWorldTextureCacheKeys,
             ref decodedTextureCount,
             ref skippedTextureCount);
 
@@ -784,25 +801,27 @@ public sealed partial class MapSceneBuilder
     }
 
     private static void AppendWorldCustomSamplerBindings(
-        List<MapRenderMaterialSamplerBinding> bindings,
+        List<MapRenderWorldMaterialSamplerBinding> bindings,
         byte customSamplerFlags,
         GfxWorldAsset gfxMap,
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         GfxSurface surface,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
-        var selection = new MapRenderWorldCustomSamplerSelection(customSamplerFlags);
+        var selection = new MaterialCustomSamplerSelection(customSamplerFlags);
 
-        foreach (MapRenderWorldCustomSamplerFlags sampler in
+        foreach (MaterialCustomSamplerFlags sampler in
                  selection.EnumerateBindingsInNativeOrder())
         {
             switch (sampler)
             {
-                case MapRenderWorldCustomSamplerFlags.ReflectionProbe:
+                case MaterialCustomSamplerFlags.ReflectionProbe:
                     {
                         var identity = new MapRenderWorldRuntimeTextureIdentity(
                             MapRenderWorldRuntimeTextureKind.ReflectionProbe,
@@ -812,12 +831,14 @@ public sealed partial class MapSceneBuilder
                                 gfxMap,
                                 identity),
                             textureCache,
+                            worldTextureCache,
                             failedTextureCacheKeys,
+                            failedWorldTextureCacheKeys,
                             ref decodedTextureCount,
                             ref skippedTextureCount));
                         break;
                     }
-                case MapRenderWorldCustomSamplerFlags.SecondaryLightmap:
+                case MaterialCustomSamplerFlags.SecondaryLightmap:
                     {
                         var identity = new MapRenderWorldRuntimeTextureIdentity(
                             MapRenderWorldRuntimeTextureKind.SecondaryLightmap,
@@ -826,15 +847,17 @@ public sealed partial class MapSceneBuilder
                             worldTextureBindings.ResolveWorldRuntimeTexture(
                                 gfxMap,
                                 identity),
-                            LightmapPrimarySamplerState,
+                            RsxImplicitSamplerStateEncoding.Lightmap,
                             imageStreams,
                             textureCache,
+                            worldTextureCache,
                             failedTextureCacheKeys,
+                            failedWorldTextureCacheKeys,
                             ref decodedTextureCount,
                             ref skippedTextureCount));
                         break;
                     }
-                case MapRenderWorldCustomSamplerFlags.PrimaryLightmap:
+                case MaterialCustomSamplerFlags.PrimaryLightmap:
                     {
                         var identity = new MapRenderWorldRuntimeTextureIdentity(
                             MapRenderWorldRuntimeTextureKind.PrimaryLightmap,
@@ -843,10 +866,12 @@ public sealed partial class MapSceneBuilder
                             worldTextureBindings.ResolveWorldRuntimeTexture(
                                 gfxMap,
                                 identity),
-                            LightmapPrimarySamplerState,
+                            RsxImplicitSamplerStateEncoding.Lightmap,
                             imageStreams,
                             textureCache,
+                            worldTextureCache,
                             failedTextureCacheKeys,
+                            failedWorldTextureCacheKeys,
                             ref decodedTextureCount,
                             ref skippedTextureCount));
                         break;
@@ -858,10 +883,12 @@ public sealed partial class MapSceneBuilder
         }
     }
 
-    private static MapRenderMaterialSamplerBinding CreateWorldReflectionProbeSamplerBinding(
+    private static MapRenderWorldMaterialSamplerBinding CreateWorldReflectionProbeSamplerBinding(
         MapRenderWorldTextureAssetBinding runtimeBinding,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
@@ -874,39 +901,32 @@ public sealed partial class MapSceneBuilder
                 runtimeBinding.Identity);
         }
 
-        var textureDef = new MaterialTextureDef
-        {
-            NameHash = 0,
-            SamplerState = ReflectionProbeSamplerState,
-            Semantic = image.TextureSemantic,
-            Image = image
-        };
-        MapRenderTextureCacheKey cacheKey =
-            MapRenderTextureCacheKey.RuntimeCube(
-                textureDef,
+        MapRenderWorldTextureCacheKey cacheKey =
+            MapRenderWorldTextureCacheKey.WorldRuntimeCube(
                 image,
+                RsxImplicitSamplerStateEncoding.ReflectionProbe,
                 runtimeBinding.Identity);
-        MapRenderTexture? texture = null;
-        if (textureCache.TryGetValue(cacheKey, out MapRenderTexture? cached))
+        Texture? texture = null;
+        if (worldTextureCache.TryGetValue(cacheKey, out Texture? cached))
             texture = cached;
-        else if (!failedTextureCacheKeys.Contains(cacheKey) &&
+        else if (!failedWorldTextureCacheKeys.Contains(cacheKey) &&
                  TryCreateWorldTextureFromCapturedResource(
                      runtimeBinding,
-                     ReflectionProbeSamplerState,
+                     RsxImplicitSamplerStateEncoding.ReflectionProbe,
                      out texture))
         {
-            textureCache.Add(cacheKey, texture!);
+            worldTextureCache.Add(cacheKey, texture!);
             decodedTextureCount++;
         }
-        else if (!failedTextureCacheKeys.Contains(cacheKey) &&
+        else if (!failedWorldTextureCacheKeys.Contains(cacheKey) &&
                  image.PayloadBytes.Count > 0)
         {
             string authoredFormat =
                 GfxImageDecoder.DescribeFormat(image.Format);
-            IReadOnlyList<MapRenderTextureAuthoredSubresource>
+            IReadOnlyList<TextureAuthoredSubresource>
                 authoredSubresources = [];
             bool capturedAuthored =
-                MapRenderAuthoredTexturePayloadCapture.TryCaptureCube(
+                AuthoredTexturePayloadCapture.TryCaptureCube(
                     image,
                     image.PayloadBytes,
                     image.Width,
@@ -917,10 +937,10 @@ public sealed partial class MapSceneBuilder
                     out authoredSubresources);
             bool completeProvenAuthored =
                 capturedAuthored &&
-                MapRenderAuthoredTexturePayloadCapture
+                AuthoredTexturePayloadCapture
                     .IsCompleteProvenChain(
                         authoredSubresources,
-                        MapRenderTextureTarget.TextureCube,
+                        TextureTarget.TextureCube,
                         image.Width,
                         image.Height);
             DecodedRgbaGfxCube cube = default;
@@ -937,12 +957,12 @@ public sealed partial class MapSceneBuilder
                 completeProvenAuthored;
             if (hasDecoded || canPublishAuthoredOnly)
             {
-                IReadOnlyList<MapRenderTextureCubeFace>? faces = hasDecoded
+                IReadOnlyList<TextureCubeFace>? faces = hasDecoded
                     ? cube.Faces
-                        .Select(face => new MapRenderTextureCubeFace(
+                        .Select(face => new TextureCubeFace(
                             face[0].RgbaBytes,
                             face.Skip(1)
-                                .Select(mip => new MapRenderTextureMip(
+                                .Select(mip => new TextureMip(
                                     mip.Width,
                                     mip.Height,
                                     mip.RgbaBytes))
@@ -952,27 +972,27 @@ public sealed partial class MapSceneBuilder
                 DecodedRgbaGfxImage? top = hasDecoded
                     ? cube.Faces[0][0]
                     : null;
-                texture = new MapRenderTexture(
+                texture = new Texture(
                     top?.Name ?? image.Name ?? "unnamed_cube",
                     top?.Width ?? image.Width,
                     top?.Height ?? image.Height,
                     top?.Format ?? authoredFormat,
-                    ReflectionProbeSamplerState,
-                    MapRenderSamplerDecoder.Decode(
-                        ReflectionProbeSamplerState,
+                    RsxImplicitSamplerStateEncoding.ReflectionProbe,
+                    RsxSamplerDecoder.Decode(
+                        RsxImplicitSamplerStateEncoding.ReflectionProbe,
                         image.Pad0F,
                         image.Pad1B),
-                    MapRenderRsxTextureCommandBuilder.FromDescriptor(
+                    RsxTextureCommandBuilder.FromDescriptor(
                         descriptor),
                     hasDecoded && cube.Faces
                         .SelectMany(face => face)
                         .Any(mip => mip.HasTransparency) || !hasDecoded,
                     top?.RgbaBytes ?? [],
                     faces is null ? [] : faces[0].MipLevels,
-                    MapRenderTextureTarget.TextureCube,
+                    TextureTarget.TextureCube,
                     faces,
                     authoredSubresources);
-                textureCache.Add(cacheKey, texture);
+                worldTextureCache.Add(cacheKey, texture);
                 if (hasDecoded)
                     decodedTextureCount++;
                 else
@@ -980,33 +1000,36 @@ public sealed partial class MapSceneBuilder
             }
             else
             {
-                failedTextureCacheKeys.Add(cacheKey);
+                failedWorldTextureCacheKeys.Add(cacheKey);
                 skippedTextureCount++;
             }
         }
         else
         {
-            failedTextureCacheKeys.Add(cacheKey);
+            failedWorldTextureCacheKeys.Add(cacheKey);
             skippedTextureCount++;
         }
 
-        return new MapRenderMaterialSamplerBinding(
-            -1,
-            1,
-            0,
-            image.TextureSemantic,
+        return CreateWorldBinding(
+            new MaterialSamplerIdentity(
+                SamplerArgIndex: -1,
+                SamplerDest: 1,
+                SamplerHash: 0,
+                image.TextureSemantic),
             image.Name ?? string.Empty,
             texture,
             null,
             runtimeBinding.Identity);
     }
 
-    private static MapRenderMaterialSamplerBinding CreateWorldCustomImageSamplerBinding(
+    private static MapRenderWorldMaterialSamplerBinding CreateWorldCustomImageSamplerBinding(
         MapRenderWorldTextureAssetBinding runtimeBinding,
         byte samplerState,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
@@ -1020,24 +1043,17 @@ public sealed partial class MapSceneBuilder
                 runtimeBinding.Identity);
         }
 
-        var textureDef = new MaterialTextureDef
-        {
-            NameHash = 0,
-            SamplerState = samplerState,
-            Semantic = image.TextureSemantic,
-            Image = image
-        };
-        MapRenderTexture? texture;
+        Texture? texture;
         if (runtimeBinding.Resource is { } capturedResource)
         {
-            MapRenderTextureCacheKey capturedCacheKey =
-                MapRenderTextureCacheKey.CapturedRuntimeTexture(
-                    textureDef,
+            MapRenderWorldTextureCacheKey capturedCacheKey =
+                MapRenderWorldTextureCacheKey.CapturedWorldTexture(
                     image,
+                    samplerState,
                     runtimeBinding.Identity,
                     capturedResource.Shape,
                     capturedResource.ContentSha256);
-            if (textureCache.TryGetValue(capturedCacheKey, out texture))
+            if (worldTextureCache.TryGetValue(capturedCacheKey, out texture))
             {
             }
             else if (TryCreateWorldTextureFromCapturedResource(
@@ -1045,14 +1061,14 @@ public sealed partial class MapSceneBuilder
                          samplerState,
                          out texture))
             {
-                textureCache.Add(capturedCacheKey, texture!);
+                worldTextureCache.Add(capturedCacheKey, texture!);
                 decodedTextureCount++;
             }
             else
             {
                 _ = TryDecodeTexture(
-                    textureDef,
                     image,
+                    samplerState,
                     imageStreams,
                     textureCache,
                     failedTextureCacheKeys,
@@ -1065,8 +1081,8 @@ public sealed partial class MapSceneBuilder
         else
         {
             _ = TryDecodeTexture(
-                textureDef,
                 image,
+                samplerState,
                 imageStreams,
                 textureCache,
                 failedTextureCacheKeys,
@@ -1075,9 +1091,9 @@ public sealed partial class MapSceneBuilder
                 ref skippedTextureCount,
                 out texture) && texture is not null;
         }
-        MapRenderRsxTextureCommandState descriptorState =
-            MapRenderRsxTextureCommandBuilder.FromDescriptor(descriptor);
-        MapRenderTexture? runtimeTexture = texture is null
+        RsxTextureCommandState descriptorState =
+            RsxTextureCommandBuilder.FromDescriptor(descriptor);
+        Texture? runtimeTexture = texture is null
             ? null
             : texture.RsxTextureCommandState == descriptorState
                 ? texture
@@ -1085,11 +1101,12 @@ public sealed partial class MapSceneBuilder
                 {
                     RsxTextureCommandState = descriptorState
                 };
-        return new MapRenderMaterialSamplerBinding(
-            -1,
-            destination,
-            0,
-            image.TextureSemantic,
+        return CreateWorldBinding(
+            new MaterialSamplerIdentity(
+                SamplerArgIndex: -1,
+                destination,
+                SamplerHash: 0,
+                image.TextureSemantic),
             image.Name ?? string.Empty,
             runtimeTexture,
             null,
@@ -1099,7 +1116,7 @@ public sealed partial class MapSceneBuilder
     private static bool TryCreateWorldTextureFromCapturedResource(
         MapRenderWorldTextureAssetBinding runtimeBinding,
         byte samplerState,
-        out MapRenderTexture? texture)
+        out Texture? texture)
     {
         texture = null;
         if (!runtimeBinding.IsRenderResourceReady ||
@@ -1110,16 +1127,16 @@ public sealed partial class MapSceneBuilder
             return false;
         }
 
-        MapRenderTextureTarget target = resource.Shape switch
+        TextureTarget target = resource.Shape switch
         {
-            MapRenderSelectedPassSamplerShape.TwoDimensional =>
-                MapRenderTextureTarget.Texture2D,
-            MapRenderSelectedPassSamplerShape.Cube =>
-                MapRenderTextureTarget.TextureCube,
+            TextureSamplerShape.TwoDimensional =>
+                TextureTarget.Texture2D,
+            TextureSamplerShape.Cube =>
+                TextureTarget.TextureCube,
             _ => throw new InvalidOperationException(
                 $"Captured runtime texture shape {resource.Shape} cannot be materialized as a render texture.")
         };
-        int faceCount = target == MapRenderTextureTarget.TextureCube ? 6 : 1;
+        int faceCount = target == TextureTarget.TextureCube ? 6 : 1;
         int mipCount = resource.Subresources.Count / faceCount;
         if (mipCount <= 0 || resource.Subresources.Count != faceCount * mipCount)
         {
@@ -1128,22 +1145,22 @@ public sealed partial class MapSceneBuilder
         }
 
         byte[] topRgba;
-        IReadOnlyList<MapRenderTextureMip> topMipLevels;
-        IReadOnlyList<MapRenderTextureCubeFace>? cubeFaces = null;
-        if (target == MapRenderTextureTarget.TextureCube)
+        IReadOnlyList<TextureMip> topMipLevels;
+        IReadOnlyList<TextureCubeFace>? cubeFaces = null;
+        if (target == TextureTarget.TextureCube)
         {
             cubeFaces = Enumerable.Range(0, faceCount)
                 .Select(faceOrdinal =>
                 {
-                    MapRenderDecodedTextureSubresourceSnapshot[] face =
+                    DecodedTextureSubresourceSnapshot[] face =
                         resource.Subresources
                             .Skip(faceOrdinal * mipCount)
                             .Take(mipCount)
                             .ToArray();
-                    return new MapRenderTextureCubeFace(
+                    return new TextureCubeFace(
                         face[0].SharedRgbaBytes,
                         face.Skip(1)
-                            .Select(mip => new MapRenderTextureMip(
+                            .Select(mip => new TextureMip(
                                 mip.Width,
                                 mip.Height,
                                 mip.SharedRgbaBytes))
@@ -1155,29 +1172,29 @@ public sealed partial class MapSceneBuilder
         }
         else
         {
-            MapRenderDecodedTextureSubresourceSnapshot top =
+            DecodedTextureSubresourceSnapshot top =
                 resource.Subresources[0];
             topRgba = top.SharedRgbaBytes;
             topMipLevels = resource.Subresources
                 .Skip(1)
-                .Select(mip => new MapRenderTextureMip(
+                .Select(mip => new TextureMip(
                     mip.Width,
                     mip.Height,
                     mip.SharedRgbaBytes))
                 .ToArray();
         }
 
-        texture = new MapRenderTexture(
+        texture = new Texture(
             resource.Name,
             resource.Width,
             resource.Height,
             resource.Format,
             samplerState,
-            MapRenderSamplerDecoder.Decode(
+            RsxSamplerDecoder.Decode(
                 samplerState,
                 image.Pad0F,
                 image.Pad1B),
-            MapRenderRsxTextureCommandBuilder.FromDescriptor(descriptor),
+            RsxTextureCommandBuilder.FromDescriptor(descriptor),
             resource.HasTransparency,
             topRgba,
             topMipLevels,
@@ -1186,16 +1203,38 @@ public sealed partial class MapSceneBuilder
         return true;
     }
 
-    private static MapRenderMaterialSamplerBinding CreateMissingCustomSamplerBinding(
+    private static MapRenderWorldMaterialSamplerBinding CreateMissingCustomSamplerBinding(
         ushort destination,
-        MapRenderWorldRuntimeTextureIdentity? runtimeIdentity = null) => new(
-            -1,
-            destination,
-            0,
-            0,
+        MapRenderWorldRuntimeTextureIdentity? runtimeIdentity = null) =>
+        CreateWorldBinding(
+            new MaterialSamplerIdentity(
+                SamplerArgIndex: -1,
+                destination,
+                SamplerHash: 0,
+                TextureSemantic: 0),
             string.Empty,
             null,
             null,
             runtimeIdentity);
+
+    private static MapRenderWorldMaterialSamplerBinding CreateWorldBinding(
+        MaterialSamplerIdentity identity,
+        string textureName,
+        Texture? texture,
+        UvRoute? uvRoute,
+        MapRenderWorldRuntimeTextureIdentity? RuntimeTextureIdentity = null,
+        EditorMaterialTextureRole EditorTextureRole =
+            EditorMaterialTextureRole.Unknown,
+        int TextureTableOrdinal = -1,
+        string? ExternalResourceIdentity = null) => new(
+            new MaterialSamplerBinding(
+                identity,
+                textureName,
+                texture,
+                uvRoute,
+                EditorTextureRole,
+                TextureTableOrdinal,
+                ExternalResourceIdentity),
+            RuntimeTextureIdentity);
 
 }

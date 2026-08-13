@@ -83,5 +83,5 @@ internal sealed record WorldMaterialSamplerPlanEntry(
     uint SamplerHash,
     MaterialTextureDef? MaterialTexture,
     GfxImageAsset? Image,
-    MapRenderEditorMaterialTextureRole EditorTextureRole,
+    EditorMaterialTextureRole EditorTextureRole,
     int TextureTableOrdinal);

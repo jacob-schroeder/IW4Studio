@@ -4,6 +4,7 @@ using IW4.FastFiles.Zone;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 using IW4.Render.Textures;
 
 namespace IW4.Render.UI;
@@ -27,10 +28,10 @@ public static partial class UiMaterialDrawPlanner
     private const uint ViewProjectionArgument = 0x00530004;
     private const ushort ViewProjectionDestination = 0;
     private const uint BaseColorSamplerHash =
-        MapRenderEditorMaterialTextureRoleClassifier.BaseColorHash;
+        EditorMaterialTextureRoleClassifier.BaseColorHash;
     private const ushort BaseColorSamplerDestination = 0;
 
-    private static readonly MapRenderShaderVertexInputBinding[] VertexInputs =
+    private static readonly ShaderVertexInputBinding[] VertexInputs =
     [
         new(
             RouteIndex: 0,
@@ -92,7 +93,7 @@ public static partial class UiMaterialDrawPlanner
         if (!assets.TryResolveCanonicalMaterialTechniqueBinding(
                 request.MaterialName,
                 request.CanonicalPoolRevision,
-                out MapRenderMaterialTechniqueBinding? binding) ||
+                out MaterialTechniqueBinding? binding) ||
             binding is null)
         {
             return Block(
@@ -161,10 +162,11 @@ public static partial class UiMaterialDrawPlanner
         }
 
         MaterialPassAsset sourcePass = technique.Passes[PassIndex];
-        MapRenderSelectedPassProgramSources sources = assets.ResolveSources(
+        SelectedPassProgramSources sources = assets.ResolveSources(
             techniqueSet,
             technique,
-            new MapRenderSelectedTechniquePass(PassIndex, sourcePass));
+            PassIndex,
+            sourcePass);
         if (!sources.HasCompleteArguments)
         {
             return Block(
@@ -253,12 +255,12 @@ public static partial class UiMaterialDrawPlanner
                 "texture with no additional faces.");
         }
 
-        if (!MapRenderStateDecoder.TryDecode(
+        if (!RenderStateDecoder.TryDecode(
                 material,
                 TechniqueSlot,
                 PassIndex,
                 assets,
-                out MapRenderState state))
+                out RenderState state))
         {
             return Block(
                 diagnostics,
@@ -286,7 +288,7 @@ public static partial class UiMaterialDrawPlanner
             return new UiMaterialDrawPlan(null, diagnostics);
         }
 
-        MapRenderSamplerState samplerState = MapRenderSamplerDecoder.Decode(
+        RsxSamplerState samplerState = RsxSamplerDecoder.Decode(
             textureRow.SamplerState,
             textureResource.DescriptorPad0F,
             textureResource.DescriptorPad1B);
@@ -310,20 +312,21 @@ public static partial class UiMaterialDrawPlanner
             PassIndex,
             sources.VertexProgram.Name,
             sources.PixelProgram.Name);
-        var renderPass = new MapRenderMaterialPass(
-            passIdentity.MaterialName,
-            passIdentity.TechniqueSetName,
-            TechniqueSlot,
-            passIdentity.TechniqueName,
-            MapRenderPassClassifier.CameraColor,
-            PassIndex,
+        var primarySampler = new MaterialSamplerIdentity(
             samplerArgumentIndex,
             samplerArgument.Dest,
             unchecked((uint)samplerArgument.ArgumentRaw),
-            textureRow.Semantic,
-            TexCoordSource: 2,
-            sourcePass.CustomSamplerFlags);
-        var uvRoute = new MapRenderUvRoute(
+            textureRow.Semantic);
+        var renderPass = new MaterialPassIdentity(
+            passIdentity.MaterialName,
+            new TechniquePassIdentity(
+                passIdentity.TechniqueSetName,
+                TechniqueSlot,
+                passIdentity.TechniqueName,
+                MaterialPassClassifier.CameraColor,
+                PassIndex,
+                sourcePass.CustomSamplerFlags));
+        var uvRoute = new UvRoute(
             "UI packet TEXCOORD_0",
             "UI_MATERIAL_VERTEX",
             TexCoordSource: 2,
@@ -332,34 +335,32 @@ public static partial class UiMaterialDrawPlanner
             Offset: 32,
             FormatByte0: 0,
             FormatByte1: 0x02,
-            MapRenderUvBaseMode.Engine,
+            UvBaseMode.Engine,
             ComponentA: 0,
             ComponentB: 1,
             ScaleU: 1f,
             ScaleV: 1f,
             AddU: 0f,
             AddV: 0f);
-        MapRenderMaterialSamplerBinding[] materialSamplers =
+        MaterialSamplerBinding[] materialSamplers =
         [
             new(
-                samplerArgumentIndex,
-                samplerArgument.Dest,
-                unchecked((uint)samplerArgument.ArgumentRaw),
-                textureRow.Semantic,
+                primarySampler,
                 textureResource.ImageName,
                 Texture: null,
                 uvRoute,
                 EditorTextureRole:
-                    MapRenderEditorMaterialTextureRole.BaseColor,
+                    EditorMaterialTextureRole.BaseColor,
                 TextureTableOrdinal: textureOrdinal,
                 ExternalResourceIdentity: textureResource.ResourceKey)
         ];
-        var selection = new MapRenderShaderExecutionPassSelection(
+        var selection = new ShaderExecutionPassSelection(
             renderPass,
+            primarySampler,
             state,
             textureResource.ImageName);
-        MapRenderShaderExecutionContract execution =
-            MapRenderShaderExecutionContractFactory.Create(
+        ShaderExecutionContract execution =
+            ShaderExecutionContractFactory.Create(
                 material,
                 techniqueSet,
                 assets,

@@ -1,9 +1,4 @@
-using System.Numerics;
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.GfxMap;
-using IW4.FastFiles.Zone;
-using IW4.Runtime.Database;
-
+using IW4.Render.Techniques;
 using IW4.Render.Execution;
 using IW4.Render.EditorPreview;
 using IW4.Render.Materials;
@@ -12,15 +7,16 @@ using IW4.Render.Textures;
 namespace IW4.Render.Geometry;
 
 public sealed record MapRenderTexturedBatch(
-    MapRenderMaterialPass Pass,
-    MapRenderTexture Texture,
-    MapRenderTexture? LightmapTexture,
-    IReadOnlyList<MapRenderColorLayer> ColorLayers,
-    IReadOnlyList<MapRenderMaterialSamplerBinding> MaterialSamplers,
-    MapRenderShaderExecutionContract ShaderExecution,
+    MaterialPassIdentity Pass,
+    MaterialSamplerIdentity PrimarySampler,
+    Texture Texture,
+    Texture? LightmapTexture,
+    IReadOnlyList<MaterialColorLayer> ColorLayers,
+    IReadOnlyList<MapRenderWorldMaterialSamplerBinding> MaterialSamplers,
+    ShaderExecutionContract ShaderExecution,
     string ShaderExecutionStatus,
-    MapRenderUvRoute UvRoute,
-    MapRenderState State,
+    UvRoute UvRoute,
+    RenderState State,
     int UnresolvedCodeSamplerCount,
     IReadOnlyList<MapRenderPickRange> PickRanges,
     float[] Vertices,
@@ -36,7 +32,7 @@ public sealed record MapRenderTexturedBatch(
 
     public MapRenderEditorDepthPrepassPlan? EditorDepthPrepass { get; init; }
 
-    public MapRenderShaderExecutionContract? DepthPrepassShaderExecution
+    public ShaderExecutionContract? DepthPrepassShaderExecution
     {
         get;
         init;

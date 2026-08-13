@@ -116,7 +116,7 @@ public sealed class MapRenderOpenGlNormalCameraSceneTargetPlan
             semanticClear.Alpha);
         Antialiasing = antialiasing;
         FragmentTargetOutputAvailability =
-            new MapRenderFragmentTargetOutputAvailability(
+            new FragmentTargetOutputAvailability(
                 colorKey.RawColorTargetMask,
                 binding.Resource.ColorResource.HostDrawBufferCount);
         RenderDepthStencilAttachmentPlan semanticDepthStencil =
@@ -230,7 +230,7 @@ public sealed class MapRenderOpenGlNormalCameraSceneTargetPlan
     public MapRenderOpenGlNormalCameraTargetAntialiasingPlan Antialiasing
         { get; }
 
-    public MapRenderFragmentTargetOutputAvailability
+    public FragmentTargetOutputAvailability
         FragmentTargetOutputAvailability { get; }
 
     public bool EnablesEffectiveSurfaceClipScissor => true;

@@ -16,4 +16,4 @@ public sealed record MapRenderPickColorLayerInfo(
     byte TextureSemantic,
     string TextureName,
     int BlendWeightComponent,
-    MapRenderUvRoute UvRoute);
+    UvRoute UvRoute);

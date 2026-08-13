@@ -15,7 +15,7 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
     IEquatable<RsxShaderTranslationRequestSnapshot>
 {
     internal const string CanonicalEncodingVersion =
-        "map-render-rsx-translation-request/v1";
+        "rsx-shader-translation-request/v1";
 
     private readonly byte[] _vertexProgramData;
     private readonly byte[] _pixelProgramData;
@@ -78,7 +78,7 @@ internal sealed class RsxShaderTranslationRequestSnapshot :
     internal static RsxShaderTranslationRequestSnapshot Capture(
         MaterialAsset? material,
         MaterialPassAsset sourcePass,
-        MapRenderSelectedPassProgramSources programSources,
+        SelectedPassProgramSources programSources,
         IReadOnlySet<int> cubeSamplerDestinations,
         IReadOnlySet<int> shadowSamplerDestinations,
         IReadOnlySet<int>? volumeSamplerDestinations = null,

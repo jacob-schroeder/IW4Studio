@@ -8,9 +8,9 @@ namespace IW4.Render.OpenGl.FloatZ;
 
 internal sealed record MapRenderOpenGlNormalCameraFloatZProgramSources(
     string FloatZVertexGlsl,
-    MapRenderOpenGlAuthoredFragmentSource FloatZPixelSource,
+    OpenGlAuthoredFragmentSource FloatZPixelSource,
     string ProcessedFloatZVertexGlsl,
-    MapRenderOpenGlAuthoredFragmentSource ProcessedFloatZPixelSource,
+    OpenGlAuthoredFragmentSource ProcessedFloatZPixelSource,
     long AssetPoolRevision);
 
 /// <summary>

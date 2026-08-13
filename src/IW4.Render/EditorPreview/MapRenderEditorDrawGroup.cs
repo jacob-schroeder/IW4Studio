@@ -122,7 +122,7 @@ public sealed class MapRenderEditorDrawGroup<TPass>
         long sourceOrdinal,
         MapRenderEditorDrawBucketClassification classification,
         IReadOnlyList<TPass> authoredPasses,
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         long? cameraIndependentSortKey = null)
     {
         if (!bounds.IsValid || !IsFinite(bounds.Min) || !IsFinite(bounds.Max))

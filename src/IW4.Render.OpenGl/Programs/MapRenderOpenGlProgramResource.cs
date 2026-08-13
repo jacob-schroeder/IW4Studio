@@ -16,7 +16,7 @@ public sealed class MapRenderOpenGlProgramResource
     private readonly ReadOnlyDictionary<int, int>
         _codePixelConstantUniformLocations;
     public MapRenderOpenGlProgramResource(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         uint handle,
         string vertexGlslSha256,
         string pixelGlslSha256,
@@ -43,15 +43,15 @@ public sealed class MapRenderOpenGlProgramResource
             nameof(samplerUniformLocations));
         _vertexConstantUniformLocations = SnapshotLocations(
             vertexConstantUniformLocations,
-            MapRenderRsxVertexConstantLayout.Count - 1,
+            RsxVertexConstantLayout.Count - 1,
             nameof(vertexConstantUniformLocations));
         _codePixelConstantUniformLocations = SnapshotLocations(
             codePixelConstantUniformLocations,
-            MapRenderOpenGlCodePixelConstantUniformLayout.Count - 1,
+            OpenGlCodePixelConstantUniformLayout.Count - 1,
             nameof(codePixelConstantUniformLocations));
     }
 
-    public MapRenderOpenGlProgramKey Key { get; }
+    public OpenGlProgramKey Key { get; }
 
     public uint Handle { get; }
 

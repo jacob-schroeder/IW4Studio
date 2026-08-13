@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
@@ -36,20 +37,20 @@ public sealed record MapRenderPickMaterialInfo(
     uint SamplerRsxTexWrapPayload,
     int SamplerFilterClass,
     int SamplerMipClass,
-    MapRenderTextureFilter SamplerMinFilter,
-    MapRenderTextureFilter SamplerMagFilter,
-    MapRenderTextureFilter SamplerMipFilter,
+    TextureFilter SamplerMinFilter,
+    TextureFilter SamplerMagFilter,
+    TextureFilter SamplerMipFilter,
     int SamplerMaxAnisotropy,
-    MapRenderTextureAddressMode SamplerAddressU,
-    MapRenderTextureAddressMode SamplerAddressV,
-    MapRenderTextureAddressMode SamplerAddressW,
-    MapRenderRsxTextureCommandState RsxTextureCommandState,
+    TextureAddressMode SamplerAddressU,
+    TextureAddressMode SamplerAddressV,
+    TextureAddressMode SamplerAddressW,
+    RsxTextureCommandState RsxTextureCommandState,
     bool TextureHasTransparency,
     int TextureMipLevelCount,
     int UnresolvedCodeSamplerCount,
     IReadOnlyList<MapRenderPickColorLayerInfo> ColorLayers,
     IReadOnlyList<MapRenderPickMaterialSamplerInfo> MaterialSamplers,
-    MapRenderShaderExecutionContract ShaderExecution,
+    ShaderExecutionContract ShaderExecution,
     string ShaderExecutionStatus,
-    MapRenderUvRoute UvRoute,
-    MapRenderState State);
+    UvRoute UvRoute,
+    RenderState State);

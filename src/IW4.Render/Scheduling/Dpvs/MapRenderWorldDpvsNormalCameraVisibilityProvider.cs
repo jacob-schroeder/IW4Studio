@@ -39,7 +39,7 @@ public sealed class MapRenderWorldDpvsNormalCameraVisibilityProvider :
 
     public MapRenderWorldDpvsVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebufferExtent,
         MapRenderNormalCameraFarPlaneState farPlane)
     {
@@ -63,7 +63,7 @@ public sealed class MapRenderWorldDpvsNormalCameraVisibilityProvider :
 
     private MapRenderWorldDpvsVisibilityBuildResult BuildCore(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebufferExtent,
         MapRenderNormalCameraFarPlaneState farPlane,
         MapRenderWorldDpvsWorkingSet workingSet)

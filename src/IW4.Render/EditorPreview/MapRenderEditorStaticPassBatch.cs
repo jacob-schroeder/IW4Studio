@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Materials;
 
 namespace IW4.Render.EditorPreview;
@@ -11,4 +12,4 @@ public readonly record struct MapRenderEditorStaticPassBatch(
     int DrawGroupId,
     int PassIndex,
     int InstanceCount,
-    MapRenderState State);
+    RenderState State);

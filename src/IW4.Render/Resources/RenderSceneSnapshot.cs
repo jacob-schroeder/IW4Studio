@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Collections.Immutable;
 using System.Numerics;
 
@@ -28,8 +29,10 @@ public sealed class RenderSkySubmissionSnapshot
         RenderSemanticIdentity vertexLayoutIdentity,
         RenderSemanticIdentity textureIdentity,
         RenderSemanticIdentity samplerIdentity,
-        MapRenderMaterialPass? shaderPass = null,
-        MapRenderShaderExecutionContract? shaderExecution = null)
+        MaterialPassIdentity? shaderPass = null,
+        MaterialSamplerIdentity? shaderPrimarySampler = null,
+        byte shaderTexCoordSource = 0,
+        ShaderExecutionContract? shaderExecution = null)
     {
         if (sceneOrdinal < 0)
             throw new ArgumentOutOfRangeException(nameof(sceneOrdinal));
@@ -81,9 +84,18 @@ public sealed class RenderSkySubmissionSnapshot
         VertexLayoutIdentity = vertexLayoutIdentity;
         TextureIdentity = textureIdentity;
         SamplerIdentity = samplerIdentity;
-        ShaderPassProvenance = shaderPass is null
-            ? null
-            : new RenderMaterialPassProvenanceSnapshot(shaderPass);
+        if ((shaderPass is null) != (shaderPrimarySampler is null))
+        {
+            throw new ArgumentException(
+                "Sky source-pass and primary-sampler provenance must be retained together.");
+        }
+        ShaderPassProvenance = shaderPass is null ||
+            shaderPrimarySampler is not { } primarySampler
+                ? null
+                : new RenderMaterialPassProvenanceSnapshot(
+                    shaderPass,
+                    primarySampler,
+                    shaderTexCoordSource);
         ShaderProvenance = shaderExecution is null
             ? null
             : new RenderWorldShaderProvenanceSnapshot(
@@ -626,7 +638,7 @@ public sealed class RenderNormalCameraDrawOmissionSnapshot
 
 /// <summary>
 /// One exact texture and sampler pair reachable from a prepared pass. The
-/// descriptors own their bytes; no source MapRenderTexture is retained.
+/// descriptors own their bytes; no source Texture is retained.
 /// </summary>
 public sealed class RenderNormalCameraTextureResourceSnapshot
 {
@@ -675,7 +687,7 @@ public sealed class RenderNormalCameraTextureResourceSnapshot
 public sealed class RenderNormalCameraColorLayerSnapshot
 {
     internal RenderNormalCameraColorLayerSnapshot(
-        MapRenderColorLayer source,
+        MaterialColorLayer source,
         RenderNormalCameraTextureResourceSnapshot resource)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -683,10 +695,10 @@ public sealed class RenderNormalCameraColorLayerSnapshot
         ArgumentNullException.ThrowIfNull(source.UvRoute);
 
         LayerIndex = source.LayerIndex;
-        SamplerArgIndex = source.SamplerArgIndex;
-        SamplerDest = source.SamplerDest;
-        SamplerHash = source.SamplerHash;
-        TextureSemantic = source.TextureSemantic;
+        SamplerArgIndex = source.Identity.SamplerArgIndex;
+        SamplerDest = source.Identity.SamplerDest;
+        SamplerHash = source.Identity.SamplerHash;
+        TextureSemantic = source.Identity.TextureSemantic;
         UvRoute = new RenderMaterialUvRouteSnapshot(source.UvRoute);
         BlendWeightComponent = source.BlendWeightComponent;
         TextureIdentity = resource.TextureIdentity;
@@ -727,18 +739,19 @@ public sealed class RenderNormalCameraColorLayerSnapshot
 public sealed class RenderNormalCameraMaterialSamplerSnapshot
 {
     internal RenderNormalCameraMaterialSamplerSnapshot(
-        MapRenderMaterialSamplerBinding source,
+        MaterialSamplerBinding source,
+        MapRenderWorldRuntimeTextureIdentity? runtimeTextureIdentity,
         RenderNormalCameraTextureResourceSnapshot? resource)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(source.TextureName);
 
-        SamplerArgIndex = source.SamplerArgIndex;
-        SamplerDest = source.SamplerDest;
-        SamplerHash = source.SamplerHash;
-        TextureSemantic = source.TextureSemantic;
+        SamplerArgIndex = source.Identity.SamplerArgIndex;
+        SamplerDest = source.Identity.SamplerDest;
+        SamplerHash = source.Identity.SamplerHash;
+        TextureSemantic = source.Identity.TextureSemantic;
         TextureName = source.TextureName;
-        WorldRuntimeTextureIdentity = source.WorldRuntimeTextureIdentity;
+        WorldRuntimeTextureIdentity = runtimeTextureIdentity;
         EditorTextureRole = source.EditorTextureRole;
         TextureTableOrdinal = source.TextureTableOrdinal;
         UvRoute = source.UvRoute is null
@@ -762,7 +775,7 @@ public sealed class RenderNormalCameraMaterialSamplerSnapshot
     public string TextureName { get; }
     public MapRenderWorldRuntimeTextureIdentity? WorldRuntimeTextureIdentity
         { get; }
-    public MapRenderEditorMaterialTextureRole EditorTextureRole { get; }
+    public EditorMaterialTextureRole EditorTextureRole { get; }
     public int TextureTableOrdinal { get; }
     public RenderMaterialUvRouteSnapshot? UvRoute { get; }
     public RenderSemanticIdentity? TextureIdentity { get; }
@@ -810,7 +823,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         int? lodIndex,
         RenderMaterialPassProvenanceSnapshot sourcePass,
         RenderMaterialUvRouteSnapshot uvRoute,
-        MapRenderState sourceState,
+        RenderState sourceState,
         byte sceneLightIndex,
         int unresolvedCodeSamplerCount,
         RenderWorldShaderProvenanceSnapshot shaderProvenance,
@@ -833,7 +846,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         RenderInstanceLayoutDescriptor? instanceLayout,
         RenderInstanceDescriptor? instances,
         IEnumerable<float> rsxVertexInputs,
-        MapRenderBounds localBounds)
+        RenderBounds localBounds)
     {
         if (!Enum.IsDefined(sourceKind))
             throw new ArgumentOutOfRangeException(nameof(sourceKind));
@@ -1035,7 +1048,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
     public int? LodIndex { get; }
     public RenderMaterialPassProvenanceSnapshot SourcePass { get; }
     public RenderMaterialUvRouteSnapshot UvRoute { get; }
-    public MapRenderState SourceState { get; }
+    public RenderState SourceState { get; }
     public byte SceneLightIndex { get; }
     public int UnresolvedCodeSamplerCount { get; }
     public RenderWorldShaderProvenanceSnapshot ShaderProvenance { get; }
@@ -1062,7 +1075,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
     public RenderInstanceLayoutDescriptor? InstanceLayout { get; }
     public RenderInstanceDescriptor? Instances { get; }
     public ImmutableArray<float> RsxVertexInputs { get; }
-    public MapRenderBounds LocalBounds { get; }
+    public RenderBounds LocalBounds { get; }
     public string ContentDigest { get; }
 
     internal void ValidateResources(RenderResourceSnapshot resources)
@@ -1118,7 +1131,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         writer.WriteNullableInt32(LodIndex);
         SourcePass.AppendContent(writer);
         UvRoute.AppendContent(writer);
-        writer.AppendMapRenderStateV1(SourceState);
+        writer.AppendRenderStateV1(SourceState);
         writer.WriteByte(SceneLightIndex);
         writer.WriteInt32(UnresolvedCodeSamplerCount);
         ShaderProvenance.AppendContent(writer);
@@ -1134,7 +1147,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
             writer.WriteString(depth.VertexProgramName);
             writer.WriteString(depth.PixelProgramName);
             writer.WriteInt32((int)depth.Program);
-            writer.AppendMapRenderStateV1(depth.State);
+            writer.AppendRenderStateV1(depth.State);
         }
         writer.WriteBoolean(DepthPrepassShaderProvenance is not null);
         DepthPrepassShaderProvenance?.AppendContent(writer);
@@ -1257,7 +1270,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
 
     private static void AppendBounds(
         RenderContentDigestWriter writer,
-        MapRenderBounds bounds)
+        RenderBounds bounds)
     {
         writer.WriteSingle(bounds.Min.X);
         writer.WriteSingle(bounds.Min.Y);

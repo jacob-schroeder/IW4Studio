@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using Silk.NET.OpenGL;
 
@@ -5,6 +6,7 @@ using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Materials;
+using IW4.Render.OpenGl.Programs;
 
 namespace IW4.Render.OpenGl;
 
@@ -27,13 +29,13 @@ internal readonly record struct GlTexturedMesh(
     float LocalMinimumHeight,
     float LocalHeightRange,
     bool ReceivesEditorLighting,
-    MapRenderState State,
+    RenderState State,
     nuint IndexOffsetBytes = 0,
     int BaseVertex = 0,
     bool OwnsGeometry = true,
     bool OwnsVertexArray = false,
     int WorldSurfaceIndex = -1,
-    MapRenderBounds WorldBounds = default,
+    RenderBounds WorldBounds = default,
     int MultiDrawBatchGroupId = -1,
     int StaticModelLodIndex = -1)
 {
@@ -42,7 +44,7 @@ internal readonly record struct GlTexturedMesh(
     /// code samplers cannot be treated as statically ready: each publication
     /// contract must be satisfied before issuing this mesh.
     /// </summary>
-    public MapRenderShaderExecutionContract? ShaderExecution { get; init; }
+    public ShaderExecutionContract? ShaderExecution { get; init; }
 
     /// <summary>
     /// Preserved selected-pass control word used by the RSX shader-packer
@@ -60,6 +62,18 @@ internal readonly record struct GlTexturedMesh(
     public MapRenderEditorDepthPrepassPlan? EditorDepthPrepass { get; init; }
 
     public GlRsxProgram DepthPrepassRsxProgram { get; init; }
+
+    /// <summary>
+    /// Map-only static-model bridge locations for the composed color program.
+    /// </summary>
+    public MapRenderOpenGlStaticModelProgramUniforms?
+        StaticModelProgramUniforms { get; init; }
+
+    /// <summary>
+    /// Map-only static-model bridge locations for the composed depth program.
+    /// </summary>
+    public MapRenderOpenGlStaticModelProgramUniforms?
+        DepthStaticModelProgramUniforms { get; init; }
 
     public GlRsxConstantBinding[] DepthPrepassRsxConstantBindings
     {

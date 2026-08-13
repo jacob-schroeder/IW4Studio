@@ -5,6 +5,8 @@ using IW4.Render.Geometry;
 using IW4.Render.Materials;
 using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
+using IW4.Render.Textures;
 
 namespace IW4.Render.Resources;
 
@@ -50,37 +52,40 @@ public static class RenderLoadedCameraColorCompatibilityProfile
     public const string WorldVertexFormat =
         "MTL_WORLDVERT_TEX_1_NRM_1/backendRow5";
 
-    public static MapRenderState RequiredState { get; } =
-        MapRenderStateDecoder.Decode(LoadBits0, LoadBits1, 0);
+    public static RenderState RequiredState { get; } =
+        RenderStateDecoder.Decode(LoadBits0, LoadBits1, 0);
 
-    public static bool MatchesRawState(MapRenderState state) =>
+    public static bool MatchesRawState(RenderState state) =>
         state.HasState &&
         state.LoadBits0 == LoadBits0 &&
         state.LoadBits1 == LoadBits1 &&
         state.Tail == 0;
 
-    public static bool Matches(MapRenderState state) =>
+    public static bool Matches(RenderState state) =>
         MatchesRawState(state) && state == RequiredState;
 
-    public static bool MatchesTechnique(MapRenderMaterialPass pass) =>
-        pass.TechniqueSlot == TechniqueSlot &&
-        pass.PassIndex == PassIndex &&
+    public static bool MatchesTechnique(MaterialPassIdentity pass) =>
+        pass.TechniquePass.TechniqueSlot == TechniqueSlot &&
+        pass.TechniquePass.PassIndex == PassIndex &&
         string.Equals(
-            pass.TechniqueName,
+            pass.TechniquePass.TechniqueName,
             TechniqueName,
             StringComparison.Ordinal) &&
         string.Equals(
-            pass.PassClass,
-            MapRenderPassClassifier.CameraColor,
+            pass.TechniquePass.PassClass,
+            MaterialPassClassifier.CameraColor,
             StringComparison.Ordinal);
 
-    public static bool MatchesPass(MapRenderMaterialPass pass) =>
+    public static bool MatchesPass(
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity primarySampler,
+        byte texCoordSource) =>
         MatchesTechnique(pass) &&
-        pass.SamplerArgIndex == SamplerArgIndex &&
-        pass.SamplerDest == SamplerDestination &&
-        pass.SamplerHash == SamplerHash &&
-        pass.TextureSemantic == TextureSemantic &&
-        pass.TexCoordSource == TexCoordSource;
+        primarySampler.SamplerArgIndex == SamplerArgIndex &&
+        primarySampler.SamplerDest == SamplerDestination &&
+        primarySampler.SamplerHash == SamplerHash &&
+        primarySampler.TextureSemantic == TextureSemantic &&
+        texCoordSource == TexCoordSource;
 
     public static bool MatchesTechnique(
         RenderMaterialPassProvenanceSnapshot pass) =>
@@ -92,7 +97,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
             StringComparison.Ordinal) &&
         string.Equals(
             pass.PassClass,
-            MapRenderPassClassifier.CameraColor,
+            MaterialPassClassifier.CameraColor,
             StringComparison.Ordinal);
 
     public static bool MatchesPass(
@@ -105,7 +110,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
         pass.TexCoordSource == TexCoordSource;
 
     public static bool MatchesShader(
-        MapRenderShaderExecutionContract shader) =>
+        ShaderExecutionContract shader) =>
         shader.FragmentProgramControl == FragmentProgramControl &&
         string.Equals(
             shader.FragmentExportPrecision,
@@ -122,7 +127,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
             StringComparison.Ordinal) &&
         !shader.FragmentDepthExportEnabled;
 
-    public static bool MatchesUvRoute(MapRenderUvRoute route) =>
+    public static bool MatchesUvRoute(UvRoute route) =>
         string.Equals(route.Label, UvLabel, StringComparison.Ordinal) &&
         string.Equals(
             route.WorldVertexFormat,
@@ -134,7 +139,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
         route.Offset == 4 &&
         route.FormatByte0 == 0x04 &&
         route.FormatByte1 == 0x02 &&
-        route.BaseMode == MapRenderUvBaseMode.Engine &&
+        route.BaseMode == UvBaseMode.Engine &&
         route.ComponentA == 0 &&
         route.ComponentB == 1 &&
         route.ScaleU == 1f &&
@@ -154,7 +159,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
         route.Offset == 4 &&
         route.FormatByte0 == 0x04 &&
         route.FormatByte1 == 0x02 &&
-        route.BaseMode == MapRenderUvBaseMode.Engine &&
+        route.BaseMode == UvBaseMode.Engine &&
         route.ComponentA == 0 &&
         route.ComponentB == 1 &&
         route.ScaleU == 1f &&
@@ -171,7 +176,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
 public sealed class RenderWorldShaderProvenanceSnapshot
 {
     internal RenderWorldShaderProvenanceSnapshot(
-        MapRenderShaderExecutionContract source,
+        ShaderExecutionContract source,
         string shaderExecutionStatus)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -234,40 +239,40 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         ContentDigest = RenderContentDigest.Compute(AppendContent);
     }
 
-    public MapRenderShaderExecutionPurpose Purpose { get; }
+    public ShaderExecutionPurpose Purpose { get; }
 
-    public MapRenderShaderProgramIdentity VertexProgram { get; }
+    public ShaderProgramIdentity VertexProgram { get; }
 
-    public MapRenderShaderProgramIdentity PixelProgram { get; }
+    public ShaderProgramIdentity PixelProgram { get; }
 
     public string VertexDeclarationIdentity { get; }
 
-    public ImmutableArray<MapRenderShaderVertexInputBinding> VertexInputs
+    public ImmutableArray<ShaderVertexInputBinding> VertexInputs
         { get; }
 
-    public ImmutableArray<MapRenderShaderSamplerDestination>
+    public ImmutableArray<ShaderSamplerDestination>
         MaterialSamplerDestinations { get; }
 
-    public ImmutableArray<MapRenderShaderSamplerDestination>
+    public ImmutableArray<ShaderSamplerDestination>
         CustomSamplerDestinations { get; }
 
-    public ImmutableArray<MapRenderShaderSamplerDestination>
+    public ImmutableArray<ShaderSamplerDestination>
         CodeSamplerDestinations { get; }
 
-    public ImmutableArray<MapRenderShaderRuntimeSamplerRequirement>
+    public ImmutableArray<ShaderRuntimeSamplerRequirement>
         RuntimeSamplerRequirements { get; }
 
     public ImmutableArray<int> ProgramSamplerDestinations { get; }
 
     public ImmutableArray<int> ProgramVertexConstantDestinations { get; }
 
-    public ImmutableArray<MapRenderShaderSamplerDestination>
+    public ImmutableArray<ShaderConstantDestination>
         ConstantDestinations { get; }
 
-    public ImmutableArray<MapRenderEmbeddedVertexConstant>
+    public ImmutableArray<EmbeddedVertexConstant>
         EmbeddedVertexConstants { get; }
 
-    public ImmutableArray<MapRenderCodePixelConstantPatchPlan>
+    public ImmutableArray<CodePixelConstantPatchPlan>
         CodePixelConstantPatchPlans { get; }
 
     public uint FragmentProgramControl { get; }
@@ -276,7 +281,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
 
     public bool FragmentDepthExportEnabled { get; }
 
-    public ImmutableArray<MapRenderShaderFragmentExport> FragmentColorExports
+    public ImmutableArray<ShaderFragmentExport> FragmentColorExports
         { get; }
 
     public string ProgramCacheKey { get; }
@@ -316,7 +321,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         writer.WriteString(FragmentExportPrecision);
         writer.WriteBoolean(FragmentDepthExportEnabled);
         writer.WriteInt32(VertexInputs.Length);
-        foreach (MapRenderShaderVertexInputBinding input in VertexInputs)
+        foreach (ShaderVertexInputBinding input in VertexInputs)
         {
             writer.WriteInt32(input.RouteIndex);
             writer.WriteByte(input.Source);
@@ -332,7 +337,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         AppendSamplerDestinations(writer, CustomSamplerDestinations);
         AppendSamplerDestinations(writer, CodeSamplerDestinations);
         writer.WriteInt32(RuntimeSamplerRequirements.Length);
-        foreach (MapRenderShaderRuntimeSamplerRequirement requirement in
+        foreach (ShaderRuntimeSamplerRequirement requirement in
                  RuntimeSamplerRequirements)
         {
             writer.WriteInt32(requirement.ArgumentIndex);
@@ -348,9 +353,9 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         writer.WriteInt32(ProgramVertexConstantDestinations.Length);
         foreach (int destination in ProgramVertexConstantDestinations)
             writer.WriteInt32(destination);
-        AppendSamplerDestinations(writer, ConstantDestinations);
+        AppendConstantDestinations(writer, ConstantDestinations);
         writer.WriteInt32(EmbeddedVertexConstants.Length);
-        foreach (MapRenderEmbeddedVertexConstant constant in
+        foreach (EmbeddedVertexConstant constant in
                  EmbeddedVertexConstants)
         {
             writer.WriteInt32(constant.ParameterOrdinal);
@@ -365,7 +370,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
             writer.WriteBoolean(constant.IsOperationallyResolved);
         }
         writer.WriteInt32(CodePixelConstantPatchPlans.Length);
-        foreach (MapRenderCodePixelConstantPatchPlan plan in
+        foreach (CodePixelConstantPatchPlan plan in
                  CodePixelConstantPatchPlans)
         {
             writer.WriteInt32(plan.ArgumentOrdinal);
@@ -377,7 +382,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
             if (plan.Detail is not null)
                 writer.WriteString(plan.Detail);
             writer.WriteInt32(plan.PatchSites.Count);
-            foreach (MapRenderCodePixelConstantPatchSite site in
+            foreach (CodePixelConstantPatchSite site in
                      plan.PatchSites)
             {
                 writer.WriteInt32(site.RelativePatchOffset);
@@ -388,7 +393,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
             }
         }
         writer.WriteInt32(FragmentColorExports.Length);
-        foreach (MapRenderShaderFragmentExport export in FragmentColorExports)
+        foreach (ShaderFragmentExport export in FragmentColorExports)
         {
             writer.WriteInt32(export.ColorTarget);
             writer.WriteString(export.Register);
@@ -432,7 +437,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
 
     private static void AppendProgram(
         RenderContentDigestWriter writer,
-        MapRenderShaderProgramIdentity program)
+        ShaderProgramIdentity program)
     {
         writer.WriteString(program.Stage);
         writer.WriteString(program.Name);
@@ -444,10 +449,10 @@ public sealed class RenderWorldShaderProvenanceSnapshot
 
     private static void AppendSamplerDestinations(
         RenderContentDigestWriter writer,
-        ImmutableArray<MapRenderShaderSamplerDestination> destinations)
+        ImmutableArray<ShaderSamplerDestination> destinations)
     {
         writer.WriteInt32(destinations.Length);
-        foreach (MapRenderShaderSamplerDestination destination in destinations)
+        foreach (ShaderSamplerDestination destination in destinations)
         {
             writer.WriteInt32(destination.ArgumentIndex);
             writer.WriteString(destination.ArgumentType);
@@ -456,17 +461,40 @@ public sealed class RenderWorldShaderProvenanceSnapshot
             writer.WriteString(destination.ResourceIdentity);
             writer.WriteBoolean(destination.IsOperationallyResolved);
             writer.WriteString(destination.TextureTarget);
-            AppendNullableSingle(writer, destination.X);
-            AppendNullableSingle(writer, destination.Y);
-            AppendNullableSingle(writer, destination.Z);
-            AppendNullableSingle(writer, destination.W);
-            writer.WriteBoolean(destination.CodeMatrixSemantic.HasValue);
-            if (destination.CodeMatrixSemantic.HasValue)
-            {
-                writer.WriteInt32((int)destination.CodeMatrixSemantic.Value);
-            }
-            writer.WriteInt32((int)destination.CodeMatrixTransform);
-            writer.WriteInt32(destination.CodeMatrixRow);
+            AppendNullableSingle(writer, null);
+            AppendNullableSingle(writer, null);
+            AppendNullableSingle(writer, null);
+            AppendNullableSingle(writer, null);
+            writer.WriteBoolean(false);
+            writer.WriteInt32((int)CodeMatrixTransform.None);
+            writer.WriteInt32(-1);
+            writer.WriteBoolean(false);
+        }
+    }
+
+    private static void AppendConstantDestinations(
+        RenderContentDigestWriter writer,
+        ImmutableArray<ShaderConstantDestination> destinations)
+    {
+        writer.WriteInt32(destinations.Length);
+        foreach (ShaderConstantDestination destination in destinations)
+        {
+            writer.WriteInt32(destination.ArgumentIndex);
+            writer.WriteString(destination.ArgumentType);
+            writer.WriteInt32(destination.Destination);
+            writer.WriteUInt32(destination.Argument);
+            writer.WriteString(destination.ResourceIdentity);
+            writer.WriteBoolean(destination.IsOperationallyResolved);
+            writer.WriteString("Texture2D");
+            AppendNullableSingle(writer, destination.Value?.X);
+            AppendNullableSingle(writer, destination.Value?.Y);
+            AppendNullableSingle(writer, destination.Value?.Z);
+            AppendNullableSingle(writer, destination.Value?.W);
+            writer.WriteBoolean(destination.CodeMatrix is not null);
+            if (destination.CodeMatrix is { } matrix)
+                writer.WriteInt32((int)matrix.Semantic);
+            writer.WriteInt32((int)(destination.CodeMatrix?.Transform ?? CodeMatrixTransform.None));
+            writer.WriteInt32(destination.CodeMatrix?.Row ?? -1);
             writer.WriteBoolean(destination.CodeConstantSourceRow.HasValue);
             if (destination.CodeConstantSourceRow.HasValue)
                 writer.WriteInt32(destination.CodeConstantSourceRow.Value);
@@ -501,7 +529,7 @@ public sealed class RenderWorldDrawPacketSnapshot
         RenderMaterialPassProvenanceSnapshot sourcePass,
         RenderMaterialTextureBindingProvenanceSnapshot baseTextureBinding,
         RenderMaterialUvRouteSnapshot uvRoute,
-        MapRenderState sourceState,
+        RenderState sourceState,
         byte sceneLightIndex,
         RenderWorldShaderProvenanceSnapshot shaderProvenance,
         IEnumerable<MapRenderPickRange> surfaceRanges,
@@ -595,7 +623,7 @@ public sealed class RenderWorldDrawPacketSnapshot
 
     public RenderMaterialUvRouteSnapshot UvRoute { get; }
 
-    public MapRenderState SourceState { get; }
+    public RenderState SourceState { get; }
 
     public byte SceneLightIndex { get; }
 
@@ -635,7 +663,7 @@ public sealed class RenderWorldDrawPacketSnapshot
         SourcePass.AppendContent(writer);
         BaseTextureBinding.AppendContent(writer);
         UvRoute.AppendContent(writer);
-        writer.AppendMapRenderStateV1(SourceState);
+        writer.AppendRenderStateV1(SourceState);
         writer.WriteByte(SceneLightIndex);
         ShaderProvenance.AppendContent(writer);
         writer.WriteInt32(SurfaceRanges.Length);
@@ -701,13 +729,13 @@ public sealed class RenderWorldDrawPacketSnapshot
         RenderMaterialPassProvenanceSnapshot pass,
         RenderMaterialTextureBindingProvenanceSnapshot binding,
         RenderMaterialUvRouteSnapshot uvRoute,
-        MapRenderState state,
+        RenderState state,
         RenderWorldShaderProvenanceSnapshot shader)
     {
         if (profile != RenderWorldDrawPacketCompatibilityProfile
                 .LoadedCameraColorBaseTextureAlphaGequal128CullFrontDepthLequalV1 ||
             !RenderLoadedCameraColorCompatibilityProfile.MatchesPass(pass) ||
-            shader.Purpose != MapRenderShaderExecutionPurpose.CameraColor ||
+            shader.Purpose != ShaderExecutionPurpose.CameraColor ||
             !shader.ProgramIrReady ||
             !shader.VertexInputPayloadReady ||
             !shader.RendererProgramReady ||

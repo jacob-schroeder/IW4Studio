@@ -17,8 +17,8 @@ public sealed class UiMaterialPreviewPlan
     internal UiMaterialPreviewPlan(
         UiMaterialPreviewMaterialMetadata material,
         UiMaterialPreviewAtlasMetadata atlas,
-        MapRenderEditorMaterialTexturePlan textureTable,
-        MapRenderEditorMaterialTextureBinding? selectedTexture,
+        EditorMaterialTexturePlan textureTable,
+        EditorMaterialTextureBinding? selectedTexture,
         UiMaterialPreviewImageAuthority selectedImageAuthority,
         UiMaterialPreviewImageMetadata? selectedImageMetadata,
         UiMaterialPreviewFidelity fidelity,
@@ -48,13 +48,13 @@ public sealed class UiMaterialPreviewPlan
 
     public UiMaterialPreviewAtlasMetadata Atlas { get; }
 
-    public MapRenderEditorMaterialTexturePlan TextureTable { get; }
+    public EditorMaterialTexturePlan TextureTable { get; }
 
-    public MapRenderEditorMaterialTextureBinding? SelectedTexture { get; }
+    public EditorMaterialTextureBinding? SelectedTexture { get; }
 
     public GfxImageAsset? SelectedImage => SelectedTexture?.Image;
 
-    public MapRenderSamplerState? SelectedSamplerState =>
+    public RsxSamplerState? SelectedSamplerState =>
         SelectedTexture?.DecodedSamplerState;
 
     public UiMaterialPreviewImageAuthority SelectedImageAuthority { get; }

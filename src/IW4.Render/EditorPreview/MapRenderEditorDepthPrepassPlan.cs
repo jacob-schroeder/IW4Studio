@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Materials;
 
@@ -25,7 +26,7 @@ public sealed record MapRenderEditorDepthPrepassPlan(
     string VertexProgramName,
     string PixelProgramName,
     MapRenderEditorDepthPrepassProgram Program,
-    MapRenderState State);
+    RenderState State);
 
 /// <summary>
 /// Exact asset-to-execution mapping for IW4's standard opaque depth owner.
@@ -58,7 +59,7 @@ public static class MapRenderEditorDepthPrepassPlanner
         IReadOnlyList<MaterialShaderArgumentAsset> arguments,
         string vertexProgramName,
         string pixelProgramName,
-        MapRenderState state,
+        RenderState state,
         out MapRenderEditorDepthPrepassPlan? plan,
         out string blocker)
     {

@@ -131,7 +131,7 @@ public static class EditorPresentationFramePlanner
         MapRenderNormalCameraClearColorResult clearColor,
         MapRenderPixelExtent hostFramebufferExtent,
         RenderSceneSnapshot sceneSnapshot,
-        MapRenderCamera camera,
+        RenderCamera camera,
         RenderPreviewSettings previewSettings,
         MapRenderEditorPreviewEffectivePostState? effectivePost = null)
     {

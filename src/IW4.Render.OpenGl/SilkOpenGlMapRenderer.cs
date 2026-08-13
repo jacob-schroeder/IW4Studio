@@ -10,7 +10,7 @@ using IW4.Render.EditorPreview;
 using IW4.Render.Lighting;
 using IW4.Render.Scheduling;
 using IW4.Render.Scheduling.Dpvs;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Scheduling.Lighting;
 using IW4.Render.Scheduling.Shadows;
@@ -18,6 +18,7 @@ using IW4.Render.Scheduling.StaticModels;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Shaders;
 using IW4.Render.Textures;
+using Texture = IW4.Render.Textures.Texture;
 using IW4.Render.Preview;
 using IW4.Render.Resources;
 using IW4.Render.OpenGl.Presentation;
@@ -41,8 +42,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private const int UnknownStaticLodIndex = int.MinValue;
     private const int GenericStaticModelLightingTextureUnit =
         MapRenderScene.MaxColorLayerCount + 1 + 4 + 3;
-    private const string EditorPreviewLinkProfileIdentity =
-        MapRenderOpenGlSharedProgramCache.EditorPreviewLinkProfileIdentity;
+    private const string LinkProfileIdentity =
+        OpenGlSharedProgramCache.LinkProfileIdentity;
     private const long DefaultTextureResidencyBudgetBytes =
         384L * 1024L * 1024L;
     private const long DefaultTextureUploadBudgetBytesPerFrame =
@@ -55,14 +56,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private readonly MapRenderOpenGlShaderCompilationCounter
         _shaderCompilationCounter = new();
     private readonly MapRenderOpenGlGpuTimerCoordinator _gpuTimers;
-    private readonly MapRenderOpenGlSharedProgramCache _sharedProgramCache;
-    private readonly MapRenderOpenGlSharedProgramCache.UsageLease
+    private readonly OpenGlSharedProgramCache _sharedProgramCache;
+    private readonly OpenGlSharedProgramCache.UsageLease
         _sharedProgramUsage;
     private readonly bool _ownsSharedProgramCache;
     private readonly HashSet<uint> _sceneOwnedProgramHandles = [];
     private readonly Dictionary<
-        MapRenderOpenGlProgramKey,
-        MapRenderOpenGlLinkedProgramHandleResolution>
+        OpenGlProgramKey,
+        OpenGlLinkedProgramHandleResolution>
         _sceneProgramResolutions = [];
     private readonly float _wireframeEffectiveLineWidth;
     private readonly string _editorPreviewPresentationContextIdentity =
@@ -228,7 +229,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]?
         _progressiveWorldDrawGroups;
     private bool _progressiveStaticMaterializationEnabled;
-    private MapRenderCamera? _lastProgressiveStaticCamera;
+    private RenderCamera? _lastProgressiveStaticCamera;
     private float _lastProgressiveStaticAspectRatio;
     private GlMesh _genericWorldArena;
     private GlMesh[] _translatedWorldArenas = [];
@@ -262,7 +263,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private long _textureDecodedFallbackBytesObserved;
     private long _rendererDecodedBcFallbackBytesRetained;
     private long _textureAuthoredBcSourceBytes;
-    private readonly HashSet<MapRenderTexture>
+    private readonly HashSet<Texture>
         _texturePayloadsAccounted =
             new(ReferenceEqualityComparer.Instance);
     private ConditionalWeakTable<byte[], object>
@@ -326,11 +327,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _editorPreviewSceneLightFrame;
     private MapRenderWorldEvent20SceneLightFrameInputFailure?
         _editorPreviewSceneLightFrameFailure;
-    private MapRenderShaderConstantValue
+    private ShaderConstantValue
         _frameClipSpaceLookupScaleCodeConstant;
-    private MapRenderShaderConstantValue
+    private ShaderConstantValue
         _frameClipSpaceLookupOffsetCodeConstant;
-    private MapRenderShaderConstantValue
+    private ShaderConstantValue
         _frameZNearCodeConstant;
     private MapRenderEditorPreviewVisionState? _editorPreviewVision;
     private MapRenderEditorPreviewEffectivePostState?
@@ -568,14 +569,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     public SilkOpenGlMapRenderer(GL gl)
         : this(
             gl,
-            new MapRenderOpenGlSharedProgramCache(gl),
+            new OpenGlSharedProgramCache(gl),
             ownsSharedProgramCache: true)
     {
     }
 
     public SilkOpenGlMapRenderer(
         GL gl,
-        MapRenderOpenGlSharedProgramCache sharedProgramCache)
+        OpenGlSharedProgramCache sharedProgramCache)
         : this(
             gl,
             sharedProgramCache,
@@ -585,7 +586,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
 
     private SilkOpenGlMapRenderer(
         GL gl,
-        MapRenderOpenGlSharedProgramCache sharedProgramCache,
+        OpenGlSharedProgramCache sharedProgramCache,
         bool ownsSharedProgramCache)
     {
         ArgumentNullException.ThrowIfNull(gl);
@@ -638,7 +639,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         }
     }
 
-    private static IEnumerable<MapRenderShaderExecutionContract?>
+    private static IEnumerable<ShaderExecutionContract?>
         EnumerateStaticModelShaderExecutions(MapRenderScene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -684,7 +685,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     public void Load(
         MapRenderScene scene,
         RenderSceneSnapshot? sceneSnapshot,
-        MapRenderCamera initialCamera,
+        RenderCamera initialCamera,
         float initialAspectRatio)
     {
         if (!(initialAspectRatio > 0f) ||
@@ -994,7 +995,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             {
                 WorldSurfaceIndex = ResolveSingleWorldSurfaceIndex(batch),
                 WorldBounds = IncludeTexturedVertexBounds(
-                    MapRenderBounds.Empty,
+                    RenderBounds.Empty,
                     batch.Vertices)
             };
         }
@@ -1172,10 +1173,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             System.Diagnostics.Stopwatch.GetTimestamp();
         MapRenderOpenGlShaderObjectCacheTelemetry shaderObjectTelemetry =
             loadShaderObjectCache.Telemetry;
-        MapRenderOpenGlLinkedProgramHandleCacheTelemetry
+        OpenGlLinkedProgramHandleCacheTelemetry
             linkedProgramTelemetry =
                 _sharedProgramCache.CreateTelemetry();
-        MapRenderOpenGlUniformLocationCacheTelemetry
+        OpenGlUniformLocationCacheTelemetry
             uniformLocationTelemetry =
                 _authoredMaterials.UniformLocationTelemetry;
         Console.WriteLine(
@@ -1217,8 +1218,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 MapRenderEditorPreviewPrimaryLightInvocationPolicy.Resolve(
                     _editorPreviewVision?.PrimaryLight,
                     useHeroLighting: false);
-            MapRenderDirectionalSunLinearColors sunColors =
-                FrameDirectCodeConstants.ProduceDirectionalSunLinearColors(
+            DirectionalSunLinearColors sunColors =
+                MapRenderEditorDirectCodeConstantProducers.ProduceDirectionalSunLinearColors(
                     _editorPreviewLighting,
                     primaryLight);
             _editorPreviewDirectionalSunDiffuseColor = sunColors.Diffuse;
@@ -1295,7 +1296,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         EstablishStateShadowBaseline();
     }
 
-    public void Render(MapRenderCamera camera)
+    public void Render(RenderCamera camera)
     {
         ThrowIfUnavailable();
         if (!_loaded)
@@ -1454,7 +1455,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _completedTelemetryFrameIndex = null;
     }
 
-    private void RenderMeasuredFrame(MapRenderCamera camera)
+    private void RenderMeasuredFrame(RenderCamera camera)
     {
         camera = BeginSunShadowDpvsPreparation(camera);
         using (_frameTelemetry.BeginCpuPhase(
@@ -1533,7 +1534,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 framePreviewSettings.AnimationTimeSeconds;
         }
 
-        MapRenderClipSpaceLookupCodeConstants clipSpaceLookup =
+        ClipSpaceLookupCodeConstants clipSpaceLookup =
             editorPresentationFrame is { } activePresentationFrame
                 ? FrameDirectCodeConstants.ProduceClipSpaceLookup(
                     activePresentationFrame.SceneTarget.Extent.LogicalWidth,
@@ -1557,7 +1558,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         // Clear obeys the current color/depth write masks. The target-2
         // lifecycle performs the clear when a canonical world source is
         // available; non-world previews retain their direct host clear.
-        MapRenderDerivedMatrixState rsxMatrices;
+        DerivedMatrixState rsxMatrices;
         Matrix4x4 viewProjection;
         using (_gpuTimers.BeginPhase(MapRenderGpuPhase.FrameSetup))
         using (_frameTelemetry.BeginCpuPhase(MapRenderCpuPhase.FrameSetup))
@@ -1583,18 +1584,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 (float)cameraTargetExtent.Width /
                 cameraTargetExtent.Height;
             rsxMatrices =
-                MapRenderOpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
+                OpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
                     camera,
                     aspectRatio);
             if (_currentSunShadowReceiverFrame is { } receiverFrame)
             {
                 rsxMatrices =
-                    MapRenderDerivedMatrixResolver.WithShadowLookupSource(
+                    DerivedMatrixResolver.WithShadowLookupSource(
                         rsxMatrices,
                         receiverFrame.Projection.ShadowLookupMatrix);
             }
             viewProjection =
-                MapRenderOpenGlRsxClipSpaceLowering
+                OpenGlRsxClipSpaceLowering
                     .CreateDirectEditorPreviewHostViewProjection(rsxMatrices);
             // A successful target-2 entry/clear is the exact scene color
             // render-pass execution point for this backend.

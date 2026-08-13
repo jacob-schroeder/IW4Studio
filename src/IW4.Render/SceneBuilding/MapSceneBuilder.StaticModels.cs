@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Buffers;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
@@ -10,6 +11,7 @@ using IW4.Render.Assets;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
+using IW4.Render.Geometry.XModel;
 using IW4.Render.Lighting;
 using IW4.Render.Materials;
 using IW4.Render.SceneBuilding.Batching;
@@ -33,7 +35,7 @@ public sealed partial class MapSceneBuilder
     private sealed record PreparedStaticModelSource(
         StaticModelPlacement Placement,
         XModelAsset Model,
-        IReadOnlyList<MapRenderStaticModelLodGeometry> LodGeometries);
+        IReadOnlyList<XModelLodGeometry> LodGeometries);
 
     private sealed class StaticModelSharedBuildCache
     {
@@ -49,11 +51,11 @@ public sealed partial class MapSceneBuilder
             TechniqueSets { get; } =
                 new(ReferenceEqualityComparer.Instance);
 
-        internal Dictionary<MaterialAsset, MapRenderState>
+        internal Dictionary<MaterialAsset, RenderState>
             SyntheticFallbackStates { get; } =
                 new(ReferenceEqualityComparer.Instance);
 
-        internal Dictionary<MaterialAsset, MapRenderEditorMaterialTexturePlan>
+        internal Dictionary<MaterialAsset, EditorMaterialTexturePlan>
             MaterialTexturePlans { get; } =
                 new(ReferenceEqualityComparer.Instance);
     }
@@ -84,7 +86,7 @@ public sealed partial class MapSceneBuilder
         }
 
         var lodCatalogs =
-            new IReadOnlyList<MapRenderStaticModelLodGeometry>?[
+            new IReadOnlyList<XModelLodGeometry>?[
                 uniqueModels.Count];
         Parallel.For(
             0,
@@ -97,10 +99,10 @@ public sealed partial class MapSceneBuilder
             },
             modelIndex =>
             {
-                if (MapRenderStaticModelLodGeometryCatalog.TryCreate(
+                if (XModelLodGeometryCatalog.TryCreate(
                         uniqueModels[modelIndex],
                         out IReadOnlyList<
-                            MapRenderStaticModelLodGeometry>? lods))
+                            XModelLodGeometry>? lods))
                 {
                     lodCatalogs[modelIndex] = lods;
                 }
@@ -248,7 +250,7 @@ public sealed partial class MapSceneBuilder
         return selections;
     }
 
-    private static IReadOnlyList<MapRenderTextureDecodeRequest>
+    private static IReadOnlyList<RenderTextureDecodeRequest>
         PlanStaticModelPrimaryTextureDecodes(
             GfxWorldAsset gfxMap,
             IReadOnlyList<PreparedStaticModelSource?> preparedSources,
@@ -257,8 +259,8 @@ public sealed partial class MapSceneBuilder
             MapRenderSceneLightSelectorAssetState? sceneLightSelector,
             StaticModelSharedBuildCache sharedCache)
     {
-        var requests = new List<MapRenderTextureDecodeRequest>();
-        var seen = new HashSet<MapRenderTextureCacheKey>();
+        var requests = new List<RenderTextureDecodeRequest>();
+        var seen = new HashSet<RenderTextureCacheKey>();
         (MapRenderSurfaceType SurfaceType,
             MapRenderTechniqueVariantAllocation Allocation,
             bool AllowPreviewFallback,
@@ -310,7 +312,7 @@ public sealed partial class MapSceneBuilder
                         sceneLightSelector,
                         variant.Allocation);
 
-                foreach (MapRenderStaticModelLodGeometry lodGeometry in
+                foreach (XModelLodGeometry lodGeometry in
                          preparedSource.LodGeometries)
                 {
                     for (int surfaceOffset = 0;
@@ -359,10 +361,10 @@ public sealed partial class MapSceneBuilder
                                 continue;
                             }
 
-                            MapRenderTextureDecodeRequest request =
-                                MapRenderTextureDecodeRequest.Create(
-                                    selectedPass.Texture,
+                            RenderTextureDecodeRequest request =
+                                RenderTextureDecodeRequest.Create(
                                     selectedPass.Image,
+                                    selectedPass.Texture.SamplerState,
                                     includeAuthoredMipChain: true);
                             if (seen.Add(request.Key))
                                 requests.Add(request);
@@ -379,7 +381,7 @@ public sealed partial class MapSceneBuilder
         GfxWorldAsset gfxMap,
         MapRenderStaticModelLightingAtlas lightingAtlas,
         Dictionary<XSurface, InstancedSolidBatchBuilder> batches,
-        ref MapRenderBounds bounds,
+        ref RenderBounds bounds,
         out int drawnInsts,
         out int skippedInsts,
         out int skippedTriangles,
@@ -422,7 +424,7 @@ public sealed partial class MapSceneBuilder
             }
 
             int beforeInstTriangles = emittedTriangles;
-            MapRenderBounds instanceBounds = MapRenderBounds.Empty;
+            RenderBounds instanceBounds = RenderBounds.Empty;
             Vector3 color = ColorFor(drawInst.Model?.Name ?? $"smodel_{drawnInsts + skippedInsts}");
             for (int i = 0; i < surfaceCount; i++)
             {
@@ -441,7 +443,7 @@ public sealed partial class MapSceneBuilder
                             out List<uint> localIndices,
                             out int surfaceSkippedTriangles,
                             out int surfaceReadFailureTriangles,
-                            out MapRenderBounds localBounds))
+                            out RenderBounds localBounds))
                     {
                         skippedTriangles += surfaceSkippedTriangles;
                         readFailureTriangles += surfaceReadFailureTriangles;
@@ -470,7 +472,7 @@ public sealed partial class MapSceneBuilder
                     drawInst.LightingHandle,
                     drawInst.GroundLighting,
                     drawInst.Flags));
-                MapRenderBounds transformedBounds =
+                RenderBounds transformedBounds =
                     TransformStaticInstanceBounds(
                         batch.LocalBounds,
                         placement);
@@ -511,13 +513,13 @@ public sealed partial class MapSceneBuilder
         out List<uint> indices,
         out int skippedTriangles,
         out int readFailureTriangles,
-        out MapRenderBounds localBounds)
+        out RenderBounds localBounds)
     {
         vertices = new List<float>(surface.TriCount * 3 * MapRenderScene.VertexFloatCount);
         indices = new List<uint>(surface.TriCount * 3);
         skippedTriangles = 0;
         readFailureTriangles = 0;
-        localBounds = MapRenderBounds.Empty;
+        localBounds = RenderBounds.Empty;
 
         for (int triangle = 0; triangle < surface.TriCount; triangle++)
         {
@@ -564,9 +566,11 @@ public sealed partial class MapSceneBuilder
         bool forceGenericPreview,
         IGfxImagePayloadResolver imageStreams,
         Dictionary<StaticTexturedBatchKey, InstancedTexturedBatchBuilder> batches,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
-        MapRenderShaderTranslationCache shaderTranslationCache,
+        RenderTextureCache textureCache,
+        MapRenderWorldTextureCache worldTextureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
+        ShaderTranslationCache shaderTranslationCache,
         string progressLabel,
         Action<string>? reportProgress,
         ref int textureDecodedCount,
@@ -575,7 +579,7 @@ public sealed partial class MapSceneBuilder
         out int genericFallbackTexturedTriangleCount,
         out int authoredCandidateTexturedSurfaceCount,
         out int authoredCandidateTexturedTriangleCount,
-        out IReadOnlyDictionary<int, MapRenderBounds> allLodBounds,
+        out IReadOnlyDictionary<int, RenderBounds> allLodBounds,
         out IReadOnlyDictionary<int, uint> renderableLodMasks)
     {
         ArgumentNullException.ThrowIfNull(preparedSources);
@@ -593,7 +597,7 @@ public sealed partial class MapSceneBuilder
         authoredCandidateTexturedSurfaceCount = 0;
         authoredCandidateTexturedTriangleCount = 0;
         var allLodBoundsByObjectIndex =
-            new Dictionary<int, MapRenderBounds>();
+            new Dictionary<int, RenderBounds>();
         var renderableLodMaskByObjectIndex =
             new Dictionary<int, uint>();
         var editorDrawGroupIds =
@@ -625,11 +629,11 @@ public sealed partial class MapSceneBuilder
 
             StaticModelPlacement placement = preparedSource.Placement;
             XModelAsset model = preparedSource.Model;
-            IReadOnlyList<MapRenderStaticModelLodGeometry> lodGeometries =
+            IReadOnlyList<XModelLodGeometry> lodGeometries =
                 preparedSource.LodGeometries;
 
             int preparedLodIndex = lodGeometries[0].LodIndex;
-            foreach (MapRenderStaticModelLodGeometry lodGeometry in
+            foreach (XModelLodGeometry lodGeometry in
                      lodGeometries)
             {
                 int lodIndex = lodGeometry.LodIndex;
@@ -682,8 +686,8 @@ public sealed partial class MapSceneBuilder
                      selectionIndex++)
                 {
                     if (selections[selectionIndex].Pass is { } pass &&
-                        new MapRenderWorldCustomSamplerSelection(
-                                pass.Pass.CustomSamplerFlags)
+                        new MaterialCustomSamplerSelection(
+                                pass.Pass.TechniquePass.CustomSamplerFlags)
                             .BindsReflectionProbe)
                     {
                         reflectionProbeBatchIndex =
@@ -729,10 +733,10 @@ public sealed partial class MapSceneBuilder
                         surface,
                         material,
                         surfaceTechniqueSlot,
-                        selectedPass.Pass.TechniqueSlot,
-                        selectedPass.Pass.PassIndex,
-                        selectedPass.Pass.SamplerArgIndex,
-                        selectedPass.Pass.SamplerHash,
+                        selectedPass.Pass.TechniquePass.TechniqueSlot,
+                        selectedPass.Pass.TechniquePass.PassIndex,
+                        selectedPass.PrimarySampler.SamplerArgIndex,
+                        selectedPass.PrimarySampler.SamplerHash,
                         reflectionProbeBatchIndex,
                         drawInst.PrimaryLightIndex);
                     if (failedBatchKeys.Contains(batchKey))
@@ -744,15 +748,15 @@ public sealed partial class MapSceneBuilder
                     if (!batches.TryGetValue(batchKey, out InstancedTexturedBatchBuilder? batch))
                     {
                         if (!TryDecodeTexture(
-                                selectedPass.Texture,
                                 selectedPass.Image,
+                                selectedPass.Texture.SamplerState,
                                 imageStreams,
                                 textureCache,
                                 failedTextureCacheKeys,
                                 true,
                                 ref textureDecodedCount,
                                 ref textureDecodeSkippedCount,
-                                out MapRenderTexture? texture) ||
+                                out Texture? texture) ||
                             texture is null)
                         {
                             failedBatchKeys.Add(batchKey);
@@ -760,16 +764,16 @@ public sealed partial class MapSceneBuilder
                             break;
                         }
 
-                        MapRenderUvRoute uvRoute = BuildStaticModelUvRoute(selectedPass.TexCoordSource);
-                        MapRenderEditorMaterialTexturePlan? texturePlan = null;
+                        UvRoute uvRoute = BuildStaticModelUvRoute(selectedPass.TexCoordSource);
+                        EditorMaterialTexturePlan? texturePlan = null;
                         if (!sharedCache.MaterialTexturePlans.TryGetValue(
                                 material,
                                 out texturePlan))
                         {
-                            texturePlan = MapRenderEditorMaterialTexturePlanner.Plan(
+                            texturePlan = EditorMaterialTexturePlanner.Plan(
                                 material.Textures,
                                 (_, row) =>
-                                    new MapRenderEditorMaterialTextureResolution(
+                                    new EditorMaterialTextureResolution(
                                         row.Image ?? lookup.ResolveImage(row.DataPointer),
                                         null));
                             sharedCache.MaterialTexturePlans.Add(
@@ -795,7 +799,7 @@ public sealed partial class MapSceneBuilder
                                 ref textureDecodeSkippedCount);
                         bool hasAuthoredSourcePass =
                             selectedPass.AuthoredProgramExecutable;
-                        MapRenderShaderVertexInputBinding[]
+                        ShaderVertexInputBinding[]
                             selectedVertexInputs = hasAuthoredSourcePass
                                 ? ResolveSelectedVertexInputs(
                                     techset,
@@ -810,7 +814,7 @@ public sealed partial class MapSceneBuilder
                                     selectedPass,
                                     selection.EditorDepthPrepass)
                                 : null;
-                        MapRenderShaderVertexInputBinding[]
+                        ShaderVertexInputBinding[]
                             depthPrepassVertexInputs =
                                 depthPrepassSelection is not null
                                     ? ResolveSelectedVertexInputs(
@@ -823,7 +827,7 @@ public sealed partial class MapSceneBuilder
                             TryMergeVertexInputBindings(
                                 selectedVertexInputs,
                                 depthPrepassVertexInputs,
-                                out MapRenderShaderVertexInputBinding[]
+                                out ShaderVertexInputBinding[]
                                     materializedVertexInputs,
                                 out string depthPrepassVertexInputBlocker);
                         if (!TryBuildTexturedStaticXSurfaceLocal(
@@ -835,7 +839,7 @@ public sealed partial class MapSceneBuilder
                                 out bool surfaceRsxVertexInputsReady,
                                 out string surfaceRsxVertexInputBlocker,
                                 out List<uint> surfaceIndices,
-                                out MapRenderBounds localBounds,
+                                out RenderBounds localBounds,
                                 useGenericFallback: !hasAuthoredSourcePass))
                         {
                             failedBatchKeys.Add(batchKey);
@@ -843,11 +847,11 @@ public sealed partial class MapSceneBuilder
                             break;
                         }
 
-                        IReadOnlyList<MapRenderColorLayer> staticColorLayers =
+                        IReadOnlyList<MaterialColorLayer> staticColorLayers =
                             preparedStaticColorLayers
                                 .Select(layer => layer.Layer)
                                 .ToArray();
-                        IReadOnlyList<MapRenderMaterialSamplerBinding> samplerBindings =
+                        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> samplerBindings =
                             PrepareStaticMaterialSamplerBindings(
                                 material,
                                 techset,
@@ -860,10 +864,12 @@ public sealed partial class MapSceneBuilder
                                 staticColorLayers,
                                 imageStreams,
                                 textureCache,
+                                worldTextureCache,
                                 failedTextureCacheKeys,
+                                failedWorldTextureCacheKeys,
                                 ref textureDecodedCount,
                                 ref textureDecodeSkippedCount);
-                        MapRenderShaderExecutionContract shaderExecution = BuildShaderExecutionContract(
+                        ShaderExecutionContract shaderExecution = BuildShaderExecutionContract(
                             material,
                             techset,
                             lookup,
@@ -879,7 +885,7 @@ public sealed partial class MapSceneBuilder
                                 shaderTranslationCache,
                             fixedVertexSourceBackendRow:
                                 XSurfaceVertexDecoder.BackendRow);
-                        MapRenderShaderExecutionContract?
+                        ShaderExecutionContract?
                             depthPrepassShaderExecution = null;
                         if (depthPrepassSelection is not null)
                         {
@@ -890,18 +896,18 @@ public sealed partial class MapSceneBuilder
                                 !depthPrepassVertexInputsCompatible
                                     ? depthPrepassVertexInputBlocker
                                     : surfaceRsxVertexInputBlocker;
-                            MapRenderShaderExecutionContract candidate =
+                            ShaderExecutionContract candidate =
                                 BuildShaderExecutionContract(
                                     material,
                                     techset,
                                     lookup,
-                                    depthPrepassSelection,
-                                    [],
+                                depthPrepassSelection,
+                                    Array.Empty<MaterialSamplerBinding>(),
                                     depthPayloadReady,
                                     depthPayloadBlocker,
                                     authoredSourcePassAvailable: true,
                                     purpose:
-                                        MapRenderShaderExecutionPurpose
+                                        ShaderExecutionPurpose
                                             .DepthOnly,
                                     shaderTranslationCache:
                                         shaderTranslationCache,
@@ -912,10 +918,11 @@ public sealed partial class MapSceneBuilder
                                 depthPrepassShaderExecution = candidate;
                             }
                         }
-                        MapRenderState renderState = selectedPass.State;
+                        RenderState renderState = selectedPass.State;
                         batch = new InstancedTexturedBatchBuilder(
                             lodIndex,
                             selectedPass.Pass,
+                            selectedPass.PrimarySampler,
                             texture,
                             staticColorLayers,
                             samplerBindings,
@@ -956,7 +963,7 @@ public sealed partial class MapSceneBuilder
                     drawInst.LightingHandle,
                     drawInst.GroundLighting,
                     drawInst.Flags);
-                MapRenderBounds transformedBounds =
+                RenderBounds transformedBounds =
                     TransformStaticInstanceBounds(
                         preparedPassBatches[0].Batch.LocalBounds,
                         placement);
@@ -965,7 +972,7 @@ public sealed partial class MapSceneBuilder
                     bool hasAccumulatedBounds =
                         allLodBoundsByObjectIndex.TryGetValue(
                             drawInstIndex,
-                            out MapRenderBounds accumulatedBounds);
+                            out RenderBounds accumulatedBounds);
                     allLodBoundsByObjectIndex[drawInstIndex] =
                         hasAccumulatedBounds
                             ? IncludeBounds(
@@ -1019,20 +1026,20 @@ public sealed partial class MapSceneBuilder
         renderableLodMasks = renderableLodMaskByObjectIndex;
     }
 
-    private static IReadOnlyDictionary<int, MapRenderBounds>
+    private static IReadOnlyDictionary<int, RenderBounds>
         MergeStaticModelBounds(
-            IReadOnlyDictionary<int, MapRenderBounds> first,
-            IReadOnlyDictionary<int, MapRenderBounds> second)
+            IReadOnlyDictionary<int, RenderBounds> first,
+            IReadOnlyDictionary<int, RenderBounds> second)
     {
         ArgumentNullException.ThrowIfNull(first);
         ArgumentNullException.ThrowIfNull(second);
-        Dictionary<int, MapRenderBounds> merged =
+        Dictionary<int, RenderBounds> merged =
             first.ToDictionary(entry => entry.Key, entry => entry.Value);
-        foreach ((int objectIndex, MapRenderBounds bounds) in second)
+        foreach ((int objectIndex, RenderBounds bounds) in second)
         {
             merged[objectIndex] = merged.TryGetValue(
                 objectIndex,
-                out MapRenderBounds existing)
+                out RenderBounds existing)
                     ? IncludeBounds(existing, bounds)
                     : bounds;
         }
@@ -1061,13 +1068,13 @@ public sealed partial class MapSceneBuilder
     private static bool TryBuildTexturedStaticXSurfaceLocal(
         XSurface surface,
         IReadOnlyList<PreparedStaticColorLayer> colorLayers,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> rsxInputBindings,
+        IReadOnlyList<ShaderVertexInputBinding> rsxInputBindings,
         out List<float> vertices,
         out List<float> rsxVertexInputs,
         out bool rsxVertexInputsReady,
         out string rsxVertexInputBlocker,
         out List<uint> indices,
-        out MapRenderBounds localBounds,
+        out RenderBounds localBounds,
         bool useGenericFallback)
     {
         vertices = new List<float>(surface.TriCount * 3 * MapRenderScene.TexturedVertexFloatCount);
@@ -1085,7 +1092,7 @@ public sealed partial class MapSceneBuilder
             new SortedSet<string>(StringComparer.Ordinal);
         rsxVertexInputBlocker = string.Empty;
         indices = new List<uint>(surface.TriCount * 3);
-        localBounds = MapRenderBounds.Empty;
+        localBounds = RenderBounds.Empty;
 
         if (colorLayers.Count == 0)
             return false;
@@ -1280,7 +1287,7 @@ public sealed partial class MapSceneBuilder
         ReadOnlySpan<byte> verts0,
         XSurface surface,
         int vertexIndex,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> bindings,
+        IReadOnlyList<ShaderVertexInputBinding> bindings,
         Span<Vector4> values,
         out string blocker)
     {
@@ -1479,14 +1486,14 @@ public sealed partial class MapSceneBuilder
         };
     }
 
-    private static MapRenderBounds TransformStaticInstanceBounds(
-        MapRenderBounds localBounds,
+    private static RenderBounds TransformStaticInstanceBounds(
+        RenderBounds localBounds,
         StaticModelPlacement placement)
     {
         if (!localBounds.IsValid)
-            return MapRenderBounds.Empty;
+            return RenderBounds.Empty;
 
-        MapRenderBounds bounds = MapRenderBounds.Empty;
+        RenderBounds bounds = RenderBounds.Empty;
 
         for (int corner = 0; corner < 8; corner++)
         {

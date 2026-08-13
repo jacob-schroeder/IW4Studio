@@ -1,6 +1,7 @@
 using System.Text;
 
 using IW4.Render.EditorPreview;
+using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Shaders;
 
@@ -23,27 +24,27 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
     public const string ViewProjectionRowsUniform =
         "rsxStaticViewProjectionRows";
     public const string EyeOffsetUniform = "rsxStaticEyeOffset";
-    public const string VegetationWindEnabledUniform =
-        "rsxStaticVegetationWindEnabled";
-    public const string VegetationTimeUniform =
-        "rsxStaticVegetationTime";
-    public const string VegetationAmplitudeUniform =
-        "rsxStaticVegetationAmplitude";
-    public const string VegetationAngularFrequencyUniform =
-        "rsxStaticVegetationAngularFrequency";
-    public const string VegetationSpatialFrequencyUniform =
-        "rsxStaticVegetationSpatialFrequency";
-    public const string VegetationLocalMinimumHeightUniform =
-        "rsxStaticVegetationLocalMinimumHeight";
-    public const string VegetationLocalHeightRangeUniform =
-        "rsxStaticVegetationLocalHeightRange";
+    public const string CompositionWindEnabledUniform =
+        "rsxStaticCompositionWindEnabled";
+    public const string CompositionTimeUniform =
+        "rsxStaticCompositionTime";
+    public const string CompositionAmplitudeUniform =
+        "rsxStaticCompositionAmplitude";
+    public const string CompositionAngularFrequencyUniform =
+        "rsxStaticCompositionAngularFrequency";
+    public const string CompositionSpatialFrequencyUniform =
+        "rsxStaticCompositionSpatialFrequency";
+    public const string CompositionLocalMinimumHeightUniform =
+        "rsxStaticCompositionLocalMinimumHeight";
+    public const string CompositionLocalHeightRangeUniform =
+        "rsxStaticCompositionLocalHeightRange";
 
     private const string MainMarker = "void main() {";
 
     public static bool TryCompose(
         string source,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> vertexInputs,
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlan plan,
+        IReadOnlyList<ShaderVertexInputBinding> vertexInputs,
+        TranslatedProgramVertexConstantBindingPlan plan,
         out string composed,
         out string cacheIdentity,
         out string blocker)
@@ -78,7 +79,7 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
             }
         }
 
-        MapRenderEditorTranslatedProgramVertexConstantBinding[] bindings =
+        TranslatedProgramVertexConstantBinding[] bindings =
             plan.Bindings
                 .Where(binding => IsPlacementDependent(
                     binding.CodeMatrixSemantic))
@@ -91,11 +92,11 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
         }
 
         string rewritten = source;
-        MapRenderEditorTranslatedProgramVertexConstantBinding[]
+        TranslatedProgramVertexConstantBinding[]
             lightingPayloadBindings = plan.Bindings
                 .Where(binding => IsLightingPayloadBinding(binding.Kind))
                 .ToArray();
-        foreach (MapRenderEditorTranslatedProgramVertexConstantBinding
+        foreach (TranslatedProgramVertexConstantBinding
                  binding in lightingPayloadBindings)
         {
             string token = $"rsxVertexConst[{binding.Destination}]";
@@ -104,7 +105,7 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
                 blocker =
                     $"STATIC_INSTANCE_VERTEX_CONST_C{binding.Destination}_" +
                     (binding.Kind ==
-                        MapRenderEditorTranslatedProgramVertexConstantBindingKind
+                        TranslatedProgramVertexConstantBindingKind
                             .PerInstanceStaticModelBaseLightingCoords
                         ? "ROW39_READ_MISSING"
                         : "ROW3A_READ_MISSING");
@@ -115,7 +116,7 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
                 "aRsxInput12",
                 StringComparison.Ordinal);
         }
-        foreach (MapRenderEditorTranslatedProgramVertexConstantBinding
+        foreach (TranslatedProgramVertexConstantBinding
                  binding in bindings)
         {
             string token = $"rsxVertexConst[{binding.Destination}]";
@@ -160,7 +161,7 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
                 .Concat(lightingPayloadBindings.Select(binding =>
                     $"c{binding.Destination}=" +
                     (binding.Kind ==
-                        MapRenderEditorTranslatedProgramVertexConstantBindingKind
+                        TranslatedProgramVertexConstantBindingKind
                             .PerInstanceStaticModelBaseLightingCoords
                         ? "instanceRow39"
                         : "instanceRow3A"))));
@@ -168,18 +169,18 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
     }
 
     public static bool TryResolveLightingPayload(
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlan plan,
+        TranslatedProgramVertexConstantBindingPlan plan,
         out MapRenderStaticInstanceLightingPayload lightingPayload,
         out string blocker)
     {
         ArgumentNullException.ThrowIfNull(plan);
         bool usesBaseLightingCoords = plan.Bindings.Any(binding =>
             binding.Kind ==
-            MapRenderEditorTranslatedProgramVertexConstantBindingKind
+            TranslatedProgramVertexConstantBindingKind
                 .PerInstanceStaticModelBaseLightingCoords);
         bool usesLightProbeAmbient = plan.Bindings.Any(binding =>
             binding.Kind ==
-            MapRenderEditorTranslatedProgramVertexConstantBindingKind
+            TranslatedProgramVertexConstantBindingKind
                 .PerInstanceStaticModelLightProbeAmbient);
         if (usesBaseLightingCoords && usesLightProbeAmbient)
         {
@@ -198,59 +199,72 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
         return true;
     }
 
+    public static IReadOnlySet<int> ResolveExternallyBoundVertexConstantDestinations(
+        TranslatedProgramVertexConstantBindingPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        return plan.Bindings
+            .Where(binding =>
+                IsPlacementDependent(binding.CodeMatrixSemantic) ||
+                IsLightingPayloadBinding(binding.Kind))
+            .Select(binding => (int)binding.Destination)
+            .ToHashSet();
+    }
+
     private static bool IsLightingPayloadBinding(
-        MapRenderEditorTranslatedProgramVertexConstantBindingKind kind) =>
+        TranslatedProgramVertexConstantBindingKind kind) =>
         kind is
-            MapRenderEditorTranslatedProgramVertexConstantBindingKind
+            TranslatedProgramVertexConstantBindingKind
                 .PerInstanceStaticModelBaseLightingCoords or
-            MapRenderEditorTranslatedProgramVertexConstantBindingKind
+            TranslatedProgramVertexConstantBindingKind
                 .PerInstanceStaticModelLightProbeAmbient;
 
     private static bool IsPlacementDependent(
-        MapRenderCodeMatrixSemantic? semantic) => semantic is
-        MapRenderCodeMatrixSemantic.World0 or
-        MapRenderCodeMatrixSemantic.WorldView0 or
-        MapRenderCodeMatrixSemantic.WorldViewProjection0;
+        CodeMatrixSemantic? semantic) => semantic is
+        CodeMatrixSemantic.World0 or
+        CodeMatrixSemantic.WorldView0 or
+        CodeMatrixSemantic.WorldViewProjection0;
 
     private const string StaticPlacementBridge = """
         uniform vec4 rsxStaticViewRows[4];
         uniform vec4 rsxStaticViewProjectionRows[4];
         uniform vec3 rsxStaticEyeOffset;
-        uniform int rsxStaticVegetationWindEnabled;
-        uniform float rsxStaticVegetationTime;
-        uniform float rsxStaticVegetationAmplitude;
-        uniform float rsxStaticVegetationAngularFrequency;
-        uniform float rsxStaticVegetationSpatialFrequency;
-        uniform float rsxStaticVegetationLocalMinimumHeight;
-        uniform float rsxStaticVegetationLocalHeightRange;
+        uniform int rsxStaticCompositionWindEnabled;
+        uniform float rsxStaticCompositionTime;
+        uniform float rsxStaticCompositionAmplitude;
+        uniform float rsxStaticCompositionAngularFrequency;
+        uniform float rsxStaticCompositionSpatialFrequency;
+        uniform float rsxStaticCompositionLocalMinimumHeight;
+        uniform float rsxStaticCompositionLocalHeightRange;
 
         // Bounded EditorPreview deformation shared with the generic static
         // model shader. No authored RSX wind constant is claimed here.
-        float rsxStaticVegetationSway()
+        float rsxStaticCompositionSway()
         {
-          if (rsxStaticVegetationWindEnabled == 0 ||
-              rsxStaticVegetationLocalHeightRange <= 0.0001)
+          if (rsxStaticCompositionWindEnabled == 0 ||
+              rsxStaticCompositionLocalHeightRange <= 0.0001)
           {
             return 0.0;
           }
           vec4 localPosition = vec4(aRsxInput0.xyz, 1.0);
           float heightWeight = clamp(
-              (aRsxInput0.z - rsxStaticVegetationLocalMinimumHeight) /
-                  rsxStaticVegetationLocalHeightRange,
+              (aRsxInput0.z - rsxStaticCompositionLocalMinimumHeight) /
+                  rsxStaticCompositionLocalHeightRange,
               0.0,
               1.0);
           heightWeight *= heightWeight;
           float renderX = dot(aRsxInput13, localPosition);
           float renderZ = dot(aRsxInput15, localPosition);
           float phase =
-              rsxStaticVegetationTime *
-                  rsxStaticVegetationAngularFrequency +
-              renderX * rsxStaticVegetationSpatialFrequency +
-              renderZ * rsxStaticVegetationSpatialFrequency * 1.37;
+              rsxStaticCompositionTime *
+                  rsxStaticCompositionAngularFrequency +
+              renderX * rsxStaticCompositionSpatialFrequency +
+              renderZ * rsxStaticCompositionSpatialFrequency * 1.37;
           float wave = (
               sin(phase) +
               0.35 * sin(phase * 0.61 + 1.7)) / 1.35;
-          return rsxStaticVegetationAmplitude * heightWeight * wave;
+          return rsxStaticCompositionAmplitude * heightWeight * wave;
         }
 
         vec4 rsxStaticWorldRow(int row)
@@ -261,7 +275,7 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
           if (row == 0) return vec4(host0.x, -host2.x, host1.x, 0.0);
           if (row == 1) return vec4(host0.y, -host2.y, host1.y, 0.0);
           if (row == 2) return vec4(host0.z, -host2.z, host1.z, 0.0);
-          float vegetationSway = rsxStaticVegetationSway();
+          float vegetationSway = rsxStaticCompositionSway();
           return vec4(
               host0.w - rsxStaticEyeOffset.x + vegetationSway,
               -host2.w - rsxStaticEyeOffset.y - vegetationSway * 0.35,

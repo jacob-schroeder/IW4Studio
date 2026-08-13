@@ -22,7 +22,7 @@ public sealed class MapRenderCameraFrustum
     }
 
     public static MapRenderCameraFrustum Create(
-        MapRenderCamera camera,
+        RenderCamera camera,
         float aspectRatio)
     {
         if (!(aspectRatio > 0f) || !float.IsFinite(aspectRatio))
@@ -39,7 +39,7 @@ public sealed class MapRenderCameraFrustum
     /// frame workspaces.
     /// </summary>
     public static void BuildPlanes(
-        MapRenderCamera camera,
+        RenderCamera camera,
         float aspectRatio,
         Span<Vector4> destination)
     {
@@ -90,7 +90,7 @@ public sealed class MapRenderCameraFrustum
                 viewProjection.M44 - viewProjection.M43));
     }
 
-    public bool Intersects(MapRenderBounds bounds) =>
+    public bool Intersects(RenderBounds bounds) =>
         Intersects(bounds, _planes);
 
     /// <summary>
@@ -98,7 +98,7 @@ public sealed class MapRenderCameraFrustum
     /// <see cref="BuildPlanes"/>.
     /// </summary>
     public static bool Intersects(
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         ReadOnlySpan<Vector4> normalizedPlanes)
     {
         if (normalizedPlanes.Length < PlaneCount)

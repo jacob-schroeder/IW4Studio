@@ -1,22 +1,21 @@
 using IW4.Assets.Assets.Image;
-using IW4.Render.Shaders;
 using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
 
 namespace IW4.Render.Assets;
 
-internal static class MapRenderDecodedTextureResourceSnapshotFactory
+internal static class DecodedTextureResourceSnapshotFactory
 {
     internal static bool TryDecode(
         GfxImageAsset image,
-        MapRenderSelectedPassSamplerShape shape,
+        TextureSamplerShape shape,
         IGfxImagePayloadResolver? imageStreams,
-        out MapRenderDecodedTextureResourceSnapshot? resource,
+        out DecodedTextureResourceSnapshot? resource,
         out string reason) => shape switch
         {
-            MapRenderSelectedPassSamplerShape.TwoDimensional =>
+            TextureSamplerShape.TwoDimensional =>
                 TryDecodeTwoDimensional(image, imageStreams, out resource, out reason),
-            MapRenderSelectedPassSamplerShape.Cube =>
+            TextureSamplerShape.Cube =>
                 TryDecodeCube(image, imageStreams, out resource, out reason),
             _ => ThrowUnknownShape(out resource, out reason)
         };
@@ -24,7 +23,7 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
     private static bool TryDecodeTwoDimensional(
         GfxImageAsset image,
         IGfxImagePayloadResolver? imageStreams,
-        out MapRenderDecodedTextureResourceSnapshot? resource,
+        out DecodedTextureResourceSnapshot? resource,
         out string reason)
     {
         resource = null;
@@ -33,7 +32,7 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
             image,
             out streamMips,
             out _) == true && streamMips.Count != 0;
-        var subresources = new List<MapRenderDecodedTextureSubresourceSnapshot>();
+        var subresources = new List<DecodedTextureSubresourceSnapshot>();
         string? format = null;
         if (hasStream)
         {
@@ -51,7 +50,7 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
                     return false;
                 }
                 format ??= decodedMip.Format;
-                subresources.Add(new MapRenderDecodedTextureSubresourceSnapshot(
+                subresources.Add(new DecodedTextureSubresourceSnapshot(
                     0,
                     mipLevel,
                     decodedMip.Width,
@@ -72,7 +71,7 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
                 return false;
             }
             format = decoded.Format;
-            subresources.Add(new MapRenderDecodedTextureSubresourceSnapshot(
+            subresources.Add(new DecodedTextureSubresourceSnapshot(
                 0,
                 0,
                 decoded.Width,
@@ -80,9 +79,9 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
                 decoded.RgbaBytes));
         }
 
-        resource = new MapRenderDecodedTextureResourceSnapshot(
+        resource = new DecodedTextureResourceSnapshot(
             image.Name ?? "unnamed_image",
-            MapRenderSelectedPassSamplerShape.TwoDimensional,
+            TextureSamplerShape.TwoDimensional,
             format ?? throw new InvalidOperationException(
                 "A decoded 2D texture lost its format identity."),
             subresources.Any(subresource => HasTransparency(subresource.RgbaBytes)),
@@ -94,11 +93,11 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
     private static bool TryDecodeCube(
         GfxImageAsset image,
         IGfxImagePayloadResolver? imageStreams,
-        out MapRenderDecodedTextureResourceSnapshot? resource,
+        out DecodedTextureResourceSnapshot? resource,
         out string reason)
     {
         resource = null;
-        var decodedLevels = new List<MapRenderDecodedCubeTexture>();
+        var decodedLevels = new List<DecodedCubeTexture>();
         if (imageStreams?.TryResolveMipPayloads(
                 image,
                 out IReadOnlyList<GfxImagePayload> streamMips,
@@ -106,13 +105,13 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
         {
             foreach (GfxImagePayload mip in streamMips)
             {
-                if (!MapRenderCubeTextureDecoder.TryDecode(
+                if (!CubeTextureDecoder.TryDecode(
                         image,
                         mip.Payload,
                         mip.Width,
                         mip.Height,
                         1,
-                        out MapRenderDecodedCubeTexture decoded,
+                        out DecodedCubeTexture decoded,
                         out reason))
                 {
                     return false;
@@ -122,13 +121,13 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
         }
         else
         {
-            if (!MapRenderCubeTextureDecoder.TryDecode(
+            if (!CubeTextureDecoder.TryDecode(
                     image,
                     image.PayloadBytes,
                     image.Width,
                     image.Height,
                     Math.Max(1, (int)image.LevelCount),
-                    out MapRenderDecodedCubeTexture decoded,
+                    out DecodedCubeTexture decoded,
                     out reason))
             {
                 return false;
@@ -136,15 +135,15 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
             decodedLevels.Add(decoded);
         }
 
-        var subresources = new List<MapRenderDecodedTextureSubresourceSnapshot>();
+        var subresources = new List<DecodedTextureSubresourceSnapshot>();
         if (decodedLevels.Count == 1 && decodedLevels[0].Faces[0].Count > 1)
         {
             for (int face = 0; face < 6; face++)
             {
                 for (int mip = 0; mip < decodedLevels[0].Faces[face].Count; mip++)
                 {
-                    MapRenderTextureMip source = decodedLevels[0].Faces[face][mip];
-                    subresources.Add(new MapRenderDecodedTextureSubresourceSnapshot(
+                    TextureMip source = decodedLevels[0].Faces[face][mip];
+                    subresources.Add(new DecodedTextureSubresourceSnapshot(
                         face,
                         mip,
                         source.Width,
@@ -159,8 +158,8 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
             {
                 for (int mip = 0; mip < decodedLevels.Count; mip++)
                 {
-                    MapRenderTextureMip source = decodedLevels[mip].Faces[face][0];
-                    subresources.Add(new MapRenderDecodedTextureSubresourceSnapshot(
+                    TextureMip source = decodedLevels[mip].Faces[face][0];
+                    subresources.Add(new DecodedTextureSubresourceSnapshot(
                         face,
                         mip,
                         source.Width,
@@ -170,10 +169,10 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
             }
         }
 
-        MapRenderDecodedCubeTexture top = decodedLevels[0];
-        resource = new MapRenderDecodedTextureResourceSnapshot(
+        DecodedCubeTexture top = decodedLevels[0];
+        resource = new DecodedTextureResourceSnapshot(
             image.Name ?? "unnamed_cube",
-            MapRenderSelectedPassSamplerShape.Cube,
+            TextureSamplerShape.Cube,
             top.Format,
             decodedLevels.Any(level => level.HasTransparency),
             subresources);
@@ -192,7 +191,7 @@ internal static class MapRenderDecodedTextureResourceSnapshotFactory
     }
 
     private static bool ThrowUnknownShape(
-        out MapRenderDecodedTextureResourceSnapshot? resource,
+        out DecodedTextureResourceSnapshot? resource,
         out string reason)
     {
         resource = null;

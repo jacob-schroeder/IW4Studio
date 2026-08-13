@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Textures;
 
 namespace IW4.Render.OpenGl.Sky;
 

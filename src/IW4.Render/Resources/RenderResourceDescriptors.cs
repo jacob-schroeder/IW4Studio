@@ -343,13 +343,6 @@ public sealed class RenderGeometryDescriptor
     }
 }
 
-public enum RenderTextureDimension
-{
-    Texture2D,
-    TextureCube,
-    Texture3D
-}
-
 public enum RenderTexturePayloadKind
 {
     /// <summary>
@@ -595,7 +588,7 @@ public sealed class RenderTextureSubresourceDescriptor
 
 public sealed class RenderTextureSourceDescriptor
 {
-    public RenderTextureSourceDescriptor(MapRenderRsxTextureCommandState source)
+    public RenderTextureSourceDescriptor(RsxTextureCommandState source)
     {
         ArgumentNullException.ThrowIfNull(source);
 
@@ -954,7 +947,7 @@ public sealed class RenderSamplerDescriptor
 {
     internal RenderSamplerDescriptor(
         RenderSemanticIdentity identity,
-        MapRenderSamplerState source)
+        RsxSamplerState source)
         : this(
             identity,
             source?.RawState ?? throw new ArgumentNullException(nameof(source)),
@@ -992,14 +985,14 @@ public sealed class RenderSamplerDescriptor
         int tableIndex,
         int filterClass,
         int mipClass,
-        MapRenderTextureFilter minFilter,
-        MapRenderTextureFilter magFilter,
-        MapRenderTextureFilter mipFilter,
+        TextureFilter minFilter,
+        TextureFilter magFilter,
+        TextureFilter mipFilter,
         int maxAnisotropy,
         float mipLodBias,
-        MapRenderTextureAddressMode addressU,
-        MapRenderTextureAddressMode addressV,
-        MapRenderTextureAddressMode addressW)
+        TextureAddressMode addressU,
+        TextureAddressMode addressV,
+        TextureAddressMode addressW)
     {
         RenderVertexLayoutDescriptor.RequireIdentity(
             identity,
@@ -1054,14 +1047,14 @@ public sealed class RenderSamplerDescriptor
     public int TableIndex { get; }
     public int FilterClass { get; }
     public int MipClass { get; }
-    public MapRenderTextureFilter MinFilter { get; }
-    public MapRenderTextureFilter MagFilter { get; }
-    public MapRenderTextureFilter MipFilter { get; }
+    public TextureFilter MinFilter { get; }
+    public TextureFilter MagFilter { get; }
+    public TextureFilter MipFilter { get; }
     public int MaxAnisotropy { get; }
     public float MipLodBias { get; }
-    public MapRenderTextureAddressMode AddressU { get; }
-    public MapRenderTextureAddressMode AddressV { get; }
-    public MapRenderTextureAddressMode AddressW { get; }
+    public TextureAddressMode AddressU { get; }
+    public TextureAddressMode AddressV { get; }
+    public TextureAddressMode AddressW { get; }
     public string ContentDigest { get; }
 
     internal void AppendContent(RenderContentDigestWriter writer)

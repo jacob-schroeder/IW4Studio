@@ -4,12 +4,12 @@ using IW4.Render.Textures;
 namespace IW4.Render.Geometry;
 
 /// <summary>
-/// Structural form of <see cref="MapRenderTexture.BindingIdentity"/> used by
+/// Structural form of <see cref="Texture.BindingIdentity"/> used by
 /// hot dictionaries without repeatedly formatting the identity string.
 /// </summary>
-internal readonly record struct MapRenderTextureBindingKey(
+internal readonly record struct TextureBindingKey(
     string Name,
-    MapRenderTextureTarget Target,
+    TextureTarget Target,
     string Format,
     int Width,
     int Height,
@@ -22,7 +22,7 @@ internal readonly record struct MapRenderTextureBindingKey(
     uint EnablePayload,
     uint CachePayload)
 {
-    internal static MapRenderTextureBindingKey Create(MapRenderTexture texture) => new(
+    internal static TextureBindingKey Create(Texture texture) => new(
         texture.Name,
         texture.Target,
         texture.Format,
@@ -39,10 +39,10 @@ internal readonly record struct MapRenderTextureBindingKey(
 }
 
 /// <summary>
-/// Structural form of <see cref="MapRenderUvRoute.BatchKey"/>. Float bit
+/// Structural form of <see cref="UvRoute.BatchKey"/>. Float bit
 /// patterns are retained so construction is culture-free and allocation-free.
 /// </summary>
-internal readonly record struct MapRenderUvRouteBatchKey(
+internal readonly record struct UvRouteBatchKey(
     string WorldVertexFormat,
     byte TexCoordSource,
     byte StreamIndex,
@@ -50,7 +50,7 @@ internal readonly record struct MapRenderUvRouteBatchKey(
     int Offset,
     byte FormatByte0,
     byte FormatByte1,
-    MapRenderUvBaseMode BaseMode,
+    UvBaseMode BaseMode,
     int ComponentA,
     int ComponentB,
     int ScaleUBits,
@@ -58,7 +58,7 @@ internal readonly record struct MapRenderUvRouteBatchKey(
     int AddUBits,
     int AddVBits)
 {
-    internal static MapRenderUvRouteBatchKey Create(MapRenderUvRoute route) => new(
+    internal static UvRouteBatchKey Create(UvRoute route) => new(
         route.WorldVertexFormat,
         route.TexCoordSource,
         route.StreamIndex,

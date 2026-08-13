@@ -98,7 +98,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     .Create(
                         _gl,
                         _editorPreviewPresentationContextIdentity,
-                        EditorPreviewLinkProfileIdentity,
+                        LinkProfileIdentity,
                         source,
                         _renderSceneSnapshot ??
                             throw new InvalidOperationException(

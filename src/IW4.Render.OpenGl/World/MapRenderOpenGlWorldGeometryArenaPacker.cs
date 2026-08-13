@@ -55,16 +55,16 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
 
     internal static MapRenderOpenGlWorldGeometryArenaPacking PackTranslatedRsx(
         IReadOnlyList<MapRenderOpenGlWorldGeometryArenaSource> sources,
-        MapRenderOpenGlPackedRsxVertexLayout layout) =>
+        OpenGlPackedRsxVertexLayout layout) =>
         PackCore(
             sources,
-            MapRenderOpenGlPackedRsxVertexLayout.SourceFloatStride,
+            OpenGlPackedRsxVertexLayout.SourceFloatStride,
             layout);
 
     private static MapRenderOpenGlWorldGeometryArenaPacking PackCore(
         IReadOnlyList<MapRenderOpenGlWorldGeometryArenaSource> sources,
         int sourceFloatsPerVertex,
-        MapRenderOpenGlPackedRsxVertexLayout? packedRsxLayout)
+        OpenGlPackedRsxVertexLayout? packedRsxLayout)
     {
         ArgumentNullException.ThrowIfNull(sources);
         if (sourceFloatsPerVertex <= 0)

@@ -38,10 +38,10 @@ internal static class GfxImageDecoder
     /// Decodes a capture-time-proven, tightly packed BC subresource without
     /// consulting an image-format declaration. This is intentionally internal:
     /// callers must first establish the authored layout proof carried by
-    /// <see cref="MapRenderTextureAuthoredSubresource"/>.
+    /// <see cref="TextureAuthoredSubresource"/>.
     /// </summary>
     internal static byte[] DecodeProvenAuthoredBc(
-        MapRenderAuthoredBlockCompression compression,
+        AuthoredBlockCompression compression,
         IReadOnlyList<byte> payloadBytes,
         int width,
         int height)
@@ -54,11 +54,11 @@ internal static class GfxImageDecoder
 
         return compression switch
         {
-            MapRenderAuthoredBlockCompression.Bc1 =>
+            AuthoredBlockCompression.Bc1 =>
                 DecodeBc1(payloadBytes, width, height),
-            MapRenderAuthoredBlockCompression.Bc2 =>
+            AuthoredBlockCompression.Bc2 =>
                 DecodeBc2(payloadBytes, width, height),
-            MapRenderAuthoredBlockCompression.Bc3 =>
+            AuthoredBlockCompression.Bc3 =>
                 DecodeBc3(payloadBytes, width, height),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(compression),

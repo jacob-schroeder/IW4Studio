@@ -4,7 +4,7 @@ namespace IW4.Render.Geometry;
 
 internal readonly record struct WorldVertexDecoderSelection(
     WorldVertexDecoder? Decoder,
-    MapRenderUvRoute UvRoute);
+    UvRoute UvRoute);
 
 internal readonly record struct WorldVertexDecoderCacheKey(
     WorldVertexLayoutSelection Layout,

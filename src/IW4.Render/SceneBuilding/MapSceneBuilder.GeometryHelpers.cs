@@ -57,8 +57,8 @@ public sealed partial class MapSceneBuilder
         List<uint> indices,
         List<MapRenderPickTriangle> pickTriangles,
         bool materializeDiagnosticGeometry,
-        ref MapRenderBounds bounds,
-        ref MapRenderBounds collisionBounds)
+        ref RenderBounds bounds,
+        ref RenderBounds collisionBounds)
     {
         ArgumentNullException.ThrowIfNull(clipMap);
         ArgumentNullException.ThrowIfNull(vertices);
@@ -270,8 +270,8 @@ public sealed partial class MapSceneBuilder
 
     private static void IncludeCollisionBounds(
         ReadOnlySpan<Vector3> corners,
-        ref MapRenderBounds bounds,
-        ref MapRenderBounds collisionBounds)
+        ref RenderBounds bounds,
+        ref RenderBounds collisionBounds)
     {
         foreach (Vector3 corner in corners)
         {
@@ -485,9 +485,9 @@ public sealed partial class MapSceneBuilder
     }
 
     private static Vector3 ToRenderCoordinates(Vector3 value) =>
-        MapRenderCoordinateConverter.GameToRenderPosition(value);
+        RenderCoordinateConverter.GameToRenderPosition(value);
 
-    private static MapRenderBounds IncludeBounds(MapRenderBounds bounds, MapRenderBounds other)
+    private static RenderBounds IncludeBounds(RenderBounds bounds, RenderBounds other)
     {
         return other.IsValid
             ? bounds.Include(other.Min).Include(other.Max)

@@ -1,6 +1,6 @@
+using IW4.Render.Techniques;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
-using IW4.Render.Assets;
 using IW4.Render.Materials;
 using IW4.Render.Shaders;
 
@@ -11,28 +11,33 @@ namespace IW4.Render.Execution;
 /// </summary>
 internal static class AuthoredMaterialExecutionPlanner
 {
-    internal static MapRenderShaderExecutionContract CreateContract(
+    internal static ShaderExecutionContract CreateContract(
         MaterialAsset? material,
         MaterialTechniqueSetAsset? techniqueSet,
-        RenderAssetLookup lookup,
-        MapRenderMaterialPass pass,
-        MapRenderState state,
+        IMaterialExecutionLookup lookup,
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity? primarySampler,
+        RenderState state,
         string fallbackTextureName,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
+        IReadOnlyList<MaterialSamplerBinding> materialSamplers,
         bool vertexInputPayloadReady,
         string vertexInputPayloadBlocker,
         bool authoredSourcePassAvailable,
-        MapRenderShaderExecutionPurpose purpose =
-            MapRenderShaderExecutionPurpose.CameraColor,
-        MapRenderShaderTranslationCache? shaderTranslationCache = null,
+        ShaderExecutionPurpose purpose =
+            ShaderExecutionPurpose.CameraColor,
+        ShaderTranslationCache? shaderTranslationCache = null,
         int? fixedVertexSourceBackendRow = null,
-        IReadOnlySet<int>? explicitCubeSamplerDestinations = null) =>
-        MapRenderShaderExecutionContractFactory.Create(
+        IReadOnlySet<int>? explicitCubeSamplerDestinations = null,
+        IReadOnlyList<ShaderVertexInputBinding>? explicitVertexInputs = null,
+        IReadOnlyList<string>?
+            scopedResourceIdentities = null) =>
+        ShaderExecutionContractFactory.Create(
             material,
             techniqueSet,
             lookup,
-            new MapRenderShaderExecutionPassSelection(
+            new ShaderExecutionPassSelection(
                 pass,
+                primarySampler,
                 state,
                 fallbackTextureName),
             materialSamplers,
@@ -42,47 +47,7 @@ internal static class AuthoredMaterialExecutionPlanner
             purpose,
             shaderTranslationCache,
             fixedVertexSourceBackendRow,
-            explicitCubeSamplerDestinations);
-
-    internal static MapRenderShaderVertexInputBinding[] ResolveVertexInputs(
-        MaterialTechniqueSetAsset? techniqueSet,
-        RenderAssetLookup lookup,
-        MapRenderMaterialPass pass,
-        int? fixedVertexSourceBackendRow = null)
-    {
-        if (techniqueSet is null ||
-            pass.TechniqueSlot < 0 ||
-            pass.PassIndex < 0)
-        {
-            return [];
-        }
-
-        MaterialTechniqueSlot? slot = lookup
-            .ResolveTechniqueSlots(techniqueSet)
-            .FirstOrDefault(candidate =>
-                candidate.Index == pass.TechniqueSlot);
-        if (slot?.Technique is not { } technique ||
-            (uint)pass.PassIndex >= (uint)technique.Passes.Count)
-        {
-            return [];
-        }
-
-        MaterialPassAsset sourcePass = technique.Passes[pass.PassIndex];
-        MapRenderSelectedPassProgramSources sources = lookup.ResolveSources(
-            techniqueSet,
-            technique,
-            new MapRenderSelectedTechniquePass(
-                pass.PassIndex,
-                sourcePass));
-        return MapRenderShaderExecutionContractFactory
-            .CreateVertexInputBindings(
-                techniqueSet,
-                technique.Flags,
-                sources.VertexDeclaration,
-                sources.VertexProgram.HasProgramData
-                    ? RsxShaderTranslator.ReadVertexInputDestinations(
-                        sources.VertexProgram.Data.ToArray())
-                    : null,
-                fixedVertexSourceBackendRow);
-    }
+            explicitCubeSamplerDestinations,
+            explicitVertexInputs,
+            scopedResourceIdentities);
 }

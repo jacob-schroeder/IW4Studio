@@ -16,7 +16,7 @@ public sealed record MapRenderStaticModelSchedulingInfo(
     ushort CullDistance,
     XModelAsset Model,
     int PreparedLodIndex,
-    MapRenderBounds Bounds)
+    RenderBounds Bounds)
 {
     /// <summary>
     /// LODs for which every authored surface produced one complete selected

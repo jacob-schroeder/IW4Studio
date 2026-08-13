@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
@@ -12,13 +13,14 @@ using IW4.Render.Textures;
 namespace IW4.Render.Geometry;
 
 public sealed record MapRenderInstancedTexturedBatch(
-    MapRenderMaterialPass Pass,
-    MapRenderTexture Texture,
-    IReadOnlyList<MapRenderColorLayer> ColorLayers,
-    IReadOnlyList<MapRenderMaterialSamplerBinding> MaterialSamplers,
-    MapRenderShaderExecutionContract ShaderExecution,
-    MapRenderUvRoute UvRoute,
-    MapRenderState State,
+    MaterialPassIdentity Pass,
+    MaterialSamplerIdentity PrimarySampler,
+    Texture Texture,
+    IReadOnlyList<MaterialColorLayer> ColorLayers,
+    IReadOnlyList<MapRenderWorldMaterialSamplerBinding> MaterialSamplers,
+    ShaderExecutionContract ShaderExecution,
+    UvRoute UvRoute,
+    RenderState State,
     int UnresolvedCodeSamplerCount,
     float[] Vertices,
     uint[] Indices,
@@ -42,7 +44,7 @@ public sealed record MapRenderInstancedTexturedBatch(
     /// </summary>
     public float[] RsxVertexInputs { get; init; } = [];
 
-    public MapRenderShaderExecutionContract? DepthPrepassShaderExecution
+    public ShaderExecutionContract? DepthPrepassShaderExecution
     {
         get;
         init;

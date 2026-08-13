@@ -52,9 +52,9 @@ public sealed class MapRenderWorldDpvsSunShadowFullProjectionState
             !float.IsFinite(partition0SampleSize) ||
             !(partition1SampleSize > 0f) ||
             !float.IsFinite(partition1SampleSize) ||
-            !MapRenderMatrixValidation.IsFinite(partition0WorldToClip) ||
-            !MapRenderMatrixValidation.IsFinite(partition1WorldToClip) ||
-            !MapRenderMatrixValidation.IsFinite(shadowLookupMatrix))
+            !RenderMatrixValidation.IsFinite(partition0WorldToClip) ||
+            !RenderMatrixValidation.IsFinite(partition1WorldToClip) ||
+            !RenderMatrixValidation.IsFinite(shadowLookupMatrix))
         {
             throw new ArgumentException(
                 "Sun-shadow projection payload must contain finite native axes, spans, origins, sample sizes, and matrices.");

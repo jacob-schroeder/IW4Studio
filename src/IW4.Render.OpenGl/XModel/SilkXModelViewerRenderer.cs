@@ -1,12 +1,15 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Lighting;
 using IW4.Render.Materials;
 using IW4.Render.OpenGl.Programs;
-using IW4.Render.SceneBuilding;
 using IW4.Render.Shaders;
 using IW4.Render.Textures;
+using Texture = IW4.Render.Textures.Texture;
+using TextureTarget = Silk.NET.OpenGL.TextureTarget;
+using RenderTextureTarget = IW4.Render.Textures.TextureTarget;
 using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl.XModel;
@@ -51,21 +54,21 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private const int ViewerReflectionEnvironmentSize = 32;
     private const int ViewerReflectionEnvironmentMaxMipLevel = 5;
     private const int NeutralDynamicLightingEntry =
-        MapRenderStaticModelLightingAtlas.StaticEntryCapacity;
+        ModelLightingAtlasLayout.StaticEntryCapacity;
 
     private readonly GL _gl;
     private readonly SilkOpenGlStateShadow _state;
     private readonly SilkOpenGlTextureParameters _textureParameters;
-    private readonly MapRenderOpenGlSharedProgramCache _sharedPrograms;
-    private readonly MapRenderOpenGlSharedProgramCache.UsageLease
+    private readonly OpenGlSharedProgramCache _sharedPrograms;
+    private readonly OpenGlSharedProgramCache.UsageLease
         _sharedProgramUsage;
     private readonly HashSet<uint> _viewerOwnedProgramHandles = [];
     private readonly Dictionary<
-        MapRenderOpenGlProgramKey,
-        MapRenderOpenGlLinkedProgramHandleResolution>
+        OpenGlProgramKey,
+        OpenGlLinkedProgramHandleResolution>
         _viewerProgramResolutions = [];
     private readonly SilkOpenGlAuthoredMaterialExecutor _authoredMaterials;
-    private readonly Dictionary<MapRenderTexture, uint> _textureHandles =
+    private readonly Dictionary<Texture, uint> _textureHandles =
         new(ReferenceEqualityComparer.Instance);
     private readonly uint _checkerboardProgram;
     private readonly uint _checkerboardVertexArray;
@@ -83,7 +86,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _gl = gl ?? throw new ArgumentNullException(nameof(gl));
         _state = new SilkOpenGlStateShadow(gl);
         _textureParameters = new SilkOpenGlTextureParameters(gl);
-        _sharedPrograms = new MapRenderOpenGlSharedProgramCache(gl);
+        _sharedPrograms = new OpenGlSharedProgramCache(gl);
         _sharedProgramUsage = _sharedPrograms.AcquireUsageLease();
         try
         {
@@ -181,8 +184,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     .SelectMany(pass => pass.MaterialSamplers)
                     .Where(binding => string.Equals(
                         binding.ExternalResourceIdentity,
-                        AuthoredMaterialSamplerResolver
-                            .XModelViewerReflectionProbeResourceIdentity,
+                        XModelRenderAuthoredPass
+                            .ViewerReflectionProbeResourceIdentity,
                         StringComparison.Ordinal))
                     .Any()
                         ? ["viewerReflectionEnvironment"]
@@ -220,11 +223,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     /// and inspection overlays in the direct OpenGL preview framebuffer.
     /// </summary>
     public static Matrix4x4 CreateHostViewProjection(
-        MapRenderCamera camera,
+        RenderCamera camera,
         float aspectRatio) =>
-        MapRenderOpenGlRsxClipSpaceLowering
+        OpenGlRsxClipSpaceLowering
             .CreateDirectEditorPreviewHostViewProjection(
-                MapRenderOpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
+                OpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
                     camera,
                     aspectRatio));
 
@@ -232,7 +235,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         int framebuffer,
         int width,
         int height,
-        MapRenderCamera camera,
+        RenderCamera camera,
         float materialTimeSeconds,
         bool studioEnvironmentEnabled,
         bool showWireframe)
@@ -248,8 +251,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
 
         float aspect = width / (float)height;
-        MapRenderDerivedMatrixState matrices =
-            MapRenderOpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
+        DerivedMatrixState matrices =
+            OpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
                 camera,
                 aspect);
         ApplyViewerReflectionEnvironment(studioEnvironmentEnabled);
@@ -360,7 +363,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     {
         prepared = null;
         blocker = null;
-        MapRenderShaderExecutionContract execution = packet.ShaderExecution;
+        ShaderExecutionContract execution = packet.ShaderExecution;
         if (!execution.RendererProgramReady)
         {
             blocker = execution.RendererBlockers.Count == 0
@@ -374,7 +377,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             return false;
         }
         int expectedInputCount = checked(surface.Positions.Count *
-            MapRenderOpenGlPackedRsxVertexLayout.SourceFloatStride);
+            OpenGlPackedRsxVertexLayout.SourceFloatStride);
         if (packet.RsxVertexInputs.Length != expectedInputCount)
         {
             blocker =
@@ -388,7 +391,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             return false;
         }
         if (execution.Purpose !=
-            MapRenderShaderExecutionPurpose.CameraColor)
+            ShaderExecutionPurpose.CameraColor)
         {
             blocker = $"EXECUTION_PURPOSE_{execution.Purpose}_UNSUPPORTED";
             return false;
@@ -405,7 +408,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             .ToArray();
         HashSet<int> programSamplerDestinationSet =
             programSamplerDestinations.ToHashSet();
-        MapRenderShaderRuntimeSamplerRequirement[] runtimeSamplerRequirements =
+        ShaderRuntimeSamplerRequirement[] runtimeSamplerRequirements =
             execution.RuntimeSamplerRequirements
                 .Where(requirement => programSamplerDestinationSet.Contains(
                     requirement.Destination))
@@ -421,15 +424,15 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 packet.MaterialSamplers,
                 programSamplerDestinations,
                 runtimeSamplerRequirements,
-                out MapRenderMaterialSamplerBinding[] materialSamplers,
+                out MaterialSamplerBinding[] materialSamplers,
                 out blocker))
         {
             return false;
         }
 
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlanBuildResult
+        TranslatedProgramDirectCodeConstantPlanBuildResult
             directResult =
-                MapRenderEditorTranslatedProgramDirectCodeConstantPlanner
+                TranslatedProgramDirectCodeConstantPlanner
                     .TryPlan(
                         execution.ConstantDestinations,
                         execution.CodePixelConstantPatchPlans,
@@ -442,7 +445,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 string.Join('|', directResult.Blockers);
             return false;
         }
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlan directPlan =
+        TranslatedProgramDirectCodeConstantPlan directPlan =
             directResult.Plan!;
         ushort[] unsupportedDynamicRows = directPlan.DynamicSourceRows
             .Where(row => row is not
@@ -458,9 +461,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             return false;
         }
 
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlanBuildResult
+        TranslatedProgramVertexConstantBindingPlanBuildResult
             vertexResult =
-                MapRenderEditorTranslatedProgramVertexConstantBindingPlanner
+                TranslatedProgramVertexConstantBindingPlanner
                     .TryPlan(
                         execution.ProgramVertexConstantDestinations,
                         execution.ConstantDestinations,
@@ -473,7 +476,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             return false;
         }
         if (vertexResult.Plan!.Bindings.Any(binding => binding.Kind ==
-            MapRenderEditorTranslatedProgramVertexConstantBindingKind
+            TranslatedProgramVertexConstantBindingKind
                 .PerInstanceStaticModelLightProbeAmbient))
         {
             blocker =
@@ -501,9 +504,6 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         GlRsxProgram program = _authoredMaterials.GetOrCreateProgram(
             execution,
             packet.State,
-            staticModelVertexConstantPlan: null,
-            useVertexPlacementDiagnostic: false,
-            fragmentOutputDiagnostic: null,
             out string? programBlocker);
         if (program.Handle == 0)
         {
@@ -518,18 +518,24 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 vertexResult.Plan,
                 out GlRsxConstantBinding[] constantBindings,
                 out string? constantBlocker,
-                MapRenderStaticModelLightingAtlas.EntryCoordinates(
-                    NeutralDynamicLightingEntry)))
+                vertexConstantOverrides: vertexResult.Plan.Bindings
+                    .Where(binding => binding.Kind ==
+                        TranslatedProgramVertexConstantBindingKind
+                            .PerInstanceStaticModelBaseLightingCoords)
+                    .ToDictionary(
+                        binding => (int)binding.Destination,
+                        _ => ModelLightingAtlasLayout.EntryCoordinates(
+                            NeutralDynamicLightingEntry))))
         {
             blocker = "OPENGL_CONSTANT_BINDINGS:" + constantBlocker;
             return false;
         }
 
-        MapRenderOpenGlPackedRsxVertexLayout layout;
+        OpenGlPackedRsxVertexLayout layout;
         try
         {
-            layout = new MapRenderOpenGlPackedRsxVertexLayout(
-                MapRenderOpenGlPackedRsxVertexLayout.ResolveAttributeMask(
+            layout = new OpenGlPackedRsxVertexLayout(
+                OpenGlPackedRsxVertexLayout.ResolveAttributeMask(
                     execution));
         }
         catch (Exception exception) when (
@@ -551,11 +557,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private static bool TryValidateRuntimeSamplerRequirements(
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement> requirements,
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements,
         out string? blocker)
     {
         blocker = null;
-        foreach (MapRenderShaderRuntimeSamplerRequirement requirement in
+        foreach (ShaderRuntimeSamplerRequirement requirement in
                  requirements)
         {
             if (requirement.Destination >= TextureUnitCount)
@@ -565,13 +571,13 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 return false;
             }
             if (requirement.ResourceKind !=
-                    MapRenderShaderRuntimeSamplerResourceKind
-                        .StaticModelLightingAtlas ||
+                    ShaderRuntimeSamplerResourceKind
+                        .ModelLightingAtlas ||
                 requirement.Status !=
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .ImmutableSceneAtlasRequired ||
                 requirement.CodeSamplerArgument !=
-                    (uint)MapRenderCodePixelSamplerSource.ModelLighting ||
+                    (uint)CodePixelSamplerSource.ModelLighting ||
                 !string.Equals(
                     requirement.ResourceIdentity,
                     "modelLightingSampler",
@@ -586,12 +592,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private static bool TryValidateMaterialSamplers(
-        MapRenderShaderExecutionContract execution,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> bindings,
+        ShaderExecutionContract execution,
+        IReadOnlyList<MaterialSamplerBinding> bindings,
         IReadOnlyList<int> programSamplerDestinations,
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement>
+        IReadOnlyList<ShaderRuntimeSamplerRequirement>
             runtimeSamplerRequirements,
-        out MapRenderMaterialSamplerBinding[] selected,
+        out MaterialSamplerBinding[] selected,
         out string? blocker)
     {
         selected = [];
@@ -606,7 +612,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             .Distinct()
             .Order()
             .ToArray();
-        var result = new List<MapRenderMaterialSamplerBinding>(
+        var result = new List<MaterialSamplerBinding>(
             destinations.Length);
         foreach (ushort destination in destinations)
         {
@@ -616,8 +622,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     $"MATERIAL_SAMPLER_DEST_{destination}_OUT_OF_RANGE";
                 return false;
             }
-            MapRenderMaterialSamplerBinding[] candidates = bindings
-                .Where(binding => binding.SamplerDest == destination)
+            MaterialSamplerBinding[] candidates = bindings
+                .Where(binding =>
+                    binding.Identity.SamplerDest == destination)
                 .ToArray();
             if (candidates.Length != 1)
             {
@@ -625,7 +632,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     $"MATERIAL_SAMPLER_DEST_{destination}_OWNER_COUNT_{candidates.Length}";
                 return false;
             }
-            MapRenderMaterialSamplerBinding candidate = candidates[0];
+            MaterialSamplerBinding candidate = candidates[0];
             string[] expectedTargets = execution.MaterialSamplerDestinations
                 .Concat(execution.CustomSamplerDestinations)
                 .Where(binding => binding.Destination == destination)
@@ -643,10 +650,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             {
                 if (string.Equals(
                         candidate.ExternalResourceIdentity,
-                        AuthoredMaterialSamplerResolver
-                            .XModelViewerReflectionProbeResourceIdentity,
+                        XModelRenderAuthoredPass
+                            .ViewerReflectionProbeResourceIdentity,
                         StringComparison.Ordinal) &&
-                    candidate.SamplerArgIndex < 0 &&
+                    candidate.Identity.SamplerArgIndex < 0 &&
                     destination == 1 &&
                     string.Equals(
                         expectedTarget,
@@ -669,8 +676,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             }
             string actualTarget = texture.Target switch
             {
-                MapRenderTextureTarget.Texture2D => "Texture2D",
-                MapRenderTextureTarget.TextureCube => "TextureCube",
+                RenderTextureTarget.Texture2D => "Texture2D",
+                RenderTextureTarget.TextureCube => "TextureCube",
                 _ => texture.Target.ToString()
             };
             if (!string.Equals(
@@ -693,7 +700,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 return false;
             }
             int ownerCount = result.Count(binding =>
-                    binding.SamplerDest == destination) +
+                    binding.Identity.SamplerDest == destination) +
                 runtimeSamplerRequirements.Count(requirement =>
                     requirement.Destination == destination);
             if (ownerCount != 1)
@@ -754,7 +761,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             GlRsxSamplerBinding[] materialSamplerBindings = prepared
                 .MaterialSamplers
                 .Select(binding => new GlRsxSamplerBinding(
-                    binding.SamplerDest,
+                    binding.Identity.SamplerDest,
                     binding.Texture is { } texture
                         ? GetOrCreateTexture(texture)
                         : GetOrCreateViewerReflectionEnvironment(),
@@ -894,12 +901,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private void ConfigureRsxVertexAttributes(
-        MapRenderOpenGlPackedRsxVertexLayout layout)
+        OpenGlPackedRsxVertexLayout layout)
     {
         uint stride = checked((uint)layout.FloatStride * sizeof(float));
         uint packedAttribute = 0;
         for (uint attribute = 0;
-             attribute < MapRenderOpenGlPackedRsxVertexLayout
+             attribute < OpenGlPackedRsxVertexLayout
                  .SourceAttributeCount;
              attribute++)
         {
@@ -913,7 +920,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 false,
                 stride,
                 (void*)(packedAttribute *
-                    MapRenderOpenGlPackedRsxVertexLayout
+                    OpenGlPackedRsxVertexLayout
                         .AttributeFloatCount * sizeof(float)));
             packedAttribute++;
         }
@@ -938,8 +945,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _state.BindArrayBuffer(0);
         _state.UseProgram(0);
         _gl.DepthRange(
-            MapRenderOpenGlRsxClipSpaceLowering.SceneDepthRange.Minimum,
-            MapRenderOpenGlRsxClipSpaceLowering.SceneDepthRange.Maximum);
+            OpenGlRsxClipSpaceLowering.SceneDepthRange.Minimum,
+            OpenGlRsxClipSpaceLowering.SceneDepthRange.Maximum);
         _gl.ClearColor(0.52f, 0.52f, 0.52f, 1f);
         _gl.ClearDepth(1d);
         _gl.Clear(
@@ -999,9 +1006,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private void BindRuntimeSamplers(
-        IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement> requirements)
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements)
     {
-        foreach (MapRenderShaderRuntimeSamplerRequirement requirement in
+        foreach (ShaderRuntimeSamplerRequirement requirement in
                  requirements)
         {
             if (_neutralModelLightingAtlas == 0)
@@ -1017,7 +1024,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
     }
 
-    private uint GetOrCreateTexture(MapRenderTexture texture)
+    private uint GetOrCreateTexture(Texture texture)
     {
         if (_textureHandles.TryGetValue(texture, out uint handle))
             return handle;
@@ -1027,7 +1034,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         return handle;
     }
 
-    private uint CreateTexture(MapRenderTexture texture)
+    private uint CreateTexture(Texture texture)
     {
         uint handle = _gl.GenTexture();
         TextureTarget target = ToGlTextureTarget(texture.Target);
@@ -1035,7 +1042,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         {
             _gl.BindTexture(target, handle);
             _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
-            if (texture.Target == MapRenderTextureTarget.Texture2D)
+            if (texture.Target == RenderTextureTarget.Texture2D)
             {
                 UploadTextureLevel(
                     TextureTarget.Texture2D,
@@ -1047,7 +1054,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                      mipIndex < texture.MipLevels.Count;
                      mipIndex++)
                 {
-                    MapRenderTextureMip mip = texture.MipLevels[mipIndex];
+                    TextureMip mip = texture.MipLevels[mipIndex];
                     UploadTextureLevel(
                         TextureTarget.Texture2D,
                         checked(mipIndex + 1),
@@ -1062,7 +1069,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                      faceIndex < texture.CubeFaces!.Count;
                      faceIndex++)
                 {
-                    MapRenderTextureCubeFace face =
+                    TextureCubeFace face =
                         texture.CubeFaces[faceIndex];
                     TextureTarget faceTarget = (TextureTarget)(
                         (int)TextureTarget.TextureCubeMapPositiveX +
@@ -1077,7 +1084,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                          mipIndex < face.MipLevels.Count;
                          mipIndex++)
                     {
-                        MapRenderTextureMip mip = face.MipLevels[mipIndex];
+                        TextureMip mip = face.MipLevels[mipIndex];
                         UploadTextureLevel(
                             faceTarget,
                             checked(mipIndex + 1),
@@ -1090,7 +1097,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             int maximumMip = texture.MipLevels.Count;
             if (maximumMip == 0 &&
                 texture.DecodedSamplerState.MipFilter !=
-                    MapRenderTextureFilter.None)
+                    TextureFilter.None)
             {
                 _gl.GenerateMipmap(target);
                 maximumMip = MaxMipLevel(texture.Width, texture.Height);
@@ -1113,33 +1120,33 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private uint CreateNeutralModelLightingAtlas()
     {
         byte[] rgba = new byte[
-            MapRenderStaticModelLightingAtlas.Width *
-            MapRenderStaticModelLightingAtlas.Height *
-            MapRenderStaticModelLightingAtlas.Depth * 4];
+            ModelLightingAtlasLayout.Width *
+            ModelLightingAtlasLayout.Height *
+            ModelLightingAtlasLayout.Depth * 4];
         int baseX =
             (NeutralDynamicLightingEntry &
-             (MapRenderStaticModelLightingAtlas.EntriesPerRow - 1)) *
-            MapRenderStaticModelLightingAtlas.TileWidth;
+             (ModelLightingAtlasLayout.EntriesPerRow - 1)) *
+            ModelLightingAtlasLayout.TileWidth;
         int baseY =
             (NeutralDynamicLightingEntry /
-             MapRenderStaticModelLightingAtlas.EntriesPerRow) *
-            MapRenderStaticModelLightingAtlas.TileHeight;
+             ModelLightingAtlasLayout.EntriesPerRow) *
+            ModelLightingAtlasLayout.TileHeight;
         for (int z = 0;
-             z < MapRenderStaticModelLightingAtlas.TileDepth;
+             z < ModelLightingAtlasLayout.TileDepth;
              z++)
         {
             for (int y = 0;
-                 y < MapRenderStaticModelLightingAtlas.TileHeight;
+                 y < ModelLightingAtlasLayout.TileHeight;
                  y++)
             {
                 for (int x = 0;
-                     x < MapRenderStaticModelLightingAtlas.TileWidth;
+                     x < ModelLightingAtlasLayout.TileWidth;
                      x++)
                 {
                     int offset = checked(
-                        (((z * MapRenderStaticModelLightingAtlas.Height +
+                        (((z * ModelLightingAtlasLayout.Height +
                            baseY + y) *
-                          MapRenderStaticModelLightingAtlas.Width +
+                          ModelLightingAtlasLayout.Width +
                           baseX + x) * 4));
                     rgba[offset] = 128;
                     rgba[offset + 1] = 128;
@@ -1160,9 +1167,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     TextureTarget.Texture3D,
                     0,
                     InternalFormat.Rgba8,
-                    MapRenderStaticModelLightingAtlas.Width,
-                    MapRenderStaticModelLightingAtlas.Height,
-                    MapRenderStaticModelLightingAtlas.Depth,
+                    ModelLightingAtlasLayout.Width,
+                    ModelLightingAtlasLayout.Height,
+                    ModelLightingAtlasLayout.Depth,
                     0,
                     PixelFormat.Rgba,
                     PixelType.UnsignedByte,
@@ -1307,8 +1314,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 
     private void ApplyViewerReflectionEnvironmentSampler() =>
         _textureParameters.ApplySampler(
-            MapRenderWorldImplicitSamplerStateFactory.Create(
-                MapRenderWorldRuntimeTextureKind.ReflectionProbe),
+            RsxSamplerDecoder.Decode(
+                RsxImplicitSamplerStateEncoding.ReflectionProbe),
             ViewerReflectionEnvironmentMaxMipLevel,
             TextureTarget.TextureCubeMap);
 
@@ -1410,12 +1417,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private static bool CanUploadTexture(
-        MapRenderTexture texture,
+        Texture texture,
         out string blocker)
     {
         if (texture.Target is not
-            (MapRenderTextureTarget.Texture2D or
-             MapRenderTextureTarget.TextureCube))
+            (RenderTextureTarget.Texture2D or
+             RenderTextureTarget.TextureCube))
         {
             blocker = $"TARGET_{texture.Target}_UNSUPPORTED";
             return false;
@@ -1430,10 +1437,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private static TextureTarget ToGlTextureTarget(
-        MapRenderTextureTarget target) => target switch
+        RenderTextureTarget target) => target switch
     {
-        MapRenderTextureTarget.Texture2D => TextureTarget.Texture2D,
-        MapRenderTextureTarget.TextureCube => TextureTarget.TextureCubeMap,
+        RenderTextureTarget.Texture2D => TextureTarget.Texture2D,
+        RenderTextureTarget.TextureCube => TextureTarget.TextureCubeMap,
         _ => throw new ArgumentOutOfRangeException(nameof(target))
     };
 
@@ -1476,26 +1483,26 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
     }
 
-    private MapRenderOpenGlLinkedProgramHandleResolution
+    private OpenGlLinkedProgramHandleResolution
         ResolveLinkedProgram(
             string vertexSource,
             string fragmentSource)
     {
-        MapRenderOpenGlProgramKey key =
-            MapRenderOpenGlProgramKey.Create(
+        OpenGlProgramKey key =
+            OpenGlProgramKey.Create(
                 vertexSource,
                 fragmentSource,
-                MapRenderOpenGlSharedProgramCache
-                    .EditorPreviewLinkProfileIdentity);
+                OpenGlSharedProgramCache
+                    .LinkProfileIdentity);
         if (_viewerProgramResolutions.TryGetValue(
                 key,
-                out MapRenderOpenGlLinkedProgramHandleResolution
+                out OpenGlLinkedProgramHandleResolution
                     viewerResolution))
         {
             return viewerResolution with { IsReuse = true };
         }
 
-        MapRenderOpenGlLinkedProgramHandleResolution resolution =
+        OpenGlLinkedProgramHandleResolution resolution =
             _sharedProgramUsage.GetOrLink(
                 vertexSource,
                 fragmentSource,
@@ -1604,11 +1611,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 
     private sealed record PreparedPass(
         XModelRenderAuthoredPass Packet,
-        MapRenderOpenGlPackedRsxVertexLayout Layout,
+        OpenGlPackedRsxVertexLayout Layout,
         GlRsxProgram Program,
         GlRsxConstantBinding[] ConstantBindings,
-        MapRenderMaterialSamplerBinding[] MaterialSamplers,
-        MapRenderShaderRuntimeSamplerRequirement[]
+        MaterialSamplerBinding[] MaterialSamplers,
+        ShaderRuntimeSamplerRequirement[]
             RuntimeSamplerRequirements);
 
     private sealed record AuthoredDrawGroup(
@@ -1620,11 +1627,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         uint VertexBuffer,
         uint IndexBuffer,
         uint IndexCount,
-        MapRenderState State,
+        RenderState State,
         GlRsxProgram Program,
         GlRsxConstantBinding[] ConstantBindings,
         GlRsxSamplerBinding[] MaterialSamplerBindings,
-        MapRenderShaderRuntimeSamplerRequirement[]
+        ShaderRuntimeSamplerRequirement[]
             RuntimeSamplerRequirements);
 
     private readonly record struct WireframeGeometry(

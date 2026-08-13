@@ -72,7 +72,8 @@ internal sealed class MapRenderOpenGlStaticResourceGroupPlan
             .Select((group, groupIndex) =>
             {
                 int[] ordinals = group
-                    .OrderBy(entry => entry.Batch.Pass.PassIndex)
+                    .OrderBy(entry =>
+                        entry.Batch.Pass.TechniquePass.PassIndex)
                     .ThenBy(entry => entry.Ordinal)
                     .Select(entry => entry.Ordinal)
                     .ToArray();

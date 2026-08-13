@@ -26,17 +26,17 @@ public static class MapRenderWorldDpvsSunShadowFullPlaneProducer
     private static readonly Vector2[] NativeClipCorners =
     [
         new(
-            MapRenderViewerMatrixMath.ClipScale,
-            MapRenderViewerMatrixMath.ClipScale),
+            RenderViewerMatrixMath.ClipScale,
+            RenderViewerMatrixMath.ClipScale),
         new(
-            -MapRenderViewerMatrixMath.ClipScale,
-            MapRenderViewerMatrixMath.ClipScale),
+            -RenderViewerMatrixMath.ClipScale,
+            RenderViewerMatrixMath.ClipScale),
         new(
-            -MapRenderViewerMatrixMath.ClipScale,
-            -MapRenderViewerMatrixMath.ClipScale),
+            -RenderViewerMatrixMath.ClipScale,
+            -RenderViewerMatrixMath.ClipScale),
         new(
-            MapRenderViewerMatrixMath.ClipScale,
-            -MapRenderViewerMatrixMath.ClipScale)
+            RenderViewerMatrixMath.ClipScale,
+            -RenderViewerMatrixMath.ClipScale)
     ];
 
     public static MapRenderWorldDpvsSunShadowFrameBuildResult Build(
@@ -207,7 +207,7 @@ public static class MapRenderWorldDpvsSunShadowFullPlaneProducer
 
         if (!IsFinite(cameraFrame.Origin) ||
             !IsFinite(cameraFrame.Forward) ||
-            !MapRenderMatrixValidation.IsFinite(cameraFrame.InverseViewProjection))
+            !RenderMatrixValidation.IsFinite(cameraFrame.InverseViewProjection))
         {
             return new(
                 MapRenderWorldDpvsSunShadowFrameFailureKind
@@ -555,9 +555,9 @@ public static class MapRenderWorldDpvsSunShadowFullPlaneProducer
             cameraFrame.Origin,
             cameraFrame.Forward,
             nearShadowMinDistance);
-        return MapRenderMatrixValidation.IsFinite(partition0WorldToClip) &&
-               MapRenderMatrixValidation.IsFinite(partition1WorldToClip) &&
-               MapRenderMatrixValidation.IsFinite(shadowLookupMatrix);
+        return RenderMatrixValidation.IsFinite(partition0WorldToClip) &&
+               RenderMatrixValidation.IsFinite(partition1WorldToClip) &&
+               RenderMatrixValidation.IsFinite(shadowLookupMatrix);
     }
 
     private static Matrix4x4 BuildWorldToClipMatrix(

@@ -6,6 +6,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using IW4.Render.UI.ScreenPlacement;
 using IW4.Render.UI.Text;
+using IW4.Render.Techniques;
 using IW4.Studio.Documents.MenuEditing;
 using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
 using IW4.Studio.Desktop.Rendering;
@@ -166,15 +167,15 @@ public sealed partial class MenuPreviewControl
 
     private static bool IsMaterialCulled(
         MenuPreviewMaterial material,
-        IW4.Render.Materials.MapRenderCullMode cullMode)
+        CullMode cullMode)
     {
-        if (cullMode == IW4.Render.Materials.MapRenderCullMode.Disabled)
+        if (cullMode == CullMode.Disabled)
             return false;
 
         // The native UI quad is back-facing under the established projection.
         // Exactly one signed dimension reverses its winding as well as its UVs.
         bool frontFacing = material.FlipHorizontal ^ material.FlipVertical;
-        return cullMode == IW4.Render.Materials.MapRenderCullMode.Front
+        return cullMode == CullMode.Front
             ? frontFacing
             : !frontFacing;
     }

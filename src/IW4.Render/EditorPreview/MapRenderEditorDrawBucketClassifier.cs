@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Materials;
 
 namespace IW4.Render.EditorPreview;
@@ -9,7 +10,7 @@ namespace IW4.Render.EditorPreview;
 public static class MapRenderEditorDrawBucketClassifier
 {
     public static MapRenderEditorDrawBucketClassification Classify(
-        IReadOnlyList<MapRenderState> passStates)
+        IReadOnlyList<RenderState> passStates)
     {
         ArgumentNullException.ThrowIfNull(passStates);
         if (passStates.Count == 0)
@@ -24,7 +25,7 @@ public static class MapRenderEditorDrawBucketClassifier
         bool usesOpaqueStateFallback = false;
         for (int passOrdinal = 0; passOrdinal < passStates.Count; passOrdinal++)
         {
-            MapRenderState state = passStates[passOrdinal];
+            RenderState state = passStates[passOrdinal];
             if (!state.HasState)
             {
                 usesOpaqueStateFallback = true;

@@ -115,7 +115,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             ResolveSingleWorldSurfaceIndex(
                                 batches[batchIndex]),
                         WorldBounds = IncludeTexturedVertexBounds(
-                            MapRenderBounds.Empty,
+                            RenderBounds.Empty,
                             batches[batchIndex].Vertices)
                     };
                     bool allowsDecodedPerSurfaceFrustumCull =
@@ -337,7 +337,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                                  batches[index].EditorDrawGroupId))
                 {
                     int[] passOrdinals = passGroup
-                        .OrderBy(index => batches[index].Pass.PassIndex)
+                        .OrderBy(index =>
+                            batches[index].Pass.TechniquePass.PassIndex)
                         .ThenBy(index => index)
                         .ToArray();
                     bool groupReady = passGroup.Key >= 0 &&
@@ -422,7 +423,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             new StaticReceiverSurfaceRuntime(
                                 identity,
                                 batches[passOrdinals[0]]
-                                    .Pass.TechniqueSlot,
+                                    .Pass.TechniquePass.TechniqueSlot,
                                 occurrences)));
                     }
 

@@ -80,7 +80,7 @@ public sealed partial class MapSceneBuilder
         List<uint> indices,
         Vector3 color,
         bool includeInBounds,
-        ref MapRenderBounds bounds,
+        ref RenderBounds bounds,
         out int skippedTriangles,
         out int readFailureTriangles,
         out int skyboxTriangles)
@@ -109,7 +109,7 @@ public sealed partial class MapSceneBuilder
         List<uint> indices,
         Vector3 color,
         bool includeInBounds,
-        ref MapRenderBounds bounds,
+        ref RenderBounds bounds,
         out int skippedTriangles,
         out int readFailureTriangles,
         out int skyboxTriangles)
@@ -165,7 +165,7 @@ public sealed partial class MapSceneBuilder
         PreparedWorldSurfaceGeometry preparedGeometry,
         ReadOnlySpan<byte> vertexBytes,
         IReadOnlyList<PreparedColorLayer> colorLayers,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> rsxInputBindings,
+        IReadOnlyList<ShaderVertexInputBinding> rsxInputBindings,
         IReadOnlyList<byte> vertexLayerBytes,
         bool allowUvValueSanitization,
         out List<float> vertices,
@@ -180,7 +180,7 @@ public sealed partial class MapSceneBuilder
         out int uvFailedTriangles,
         out int degenerateUvTriangles,
         out bool lightmapUvReady,
-        out MapRenderBounds bounds,
+        out RenderBounds bounds,
         bool useGenericFallback)
     {
         ArgumentNullException.ThrowIfNull(surface);
@@ -214,7 +214,7 @@ public sealed partial class MapSceneBuilder
         degenerateUvTriangles = 0;
         lightmapUvReady = colorLayers.Count > 0 &&
             colorLayers[0].Decoder.HasLightmapTexCoord;
-        bounds = MapRenderBounds.Empty;
+        bounds = RenderBounds.Empty;
         if (colorLayers.Count == 0 || sourceVertexCount <= 0)
             return false;
 
@@ -376,7 +376,7 @@ public sealed partial class MapSceneBuilder
         ReadOnlySpan<byte> vertexBytes,
         IReadOnlyList<byte> vertexLayerBytes,
         IReadOnlyList<PreparedColorLayer> colorLayers,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> rsxInputBindings,
+        IReadOnlyList<ShaderVertexInputBinding> rsxInputBindings,
         bool allowUvValueSanitization,
         bool useGenericFallback,
         bool materializeRsxVertexInputs,
@@ -530,7 +530,7 @@ public sealed partial class MapSceneBuilder
         IReadOnlyList<byte> stream1,
         GfxSurface surface,
         int surfaceVertexIndex,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> bindings,
+        IReadOnlyList<ShaderVertexInputBinding> bindings,
         Span<Vector4> values,
         out string blocker)
     {
@@ -543,7 +543,7 @@ public sealed partial class MapSceneBuilder
 
         values.Fill(DefaultRsxVertexInput);
         blocker = string.Empty;
-        foreach (MapRenderShaderVertexInputBinding binding in bindings)
+        foreach (ShaderVertexInputBinding binding in bindings)
         {
             if (binding.Destination >= values.Length)
             {

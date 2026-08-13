@@ -3,6 +3,7 @@ using Silk.NET.OpenGL;
 
 using IW4.Render.EditorPreview;
 using IW4.Render.Diagnostics;
+using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.OpenGl.Presentation;
 using IW4.Render.OpenGl.Programs;
@@ -22,7 +23,7 @@ namespace IW4.Render.OpenGl;
 
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
-    private void UpdatePreviewVisibility(MapRenderCamera camera)
+    private void UpdatePreviewVisibility(RenderCamera camera)
     {
         MapRenderPixelExtent targetExtent =
             MapRenderOpenGlNormalCameraTargetExtentPolicy.Resolve(
@@ -182,7 +183,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private MapRenderWorldDpvsViewVisibility? TryResolvePreviewDpvs(
-        MapRenderCamera camera)
+        RenderCamera camera)
     {
         if (_currentSunShadowPublication is { } shadowFrame)
             return shadowFrame.Frame.Camera;
@@ -956,40 +957,36 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void ApplyStaticModelInstancingFrame(
-        GlRsxProgram program,
-        MapRenderDerivedMatrixState matrices)
+        MapRenderOpenGlStaticModelProgramUniforms? programUniforms,
+        DerivedMatrixState matrices)
     {
-        if (!program.StaticModelInstancingReady)
+        if (programUniforms is not { } uniforms)
             return;
-        if (program.StaticModelViewRowLocations is not { Length: 4 }
-                viewLocations ||
-            program.StaticModelViewProjectionRowLocations is not
-                { Length: 4 } viewProjectionLocations)
+        if (!uniforms.HasFrameRows)
         {
             throw new InvalidOperationException(
                 "A translated static-model program lost its frame-row uniform layout.");
         }
 
-        ApplyMatrixRows(viewLocations, matrices.View);
+        ApplyMatrixRows(uniforms.ViewRowLocations, matrices.View);
         ApplyMatrixRows(
-            viewProjectionLocations,
+            uniforms.ViewProjectionRowLocations,
             matrices.ViewProjection);
         _state.Uniform3(
-            program.StaticModelEyeOffsetLocation,
+            uniforms.EyeOffsetLocation,
             matrices.EyeOffset.X,
             matrices.EyeOffset.Y,
             matrices.EyeOffset.Z);
     }
 
-    private void ApplyTranslatedStaticVegetation(
-        GlRsxProgram program,
+    private void ApplyTranslatedStaticComposition(
+        MapRenderOpenGlStaticModelProgramUniforms? programUniforms,
         GlTexturedMesh mesh,
         float editorTimeSeconds)
     {
-        if (!program.StaticModelInstancingReady)
+        if (programUniforms is not { } uniforms)
             return;
-        if (program.StaticModelVegetationUniformLocations is not
-            { IsReady: true } locations)
+        if (!uniforms.Vegetation.IsReady)
         {
             throw new InvalidOperationException(
                 "A translated static-model program lost its Live Preview vegetation uniform layout.");
@@ -1002,23 +999,23 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderEditorVegetationAnimationPlan? vegetation =
             mesh.VegetationAnimation;
         _state.Uniform1(
-            locations.WindEnabled,
+            uniforms.Vegetation.WindEnabled,
             vegetation?.IsEnabled == true ? 1 : 0);
-        _state.Uniform1(locations.Time, editorTimeSeconds);
+        _state.Uniform1(uniforms.Vegetation.Time, editorTimeSeconds);
         _state.Uniform1(
-            locations.Amplitude,
+            uniforms.Vegetation.Amplitude,
             vegetation?.Amplitude ?? 0f);
         _state.Uniform1(
-            locations.AngularFrequency,
+            uniforms.Vegetation.AngularFrequency,
             vegetation?.AngularFrequency ?? 0f);
         _state.Uniform1(
-            locations.SpatialFrequency,
+            uniforms.Vegetation.SpatialFrequency,
             vegetation?.SpatialFrequency ?? 0f);
         _state.Uniform1(
-            locations.LocalMinimumHeight,
+            uniforms.Vegetation.LocalMinimumHeight,
             mesh.LocalMinimumHeight);
         _state.Uniform1(
-            locations.LocalHeightRange,
+            uniforms.Vegetation.LocalHeightRange,
             mesh.LocalHeightRange);
     }
 
@@ -1054,7 +1051,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private readonly record struct DpvsWorkKey(
         long SceneGeneration,
-        MapRenderCamera Camera,
+        RenderCamera Camera,
         int Width,
         int Height);
 

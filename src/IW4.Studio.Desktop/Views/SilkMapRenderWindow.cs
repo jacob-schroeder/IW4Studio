@@ -32,7 +32,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
     private SilkMapRenderOpenGlShareGroup.Lease? _shareGroupLease;
     private SilkOpenGlMapRenderer? _renderer;
     private SilkMapRenderFpsOverlay? _fpsOverlay;
-    private MapRenderCamera _camera;
+    private RenderCamera _camera;
     private Vector2 _lastMousePosition;
     private bool _wasDragging;
     private bool _wasPickKeyPressed;
@@ -52,13 +52,38 @@ internal sealed class SilkMapRenderWindow : IDisposable
         _sceneSnapshot = sceneSnapshot ??
             throw new ArgumentNullException(nameof(sceneSnapshot));
         _copyTextAsync = copyTextAsync;
-        _camera = MapRenderCamera.CreateForBounds(scene.CameraBounds);
+        _camera = CreateInitialCamera(scene.CameraBounds);
         _timer.Tick += Timer_Tick;
     }
 
     public event EventHandler<Exception>? Failed;
 
     public event EventHandler? Stopped;
+
+    private static RenderCamera CreateInitialCamera(RenderBounds bounds)
+    {
+        const float previewNearPlane = 4f;
+        float radius = bounds.Radius;
+        float targetHeight = bounds.IsValid
+            ? bounds.Center.Y - radius * 0.001f
+            : 0f;
+        Vector3 target = new(
+            radius * 0.04f,
+            targetHeight,
+            -radius * 0.074f);
+        Vector3 position = target + new Vector3(
+            -radius * 0.14f,
+            radius * 0.11f,
+            radius * 0.14f);
+        Vector3 direction = Vector3.Normalize(target - position);
+        return new RenderCamera(
+            position,
+            MathF.Atan2(direction.X, -direction.Z),
+            MathF.Asin(direction.Y),
+            55f * MathF.PI / 180f,
+            previewNearPlane,
+            MathF.Max(250000f, position.Y + radius * 4f));
+    }
 
     public void Show()
     {

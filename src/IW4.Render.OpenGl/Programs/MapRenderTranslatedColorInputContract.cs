@@ -11,8 +11,8 @@ namespace IW4.Render.OpenGl.Programs;
 internal static class MapRenderTranslatedColorInputContract
 {
     public static int ResolveLinearizationMask(
-        MapRenderShaderExecutionContract execution,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
+        ShaderExecutionContract execution,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
         int maximumLayerCount)
     {
         ArgumentNullException.ThrowIfNull(execution);
@@ -31,7 +31,7 @@ internal static class MapRenderTranslatedColorInputContract
             if (MapRenderColorInputIrCompatibilityClassifier
                     .RequiresLinearization(
                         execution.FragmentProgramIr,
-                        colorLayers[layerIndex].SamplerDest))
+                        colorLayers[layerIndex].Identity.SamplerDest))
             {
                 mask |= 1 << layerIndex;
             }

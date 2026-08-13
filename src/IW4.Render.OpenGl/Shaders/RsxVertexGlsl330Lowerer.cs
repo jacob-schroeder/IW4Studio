@@ -60,7 +60,7 @@ internal static class RsxVertexGlsl330Lowerer
         for (int i = 0; i < 16; i++)
             builder.AppendLine($"layout(location = {i}) in vec4 aRsxInput{i};");
         builder.AppendLine(
-            $"uniform vec4 rsxVertexConst[{MapRenderRsxVertexConstantLayout.Count}];");
+            $"uniform vec4 rsxVertexConst[{RsxVertexConstantLayout.Count}];");
         builder.AppendLine("out vec4 rsxColor0;");
         builder.AppendLine("out vec4 rsxColor1;");
         for (int i = 0; i < 8; i++)

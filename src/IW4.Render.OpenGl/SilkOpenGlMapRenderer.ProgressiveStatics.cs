@@ -115,7 +115,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void SelectProgressiveStaticObjects(
-        MapRenderCamera camera,
+        RenderCamera camera,
         float aspectRatio)
     {
         Span<Vector4> frustumPlanes =
@@ -539,7 +539,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                                         initialView.Camera.Position + offset
                                 },
                                 initialView.AspectRatio);
-                foreach (MapRenderCamera camera in positionRing.YawRing)
+                foreach (RenderCamera camera in positionRing.YawRing)
                 {
                     SelectProgressiveStaticObjects(
                         camera,
@@ -747,7 +747,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         group.ReceiverIdentities[instanceIndex],
                         new StaticReceiverSurfaceRuntime(
                             group.ReceiverIdentities[instanceIndex],
-                            groupBatches[0].Pass.TechniqueSlot,
+                            groupBatches[0].Pass.TechniquePass.TechniqueSlot,
                             occurrences));
                 }
                 resolution = resolution.AddMaterialized(
@@ -792,7 +792,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void EnsureProgressiveStaticResources(
-        MapRenderCamera camera)
+        RenderCamera camera)
     {
         if (!_progressiveStaticMaterializationEnabled)
             return;
@@ -1408,7 +1408,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private readonly record struct ProgressiveStaticInitialView(
-        MapRenderCamera Camera,
+        RenderCamera Camera,
         float AspectRatio);
 
     private readonly record struct StaticResourceResolution(

@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;
@@ -10,11 +11,11 @@ namespace IW4.Render.SceneBuilding;
 internal readonly record struct ShaderExecutionCacheKey(
     MaterialAsset? Material,
     MaterialTechniqueSetAsset? TechniqueSet,
-    int TechniqueSlot,
-    int PassIndex,
-    MapRenderMaterialPass Pass,
-    MapRenderState RenderState,
-    MapRenderShaderExecutionPurpose Purpose,
+    MaterialPassIdentity Pass,
+    MaterialSamplerIdentity PrimarySampler,
+    byte TexCoordSource,
+    RenderState RenderState,
+    ShaderExecutionPurpose Purpose,
     bool AuthoredProgramExecutable,
     MaterialSamplerBindingsIdentity SamplerBindingsIdentity,
     bool VertexInputPayloadReady,
@@ -29,11 +30,12 @@ internal readonly record struct ShaderExecutionCacheKey(
 internal sealed class MaterialSamplerBindingsIdentity :
     IEquatable<MaterialSamplerBindingsIdentity>
 {
-    private readonly IReadOnlyList<MapRenderMaterialSamplerBinding> _bindings;
+    private readonly IReadOnlyList<MapRenderWorldMaterialSamplerBinding>
+        _bindings;
     private readonly int _hashCode;
 
     internal MaterialSamplerBindingsIdentity(
-        IReadOnlyList<MapRenderMaterialSamplerBinding> bindings)
+        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> bindings)
     {
         ArgumentNullException.ThrowIfNull(bindings);
         _bindings = bindings;
@@ -67,25 +69,28 @@ internal sealed class MaterialSamplerBindingsIdentity :
     public override int GetHashCode() => _hashCode;
 
     private static Entry EntryAtRank(
-        IReadOnlyList<MapRenderMaterialSamplerBinding> bindings,
+        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> bindings,
         int requestedRank)
     {
         for (int candidateIndex = 0;
              candidateIndex < bindings.Count;
              candidateIndex++)
         {
-            MapRenderMaterialSamplerBinding candidate =
+            MapRenderWorldMaterialSamplerBinding candidate =
                 bindings[candidateIndex];
             int rank = 0;
             for (int otherIndex = 0;
                  otherIndex < bindings.Count;
                  otherIndex++)
             {
-                MapRenderMaterialSamplerBinding other = bindings[otherIndex];
-                int order = other.SamplerArgIndex.CompareTo(
-                    candidate.SamplerArgIndex);
+                MapRenderWorldMaterialSamplerBinding other = bindings[otherIndex];
+                int order = other.Binding.Identity.SamplerArgIndex.CompareTo(
+                    candidate.Binding.Identity.SamplerArgIndex);
                 if (order == 0)
-                    order = other.SamplerDest.CompareTo(candidate.SamplerDest);
+                {
+                    order = other.Binding.Identity.SamplerDest.CompareTo(
+                        candidate.Binding.Identity.SamplerDest);
+                }
                 if (order < 0 || (order == 0 && otherIndex < candidateIndex))
                     rank++;
             }
@@ -101,21 +106,21 @@ internal sealed class MaterialSamplerBindingsIdentity :
         int SamplerArgIndex,
         ushort SamplerDest,
         uint SamplerHash,
-        MapRenderTextureBindingKey? Texture,
+        TextureBindingKey? Texture,
         MapRenderWorldRuntimeTextureIdentity? WorldRuntimeTextureIdentity,
-        MapRenderUvRouteBatchKey? UvRoute)
+        UvRouteBatchKey? UvRoute)
     {
         internal static Entry Create(
-            MapRenderMaterialSamplerBinding binding) => new(
-                binding.SamplerArgIndex,
-                binding.SamplerDest,
-                binding.SamplerHash,
-                binding.Texture is null
+            MapRenderWorldMaterialSamplerBinding binding) => new(
+                binding.Binding.Identity.SamplerArgIndex,
+                binding.Binding.Identity.SamplerDest,
+                binding.Binding.Identity.SamplerHash,
+                binding.Binding.Texture is null
                     ? null
-                    : MapRenderTextureBindingKey.Create(binding.Texture),
-                binding.WorldRuntimeTextureIdentity,
-                binding.UvRoute is null
+                    : TextureBindingKey.Create(binding.Binding.Texture),
+                binding.RuntimeTextureIdentity,
+                binding.Binding.UvRoute is null
                     ? null
-                    : MapRenderUvRouteBatchKey.Create(binding.UvRoute));
+                    : UvRouteBatchKey.Create(binding.Binding.UvRoute));
     }
 }

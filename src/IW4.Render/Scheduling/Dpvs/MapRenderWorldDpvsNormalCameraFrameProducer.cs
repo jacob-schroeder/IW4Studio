@@ -21,7 +21,7 @@ public static class MapRenderWorldDpvsNormalCameraFrameProducer
     ];
 
     public static MapRenderWorldDpvsNormalCameraFrameBuildResult Build(
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebuffer,
         MapRenderNormalCameraFarPlaneState farPlaneState)
     {
@@ -47,14 +47,14 @@ public static class MapRenderWorldDpvsNormalCameraFrameProducer
                 "Effective PS3 far-plane distance is not finite.");
         }
 
-        MapRenderNormalCameraMatrixCalculator.CalculatePs3Native(
+        RenderNormalCameraMatrixCalculator.CalculatePs3Native(
             camera,
             aspectRatio,
             out _,
             out _,
             out Matrix4x4 rotationViewProjection,
             out Vector3 origin);
-        Vector3 forward = MapRenderCoordinateConverter
+        Vector3 forward = RenderCoordinateConverter
             .RenderToGameUnitDirection(camera.Forward);
         Matrix4x4 viewProjection =
             Matrix4x4.CreateTranslation(-origin) * rotationViewProjection;
@@ -147,7 +147,7 @@ public static class MapRenderWorldDpvsNormalCameraFrameProducer
         return IsFinite(plane);
     }
 
-    private static bool IsValid(MapRenderCamera camera) =>
+    private static bool IsValid(RenderCamera camera) =>
         IsFinite(camera.Position) &&
         float.IsFinite(camera.YawRadians) &&
         float.IsFinite(camera.PitchRadians) &&

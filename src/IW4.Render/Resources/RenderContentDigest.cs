@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Security.Cryptography;
@@ -89,7 +90,7 @@ internal sealed class RenderContentDigestWriter : IDisposable
         _hash.AppendData(values.AsSpan());
     }
 
-    internal void AppendMapRenderStateV1(MapRenderState state)
+    internal void AppendRenderStateV1(RenderState state)
     {
         WriteBoolean(state.HasState);
         WriteUInt32(state.LoadBits0);
@@ -132,7 +133,7 @@ internal sealed class RenderContentDigestWriter : IDisposable
 
     public void Dispose() => _hash.Dispose();
 
-    private void AppendMapRenderStencilFaceV1(MapRenderStencilFaceState state)
+    private void AppendMapRenderStencilFaceV1(StencilFaceState state)
     {
         WriteUInt32(state.Function);
         WriteInt32(state.Reference);

@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using Silk.NET.OpenGL;
 using IW4.Render.Geometry.Shadows;
@@ -217,6 +218,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _sceneOwnedProgramHandles.Clear();
         _sceneProgramResolutions.Clear();
         _authoredMaterials.Clear();
+        _staticModelProgramUniforms.Clear();
         DeleteMesh(_wire);
         _wire = default;
         DeleteMesh(_editorSelectionOutlineMesh);
@@ -310,7 +312,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _state.ColorMask(true, true, true, true);
     }
 
-    private void ApplyRenderState(MapRenderState state)
+    private void ApplyRenderState(RenderState state)
     {
         if (!state.HasState)
         {

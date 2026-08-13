@@ -53,7 +53,7 @@ internal sealed class MapRenderOpenGlNormalCameraDiagnosticPlan
         ArgumentNullException.ThrowIfNull(framePlan);
         ArgumentNullException.ThrowIfNull(diagnosticsPass);
         ArgumentNullException.ThrowIfNull(resources);
-        if (!MapRenderMatrixValidation.IsFinite(preparedHostViewProjection))
+        if (!RenderMatrixValidation.IsFinite(preparedHostViewProjection))
             throw new ArgumentOutOfRangeException(
                 nameof(preparedHostViewProjection));
         if (commands.IsDefault || commands.Any(command => command is null))

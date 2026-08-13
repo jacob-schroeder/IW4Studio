@@ -3,7 +3,6 @@ using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
 using IW4.FastFiles.Zone;
 using IW4.Render.Textures;
-using IW4.Render.Shaders;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Assets.Lifecycle.State;
 
@@ -24,9 +23,9 @@ public sealed class MapRenderWorldTextureAssetBinding
         GfxImageAsset? sourceImage = null,
         GfxImageAsset? descriptorImage = null,
         XAssetActiveProviderSnapshot? sourceImageProvider = null,
-        MapRenderSelectedPassSamplerShape? shape = null,
-        MapRenderSamplerState? decodedSamplerState = null,
-        MapRenderDecodedTextureResourceSnapshot? resource = null,
+        TextureSamplerShape? shape = null,
+        RsxSamplerState? decodedSamplerState = null,
+        DecodedTextureResourceSnapshot? resource = null,
         MapRenderWorldTextureResourceStatus resourceStatus =
             MapRenderWorldTextureResourceStatus.Unavailable)
     {
@@ -54,11 +53,11 @@ public sealed class MapRenderWorldTextureAssetBinding
                 "A ready world texture binding requires descriptor, source, and decode view.",
                 nameof(status));
         }
-        MapRenderSelectedPassSamplerShape expectedShape = identity.Kind ==
+        TextureSamplerShape expectedShape = identity.Kind ==
             MapRenderWorldRuntimeTextureKind.ReflectionProbe
-                ? MapRenderSelectedPassSamplerShape.Cube
-                : MapRenderSelectedPassSamplerShape.TwoDimensional;
-        MapRenderSamplerState expectedSamplerState =
+                ? TextureSamplerShape.Cube
+                : TextureSamplerShape.TwoDimensional;
+        RsxSamplerState expectedSamplerState =
             MapRenderWorldImplicitSamplerStateFactory.Create(identity.Kind);
         if (resourceStatus == MapRenderWorldTextureResourceStatus.Ready &&
             (sourceImageProvider is null || shape is null ||
@@ -164,11 +163,11 @@ public sealed class MapRenderWorldTextureAssetBinding
 
     public XAssetActiveProviderSnapshot? SourceImageProvider { get; }
 
-    public MapRenderSelectedPassSamplerShape? Shape { get; }
+    public TextureSamplerShape? Shape { get; }
 
-    public MapRenderSamplerState? DecodedSamplerState { get; }
+    public RsxSamplerState? DecodedSamplerState { get; }
 
-    public MapRenderDecodedTextureResourceSnapshot? Resource { get; }
+    public DecodedTextureResourceSnapshot? Resource { get; }
 
     public MapRenderWorldTextureResourceStatus ResourceStatus { get; }
 

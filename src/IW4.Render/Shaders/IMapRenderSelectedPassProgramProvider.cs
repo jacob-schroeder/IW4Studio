@@ -1,12 +1,12 @@
 using IW4.Assets.Assets.TechniqueSet;
-using IW4.Render.Materials;
 
 namespace IW4.Render.Shaders;
 
-public interface IMapRenderSelectedPassProgramProvider
+public interface ISelectedPassProgramProvider
 {
-    MapRenderSelectedPassProgramSources ResolveSources(
+    SelectedPassProgramSources ResolveSources(
         MaterialTechniqueSetAsset techniqueSet,
         MaterialTechniqueAsset technique,
-        MapRenderSelectedTechniquePass selectedPass);
+        int passIndex,
+        MaterialPassAsset pass);
 }

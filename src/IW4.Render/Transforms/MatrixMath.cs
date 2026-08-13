@@ -6,10 +6,10 @@ namespace IW4.Render.Transforms;
 /// Shared policy-free normal-camera math. Callers provide the complete camera
 /// and aspect ratio; this type supplies no captured or preview defaults.
 /// </summary>
-internal static class MapRenderNormalCameraMatrixCalculator
+internal static class RenderNormalCameraMatrixCalculator
 {
     public static void CalculatePs3Native(
-        MapRenderCamera camera,
+        RenderCamera camera,
         float aspectRatio,
         out Matrix4x4 view,
         out Matrix4x4 projection,
@@ -23,29 +23,29 @@ internal static class MapRenderNormalCameraMatrixCalculator
                 "Framebuffer aspect ratio must be finite and positive.");
         }
 
-        eyeOffset = MapRenderCoordinateConverter.RenderToGamePosition(
+        eyeOffset = RenderCoordinateConverter.RenderToGamePosition(
             camera.Position);
         Vector3 forwardAxis =
-            MapRenderCoordinateConverter.RenderToGameUnitDirection(
+            RenderCoordinateConverter.RenderToGameUnitDirection(
                 camera.Forward);
         Vector3 leftAxis =
-            -MapRenderCoordinateConverter.RenderToGameUnitDirection(
+            -RenderCoordinateConverter.RenderToGameUnitDirection(
                 camera.Right);
         Vector3 upAxis =
-            MapRenderCoordinateConverter.RenderToGameUnitDirection(camera.Up);
+            RenderCoordinateConverter.RenderToGameUnitDirection(camera.Up);
 
-        view = MapRenderViewerMatrixMath.CreateRotationOnlyView(
+        view = RenderViewerMatrixMath.CreateRotationOnlyView(
             forwardAxis,
             leftAxis,
             upAxis);
         float tanHalfFovY = MathF.Tan(
             camera.FieldOfViewRadians * 0.5f);
         float tanHalfFovX = tanHalfFovY * aspectRatio;
-        projection = MapRenderViewerMatrixMath.CreateInfiniteProjection(
+        projection = RenderViewerMatrixMath.CreateInfiniteProjection(
             tanHalfFovX,
             tanHalfFovY,
             camera.NearPlane);
-        viewProjection = MapRenderViewerMatrixMath.CreateViewProjection(
+        viewProjection = RenderViewerMatrixMath.CreateViewProjection(
             view,
             projection);
     }
@@ -55,7 +55,7 @@ internal static class MapRenderNormalCameraMatrixCalculator
 /// Pure matrix operations reproduced from the PS3 viewer/projection builders.
 /// Inputs are already expressed in native game coordinates.
 /// </summary>
-internal static class MapRenderViewerMatrixMath
+internal static class RenderViewerMatrixMath
 {
     public const float ClipScale = 0.99951171875f;
 
@@ -126,7 +126,7 @@ internal static class MapRenderViewerMatrixMath
     }
 }
 
-internal static class MapRenderMatrixValidation
+internal static class RenderMatrixValidation
 {
     internal static bool IsFinite(Matrix4x4 value) =>
         float.IsFinite(value.M11) && float.IsFinite(value.M12) &&

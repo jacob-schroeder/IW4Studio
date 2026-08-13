@@ -11,7 +11,7 @@ public static class MapRenderWorldDpvsCameraTraversalProducer
 {
     public static MapRenderWorldDpvsCameraTraversalBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebuffer,
         MapRenderNormalCameraFarPlaneState farPlaneState,
         MapRenderWorldDpvsPortalTraversalSettings? settings = null)
@@ -28,7 +28,7 @@ public static class MapRenderWorldDpvsCameraTraversalProducer
 
     internal static MapRenderWorldDpvsCameraTraversalBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebuffer,
         MapRenderNormalCameraFarPlaneState farPlaneState,
         MapRenderWorldDpvsPortalTraversalSettings? settings,

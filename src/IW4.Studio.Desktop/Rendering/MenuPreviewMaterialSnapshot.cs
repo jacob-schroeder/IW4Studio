@@ -31,7 +31,7 @@ public sealed class MenuPreviewMaterialSnapshot
         MaterialName = plan.Material.Name;
         ImageName = plan.SelectedImageMetadata?.Name ?? preview.Name;
         Role = plan.SelectedTexture?.Role ??
-            MapRenderEditorMaterialTextureRole.Unknown;
+            EditorMaterialTextureRole.Unknown;
         Width = preview.Width;
         Height = preview.Height;
         Format = preview.Format;
@@ -54,7 +54,7 @@ public sealed class MenuPreviewMaterialSnapshot
 
     public string ImageName { get; }
 
-    public MapRenderEditorMaterialTextureRole Role { get; }
+    public EditorMaterialTextureRole Role { get; }
 
     public int Width { get; }
 
@@ -88,7 +88,7 @@ public sealed class MenuPreviewMaterialSnapshot
 
     public UiMaterialPreviewAtlasMetadata Atlas { get; }
 
-    public MapRenderSamplerState? SamplerState { get; }
+    public RsxSamplerState? SamplerState { get; }
 
     public IReadOnlyList<UiMaterialPreviewDiagnostic> Diagnostics =>
         _diagnostics;

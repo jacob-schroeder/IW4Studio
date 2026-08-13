@@ -15,13 +15,13 @@ namespace IW4.Render.Geometry;
 internal sealed class InstancedSolidBatchBuilder(
     List<float> vertices,
     List<uint> indices,
-    MapRenderBounds localBounds,
+    RenderBounds localBounds,
     int skippedTriangles,
     int readFailureTriangles)
 {
     public List<float> Vertices { get; } = vertices;
     public List<uint> Indices { get; } = indices;
-    public MapRenderBounds LocalBounds { get; } = localBounds;
+    public RenderBounds LocalBounds { get; } = localBounds;
     public int SkippedTriangles { get; } = skippedTriangles;
     public int ReadFailureTriangles { get; } = readFailureTriangles;
     public List<MapRenderStaticModelInstance> Instances { get; } = [];

@@ -127,8 +127,8 @@ public sealed class MapRenderWorldSunShadowCasterBatch
         GfxSurface surface,
         MapRenderSunShadowCasterMaterialPlan material,
         MapRenderSunShadowCasterGeometry geometry,
-        MapRenderUvRoute? cutoutUvRoute,
-        MapRenderTexture? cutoutTexture)
+        UvRoute? cutoutUvRoute,
+        Texture? cutoutTexture)
     {
         if (surfaceIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(surfaceIndex));
@@ -157,15 +157,15 @@ public sealed class MapRenderWorldSunShadowCasterBatch
 
     public MapRenderSunShadowCasterGeometry Geometry { get; }
 
-    public MapRenderUvRoute? CutoutUvRoute { get; }
+    public UvRoute? CutoutUvRoute { get; }
 
-    public MapRenderTexture? CutoutTexture { get; }
+    public Texture? CutoutTexture { get; }
 
     internal static void ValidateMaterialPayload(
         MapRenderSunShadowCasterMaterialPlan material,
         MapRenderSunShadowCasterGeometry geometry,
-        MapRenderUvRoute? cutoutUvRoute,
-        MapRenderTexture? cutoutTexture)
+        UvRoute? cutoutUvRoute,
+        Texture? cutoutTexture)
     {
         bool cutout = material.Kind ==
             MapRenderSunShadowCasterMaterialKind.Cutout;
@@ -249,8 +249,8 @@ public sealed class MapRenderStaticSunShadowCasterBatch
         MapRenderSunShadowStaticMaterialEligibility materialEligibility,
         MapRenderSunShadowCasterMaterialPlan material,
         MapRenderSunShadowCasterGeometry geometry,
-        MapRenderUvRoute? cutoutUvRoute,
-        MapRenderTexture? cutoutTexture,
+        UvRoute? cutoutUvRoute,
+        Texture? cutoutTexture,
         IReadOnlyList<MapRenderSunShadowStaticCasterInstance> instances)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -313,9 +313,9 @@ public sealed class MapRenderStaticSunShadowCasterBatch
 
     public MapRenderSunShadowCasterGeometry Geometry { get; }
 
-    public MapRenderUvRoute? CutoutUvRoute { get; }
+    public UvRoute? CutoutUvRoute { get; }
 
-    public MapRenderTexture? CutoutTexture { get; }
+    public Texture? CutoutTexture { get; }
 
     public IReadOnlyList<MapRenderSunShadowStaticCasterInstance> Instances
         { get; }

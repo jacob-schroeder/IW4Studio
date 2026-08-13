@@ -142,7 +142,7 @@ internal sealed class WorldVertexDecoder(
             BitConverter.UInt32BitsToSingle(decodedBits[1]),
             BitConverter.UInt32BitsToSingle(decodedBits[2]));
         Vector3 renderNormal =
-            MapRenderCoordinateConverter.GameToRenderPosition(gameNormal);
+            RenderCoordinateConverter.GameToRenderPosition(gameNormal);
         float lengthSquared = renderNormal.LengthSquared();
         if (!IsFinite(renderNormal) ||
             !float.IsFinite(lengthSquared) ||

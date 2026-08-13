@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Execution;
 using IW4.Render.EditorPreview;
 using IW4.Render.Geometry;
@@ -8,35 +9,37 @@ namespace IW4.Render.SceneBuilding.Batching;
 
 internal sealed class InstancedTexturedBatchBuilder(
     int lodIndex,
-    MapRenderMaterialPass pass,
-    MapRenderTexture texture,
-    IReadOnlyList<MapRenderColorLayer> colorLayers,
-    IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
-    MapRenderShaderExecutionContract shaderExecution,
-    MapRenderUvRoute uvRoute,
-    MapRenderState state,
+    MaterialPassIdentity pass,
+    MaterialSamplerIdentity primarySampler,
+    Texture texture,
+    IReadOnlyList<MaterialColorLayer> colorLayers,
+    IReadOnlyList<MapRenderWorldMaterialSamplerBinding> materialSamplers,
+    ShaderExecutionContract shaderExecution,
+    UvRoute uvRoute,
+    RenderState state,
     MapRenderEditorDepthPrepassPlan? editorDepthPrepass,
-    MapRenderShaderExecutionContract? depthPrepassShaderExecution,
+    ShaderExecutionContract? depthPrepassShaderExecution,
     int unresolvedCodeSamplerCount,
     List<float> vertices,
     List<float> rsxVertexInputs,
     List<uint> indices,
-    MapRenderBounds localBounds,
+    RenderBounds localBounds,
     int editorDrawGroupId,
     bool isExactTechniqueVariant,
     byte sceneLightIndex)
 {
     public int LodIndex { get; } = lodIndex;
-    public MapRenderMaterialPass Pass { get; } = pass;
-    public MapRenderTexture Texture { get; } = texture;
-    public IReadOnlyList<MapRenderColorLayer> ColorLayers { get; } = colorLayers;
-    public IReadOnlyList<MapRenderMaterialSamplerBinding> MaterialSamplers { get; } = materialSamplers;
-    public MapRenderShaderExecutionContract ShaderExecution { get; } = shaderExecution;
-    public MapRenderUvRoute UvRoute { get; } = uvRoute;
-    public MapRenderState State { get; } = state;
+    public MaterialPassIdentity Pass { get; } = pass;
+    public MaterialSamplerIdentity PrimarySampler { get; } = primarySampler;
+    public Texture Texture { get; } = texture;
+    public IReadOnlyList<MaterialColorLayer> ColorLayers { get; } = colorLayers;
+    public IReadOnlyList<MapRenderWorldMaterialSamplerBinding> MaterialSamplers { get; } = materialSamplers;
+    public ShaderExecutionContract ShaderExecution { get; } = shaderExecution;
+    public UvRoute UvRoute { get; } = uvRoute;
+    public RenderState State { get; } = state;
     public MapRenderEditorDepthPrepassPlan? EditorDepthPrepass { get; } =
         editorDepthPrepass;
-    public MapRenderShaderExecutionContract? DepthPrepassShaderExecution
+    public ShaderExecutionContract? DepthPrepassShaderExecution
     {
         get;
     } = depthPrepassShaderExecution;
@@ -44,7 +47,7 @@ internal sealed class InstancedTexturedBatchBuilder(
     public List<float> Vertices { get; } = vertices;
     public List<float> RsxVertexInputs { get; } = rsxVertexInputs;
     public List<uint> Indices { get; } = indices;
-    public MapRenderBounds LocalBounds { get; } = localBounds;
+    public RenderBounds LocalBounds { get; } = localBounds;
     public List<MapRenderStaticModelInstance> Instances { get; } = [];
     public List<MapRenderStaticModelInstance> PreparedInstances { get; } = [];
     public int PreparedSourceOrdinal { get; set; } = -1;

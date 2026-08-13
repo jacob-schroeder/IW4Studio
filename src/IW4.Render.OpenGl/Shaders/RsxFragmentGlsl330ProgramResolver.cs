@@ -48,7 +48,7 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
     internal long RetainedKeyPayloadByteCount { get; private set; }
 
     internal RsxFragmentGlsl330ProgramResolution Resolve(
-        MapRenderShaderExecutionContract execution)
+        ShaderExecutionContract execution)
     {
         ArgumentNullException.ThrowIfNull(execution);
         RsxFragmentGlsl330ProgramResolution fragment = Resolve(
@@ -309,9 +309,9 @@ internal enum RsxFragmentGlsl330ProgramFailureKind
 /// string so core oracle GLSL cannot accidentally become executable input.
 /// Backend composition retains the token while replacing its exact source.
 /// </summary>
-internal sealed class MapRenderOpenGlAuthoredFragmentSource
+internal sealed class OpenGlAuthoredFragmentSource
 {
-    private MapRenderOpenGlAuthoredFragmentSource(string exactGlsl)
+    private OpenGlAuthoredFragmentSource(string exactGlsl)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(exactGlsl);
         ExactGlsl = exactGlsl;
@@ -319,17 +319,17 @@ internal sealed class MapRenderOpenGlAuthoredFragmentSource
 
     internal string ExactGlsl { get; }
 
-    internal static MapRenderOpenGlAuthoredFragmentSource FromBackendLowering(
+    internal static OpenGlAuthoredFragmentSource FromBackendLowering(
         string exactGlsl) =>
         new(exactGlsl);
 
-    internal MapRenderOpenGlAuthoredFragmentSource WithBackendComposition(
+    internal OpenGlAuthoredFragmentSource WithBackendComposition(
         string exactGlsl) =>
         new(exactGlsl);
 }
 
 internal sealed record RsxFragmentGlsl330ProgramResolution(
-    MapRenderOpenGlAuthoredFragmentSource? Source,
+    OpenGlAuthoredFragmentSource? Source,
     bool IsReady,
     RsxFragmentGlsl330ProgramFailureKind FailureKind,
     string FailureReason,
@@ -339,7 +339,7 @@ internal sealed record RsxFragmentGlsl330ProgramResolution(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(glsl);
         return new RsxFragmentGlsl330ProgramResolution(
-            MapRenderOpenGlAuthoredFragmentSource.FromBackendLowering(glsl),
+            OpenGlAuthoredFragmentSource.FromBackendLowering(glsl),
             IsReady: true,
             RsxFragmentGlsl330ProgramFailureKind.None,
             string.Empty,

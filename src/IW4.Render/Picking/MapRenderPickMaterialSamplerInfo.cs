@@ -14,4 +14,4 @@ public sealed record MapRenderPickMaterialSamplerInfo(
     uint SamplerHash,
     byte TextureSemantic,
     string TextureName,
-    MapRenderUvRoute? UvRoute);
+    UvRoute? UvRoute);

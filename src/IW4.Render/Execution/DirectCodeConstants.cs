@@ -1,17 +1,15 @@
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 using IW4.Render.Shaders;
-using IW4.Render.Lighting;
-using IW4.Render.EditorPreview;
 
 namespace IW4.Render.Execution;
 
-internal readonly record struct MapRenderDirectionalSunLinearColors(
+internal readonly record struct DirectionalSunLinearColors(
     System.Numerics.Vector3 Diffuse,
     System.Numerics.Vector3 Specular);
 
-internal readonly record struct MapRenderClipSpaceLookupCodeConstants(
-    MapRenderShaderConstantValue Scale,
-    MapRenderShaderConstantValue Offset);
+internal readonly record struct ClipSpaceLookupCodeConstants(
+    ShaderConstantValue Scale,
+    ShaderConstantValue Offset);
 
 /// <summary>
 /// Shared frame-row calculations used by translated-program
@@ -68,13 +66,13 @@ internal static class FrameDirectCodeConstants
     private static readonly float InvalidFadeRangeScale = Float(0x42C80000);
 
     private static readonly IReadOnlyList<
-        MapRenderDirectCodeConstantRow> SourceInitializationRows =
+        DirectCodeConstantRow> SourceInitializationRows =
     [
         // Row 0x05 uses scalar initialization even when the normal-view caller
         // supplies its input table.
         new(
             0x05,
-            new MapRenderShaderConstantValue(
+            new ShaderConstantValue(
                 float.MaxValue,
                 float.MaxValue,
                 float.MaxValue,
@@ -85,7 +83,7 @@ internal static class FrameDirectCodeConstants
         // sentinel branch.
         new(
             0x23,
-            new MapRenderShaderConstantValue(
+            new ShaderConstantValue(
                 0.0f,
                 0.0f,
                 0.0f,
@@ -93,38 +91,28 @@ internal static class FrameDirectCodeConstants
     ];
 
     private static readonly IReadOnlyList<
-        MapRenderDirectCodeConstantRow> FogTemplateRows =
+        DirectCodeConstantRow> FogTemplateRows =
         Array.AsReadOnly(
             Enumerable.Range(
                     FogRowIndex,
                     SunFogDirectionRowIndex - FogRowIndex + 1)
                 .Select(index => new
-                    MapRenderDirectCodeConstantRow(
+                    DirectCodeConstantRow(
                         index,
-                        new MapRenderShaderConstantValue(0f, 0f, 0f, 0f)))
+                        new ShaderConstantValue(0f, 0f, 0f, 0f)))
                 .ToArray());
 
     private static readonly IReadOnlyList<
-        MapRenderDirectCodeConstantRow> DisabledFogRows =
+        DirectCodeConstantRow> DisabledFogRows =
         Array.AsReadOnly(
         [
             Row(FogRowIndex, new(0.0f, 1.0f, 0.0f, 0.0f))
         ]);
 
-    internal static IReadOnlyList<MapRenderDirectCodeConstantRow>
+    internal static IReadOnlyList<DirectCodeConstantRow>
         ProduceSourceInitializationRows() => SourceInitializationRows;
 
-    internal static MapRenderDirectCodeConstantRow
-        ProduceModelLightingSamplerRow() =>
-        Row(
-            ModelLightingSamplerRowIndex,
-            new MapRenderShaderConstantValue(
-                MapRenderStaticModelLightingAtlas.SamplerTransform.X,
-                MapRenderStaticModelLightingAtlas.SamplerTransform.Y,
-                MapRenderStaticModelLightingAtlas.SamplerTransform.Z,
-                MapRenderStaticModelLightingAtlas.SamplerTransform.W));
-
-    internal static MapRenderClipSpaceLookupCodeConstants
+    internal static ClipSpaceLookupCodeConstants
         ProduceClipSpaceLookup(
             int renderTargetWidth,
             int renderTargetHeight,
@@ -161,20 +149,20 @@ internal static class FrameDirectCodeConstants
             scaleY +
             inverseHeight * viewportY;
 
-        return new MapRenderClipSpaceLookupCodeConstants(
-            new MapRenderShaderConstantValue(
+        return new ClipSpaceLookupCodeConstants(
+            new ShaderConstantValue(
                 scaleX,
                 -scaleY,
                 0.0f,
                 1.0f),
-            new MapRenderShaderConstantValue(
+            new ShaderConstantValue(
                 offsetX,
                 offsetY,
                 0.0f,
                 0.0f));
     }
 
-    internal static MapRenderDirectCodeConstantRow ProduceZNear(
+    internal static DirectCodeConstantRow ProduceZNear(
         float zNear)
     {
         if (!(zNear > 0.0f) || !float.IsFinite(zNear))
@@ -182,120 +170,14 @@ internal static class FrameDirectCodeConstants
 
         return Row(
             ZNearRowIndex,
-            new MapRenderShaderConstantValue(
+            new ShaderConstantValue(
                 zNear * ZNearScale,
                 0.0f,
                 0.0f,
                 0.0f));
     }
 
-    /// <summary>
-    /// The directional-light writer copies the authored direction to row 0,
-    /// multiplies the two live
-    /// renderer color scales by the view's primary-light tweak strengths when
-    /// requested, then applies the exact gamma-to-linear transfer independently
-    /// to diffuse/specular rows 1 and 2. The direction in this operational plan
-    /// has been adapted once into the viewer basis, matching viewer-adapted
-    /// vertex inputs.
-    /// </summary>
-    internal static IReadOnlyList<MapRenderDirectCodeConstantRow>
-        ProduceDirectionalSunRows(
-            MapRenderEditorPreviewLightingPlan lighting,
-            MapRenderEditorPreviewPrimaryLightVisionState? primaryLight = null,
-            float diffuseColorScale =
-                DefaultDiffuseColorScale,
-            float specularColorScale =
-                DefaultSpecularColorScale)
-    {
-        MapRenderDirectionalSunLinearColors colors =
-            ProduceDirectionalSunLinearColors(
-                lighting,
-                primaryLight,
-                diffuseColorScale,
-                specularColorScale);
-        System.Numerics.Vector3 direction =
-            lighting.DirectionalSunCodeDirection;
-        return
-        [
-            Row(
-                DirectionalLightDirectionRowIndex,
-                new(direction.X, direction.Y, direction.Z, 0.0f)),
-            Row(
-                DirectionalLightDiffuseRowIndex,
-                new(
-                    colors.Diffuse.X,
-                    colors.Diffuse.Y,
-                    colors.Diffuse.Z,
-                    1.0f)),
-            Row(
-                DirectionalLightSpecularRowIndex,
-                new(
-                    colors.Specular.X,
-                    colors.Specular.Y,
-                    colors.Specular.Z,
-                    1.0f))
-        ];
-    }
-
-    internal static MapRenderDirectionalSunLinearColors
-        ProduceDirectionalSunLinearColors(
-            MapRenderEditorPreviewLightingPlan lighting,
-            MapRenderEditorPreviewPrimaryLightVisionState? primaryLight = null,
-            float diffuseColorScale =
-                DefaultDiffuseColorScale,
-            float specularColorScale =
-                DefaultSpecularColorScale)
-    {
-        ArgumentNullException.ThrowIfNull(lighting);
-        if (!lighting.HasDirectionalSun)
-        {
-            throw new ArgumentException(
-                "Directional sun rows require one active editor sun.",
-                nameof(lighting));
-        }
-        if (!float.IsFinite(diffuseColorScale) ||
-            diffuseColorScale < 0f)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(diffuseColorScale));
-        }
-        if (!float.IsFinite(specularColorScale) ||
-            specularColorScale < 0f)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(specularColorScale));
-        }
-        if (primaryLight is not null &&
-            !primaryLight.HasFiniteNonnegativeStrengths)
-        {
-            throw new ArgumentException(
-                "Primary-light tweak strengths must be finite and nonnegative.",
-                nameof(primaryLight));
-        }
-
-        if (primaryLight?.UseTweaks == true)
-        {
-            diffuseColorScale *= primaryLight.DiffuseStrength;
-            specularColorScale *= primaryLight.SpecularStrength;
-        }
-
-        System.Numerics.Vector3 color = lighting.DirectionalSunColor;
-        System.Numerics.Vector3 diffuse =
-            color * diffuseColorScale;
-        System.Numerics.Vector3 specular =
-            color * specularColorScale;
-        return new MapRenderDirectionalSunLinearColors(
-            new System.Numerics.Vector3(
-                GammaColorTransfer.ToLinear(diffuse.X),
-                GammaColorTransfer.ToLinear(diffuse.Y),
-                GammaColorTransfer.ToLinear(diffuse.Z)),
-            new System.Numerics.Vector3(
-                GammaColorTransfer.ToLinear(specular.X),
-                GammaColorTransfer.ToLinear(specular.Y),
-                GammaColorTransfer.ToLinear(specular.Z)));
-    }
-
-    internal static MapRenderDirectCodeConstantRow ProduceGameTime(
+    internal static DirectCodeConstantRow ProduceGameTime(
         float gameTime)
     {
         if (!float.IsFinite(gameTime))
@@ -306,20 +188,20 @@ internal static class FrameDirectCodeConstants
         float angle = fraction * TwoPi;
         return new(
             GameTimeRowIndex,
-            new MapRenderShaderConstantValue(
+            new ShaderConstantValue(
                 MathF.Sin(angle),
                 MathF.Cos(angle),
                 fraction,
                 gameTime % GameTimeWrapSeconds));
     }
 
-    internal static IReadOnlyList<MapRenderDirectCodeConstantRow>
+    internal static IReadOnlyList<DirectCodeConstantRow>
         ProduceFogTemplateRows() => FogTemplateRows;
 
-    internal static IReadOnlyList<MapRenderDirectCodeConstantRow>
+    internal static IReadOnlyList<DirectCodeConstantRow>
         ProduceDisabledFogRows() => DisabledFogRows;
 
-    internal static IReadOnlyList<MapRenderDirectCodeConstantRow>
+    internal static IReadOnlyList<DirectCodeConstantRow>
         ProduceFogRows(
             bool fogRenderingEnabled,
             MapRenderActiveFogState activeFog)
@@ -329,9 +211,9 @@ internal static class FrameDirectCodeConstants
         if (!fogRenderingEnabled)
             return ProduceDisabledFogRows();
 
-        MapRenderShaderConstantValue fogGamma = UnpackBgra(activeFog.Color);
-        MapRenderShaderConstantValue fogLinear = Linearize(fogGamma);
-        var rows = new List<MapRenderDirectCodeConstantRow>
+        ShaderConstantValue fogGamma = UnpackBgra(activeFog.Color);
+        ShaderConstantValue fogLinear = Linearize(fogGamma);
+        var rows = new List<DirectCodeConstantRow>
         {
             // Native write order is retained: color rows precede FOG.
             Row(FogColorLinearRowIndex, fogLinear),
@@ -359,8 +241,8 @@ internal static class FrameDirectCodeConstants
             : InvalidFadeRangeScale;
         float negativeDensity = -activeFog.Density;
 
-        MapRenderShaderConstantValue sunGamma = UnpackBgra(sunFog.Color);
-        MapRenderShaderConstantValue sunLinear = Linearize(sunGamma);
+        ShaderConstantValue sunGamma = UnpackBgra(sunFog.Color);
+        ShaderConstantValue sunLinear = Linearize(sunGamma);
         rows.Add(Row(
             SunFogConstantsRowIndex,
             new(
@@ -376,7 +258,7 @@ internal static class FrameDirectCodeConstants
         return ReadOnly(rows);
     }
 
-    private static MapRenderShaderConstantValue UnpackBgra(
+    private static ShaderConstantValue UnpackBgra(
         MapRenderBgra8Color color) =>
         new(
             color.Red * ByteToUnit,
@@ -384,15 +266,15 @@ internal static class FrameDirectCodeConstants
             color.Blue * ByteToUnit,
             color.Alpha * ByteToUnit);
 
-    private static MapRenderShaderConstantValue Linearize(
-        MapRenderShaderConstantValue gamma) =>
+    private static ShaderConstantValue Linearize(
+        ShaderConstantValue gamma) =>
         new(
             GammaColorTransfer.ToLinear(gamma.X),
             GammaColorTransfer.ToLinear(gamma.Y),
             GammaColorTransfer.ToLinear(gamma.Z),
             gamma.W);
 
-    private static MapRenderShaderConstantValue NormalizeDirection(
+    private static ShaderConstantValue NormalizeDirection(
         System.Numerics.Vector3 direction)
     {
         // Preserve the PS3 operation order: y*y, then fused x*x and z*z.
@@ -415,9 +297,9 @@ internal static class FrameDirectCodeConstants
             0.0f);
     }
 
-    private static MapRenderDirectCodeConstantRow Row(
+    private static DirectCodeConstantRow Row(
         ushort index,
-        MapRenderShaderConstantValue value)
+        ShaderConstantValue value)
     {
         if (!IsFinite(value))
         {
@@ -428,11 +310,11 @@ internal static class FrameDirectCodeConstants
         return new(index, value);
     }
 
-    private static IReadOnlyList<MapRenderDirectCodeConstantRow>
-        ReadOnly(List<MapRenderDirectCodeConstantRow> rows) =>
+    private static IReadOnlyList<DirectCodeConstantRow>
+        ReadOnly(List<DirectCodeConstantRow> rows) =>
         Array.AsReadOnly(rows.ToArray());
 
-    private static bool IsFinite(MapRenderShaderConstantValue value) =>
+    private static bool IsFinite(ShaderConstantValue value) =>
         float.IsFinite(value.X) &&
         float.IsFinite(value.Y) &&
         float.IsFinite(value.Z) &&

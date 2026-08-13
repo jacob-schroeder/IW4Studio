@@ -45,8 +45,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     /// packet is preferable to switching a moving frame to the unrelated
     /// conservative fallback topology for a single deadline miss.
     /// </summary>
-    private MapRenderCamera BeginSunShadowDpvsPreparation(
-        MapRenderCamera requestedCamera)
+    private RenderCamera BeginSunShadowDpvsPreparation(
+        RenderCamera requestedCamera)
     {
         _activeSunShadowDpvsPacket = null;
         _preparedStaticSelectionKey = null;
@@ -149,7 +149,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private bool TryCompleteSunShadowDpvsPreparation(
             MapRenderWorldSceneSource source,
             IMapRenderWorldDpvsNormalCameraVisibilityProvider provider,
-            MapRenderCamera camera,
+            RenderCamera camera,
             MapRenderNormalCameraFramebufferExtent extent,
             MapRenderNormalCameraFarPlaneState farPlane,
             long revision,
@@ -356,7 +356,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void PrepareStaticSelectionOnRenderThread(
         SunShadowDpvsWorkKey key,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsVisibilityBuildResult visibility)
     {
         if (!TryGetCameraVisibility(
@@ -391,7 +391,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private bool TryUsePreparedStaticSelection(
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsViewVisibility? cameraVisibility)
     {
         if (_previewWorldSource is not { } source)
@@ -411,7 +411,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private bool TryGetPreparedCameraVisibility(
-        MapRenderCamera camera,
+        RenderCamera camera,
         out MapRenderWorldDpvsViewVisibility? cameraVisibility)
     {
         cameraVisibility = null;
@@ -436,7 +436,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void PrepareStaticModelLightingAdmission(
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsViewVisibility cameraVisibility)
     {
         if (_previewWorldSource is not { } source)
@@ -468,7 +468,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private bool TryUsePreparedStaticModelLightingAdmission(
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderWorldDpvsViewVisibility? cameraVisibility,
         out long visibleStaticObjectCount)
     {
@@ -571,7 +571,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private readonly record struct SunShadowDpvsWorkKey(
         long SceneRevision,
-        MapRenderCamera Camera,
+        RenderCamera Camera,
         int Width,
         int Height,
         float RZFar,

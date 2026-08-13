@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+using IW4.Render.Techniques;
 using System.Diagnostics.CodeAnalysis;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Materials;
@@ -10,16 +12,19 @@ namespace IW4.Render.Execution;
 /// construct renderer-neutral material execution contracts.
 /// </summary>
 public interface IMaterialExecutionLookup :
-    IMapRenderStateLoadBitsResolver,
-    IMapRenderSelectedPassProgramProvider
+    IStateLoadBitsResolver,
+    ISelectedPassProgramProvider
 {
     bool TryResolveCanonicalMaterialTechniqueBinding(
         string name,
         long expectedPoolRevision,
-        [NotNullWhen(true)] out MapRenderMaterialTechniqueBinding? binding);
+        [NotNullWhen(true)] out MaterialTechniqueBinding? binding);
 
     bool HasCanonicalAssetPoolRevision(long expectedPoolRevision);
 
     IReadOnlyList<MaterialTechniqueSlot> ResolveTechniqueSlots(
         MaterialTechniqueSetAsset techniqueSet);
+
+    IReadOnlyList<MaterialShaderArgumentAsset> ResolveShaderArgs(
+        MaterialPassAsset pass);
 }

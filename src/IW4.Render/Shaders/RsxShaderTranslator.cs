@@ -107,7 +107,7 @@ internal static class RsxShaderTranslator
             pass,
             material,
             blockers,
-            out MapRenderStaticFragmentConstantPatch[] staticFragmentPatches,
+            out StaticFragmentConstantPatch[] staticFragmentPatches,
             out FragmentCodePixelConstantPatchCandidate[]
                 codePixelPatchCandidates);
         RsxVertexProgramIr vertexProgramIr = programSemantics.VertexProgram
@@ -130,7 +130,7 @@ internal static class RsxShaderTranslator
         ImmutableArray<RsxFragmentInstruction> translatedPixelInstructions =
             decodedFragmentProgram.SpecializeInlineConstants(
                 patchedPixelData);
-        MapRenderCodePixelConstantPatchPlan[] codePixelPatchPlans;
+        CodePixelConstantPatchPlan[] codePixelPatchPlans;
         if (codePixelPatchCandidates.Length == 0)
         {
             codePixelPatchPlans = [];
@@ -432,12 +432,12 @@ internal static class RsxShaderTranslator
         MaterialPassAsset pass,
         MaterialAsset? material,
         ISet<string> blockers,
-        out MapRenderStaticFragmentConstantPatch[] staticFragmentPatches,
+        out StaticFragmentConstantPatch[] staticFragmentPatches,
         out FragmentCodePixelConstantPatchCandidate[]
             codePixelPatchCandidates)
     {
         ArgumentNullException.ThrowIfNull(decodedProgram);
-        var appliedPatches = new List<MapRenderStaticFragmentConstantPatch>();
+        var appliedPatches = new List<StaticFragmentConstantPatch>();
         var codePixelCandidates = new List<
             FragmentCodePixelConstantPatchCandidate>();
         byte[] patched = data.ToArray();
@@ -516,7 +516,7 @@ internal static class RsxShaderTranslator
                 argument.Dest,
                 argument.ArgumentRaw,
                 codeIndex,
-                MapRenderCodePixelConstantPatchStatus.NonStableScopeDeferred,
+                CodePixelConstantPatchStatus.NonStableScopeDeferred,
                 [],
                 checked((int)runtimeInfo.UploadOffset),
                 "PS3 0x003A7738 does not consume per-primitive or per-object arguments."));
@@ -539,14 +539,14 @@ internal static class RsxShaderTranslator
                 // destination/value pair; the two union-tail bytes are not a
                 // fragment row shape.
                 ushort codeIndex = checked((ushort)(raw >> 16));
-                if (codeIndex >= MapRenderCodeConstantLayout.Float4Count)
+                if (codeIndex >= CodeConstantLayout.Float4Count)
                 {
                     codePixelCandidates.Add(new(
                         ordinal,
                         argument.Dest,
                         argument.ArgumentRaw,
                         codeIndex,
-                        MapRenderCodePixelConstantPatchStatus
+                        CodePixelConstantPatchStatus
                             .DerivedSourceDeferred,
                         [],
                         checked((int)runtimeInfo.UploadOffset),
@@ -564,7 +564,7 @@ internal static class RsxShaderTranslator
                         argument.Dest,
                         argument.ArgumentRaw,
                         codeIndex,
-                        MapRenderCodePixelConstantPatchStatus
+                        CodePixelConstantPatchStatus
                             .DestinationUnmapped,
                         [],
                         checked((int)runtimeInfo.UploadOffset),
@@ -578,7 +578,7 @@ internal static class RsxShaderTranslator
                         argument.Dest,
                         argument.ArgumentRaw,
                         codeIndex,
-                        MapRenderCodePixelConstantPatchStatus
+                        CodePixelConstantPatchStatus
                             .DefaultOnlyPatchEntry,
                         [],
                         checked((int)runtimeInfo.UploadOffset),
@@ -621,12 +621,12 @@ internal static class RsxShaderTranslator
             {
                 case MaterialShaderArgumentType.MaterialPixelConst when constants.TryGetValue(raw, out MaterialConstantDef? constant):
                     ApplyFragmentConstant(patched, runtimeInfo, entry, constant.Literal.X, constant.Literal.Y, constant.Literal.Z, constant.Literal.W);
-                    appliedPatches.Add(new MapRenderStaticFragmentConstantPatch(
+                    appliedPatches.Add(new StaticFragmentConstantPatch(
                         ordinal,
-                        MapRenderSelectedPassConstantKind.MaterialPixel,
+                        SelectedPassConstantKind.MaterialPixel,
                         argument.Dest,
                         argument.ArgumentRaw,
-                        new MapRenderShaderConstantValue(
+                        new ShaderConstantValue(
                             constant.Literal.X,
                             constant.Literal.Y,
                             constant.Literal.Z,
@@ -635,12 +635,12 @@ internal static class RsxShaderTranslator
                     break;
                 case MaterialShaderArgumentType.LiteralPixelConst when argument.LiteralConstant is { } literal:
                     ApplyFragmentConstant(patched, runtimeInfo, entry, literal.X, literal.Y, literal.Z, literal.W);
-                    appliedPatches.Add(new MapRenderStaticFragmentConstantPatch(
+                    appliedPatches.Add(new StaticFragmentConstantPatch(
                         ordinal,
-                        MapRenderSelectedPassConstantKind.LiteralPixel,
+                        SelectedPassConstantKind.LiteralPixel,
                         argument.Dest,
                         argument.ArgumentRaw,
-                        new MapRenderShaderConstantValue(
+                        new ShaderConstantValue(
                             literal.X,
                             literal.Y,
                             literal.Z,
@@ -685,7 +685,7 @@ internal static class RsxShaderTranslator
         return valid;
     }
 
-    private static MapRenderCodePixelConstantPatchPlan[]
+    private static CodePixelConstantPatchPlan[]
         ResolveCodePixelConstantPatches(
             IList<RsxFragmentInstruction> instructions,
             IReadOnlyList<FragmentCodePixelConstantPatchCandidate> candidates,
@@ -738,19 +738,19 @@ internal static class RsxShaderTranslator
             }
         }
 
-        var plans = new List<MapRenderCodePixelConstantPatchPlan>(
+        var plans = new List<CodePixelConstantPatchPlan>(
             candidates.Count);
         foreach (FragmentCodePixelConstantPatchCandidate candidate in
                  candidates.OrderBy(candidate => candidate.ArgumentOrdinal))
         {
-            MapRenderCodePixelConstantPatchSite[] sites = candidate
+            CodePixelConstantPatchSite[] sites = candidate
                 .RelativePatchOffsets
                 .Distinct()
                 .Select(relativeOffset =>
                 {
                     int programOffset = checked(
                         candidate.UploadOffset + relativeOffset);
-                    return new MapRenderCodePixelConstantPatchSite(
+                    return new CodePixelConstantPatchSite(
                         relativeOffset,
                         programOffset,
                         instructionsByPayloadOffset.TryGetValue(
@@ -760,24 +760,24 @@ internal static class RsxShaderTranslator
                             : null);
                 })
                 .ToArray();
-            MapRenderCodePixelConstantPatchStatus status =
+            CodePixelConstantPatchStatus status =
                 candidate.DeferredStatus ??
                 (ambiguousOrdinals.Contains(candidate.ArgumentOrdinal)
-                    ? MapRenderCodePixelConstantPatchStatus.PatchSiteAmbiguous
+                    ? CodePixelConstantPatchStatus.PatchSiteAmbiguous
                     : sites.Any(site => !site.InstructionIndex.HasValue)
-                        ? MapRenderCodePixelConstantPatchStatus
+                        ? CodePixelConstantPatchStatus
                             .PatchSiteUnmatched
-                        : MapRenderCodePixelConstantPatchStatus
+                        : CodePixelConstantPatchStatus
                             .DirectSourceResolved);
             string? detail = candidate.Detail ?? status switch
             {
-                MapRenderCodePixelConstantPatchStatus.PatchSiteAmbiguous =>
+                CodePixelConstantPatchStatus.PatchSiteAmbiguous =>
                     "Destination or fragment patch site has multiple authored CodePixel owners.",
-                MapRenderCodePixelConstantPatchStatus.PatchSiteUnmatched =>
+                CodePixelConstantPatchStatus.PatchSiteUnmatched =>
                     "A fragment patch offset is not an exact decoded inline-constant payload.",
                 _ => null
             };
-            var plan = new MapRenderCodePixelConstantPatchPlan(
+            var plan = new CodePixelConstantPatchPlan(
                 candidate.ArgumentOrdinal,
                 candidate.Destination,
                 candidate.ArgumentRaw,
@@ -794,7 +794,7 @@ internal static class RsxShaderTranslator
                 continue;
             }
 
-            foreach (MapRenderCodePixelConstantPatchSite site in
+            foreach (CodePixelConstantPatchSite site in
                      plan.PatchSites)
             {
                 int instructionIndex = site.InstructionIndex!.Value;

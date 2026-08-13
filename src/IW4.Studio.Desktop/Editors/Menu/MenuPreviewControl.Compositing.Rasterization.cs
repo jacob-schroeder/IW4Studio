@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Media;
 using IW4.Render.Materials;
+using IW4.Render.Techniques;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
@@ -193,25 +194,25 @@ public sealed partial class MenuPreviewControl
     }
 
     private static bool ResolveFilter(
-        MapRenderSamplerState sampler,
+        RsxSamplerState sampler,
         Rect bounds,
         MenuPreviewMaterialSnapshot snapshot)
     {
         bool magnifies = bounds.Width >= snapshot.Width &&
             bounds.Height >= snapshot.Height;
         return (magnifies ? sampler.MagFilter : sampler.MinFilter) ==
-            MapRenderTextureFilter.Linear;
+            TextureFilter.Linear;
     }
 
     private static bool PassesAlphaTest(
         float sourceAlpha,
-        MapRenderAlphaTestMode alphaTest) =>
+        AlphaTestMode alphaTest) =>
         alphaTest switch
         {
-            MapRenderAlphaTestMode.Disabled => true,
-            MapRenderAlphaTestMode.GreaterZero => sourceAlpha > 0,
-            MapRenderAlphaTestMode.Less128 => sourceAlpha < 128f / 255f,
-            MapRenderAlphaTestMode.GreaterEqual128 =>
+            AlphaTestMode.Disabled => true,
+            AlphaTestMode.GreaterZero => sourceAlpha > 0,
+            AlphaTestMode.Less128 => sourceAlpha < 128f / 255f,
+            AlphaTestMode.GreaterEqual128 =>
                 sourceAlpha >= 128f / 255f,
             _ => false
         };
@@ -333,7 +334,7 @@ public sealed partial class MenuPreviewControl
         ReadOnlySpan<byte> pixels,
         int width,
         int height,
-        MapRenderSamplerState sampler,
+        RsxSamplerState sampler,
         float u,
         float v,
         bool linear,
@@ -455,7 +456,7 @@ public sealed partial class MenuPreviewControl
         int height,
         int x,
         int y,
-        MapRenderSamplerState sampler,
+        RsxSamplerState sampler,
         out float red,
         out float green,
         out float blue,
@@ -473,9 +474,9 @@ public sealed partial class MenuPreviewControl
     private static int ResolveTexelCoordinate(
         int coordinate,
         int length,
-        MapRenderTextureAddressMode addressMode)
+        TextureAddressMode addressMode)
     {
-        if (addressMode == MapRenderTextureAddressMode.Clamp)
+        if (addressMode == TextureAddressMode.Clamp)
             return Math.Clamp(coordinate, 0, length - 1);
 
         int wrapped = coordinate % length;

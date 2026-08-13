@@ -5,6 +5,8 @@ using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Geometry.Shadows;
 using IW4.Render.Textures;
+using Texture = IW4.Render.Textures.Texture;
+using TextureTarget = Silk.NET.OpenGL.TextureTarget;
 
 namespace IW4.Render.OpenGl;
 
@@ -88,7 +90,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             AccountTexturePayload(batch.LightmapTexture);
             AccountBatchBindings(
                 batch.ColorLayers,
-                batch.MaterialSamplers);
+                batch.MaterialSamplers.Select(binding => binding.Binding));
         }
     }
 
@@ -100,22 +102,22 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             AccountTexturePayload(batch.Texture);
             AccountBatchBindings(
                 batch.ColorLayers,
-                batch.MaterialSamplers);
+                batch.MaterialSamplers.Select(binding => binding.Binding));
         }
     }
 
     private void AccountBatchBindings(
-        IEnumerable<IW4.Render.Materials.MapRenderColorLayer>
+        IEnumerable<IW4.Render.Materials.MaterialColorLayer>
             colorLayers,
-        IEnumerable<IW4.Render.Materials.MapRenderMaterialSamplerBinding>
+        IEnumerable<IW4.Render.Materials.MaterialSamplerBinding>
             materialSamplers)
     {
-        foreach (IW4.Render.Materials.MapRenderColorLayer layer in
+        foreach (IW4.Render.Materials.MaterialColorLayer layer in
                  colorLayers)
         {
             AccountTexturePayload(layer.Texture);
         }
-        foreach (IW4.Render.Materials.MapRenderMaterialSamplerBinding binding in
+        foreach (IW4.Render.Materials.MaterialSamplerBinding binding in
                  materialSamplers)
         {
             AccountTexturePayload(binding.Texture);
@@ -123,7 +125,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void AccountTexturePayload(
-        MapRenderTexture? texture)
+        Texture? texture)
     {
         if (texture is null ||
             !_texturePayloadsAccounted.Add(texture))
@@ -147,14 +149,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     _textureDecodedFallbackBytesObserved +
                     payload.Length);
             });
-        if (!MapRenderOpenGlAuthoredBcUploadPlan.TryCreate(
+        if (!OpenGlAuthoredBcUploadPlan.TryCreate(
                 texture,
-                out MapRenderOpenGlAuthoredBcUploadPlan plan))
+                out OpenGlAuthoredBcUploadPlan plan))
         {
             return;
         }
 
-        foreach (MapRenderTextureAuthoredSubresource subresource in
+        foreach (TextureAuthoredSubresource subresource in
                  plan.Subresources)
         {
             byte[] payload = subresource.SharedPayload;
@@ -394,7 +396,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             if (mesh.RsxProgram.Handle == 0)
                 continue;
 
-            IReadOnlyList<MapRenderShaderRuntimeSamplerRequirement>
+            IReadOnlyList<ShaderRuntimeSamplerRequirement>
                 runtimeRequirements =
                     mesh.ShaderExecution?.RuntimeSamplerRequirements ?? [];
             foreach (int destination in
@@ -544,7 +546,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             entry.Target,
             entry.FaceCount);
         ApplyTextureSwizzle(
-            MapRenderRsxTextureSwizzleDecoder.Decode(
+            RsxTextureSwizzleDecoder.Decode(
                 entry.Source.RsxTextureCommandState
                     .TexSwizzlePayload),
             entry.Target);

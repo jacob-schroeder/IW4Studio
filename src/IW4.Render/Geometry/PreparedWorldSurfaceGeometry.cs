@@ -23,7 +23,7 @@ internal sealed class PreparedWorldSurfaceGeometry
         int sourceTopologyReadFailureTriangleCount,
         int positionReadFailureTriangleCount,
         int skyboxTriangleCount,
-        MapRenderBounds bounds)
+        RenderBounds bounds)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(positions);
@@ -94,7 +94,7 @@ internal sealed class PreparedWorldSurfaceGeometry
 
     internal int SkyboxTriangleCount { get; }
 
-    internal MapRenderBounds Bounds { get; }
+    internal RenderBounds Bounds { get; }
 
     internal ReadOnlySpan<PreparedWorldSurfaceTriangle> Triangles => _triangles;
 

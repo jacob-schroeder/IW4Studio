@@ -3,25 +3,27 @@ using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Assets;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
+using IW4.Render.Geometry;
 using IW4.Render.Materials;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 
 namespace IW4.Render.SceneBuilding;
 
 public sealed partial class MapSceneBuilder
 {
-    internal static MapRenderShaderExecutionContract BuildShaderExecutionContract(
+    internal static ShaderExecutionContract BuildShaderExecutionContract(
         MaterialAsset? material,
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup,
         SelectedColorPass selectedPass,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
+        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> materialSamplers,
         bool vertexInputPayloadReady,
         string vertexInputPayloadBlocker,
         bool authoredSourcePassAvailable,
-        MapRenderShaderExecutionPurpose purpose =
-            MapRenderShaderExecutionPurpose.CameraColor,
-        MapRenderShaderTranslationCache? shaderTranslationCache = null,
+        ShaderExecutionPurpose purpose =
+            ShaderExecutionPurpose.CameraColor,
+        ShaderTranslationCache? shaderTranslationCache = null,
         int? fixedVertexSourceBackendRow = null,
         IReadOnlySet<int>? explicitCubeSamplerDestinations = null) =>
         AuthoredMaterialExecutionPlanner.CreateContract(
@@ -29,6 +31,50 @@ public sealed partial class MapSceneBuilder
             techset,
             lookup,
             selectedPass.Pass,
+            selectedPass.PrimarySampler,
+            selectedPass.State,
+            selectedPass.Image.Name ?? string.Empty,
+            materialSamplers.Select(binding => binding.Binding).ToArray(),
+            vertexInputPayloadReady,
+            vertexInputPayloadBlocker,
+            authoredSourcePassAvailable,
+            purpose,
+            shaderTranslationCache,
+            fixedVertexSourceBackendRow,
+            explicitCubeSamplerDestinations,
+            MaterialVertexInputBindingPlanner.Resolve(
+                techset,
+                lookup,
+                selectedPass.Pass,
+                fixedVertexSourceBackendRow),
+            materialSamplers
+                .Select(binding => string.Concat(
+                    binding.RuntimeTextureIdentity?.ToString() ??
+                        "NO_WORLD_SLOT",
+                    ":",
+                    binding.Binding.ResourceBindingIdentity))
+                .ToArray());
+
+    internal static ShaderExecutionContract BuildShaderExecutionContract(
+        MaterialAsset? material,
+        MaterialTechniqueSetAsset? techset,
+        RenderAssetLookup lookup,
+        SelectedColorPass selectedPass,
+        IReadOnlyList<MaterialSamplerBinding> materialSamplers,
+        bool vertexInputPayloadReady,
+        string vertexInputPayloadBlocker,
+        bool authoredSourcePassAvailable,
+        ShaderExecutionPurpose purpose =
+            ShaderExecutionPurpose.CameraColor,
+        ShaderTranslationCache? shaderTranslationCache = null,
+        int? fixedVertexSourceBackendRow = null,
+        IReadOnlySet<int>? explicitCubeSamplerDestinations = null) =>
+        AuthoredMaterialExecutionPlanner.CreateContract(
+            material,
+            techset,
+            lookup,
+            selectedPass.Pass,
+            selectedPass.PrimarySampler,
             selectedPass.State,
             selectedPass.Image.Name ?? string.Empty,
             materialSamplers,
@@ -38,15 +84,20 @@ public sealed partial class MapSceneBuilder
             purpose,
             shaderTranslationCache,
             fixedVertexSourceBackendRow,
-            explicitCubeSamplerDestinations);
+            explicitCubeSamplerDestinations,
+            MaterialVertexInputBindingPlanner.Resolve(
+                techset,
+                lookup,
+                selectedPass.Pass,
+                fixedVertexSourceBackendRow));
 
-    internal static MapRenderShaderVertexInputBinding[] ResolveSelectedVertexInputs(
+    internal static ShaderVertexInputBinding[] ResolveSelectedVertexInputs(
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup,
         SelectedColorPass selectedPass,
         int? fixedVertexSourceBackendRow = null)
     {
-        return AuthoredMaterialExecutionPlanner.ResolveVertexInputs(
+        return MaterialVertexInputBindingPlanner.Resolve(
             techset,
             lookup,
             selectedPass.Pass,
@@ -58,19 +109,20 @@ public sealed partial class MapSceneBuilder
         MapRenderEditorDepthPrepassPlan plan) => new(
             colorPass.Texture,
             colorPass.Image,
-            new MapRenderMaterialPass(
+            new MaterialPassIdentity(
                 plan.MaterialName,
-                plan.TechniqueSetName,
-                plan.TechniqueSlot,
-                plan.TechniqueName,
-                MapRenderPassClassifier.NonColorWrite,
-                plan.PassIndex,
+                new TechniquePassIdentity(
+                    plan.TechniqueSetName,
+                    plan.TechniqueSlot,
+                    plan.TechniqueName,
+                    MaterialPassClassifier.NonColorWrite,
+                    plan.PassIndex,
+                    CustomSamplerFlags: 0)),
+            new MaterialSamplerIdentity(
                 SamplerArgIndex: -1,
                 SamplerDest: 0,
                 SamplerHash: 0,
-                TextureSemantic: 0,
-                TexCoordSource: 0,
-                CustomSamplerFlags: 0),
+                TextureSemantic: 0),
             plan.State,
             UnresolvedCodeSamplerCount: 0,
             TexCoordSource: 0,
@@ -84,22 +136,22 @@ public sealed partial class MapSceneBuilder
     /// depth-only destinations can be decoded into otherwise-unused rows.
     /// </summary>
     internal static bool TryMergeVertexInputBindings(
-        IReadOnlyList<MapRenderShaderVertexInputBinding> colorBindings,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> depthBindings,
-        out MapRenderShaderVertexInputBinding[] merged,
+        IReadOnlyList<ShaderVertexInputBinding> colorBindings,
+        IReadOnlyList<ShaderVertexInputBinding> depthBindings,
+        out ShaderVertexInputBinding[] merged,
         out string blocker)
     {
         ArgumentNullException.ThrowIfNull(colorBindings);
         ArgumentNullException.ThrowIfNull(depthBindings);
 
-        var byDestination = new Dictionary<byte, MapRenderShaderVertexInputBinding>();
-        var result = new List<MapRenderShaderVertexInputBinding>(
+        var byDestination = new Dictionary<byte, ShaderVertexInputBinding>();
+        var result = new List<ShaderVertexInputBinding>(
             colorBindings.Count + depthBindings.Count);
-        foreach (MapRenderShaderVertexInputBinding binding in colorBindings)
+        foreach (ShaderVertexInputBinding binding in colorBindings)
         {
             if (byDestination.TryGetValue(
                     binding.Destination,
-                    out MapRenderShaderVertexInputBinding? existing) &&
+                    out ShaderVertexInputBinding? existing) &&
                 !VertexInputRoutesMatch(existing, binding))
             {
                 merged = [];
@@ -113,11 +165,11 @@ public sealed partial class MapSceneBuilder
             result.Add(binding);
         }
 
-        foreach (MapRenderShaderVertexInputBinding binding in depthBindings)
+        foreach (ShaderVertexInputBinding binding in depthBindings)
         {
             if (byDestination.TryGetValue(
                     binding.Destination,
-                    out MapRenderShaderVertexInputBinding? existing))
+                    out ShaderVertexInputBinding? existing))
             {
                 if (!VertexInputRoutesMatch(existing, binding))
                 {
@@ -139,8 +191,8 @@ public sealed partial class MapSceneBuilder
     }
 
     private static bool VertexInputRoutesMatch(
-        MapRenderShaderVertexInputBinding first,
-        MapRenderShaderVertexInputBinding next) =>
+        ShaderVertexInputBinding first,
+        ShaderVertexInputBinding next) =>
         first.Source == next.Source &&
         first.Destination == next.Destination &&
         first.StreamIndex == next.StreamIndex &&

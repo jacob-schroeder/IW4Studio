@@ -1,128 +1,11 @@
 using IW4.Render.Execution;
 using IW4.Render.Lighting;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 using IW4.Render.Scheduling.Lighting;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Shaders;
 
 namespace IW4.Render.EditorPreview;
-
-/// <summary>
-/// Immutable active direct-table ownership authorized for one translated
-/// EditorPreview program. <see cref="Rows"/> contains values that are safe to
-/// materialize immediately; projection-owned dynamic rows appear only in
-/// <see cref="DynamicSourceRows"/> until their same-revision runtime producer
-/// publishes them. Missing rows remain unavailable instead of becoming
-/// implicit zero backend bindings.
-/// </summary>
-public sealed class MapRenderEditorTranslatedProgramDirectCodeConstantPlan
-{
-    private readonly Dictionary<ushort,
-        MapRenderDirectCodeConstantRow> _rows;
-
-    internal MapRenderEditorTranslatedProgramDirectCodeConstantPlan(
-        string producerIdentity,
-        IReadOnlyList<MapRenderDirectCodeConstantRow> rows,
-        IReadOnlySet<ushort>? dynamicSourceRows = null,
-        int? sceneLightIndex = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(producerIdentity);
-        ArgumentNullException.ThrowIfNull(rows);
-
-        MapRenderDirectCodeConstantRow[] copied = rows
-            .Select(row => row is null
-                ? throw new ArgumentException(
-                    "Editor direct-code plans cannot contain null rows.",
-                    nameof(rows))
-                : new MapRenderDirectCodeConstantRow(
-                    row.SourceRowIndex,
-                    row.Value))
-            .ToArray();
-        if (copied.Any(row => !IsFinite(row.Value)))
-        {
-            throw new ArgumentException(
-                "Editor direct-code plans cannot contain non-finite values.",
-                nameof(rows));
-        }
-
-        _rows = new(copied.Length);
-        foreach (MapRenderDirectCodeConstantRow row in copied)
-        {
-            ushort sourceRow = checked((ushort)row.SourceRowIndex);
-            if (!_rows.TryAdd(sourceRow, row))
-            {
-                throw new ArgumentException(
-                    $"Editor direct-code row 0x{sourceRow:X2} is duplicated.",
-                    nameof(rows));
-            }
-        }
-
-        ushort[] dynamicRows = (dynamicSourceRows ??
-                new HashSet<ushort>())
-            .Distinct()
-            .Order()
-            .ToArray();
-        if (dynamicRows.Any(row =>
-                !_rows.ContainsKey(row) &&
-                !MapRenderEditorTranslatedProgramDirectCodeConstantPlanner
-                    .IsRuntimeOwnedSourceRow(row)))
-        {
-            throw new ArgumentException(
-                "Dynamic direct-code rows without placeholder values must have a supported runtime owner.",
-                nameof(dynamicSourceRows));
-        }
-        if (sceneLightIndex is < 1 or > byte.MaxValue)
-            throw new ArgumentOutOfRangeException(nameof(sceneLightIndex));
-        if (dynamicRows.Contains(
-                FrameDirectCodeConstants.DirectionalLightDirectionRowIndex) &&
-            !sceneLightIndex.HasValue)
-        {
-            throw new ArgumentException(
-                "A dynamic scene-light position row requires exact invocation light identity.",
-                nameof(sceneLightIndex));
-        }
-
-        ProducerIdentity = producerIdentity;
-        Rows = Array.AsReadOnly(copied);
-        DynamicSourceRows = Array.AsReadOnly(dynamicRows);
-        SceneLightIndex = sceneLightIndex;
-    }
-
-    public string ProducerIdentity { get; }
-
-    public IReadOnlyList<MapRenderDirectCodeConstantRow> Rows
-        { get; }
-
-    public IReadOnlyList<ushort> DynamicSourceRows { get; }
-
-    /// <summary>
-    /// Exact Event20 invocation-owned light index for a dynamic non-directional
-    /// row 0x00. Null means this plan has no such dynamic row.
-    /// </summary>
-    public int? SceneLightIndex { get; }
-
-    public bool IsDynamicSourceRow(ushort sourceRowIndex) =>
-        DynamicSourceRows.Contains(sourceRowIndex);
-
-    public bool TryGetRow(
-        ushort sourceRowIndex,
-        out MapRenderDirectCodeConstantRow? row) =>
-        _rows.TryGetValue(sourceRowIndex, out row);
-
-    private static bool IsFinite(MapRenderShaderConstantValue value) =>
-        float.IsFinite(value.X) &&
-        float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) &&
-        float.IsFinite(value.W);
-}
-
-public sealed record
-    MapRenderEditorTranslatedProgramDirectCodeConstantPlanBuildResult(
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlan? Plan,
-        IReadOnlyList<string> Blockers)
-{
-    public bool IsReady => Plan is not null && Blockers.Count == 0;
-}
 
 /// <summary>
 /// Resolves the direct CodeVertex and actually-used CodePixel rows that an
@@ -132,7 +15,7 @@ public sealed record
 /// branch writes are overlaid in native order.
 /// </summary>
 public static class
-    MapRenderEditorTranslatedProgramDirectCodeConstantPlanner
+    TranslatedProgramDirectCodeConstantPlanner
 {
     public const ushort FogRowIndex =
         FrameDirectCodeConstants.FogRowIndex;
@@ -165,9 +48,9 @@ public static class
         "editorSceneLightIndex=EDITOR_EVENT20_SENTINEL_DOES_NOT_WRITE_REQUIRED_ROWS";
 
     public static IReadOnlyList<string> FindBlockers(
-        IReadOnlyList<MapRenderShaderSamplerDestination>
+        IReadOnlyList<ShaderConstantDestination>
             constantDestinations,
-        IReadOnlyList<MapRenderCodePixelConstantPatchPlan>
+        IReadOnlyList<CodePixelConstantPatchPlan>
             codePixelConstantPatchPlans)
     {
         ArgumentNullException.ThrowIfNull(constantDestinations);
@@ -182,11 +65,11 @@ public static class
     }
 
     public static
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlanBuildResult
+        TranslatedProgramDirectCodeConstantPlanBuildResult
         TryPlan(
-            IReadOnlyList<MapRenderShaderSamplerDestination>
+            IReadOnlyList<ShaderConstantDestination>
                 constantDestinations,
-            IReadOnlyList<MapRenderCodePixelConstantPatchPlan>
+            IReadOnlyList<CodePixelConstantPatchPlan>
                 codePixelConstantPatchPlans,
             MapRenderActiveFogState? activeFog) =>
         TryPlan(
@@ -197,11 +80,11 @@ public static class
             directionalSun: null);
 
     public static
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlanBuildResult
+        TranslatedProgramDirectCodeConstantPlanBuildResult
         TryPlan(
-            IReadOnlyList<MapRenderShaderSamplerDestination>
+            IReadOnlyList<ShaderConstantDestination>
                 constantDestinations,
-            IReadOnlyList<MapRenderCodePixelConstantPatchPlan>
+            IReadOnlyList<CodePixelConstantPatchPlan>
                 codePixelConstantPatchPlans,
             bool fogRenderingEnabled,
             MapRenderActiveFogState? activeFog) =>
@@ -213,11 +96,11 @@ public static class
             directionalSun: null);
 
     public static
-        MapRenderEditorTranslatedProgramDirectCodeConstantPlanBuildResult
+        TranslatedProgramDirectCodeConstantPlanBuildResult
         TryPlan(
-            IReadOnlyList<MapRenderShaderSamplerDestination>
+            IReadOnlyList<ShaderConstantDestination>
                 constantDestinations,
-            IReadOnlyList<MapRenderCodePixelConstantPatchPlan>
+            IReadOnlyList<CodePixelConstantPatchPlan>
                 codePixelConstantPatchPlans,
             bool fogRenderingEnabled,
             MapRenderActiveFogState? activeFog,
@@ -241,7 +124,7 @@ public static class
         {
             return blockers.Count == 0
                 ? new(
-                    new MapRenderEditorTranslatedProgramDirectCodeConstantPlan(
+                    new TranslatedProgramDirectCodeConstantPlan(
                         producerIdentity,
                         []),
                     [])
@@ -302,15 +185,15 @@ public static class
             return new(null, Array.AsReadOnly(blockers.ToArray()));
         }
 
-        Dictionary<ushort, MapRenderDirectCodeConstantRow>
+        Dictionary<ushort, DirectCodeConstantRow>
             availableRows =
                 FrameDirectCodeConstants
                     .ProduceSourceInitializationRows()
                 .Append(
                     FrameDirectCodeConstants.ProduceGameTime(0f))
                 .Append(
-                    FrameDirectCodeConstants
-                        .ProduceModelLightingSamplerRow())
+                    ModelLightingAtlasDirectCodeConstantProducer
+                        .ProduceSamplerRow())
                 .Concat(
                     FrameDirectCodeConstants
                         .ProduceFogTemplateRows())
@@ -318,7 +201,7 @@ public static class
         if (selectedSceneLight is not null)
         {
             int selectedSceneLightIndex = sceneLightIndex!.Value;
-            IReadOnlyList<MapRenderDirectCodeConstantRow> sceneRows;
+            IReadOnlyList<DirectCodeConstantRow> sceneRows;
             try
             {
                 sceneRows =
@@ -335,7 +218,7 @@ public static class
                     $"EDITOR_EVENT20_SCENE_LIGHT_VALUE_INVALID:{exception.Message}");
                 return new(null, Array.AsReadOnly(blockers.ToArray()));
             }
-            foreach (MapRenderDirectCodeConstantRow sceneRow in sceneRows)
+            foreach (DirectCodeConstantRow sceneRow in sceneRows)
             {
                 availableRows[checked((ushort)sceneRow.SourceRowIndex)] =
                     sceneRow;
@@ -343,8 +226,8 @@ public static class
         }
         else if (requiresDirectionalSun)
         {
-            foreach (MapRenderDirectCodeConstantRow sunRow in
-                     FrameDirectCodeConstants.ProduceDirectionalSunRows(
+            foreach (DirectCodeConstantRow sunRow in
+                    MapRenderEditorDirectCodeConstantProducers.ProduceDirectionalSunRows(
                          directionalSun!,
                          primaryLight))
             {
@@ -354,14 +237,14 @@ public static class
         }
         if (requiresFog)
         {
-            IReadOnlyList<MapRenderDirectCodeConstantRow>
+            IReadOnlyList<DirectCodeConstantRow>
                 fogRows = fogRenderingEnabled
                     ? FrameDirectCodeConstants.ProduceFogRows(
                         fogRenderingEnabled: true,
                         activeFog!)
                     : FrameDirectCodeConstants
                         .ProduceDisabledFogRows();
-            foreach (MapRenderDirectCodeConstantRow fogRow in
+            foreach (DirectCodeConstantRow fogRow in
                      fogRows)
             {
                 availableRows[checked((ushort)fogRow.SourceRowIndex)] =
@@ -370,7 +253,7 @@ public static class
         }
 
         var resolvedRows = new List<
-            MapRenderDirectCodeConstantRow>(requiredRows.Count);
+            DirectCodeConstantRow>(requiredRows.Count);
         foreach (ushort requiredRow in requiredRows)
         {
             // Rows 0x1E/0x1F are owned by the current sun-shadow projection.
@@ -402,7 +285,7 @@ public static class
 
             if (!availableRows.TryGetValue(
                     requiredRow,
-                    out MapRenderDirectCodeConstantRow? row))
+                    out DirectCodeConstantRow? row))
             {
                 blockers.Add(
                     $"codeConstantRow0x{requiredRow:X2}=" +
@@ -469,7 +352,7 @@ public static class
         }
 
         return new(
-            new MapRenderEditorTranslatedProgramDirectCodeConstantPlan(
+            new TranslatedProgramDirectCodeConstantPlan(
                 producerIdentity,
                 resolvedRows,
                 dynamicRows.Count == 0 ? null : dynamicRows,
@@ -539,9 +422,9 @@ public static class
                 .SunFogDirectionRowIndex;
 
     private static void CollectRequirements(
-        IReadOnlyList<MapRenderShaderSamplerDestination>
+        IReadOnlyList<ShaderConstantDestination>
             constantDestinations,
-        IReadOnlyList<MapRenderCodePixelConstantPatchPlan>
+        IReadOnlyList<CodePixelConstantPatchPlan>
             codePixelConstantPatchPlans,
         out SortedSet<ushort> requiredRows,
         out SortedSet<string> blockers)
@@ -549,7 +432,7 @@ public static class
         blockers = new SortedSet<string>(StringComparer.Ordinal);
         requiredRows = new SortedSet<ushort>();
 
-        foreach (MapRenderShaderSamplerDestination constant in
+        foreach (ShaderConstantDestination constant in
                  constantDestinations.Where(constant =>
                      constant.ArgumentType.EndsWith(
                          "VertexConst",
@@ -568,7 +451,7 @@ public static class
             requiredRows.Add(sourceRow);
         }
 
-        foreach (MapRenderCodePixelConstantPatchPlan patchPlan in
+        foreach (CodePixelConstantPatchPlan patchPlan in
                  codePixelConstantPatchPlans)
         {
             if (!patchPlan.IsDirectSourceResolved)

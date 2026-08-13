@@ -10,7 +10,7 @@ internal readonly record struct MapRenderOpenGlWorldSurfaceSpan(
     int SurfaceIndex,
     int FirstIndex,
     int IndexCount,
-    MapRenderBounds Bounds)
+    RenderBounds Bounds)
 {
     public int EndIndexExclusive => checked(FirstIndex + IndexCount);
 }

@@ -20,7 +20,7 @@ internal readonly record struct VertexSource(
     int Offset,
     byte FormatByte0,
     byte FormatByte1,
-    MapRenderUvBaseMode BaseMode = MapRenderUvBaseMode.Engine,
+    UvBaseMode BaseMode = UvBaseMode.Engine,
     int ComponentA = 0,
     int ComponentB = 1,
     float ScaleU = 1f,
@@ -32,16 +32,16 @@ internal readonly record struct VertexSource(
 
     public int GetOffset(SrfTriangles triangles, int surfaceIndex)
     {
-        if (BaseMode == MapRenderUvBaseMode.Stream0GlobalIndexSourceStride)
+        if (BaseMode == UvBaseMode.Stream0GlobalIndexSourceStride)
             return checked((triangles.BaseVertex + surfaceIndex) * Stride + Offset);
 
         int streamBase = BaseMode switch
         {
-            MapRenderUvBaseMode.Stream0BaseVertexGfxStride => checked(triangles.BaseVertex * VertexElementDecoder.WorldVertexStride),
-            MapRenderUvBaseMode.Stream0BaseVertexSourceStride => checked(triangles.BaseVertex * Stride),
-            MapRenderUvBaseMode.Stream0LocalIndexOnly => 0,
-            MapRenderUvBaseMode.Stream1VertexLayerData => triangles.VertexLayerData,
-            MapRenderUvBaseMode.Stream1ZeroBase => 0,
+            UvBaseMode.Stream0BaseVertexGfxStride => checked(triangles.BaseVertex * VertexElementDecoder.WorldVertexStride),
+            UvBaseMode.Stream0BaseVertexSourceStride => checked(triangles.BaseVertex * Stride),
+            UvBaseMode.Stream0LocalIndexOnly => 0,
+            UvBaseMode.Stream1VertexLayerData => triangles.VertexLayerData,
+            UvBaseMode.Stream1ZeroBase => 0,
             _ => StreamIndex switch
             {
                 0 => checked(triangles.BaseVertex * VertexElementDecoder.WorldVertexStride),

@@ -24,7 +24,7 @@ public sealed partial class RenderAssetLookup
     /// </summary>
     public bool TryResolveMaterialTechniqueBinding(
         int materialSortedIndex,
-        [NotNullWhen(true)] out MapRenderMaterialTechniqueBinding? binding)
+        [NotNullWhen(true)] out MaterialTechniqueBinding? binding)
     {
         binding = null;
         if ((uint)materialSortedIndex >= MaterialSortedIndexCount ||
@@ -72,7 +72,7 @@ public sealed partial class RenderAssetLookup
             HydrateDependencyTechniqueGraphs();
         }
 
-        binding = new MapRenderMaterialTechniqueBinding(
+        binding = new MaterialTechniqueBinding(
             currentMaterial,
             currentTechniqueSet,
             ResolveTechniqueSlots(currentTechniqueSet));

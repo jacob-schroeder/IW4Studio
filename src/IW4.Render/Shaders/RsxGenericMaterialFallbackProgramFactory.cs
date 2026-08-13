@@ -96,8 +96,8 @@ public static class RsxGenericMaterialFallbackProgramFactory
             uploadOffset: 0,
             uploadSize: bytes.Length,
             ImmutableArray.Create(instruction),
-            Array.Empty<MapRenderStaticFragmentConstantPatch>(),
-            Array.Empty<MapRenderCodePixelConstantPatchPlan>(),
+            Array.Empty<StaticFragmentConstantPatch>(),
+            Array.Empty<CodePixelConstantPatchPlan>(),
             new RsxFragmentProgramControl(
                 IsValid: true,
                 DescriptorOffset: 0,

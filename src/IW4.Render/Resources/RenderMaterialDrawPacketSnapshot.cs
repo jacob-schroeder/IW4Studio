@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Collections.Immutable;
 
 using IW4.Render.Geometry;
@@ -16,26 +17,29 @@ namespace IW4.Render.Resources;
 public sealed class RenderMaterialPassProvenanceSnapshot
 {
     internal RenderMaterialPassProvenanceSnapshot(
-        MapRenderMaterialPass source)
+        MaterialPassIdentity source,
+        MaterialSamplerIdentity primarySampler,
+        byte texCoordSource)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(source.MaterialName);
-        ArgumentNullException.ThrowIfNull(source.TechniqueSetName);
-        ArgumentNullException.ThrowIfNull(source.TechniqueName);
-        ArgumentNullException.ThrowIfNull(source.PassClass);
+        ArgumentNullException.ThrowIfNull(
+            source.TechniquePass.TechniqueSetName);
+        ArgumentNullException.ThrowIfNull(source.TechniquePass.TechniqueName);
+        ArgumentNullException.ThrowIfNull(source.TechniquePass.PassClass);
 
         MaterialName = source.MaterialName;
-        TechniqueSetName = source.TechniqueSetName;
-        TechniqueSlot = source.TechniqueSlot;
-        TechniqueName = source.TechniqueName;
-        PassClass = source.PassClass;
-        PassIndex = source.PassIndex;
-        SamplerArgIndex = source.SamplerArgIndex;
-        SamplerDest = source.SamplerDest;
-        SamplerHash = source.SamplerHash;
-        TextureSemantic = source.TextureSemantic;
-        TexCoordSource = source.TexCoordSource;
-        CustomSamplerFlags = source.CustomSamplerFlags;
+        TechniqueSetName = source.TechniquePass.TechniqueSetName;
+        TechniqueSlot = source.TechniquePass.TechniqueSlot;
+        TechniqueName = source.TechniquePass.TechniqueName;
+        PassClass = source.TechniquePass.PassClass;
+        PassIndex = source.TechniquePass.PassIndex;
+        SamplerArgIndex = primarySampler.SamplerArgIndex;
+        SamplerDest = primarySampler.SamplerDest;
+        SamplerHash = primarySampler.SamplerHash;
+        TextureSemantic = primarySampler.TextureSemantic;
+        TexCoordSource = texCoordSource;
+        CustomSamplerFlags = source.TechniquePass.CustomSamplerFlags;
         ContentDigest = RenderContentDigest.Compute(AppendContent);
     }
 
@@ -90,7 +94,7 @@ public sealed class RenderMaterialPassProvenanceSnapshot
 /// </summary>
 public sealed class RenderMaterialUvRouteSnapshot
 {
-    internal RenderMaterialUvRouteSnapshot(MapRenderUvRoute source)
+    internal RenderMaterialUvRouteSnapshot(UvRoute source)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(source.Label);
@@ -130,7 +134,7 @@ public sealed class RenderMaterialUvRouteSnapshot
 
     public byte FormatByte1 { get; }
 
-    public MapRenderUvBaseMode BaseMode { get; }
+    public UvBaseMode BaseMode { get; }
 
     public int ComponentA { get; }
 
@@ -174,21 +178,22 @@ public sealed class RenderMaterialUvRouteSnapshot
 public sealed class RenderMaterialTextureBindingProvenanceSnapshot
 {
     internal RenderMaterialTextureBindingProvenanceSnapshot(
-        MapRenderColorLayer layer,
-        MapRenderMaterialSamplerBinding sampler)
+        MaterialColorLayer layer,
+        MaterialSamplerBinding sampler,
+        MapRenderWorldRuntimeTextureIdentity? runtimeTextureIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(sampler);
         ArgumentNullException.ThrowIfNull(sampler.TextureName);
 
         LayerIndex = layer.LayerIndex;
-        SamplerArgIndex = layer.SamplerArgIndex;
-        SamplerDest = layer.SamplerDest;
-        SamplerHash = layer.SamplerHash;
-        TextureSemantic = layer.TextureSemantic;
+        SamplerArgIndex = layer.Identity.SamplerArgIndex;
+        SamplerDest = layer.Identity.SamplerDest;
+        SamplerHash = layer.Identity.SamplerHash;
+        TextureSemantic = layer.Identity.TextureSemantic;
         BlendWeightComponent = layer.BlendWeightComponent;
         TextureName = sampler.TextureName;
-        WorldRuntimeTextureIdentity = sampler.WorldRuntimeTextureIdentity;
+        WorldRuntimeTextureIdentity = runtimeTextureIdentity;
         EditorTextureRole = sampler.EditorTextureRole;
         TextureTableOrdinal = sampler.TextureTableOrdinal;
         ContentDigest = RenderContentDigest.Compute(AppendContent);
@@ -211,7 +216,7 @@ public sealed class RenderMaterialTextureBindingProvenanceSnapshot
     public MapRenderWorldRuntimeTextureIdentity? WorldRuntimeTextureIdentity
         { get; }
 
-    public MapRenderEditorMaterialTextureRole EditorTextureRole { get; }
+    public EditorMaterialTextureRole EditorTextureRole { get; }
 
     public int TextureTableOrdinal { get; }
 
@@ -298,15 +303,15 @@ public sealed class RenderMaterialDrawPacketSnapshot
     public const int VertexStrideBytes =
         MapRenderScene.TexturedVertexFloatCount * sizeof(float);
 
-    public static MapRenderState RequiredEffectiveState { get; } =
-        MapRenderState.Default with { HasState = true };
+    public static RenderState RequiredEffectiveState { get; } =
+        RenderState.Default with { HasState = true };
 
     internal RenderMaterialDrawPacketSnapshot(
         int sourceOrdinal,
         RenderMaterialPassProvenanceSnapshot sourcePass,
         RenderMaterialTextureBindingProvenanceSnapshot baseTextureBinding,
         RenderMaterialUvRouteSnapshot uvRoute,
-        MapRenderState effectiveState,
+        RenderState effectiveState,
         byte sceneLightIndex,
         string shaderExecutionStatus,
         IEnumerable<MapRenderPickRange> pickRanges,
@@ -363,7 +368,7 @@ public sealed class RenderMaterialDrawPacketSnapshot
 
     public RenderMaterialUvRouteSnapshot UvRoute { get; }
 
-    public MapRenderState EffectiveState { get; }
+    public RenderState EffectiveState { get; }
 
     public byte SceneLightIndex { get; }
 
@@ -400,7 +405,7 @@ public sealed class RenderMaterialDrawPacketSnapshot
         SourcePass.AppendContent(writer);
         BaseTextureBinding.AppendContent(writer);
         UvRoute.AppendContent(writer);
-        writer.AppendMapRenderStateV1(EffectiveState);
+        writer.AppendRenderStateV1(EffectiveState);
         writer.WriteByte(SceneLightIndex);
         writer.WriteString(ShaderExecutionStatus);
         writer.WriteInt32(PickRanges.Length);
@@ -421,7 +426,7 @@ public sealed class RenderMaterialDrawPacketSnapshot
         RenderMaterialPassProvenanceSnapshot sourcePass,
         RenderMaterialTextureBindingProvenanceSnapshot binding,
         RenderMaterialUvRouteSnapshot uvRoute,
-        MapRenderState effectiveState)
+        RenderState effectiveState)
     {
         if (sourcePass.TechniqueSlot != -1 ||
             sourcePass.PassIndex != -1 ||

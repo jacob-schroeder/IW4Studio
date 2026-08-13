@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
 using IW4.Runtime.Assets.Images;
 
 using IW4.Render.Assets;
@@ -119,7 +118,7 @@ public sealed partial class MapSceneBuilder
         var resolvedSurfaces = new List<int>();
         var vertexBuffer = new List<float>();
         var indexBuffer = new List<uint>();
-        MapRenderBounds ignoredBounds = MapRenderBounds.Empty;
+        RenderBounds ignoredBounds = RenderBounds.Empty;
 
         foreach (int skyStartSurfPosition in skyStartSurfPositions.Distinct())
         {
@@ -159,8 +158,8 @@ public sealed partial class MapSceneBuilder
         IReadOnlyList<PreparedWorldSurfaceGeometry> preparedWorldSurfaces,
         RenderAssetLookup lookup,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount)
     {
@@ -195,7 +194,7 @@ public sealed partial class MapSceneBuilder
                     failedTextureCacheKeys,
                     ref decodedTextureCount,
                     ref skippedTextureCount,
-                    out MapRenderTexture? texture) ||
+                    out Texture? texture) ||
                 texture is null)
             {
                 continue;
@@ -217,15 +216,15 @@ public sealed partial class MapSceneBuilder
     private static bool TryDecodeSkyTexture(
         SkySourceCandidate candidate,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount,
-        out MapRenderTexture? texture)
+        out Texture? texture)
     {
         GfxImageAsset image = candidate.Image;
-        MapRenderTextureCacheKey cacheKey =
-            MapRenderTextureCacheKey.Sky(image, candidate.SamplerState);
+        RenderTextureCacheKey cacheKey =
+            RenderTextureCacheKey.SkyCube(image, candidate.SamplerState);
         if (textureCache.TryGetValue(cacheKey, out texture))
             return true;
         if (failedTextureCacheKeys.Contains(cacheKey))
@@ -234,9 +233,9 @@ public sealed partial class MapSceneBuilder
             return false;
         }
 
-        MapRenderDecodedCubeTexture? decoded = null;
+        DecodedCubeTexture? decoded = null;
         var authoredSubresources =
-            new List<MapRenderTextureAuthoredSubresource>();
+            new List<TextureAuthoredSubresource>();
         string authoredFormat = GfxImageDecoder.DescribeFormat(image.Format);
         if (imageStreams.TryResolveMipPayloads(
                 image,
@@ -251,7 +250,7 @@ public sealed partial class MapSceneBuilder
                 // Each PS3 image-package part stores one complete cubemap level
                 // in layer order. Retain every complete authored level even
                 // when the RGBA compatibility decoder cannot consume it.
-                if (MapRenderAuthoredTexturePayloadCapture.TryCaptureCube(
+                if (AuthoredTexturePayloadCapture.TryCaptureCube(
                         image,
                         streamMip.Payload,
                         streamMip.Width,
@@ -259,7 +258,7 @@ public sealed partial class MapSceneBuilder
                         mipCount: 1,
                         firstMipLevel: streamMipIndex,
                         authoredFormat,
-                        out IReadOnlyList<MapRenderTextureAuthoredSubresource>
+                        out IReadOnlyList<TextureAuthoredSubresource>
                             capturedMip))
                 {
                     authoredSubresources.AddRange(capturedMip);
@@ -270,17 +269,17 @@ public sealed partial class MapSceneBuilder
                 streamMips.Count > 0 &&
                 authoredSubresources.Count ==
                     checked(streamMips.Count * 6) &&
-                MapRenderAuthoredTexturePayloadCapture
+                AuthoredTexturePayloadCapture
                     .IsCompleteProvenChain(
                         authoredSubresources,
-                        MapRenderTextureTarget.TextureCube,
+                        TextureTarget.TextureCube,
                         streamMips[0].Width,
                         streamMips[0].Height);
             if (!(textureCache.PreferProvenAuthoredPayloads &&
                   completeProvenAuthored))
             {
                 var decodedStreamMips =
-                    new List<MapRenderDecodedCubeTexture>(
+                    new List<DecodedCubeTexture>(
                         streamMips.Count);
                 bool decodedMipChainOpen = true;
                 for (int streamMipIndex = 0;
@@ -290,13 +289,13 @@ public sealed partial class MapSceneBuilder
                     GfxImagePayload streamMip =
                         streamMips[streamMipIndex];
                     if (decodedMipChainOpen &&
-                    MapRenderCubeTextureDecoder.TryDecode(
+                    CubeTextureDecoder.TryDecode(
                         image,
                         streamMip.Payload,
                         streamMip.Width,
                         streamMip.Height,
                         mipCount: 1,
-                        out MapRenderDecodedCubeTexture decodedStreamMip,
+                        out DecodedCubeTexture decodedStreamMip,
                         out _))
                     {
                         decodedStreamMips.Add(decodedStreamMip);
@@ -309,16 +308,16 @@ public sealed partial class MapSceneBuilder
 
                 if (decodedStreamMips.Count > 0)
                 {
-                    MapRenderDecodedCubeTexture topStreamMip =
+                    DecodedCubeTexture topStreamMip =
                         decodedStreamMips[0];
-                    decoded = new MapRenderDecodedCubeTexture(
+                    decoded = new DecodedCubeTexture(
                         topStreamMip.Name,
                         topStreamMip.Format,
                         decodedStreamMips.Any(
                             mip => mip.HasTransparency),
                         Enumerable.Range(0, 6)
                             .Select(faceIndex =>
-                                (IReadOnlyList<MapRenderTextureMip>)
+                                (IReadOnlyList<TextureMip>)
                                 decodedStreamMips
                                     .SelectMany(
                                         mip =>
@@ -330,7 +329,7 @@ public sealed partial class MapSceneBuilder
         }
         else if (image.PayloadBytes.Count > 0)
         {
-            if (MapRenderAuthoredTexturePayloadCapture.TryCaptureCube(
+            if (AuthoredTexturePayloadCapture.TryCaptureCube(
                     image,
                     image.PayloadBytes,
                     image.Width,
@@ -338,43 +337,43 @@ public sealed partial class MapSceneBuilder
                     Math.Max(1, (int)image.LevelCount),
                     firstMipLevel: 0,
                     authoredFormat,
-                    out IReadOnlyList<MapRenderTextureAuthoredSubresource>
+                    out IReadOnlyList<TextureAuthoredSubresource>
                         capturedInline))
             {
                 authoredSubresources.AddRange(capturedInline);
             }
             bool completeProvenAuthored =
-                MapRenderAuthoredTexturePayloadCapture
+                AuthoredTexturePayloadCapture
                     .IsCompleteProvenChain(
                         authoredSubresources,
-                        MapRenderTextureTarget.TextureCube,
+                        TextureTarget.TextureCube,
                         image.Width,
                         image.Height);
             if (!(textureCache.PreferProvenAuthoredPayloads &&
                   completeProvenAuthored) &&
-                MapRenderCubeTextureDecoder.TryDecode(
+                CubeTextureDecoder.TryDecode(
                     image,
                     image.PayloadBytes,
                     image.Width,
                     image.Height,
                     Math.Max(1, (int)image.LevelCount),
-                    out MapRenderDecodedCubeTexture inlineDecoded,
+                    out DecodedCubeTexture inlineDecoded,
                     out _))
             {
                 decoded = inlineDecoded;
             }
         }
 
-        MapRenderTextureAuthoredSubresource? authoredTop =
+        TextureAuthoredSubresource? authoredTop =
             authoredSubresources.FirstOrDefault(value =>
                 value.FaceOrdinal == 0 && value.MipLevel == 0);
         bool canPublishAuthoredOnly =
             textureCache.PreferProvenAuthoredPayloads &&
             authoredTop is not null &&
-            MapRenderAuthoredTexturePayloadCapture
+            AuthoredTexturePayloadCapture
                 .IsCompleteProvenChain(
                     authoredSubresources,
-                    MapRenderTextureTarget.TextureCube,
+                    TextureTarget.TextureCube,
                     authoredTop.Width,
                     authoredTop.Height);
         if (decoded is null && !canPublishAuthoredOnly)
@@ -385,24 +384,24 @@ public sealed partial class MapSceneBuilder
             return false;
         }
 
-        IReadOnlyList<MapRenderTextureCubeFace>? faces = decoded?.Faces
-            .Select(face => new MapRenderTextureCubeFace(
+        IReadOnlyList<TextureCubeFace>? faces = decoded?.Faces
+            .Select(face => new TextureCubeFace(
                 face[0].RgbaBytes,
                 face.Skip(1).ToArray()))
             .ToArray();
-        MapRenderTextureMip? top = decoded?.Faces[0][0];
-        texture = new MapRenderTexture(
+        TextureMip? top = decoded?.Faces[0][0];
+        texture = new Texture(
             decoded?.Name ?? image.Name ?? "unnamed_cube",
             top?.Width ?? authoredTop!.Width,
             top?.Height ?? authoredTop!.Height,
             decoded?.Format ?? authoredFormat,
             candidate.SamplerState,
-            MapRenderSamplerDecoder.Decode(candidate.SamplerState, image.Pad0F, image.Pad1B),
-            MapRenderRsxTextureCommandBuilder.FromImage(image),
+            RsxSamplerDecoder.Decode(candidate.SamplerState, image.Pad0F, image.Pad1B),
+            RsxTextureCommandBuilder.FromImage(image),
             decoded?.HasTransparency ?? true,
             top?.RgbaBytes ?? [],
             faces is null ? [] : faces[0].MipLevels,
-            MapRenderTextureTarget.TextureCube,
+            TextureTarget.TextureCube,
             faces,
             authoredSubresources);
         textureCache.Add(cacheKey, texture);
@@ -414,23 +413,23 @@ public sealed partial class MapSceneBuilder
     }
 
     private static bool TryDecodeTexture(
-        MaterialTextureDef materialTexture,
         GfxImageAsset image,
+        byte samplerState,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         bool includeAuthoredMipChain,
         ref int decodedTextureCount,
         ref int skippedTextureCount,
-        out MapRenderTexture? texture)
+        out Texture? texture)
     {
-        MapRenderTextureDecodeRequest request =
-            MapRenderTextureDecodeRequest.Create(
-                materialTexture,
+        RenderTextureDecodeRequest request =
+            RenderTextureDecodeRequest.Create(
                 image,
+                samplerState,
                 includeAuthoredMipChain);
-        MapRenderTextureCacheKey key = request.Key;
-        if (textureCache.TryGetValue(key, out MapRenderTexture? cachedTexture))
+        RenderTextureCacheKey key = request.Key;
+        if (textureCache.TryGetValue(key, out Texture? cachedTexture))
         {
             texture = cachedTexture;
             return true;
@@ -442,8 +441,8 @@ public sealed partial class MapSceneBuilder
             return false;
         }
 
-        MapRenderTextureDecodeResult result =
-            MapRenderTextureDecodeBatch.Decode(
+        RenderTextureDecodeResult result =
+            RenderTextureDecodeBatch.Decode(
                 request,
                 imageStreams,
                 textureCache.PreferProvenAuthoredPayloads);

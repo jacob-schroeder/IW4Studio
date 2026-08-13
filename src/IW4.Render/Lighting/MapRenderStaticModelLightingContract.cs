@@ -13,7 +13,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     bool AddsDirectionalSpecular)
 {
     internal static bool TryCreate(
-        MapRenderShaderExecutionContract execution,
+        ShaderExecutionContract execution,
         out MapRenderStaticModelLightingContract contract)
     {
         ArgumentNullException.ThrowIfNull(execution);
@@ -62,7 +62,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     /// </summary>
     internal static void ValidateAtlasAvailability(
         MapRenderStaticModelLightingAtlas? atlas,
-        IEnumerable<MapRenderShaderExecutionContract?> executions)
+        IEnumerable<ShaderExecutionContract?> executions)
     {
         ArgumentNullException.ThrowIfNull(executions);
         if (atlas is not null)
@@ -79,17 +79,17 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     }
 
     private static bool HasConsumedAtlasSampler(
-        MapRenderShaderExecutionContract execution)
+        ShaderExecutionContract execution)
     {
-        MapRenderShaderRuntimeSamplerRequirement[] requirements = execution
+        ShaderRuntimeSamplerRequirement[] requirements = execution
             .RuntimeSamplerRequirements
             .Where(requirement =>
                 requirement.CodeSamplerArgument == 3 &&
                 requirement.ResourceKind ==
-                    MapRenderShaderRuntimeSamplerResourceKind
-                        .StaticModelLightingAtlas &&
+                    ShaderRuntimeSamplerResourceKind
+                        .ModelLightingAtlas &&
                 requirement.Status ==
-                    MapRenderShaderRuntimeSamplerRequirementStatus
+                    ShaderRuntimeSamplerRequirementStatus
                         .ImmutableSceneAtlasRequired &&
                 execution.ProgramSamplerDestinations.Contains(
                     requirement.Destination))
@@ -97,7 +97,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
         if (requirements.Length != 1)
             return false;
 
-        MapRenderShaderRuntimeSamplerRequirement requirement =
+        ShaderRuntimeSamplerRequirement requirement =
             requirements[0];
         return execution.CodeSamplerDestinations.Count(destination =>
             destination.ArgumentIndex == requirement.ArgumentIndex &&
@@ -114,7 +114,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     }
 
     private static bool HasVertexSourceRow(
-        MapRenderShaderExecutionContract execution,
+        ShaderExecutionContract execution,
         ushort sourceRow) =>
         execution.ConstantDestinations.Any(destination =>
             string.Equals(
@@ -126,7 +126,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
                 destination.Destination));
 
     private static bool HasPixelSourceRow(
-        MapRenderShaderExecutionContract execution,
+        ShaderExecutionContract execution,
         ushort sourceRow) =>
         execution.ConstantDestinations.Any(destination =>
             string.Equals(

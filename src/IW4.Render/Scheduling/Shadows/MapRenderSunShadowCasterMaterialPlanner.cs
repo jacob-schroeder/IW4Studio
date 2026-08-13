@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
@@ -83,8 +84,8 @@ public abstract class MapRenderSunShadowCasterMaterialPlan
         MaterialTechniqueSetAsset techniqueSet,
         MaterialTechniqueAsset technique,
         MaterialPassAsset pass,
-        MapRenderSelectedPassProgramSources sources,
-        MapRenderState state)
+        SelectedPassProgramSources sources,
+        RenderState state)
     {
         Kind = kind;
         Material = material;
@@ -105,9 +106,9 @@ public abstract class MapRenderSunShadowCasterMaterialPlan
 
     public MaterialPassAsset Pass { get; }
 
-    public MapRenderSelectedPassProgramSources Sources { get; }
+    public SelectedPassProgramSources Sources { get; }
 
-    public MapRenderState State { get; }
+    public RenderState State { get; }
 
     public int TechniqueSlot =>
         MapRenderSunShadowCasterMaterialPlanner.SunShadowTechniqueSlot;
@@ -124,8 +125,8 @@ public sealed class MapRenderSunShadowOpaqueCasterMaterialPlan :
         MaterialTechniqueSetAsset techniqueSet,
         MaterialTechniqueAsset technique,
         MaterialPassAsset pass,
-        MapRenderSelectedPassProgramSources sources,
-        MapRenderState state)
+        SelectedPassProgramSources sources,
+        RenderState state)
         : base(
             MapRenderSunShadowCasterMaterialKind.Opaque,
             material,
@@ -148,7 +149,7 @@ public sealed record MapRenderSunShadowCutoutSamplerBinding(
     MaterialTextureDef Texture,
     GfxImageAsset Image,
     byte RawSamplerState,
-    MapRenderSamplerState DecodedSamplerState);
+    RsxSamplerState DecodedSamplerState);
 
 public sealed class MapRenderSunShadowCutoutCasterMaterialPlan :
     MapRenderSunShadowCasterMaterialPlan
@@ -158,8 +159,8 @@ public sealed class MapRenderSunShadowCutoutCasterMaterialPlan :
         MaterialTechniqueSetAsset techniqueSet,
         MaterialTechniqueAsset technique,
         MaterialPassAsset pass,
-        MapRenderSelectedPassProgramSources sources,
-        MapRenderState state,
+        SelectedPassProgramSources sources,
+        RenderState state,
         MapRenderSunShadowCutoutSamplerBinding sampler,
         bool usesVertexColor)
         : base(
@@ -328,19 +329,17 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         }
 
         MaterialPassAsset pass = technique.Passes[SunShadowPassIndex];
-        var selectedPass = new MapRenderSelectedTechniquePass(
-            SunShadowPassIndex,
-            pass);
-        MapRenderSelectedPassProgramSources sources = lookup.ResolveSources(
+        SelectedPassProgramSources sources = lookup.ResolveSources(
             techniqueSet,
             technique,
-            selectedPass);
-        if (!MapRenderStateDecoder.TryDecode(
+            SunShadowPassIndex,
+            pass);
+        if (!RenderStateDecoder.TryDecode(
                 material,
                 SunShadowTechniqueSlot,
                 SunShadowPassIndex,
                 lookup,
-                out MapRenderState state))
+                out RenderState state))
         {
             return MapRenderSunShadowCasterMaterialPlanResult.Failed(
                 MapRenderSunShadowCasterMaterialFailureKind.StateUnavailable,
@@ -424,12 +423,12 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         }
 
         MaterialPassAsset pass = technique.Passes[0];
-        if (!MapRenderStateDecoder.TryDecode(
+        if (!RenderStateDecoder.TryDecode(
                 material,
                 SunShadowTechniqueSlot,
                 SunShadowPassIndex,
                 lookup,
-                out MapRenderState state))
+                out RenderState state))
         {
             return MapRenderSunShadowCasterMaterialPlanResult.Failed(
                 MapRenderSunShadowCasterMaterialFailureKind.StateUnavailable,
@@ -450,8 +449,8 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         MaterialAsset material,
         MaterialTechniqueSetAsset techniqueSet,
         MaterialTechniqueSlot exactSlot,
-        MapRenderSelectedPassProgramSources sources,
-        MapRenderState state,
+        SelectedPassProgramSources sources,
+        RenderState state,
         Func<MaterialTextureDef, GfxImageAsset?> resolveImage)
     {
         ArgumentNullException.ThrowIfNull(material);
@@ -840,7 +839,7 @@ public static class MapRenderSunShadowCasterMaterialPlanner
                 "The exact cutout texture row has no resolved GfxImage identity.");
         }
 
-        MapRenderSamplerState decodedSampler = MapRenderSamplerDecoder.Decode(
+        RsxSamplerState decodedSampler = RsxSamplerDecoder.Decode(
             textureRow.SamplerState,
             image.Pad0F,
             image.Pad1B);
@@ -973,27 +972,27 @@ public static class MapRenderSunShadowCasterMaterialPlanner
             new MaterialVertexStreamRouting(0x02, 0x08);
     }
 
-    private static MapRenderSelectedPassProgramSources
+    private static SelectedPassProgramSources
         CreateFixedStaticModelSources(MaterialPassAsset pass)
     {
         ArgumentNullException.ThrowIfNull(pass);
-        var vertex = new MapRenderShaderProgramResolution(
+        var vertex = new ShaderProgramResolution(
             pass.VertexShaderPointer.Untyped,
             MaterialShaderKind.Vertex,
             pass.VertexShader,
-            MapRenderShaderProgramResolutionKind
+            ShaderProgramResolutionKind
                 .HydratedObjectWithoutActiveProvider,
             providerIdentity: null);
-        var pixel = new MapRenderShaderProgramResolution(
+        var pixel = new ShaderProgramResolution(
             pass.PixelShaderPointer.Untyped,
             MaterialShaderKind.Pixel,
             pass.PixelShader,
-            MapRenderShaderProgramResolutionKind
+            ShaderProgramResolutionKind
                 .HydratedObjectWithoutActiveProvider,
             providerIdentity: null);
         int expected = pass.PerPrimArgCount + pass.PerObjArgCount +
             pass.StableArgCount;
-        return new MapRenderSelectedPassProgramSources(
+        return new SelectedPassProgramSources(
             pass.VertexDeclaration,
             vertex,
             pixel,

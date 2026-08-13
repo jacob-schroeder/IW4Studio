@@ -185,15 +185,14 @@ public sealed partial class RenderAssetLookup
                     MapRenderWorldTextureResourceStatus.SourceProviderUnavailable);
         }
 
-        MapRenderSelectedPassSamplerShape expectedShape = identity.Kind ==
+        TextureSamplerShape expectedShape = identity.Kind ==
             MapRenderWorldRuntimeTextureKind.ReflectionProbe
-                ? MapRenderSelectedPassSamplerShape.Cube
-                : MapRenderSelectedPassSamplerShape.TwoDimensional;
-        MapRenderSelectedPassSamplerClassification classification =
-            MapRenderSelectedPassSamplerClassifier.ClassifyMaterialImage(
-                descriptorImage);
-        if (!classification.HasKnownShape ||
-            classification.Shape != expectedShape)
+                ? TextureSamplerShape.Cube
+                : TextureSamplerShape.TwoDimensional;
+        TextureSamplerShape classifiedShape =
+            TextureSamplerShapeClassifier.ClassifyMaterialImage(descriptorImage);
+        if (classifiedShape == TextureSamplerShape.Unknown ||
+            classifiedShape != expectedShape)
         {
             return new MapRenderWorldTextureAssetBinding(
                 identity,
@@ -208,13 +207,13 @@ public sealed partial class RenderAssetLookup
                     MapRenderWorldTextureResourceStatus.SamplerShapeUnavailable);
         }
 
-        MapRenderSamplerState samplerState =
+        RsxSamplerState samplerState =
             MapRenderWorldImplicitSamplerStateFactory.Create(identity.Kind);
-        if (!MapRenderDecodedTextureResourceSnapshotFactory.TryDecode(
+        if (!DecodedTextureResourceSnapshotFactory.TryDecode(
                 descriptorImage,
                 expectedShape,
                 _imageStreams,
-                out MapRenderDecodedTextureResourceSnapshot? resource,
+                out DecodedTextureResourceSnapshot? resource,
                 out _))
         {
             return new MapRenderWorldTextureAssetBinding(

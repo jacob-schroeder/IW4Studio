@@ -22,5 +22,5 @@ public interface IMapRenderer : IDisposable
 
         Resize(extents.SceneTarget.Width, extents.SceneTarget.Height);
     }
-    void Render(MapRenderCamera camera);
+    void Render(RenderCamera camera);
 }

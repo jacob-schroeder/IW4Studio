@@ -16,7 +16,7 @@ using IW4.Runtime.Assets.Images;
 namespace IW4.Render.Assets;
 
 public sealed partial class RenderAssetLookup :
-    IMapRenderMaterialTechniqueBindingResolver,
+    IMaterialTechniqueBindingResolver,
     IMaterialExecutionLookup,
     IMapRenderWorldTextureBindingResolver,
     IMapRenderWorldTextureBindingSnapshotFactory,
@@ -62,7 +62,7 @@ public sealed partial class RenderAssetLookup :
         new(ReferenceEqualityComparer.Instance);
     private readonly object _resolvedShaderArgsGate = new();
     private readonly Dictionary<SelectedPassProgramSourceCacheKey,
-        MapRenderSelectedPassProgramSources> _selectedPassProgramSources = [];
+        SelectedPassProgramSources> _selectedPassProgramSources = [];
     private readonly object _selectedPassProgramSourcesGate = new();
     private long? _selectedPassProgramSourcePoolRevision;
     private RenderAssetLookup(
@@ -79,13 +79,33 @@ public sealed partial class RenderAssetLookup :
     }
 
     public RenderAssetLookup(
-        MapRenderAssetSource source,
+        RenderAssetSource source,
         IGfxImagePayloadResolver? imageStreams = null)
+        : this(source, imageStreams, gfxWorldRuntimeState: null)
+    {
+    }
+
+    internal RenderAssetLookup(
+        RenderAssetSource source,
+        GfxWorldRuntimeState gfxWorldRuntimeState,
+        IGfxImagePayloadResolver? imageStreams)
+        : this(
+            source,
+            imageStreams,
+            gfxWorldRuntimeState ?? throw new ArgumentNullException(
+                nameof(gfxWorldRuntimeState)))
+    {
+    }
+
+    private RenderAssetLookup(
+        RenderAssetSource source,
+        IGfxImagePayloadResolver? imageStreams,
+        GfxWorldRuntimeState? gfxWorldRuntimeState)
     {
         ArgumentNullException.ThrowIfNull(source);
         _blocks = source.Blocks;
         _assetPool = source.AssetPool;
-        _gfxWorldRuntimeState = source.GfxWorldRuntime;
+        _gfxWorldRuntimeState = gfxWorldRuntimeState;
         _imageStreams = imageStreams;
         _materialTechniqueGraph = new MaterialTechniqueGraphCache(
             source.Blocks,

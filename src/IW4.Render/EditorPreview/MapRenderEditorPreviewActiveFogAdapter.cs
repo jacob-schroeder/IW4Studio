@@ -1,6 +1,6 @@
 using System.Numerics;
 using IW4.Render.Lighting;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 using IW4.Render.Transforms;
 
 namespace IW4.Render.EditorPreview;
@@ -40,7 +40,7 @@ public static class MapRenderEditorPreviewActiveFogAdapter
         MapRenderBgra8Color fogColor = ToBgra8(atmosphere.FogColor);
 
         Vector3 sunFogDirection = lighting?.HasDirectionalSun == true
-            ? MapRenderCoordinateConverter.RenderToGameUnitDirection(
+            ? RenderCoordinateConverter.RenderToGameUnitDirection(
                 lighting.DirectionalSunDirection)
             : Vector3.UnitZ;
         var sunFog = new MapRenderActiveSunFogState(

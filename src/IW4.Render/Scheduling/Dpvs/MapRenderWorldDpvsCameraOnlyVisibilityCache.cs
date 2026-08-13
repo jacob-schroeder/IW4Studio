@@ -30,7 +30,7 @@ public sealed class MapRenderWorldDpvsCameraOnlyVisibilityCache
 
     public MapRenderWorldDpvsCameraOnlyVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebufferExtent,
         MapRenderNormalCameraFarPlaneState farPlane,
         CancellationToken cancellationToken = default)
@@ -89,7 +89,7 @@ public sealed class MapRenderWorldDpvsCameraOnlyVisibilityCache
     }
 
     private readonly record struct CacheKey(
-        MapRenderCamera Camera,
+        RenderCamera Camera,
         MapRenderNormalCameraFramebufferExtent FramebufferExtent,
         float RZFar,
         float RendererFallback);

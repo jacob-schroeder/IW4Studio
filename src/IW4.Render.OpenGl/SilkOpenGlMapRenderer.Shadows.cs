@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Diagnostics;
@@ -204,7 +205,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private MapRenderOpenGlSunShadowCasterMesh
         CreateSunShadowCasterMesh(
             MapRenderSunShadowCasterGeometry geometry,
-            IW4.Render.Textures.MapRenderTexture? cutoutTexture,
+            IW4.Render.Textures.Texture? cutoutTexture,
         int staticInstanceCapacity)
     {
         ArgumentNullException.ThrowIfNull(geometry);
@@ -568,7 +569,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private bool TryBuildSunShadowFrame(
-        MapRenderCamera camera,
+        RenderCamera camera,
         out MapRenderSunShadowFramePublication? publication,
         out MapRenderSunShadowCasterCatalog? casters)
     {
@@ -722,7 +723,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private MapRenderWorldDpvsThreeViewFrame? RenderSunShadowFrame(
-        MapRenderCamera camera,
+        RenderCamera camera,
         out MapRenderSunShadowAtlasReadyState? atlasReady)
     {
         atlasReady = null;
@@ -940,7 +941,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderSunShadowCasterPartition partition)
     {
         Matrix4x4 viewProjection =
-            MapRenderOpenGlRsxClipSpaceLowering
+            OpenGlRsxClipSpaceLowering
                 .CreateSunShadowCasterHostViewProjection(
                     frame.Projection.WorldToClip(
                         partition.PartitionIndex));
@@ -1118,7 +1119,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void DrawSunShadowWorldCasterRuns(
         MapRenderOpenGlSunShadowCasterMesh mesh,
-        MapRenderState authoredState,
+        RenderState authoredState,
         Matrix4x4 viewProjection,
         IReadOnlyList<MapRenderSunShadowWorldCasterDrawRun> drawRuns,
         int drawRunCount)
@@ -1195,7 +1196,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void DrawSunShadowCaster(
         MapRenderOpenGlSunShadowCasterMesh mesh,
-        MapRenderState authoredState,
+        RenderState authoredState,
         Matrix4x4 viewProjection,
         uint instanceCount,
         bool useInstancing)
@@ -1234,7 +1235,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void PrepareSunShadowCasterDraw(
         MapRenderOpenGlSunShadowCasterMesh mesh,
-        MapRenderState authoredState,
+        RenderState authoredState,
         Matrix4x4 viewProjection,
         bool useInstancing)
     {

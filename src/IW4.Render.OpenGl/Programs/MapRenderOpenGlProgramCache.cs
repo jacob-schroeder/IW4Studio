@@ -14,13 +14,13 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
     private readonly IMapRenderOpenGlProgramCompiler _compiler;
     private readonly MapRenderOpenGlShaderCompilationCounter
         _compilationCounter;
-    private readonly MapRenderOpenGlSharedProgramCache.UsageLease?
+    private readonly OpenGlSharedProgramCache.UsageLease?
         _sharedProgramUsage;
     private readonly IMapRenderOpenGlLinkedProgramDescriber?
         _linkedProgramDescriber;
     private readonly string _contextIdentity;
     private readonly string _linkProfileIdentity;
-    private readonly Dictionary<MapRenderOpenGlProgramKey, MapRenderOpenGlProgramResource> _resources = [];
+    private readonly Dictionary<OpenGlProgramKey, MapRenderOpenGlProgramResource> _resources = [];
     private readonly HashSet<uint> _ownedHandles = [];
     private readonly int _ownerThreadId;
     private bool _disposed;
@@ -44,7 +44,7 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
     internal MapRenderOpenGlProgramCache(
         IMapRenderOpenGlProgramCompiler compiler,
         MapRenderOpenGlShaderCompilationCounter compilationCounter,
-        MapRenderOpenGlSharedProgramCache.UsageLease? sharedProgramUsage)
+        OpenGlSharedProgramCache.UsageLease? sharedProgramUsage)
     {
         ArgumentNullException.ThrowIfNull(compiler);
         ArgumentNullException.ThrowIfNull(compilationCounter);
@@ -103,7 +103,7 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
         string pixelGlsl)
     {
         EnsureUsableOnOwnerThread();
-        MapRenderOpenGlProgramKey key = MapRenderOpenGlProgramKey.Create(
+        OpenGlProgramKey key = OpenGlProgramKey.Create(
             vertexGlsl,
             pixelGlsl,
             _linkProfileIdentity);
@@ -116,14 +116,14 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
     /// </summary>
     internal MapRenderOpenGlProgramResource GetOrCompileAuthored(
         string vertexGlsl,
-        MapRenderOpenGlAuthoredFragmentSource pixelSource)
+        OpenGlAuthoredFragmentSource pixelSource)
     {
         ArgumentNullException.ThrowIfNull(pixelSource);
         return GetOrCompile(vertexGlsl, pixelSource.ExactGlsl);
     }
 
     public MapRenderOpenGlProgramResource GetOrCompile(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         string vertexGlsl,
         string pixelGlsl)
     {
@@ -155,7 +155,7 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
         else
         {
             MapRenderOpenGlProgramResource? compiledResource = null;
-            MapRenderOpenGlLinkedProgramHandleResolution resolution =
+            OpenGlLinkedProgramHandleResolution resolution =
                 _sharedProgramUsage.GetOrLink(
                     vertexGlsl,
                     pixelGlsl,
@@ -208,7 +208,7 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
     }
 
     public bool TryGet(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         out MapRenderOpenGlProgramResource? resource)
     {
         EnsureUsableOnOwnerThread();
@@ -247,7 +247,7 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
 
     private void ValidateCompiledResource(
         MapRenderOpenGlProgramResource resource,
-        MapRenderOpenGlProgramKey expectedKey,
+        OpenGlProgramKey expectedKey,
         string vertexGlsl,
         string pixelGlsl,
         bool deleteOnFailure)
@@ -255,11 +255,11 @@ public sealed class MapRenderOpenGlProgramCache : IDisposable
         bool valid = resource.Key == expectedKey &&
                      string.Equals(
                          resource.VertexGlslSha256,
-                         MapRenderOpenGlProgramKey.HashExactText(vertexGlsl),
+                         OpenGlProgramKey.HashExactText(vertexGlsl),
                          StringComparison.Ordinal) &&
                      string.Equals(
                          resource.PixelGlslSha256,
-                         MapRenderOpenGlProgramKey.HashExactText(pixelGlsl),
+                         OpenGlProgramKey.HashExactText(pixelGlsl),
                          StringComparison.Ordinal);
         if (valid)
             return;

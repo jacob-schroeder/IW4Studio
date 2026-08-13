@@ -11,8 +11,8 @@ internal readonly record struct GlRsxConstantBinding(
     float? Y,
     float? Z,
     float? W,
-    MapRenderCodeMatrixSemantic? CodeMatrixSemantic,
-    MapRenderCodeMatrixTransform CodeMatrixTransform,
+    CodeMatrixSemantic? CodeMatrixSemantic,
+    CodeMatrixTransform CodeMatrixTransform,
     int CodeMatrixRow,
     ushort? DynamicCodeConstantSourceRow = null,
     int? SceneLightIndex = null);

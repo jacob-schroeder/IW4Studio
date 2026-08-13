@@ -47,11 +47,11 @@ public static class UiMaterialPreviewPlanner
             }
         }
 
-        MapRenderEditorMaterialTexturePlan textureTable =
-            MapRenderEditorMaterialTexturePlanner.Plan(
+        EditorMaterialTexturePlan textureTable =
+            EditorMaterialTexturePlanner.Plan(
                 textures,
                 (ordinal, _) =>
-                    new MapRenderEditorMaterialTextureResolution(
+                    new EditorMaterialTextureResolution(
                         resolutions[ordinal].Image,
                         null));
         UiMaterialPreviewAtlasMetadata atlas = new(
@@ -76,7 +76,7 @@ public static class UiMaterialPreviewPlanner
                 "texture atlas will be shown."));
         }
 
-        MapRenderEditorMaterialTextureBinding? selected = SelectTexture(
+        EditorMaterialTextureBinding? selected = SelectTexture(
             textureTable,
             diagnostics);
         UiMaterialPreviewImageAuthority selectedAuthority =
@@ -174,17 +174,17 @@ public static class UiMaterialPreviewPlanner
                 "The material texture row has no resolved image.")
             : UiMaterialPreviewImageResolution.MaterialRowFallback(row.Image);
 
-    private static MapRenderEditorMaterialTextureBinding? SelectTexture(
-        MapRenderEditorMaterialTexturePlan textureTable,
+    private static EditorMaterialTextureBinding? SelectTexture(
+        EditorMaterialTexturePlan textureTable,
         ICollection<UiMaterialPreviewDiagnostic> diagnostics)
     {
-        MapRenderEditorMaterialTextureBinding[] baseColorBindings =
+        EditorMaterialTextureBinding[] baseColorBindings =
             textureTable.Bindings
                 .Where(binding =>
                     binding.Role ==
-                    MapRenderEditorMaterialTextureRole.BaseColor)
+                    EditorMaterialTextureRole.BaseColor)
                 .ToArray();
-        MapRenderEditorMaterialTextureBinding[] resolvedBaseColorBindings =
+        EditorMaterialTextureBinding[] resolvedBaseColorBindings =
             baseColorBindings
                 .Where(binding => binding.Image is not null)
                 .ToArray();
@@ -209,7 +209,7 @@ public static class UiMaterialPreviewPlanner
                 "The material's base-color texture rows do not resolve to an image."));
         }
 
-        MapRenderEditorMaterialTextureBinding? fallback =
+        EditorMaterialTextureBinding? fallback =
             textureTable.Bindings.FirstOrDefault(binding =>
                 binding.Image is not null);
         if (fallback is not null)

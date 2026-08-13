@@ -6,19 +6,21 @@ namespace IW4.Render.Textures;
 /// </summary>
 public static class MapRenderWorldImplicitSamplerStateFactory
 {
-    public static MapRenderSamplerState Create(
+    public static RsxSamplerState Create(
         MapRenderWorldRuntimeTextureKind kind)
     {
         byte rawState = kind switch
         {
-            MapRenderWorldRuntimeTextureKind.ReflectionProbe => 0x72,
+            MapRenderWorldRuntimeTextureKind.ReflectionProbe =>
+                RsxImplicitSamplerStateEncoding.ReflectionProbe,
             MapRenderWorldRuntimeTextureKind.SecondaryLightmap or
-            MapRenderWorldRuntimeTextureKind.PrimaryLightmap => 0x62,
+            MapRenderWorldRuntimeTextureKind.PrimaryLightmap =>
+                RsxImplicitSamplerStateEncoding.Lightmap,
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
-        MapRenderSamplerState decoded = MapRenderSamplerDecoder.Decode(rawState);
+        RsxSamplerState decoded = RsxSamplerDecoder.Decode(rawState);
         IReadOnlyList<Commands.MapRenderRsxMethodPacket> packets =
-            MapRenderRsxImplicitSamplerCommandBuilder.BuildInitialization(kind);
+            RsxImplicitSamplerCommandBuilder.BuildInitialization(kind);
         uint[] payloads = packets.SelectMany(packet => packet.Payloads).ToArray();
         if (payloads.Length != 3 ||
             payloads[0] != decoded.RsxTexEnablePayload ||

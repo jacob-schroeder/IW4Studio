@@ -3,6 +3,8 @@ using System.Numerics;
 
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Shaders;
+using IW4.Render.Textures;
 
 namespace IW4.Render.OpenGl.Sky;
 
@@ -57,7 +59,7 @@ internal static class MapRenderOpenGlNormalCameraSkyPlanner
             Matrix4x4 nativeWorldViewProjection =
                 DecodePs3NativeWorldViewProjection(draw);
             Matrix4x4 hostViewProjection =
-                MapRenderOpenGlRsxClipSpaceLowering
+                OpenGlRsxClipSpaceLowering
                     .CreateDirectEditorPreviewHostViewProjectionFromPs3Native(
                         nativeWorldViewProjection);
             commands.Add(new MapRenderOpenGlNormalCameraSkyDrawCommand(

@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Assets.Zone;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
@@ -63,7 +64,7 @@ public sealed record UiMaterialTextureBinding(
     uint NameHash,
     byte TextureSemantic,
     byte AuthoredSamplerState,
-    MapRenderSamplerState SamplerState);
+    RsxSamplerState SamplerState);
 
 public sealed record UiMaterialPassIdentity(
     string MaterialName,
@@ -103,8 +104,8 @@ public sealed class UiMaterialDrawPacket : UiDrawPacket
         UiMaterialPassIdentity identity,
         UiMaterialTextureBinding texture,
         UiMaterialAtlasState atlas,
-        MapRenderState state,
-        MapRenderShaderExecutionContract shaderExecution,
+        RenderState state,
+        ShaderExecutionContract shaderExecution,
         IReadOnlyList<UiMaterialExecutionDiagnostic> diagnostics)
         : base(drawOrder)
     {
@@ -156,9 +157,9 @@ public sealed class UiMaterialDrawPacket : UiDrawPacket
 
     public UiMaterialAtlasState Atlas { get; }
 
-    public MapRenderState State { get; }
+    public RenderState State { get; }
 
-    public MapRenderShaderExecutionContract ShaderExecution { get; }
+    public ShaderExecutionContract ShaderExecution { get; }
 
     public IReadOnlyList<UiMaterialExecutionDiagnostic> Diagnostics { get; }
 

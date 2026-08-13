@@ -1,5 +1,6 @@
+using IW4.Render.Techniques;
+using IW4.Render.Execution.FixedFunction;
 using IW4.Render.Materials;
-using IW4.Render.Scheduling.FramePlans;
 
 namespace IW4.Render.UI;
 
@@ -58,8 +59,8 @@ public readonly record struct UiMaterialCpuPreviewBlendState(
 /// </summary>
 public sealed record UiMaterialCpuPreviewCompositeState(
     UiMaterialCpuPreviewColorWriteMask ColorWriteMask,
-    MapRenderAlphaTestMode AlphaTest,
-    MapRenderCullMode CullMode,
+    AlphaTestMode AlphaTest,
+    CullMode CullMode,
     UiMaterialCpuPreviewBlendState Blend);
 
 public sealed class UiMaterialCpuPreviewPlan
@@ -111,7 +112,7 @@ public sealed class UiMaterialCpuPreviewPlan
                 message)]);
     }
 
-    public static UiMaterialCpuPreviewPlan Plan(MapRenderState state)
+    public static UiMaterialCpuPreviewPlan Plan(RenderState state)
     {
         var diagnostics = new List<UiMaterialExecutionDiagnostic>();
         if (!state.HasState)
@@ -143,7 +144,7 @@ public sealed class UiMaterialCpuPreviewPlan
                 "The selected material enables polygon offset, which is not " +
                 "meaningful for the Menu CPU compositor.");
         }
-        MapRenderCullMode? cullMode = MapRenderCull.Resolve(state);
+        CullMode? cullMode = Cull.Resolve(state);
         if (cullMode is null)
         {
             Block(
@@ -168,7 +169,7 @@ public sealed class UiMaterialCpuPreviewPlan
                 "the decoded PS3 RGB-only, alpha-only, or RGBA write masks.");
         }
 
-        MapRenderAlphaTestMode? alphaTest = MapRenderAlphaTest.Resolve(state);
+        AlphaTestMode? alphaTest = AlphaTest.Resolve(state);
         if (alphaTest is null)
         {
             Block(
@@ -229,9 +230,9 @@ public sealed class UiMaterialCpuPreviewPlan
         };
 
     private static UiMaterialCpuPreviewBlendState? DecodeBlend(
-        MapRenderState state)
+        RenderState state)
     {
-        if (!MapRenderBlend.TryResolve(state, out RenderBlendStateDescriptor blend))
+        if (!RenderBlendDecoder.TryResolve(state, out RenderBlendStateDescriptor blend))
             return null;
 
         return new UiMaterialCpuPreviewBlendState(

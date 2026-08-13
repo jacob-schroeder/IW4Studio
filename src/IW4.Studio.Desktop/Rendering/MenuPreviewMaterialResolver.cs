@@ -6,6 +6,7 @@ using IW4.Render;
 using IW4.Render.Assets;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
+using IW4.Render.Techniques;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Runtime.Assets;
@@ -341,24 +342,24 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 "this material's atlas frame has not been evaluated.");
         }
         if (previewPlan.SelectedSamplerState is not { } sampler ||
-            sampler.MipFilter != MapRenderTextureFilter.None ||
+            sampler.MipFilter != TextureFilter.None ||
             sampler.MinFilter is not (
-                MapRenderTextureFilter.Point or
-                MapRenderTextureFilter.Linear) ||
+                TextureFilter.Point or
+                TextureFilter.Linear) ||
             sampler.MagFilter is not (
-                MapRenderTextureFilter.Point or
-                MapRenderTextureFilter.Linear))
+                TextureFilter.Point or
+                TextureFilter.Linear))
         {
             return UiMaterialCpuPreviewPlan.Blocked(
                 "The Menu CPU compositor supports only decoded point or " +
                 "linear base-level sampler filtering.");
         }
-        if (!MapRenderStateDecoder.TryDecode(
+        if (!RenderStateDecoder.TryDecode(
                 material,
                 UiMaterialDrawPlanner.TechniqueSlot,
                 UiMaterialDrawPlanner.PassIndex,
                 _materialExecution,
-                out MapRenderState state))
+                out RenderState state))
         {
             return UiMaterialCpuPreviewPlan.Blocked(
                 "The selected material pass has no decodable PS3 state bits.");
@@ -380,11 +381,9 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
         FastFileWorkspace workspace)
     {
         var target = workspace.LoadedZone;
-        var source = new MapRenderAssetSource(
-            target.Header,
+        var source = new RenderAssetSource(
             target.Context.Blocks,
             target.Context.AssetPool,
-            target.Context.AssetRuntimeLifecycle.GfxWorld,
             target.Context.GfxImagesByAddress,
             target.LoadedAssets,
             target.XAssetList.Assets);

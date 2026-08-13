@@ -21,7 +21,7 @@ public sealed class MapRenderWorldSceneSourceBuilder
         MapRenderInput input,
         Action<string>? progress)
     {
-        MapRenderAssetSource assets = input.AssetSource;
+        RenderAssetSource assets = input.AssetSource;
         GfxWorldTextureRuntimeSession? textureRuntime = null;
         if (input.GfxMap is { } activeWorld &&
             assets.AssetPool.TryGetEntry(
@@ -34,7 +34,7 @@ public sealed class MapRenderWorldSceneSourceBuilder
                 activeWorld,
                 assets.AssetPool,
                 worldBlocks,
-                assets.GfxWorldRuntime);
+                input.GfxWorldRuntime);
             var textureState = textureRuntime.EnsureInitialized();
             progress?.Invoke(
                 $"world texture descriptors ready: " +
@@ -48,6 +48,7 @@ public sealed class MapRenderWorldSceneSourceBuilder
             UnavailableGfxImagePayloadResolver.Instance;
         var assetLookup = new RenderAssetLookup(
             assets,
+            input.GfxWorldRuntime,
             imageStreams);
 
         MapRenderWorldSceneSourceBuildResult result;

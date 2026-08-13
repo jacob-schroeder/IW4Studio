@@ -3,6 +3,7 @@ using System.Numerics;
 
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Shaders;
 
 namespace IW4.Render.OpenGl.Diagnostics;
 
@@ -71,7 +72,7 @@ internal static class MapRenderOpenGlNormalCameraDiagnosticPlanner
             }
 
             Matrix4x4 drawHostViewProjection =
-                MapRenderOpenGlRsxClipSpaceLowering
+                OpenGlRsxClipSpaceLowering
                     .CreateDirectEditorPreviewHostViewProjectionFromPs3Native(
                         DecodePs3NativeWorldViewProjection(draw));
             if (semanticHostViewProjection is { } previous &&

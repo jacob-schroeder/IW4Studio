@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
@@ -10,7 +11,7 @@ public sealed class XModelRenderScene
         string name,
         IReadOnlyList<XModelRenderLod> lods,
         int defaultLodIndex,
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         IReadOnlyList<XModelRenderBone> bones,
         IReadOnlyList<string> diagnostics)
     {
@@ -33,7 +34,7 @@ public sealed class XModelRenderScene
 
     public int DefaultLodIndex { get; }
 
-    public MapRenderBounds Bounds { get; }
+    public RenderBounds Bounds { get; }
 
     public IReadOnlyList<XModelRenderBone> Bones { get; }
 
@@ -45,7 +46,7 @@ public sealed class XModelRenderLod
     internal XModelRenderLod(
         int lodIndex,
         float distance,
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         IReadOnlyList<XModelRenderSurface> surfaces)
     {
         ArgumentNullException.ThrowIfNull(surfaces);
@@ -64,7 +65,7 @@ public sealed class XModelRenderLod
 
     public float Distance { get; }
 
-    public MapRenderBounds Bounds { get; }
+    public RenderBounds Bounds { get; }
 
     public IReadOnlyList<XModelRenderSurface> Surfaces { get; }
 
@@ -81,7 +82,7 @@ public sealed class XModelRenderSurface
         string materialName,
         IReadOnlyList<Vector3> positions,
         IReadOnlyList<uint> indices,
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         int selectedTechniqueSlot,
         string selectedTechniqueName,
         IReadOnlyList<XModelRenderAuthoredPass> authoredPasses,
@@ -135,7 +136,7 @@ public sealed class XModelRenderSurface
 
     public IReadOnlyList<uint> Indices { get; }
 
-    public MapRenderBounds Bounds { get; }
+    public RenderBounds Bounds { get; }
 
     public int SelectedTechniqueSlot { get; }
 
@@ -152,13 +153,17 @@ public sealed class XModelRenderSurface
 
 internal sealed class XModelRenderAuthoredPass
 {
+    internal const string ViewerReflectionProbeResourceIdentity =
+        "XMODEL_VIEWER_REFLECTION_PROBE";
+
     internal XModelRenderAuthoredPass(
         int groupId,
         int groupPassIndex,
-        MapRenderMaterialPass pass,
-        MapRenderState state,
-        MapRenderShaderExecutionContract shaderExecution,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity? primarySampler,
+        RenderState state,
+        ShaderExecutionContract shaderExecution,
+        IReadOnlyList<MaterialSamplerBinding> materialSamplers,
         float[] rsxVertexInputs,
         string diagnostic)
     {
@@ -175,6 +180,7 @@ internal sealed class XModelRenderAuthoredPass
         GroupId = groupId;
         GroupPassIndex = groupPassIndex;
         Pass = pass;
+        PrimarySampler = primarySampler;
         State = state;
         ShaderExecution = shaderExecution;
         MaterialSamplers = Array.AsReadOnly(materialSamplers.ToArray());
@@ -186,13 +192,15 @@ internal sealed class XModelRenderAuthoredPass
 
     internal int GroupPassIndex { get; }
 
-    internal MapRenderMaterialPass Pass { get; }
+    internal MaterialPassIdentity Pass { get; }
 
-    internal MapRenderState State { get; }
+    internal MaterialSamplerIdentity? PrimarySampler { get; }
 
-    internal MapRenderShaderExecutionContract ShaderExecution { get; }
+    internal RenderState State { get; }
 
-    internal IReadOnlyList<MapRenderMaterialSamplerBinding>
+    internal ShaderExecutionContract ShaderExecution { get; }
+
+    internal IReadOnlyList<MaterialSamplerBinding>
         MaterialSamplers { get; }
 
     internal float[] RsxVertexInputs { get; }

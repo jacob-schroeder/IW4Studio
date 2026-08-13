@@ -2,11 +2,14 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Numerics;
 
+using IW4.Render.Execution;
+using IW4.Render.Execution.FixedFunction;
 using IW4.Render.Preview;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.Clear;
 using IW4.Render.Scheduling.Lifecycle;
 using IW4.Render.Shaders;
+using IW4.Render.Textures;
 using IW4.Render.Transforms;
 
 namespace IW4.Render.Scheduling.FramePlans;
@@ -456,7 +459,7 @@ public static class RenderFramePlanner
         MapRenderSurfaceExtents surfaceExtents,
         MapRenderNormalCameraClearColorResult clearColor,
         RenderSceneSnapshot scene,
-        MapRenderCamera camera,
+        RenderCamera camera,
         RenderPreviewSettings previewSettings)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -1010,12 +1013,12 @@ public static class RenderFramePlanner
             draws);
 
     internal static RenderDynamicConstantBinding CreateWorldViewProjection(
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderPixelExtent sceneTargetExtent)
     {
         float aspectRatio =
             (float)sceneTargetExtent.Width / sceneTargetExtent.Height;
-        MapRenderNormalCameraMatrixCalculator.CalculatePs3Native(
+        RenderNormalCameraMatrixCalculator.CalculatePs3Native(
             camera,
             aspectRatio,
             out _,
@@ -1023,8 +1026,8 @@ public static class RenderFramePlanner
             out Matrix4x4 viewProjection,
             out Vector3 eyeOffset);
         Matrix4x4 nativeWorldViewProjection0 =
-            MapRenderDerivedMatrixResolver.MultiplyWorldViewProjection0(
-                MapRenderDerivedMatrixResolver.CreateWorld0(eyeOffset),
+            DerivedMatrixResolver.MultiplyWorldViewProjection0(
+                DerivedMatrixResolver.CreateWorld0(eyeOffset),
                 viewProjection);
         ImmutableArray<Vector4> nativeRows = ImmutableArray.Create(
             new Vector4(

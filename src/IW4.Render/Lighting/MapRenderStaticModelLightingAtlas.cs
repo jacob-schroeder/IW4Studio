@@ -12,34 +12,28 @@ namespace IW4.Render.Lighting;
 /// </summary>
 public sealed class MapRenderStaticModelLightingAtlas
 {
-    public const int Width = 512;
-    public const int Height = 256;
-    public const int Depth = 4;
-    public const int TileWidth = 4;
-    public const int TileHeight = 4;
-    public const int TileDepth = 4;
-    public const int EntriesPerRow = Width / TileWidth;
-    public const int RowsPerSlice = Height / TileHeight;
-    public const int EntryCapacity = EntriesPerRow * RowsPerSlice;
+    public const int Width = ModelLightingAtlasLayout.Width;
+    public const int Height = ModelLightingAtlasLayout.Height;
+    public const int Depth = ModelLightingAtlasLayout.Depth;
+    public const int TileWidth = ModelLightingAtlasLayout.TileWidth;
+    public const int TileHeight = ModelLightingAtlasLayout.TileHeight;
+    public const int TileDepth = ModelLightingAtlasLayout.TileDepth;
+    public const int EntriesPerRow = ModelLightingAtlasLayout.EntriesPerRow;
+    public const int RowsPerSlice = ModelLightingAtlasLayout.RowsPerSlice;
+    public const int EntryCapacity = ModelLightingAtlasLayout.EntryCapacity;
     // Native xmodel lighting starts at baseIndex 7168, leaving handles
     // 1..7168 (physical entries 0..7167) to the static-model cache.
-    public const int DynamicEntryCapacity = 1024;
-    public const int StaticEntryCapacity =
-        EntryCapacity - DynamicEntryCapacity;
-    public const int TilePixelCount =
-        TileWidth * TileHeight * TileDepth;
-    public const int TileByteCount = TilePixelCount * 4;
+    public const int DynamicEntryCapacity = ModelLightingAtlasLayout.DynamicEntryCapacity;
+    public const int StaticEntryCapacity = ModelLightingAtlasLayout.StaticEntryCapacity;
+    public const int TilePixelCount = ModelLightingAtlasLayout.TilePixelCount;
+    public const int TileByteCount = ModelLightingAtlasLayout.TileByteCount;
 
     /// <summary>
     /// Pixel row 0x21 sampling transform. Multiplying a normalized game-space
     /// material normal by this row addresses the inner 3x3x3 span around a
     /// row-0x39 tile center.
     /// </summary>
-    public static Vector4 SamplerTransform { get; } = new(
-        1.5f / Width,
-        1.5f / Height,
-        1.5f / Depth,
-        0f);
+    public static Vector4 SamplerTransform => ModelLightingAtlasLayout.SamplerTransform;
 
     public MapRenderStaticModelLightingAtlas(
         byte[] rgbaBytes,
@@ -137,15 +131,7 @@ public sealed class MapRenderStaticModelLightingAtlas
     }
 
     public static Vector4 EntryCoordinates(int entryIndex)
-    {
-        if ((uint)entryIndex >= EntryCapacity)
-            throw new ArgumentOutOfRangeException(nameof(entryIndex));
-        return new Vector4(
-            (TileWidth * (entryIndex & (EntriesPerRow - 1)) + 2f) / Width,
-            (TileHeight * (entryIndex / EntriesPerRow) + 2f) / Height,
-            0.5f,
-            1f);
-    }
+        => ModelLightingAtlasLayout.EntryCoordinates(entryIndex);
 
     /// <summary>
     /// Mirrors the native row-0x39 + normal*row-0x21 lookup while adapting

@@ -16,7 +16,7 @@ public sealed class MapRenderCameraFrustumCache
     public long MissCount { get; private set; }
 
     public MapRenderCameraFrustum GetOrCreate(
-        MapRenderCamera camera,
+        RenderCamera camera,
         float aspectRatio)
     {
         var key = new CacheKey(camera, aspectRatio);
@@ -47,6 +47,6 @@ public sealed class MapRenderCameraFrustumCache
     }
 
     private readonly record struct CacheKey(
-        MapRenderCamera Camera,
+        RenderCamera Camera,
         float AspectRatio);
 }

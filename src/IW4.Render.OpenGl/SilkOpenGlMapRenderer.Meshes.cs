@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Numerics;
 using Silk.NET.OpenGL;
+using RenderTextureTarget = IW4.Render.Textures.TextureTarget;
 
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
@@ -59,8 +60,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _staticGeometryUploads.ImmutableBufferUploadBytes;
 
     private static int ResolveTranslatedColorInputLinearizationMask(
-        MapRenderShaderExecutionContract execution,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
+        ShaderExecutionContract execution,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
         int maximumLayerCount) =>
         MapRenderTranslatedColorInputContract.ResolveLinearizationMask(
             execution,
@@ -255,7 +256,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     throw new InvalidDataException(
                         $"Sky source ordinal {ordinal} is null.");
                 if (sky.Texture.Target !=
-                        MapRenderTextureTarget.TextureCube ||
+                        RenderTextureTarget.TextureCube ||
                     sky.Vertices.Length == 0 ||
                     sky.Indices.Length == 0)
                 {
@@ -365,15 +366,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         bool directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
             batch.ShaderExecution,
             batch.SceneLightIndex,
-            out MapRenderEditorTranslatedProgramDirectCodeConstantPlan?
+            out TranslatedProgramDirectCodeConstantPlan?
                 directCodePlan);
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
+        TranslatedProgramVertexConstantBindingPlan?
             vertexConstantPlan = null;
         bool vertexConstantPlanReady = directCodePlanReady &&
             TryCreateEditorVertexConstantBindingPlan(
                 batch.ShaderExecution,
                 directCodePlan!,
                 out vertexConstantPlan);
+        MapRenderOpenGlStaticModelProgramUniforms?
+            compiledStaticModelProgramUniforms = null;
         GlRsxProgram compiledRsxProgram =
             authorizedAuthoredProgramGroups is null ||
             !vertexConstantPlanReady
@@ -381,7 +384,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 : GetOrCreateRsxProgram(
                     batch.ShaderExecution,
                     batch.State,
-                    vertexConstantPlan);
+                    vertexConstantPlan,
+                    out compiledStaticModelProgramUniforms);
         int vertexCount = batch.Vertices.Length /
             MapRenderScene.TexturedVertexFloatCount;
         bool useRsxVertexInputs =
@@ -467,28 +471,28 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             uint[] normalTextures = executeTranslatedAuthored
                 ? []
                 : CreateEditorRoleTextures(
-                batch.MaterialSamplers,
+                batch.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
                 [
-                    MapRenderEditorMaterialTextureRole.BaseNormal,
-                    MapRenderEditorMaterialTextureRole.NormalLayer1,
-                    MapRenderEditorMaterialTextureRole.NormalLayer2,
-                    MapRenderEditorMaterialTextureRole.NormalLayer3
+                    EditorMaterialTextureRole.BaseNormal,
+                    EditorMaterialTextureRole.NormalLayer1,
+                    EditorMaterialTextureRole.NormalLayer2,
+                    EditorMaterialTextureRole.NormalLayer3
                 ]);
             uint[] specularTextures = executeTranslatedAuthored
                 ? []
                 : CreateEditorRoleTextures(
-                batch.MaterialSamplers,
+                batch.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
                 [
-                    MapRenderEditorMaterialTextureRole.BaseSpecular,
-                    MapRenderEditorMaterialTextureRole.SpecularLayer1,
-                    MapRenderEditorMaterialTextureRole.SpecularLayer2
+                    EditorMaterialTextureRole.BaseSpecular,
+                    EditorMaterialTextureRole.SpecularLayer1,
+                    EditorMaterialTextureRole.SpecularLayer2
                 ]);
 
             _gl.BindVertexArray(vao);
             // The static placement bridge reads location 0 independently of
             // the authored program. Locations 12..15 remain instance-buffer
             // owned because UploadInstanceTransforms rewires them below.
-            MapRenderOpenGlPackedRsxVertexLayout?
+            OpenGlPackedRsxVertexLayout?
                 packedRsxVertexLayout = executeTranslatedAuthored
                     ? ResolvePackedRsxVertexLayout(
                         batch.ShaderExecution,
@@ -546,24 +550,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 executeTranslatedAuthored
                     ? batch.MaterialSamplers
                         .Where(binding =>
-                            CanUploadTexture(binding.Texture))
-                        .GroupBy(binding => binding.SamplerDest)
+                            CanUploadTexture(binding.Binding.Texture))
+                        .GroupBy(binding => binding.Binding.Identity.SamplerDest)
                         .Select(group => group.First())
                         .Select(binding => new GlRsxSamplerBinding(
-                            binding.SamplerDest,
-                            CreateTexture(binding.Texture!),
-                            ToGlTextureTarget(binding.Texture!.Target)))
+                            binding.Binding.Identity.SamplerDest,
+                            CreateTexture(binding.Binding.Texture!),
+                            ToGlTextureTarget(binding.Binding.Texture!.Target)))
                         .ToArray()
                     : [];
             GlRsxConstantBinding[] rsxConstantBindings =
                 executeTranslatedAuthored
                     ? CreateRsxConstantBindings(
-                        batch.ShaderExecution,
-                        rsxProgram,
-                        directCodePlan!,
-                        vertexConstantPlan!)
+                    batch.ShaderExecution,
+                    rsxProgram,
+                    directCodePlan!,
+                    vertexConstantPlan!,
+                    MapRenderOpenGlStaticModelInstancedVertexComposer
+                        .ResolveExternallyBoundVertexConstantDestinations(
+                            vertexConstantPlan!))
                     : [];
             GlRsxProgram depthPrepassRsxProgram = default;
+            MapRenderOpenGlStaticModelProgramUniforms?
+                depthStaticModelProgramUniforms = null;
             GlRsxConstantBinding[] depthPrepassRsxConstantBindings = [];
             if (executeTranslatedAuthored &&
                 batch.EditorDepthPrepass is { } depthPrepass &&
@@ -572,18 +581,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 TryCreateEditorDirectCodeConstantPlan(
                     depthExecution,
                     batch.SceneLightIndex,
-                    out MapRenderEditorTranslatedProgramDirectCodeConstantPlan?
+                    out TranslatedProgramDirectCodeConstantPlan?
                         depthDirectCodePlan) &&
                 TryCreateEditorVertexConstantBindingPlan(
                     depthExecution,
                     depthDirectCodePlan!,
-                    out MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
+                    out TranslatedProgramVertexConstantBindingPlan?
                         depthVertexConstantPlan))
             {
                 depthPrepassRsxProgram = GetOrCreateRsxProgram(
                     depthExecution,
                     depthPrepass.State,
-                    depthVertexConstantPlan);
+                    depthVertexConstantPlan,
+                    out depthStaticModelProgramUniforms);
                 if (depthPrepassRsxProgram.Handle != 0)
                 {
                     depthPrepassRsxConstantBindings =
@@ -591,7 +601,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             depthExecution,
                             depthPrepassRsxProgram,
                             depthDirectCodePlan!,
-                            depthVertexConstantPlan!);
+                            depthVertexConstantPlan!,
+                            MapRenderOpenGlStaticModelInstancedVertexComposer
+                                .ResolveExternallyBoundVertexConstantDestinations(
+                                    depthVertexConstantPlan!));
                 }
             }
 
@@ -645,6 +658,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         MapRenderScene.MaxColorLayerCount),
                 EditorDepthPrepass = batch.EditorDepthPrepass,
                 DepthPrepassRsxProgram = depthPrepassRsxProgram,
+                StaticModelProgramUniforms = compiledStaticModelProgramUniforms,
+                DepthStaticModelProgramUniforms =
+                    depthStaticModelProgramUniforms,
                 DepthPrepassRsxConstantBindings =
                     depthPrepassRsxConstantBindings,
                 StaticModelLodIndex = batch.LodIndex,
@@ -679,7 +695,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private MapRenderOpenGlStaticGeometryBuffers UploadStaticGeometry(
         float[] vertices,
         uint[] indices,
-        MapRenderOpenGlPackedRsxVertexLayout?
+        OpenGlPackedRsxVertexLayout?
             packedRsxVertexLayout = null)
     {
         uint vertexBuffer = _gl.GenBuffer();
@@ -740,20 +756,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         foreach (IGrouping<EditorWorldDrawGroupKey, WorldEditorMeshEntry> sourceGroup in
                  worldEntries.GroupBy(entry => new EditorWorldDrawGroupKey(
                      entry.Batch.Pass.MaterialName,
-                     entry.Batch.Pass.TechniqueSetName,
-                     entry.Batch.Pass.TechniqueSlot,
-                     entry.Batch.Pass.TechniqueName,
+                     entry.Batch.Pass.TechniquePass.TechniqueSetName,
+                     entry.Batch.Pass.TechniquePass.TechniqueSlot,
+                     entry.Batch.Pass.TechniquePass.TechniqueName,
                      entry.SurfaceIndex)))
         {
             WorldEditorMeshEntry[] ordered = sourceGroup
-                .OrderBy(entry => entry.Batch.Pass.PassIndex)
+                .OrderBy(entry =>
+                    entry.Batch.Pass.TechniquePass.PassIndex)
                 .ThenBy(entry => entry.SourceOrdinal)
                 .ToArray();
             MapRenderEditorDrawBucketClassification classification =
                 MapRenderEditorDrawBucketClassifier.Classify(
                     ordered.Select(entry => entry.Batch.State).ToArray());
-            MapRenderBounds bounds = ordered.Aggregate(
-                MapRenderBounds.Empty,
+            RenderBounds bounds = ordered.Aggregate(
+                RenderBounds.Empty,
                 (current, entry) => IncludeBounds(
                     current,
                     entry.Mesh.WorldBounds));
@@ -779,15 +796,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 batch.EditorDrawGroupId >= 0
                     ? batch.EditorDrawGroupId
                     : int.MaxValue - ordinal,
-                batch.Pass.PassIndex,
+                batch.Pass.TechniquePass.PassIndex,
                 batch.Instances.Count,
                 batch.State))
             .ToArray();
         IReadOnlyList<MapRenderEditorStaticDrawPlan> staticPlans =
             MapRenderEditorStaticDrawPlanner.Create(staticPasses);
-        var localBoundsByVertices = new Dictionary<float[], MapRenderBounds>(
+        var localBoundsByVertices = new Dictionary<float[], RenderBounds>(
             ReferenceEqualityComparer.Instance);
-        var localBoundsByBatch = new MapRenderBounds[instancedBatches.Count];
+        var localBoundsByBatch = new RenderBounds[instancedBatches.Count];
         for (int batchIndex = 0;
              batchIndex < instancedBatches.Count;
              batchIndex++)
@@ -795,10 +812,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             float[] vertices = instancedBatches[batchIndex].Vertices;
             if (!localBoundsByVertices.TryGetValue(
                     vertices,
-                    out MapRenderBounds localBounds))
+                    out RenderBounds localBounds))
             {
                 localBounds = IncludeTexturedVertexBounds(
-                    MapRenderBounds.Empty,
+                    RenderBounds.Empty,
                     vertices);
                 localBoundsByVertices.Add(vertices, localBounds);
             }
@@ -839,7 +856,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 if (commands.Length != plan.PassSourceOrdinals.Count)
                     continue;
 
-                MapRenderBounds bounds =
+                RenderBounds bounds =
                     selectedInstanceIndex is int instanceIndex
                         ? CalculateInstancedTexturedBounds(
                             firstBatch,
@@ -941,7 +958,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         long sourceOrdinal,
         MapRenderEditorDrawBucketClassification classification,
         IReadOnlyList<GlTexturedDrawCommand> commands,
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         long? cameraIndependentSortKey = null) =>
         bounds.IsValid
             ? MapRenderEditorDrawGroup<GlTexturedDrawCommand>.FromBounds(
@@ -976,15 +993,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return surfaceIndex;
     }
 
-    private static MapRenderBounds IncludeBounds(
-        MapRenderBounds current,
-        MapRenderBounds added) =>
+    private static RenderBounds IncludeBounds(
+        RenderBounds current,
+        RenderBounds added) =>
         added.IsValid
             ? current.Include(added.Min).Include(added.Max)
             : current;
 
-    private static MapRenderBounds IncludeTexturedVertexBounds(
-        MapRenderBounds bounds,
+    private static RenderBounds IncludeTexturedVertexBounds(
+        RenderBounds bounds,
         IReadOnlyList<float> vertices)
     {
         for (int offset = 0;
@@ -1040,23 +1057,23 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         localHeightRange = maximum - minimum;
     }
 
-    private static MapRenderBounds CalculateInstancedTexturedBounds(
+    private static RenderBounds CalculateInstancedTexturedBounds(
         MapRenderInstancedTexturedBatch batch,
-        MapRenderBounds localBounds)
+        RenderBounds localBounds)
     {
         if (!localBounds.IsValid)
-            return MapRenderBounds.Empty;
+            return RenderBounds.Empty;
 
-        MapRenderBounds result = MapRenderBounds.Empty;
+        RenderBounds result = RenderBounds.Empty;
         foreach (MapRenderStaticModelInstance instance in batch.Instances)
             result = IncludeTransformedBounds(result, localBounds, instance);
 
         return result;
     }
 
-    private static MapRenderBounds CalculateInstancedTexturedBounds(
+    private static RenderBounds CalculateInstancedTexturedBounds(
         MapRenderInstancedTexturedBatch batch,
-        MapRenderBounds localBounds,
+        RenderBounds localBounds,
         int instanceIndex)
     {
         if ((uint)instanceIndex >= (uint)batch.Instances.Count)
@@ -1069,15 +1086,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         return localBounds.IsValid
             ? IncludeTransformedBounds(
-                MapRenderBounds.Empty,
+                RenderBounds.Empty,
                 localBounds,
                 batch.Instances[instanceIndex])
-            : MapRenderBounds.Empty;
+            : RenderBounds.Empty;
     }
 
-    private static MapRenderBounds IncludeTransformedBounds(
-        MapRenderBounds result,
-        MapRenderBounds localBounds,
+    private static RenderBounds IncludeTransformedBounds(
+        RenderBounds result,
+        RenderBounds localBounds,
         MapRenderStaticModelInstance instance)
     {
         for (int corner = 0; corner < 8; corner++)
@@ -1134,7 +1151,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void UploadPackedRsxVertexBuffer(
         uint buffer,
         float[] source,
-        MapRenderOpenGlPackedRsxVertexLayout layout)
+        OpenGlPackedRsxVertexLayout layout)
     {
         int packedFloatCount = layout.PackedFloatCount(source.Length);
         float[] packed = ArrayPool<float>.Shared.Rent(
@@ -1244,7 +1261,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                          .OrderBy(group => group.Key))
             {
                 var layout =
-                    new MapRenderOpenGlPackedRsxVertexLayout(
+                    new OpenGlPackedRsxVertexLayout(
                         arenaGroup.Key);
                 translatedArenas.Add(CreateWorldGeometryArena(
                     batches,
@@ -1278,12 +1295,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     {
         ArgumentNullException.ThrowIfNull(batch);
         int attributeMask =
-            MapRenderOpenGlPackedRsxVertexLayout.ResolveAttributeMask(
+            OpenGlPackedRsxVertexLayout.ResolveAttributeMask(
                 batch.ShaderExecution);
         if (batch.DepthPrepassShaderExecution is { } depthExecution)
         {
             attributeMask |=
-                MapRenderOpenGlPackedRsxVertexLayout.ResolveAttributeMask(
+                OpenGlPackedRsxVertexLayout.ResolveAttributeMask(
                     depthExecution);
         }
 
@@ -1301,7 +1318,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         IReadOnlyList<GlTexturedMesh> sourceMeshes,
         GlTexturedMesh[] replacement,
         IReadOnlyList<int> meshIndices,
-        MapRenderOpenGlPackedRsxVertexLayout? packedRsxVertexLayout)
+        OpenGlPackedRsxVertexLayout? packedRsxVertexLayout)
     {
         ArgumentNullException.ThrowIfNull(meshIndices);
         if (meshIndices.Count == 0)
@@ -1309,7 +1326,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         bool translated = packedRsxVertexLayout is not null;
         int sourceFloatsPerVertex = translated
-            ? MapRenderOpenGlPackedRsxVertexLayout.SourceFloatStride
+            ? OpenGlPackedRsxVertexLayout.SourceFloatStride
             : MapRenderScene.TexturedVertexFloatCount;
         var sources =
             new MapRenderOpenGlWorldGeometryArenaSource[
@@ -1472,7 +1489,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 : MapRenderStaticInstanceLightingPayload.None);
 
     internal static bool ShouldReceiveGenericMaterialLighting(
-        MapRenderMaterialPass pass,
+        MaterialPassIdentity pass,
         bool usesGenericStaticModelLighting) =>
         usesGenericStaticModelLighting ||
         MapRenderEditorPreviewLightingPlanner
@@ -1520,35 +1537,35 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             (void*)(MapRenderScene.TexturedNormalOffset * sizeof(float)));
     }
 
-    private static MapRenderOpenGlPackedRsxVertexLayout
+    private static OpenGlPackedRsxVertexLayout
         ResolvePackedRsxVertexLayout(
-            MapRenderShaderExecutionContract execution,
-            MapRenderShaderExecutionContract? depthExecution = null,
+            ShaderExecutionContract execution,
+            ShaderExecutionContract? depthExecution = null,
             int requiredAttributeMask = 0)
     {
         int attributeMask = requiredAttributeMask |
-            MapRenderOpenGlPackedRsxVertexLayout
+            OpenGlPackedRsxVertexLayout
                 .ResolveAttributeMask(execution);
         if (depthExecution is not null)
         {
             attributeMask |=
-                MapRenderOpenGlPackedRsxVertexLayout
+                OpenGlPackedRsxVertexLayout
                     .ResolveAttributeMask(depthExecution);
         }
 
-        return new MapRenderOpenGlPackedRsxVertexLayout(
+        return new OpenGlPackedRsxVertexLayout(
             attributeMask);
     }
 
     private void ConfigureRsxVertexAttributes(
-        MapRenderOpenGlPackedRsxVertexLayout layout)
+        OpenGlPackedRsxVertexLayout layout)
     {
         uint rsxStride = checked(
             (uint)layout.FloatStride * sizeof(float));
         uint packedAttributeIndex = 0;
         for (uint attributeIndex = 0;
              attributeIndex <
-                 MapRenderOpenGlPackedRsxVertexLayout
+                 OpenGlPackedRsxVertexLayout
                      .SourceAttributeCount;
              attributeIndex++)
         {
@@ -1566,7 +1583,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 false,
                 rsxStride,
                 (void*)(packedAttributeIndex *
-                    MapRenderOpenGlPackedRsxVertexLayout
+                    OpenGlPackedRsxVertexLayout
                         .AttributeFloatCount *
                     sizeof(float)));
             packedAttributeIndex++;
@@ -1584,13 +1601,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return default;
 
         GlRsxProgram compiledRsxProgram =
-            GetOrCreateRsxProgram(batch.ShaderExecution, batch.State);
+            GetOrCreateRsxProgram(
+                batch.ShaderExecution,
+                batch.State,
+                compositionVertexConstantPlan: null,
+                out _);
         bool directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
             batch.ShaderExecution,
             batch.SceneLightIndex,
-            out MapRenderEditorTranslatedProgramDirectCodeConstantPlan?
+            out TranslatedProgramDirectCodeConstantPlan?
                 directCodePlan);
-        MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
+        TranslatedProgramVertexConstantBindingPlan?
             vertexConstantPlan = null;
         bool vertexConstantPlanReady = directCodePlanReady &&
             TryCreateEditorVertexConstantBindingPlan(
@@ -1640,34 +1661,34 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         uint[] normalTextures = executeTranslatedAuthored
             ? []
             : CreateEditorRoleTextures(
-                batch.MaterialSamplers,
+                batch.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
                 [
-                    MapRenderEditorMaterialTextureRole.BaseNormal,
-                    MapRenderEditorMaterialTextureRole.NormalLayer1,
-                    MapRenderEditorMaterialTextureRole.NormalLayer2,
-                    MapRenderEditorMaterialTextureRole.NormalLayer3
+                    EditorMaterialTextureRole.BaseNormal,
+                    EditorMaterialTextureRole.NormalLayer1,
+                    EditorMaterialTextureRole.NormalLayer2,
+                    EditorMaterialTextureRole.NormalLayer3
                 ]);
         uint[] specularTextures = executeTranslatedAuthored
             ? []
             : CreateEditorRoleTextures(
-                batch.MaterialSamplers,
+                batch.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
                 [
-                    MapRenderEditorMaterialTextureRole.BaseSpecular,
-                    MapRenderEditorMaterialTextureRole.SpecularLayer1,
-                    MapRenderEditorMaterialTextureRole.SpecularLayer2
+                    EditorMaterialTextureRole.BaseSpecular,
+                    EditorMaterialTextureRole.SpecularLayer1,
+                    EditorMaterialTextureRole.SpecularLayer2
                 ]);
         GlRsxProgram rsxProgram = executeTranslatedAuthored
             ? compiledRsxProgram
             : default;
         GlRsxSamplerBinding[] rsxSamplerBindings = executeTranslatedAuthored
             ? batch.MaterialSamplers
-                .Where(binding => CanUploadTexture(binding.Texture))
-                .GroupBy(binding => binding.SamplerDest)
+                .Where(binding => CanUploadTexture(binding.Binding.Texture))
+                .GroupBy(binding => binding.Binding.Identity.SamplerDest)
                 .Select(group => group.First())
                 .Select(binding => new GlRsxSamplerBinding(
-                    binding.SamplerDest,
-                    CreateTexture(binding.Texture!),
-                    ToGlTextureTarget(binding.Texture!.Target)))
+                    binding.Binding.Identity.SamplerDest,
+                    CreateTexture(binding.Binding.Texture!),
+                    ToGlTextureTarget(binding.Binding.Texture!.Target)))
                 .ToArray()
             : [];
         GlRsxConstantBinding[] rsxConstantBindings = rsxProgram.Handle == 0
@@ -1686,17 +1707,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             TryCreateEditorDirectCodeConstantPlan(
                 depthExecution,
                 batch.SceneLightIndex,
-                out MapRenderEditorTranslatedProgramDirectCodeConstantPlan?
+                out TranslatedProgramDirectCodeConstantPlan?
                     depthDirectCodePlan) &&
             TryCreateEditorVertexConstantBindingPlan(
                 depthExecution,
                 depthDirectCodePlan!,
-                out MapRenderEditorTranslatedProgramVertexConstantBindingPlan?
+                out TranslatedProgramVertexConstantBindingPlan?
                     depthVertexConstantPlan))
         {
             depthPrepassRsxProgram = GetOrCreateRsxProgram(
                 depthExecution,
-                depthPrepass.State);
+                depthPrepass.State,
+                compositionVertexConstantPlan: null,
+                out _);
             if (depthPrepassRsxProgram.Handle != 0)
             {
                 depthPrepassRsxConstantBindings = CreateRsxConstantBindings(

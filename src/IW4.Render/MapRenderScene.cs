@@ -9,7 +9,7 @@ using IW4.Render.Geometry;
 using IW4.Render.Geometry.Shadows;
 using IW4.Render.Lighting;
 using IW4.Render.Picking;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
 using IW4.Render.SceneBuilding;
 
 namespace IW4.Render;
@@ -29,8 +29,8 @@ public sealed record MapRenderScene(
     IReadOnlyList<MapRenderPickRange> SolidPickRanges,
     IReadOnlyList<MapRenderPickRange> FallbackSolidPickRanges,
     IReadOnlyList<MapRenderPickTriangle> CollisionPickTriangles,
-    MapRenderBounds Bounds,
-    MapRenderBounds CameraBounds,
+    RenderBounds Bounds,
+    RenderBounds CameraBounds,
     MapRenderWorldSceneSourceBuildResult WorldSourceBuildResult,
     MapRenderEditorPreviewLightingPlan? EditorPreviewLighting = null,
     MapRenderEditorPreviewAtmospherePlan? EditorPreviewAtmosphere = null,

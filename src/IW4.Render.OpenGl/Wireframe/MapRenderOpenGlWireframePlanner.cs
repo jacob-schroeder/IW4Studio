@@ -3,6 +3,7 @@ using System.Numerics;
 
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Shaders;
 
 namespace IW4.Render.OpenGl.Wireframe;
 
@@ -36,7 +37,7 @@ internal static class MapRenderOpenGlWireframePlanner
                 "The normal-camera wireframe pass must contain one draw.",
                 nameof(framePlan));
         Matrix4x4 preparedHostViewProjection =
-            MapRenderOpenGlRsxClipSpaceLowering
+            OpenGlRsxClipSpaceLowering
                 .CreateDirectEditorPreviewHostViewProjectionFromPs3Native(
                     DecodePs3NativeWorldViewProjection(draw));
         return LowerNormalCamera(
@@ -77,7 +78,7 @@ internal static class MapRenderOpenGlWireframePlanner
             RenderMultisampleStateDescriptor.Ps3Target2);
 
         Matrix4x4 hostWorldViewProjection =
-            MapRenderOpenGlRsxClipSpaceLowering
+            OpenGlRsxClipSpaceLowering
                 .CreateDirectEditorPreviewHostViewProjectionFromPs3Native(
                     DecodePs3NativeWorldViewProjection(draw));
         if (hostWorldViewProjection != preparedHostViewProjection)

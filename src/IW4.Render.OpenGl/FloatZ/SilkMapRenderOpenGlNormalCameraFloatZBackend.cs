@@ -220,7 +220,7 @@ internal sealed unsafe class
                 "FloatZ resources do not match the active target-2 extent.");
         }
 
-        MapRenderShaderConstantValue zNearRow =
+        ShaderConstantValue zNearRow =
             FrameDirectCodeConstants.ProduceZNear(zNear).Value;
         if (!_processedFloatZProgram
                 .TryGetCodePixelConstantUniformLocation(
@@ -420,7 +420,7 @@ internal sealed unsafe class
 
     private void InitializeAuthoredConstants(int width, int height)
     {
-        MapRenderClipSpaceLookupCodeConstants lookup =
+        ClipSpaceLookupCodeConstants lookup =
             FrameDirectCodeConstants.ProduceClipSpaceLookup(
                 width,
                 height,
@@ -462,7 +462,7 @@ internal sealed unsafe class
     private void SetVertexConstant(
         MapRenderOpenGlProgramResource program,
         int destination,
-        MapRenderShaderConstantValue value) =>
+        ShaderConstantValue value) =>
         SetVertexConstant(
             program,
             destination,

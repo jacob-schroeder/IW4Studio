@@ -6,7 +6,6 @@ using IW4.FastFiles.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
-using IW4.Render.Materials;
 using IW4.Render.Shaders;
 using System.Diagnostics.CodeAnalysis;
 
@@ -75,20 +74,21 @@ public sealed partial class RenderAssetLookup
         }
     }
 
-    public MapRenderSelectedPassProgramSources ResolveSources(
+    public SelectedPassProgramSources ResolveSources(
         MaterialTechniqueSetAsset techniqueSet,
         MaterialTechniqueAsset technique,
-        MapRenderSelectedTechniquePass selectedPass)
+        int passIndex,
+        MaterialPassAsset pass)
     {
         ArgumentNullException.ThrowIfNull(techniqueSet);
         ArgumentNullException.ThrowIfNull(technique);
+        ArgumentNullException.ThrowIfNull(pass);
         RenderAssetLookup sourceLookup =
             _dependencyLookupByTechset.TryGetValue(
                 techniqueSet,
                 out RenderAssetLookup? dependencyLookup)
                 ? dependencyLookup
                 : this;
-        MaterialPassAsset pass = selectedPass.Pass;
         lock (_selectedPassProgramSourcesGate)
         {
             long poolRevision = _assetPool?.Revision ?? -1;
@@ -101,12 +101,12 @@ public sealed partial class RenderAssetLookup
                 sourceLookup,
                 techniqueSet,
                 technique,
-                selectedPass.PassIndex,
+                passIndex,
                 pass,
                 poolRevision);
             if (_selectedPassProgramSources.TryGetValue(
                     cacheKey,
-                    out MapRenderSelectedPassProgramSources? cached))
+                    out SelectedPassProgramSources? cached))
             {
                 if ((_assetPool?.Revision ?? -1) != poolRevision)
                 {
@@ -120,13 +120,13 @@ public sealed partial class RenderAssetLookup
             MaterialVertexDeclarationAsset? declaration =
                 pass.VertexDeclaration ??
                 sourceLookup.ResolveVertexDeclaration(pass.VertexDeclPointer);
-            MapRenderShaderProgramResolution vertex =
+            ShaderProgramResolution vertex =
                 sourceLookup.ResolveShaderProgram(
                     pass.VertexShaderPointer.Untyped,
                     pass.VertexShader,
                     MaterialShaderKind.Vertex,
                     _assetPool);
-            MapRenderShaderProgramResolution pixel =
+            ShaderProgramResolution pixel =
                 sourceLookup.ResolveShaderProgram(
                     pass.PixelShaderPointer.Untyped,
                     pass.PixelShader,
@@ -134,7 +134,7 @@ public sealed partial class RenderAssetLookup
                     _assetPool);
             int expected = pass.PerPrimArgCount + pass.PerObjArgCount +
                 pass.StableArgCount;
-            var result = new MapRenderSelectedPassProgramSources(
+            var result = new SelectedPassProgramSources(
                 declaration,
                 vertex,
                 pixel,
@@ -207,7 +207,7 @@ public sealed partial class RenderAssetLookup
         return Array.AsReadOnly(args);
     }
 
-    private MapRenderShaderProgramResolution ResolveShaderProgram(
+    private ShaderProgramResolution ResolveShaderProgram(
         XPointerReference pointer,
         MaterialShaderAsset? namedFallback,
         MaterialShaderKind kind,
@@ -222,13 +222,13 @@ public sealed partial class RenderAssetLookup
             TryGetActiveProviderIdentity(
                 pointerCanonical,
                 assetPool,
-                out MapRenderShaderProgramProviderIdentity? pointerProvider))
+                out ShaderProgramProviderIdentity? pointerProvider))
         {
-            return new MapRenderShaderProgramResolution(
+            return new ShaderProgramResolution(
                 pointer,
                 kind,
                 pointerCanonical,
-                MapRenderShaderProgramResolutionKind.CanonicalActiveProvider,
+                ShaderProgramResolutionKind.CanonicalActiveProvider,
                 pointerProvider);
         }
 
@@ -241,12 +241,12 @@ public sealed partial class RenderAssetLookup
                 aliasOwner,
                 kind,
                 assetPool,
-                out MapRenderShaderProgramProviderIdentity? providerIdentity);
-            return new MapRenderShaderProgramResolution(
+                out ShaderProgramProviderIdentity? providerIdentity);
+            return new ShaderProgramResolution(
                 pointer,
                 kind,
                 resolved,
-                MapRenderShaderProgramResolutionKind.AliasCellOwner,
+                ShaderProgramResolutionKind.AliasCellOwner,
                 providerIdentity);
         }
 
@@ -268,12 +268,12 @@ public sealed partial class RenderAssetLookup
                     persistent,
                     kind,
                     assetPool,
-                    out MapRenderShaderProgramProviderIdentity? providerIdentity);
-                return new MapRenderShaderProgramResolution(
+                    out ShaderProgramProviderIdentity? providerIdentity);
+                return new ShaderProgramResolution(
                     pointer,
                     kind,
                     resolved,
-                    MapRenderShaderProgramResolutionKind.PersistentBlockAddress,
+                    ShaderProgramResolutionKind.PersistentBlockAddress,
                     providerIdentity);
             }
         }
@@ -284,13 +284,13 @@ public sealed partial class RenderAssetLookup
                 kind,
                 assetPool,
                 out MaterialShaderAsset? fallbackCanonical,
-                out MapRenderShaderProgramProviderIdentity? fallbackProvider))
+                out ShaderProgramProviderIdentity? fallbackProvider))
         {
-            return new MapRenderShaderProgramResolution(
+            return new ShaderProgramResolution(
                 pointer,
                 kind,
                 fallbackCanonical,
-                MapRenderShaderProgramResolutionKind.HydratedActiveProvider,
+                ShaderProgramResolutionKind.HydratedActiveProvider,
                 fallbackProvider);
         }
 
@@ -307,11 +307,11 @@ public sealed partial class RenderAssetLookup
             ambiguousNames);
         if (unique is not null)
         {
-            return new MapRenderShaderProgramResolution(
+            return new ShaderProgramResolution(
                 pointer,
                 kind,
                 unique,
-                MapRenderShaderProgramResolutionKind.UniqueNameFallback,
+                ShaderProgramResolutionKind.UniqueNameFallback,
                 providerIdentity: null);
         }
 
@@ -322,15 +322,15 @@ public sealed partial class RenderAssetLookup
              namedFallback?.ProgramBytes is { Length: > 0 });
         bool namedPlaceholder = referencePlaceholder ||
             !hydratedObject && !string.IsNullOrWhiteSpace(namedFallback?.Name);
-        return new MapRenderShaderProgramResolution(
+        return new ShaderProgramResolution(
             pointer,
             kind,
             namedFallback,
             hydratedObject
-                ? MapRenderShaderProgramResolutionKind.HydratedObjectWithoutActiveProvider
+                ? ShaderProgramResolutionKind.HydratedObjectWithoutActiveProvider
                 : namedPlaceholder
-                    ? MapRenderShaderProgramResolutionKind.NamedPlaceholder
-                    : MapRenderShaderProgramResolutionKind.Unresolved,
+                    ? ShaderProgramResolutionKind.NamedPlaceholder
+                    : ShaderProgramResolutionKind.Unresolved,
             providerIdentity: null);
     }
 
@@ -350,7 +350,7 @@ public sealed partial class RenderAssetLookup
         MaterialShaderAsset candidate,
         MaterialShaderKind kind,
         XAssetPool? assetPool,
-        out MapRenderShaderProgramProviderIdentity? identity)
+        out ShaderProgramProviderIdentity? identity)
     {
         ArgumentNullException.ThrowIfNull(candidate);
         if (TryGetCanonicalShader(
@@ -372,7 +372,7 @@ public sealed partial class RenderAssetLookup
         MaterialShaderKind kind,
         XAssetPool? assetPool,
         [NotNullWhen(true)] out MaterialShaderAsset? canonical,
-        [NotNullWhen(true)] out MapRenderShaderProgramProviderIdentity? identity)
+        [NotNullWhen(true)] out ShaderProgramProviderIdentity? identity)
     {
         canonical = null;
         identity = null;
@@ -395,7 +395,7 @@ public sealed partial class RenderAssetLookup
     private static bool TryGetActiveProviderIdentity(
         MaterialShaderAsset shader,
         XAssetPool? assetPool,
-        [NotNullWhen(true)] out MapRenderShaderProgramProviderIdentity? identity)
+        [NotNullWhen(true)] out ShaderProgramProviderIdentity? identity)
     {
         identity = null;
         if (assetPool is null ||
@@ -412,12 +412,12 @@ public sealed partial class RenderAssetLookup
         return true;
     }
 
-    private static MapRenderShaderProgramProviderIdentity CreateProviderIdentity(
+    private static ShaderProgramProviderIdentity CreateProviderIdentity(
         XAssetSlot slot,
         MaterialShaderAsset shader)
     {
         XAssetProviderContribution provider = slot.ActiveProvider;
-        return new MapRenderShaderProgramProviderIdentity(
+        return new ShaderProgramProviderIdentity(
             slot.Address,
             provider.Id,
             provider.Owner,

@@ -6,6 +6,7 @@ using IW4.Render.Geometry;
 using IW4.Render.Materials;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.Techniques;
 using IW4.Render.Textures;
 
 namespace IW4.Render.Picking;
@@ -18,7 +19,7 @@ public static class MapRenderPicker
 
     public static bool TryPick(
         MapRenderScene scene,
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector2 screenPosition,
         Vector2 viewportSize,
         bool includeUntexturedGeometry,
@@ -88,7 +89,7 @@ public static class MapRenderPicker
     /// </summary>
     public static bool TryPickCollision(
         MapRenderScene scene,
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector2 screenPosition,
         Vector2 viewportSize,
         out MapRenderPickHit hit)
@@ -146,7 +147,7 @@ public static class MapRenderPicker
     /// without duplicating camera projection semantics.
     /// </summary>
     public static bool TryCreateScreenRay(
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector2 screenPosition,
         Vector2 viewportSize,
         out Vector3 origin,
@@ -262,7 +263,7 @@ public static class MapRenderPicker
 
     public static IReadOnlyList<MapRenderPickCandidate> PickCandidates(
         MapRenderScene scene,
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector2 screenPosition,
         Vector2 viewportSize,
         bool includeUntexturedGeometry = true,
@@ -400,7 +401,7 @@ public static class MapRenderPicker
     /// </summary>
     public static IReadOnlyList<MapRenderPickCandidate> PickRayStack(
         MapRenderScene scene,
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector2 screenPosition,
         Vector2 viewportSize,
         bool includeUntexturedGeometry = true,
@@ -662,7 +663,7 @@ public static class MapRenderPicker
     }
 
     private static bool TryMakeRay(
-        MapRenderCamera camera,
+        RenderCamera camera,
         Vector2 screenPosition,
         Vector2 viewportSize,
         out Vector3 origin,
@@ -1428,7 +1429,7 @@ public static class MapRenderPicker
     {
         MapRenderPickMaterialInfo? material = hit.Material;
         bool isTextured = material is not null;
-        bool isCameraColorCandidate = material is not null && MapRenderPassClassifier.CanSubmitToCameraColor(material.PassClass);
+        bool isCameraColorCandidate = material is not null && MaterialPassClassifier.CanSubmitToCameraColor(material.PassClass);
         bool isFallbackMaterialCandidate = material?.PassClass is
             "GenericMaterialFallback" or "MaterialColor" or "AuthoredMaterialCandidate";
         bool hasColorSemantic = material?.TextureSemantic == 0x02;
@@ -1540,10 +1541,11 @@ public static class MapRenderPicker
     {
         return ToMaterialInfo(
             batch.Pass,
+            batch.PrimarySampler,
             batch.Texture,
             batch.UnresolvedCodeSamplerCount,
             batch.ColorLayers,
-            batch.MaterialSamplers,
+            batch.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
             batch.ShaderExecution,
             batch.ShaderExecutionStatus,
             batch.UvRoute,
@@ -1554,10 +1556,11 @@ public static class MapRenderPicker
     {
         return ToMaterialInfo(
             batch.Pass,
+            batch.PrimarySampler,
             batch.Texture,
             batch.UnresolvedCodeSamplerCount,
             batch.ColorLayers,
-            batch.MaterialSamplers,
+            batch.MaterialSamplers.Select(binding => binding.Binding).ToArray(),
             batch.ShaderExecution,
             batch.ShaderExecution.ProgramExecutionStatus,
             batch.UvRoute,
@@ -1565,29 +1568,30 @@ public static class MapRenderPicker
     }
 
     private static MapRenderPickMaterialInfo ToMaterialInfo(
-        MapRenderMaterialPass pass,
-        MapRenderTexture texture,
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity primarySampler,
+        Texture texture,
         int unresolvedCodeSamplerCount,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
-        MapRenderShaderExecutionContract shaderExecution,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
+        IReadOnlyList<MaterialSamplerBinding> materialSamplers,
+        ShaderExecutionContract shaderExecution,
         string shaderExecutionStatus,
-        MapRenderUvRoute uvRoute,
-        MapRenderState state)
+        UvRoute uvRoute,
+        RenderState state)
     {
-        MapRenderSamplerState sampler = texture.DecodedSamplerState;
+        RsxSamplerState sampler = texture.DecodedSamplerState;
         return new MapRenderPickMaterialInfo(
             pass.MaterialName,
-            pass.TechniqueSetName,
-            pass.TechniqueSlot,
-            pass.TechniqueName,
-            pass.PassClass,
-            pass.PassIndex,
-            pass.SamplerArgIndex,
-            pass.SamplerDest,
-            pass.SamplerHash,
-            pass.TextureSemantic,
-            pass.TexCoordSource,
+            pass.TechniquePass.TechniqueSetName,
+            pass.TechniquePass.TechniqueSlot,
+            pass.TechniquePass.TechniqueName,
+            pass.TechniquePass.PassClass,
+            pass.TechniquePass.PassIndex,
+            primarySampler.SamplerArgIndex,
+            primarySampler.SamplerDest,
+            primarySampler.SamplerHash,
+            primarySampler.TextureSemantic,
+            uvRoute.TexCoordSource,
             texture.Name,
             texture.Width,
             texture.Height,
@@ -1615,18 +1619,18 @@ public static class MapRenderPicker
             unresolvedCodeSamplerCount,
             colorLayers.Select(layer => new MapRenderPickColorLayerInfo(
                 layer.LayerIndex,
-                layer.SamplerArgIndex,
-                layer.SamplerDest,
-                layer.SamplerHash,
-                layer.TextureSemantic,
+                layer.Identity.SamplerArgIndex,
+                layer.Identity.SamplerDest,
+                layer.Identity.SamplerHash,
+                layer.Identity.TextureSemantic,
                 layer.Texture.Name,
                 layer.BlendWeightComponent,
                 layer.UvRoute)).ToArray(),
             materialSamplers.Select(binding => new MapRenderPickMaterialSamplerInfo(
-                binding.SamplerArgIndex,
-                binding.SamplerDest,
-                binding.SamplerHash,
-                binding.TextureSemantic,
+                binding.Identity.SamplerArgIndex,
+                binding.Identity.SamplerDest,
+                binding.Identity.SamplerHash,
+                binding.Identity.TextureSemantic,
                 binding.TextureName,
                 binding.UvRoute)).ToArray(),
             shaderExecution,

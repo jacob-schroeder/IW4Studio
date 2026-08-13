@@ -14,7 +14,7 @@ public static class MapRenderEditorPreviewAtmospherePlanner
     public const float DefaultMaxOpacity = 0.72f;
 
     public static MapRenderEditorPreviewAtmospherePlan Create(
-        MapRenderBounds bounds,
+        RenderBounds bounds,
         MapRenderEditorPreviewAtmosphereSettings? settings = null)
     {
         MapRenderEditorPreviewAtmosphereSettings effective =
@@ -61,7 +61,7 @@ public static class MapRenderEditorPreviewAtmospherePlanner
     }
 
     private static MapRenderEditorPreviewAtmosphereSettings
-        CreatePresetSettings(MapRenderBounds bounds)
+        CreatePresetSettings(RenderBounds bounds)
     {
         float extent = bounds.IsValid
             ? MathF.Max(

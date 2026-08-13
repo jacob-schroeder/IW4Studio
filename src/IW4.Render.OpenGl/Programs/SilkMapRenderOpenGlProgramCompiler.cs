@@ -33,7 +33,7 @@ public sealed class SilkMapRenderOpenGlProgramCompiler :
     public string LinkProfileIdentity { get; }
 
     public MapRenderOpenGlProgramResource Compile(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         string vertexGlsl,
         string pixelGlsl)
     {
@@ -66,7 +66,7 @@ public sealed class SilkMapRenderOpenGlProgramCompiler :
     }
 
     public MapRenderOpenGlProgramResource DescribeLinkedProgram(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         uint programHandle,
         string vertexGlsl,
         string pixelGlsl)
@@ -90,8 +90,8 @@ public sealed class SilkMapRenderOpenGlProgramCompiler :
         return new MapRenderOpenGlProgramResource(
             key,
             programHandle,
-            MapRenderOpenGlProgramKey.HashExactText(vertexGlsl),
-            MapRenderOpenGlProgramKey.HashExactText(pixelGlsl),
+            OpenGlProgramKey.HashExactText(vertexGlsl),
+            OpenGlProgramKey.HashExactText(pixelGlsl),
             locations.Samplers,
             locations.VertexConstants,
             locations.CodePixelConstants);
@@ -240,7 +240,7 @@ internal static class MapRenderOpenGlActiveUniformDiscovery
     private const string SamplerPrefix = "rsxSampler";
     private const string VertexConstantArray = "rsxVertexConst";
     private const string CodePixelConstantArray =
-        MapRenderOpenGlCodePixelConstantUniformLayout.ArrayName;
+        OpenGlCodePixelConstantUniformLayout.ArrayName;
 
     internal static MapRenderOpenGlTrackedActiveUniform[] Expand(
         string activeName,
@@ -276,7 +276,7 @@ internal static class MapRenderOpenGlActiveUniformDiscovery
                 VertexConstantArray,
                 firstVertexConstant,
                 activeSize,
-                MapRenderRsxVertexConstantLayout.Count);
+                RsxVertexConstantLayout.Count);
         }
 
         if (TryParseArrayElement(
@@ -289,7 +289,7 @@ internal static class MapRenderOpenGlActiveUniformDiscovery
                 CodePixelConstantArray,
                 firstCodePixelConstant,
                 activeSize,
-                MapRenderOpenGlCodePixelConstantUniformLayout.Count);
+                OpenGlCodePixelConstantUniformLayout.Count);
         }
 
         return [];

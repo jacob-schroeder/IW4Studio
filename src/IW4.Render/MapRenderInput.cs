@@ -1,7 +1,9 @@
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
+using IW4.Render.Assets;
 using IW4.Render.EditorPreview;
-using IW4.Render.Scheduling.Fog;
+using IW4.Render.Execution.Fog;
+using IW4.Runtime.Assets.Lifecycle.State;
 using IW4.Runtime.Assets.Images;
 
 namespace IW4.Render;
@@ -23,7 +25,8 @@ public enum MapRenderSceneBuildProfile : byte
 /// .vision rows after selection or interpolation.
 /// </summary>
 public readonly record struct MapRenderInput(
-    MapRenderAssetSource AssetSource,
+    RenderAssetSource AssetSource,
+    GfxWorldRuntimeState GfxWorldRuntime,
     string FastFilePath,
     GfxWorldAsset? GfxMap,
     ClipMapAsset? ClipMap,

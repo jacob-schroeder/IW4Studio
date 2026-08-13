@@ -7,26 +7,27 @@ using IW4.Render.OpenGl.Shaders;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.Lifecycle;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 
 namespace IW4.Render.OpenGl.Presentation;
 
 internal sealed record MapRenderOpenGlNormalCameraFullscreenProgramSources(
     string FullscreenVertexGlsl,
-    MapRenderOpenGlAuthoredFragmentSource FeedbackReplacePixelSource,
-    MapRenderOpenGlAuthoredFragmentSource PostFxPixelSource,
-    MapRenderOpenGlAuthoredFragmentSource? PostFxColor2PixelSource,
+    OpenGlAuthoredFragmentSource FeedbackReplacePixelSource,
+    OpenGlAuthoredFragmentSource PostFxPixelSource,
+    OpenGlAuthoredFragmentSource? PostFxColor2PixelSource,
     MapRenderOpenGlNormalCameraGlowProgramSources? Glow,
     long AssetPoolRevision);
 
 internal sealed record MapRenderOpenGlNormalCameraGlowFilterProgramSources(
     string VertexGlsl,
-    MapRenderOpenGlAuthoredFragmentSource PixelSource);
+    OpenGlAuthoredFragmentSource PixelSource);
 
 internal sealed record MapRenderOpenGlNormalCameraGlowProgramSources(
     string SetupVertexGlsl,
-    MapRenderOpenGlAuthoredFragmentSource SetupPixelSource,
+    OpenGlAuthoredFragmentSource SetupPixelSource,
     string ApplyVertexGlsl,
-    MapRenderOpenGlAuthoredFragmentSource ApplyPixelSource,
+    OpenGlAuthoredFragmentSource ApplyPixelSource,
     IReadOnlyList<MapRenderOpenGlNormalCameraGlowFilterProgramSources>
         SymmetricFilters);
 
@@ -196,16 +197,16 @@ internal static class
             filters);
     }
 
-    private static MapRenderOpenGlAuthoredFragmentSource
+    private static OpenGlAuthoredFragmentSource
         ComposeFixedFunctionPixelProgram(
         ResolvedMaterialProgram program,
         MapRenderNormalCameraMaterialAssetContract contract)
     {
-        MapRenderState state = MapRenderStateDecoder.Decode(
+        RenderState state = RenderStateDecoder.Decode(
             contract.StateBits0,
             contract.StateBits1,
             tail: 0);
-        if (!MapRenderOpenGlFixedFunctionEpilogue.TryCompose(
+        if (!OpenGlFixedFunctionEpilogue.TryCompose(
                 state,
                 program.Translation.FragmentProgramControl,
                 suppressShaderPackerForDiagnosticOutput: false,
@@ -216,7 +217,7 @@ internal static class
             throw new InvalidOperationException(
                 $"Fullscreen material '{contract.MaterialName}' has an unsupported fixed-function epilogue.");
         }
-        return MapRenderOpenGlFixedFunctionEpilogue.Apply(
+        return OpenGlFixedFunctionEpilogue.Apply(
             program.PixelSource,
             epilogue);
     }
@@ -234,7 +235,7 @@ internal static class
         if (!lookup.TryResolveCanonicalMaterialTechniqueBinding(
                 contract.MaterialName,
                 revision,
-                out MapRenderMaterialTechniqueBinding? binding))
+                out MaterialTechniqueBinding? binding))
         {
             throw new InvalidOperationException(
                 $"Canonical fullscreen material '{contract.MaterialName}' is unavailable at asset-pool revision {revision}.");
@@ -377,5 +378,5 @@ internal static class
     internal sealed record ResolvedMaterialProgram(
         RsxShaderTranslationResult Translation,
         string VertexGlsl,
-        MapRenderOpenGlAuthoredFragmentSource PixelSource);
+        OpenGlAuthoredFragmentSource PixelSource);
 }

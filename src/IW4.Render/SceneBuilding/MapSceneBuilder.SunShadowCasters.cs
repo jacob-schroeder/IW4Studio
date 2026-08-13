@@ -7,10 +7,10 @@ using IW4.Runtime.Assets.Images;
 using IW4.Render.Assets;
 using IW4.Render.Geometry;
 using IW4.Render.Geometry.Shadows;
+using IW4.Render.Geometry.XModel;
 using IW4.Render.Lighting;
 using IW4.Render.Materials;
 using IW4.Render.Scheduling.Shadows;
-using IW4.Render.Scheduling.StaticModels;
 using IW4.Render.Textures;
 
 namespace IW4.Render.SceneBuilding;
@@ -27,8 +27,8 @@ public sealed partial class MapSceneBuilder
         MapRenderSunShadowStaticMaterialEligibility materialEligibility,
         MapRenderSunShadowCasterMaterialPlan material,
         MapRenderSunShadowCasterGeometry geometry,
-        MapRenderUvRoute? cutoutUvRoute,
-        MapRenderTexture? cutoutTexture)
+        UvRoute? cutoutUvRoute,
+        Texture? cutoutTexture)
     {
         internal XModelAsset Model { get; } = model;
         internal XModelLodInfo Lod { get; } = lod;
@@ -42,8 +42,8 @@ public sealed partial class MapSceneBuilder
             material;
         internal MapRenderSunShadowCasterGeometry Geometry { get; } =
             geometry;
-        internal MapRenderUvRoute? CutoutUvRoute { get; } = cutoutUvRoute;
-        internal MapRenderTexture? CutoutTexture { get; } = cutoutTexture;
+        internal UvRoute? CutoutUvRoute { get; } = cutoutUvRoute;
+        internal Texture? CutoutTexture { get; } = cutoutTexture;
         internal List<MapRenderSunShadowStaticCasterInstance> Instances
             { get; } = [];
 
@@ -76,9 +76,9 @@ public sealed partial class MapSceneBuilder
             IReadOnlyList<PreparedWorldSurfaceGeometry> preparedSurfaces,
             RenderAssetLookup lookup,
             IGfxImagePayloadResolver imageStreams,
-            MapRenderTextureCache
+            RenderTextureCache
                 textureCache,
-            HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+            HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
             ref int decodedTextureCount,
             ref int skippedTextureCount,
             out IReadOnlyList<
@@ -157,8 +157,8 @@ public sealed partial class MapSceneBuilder
                     ref decodedTextureCount,
                     ref skippedTextureCount,
                     out MapRenderSunShadowCasterGeometry? geometry,
-                    out MapRenderUvRoute? cutoutUvRoute,
-                    out MapRenderTexture? cutoutTexture))
+                    out UvRoute? cutoutUvRoute,
+                    out Texture? cutoutTexture))
             {
                 rejected.Add(new(
                     surfaceIndex,
@@ -188,9 +188,9 @@ public sealed partial class MapSceneBuilder
             MapRenderStaticModelLightingAtlas lightingAtlas,
             RenderAssetLookup lookup,
             IGfxImagePayloadResolver imageStreams,
-            MapRenderTextureCache
+            RenderTextureCache
                 textureCache,
-            HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+            HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
             ref int decodedTextureCount,
             ref int skippedTextureCount,
             out IReadOnlyList<
@@ -203,7 +203,7 @@ public sealed partial class MapSceneBuilder
             MapRenderSunShadowCasterMaterialPlan?>(
                 ReferenceEqualityComparer.Instance);
         var lodGeometryCache = new Dictionary<XModelAsset,
-            IReadOnlyList<MapRenderStaticModelLodGeometry>>(
+            IReadOnlyList<XModelLodGeometry>>(
                 ReferenceEqualityComparer.Instance);
         var invalidModels = new HashSet<XModelAsset>(
             ReferenceEqualityComparer.Instance);
@@ -233,10 +233,10 @@ public sealed partial class MapSceneBuilder
 
             if (!lodGeometryCache.TryGetValue(
                     model,
-                    out IReadOnlyList<MapRenderStaticModelLodGeometry>?
+                    out IReadOnlyList<XModelLodGeometry>?
                         lodGeometries))
             {
-                if (!MapRenderStaticModelLodGeometryCatalog.TryCreate(
+                if (!XModelLodGeometryCatalog.TryCreate(
                         model,
                         out lodGeometries))
                 {
@@ -246,7 +246,7 @@ public sealed partial class MapSceneBuilder
                 lodGeometryCache.Add(model, lodGeometries);
             }
 
-            foreach (MapRenderStaticModelLodGeometry lodGeometry in
+            foreach (XModelLodGeometry lodGeometry in
                      lodGeometries)
             {
                 for (int surfaceOffset = 0;
@@ -321,8 +321,8 @@ public sealed partial class MapSceneBuilder
                                 ref decodedTextureCount,
                                 ref skippedTextureCount,
                                 out MapRenderSunShadowCasterGeometry? geometry,
-                                out MapRenderUvRoute? cutoutUvRoute,
-                                out MapRenderTexture? cutoutTexture))
+                                out UvRoute? cutoutUvRoute,
+                                out Texture? cutoutTexture))
                         {
                             continue;
                         }
@@ -380,13 +380,13 @@ public sealed partial class MapSceneBuilder
         PreparedWorldSurfaceGeometry preparedGeometry,
         MapRenderSunShadowCasterMaterialPlan plan,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount,
         out MapRenderSunShadowCasterGeometry? geometry,
-        out MapRenderUvRoute? cutoutUvRoute,
-        out MapRenderTexture? cutoutTexture)
+        out UvRoute? cutoutUvRoute,
+        out Texture? cutoutTexture)
     {
         bool cutout = plan is MapRenderSunShadowCutoutCasterMaterialPlan;
         bool usesVertexColor = plan is
@@ -412,7 +412,7 @@ public sealed partial class MapSceneBuilder
                 MapRenderSunShadowCasterMaterialPlanner
                     .CutoutEngineRouteSource,
                 texCoordSourceIsEngineRouted: true,
-                out MapRenderUvRoute resolvedRoute);
+                out UvRoute resolvedRoute);
             if (uvDecoder is null || !uvDecoder.HasTexCoord)
             {
                 geometry = null;
@@ -422,8 +422,8 @@ public sealed partial class MapSceneBuilder
 
             var cutoutPlan = (MapRenderSunShadowCutoutCasterMaterialPlan)plan;
             if (!TryDecodeTexture(
-                    cutoutPlan.Sampler.Texture,
                     cutoutPlan.Sampler.Image,
+                    cutoutPlan.Sampler.Texture.SamplerState,
                     imageStreams,
                     textureCache,
                     failedTextureCacheKeys,
@@ -452,13 +452,13 @@ public sealed partial class MapSceneBuilder
         XSurface surface,
         MapRenderSunShadowCasterMaterialPlan plan,
         IGfxImagePayloadResolver imageStreams,
-        MapRenderTextureCache textureCache,
-        HashSet<MapRenderTextureCacheKey> failedTextureCacheKeys,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
         ref int decodedTextureCount,
         ref int skippedTextureCount,
         out MapRenderSunShadowCasterGeometry? geometry,
-        out MapRenderUvRoute? cutoutUvRoute,
-        out MapRenderTexture? cutoutTexture)
+        out UvRoute? cutoutUvRoute,
+        out Texture? cutoutTexture)
     {
         bool cutout = plan is MapRenderSunShadowCutoutCasterMaterialPlan;
         bool usesVertexColor = plan is
@@ -485,8 +485,8 @@ public sealed partial class MapSceneBuilder
 
             var cutoutPlan = (MapRenderSunShadowCutoutCasterMaterialPlan)plan;
             if (!TryDecodeTexture(
-                    cutoutPlan.Sampler.Texture,
                     cutoutPlan.Sampler.Image,
+                    cutoutPlan.Sampler.Texture.SamplerState,
                     imageStreams,
                     textureCache,
                     failedTextureCacheKeys,

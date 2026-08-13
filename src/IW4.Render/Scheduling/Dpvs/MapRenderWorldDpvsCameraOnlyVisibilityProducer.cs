@@ -12,7 +12,7 @@ public static class MapRenderWorldDpvsCameraOnlyVisibilityProducer
 {
     public static MapRenderWorldDpvsCameraOnlyVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebufferExtent,
         MapRenderNormalCameraFarPlaneState farPlane,
         MapRenderWorldDpvsPortalTraversalSettings? portalTraversalSettings =
@@ -32,7 +32,7 @@ public static class MapRenderWorldDpvsCameraOnlyVisibilityProducer
 
     internal static MapRenderWorldDpvsCameraOnlyVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebufferExtent,
         MapRenderNormalCameraFarPlaneState farPlane,
         MapRenderWorldDpvsPortalTraversalSettings? portalTraversalSettings,

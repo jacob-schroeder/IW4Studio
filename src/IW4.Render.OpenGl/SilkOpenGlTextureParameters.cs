@@ -1,4 +1,6 @@
 using IW4.Render.Textures;
+using Texture = IW4.Render.Textures.Texture;
+using TextureTarget = Silk.NET.OpenGL.TextureTarget;
 using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl;
@@ -32,20 +34,20 @@ internal sealed class SilkOpenGlTextureParameters
     }
 
     internal void Apply(
-        MapRenderTexture texture,
+        Texture texture,
         int maxMipLevel,
         TextureTarget textureTarget)
     {
         ArgumentNullException.ThrowIfNull(texture);
         ApplySwizzle(
-            MapRenderRsxTextureSwizzleDecoder.Decode(
+            RsxTextureSwizzleDecoder.Decode(
                 texture.RsxTextureCommandState.TexSwizzlePayload),
             textureTarget);
         ApplySampler(texture.DecodedSamplerState, maxMipLevel, textureTarget);
     }
 
     internal void ApplySwizzle(
-        MapRenderRsxTextureSwizzle swizzle,
+        RsxTextureSwizzle swizzle,
         TextureTarget textureTarget)
     {
         _gl.TexParameter(
@@ -67,12 +69,12 @@ internal sealed class SilkOpenGlTextureParameters
     }
 
     internal void ApplySampler(
-        MapRenderSamplerState sampler,
+        RsxSamplerState sampler,
         int maxMipLevel,
         TextureTarget textureTarget)
     {
         bool useMipChain = maxMipLevel > 0 &&
-            sampler.MipFilter != MapRenderTextureFilter.None;
+            sampler.MipFilter != TextureFilter.None;
         _gl.TexParameter(
             textureTarget,
             TextureParameterName.TextureMinFilter,
@@ -113,31 +115,31 @@ internal sealed class SilkOpenGlTextureParameters
     }
 
     private static int ToGlTextureSwizzle(
-        MapRenderRsxTextureSwizzleSource source) => source switch
+        RsxTextureSwizzleSource source) => source switch
         {
-            MapRenderRsxTextureSwizzleSource.Zero => GlTextureSwizzleZero,
-            MapRenderRsxTextureSwizzleSource.One => GlTextureSwizzleOne,
-            MapRenderRsxTextureSwizzleSource.Red => GlTextureSwizzleRed,
-            MapRenderRsxTextureSwizzleSource.Green => GlTextureSwizzleGreen,
-            MapRenderRsxTextureSwizzleSource.Blue => GlTextureSwizzleBlue,
-            MapRenderRsxTextureSwizzleSource.Alpha => GlTextureSwizzleAlpha,
+            RsxTextureSwizzleSource.Zero => GlTextureSwizzleZero,
+            RsxTextureSwizzleSource.One => GlTextureSwizzleOne,
+            RsxTextureSwizzleSource.Red => GlTextureSwizzleRed,
+            RsxTextureSwizzleSource.Green => GlTextureSwizzleGreen,
+            RsxTextureSwizzleSource.Blue => GlTextureSwizzleBlue,
+            RsxTextureSwizzleSource.Alpha => GlTextureSwizzleAlpha,
             _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
         };
 
     private static TextureMinFilter ToMinFilter(
-        MapRenderSamplerState sampler,
+        RsxSamplerState sampler,
         bool useMipChain)
     {
-        bool point = sampler.MinFilter == MapRenderTextureFilter.Point;
+        bool point = sampler.MinFilter == TextureFilter.Point;
         if (!useMipChain)
             return point ? TextureMinFilter.Nearest : TextureMinFilter.Linear;
 
         return sampler.MipFilter switch
         {
-            MapRenderTextureFilter.Point => point
+            TextureFilter.Point => point
                 ? TextureMinFilter.NearestMipmapNearest
                 : TextureMinFilter.LinearMipmapNearest,
-            MapRenderTextureFilter.Linear => point
+            TextureFilter.Linear => point
                 ? TextureMinFilter.NearestMipmapLinear
                 : TextureMinFilter.LinearMipmapLinear,
             _ => point ? TextureMinFilter.Nearest : TextureMinFilter.Linear
@@ -145,14 +147,14 @@ internal sealed class SilkOpenGlTextureParameters
     }
 
     private static TextureMagFilter ToMagFilter(
-        MapRenderTextureFilter filter) =>
-        filter == MapRenderTextureFilter.Point
+        TextureFilter filter) =>
+        filter == TextureFilter.Point
             ? TextureMagFilter.Nearest
             : TextureMagFilter.Linear;
 
     private static TextureWrapMode ToWrapMode(
-        MapRenderTextureAddressMode mode) =>
-        mode == MapRenderTextureAddressMode.Clamp
+        TextureAddressMode mode) =>
+        mode == TextureAddressMode.Clamp
             ? TextureWrapMode.ClampToEdge
             : TextureWrapMode.Repeat;
 }

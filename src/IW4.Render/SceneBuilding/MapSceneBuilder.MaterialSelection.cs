@@ -12,6 +12,7 @@ using IW4.Render.Geometry;
 using IW4.Render.Materials;
 using IW4.Render.Scheduling;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 
 namespace IW4.Render.SceneBuilding;
 
@@ -37,19 +38,18 @@ public sealed partial class MapSceneBuilder
         }
 
         MaterialPassAsset pass = technique.Passes[0];
-        MapRenderSelectedPassProgramSources sources = lookup.ResolveSources(
+        SelectedPassProgramSources sources = lookup.ResolveSources(
             techset,
             technique,
-            new MapRenderSelectedTechniquePass(
-                MapRenderEditorDepthPrepassPlanner.StandardPassIndex,
-                pass));
+            MapRenderEditorDepthPrepassPlanner.StandardPassIndex,
+            pass);
         if (!sources.HasCompleteArguments ||
-            !MapRenderStateDecoder.TryDecode(
+            !RenderStateDecoder.TryDecode(
                 material,
                 slot.Index,
                 MapRenderEditorDepthPrepassPlanner.StandardPassIndex,
                 lookup,
-                out MapRenderState state))
+                out RenderState state))
         {
             return null;
         }
@@ -129,7 +129,7 @@ public sealed partial class MapSceneBuilder
     /// sampler remains deliberately deferred to draw-time authorization.
     /// </summary>
     internal static bool ReceiverVariantProgramReadyForBuild(
-        MapRenderShaderExecutionContract execution,
+        ShaderExecutionContract execution,
         MapRenderTechniqueVariantAllocation allocation)
     {
         ArgumentNullException.ThrowIfNull(execution);
@@ -179,21 +179,21 @@ public sealed partial class MapSceneBuilder
              passIndex++)
         {
             MaterialPassAsset pass = technique.Passes[passIndex];
-            if (!MapRenderStateDecoder.TryDecode(
+            if (!RenderStateDecoder.TryDecode(
                     material,
                     techniqueSlot,
                     passIndex,
                     lookup,
-                    out MapRenderState state))
+                    out RenderState state))
             {
                 return true;
             }
 
-            string passClass = MapRenderPassClassifier.Classify(
+            string passClass = MaterialPassClassifier.Classify(
                 technique.Name ?? string.Empty,
                 state,
                 CountUnresolvedCodePixelSamplers(pass));
-            if (MapRenderPassClassifier.CanSubmitToCameraColor(passClass))
+            if (MaterialPassClassifier.CanSubmitToCameraColor(passClass))
                 return true;
         }
 
@@ -254,22 +254,39 @@ public sealed partial class MapSceneBuilder
             // The map's legacy SelectedColorPass carrier still requires one
             // primary texture. Standalone authored packets do not impose this
             // restriction and retain valid sampler-free camera-color passes.
-            if (pass.PrimaryTexture is null || pass.PrimaryImage is null)
+            if (!AuthoredMaterialSamplerResolver.TrySelectPrimary(
+                    material,
+                    pass.SourcePass,
+                    pass.Arguments,
+                    lookup,
+                    GenericFallbackTexCoordSource,
+                    out AuthoredMaterialPrimarySamplerSelection? primary) ||
+                primary is null)
             {
                 blockReason =
-                    $"Selected camera-color group pass {pass.Pass.PassIndex} " +
+                    $"Selected camera-color group pass {pass.PassIndex} " +
                     "has no primary material sampler for the map batch carrier.";
                 return [];
             }
 
+            var materialPass = new MaterialPassIdentity(
+                material.Info.Name ?? string.Empty,
+                new TechniquePassIdentity(
+                    techset?.Name ?? string.Empty,
+                    selection.TechniqueSlot,
+                    selection.TechniqueName,
+                    pass.PassClass,
+                    pass.PassIndex,
+                    pass.SourcePass.CustomSamplerFlags));
             result.Add(new SelectedColorPass(
-                pass.PrimaryTexture,
-                pass.PrimaryImage,
-                pass.Pass,
+                primary.Texture,
+                primary.Image,
+                materialPass,
+                primary.Identity,
                 pass.State,
                 pass.UnresolvedCodeSamplerCount,
-                pass.Pass.TexCoordSource,
-                pass.TexCoordSourceIsEngineRouted,
+                primary.TexCoordSource,
+                primary.TexCoordSourceIsEngineRouted,
                 AuthoredProgramExecutable: true));
         }
 
@@ -308,11 +325,11 @@ public sealed partial class MapSceneBuilder
         string lastBlockReason =
             "Editor technique policy found no populated authored slot.";
         IReadOnlyList<int> orderedSlots =
-            MapRenderEditorTechniquePolicy.OrderCandidateSlots(slots);
+            EditorPreviewTechniquePolicy.OrderCandidateSlots(slots);
         foreach (int techniqueSlot in orderedSlots.Where(slot =>
-                     slot is MapRenderEditorTechniquePolicy
+                     slot is EditorPreviewTechniquePolicy
                          .PreferredLitTechniqueSlot or
-                         MapRenderEditorTechniquePolicy
+                         EditorPreviewTechniquePolicy
                          .PreferredEmissiveTechniqueSlot))
         {
             IReadOnlyList<SelectedColorPass> passes =
@@ -335,9 +352,9 @@ public sealed partial class MapSceneBuilder
         IReadOnlyList<SelectedColorPass>? bestPasses = null;
         SelectedColorPass? bestRepresentative = null;
         foreach (int techniqueSlot in orderedSlots.Where(slot =>
-                     slot is not MapRenderEditorTechniquePolicy
+                     slot is not EditorPreviewTechniquePolicy
                          .PreferredLitTechniqueSlot and not
-                         MapRenderEditorTechniquePolicy
+                         EditorPreviewTechniquePolicy
                          .PreferredEmissiveTechniqueSlot))
         {
             IReadOnlyList<SelectedColorPass> passes =
@@ -386,8 +403,9 @@ public sealed partial class MapSceneBuilder
         SelectedColorPass left,
         SelectedColorPass right)
     {
-        int result = EditorPassClassRank(left.Pass.PassClass).CompareTo(
-            EditorPassClassRank(right.Pass.PassClass));
+        int result = EditorPassClassRank(
+            left.Pass.TechniquePass.PassClass).CompareTo(
+            EditorPassClassRank(right.Pass.TechniquePass.PassClass));
         if (result != 0)
             return result;
         result = (left.Texture.Semantic == ColorTextureSemantic ? 0 : 1)
@@ -402,30 +420,32 @@ public sealed partial class MapSceneBuilder
             right.UnresolvedCodeSamplerCount);
         if (result != 0)
             return result;
-        result = (left.Pass.SamplerDest == 0 ? 0 : 1)
-            .CompareTo(right.Pass.SamplerDest == 0 ? 0 : 1);
+        result = (left.PrimarySampler.SamplerDest == 0 ? 0 : 1)
+            .CompareTo(right.PrimarySampler.SamplerDest == 0 ? 0 : 1);
         if (result != 0)
             return result;
-        result = left.Pass.TechniqueSlot.CompareTo(
-            right.Pass.TechniqueSlot);
+        result = left.Pass.TechniquePass.TechniqueSlot.CompareTo(
+            right.Pass.TechniquePass.TechniqueSlot);
         if (result != 0)
             return result;
-        result = left.Pass.PassIndex.CompareTo(right.Pass.PassIndex);
+        result = left.Pass.TechniquePass.PassIndex.CompareTo(
+            right.Pass.TechniquePass.PassIndex);
         if (result != 0)
             return result;
-        result = left.Pass.SamplerArgIndex.CompareTo(
-            right.Pass.SamplerArgIndex);
+        result = left.PrimarySampler.SamplerArgIndex.CompareTo(
+            right.PrimarySampler.SamplerArgIndex);
         return result != 0
             ? result
-            : left.Pass.SamplerHash.CompareTo(right.Pass.SamplerHash);
+            : left.PrimarySampler.SamplerHash.CompareTo(
+                right.PrimarySampler.SamplerHash);
     }
 
     private static int EditorPassClassRank(string passClass) =>
         passClass switch
         {
-            MapRenderPassClassifier.CameraColor => 0,
-            MapRenderPassClassifier.CameraColorWithUnresolvedCodeSamplers => 1,
-            MapRenderPassClassifier.CameraColorWithMissingState => 2,
+            MaterialPassClassifier.CameraColor => 0,
+            MaterialPassClassifier.CameraColorWithUnresolvedCodeSamplers => 1,
+            MaterialPassClassifier.CameraColorWithMissingState => 2,
             _ => 3
         };
 
@@ -434,7 +454,7 @@ public sealed partial class MapSceneBuilder
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup)
     {
-        if (!TryResolveMaterialTexture(
+        if (!MaterialTextureResolver.TryResolve(
                 material,
                 lookup,
                 preferredHash: null,
@@ -453,23 +473,25 @@ public sealed partial class MapSceneBuilder
         // hydrating/scanning dependency-zone technique graphs for this
         // explicit generic material route.
         const byte staticTexCoordSource = GenericFallbackTexCoordSource;
-        var pass = new MapRenderMaterialPass(
-            material.Info.Name ?? string.Empty,
-            techset?.Name ?? string.Empty,
-            -1,
-            "material.texture[semantic=0x02]",
-            BaseSurfaceTexturePassClass,
-            -1,
-            -1,
-            0,
+        var primarySampler = new MaterialSamplerIdentity(
+            SamplerArgIndex: -1,
+            SamplerDest: 0,
             texture.NameHash,
-            texture.Semantic,
-            staticTexCoordSource,
-            0);
+            texture.Semantic);
+        var pass = new MaterialPassIdentity(
+            material.Info.Name ?? string.Empty,
+            new TechniquePassIdentity(
+                techset?.Name ?? string.Empty,
+                -1,
+                "material.texture[semantic=0x02]",
+                BaseSurfaceTexturePassClass,
+                -1,
+                CustomSamplerFlags: 0));
         return new SelectedColorPass(
             texture,
             image,
             pass,
+            primarySampler,
             GenericMaterialState,
             0,
             staticTexCoordSource,
@@ -482,7 +504,7 @@ public sealed partial class MapSceneBuilder
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup)
     {
-        if (!TryResolveMaterialTexture(
+        if (!MaterialTextureResolver.TryResolve(
                 material,
                 lookup,
                 preferredHash: null,
@@ -501,7 +523,7 @@ public sealed partial class MapSceneBuilder
         // World backend source 0x02 is the primary color UV row for every
         // eligible mp_boneyard surface.
         const byte texCoordSource = GenericFallbackTexCoordSource;
-        MapRenderState fallbackState = GenericMaterialState;
+        RenderState fallbackState = GenericMaterialState;
         if (techset is not null &&
             TrySelectRoutedBaseSurfaceTexturePass(
                 material,
@@ -516,23 +538,25 @@ public sealed partial class MapSceneBuilder
             // into a partial authored-pass execution.
             fallbackState = rankedAuthoredPass.State;
         }
-        var pass = new MapRenderMaterialPass(
-            material.Info.Name ?? string.Empty,
-            techset?.Name ?? string.Empty,
-            -1,
-            "material.texture[semantic=0x02]",
-            BaseSurfaceTexturePassClass,
-            -1,
-            -1,
-            0,
+        var primarySampler = new MaterialSamplerIdentity(
+            SamplerArgIndex: -1,
+            SamplerDest: 0,
             texture.NameHash,
-            texture.Semantic,
-            texCoordSource,
-            0);
+            texture.Semantic);
+        var pass = new MaterialPassIdentity(
+            material.Info.Name ?? string.Empty,
+            new TechniquePassIdentity(
+                techset?.Name ?? string.Empty,
+                -1,
+                "material.texture[semantic=0x02]",
+                BaseSurfaceTexturePassClass,
+                -1,
+                CustomSamplerFlags: 0));
         return new SelectedColorPass(
             texture,
             image,
             pass,
+            primarySampler,
             fallbackState,
             0,
             texCoordSource,
@@ -580,34 +604,36 @@ public sealed partial class MapSceneBuilder
                     if (image is null)
                         continue;
 
-                    MapRenderState authoredState =
-                        MapRenderStateDecoder.TryDecode(
+                    RenderState authoredState =
+                        RenderStateDecoder.TryDecode(
                             material,
                             slot.Index,
                             passIndex,
                             lookup,
-                            out MapRenderState decodedState)
+                            out RenderState decodedState)
                             ? decodedState
-                            : MapRenderState.Default;
+                            : RenderState.Default;
 
-                    var renderPass = new MapRenderMaterialPass(
-                        material.Info.Name ?? string.Empty,
-                        techset.Name ?? string.Empty,
-                        slot.Index,
-                        technique.Name ?? string.Empty,
-                        BaseSurfaceTexturePassClass,
-                        passIndex,
+                    var primarySampler = new MaterialSamplerIdentity(
                         argIndex,
                         arg.Dest,
                         samplerHash,
-                        texture.Semantic,
-                        texCoordSource,
-                        pass.CustomSamplerFlags);
+                        texture.Semantic);
+                    var renderPass = new MaterialPassIdentity(
+                        material.Info.Name ?? string.Empty,
+                        new TechniquePassIdentity(
+                            techset.Name ?? string.Empty,
+                            slot.Index,
+                            technique.Name ?? string.Empty,
+                            BaseSurfaceTexturePassClass,
+                            passIndex,
+                            pass.CustomSamplerFlags));
 
                     var candidate = new SelectedColorPass(
                         texture,
                         image,
                         renderPass,
+                        primarySampler,
                         CreateGenericMaterialFallbackState(authoredState),
                         unresolvedCodeSamplerCount,
                         texCoordSource,
@@ -632,11 +658,11 @@ public sealed partial class MapSceneBuilder
     /// editor's generic material without importing any other authored render
     /// state. The generic fragment shader implements these exact tuples.
     /// </summary>
-    internal static MapRenderState CreateGenericMaterialFallbackState(
-        MapRenderState authoredState)
+    internal static RenderState CreateGenericMaterialFallbackState(
+        RenderState authoredState)
     {
         if (!authoredState.AlphaTestEnabled ||
-            MapRenderAlphaTest.Resolve(authoredState) is null)
+            AlphaTest.Resolve(authoredState) is null)
         {
             return GenericMaterialState;
         }
@@ -657,7 +683,7 @@ public sealed partial class MapSceneBuilder
     /// </summary>
     internal static SelectedColorPass ApplyStaticModelGenericFallbackState(
         SelectedColorPass selectedPass,
-        MapRenderState authoredState) =>
+        RenderState authoredState) =>
         selectedPass with
         {
             State = CreateGenericMaterialFallbackState(authoredState)
@@ -668,29 +694,30 @@ public sealed partial class MapSceneBuilder
         MaterialTechniqueSetAsset? techset,
         RenderAssetLookup lookup,
         SelectedColorPass selectedPass,
-        IDictionary<MaterialAsset, MapRenderState>
+        IDictionary<MaterialAsset, RenderState>
             syntheticFallbackStateCache)
     {
-        MapRenderState authoredState = MapRenderState.Default;
+        RenderState authoredState = RenderState.Default;
         bool hasAuthoredState = false;
 
         // Generic-selector and authored-candidate fallbacks retain their
         // source pass identity. Prefer that exact PS3 state row when present.
         if (techset is not null &&
-            selectedPass.Pass.TechniqueSlot >= 0 &&
-            selectedPass.Pass.PassIndex >= 0)
+            selectedPass.Pass.TechniquePass.TechniqueSlot >= 0 &&
+            selectedPass.Pass.TechniquePass.PassIndex >= 0)
         {
             MaterialTechniqueSlot? slot = lookup.ResolveTechniqueSlots(techset)
                 .FirstOrDefault(candidate =>
-                    candidate.Index == selectedPass.Pass.TechniqueSlot);
+                    candidate.Index ==
+                        selectedPass.Pass.TechniquePass.TechniqueSlot);
             if (slot?.Technique is { } technique &&
-                (uint)selectedPass.Pass.PassIndex <
+                (uint)selectedPass.Pass.TechniquePass.PassIndex <
                     (uint)technique.Passes.Count)
             {
-                hasAuthoredState = MapRenderStateDecoder.TryDecode(
+                hasAuthoredState = RenderStateDecoder.TryDecode(
                     material,
-                    selectedPass.Pass.TechniqueSlot,
-                    selectedPass.Pass.PassIndex,
+                    selectedPass.Pass.TechniquePass.TechniqueSlot,
+                    selectedPass.Pass.TechniquePass.PassIndex,
                     lookup,
                     out authoredState);
             }
@@ -700,13 +727,14 @@ public sealed partial class MapSceneBuilder
         // pass ordinal. Reuse the ranked routed color pass solely as the
         // alpha-test state authority. TrySelectRoutedBaseSurfaceTexturePass
         // already strips all non-alpha state from its result.
-        bool isSyntheticPass = selectedPass.Pass.TechniqueSlot < 0 ||
-                               selectedPass.Pass.PassIndex < 0;
+        bool isSyntheticPass =
+            selectedPass.Pass.TechniquePass.TechniqueSlot < 0 ||
+            selectedPass.Pass.TechniquePass.PassIndex < 0;
         if (!hasAuthoredState &&
             isSyntheticPass &&
             syntheticFallbackStateCache.TryGetValue(
                 material,
-                out MapRenderState cachedState))
+                out RenderState cachedState))
         {
             authoredState = cachedState;
             hasAuthoredState = true;
@@ -748,20 +776,20 @@ public sealed partial class MapSceneBuilder
         RenderAssetLookup lookup)
     {
         int unresolvedCodeSamplerCount = CountUnresolvedCodePixelSamplers(pass);
-        MapRenderState state = MapRenderState.Default;
-        if (MapRenderStateDecoder.TryDecode(material, techniqueSlot, passIndex, lookup, out MapRenderState decodedState))
+        RenderState state = RenderState.Default;
+        if (RenderStateDecoder.TryDecode(material, techniqueSlot, passIndex, lookup, out RenderState decodedState))
             state = decodedState;
 
-        string passClass = MapRenderPassClassifier.Classify(techniqueName, state, unresolvedCodeSamplerCount);
+        string passClass = MaterialPassClassifier.Classify(techniqueName, state, unresolvedCodeSamplerCount);
         int passClassRank = passClass switch
         {
-            MapRenderPassClassifier.CameraColor => 0,
-            MapRenderPassClassifier.CameraColorWithUnresolvedCodeSamplers => 1,
-            MapRenderPassClassifier.CameraColorWithMissingState => 2,
-            MapRenderPassClassifier.NonFillColorWrite => 4,
-            MapRenderPassClassifier.NonColorWrite => 5,
-            MapRenderPassClassifier.NonColorWire => 6,
-            MapRenderPassClassifier.ShadowDepth => 9,
+            MaterialPassClassifier.CameraColor => 0,
+            MaterialPassClassifier.CameraColorWithUnresolvedCodeSamplers => 1,
+            MaterialPassClassifier.CameraColorWithMissingState => 2,
+            MaterialPassClassifier.NonFillColorWrite => 4,
+            MaterialPassClassifier.NonColorWrite => 5,
+            MaterialPassClassifier.NonColorWire => 6,
+            MaterialPassClassifier.ShadowDepth => 9,
             _ => 8
         };
         int samplerRank = samplerArg.Dest == 0 ? 0 : 1;
@@ -800,7 +828,7 @@ public sealed partial class MapSceneBuilder
                             continue;
 
                         uint samplerHash = unchecked((uint)arg.ArgumentRaw);
-                        if (TryResolveMaterialTexture(material, lookup, samplerHash, requireColor: true, out MaterialTextureDef? texture, out GfxImageAsset? image))
+                        if (MaterialTextureResolver.TryResolve(material, lookup, samplerHash, requireColor: true, out MaterialTextureDef? texture, out GfxImageAsset? image))
                         {
                             bool texCoordSourceIsEngineRouted = RsxShaderInputRouter.TrySelectSamplerSource(
                                 pass,
@@ -830,7 +858,7 @@ public sealed partial class MapSceneBuilder
                         }
 
                         if (fallbackSelectedPass is null &&
-                            TryResolveMaterialTexture(material, lookup, samplerHash, requireColor: false, out texture, out image))
+                            MaterialTextureResolver.TryResolve(material, lookup, samplerHash, requireColor: false, out texture, out image))
                         {
                             bool texCoordSourceIsEngineRouted = RsxShaderInputRouter.TrySelectSamplerSource(
                                 pass,
@@ -886,7 +914,7 @@ public sealed partial class MapSceneBuilder
                             continue;
 
                         uint samplerHash = unchecked((uint)arg.ArgumentRaw);
-                        if (!TryResolveMaterialTexture(material, lookup, samplerHash, requireColor: true, out MaterialTextureDef? texture, out GfxImageAsset? image) ||
+                        if (!MaterialTextureResolver.TryResolve(material, lookup, samplerHash, requireColor: true, out MaterialTextureDef? texture, out GfxImageAsset? image) ||
                             !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture!.Semantic, out byte texCoordSource))
                         {
                             continue;
@@ -913,8 +941,8 @@ public sealed partial class MapSceneBuilder
             }
         }
 
-        if (!TryResolveMaterialTexture(material, lookup, preferredHash: null, requireColor: true, out MaterialTextureDef? fallbackTexture, out GfxImageAsset? fallbackImage) &&
-            !TryResolveMaterialTexture(material, lookup, preferredHash: null, requireColor: false, out fallbackTexture, out fallbackImage))
+        if (!MaterialTextureResolver.TryResolve(material, lookup, preferredHash: null, requireColor: true, out MaterialTextureDef? fallbackTexture, out GfxImageAsset? fallbackImage) &&
+            !MaterialTextureResolver.TryResolve(material, lookup, preferredHash: null, requireColor: false, out fallbackTexture, out fallbackImage))
         {
             return null;
         }
@@ -937,32 +965,6 @@ public sealed partial class MapSceneBuilder
             0);
     }
 
-    private static bool TryResolveMaterialTexture(
-        MaterialAsset material,
-        RenderAssetLookup lookup,
-        uint? preferredHash,
-        bool requireColor,
-        out MaterialTextureDef? texture,
-        out GfxImageAsset? image)
-    {
-        return AuthoredCameraColorTechniqueSelector.TryResolveMaterialTexture(
-            material,
-            lookup,
-            preferredHash,
-            requireColor,
-            out texture,
-            out image);
-    }
-
-    private static int FindMaterialTextureOrdinal(
-        MaterialAsset material,
-        MaterialTextureDef? texture)
-    {
-        return AuthoredCameraColorTechniqueSelector.FindMaterialTextureOrdinal(
-            material,
-            texture);
-    }
-
     private static SelectedColorPass CreateGenericMaterialFallbackPass(
         MaterialAsset material,
         MaterialTechniqueSetAsset? techset,
@@ -980,24 +982,26 @@ public sealed partial class MapSceneBuilder
         bool authoredProgramExecutable,
         byte customSamplerFlags)
     {
-        var pass = new MapRenderMaterialPass(
-            material.Info.Name ?? string.Empty,
-            techset?.Name ?? string.Empty,
-            techniqueSlot,
-            techniqueName,
-            GenericMaterialFallbackPassClass,
-            passIndex,
+        var primarySampler = new MaterialSamplerIdentity(
             argIndex,
             samplerDest,
             samplerHash,
-            texture.Semantic,
-            texCoordSource,
-            customSamplerFlags);
+            texture.Semantic);
+        var pass = new MaterialPassIdentity(
+            material.Info.Name ?? string.Empty,
+            new TechniquePassIdentity(
+                techset?.Name ?? string.Empty,
+                techniqueSlot,
+                techniqueName,
+                GenericMaterialFallbackPassClass,
+                passIndex,
+                customSamplerFlags));
 
         return new SelectedColorPass(
             texture,
             image,
             pass,
+            primarySampler,
             GenericMaterialState,
             unresolvedCodeSamplerCount,
             texCoordSource,
@@ -1040,23 +1044,25 @@ public sealed partial class MapSceneBuilder
                     if (image is null)
                         continue;
 
-                    var candidatePass = new MapRenderMaterialPass(
-                        material.Info.Name ?? string.Empty,
-                        techset.Name ?? string.Empty,
-                        slot.Index,
-                        technique.Name ?? string.Empty,
-                        AuthoredMaterialCandidatePassClass,
-                        passIndex,
+                    var primarySampler = new MaterialSamplerIdentity(
                         argIndex,
                         arg.Dest,
                         unchecked((uint)arg.ArgumentRaw),
-                        texture.Semantic,
-                        texCoordSource,
-                        pass.CustomSamplerFlags);
+                        texture.Semantic);
+                    var candidatePass = new MaterialPassIdentity(
+                        material.Info.Name ?? string.Empty,
+                        new TechniquePassIdentity(
+                            techset.Name ?? string.Empty,
+                            slot.Index,
+                            technique.Name ?? string.Empty,
+                            AuthoredMaterialCandidatePassClass,
+                            passIndex,
+                            pass.CustomSamplerFlags));
                     return new SelectedColorPass(
                         texture,
                         image,
                         candidatePass,
+                        primarySampler,
                         GenericMaterialState,
                         CountUnresolvedCodePixelSamplers(pass),
                         texCoordSource,
@@ -1075,7 +1081,7 @@ public sealed partial class MapSceneBuilder
         foreach (MaterialShaderArgumentAsset arg in pass.Args)
         {
             if (arg.Type == MaterialShaderArgumentType.CodePixelSampler &&
-                !IsMappedRuntimeCodePixelSampler(
+                !CodePixelSamplerAbi.HasRuntimeRequirement(
                     unchecked((uint)arg.ArgumentRaw)))
             {
                 count++;
@@ -1084,16 +1090,6 @@ public sealed partial class MapSceneBuilder
 
         return count;
     }
-
-    /// <summary>
-    /// A code sampler is mapped only after the ABI catalog carries a concrete
-    /// renderer-owned publication contract for it.
-    /// </summary>
-    internal static bool IsMappedRuntimeCodePixelSampler(uint rawSampler) =>
-        MapRenderCodePixelSamplerAbi.TryResolve(
-            rawSampler,
-            out MapRenderCodePixelSamplerAbiEntry entry) &&
-        entry.HasRuntimeRequirement;
 
     private static MaterialTechniqueSetAsset? ResolveTechniqueSet(MaterialAsset? material, RenderAssetLookup lookup)
     {
@@ -1125,7 +1121,8 @@ public sealed partial class MapSceneBuilder
             return WorldVertexLayoutSelection.Unresolved(null);
 
         MaterialWorldVertexFormat logicalFormat = techset.WorldVertexFormat;
-        if (selectedPass.Pass.TechniqueSlot < 0 || selectedPass.Pass.PassIndex < 0)
+        if (selectedPass.Pass.TechniquePass.TechniqueSlot < 0 ||
+            selectedPass.Pass.TechniquePass.PassIndex < 0)
         {
             // Synthetic fallback passes have no technique flags to prove an Event20
             // selection. Use the layered world-format row explicitly as diagnostic
@@ -1140,12 +1137,14 @@ public sealed partial class MapSceneBuilder
         }
 
         MaterialTechniqueSlot? slot = lookup.ResolveTechniqueSlots(techset)
-            .FirstOrDefault(candidate => candidate.Index == selectedPass.Pass.TechniqueSlot);
+            .FirstOrDefault(candidate => candidate.Index ==
+                selectedPass.Pass.TechniquePass.TechniqueSlot);
         if (slot?.Technique is not { } technique)
         {
             return WorldVertexLayoutSelection.Unresolved(logicalFormat);
         }
-        if ((uint)selectedPass.Pass.PassIndex >= (uint)technique.Passes.Count)
+        if ((uint)selectedPass.Pass.TechniquePass.PassIndex >=
+            (uint)technique.Passes.Count)
         {
             return WorldVertexLayoutSelection.Unresolved(logicalFormat);
         }
@@ -1166,9 +1165,9 @@ public sealed partial class MapSceneBuilder
         WorldVertexLayoutSelection layout,
         byte texCoordSource,
         bool texCoordSourceIsEngineRouted,
-        out MapRenderUvRoute uvRoute)
+        out UvRoute uvRoute)
     {
-        uvRoute = new MapRenderUvRoute(
+        uvRoute = new UvRoute(
             "unresolved",
             layout.FormatText,
             texCoordSource,
@@ -1177,7 +1176,7 @@ public sealed partial class MapSceneBuilder
             0,
             0,
             0,
-            MapRenderUvBaseMode.Engine,
+            UvBaseMode.Engine,
             0,
             1,
             1f,
@@ -1254,13 +1253,13 @@ public sealed partial class MapSceneBuilder
             lightingSources.Normal);
     }
 
-    private static MapRenderUvRoute BuildUvRoute(
+    private static UvRoute BuildUvRoute(
         WorldVertexLayoutSelection layout,
         byte texCoordSource,
         VertexSource source,
         string label)
     {
-        return new MapRenderUvRoute(
+        return new UvRoute(
             label,
             layout.FormatText,
             texCoordSource,
@@ -1288,7 +1287,7 @@ public sealed partial class MapSceneBuilder
                 : null;
     }
 
-    private static MapRenderUvRoute BuildStaticModelUvRoute(byte texCoordSource)
+    private static UvRoute BuildStaticModelUvRoute(byte texCoordSource)
         => XSurfaceVertexDecoder.CreateUvRoute(texCoordSource);
 
 }

@@ -138,10 +138,10 @@ public static class MapRenderSunShadowReceiverShaderProfile
             return false;
         }
 
-        MapRenderStaticFragmentConstantPatch material =
+        StaticFragmentConstantPatch material =
             program.StaticConstantPatches[0];
         if (material.ArgumentOrdinal != 19 ||
-            material.Kind != MapRenderSelectedPassConstantKind.MaterialPixel ||
+            material.Kind != SelectedPassConstantKind.MaterialPixel ||
             material.Destination != 15 ||
             unchecked((uint)material.ArgumentRaw) != 0x3D9994DCu ||
             material.PatchSiteCount != 3 ||

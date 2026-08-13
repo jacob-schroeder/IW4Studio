@@ -1,8 +1,6 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 
-using IW4.Render.Scheduling.FramePlans;
-
 namespace IW4.Render.Shaders;
 
 /// <summary>
@@ -251,7 +249,7 @@ public sealed class RsxShaderSemanticIdentity :
         writer.WriteUInt16(binding.CodeIndex);
         writer.WriteInt32((int)binding.Status);
         writer.WriteInt32(binding.PatchSites.Length);
-        foreach (MapRenderCodePixelConstantPatchSite site in binding.PatchSites)
+        foreach (CodePixelConstantPatchSite site in binding.PatchSites)
         {
             writer.WriteUInt16(site.RelativePatchOffset);
             writer.WriteInt32(site.ProgramByteOffset);

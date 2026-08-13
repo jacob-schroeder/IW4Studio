@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Immutable;
 
 using IW4.Render.Resources;
+using IW4.Render.Shaders;
 
 namespace IW4.Render.Scheduling.FramePlans;
 

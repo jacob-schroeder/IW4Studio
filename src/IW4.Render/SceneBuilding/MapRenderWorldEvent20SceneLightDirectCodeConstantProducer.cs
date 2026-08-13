@@ -14,7 +14,7 @@ internal static class
     internal const string ManagedProducerIdentity =
         "PS3_R_SET_DRAW_SURFS_SCENE_LIGHT_UNSHADOWED_MANAGED";
 
-    internal static IReadOnlyList<MapRenderDirectCodeConstantRow> ProduceRows(
+    internal static IReadOnlyList<DirectCodeConstantRow> ProduceRows(
         MapRenderWorldEvent20SceneLightFrameInput frame,
         int sceneLightIndex,
         Vector3 eyeOffset)
@@ -62,7 +62,7 @@ internal static class
             sceneLightIndex,
             light);
 
-        var rows = new List<MapRenderDirectCodeConstantRow>(5)
+        var rows = new List<DirectCodeConstantRow>(5)
         {
             ProducePositionRow(frame, sceneLightIndex, eyeOffset),
             ColorRow(
@@ -112,7 +112,7 @@ internal static class
     /// Event20 row table. The renderer calls this once for each selected
     /// translated draw so camera motion cannot retain a load-time eye offset.
     /// </summary>
-    internal static MapRenderDirectCodeConstantRow ProducePositionRow(
+    internal static DirectCodeConstantRow ProducePositionRow(
         MapRenderWorldEvent20SceneLightFrameInput frame,
         int sceneLightIndex,
         Vector3 eyeOffset)
@@ -170,7 +170,7 @@ internal static class
         }
     }
 
-    private static MapRenderDirectCodeConstantRow ColorRow(
+    private static DirectCodeConstantRow ColorRow(
         int sceneLightIndex,
         int rowIndex,
         MapRenderWorldEvent20SceneLight light,
@@ -182,7 +182,7 @@ internal static class
             GammaColorTransfer.ToLinear(light.Color.Z * colorScale),
             1f);
 
-    private static MapRenderDirectCodeConstantRow Row(
+    private static DirectCodeConstantRow Row(
         int sceneLightIndex,
         int index,
         float x,
@@ -199,7 +199,7 @@ internal static class
                 $"Event20 scene light {sceneLightIndex} produced a non-finite direct constant for row 0x{index:X2}.");
         }
 
-        return new(index, new MapRenderShaderConstantValue(x, y, z, w));
+        return new(index, new ShaderConstantValue(x, y, z, w));
     }
 
     private static bool IsFinite(Vector3 value) =>

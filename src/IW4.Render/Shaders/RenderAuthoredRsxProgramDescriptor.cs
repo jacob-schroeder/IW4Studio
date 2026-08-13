@@ -180,7 +180,7 @@ public sealed class RenderAuthoredRsxProgramDescriptor :
         }
 
         writer.WriteInt32(fragment.StaticConstantPatches.Length);
-        foreach (MapRenderStaticFragmentConstantPatch patch in
+        foreach (StaticFragmentConstantPatch patch in
                  fragment.StaticConstantPatches)
         {
             writer.WriteInt32(patch.ArgumentOrdinal);
@@ -204,7 +204,7 @@ public sealed class RenderAuthoredRsxProgramDescriptor :
             writer.WriteUInt16(binding.CodeIndex);
             writer.WriteInt32((int)binding.Status);
             writer.WriteInt32(binding.PatchSites.Length);
-            foreach (MapRenderCodePixelConstantPatchSite site in
+            foreach (CodePixelConstantPatchSite site in
                      binding.PatchSites)
             {
                 writer.WriteUInt16(site.RelativePatchOffset);

@@ -11,7 +11,7 @@ public interface IMapRenderOpenGlProgramCompiler
     string LinkProfileIdentity { get; }
 
     MapRenderOpenGlProgramResource Compile(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         string vertexGlsl,
         string pixelGlsl);
 
@@ -21,7 +21,7 @@ public interface IMapRenderOpenGlProgramCompiler
 internal interface IMapRenderOpenGlLinkedProgramDescriber
 {
     MapRenderOpenGlProgramResource DescribeLinkedProgram(
-        MapRenderOpenGlProgramKey key,
+        OpenGlProgramKey key,
         uint programHandle,
         string vertexGlsl,
         string pixelGlsl);

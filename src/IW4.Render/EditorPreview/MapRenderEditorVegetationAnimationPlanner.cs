@@ -1,3 +1,5 @@
+using IW4.Render.Techniques;
+
 namespace IW4.Render.EditorPreview;
 
 /// <summary>
@@ -13,7 +15,7 @@ public static class MapRenderEditorVegetationAnimationPlanner
     public const float DefaultSpatialFrequency = 0.035f;
 
     public static MapRenderEditorVegetationAnimationPlan Create(
-        Materials.MapRenderState state,
+        RenderState state,
         string? materialName,
         IReadOnlyList<string> modelNames) =>
         Create(
@@ -22,7 +24,7 @@ public static class MapRenderEditorVegetationAnimationPlanner
             modelNames);
 
     public static MapRenderEditorVegetationAnimationPlan Create(
-        IReadOnlyList<Materials.MapRenderState> completePassStates,
+        IReadOnlyList<RenderState> completePassStates,
         string? materialName,
         IReadOnlyList<string> modelNames)
     {

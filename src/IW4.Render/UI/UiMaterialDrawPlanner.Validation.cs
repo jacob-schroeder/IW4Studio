@@ -1,7 +1,8 @@
+using IW4.Render.Techniques;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
+using IW4.Render.Execution.FixedFunction;
 using IW4.Render.Materials;
-using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Shaders;
 
 namespace IW4.Render.UI;
@@ -9,7 +10,7 @@ namespace IW4.Render.UI;
 public static partial class UiMaterialDrawPlanner
 {
     private static bool HasExpectedPrograms(
-        MapRenderSelectedPassProgramSources sources) =>
+        SelectedPassProgramSources sources) =>
         sources.VertexProgram.HasProgramData &&
         sources.PixelProgram.HasProgramData &&
         string.Equals(
@@ -87,7 +88,7 @@ public static partial class UiMaterialDrawPlanner
     }
 
     private static IEnumerable<string> FindStateBlockers(
-        MapRenderState state)
+        RenderState state)
     {
         if (!state.HasState)
             yield return "state missing";
@@ -95,20 +96,20 @@ public static partial class UiMaterialDrawPlanner
             yield return "shader-packer sRGB enabled";
         if (state.ColorMask != 0x01010101)
             yield return $"color mask 0x{state.ColorMask:X8}";
-        if (MapRenderAlphaTest.Resolve(state) is null)
+        if (AlphaTest.Resolve(state) is null)
         {
             yield return
                 $"alpha test {state.AlphaTestEnabled}/" +
                 $"0x{state.AlphaFunc:X4}/{state.AlphaRef}";
         }
-        if (MapRenderCull.Resolve(state) is null)
+        if (Cull.Resolve(state) is null)
         {
             yield return
                 $"cull tuple {state.CullEnabled}/0x{state.CullFace:X4}";
         }
         if (state.PolygonMode != 0x1B02)
             yield return $"polygon mode 0x{state.PolygonMode:X4}";
-        if (!MapRenderBlend.TryResolve(
+        if (!RenderBlendDecoder.TryResolve(
                 state,
                 out RenderBlendStateDescriptor blend) ||
             !blend.Enabled ||

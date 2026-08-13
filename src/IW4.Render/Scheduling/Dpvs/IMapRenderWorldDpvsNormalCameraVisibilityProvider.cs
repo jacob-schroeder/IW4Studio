@@ -17,7 +17,7 @@ public interface IMapRenderWorldDpvsNormalCameraVisibilityProvider
 
     MapRenderWorldDpvsVisibilityBuildResult Build(
         GfxWorldAsset world,
-        MapRenderCamera camera,
+        RenderCamera camera,
         MapRenderNormalCameraFramebufferExtent framebufferExtent,
         MapRenderNormalCameraFarPlaneState farPlane);
 }

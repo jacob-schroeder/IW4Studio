@@ -73,7 +73,7 @@ internal sealed class XSurfaceVertexDecoder
         return true;
     }
 
-    internal static MapRenderUvRoute CreateUvRoute(byte texCoordSource)
+    internal static UvRoute CreateUvRoute(byte texCoordSource)
     {
         if (!WorldVertexLayout.TryGetSource(
                 BackendRow,
@@ -84,13 +84,13 @@ internal sealed class XSurfaceVertexDecoder
                 source.StreamIndex,
                 out byte stride))
         {
-            return MapRenderUvRoute.StaticModel(texCoordSource);
+            return UvRoute.StaticModel(texCoordSource);
         }
 
-        MapRenderUvBaseMode baseMode = source.StreamIndex == 1
-            ? MapRenderUvBaseMode.Stream1ZeroBase
-            : MapRenderUvBaseMode.Stream0LocalIndexOnly;
-        return new MapRenderUvRoute(
+        UvBaseMode baseMode = source.StreamIndex == 1
+            ? UvBaseMode.Stream1ZeroBase
+            : UvBaseMode.Stream0LocalIndexOnly;
+        return new UvRoute(
             "static model tc0",
             MaterialWorldVertexFormat.MTL_WORLDVERT_TEX_2_NRM_2
                 .ToString(),
@@ -112,7 +112,7 @@ internal sealed class XSurfaceVertexDecoder
     internal static bool TryReadRsxVertexInputs(
         XSurface surface,
         int vertexIndex,
-        IReadOnlyList<MapRenderShaderVertexInputBinding> bindings,
+        IReadOnlyList<ShaderVertexInputBinding> bindings,
         Span<Vector4> values,
         out string blocker)
     {
@@ -125,7 +125,7 @@ internal sealed class XSurfaceVertexDecoder
 
         values.Fill(new Vector4(0f, 0f, 0f, 1f));
         blocker = string.Empty;
-        foreach (MapRenderShaderVertexInputBinding binding in bindings)
+        foreach (ShaderVertexInputBinding binding in bindings)
         {
             if (binding.Destination >= values.Length)
             {

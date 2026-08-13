@@ -20,7 +20,7 @@ internal sealed class MapRenderOpenGlWireframeDrawCommand
     {
         ArgumentNullException.ThrowIfNull(semanticDraw);
         ArgumentNullException.ThrowIfNull(resource);
-        if (!MapRenderMatrixValidation.IsFinite(hostWorldViewProjection))
+        if (!RenderMatrixValidation.IsFinite(hostWorldViewProjection))
             throw new ArgumentOutOfRangeException(
                 nameof(hostWorldViewProjection));
 

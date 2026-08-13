@@ -30,12 +30,12 @@ internal sealed class MapRenderOpenGlSunShadowReceiverFrame
 
         RuntimeSamplerBindings = Array.AsReadOnly(
         [
-            new MapRenderShaderRuntimeSamplerBinding(
+            new ShaderRuntimeSamplerBinding(
                 Destination: MapRenderSunShadowReceiverShaderProfile
                     .RsxSamplerDestination,
-                MapRenderShaderRuntimeSamplerResourceKind.SunShadowAtlas,
+                ShaderRuntimeSamplerResourceKind.SunShadowAtlas,
                 publication.Revision,
-                MapRenderShaderRuntimeSamplerBindingStatus.Ready)
+                ShaderRuntimeSamplerBindingStatus.Ready)
         ]);
     }
 
@@ -48,6 +48,6 @@ internal sealed class MapRenderOpenGlSunShadowReceiverFrame
     public MapRenderWorldDpvsSunShadowFullProjectionState Projection =>
         Publication.Frame.Projection;
 
-    public IReadOnlyList<MapRenderShaderRuntimeSamplerBinding>
+    public IReadOnlyList<ShaderRuntimeSamplerBinding>
         RuntimeSamplerBindings { get; }
 }

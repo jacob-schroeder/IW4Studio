@@ -46,7 +46,7 @@ internal sealed class SilkMapRenderOpenGlShareGroup : IDisposable
             _rootContext = rootWindow.GLContext ??
                 throw new InvalidOperationException(
                     "Silk.NET did not create the OpenGL share-root context.");
-            ProgramCache = new MapRenderOpenGlSharedProgramCache(
+            ProgramCache = new OpenGlSharedProgramCache(
                 GL.GetApi(rootWindow));
         }
         catch
@@ -56,7 +56,7 @@ internal sealed class SilkMapRenderOpenGlShareGroup : IDisposable
         }
     }
 
-    internal MapRenderOpenGlSharedProgramCache ProgramCache { get; }
+    internal OpenGlSharedProgramCache ProgramCache { get; }
 
     internal static Lease Acquire()
     {
@@ -173,7 +173,7 @@ internal sealed class SilkMapRenderOpenGlShareGroup : IDisposable
         internal Lease(
             SilkMapRenderOpenGlShareGroup owner,
             IGLContext sharedContext,
-            MapRenderOpenGlSharedProgramCache programCache)
+            OpenGlSharedProgramCache programCache)
         {
             _owner = owner;
             SharedContext = sharedContext;
@@ -182,7 +182,7 @@ internal sealed class SilkMapRenderOpenGlShareGroup : IDisposable
 
         internal IGLContext SharedContext { get; }
 
-        internal MapRenderOpenGlSharedProgramCache ProgramCache { get; }
+        internal OpenGlSharedProgramCache ProgramCache { get; }
 
         public void Dispose()
         {

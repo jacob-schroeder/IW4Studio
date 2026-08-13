@@ -1,3 +1,4 @@
+using IW4.Render.Techniques;
 using IW4.Render.Execution;
 using IW4.Render.EditorPreview;
 using IW4.Render.Geometry;
@@ -14,22 +15,23 @@ namespace IW4.Render.SceneBuilding.Batching;
 internal sealed class WorldTexturedBatchKey :
     IEquatable<WorldTexturedBatchKey>
 {
-    private readonly IReadOnlyList<MapRenderColorLayer> _colorLayers;
-    private readonly IReadOnlyList<MapRenderMaterialSamplerBinding>
+    private readonly IReadOnlyList<MaterialColorLayer> _colorLayers;
+    private readonly IReadOnlyList<MapRenderWorldMaterialSamplerBinding>
         _materialSamplers;
     private readonly int _hashCode;
 
     internal WorldTexturedBatchKey(
-        MapRenderMaterialPass pass,
-        MapRenderTexture texture,
-        MapRenderTexture? lightmapTexture,
-        IReadOnlyList<MapRenderColorLayer> colorLayers,
-        IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
-        MapRenderShaderExecutionContract shaderExecution,
-        MapRenderUvRoute uvRoute,
-        MapRenderState state,
+        MaterialPassIdentity pass,
+        MaterialSamplerIdentity primarySampler,
+        Texture texture,
+        Texture? lightmapTexture,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
+        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> materialSamplers,
+        ShaderExecutionContract shaderExecution,
+        UvRoute uvRoute,
+        RenderState state,
         MapRenderEditorDepthPrepassPlan? editorDepthPrepass,
-        MapRenderShaderExecutionContract? depthPrepassShaderExecution,
+        ShaderExecutionContract? depthPrepassShaderExecution,
         int unresolvedCodeSamplerCount,
         int? editorDrawGroupSurfaceIndex,
         byte sceneLightIndex)
@@ -42,14 +44,15 @@ internal sealed class WorldTexturedBatchKey :
         ArgumentNullException.ThrowIfNull(uvRoute);
 
         Pass = pass;
-        Texture = MapRenderTextureBindingKey.Create(texture);
+        PrimarySampler = primarySampler;
+        Texture = TextureBindingKey.Create(texture);
         LightmapTexture = lightmapTexture is null
             ? null
-            : MapRenderTextureBindingKey.Create(lightmapTexture);
+            : TextureBindingKey.Create(lightmapTexture);
         _colorLayers = colorLayers;
         _materialSamplers = materialSamplers;
         ProgramCacheKey = shaderExecution.ProgramCacheKey;
-        UvRoute = MapRenderUvRouteBatchKey.Create(uvRoute);
+        UvRoute = UvRouteBatchKey.Create(uvRoute);
         LoadBits0 = state.LoadBits0;
         LoadBits1 = state.LoadBits1;
         StateTail = state.Tail;
@@ -62,11 +65,12 @@ internal sealed class WorldTexturedBatchKey :
 
         var hash = new HashCode();
         hash.Add(Pass);
+        hash.Add(PrimarySampler);
         hash.Add(Texture);
         hash.Add(LightmapTexture);
-        foreach (MapRenderColorLayer layer in _colorLayers)
+        foreach (MaterialColorLayer layer in _colorLayers)
             hash.Add(ColorLayerKey.Create(layer));
-        foreach (MapRenderMaterialSamplerBinding sampler in _materialSamplers)
+        foreach (MapRenderWorldMaterialSamplerBinding sampler in _materialSamplers)
             hash.Add(SamplerBindingKey.Create(sampler));
         hash.Add(ProgramCacheKey, StringComparer.Ordinal);
         hash.Add(UvRoute);
@@ -81,15 +85,17 @@ internal sealed class WorldTexturedBatchKey :
         _hashCode = hash.ToHashCode();
     }
 
-    private MapRenderMaterialPass Pass { get; }
+    private MaterialPassIdentity Pass { get; }
 
-    private MapRenderTextureBindingKey Texture { get; }
+    private MaterialSamplerIdentity PrimarySampler { get; }
 
-    private MapRenderTextureBindingKey? LightmapTexture { get; }
+    private TextureBindingKey Texture { get; }
+
+    private TextureBindingKey? LightmapTexture { get; }
 
     private string ProgramCacheKey { get; }
 
-    private MapRenderUvRouteBatchKey UvRoute { get; }
+    private UvRouteBatchKey UvRoute { get; }
 
     private uint LoadBits0 { get; }
 
@@ -111,6 +117,7 @@ internal sealed class WorldTexturedBatchKey :
     {
         if (other is null ||
             Pass != other.Pass ||
+            PrimarySampler != other.PrimarySampler ||
             Texture != other.Texture ||
             LightmapTexture != other.LightmapTexture ||
             _colorLayers.Count != other._colorLayers.Count ||
@@ -166,71 +173,67 @@ internal sealed class WorldTexturedBatchKey :
         int SamplerArgIndex,
         ushort SamplerDest,
         uint SamplerHash,
-        MapRenderTextureBindingKey Texture,
-        MapRenderUvRouteBatchKey UvRoute,
+        TextureBindingKey Texture,
+        UvRouteBatchKey UvRoute,
         int BlendWeightComponent)
     {
-        internal static ColorLayerKey Create(MapRenderColorLayer layer) => new(
+        internal static ColorLayerKey Create(MaterialColorLayer layer) => new(
             layer.LayerIndex,
-            layer.SamplerArgIndex,
-            layer.SamplerDest,
-            layer.SamplerHash,
-            MapRenderTextureBindingKey.Create(layer.Texture),
-            MapRenderUvRouteBatchKey.Create(layer.UvRoute),
+            layer.Identity.SamplerArgIndex,
+            layer.Identity.SamplerDest,
+            layer.Identity.SamplerHash,
+            TextureBindingKey.Create(layer.Texture),
+            UvRouteBatchKey.Create(layer.UvRoute),
             layer.BlendWeightComponent);
     }
 
     private readonly record struct SamplerBindingKey(
-        int SamplerArgIndex,
-        ushort SamplerDest,
-        uint SamplerHash,
-        byte TextureSemantic,
+        MaterialSamplerIdentity Identity,
         MapRenderWorldRuntimeTextureIdentity? WorldRuntimeTextureIdentity,
-        MapRenderTextureBindingKey? Texture,
-        MapRenderUvRouteBatchKey? UvRoute)
+        TextureBindingKey? Texture,
+        UvRouteBatchKey? UvRoute)
     {
         internal static SamplerBindingKey Create(
-            MapRenderMaterialSamplerBinding binding) => new(
-                binding.SamplerArgIndex,
-                binding.SamplerDest,
-                binding.SamplerHash,
-                binding.TextureSemantic,
-                binding.WorldRuntimeTextureIdentity,
-                binding.Texture is null
+            MapRenderWorldMaterialSamplerBinding binding) => new(
+                binding.Binding.Identity,
+                binding.RuntimeTextureIdentity,
+                binding.Binding.Texture is null
                     ? null
-                    : MapRenderTextureBindingKey.Create(binding.Texture),
-                binding.UvRoute is null
+                    : TextureBindingKey.Create(binding.Binding.Texture),
+                binding.Binding.UvRoute is null
                     ? null
-                    : MapRenderUvRouteBatchKey.Create(binding.UvRoute));
+                    : UvRouteBatchKey.Create(binding.Binding.UvRoute));
     }
 }
 
 internal sealed class TexturedBatchBuilder(
-    MapRenderMaterialPass pass,
-    MapRenderTexture texture,
-    MapRenderTexture? lightmapTexture,
-    IReadOnlyList<MapRenderColorLayer> colorLayers,
-    IReadOnlyList<MapRenderMaterialSamplerBinding> materialSamplers,
-    MapRenderShaderExecutionContract shaderExecution,
-    MapRenderUvRoute uvRoute,
-    MapRenderState state,
+    MaterialPassIdentity pass,
+    MaterialSamplerIdentity primarySampler,
+    Texture texture,
+    Texture? lightmapTexture,
+    IReadOnlyList<MaterialColorLayer> colorLayers,
+    IReadOnlyList<MapRenderWorldMaterialSamplerBinding> materialSamplers,
+    ShaderExecutionContract shaderExecution,
+    UvRoute uvRoute,
+    RenderState state,
     MapRenderEditorDepthPrepassPlan? editorDepthPrepass,
-    MapRenderShaderExecutionContract? depthPrepassShaderExecution,
+    ShaderExecutionContract? depthPrepassShaderExecution,
     int unresolvedCodeSamplerCount,
     byte sceneLightIndex)
 {
-    public MapRenderMaterialPass Pass { get; } = pass;
-    public MapRenderTexture Texture { get; } = texture;
-    public MapRenderTexture? LightmapTexture { get; } = lightmapTexture;
-    public IReadOnlyList<MapRenderColorLayer> ColorLayers { get; } = colorLayers;
-    public IReadOnlyList<MapRenderMaterialSamplerBinding> MaterialSamplers { get; } = materialSamplers;
-    public MapRenderShaderExecutionContract ShaderExecution { get; } = shaderExecution;
+    public MaterialPassIdentity Pass { get; } = pass;
+    public MaterialSamplerIdentity PrimarySampler { get; } = primarySampler;
+    public Texture Texture { get; } = texture;
+    public Texture? LightmapTexture { get; } = lightmapTexture;
+    public IReadOnlyList<MaterialColorLayer> ColorLayers { get; } = colorLayers;
+    public IReadOnlyList<MapRenderWorldMaterialSamplerBinding> MaterialSamplers { get; } = materialSamplers;
+    public ShaderExecutionContract ShaderExecution { get; } = shaderExecution;
     public string ShaderExecutionStatus { get; } = shaderExecution.ProgramExecutionStatus;
-    public MapRenderUvRoute UvRoute { get; } = uvRoute;
-    public MapRenderState State { get; } = state;
+    public UvRoute UvRoute { get; } = uvRoute;
+    public RenderState State { get; } = state;
     public MapRenderEditorDepthPrepassPlan? EditorDepthPrepass { get; } =
         editorDepthPrepass;
-    public MapRenderShaderExecutionContract? DepthPrepassShaderExecution
+    public ShaderExecutionContract? DepthPrepassShaderExecution
     {
         get;
     } = depthPrepassShaderExecution;
@@ -244,15 +247,15 @@ internal sealed class TexturedBatchBuilder(
 
 internal sealed record PreparedWorldTexturedSubmission(
     SelectedColorPass SelectedPass,
-    MapRenderTexture Texture,
-    MapRenderTexture? LightmapTexture,
-    IReadOnlyList<MapRenderColorLayer> ColorLayers,
-    IReadOnlyList<MapRenderMaterialSamplerBinding> MaterialSamplers,
-    MapRenderShaderExecutionContract ShaderExecution,
-    MapRenderUvRoute UvRoute,
-    MapRenderState RenderState,
+    Texture Texture,
+    Texture? LightmapTexture,
+    IReadOnlyList<MaterialColorLayer> ColorLayers,
+    IReadOnlyList<MapRenderWorldMaterialSamplerBinding> MaterialSamplers,
+    ShaderExecutionContract ShaderExecution,
+    UvRoute UvRoute,
+    RenderState RenderState,
     MapRenderEditorDepthPrepassPlan? EditorDepthPrepass,
-    MapRenderShaderExecutionContract? DepthPrepassShaderExecution,
+    ShaderExecutionContract? DepthPrepassShaderExecution,
     List<float> Vertices,
     List<float> RsxVertexInputs,
     List<uint> Indices,

@@ -2,6 +2,7 @@ using IW4.FastFiles.Loaders.Database;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Render;
+using IW4.Render.Assets;
 using IW4.Render.Resources;
 using IW4.Render.SceneBuilding;
 using IW4.Studio.Documents;
@@ -88,16 +89,15 @@ public sealed class FastFileRenderViewService : IDisposable
                 NoRenderableMapAssetsReason);
         }
 
-        var assetSource = new MapRenderAssetSource(
-            loadedZone.Header,
+        var assetSource = new RenderAssetSource(
             loadedZone.Context.Blocks,
             loadedZone.Context.AssetPool,
-            loadedZone.Context.AssetRuntimeLifecycle.GfxWorld,
             loadedZone.Context.GfxImagesByAddress,
             loadedZone.LoadedAssets,
             loadedZone.XAssetList.Assets);
         var input = new MapRenderInput(
             assetSource,
+            loadedZone.Context.AssetRuntimeLifecycle.GfxWorld,
             workspace.Document.Request.Path,
             gfxWorld,
             clipMap,
