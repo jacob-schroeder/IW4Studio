@@ -238,7 +238,32 @@ public sealed partial class StudioWorkbenchView : UserControl
         }
 
         if (listBox.SelectedItem is not null)
+        {
             listBox.ScrollIntoView(listBox.SelectedItem);
+            if (this.FindControl<ScrollViewer>("CenterEditorScrollViewer") is { } editorScrollViewer)
+            {
+                editorScrollViewer.Offset = new Vector(
+                    editorScrollViewer.Offset.X,
+                    0);
+            }
+        }
+    }
+
+    private void CenterEditorScrollViewer_SizeChanged(
+        object? sender,
+        SizeChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer)
+            return;
+
+        // Preserve the old full-height editor behavior for short documents,
+        // while allowing taller editor content to establish a scroll extent.
+        if (this.FindControl<ContentControl>("CenterEditorContent") is { } editorContent)
+        {
+            editorContent.MinHeight = Math.Max(
+                0,
+                scrollViewer.Bounds.Height - 28);
+        }
     }
 
     private static void EditorTabStrip_PointerWheelChanged(

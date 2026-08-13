@@ -360,11 +360,17 @@
           </ScrollViewer>
 
           <Grid IsVisible="{Binding HasSelection}">
-            <ContentControl Margin="14"
-                            Content="{Binding SelectedHostedView}"
-                            IsVisible="{Binding HasSelectedHostedView}"
-                            HorizontalContentAlignment="Stretch"
-                            VerticalContentAlignment="Stretch" />
+            <ScrollViewer x:Name="CenterEditorScrollViewer"
+                          IsVisible="{Binding HasSelectedHostedView}"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          SizeChanged="CenterEditorScrollViewer_SizeChanged">
+              <ContentControl x:Name="CenterEditorContent"
+                              Margin="14"
+                              Content="{Binding SelectedHostedView}"
+                              HorizontalContentAlignment="Stretch"
+                              VerticalContentAlignment="Stretch" />
+            </ScrollViewer>
 
             <ScrollViewer IsVisible="{Binding HasEditorFallback}"
                           HorizontalScrollBarVisibility="Disabled"

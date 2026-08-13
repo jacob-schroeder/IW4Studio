@@ -214,9 +214,14 @@ public sealed partial class XModelEditorView : UserControl
             Array.AsReadOnly(rgba));
     }
 
-    private async void ExportXModelButton_Click(
+    private void ExportXModelMenuItem_Click(
         object? sender,
-        RoutedEventArgs e)
+        RoutedEventArgs e) =>
+        Dispatcher.UIThread.Post(
+            async () => await ExportXModelAsync(),
+            DispatcherPriority.Background);
+
+    private async Task ExportXModelAsync()
     {
         if (_isExportInProgress)
             return;
@@ -329,9 +334,14 @@ public sealed partial class XModelEditorView : UserControl
         }
     }
 
-    private async void ExportGlbButton_Click(
+    private void ExportGlbMenuItem_Click(
         object? sender,
-        RoutedEventArgs e)
+        RoutedEventArgs e) =>
+        Dispatcher.UIThread.Post(
+            async () => await ExportGlbAsync(),
+            DispatcherPriority.Background);
+
+    private async Task ExportGlbAsync()
     {
         if (_isGlbExportInProgress ||
             DataContext is not XModelEditorViewModel viewModel)
