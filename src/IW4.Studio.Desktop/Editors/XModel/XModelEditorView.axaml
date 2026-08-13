@@ -10,7 +10,7 @@
              mc:Ignorable="d"
              d:DesignWidth="1120"
              d:DesignHeight="720">
-  <Grid RowDefinitions="Auto,10,*">
+  <Grid RowDefinitions="Auto,8,Auto,10,*">
     <Border Padding="12,9"
             CornerRadius="7"
             Background="{DynamicResource StudioSurfaceBrush}"
@@ -18,61 +18,29 @@
             BorderThickness="1">
       <Grid ColumnDefinitions="*,Auto"
             ColumnSpacing="14">
-        <StackPanel Spacing="2">
-          <TextBlock Text="{Binding Name}"
-                     FontSize="16"
-                     FontWeight="SemiBold"
-                     TextTrimming="CharacterEllipsis"
-                     Foreground="{DynamicResource StudioTextBrush}" />
-          <TextBlock Text="{Binding StatusMessage}"
-                     FontSize="9"
-                     TextTrimming="CharacterEllipsis"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
-        </StackPanel>
+        <TextBlock Text="{Binding Name}"
+                   VerticalAlignment="Center"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource StudioTextBrush}" />
 
         <StackPanel Grid.Column="1"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
                     Spacing="7">
-          <TextBlock Text="LOD"
-                     VerticalAlignment="Center"
-                     FontSize="9"
-                     FontWeight="SemiBold"
-                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
-          <ComboBox Width="164"
-                    MinHeight="30"
-                    Padding="8,3"
-                    ItemsSource="{Binding Lods}"
-                    SelectedItem="{Binding SelectedLod, Mode=TwoWay}" />
           <Button Classes="ghost"
                   MinHeight="30"
-                  Padding="9,4"
-                  ToolTip.Tip="Reset orbit, pan, and zoom to fit the selected LOD"
-                  Click="FitButton_Click">
-            <StackPanel Orientation="Horizontal" Spacing="5">
-              <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="15" Height="15" />
-              <TextBlock Text="Fit" />
-            </StackPanel>
-          </Button>
-          <CheckBox Content="Studio light"
-                    VerticalAlignment="Center"
-                    ToolTip.Tip="Toggle the preview-only studio reflection environment; authored material passes remain unchanged"
-                    IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" />
-          <CheckBox Content="Wireframe"
-                    VerticalAlignment="Center"
-                    IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
-          <CheckBox Content="Bone tags"
-                    VerticalAlignment="Center"
-                    IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
-          <Button Classes="ghost"
-                  MinHeight="30"
-                  Padding="7,4"
+                  Padding="10,4"
                   IsEnabled="{Binding CanRevert}"
                   ToolTip.Tip="Revert the editable XModel draft"
                   AutomationProperties.Name="Revert XModel draft"
                   Click="RevertButton_Click">
-            <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+              <TextBlock Text="Revert" />
+            </StackPanel>
           </Button>
           <Button Classes="primary"
                   MinHeight="30"
@@ -89,6 +57,51 @@
     </Border>
 
     <Border Grid.Row="2"
+            Padding="12,8"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="Auto,164,Auto,*,Auto,Auto,Auto"
+            ColumnSpacing="9">
+        <TextBlock Text="LOD"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <ComboBox Grid.Column="1"
+                  MinHeight="30"
+                  Padding="8,3"
+                  ItemsSource="{Binding Lods}"
+                  SelectedItem="{Binding SelectedLod, Mode=TwoWay}" />
+        <Button Grid.Column="2"
+                Classes="ghost"
+                MinHeight="30"
+                Padding="9,4"
+                ToolTip.Tip="Reset orbit, pan, and zoom to fit the selected LOD"
+                Click="FitButton_Click">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="15" Height="15" />
+            <TextBlock Text="Fit" />
+          </StackPanel>
+        </Button>
+        <CheckBox Grid.Column="4"
+                  Content="Studio light"
+                  VerticalAlignment="Center"
+                  ToolTip.Tip="Toggle the preview-only studio reflection environment; authored material passes remain unchanged"
+                  IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" />
+        <CheckBox Grid.Column="5"
+                  Content="Wireframe"
+                  VerticalAlignment="Center"
+                  IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
+        <CheckBox Grid.Column="6"
+                  Content="Bone tags"
+                  VerticalAlignment="Center"
+                  IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="4"
             CornerRadius="8"
             ClipToBounds="True"
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
