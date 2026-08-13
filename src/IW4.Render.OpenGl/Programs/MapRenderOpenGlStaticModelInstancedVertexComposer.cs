@@ -62,7 +62,7 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
 
         for (int index = 0; index < vertexInputs.Count; index++)
         {
-            byte destination = vertexInputs[index].Destination;
+            byte destination = (byte)vertexInputs[index].Destination;
             if (destination == LightingPayloadAttribute)
             {
                 blocker =

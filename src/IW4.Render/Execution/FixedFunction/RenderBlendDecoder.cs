@@ -54,24 +54,24 @@ internal static class RenderBlendDecoder
     }
 
     private static bool TryResolveOperation(
-        uint value,
+        RsxBlendEquation value,
         out RenderBlendOperation operation)
     {
         switch (value)
         {
-            case 0x8006:
+            case RsxBlendEquation.Add:
                 operation = RenderBlendOperation.Add;
                 return true;
-            case 0x800A:
+            case RsxBlendEquation.Subtract:
                 operation = RenderBlendOperation.Subtract;
                 return true;
-            case 0x800B:
+            case RsxBlendEquation.ReverseSubtract:
                 operation = RenderBlendOperation.ReverseSubtract;
                 return true;
-            case 0x8007:
+            case RsxBlendEquation.Minimum:
                 operation = RenderBlendOperation.Minimum;
                 return true;
-            case 0x8008:
+            case RsxBlendEquation.Maximum:
                 operation = RenderBlendOperation.Maximum;
                 return true;
             default:
@@ -81,39 +81,39 @@ internal static class RenderBlendDecoder
     }
 
     private static bool TryResolveFactor(
-        uint value,
+        RsxBlendFactor value,
         out RenderBlendFactor factor)
     {
         switch (value)
         {
-            case 0:
+            case RsxBlendFactor.Zero:
                 factor = RenderBlendFactor.Zero;
                 return true;
-            case 1:
+            case RsxBlendFactor.One:
                 factor = RenderBlendFactor.One;
                 return true;
-            case 0x0300:
+            case RsxBlendFactor.SourceColor:
                 factor = RenderBlendFactor.SourceColor;
                 return true;
-            case 0x0301:
+            case RsxBlendFactor.OneMinusSourceColor:
                 factor = RenderBlendFactor.OneMinusSourceColor;
                 return true;
-            case 0x0302:
+            case RsxBlendFactor.SourceAlpha:
                 factor = RenderBlendFactor.SourceAlpha;
                 return true;
-            case 0x0303:
+            case RsxBlendFactor.OneMinusSourceAlpha:
                 factor = RenderBlendFactor.OneMinusSourceAlpha;
                 return true;
-            case 0x0304:
+            case RsxBlendFactor.DestinationAlpha:
                 factor = RenderBlendFactor.DestinationAlpha;
                 return true;
-            case 0x0305:
+            case RsxBlendFactor.OneMinusDestinationAlpha:
                 factor = RenderBlendFactor.OneMinusDestinationAlpha;
                 return true;
-            case 0x0306:
+            case RsxBlendFactor.DestinationColor:
                 factor = RenderBlendFactor.DestinationColor;
                 return true;
-            case 0x0307:
+            case RsxBlendFactor.OneMinusDestinationColor:
                 factor = RenderBlendFactor.OneMinusDestinationColor;
                 return true;
             default:

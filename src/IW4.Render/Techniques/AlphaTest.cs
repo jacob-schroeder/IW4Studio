@@ -22,9 +22,10 @@ public static class AlphaTest
 
         return (state.AlphaFunc, state.AlphaRef) switch
         {
-            (0x0204u, 0x00) => AlphaTestMode.GreaterZero,
-            (0x0201u, 0x80) => AlphaTestMode.Less128,
-            (0x0206u, 0x80) => AlphaTestMode.GreaterEqual128,
+            (RsxCompareFunction.Greater, 0x00) => AlphaTestMode.GreaterZero,
+            (RsxCompareFunction.Less, 0x80) => AlphaTestMode.Less128,
+            (RsxCompareFunction.GreaterThanOrEqual, 0x80) =>
+                AlphaTestMode.GreaterEqual128,
             _ => null
         };
     }

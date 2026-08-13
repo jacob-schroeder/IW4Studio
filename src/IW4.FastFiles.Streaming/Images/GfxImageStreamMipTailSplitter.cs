@@ -21,9 +21,9 @@ internal static class GfxImageStreamMipTailSplitter
         ArgumentNullException.ThrowIfNull(payload);
 
         mips = [];
-        if (image.MapType != 3 ||
-            image.DimensionCount != 2 ||
-            image.MultiFaceControl != 0 ||
+        if (image.MapType != MapType.TwoDimensional ||
+            image.DimensionCount != GfxImageDimension.TwoDimensional ||
+            image.IsCubemap ||
             image.Depth != 1 ||
             streamData.Width == 0 ||
             streamData.Height == 0)
@@ -39,8 +39,8 @@ internal static class GfxImageStreamMipTailSplitter
             return false;
 
         uint formatKey = GfxImagePixelLayout.BuildFormatKey(
-            image.Format,
-            image.TextureFlags);
+            image.FormatEncoding,
+            image.TextureRemap);
         var layouts = new List<(int Width, int Height, int ByteCount)>(
             levelCount);
         int width = streamData.Width;

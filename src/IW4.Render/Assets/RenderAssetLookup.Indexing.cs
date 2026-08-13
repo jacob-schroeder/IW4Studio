@@ -39,8 +39,7 @@ public sealed partial class RenderAssetLookup
         if (material is null)
             return;
 
-        int materialSortedIndex = checked((int)(
-            (material.Info.DrawSurf.Packed >> 30) & (MaterialSortedIndexCount - 1)));
+        int materialSortedIndex = material.Info.DrawSurf.MaterialSortedIndex;
         if (_ambiguousMaterialSortedIndices.Contains(materialSortedIndex))
             return;
         if (!_materialsBySortedIndex.TryGetValue(materialSortedIndex, out MaterialAsset? existing))

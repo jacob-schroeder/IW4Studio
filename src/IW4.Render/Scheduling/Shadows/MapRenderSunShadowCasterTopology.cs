@@ -58,8 +58,8 @@ internal sealed class MapRenderSunShadowCasterTopology
              staticModelIndex++)
         {
             // Fast-worker static caster admission rejects flags+0x26 bit zero.
-            if ((world.Dpvs.SModelDrawInsts[staticModelIndex].Flags & 0x01) !=
-                0)
+            if ((world.Dpvs.SModelDrawInsts[staticModelIndex].Flags &
+                    GfxStaticModelDrawInstFlags.NoCastShadow) != 0)
             {
                 continue;
             }

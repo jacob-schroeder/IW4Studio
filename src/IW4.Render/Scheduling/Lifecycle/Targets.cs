@@ -1,4 +1,60 @@
+using IW4.Assets.Assets.Image;
+using IW4.Render.Shaders;
+
 namespace IW4.Render.Scheduling.Lifecycle;
+
+/// <summary>Flags consumed by the PS3 program-image setup path.</summary>
+[Flags]
+public enum MapRenderNormalCameraImageSetupFlags : uint
+{
+    None = 0,
+    NoPicmip = 0x0000_0001,
+    NoMipmaps = 0x0000_0002,
+    RenderTarget = 0x0200_0000
+}
+
+/// <summary>Native <c>CELL_GCM_SURFACE_*</c> memory layout selector.</summary>
+public enum RsxSurfaceType : byte
+{
+    Pitch = 1,
+    Swizzle = 2
+}
+
+/// <summary>Native <c>CELL_GCM_SURFACE_*</c> sample topology selector.</summary>
+public enum RsxSurfaceAntialias : byte
+{
+    Center1 = 0,
+    DiagonalCentered2 = 3,
+    SquareCentered4 = 4,
+    SquareRotated4 = 5
+}
+
+/// <summary>Native <c>CELL_GCM_SURFACE_ZETA_*</c> depth format.</summary>
+public enum RsxSurfaceDepthFormat : byte
+{
+    Z16 = 1,
+    Z24S8 = 2
+}
+
+/// <summary>Native PS3 surface color formats proven for this lifecycle.</summary>
+public enum RsxSurfaceColorFormat : byte
+{
+    A8R8G8B8 = 8,
+    FloatX32 = 13
+}
+
+/// <summary>
+/// Low-half flags in the PS3 <c>NV4097_SET_ANTI_ALIASING_CONTROL</c>
+/// payload. The independent high-half sample mask is carried separately.
+/// </summary>
+[Flags]
+public enum RsxAntiAliasingControlFlags : ushort
+{
+    None = 0,
+    Multisample = 0x0001,
+    AlphaToCoverage = 0x0010,
+    AlphaToOne = 0x0100
+}
 
 /// <summary>
 /// PS3 render-target dimension rule selected by the target-table producer.
@@ -123,24 +179,49 @@ public sealed record MapRenderNormalCameraFloatZTargetPlan
     /// </summary>
     public uint RawImageSetupFormat => 0x01aa_e49c;
 
-    public uint RawImageSetupFlags => 0x0000_0003;
+    public MapRenderNormalCameraImageSetupFlags ImageSetupFlags =>
+        MapRenderNormalCameraImageSetupFlags.NoPicmip |
+        MapRenderNormalCameraImageSetupFlags.NoMipmaps;
 
-    public byte RawImageSetupTextureFormatByte => 0x9c;
+    public uint RawImageSetupFlags => (uint)ImageSetupFlags;
+
+    public GfxImageFormat ImageSetupTextureFormat =>
+        new((byte)GfxImageBaseFormat.X32Float);
+
+    public byte RawImageSetupTextureFormatByte =>
+        ImageSetupTextureFormat.RawValue;
 
     /// <summary>Final linear X32_FLOAT program-image format byte.</summary>
-    public byte RawImageFormatByte => 0xbc;
+    public GfxImageFormat ImageFormat => new(
+        (byte)((byte)GfxImageBaseFormat.X32Float |
+            (byte)GfxImageFormatFlags.Linear));
+
+    public byte RawImageFormatByte => ImageFormat.RawValue;
 
     /// <summary><c>CELL_GCM_SURFACE_F_X32</c>.</summary>
-    public byte RawColorFormat => 13;
+    public RsxSurfaceColorFormat SurfaceColorFormat =>
+        RsxSurfaceColorFormat.FloatX32;
+
+    public byte RawColorFormat => (byte)SurfaceColorFormat;
 
     public MapRenderNormalCameraTargetDimensions Dimensions =>
         MapRenderNormalCameraTargetDimensions.HalfDisplayShiftClamp;
 
-    public byte RawAntialias => 0;
+    public RsxSurfaceAntialias SurfaceAntialias =>
+        RsxSurfaceAntialias.Center1;
+
+    public byte RawAntialias => (byte)SurfaceAntialias;
 
     public int Ps3SurfaceSampleCount => 1;
 
-    public uint RawTargetSetAntiAliasingControl => 0xffff_0000;
+    public RsxAntiAliasingControlFlags TargetSetAntiAliasingControlFlags =>
+        RsxAntiAliasingControlFlags.None;
+
+    public ushort TargetSetSampleMask => ushort.MaxValue;
+
+    public uint RawTargetSetAntiAliasingControl =>
+        ((uint)TargetSetSampleMask << 16) |
+        (uint)TargetSetAntiAliasingControlFlags;
 
     public MapRenderNormalCameraTargetExtent ResolveExtent(
         int displayWidth,
@@ -225,9 +306,18 @@ public sealed record MapRenderNormalCameraTargetPlan
     /// </summary>
     public uint RawImageSetupFormat => 0x01aa_e485;
 
-    public uint RawImageSetupFlags => 0x0200_0003;
+    public MapRenderNormalCameraImageSetupFlags ImageSetupFlags =>
+        MapRenderNormalCameraImageSetupFlags.NoPicmip |
+        MapRenderNormalCameraImageSetupFlags.NoMipmaps |
+        MapRenderNormalCameraImageSetupFlags.RenderTarget;
 
-    public byte RawImageFormatByte => 0xa5;
+    public uint RawImageSetupFlags => (uint)ImageSetupFlags;
+
+    public GfxImageFormat ImageFormat => new(
+        (byte)((byte)GfxImageBaseFormat.A8R8G8B8 |
+            (byte)GfxImageFormatFlags.Linear));
+
+    public byte RawImageFormatByte => ImageFormat.RawValue;
 
     public MapRenderNormalCameraTargetDimensions Dimensions { get; }
 
@@ -256,7 +346,9 @@ public sealed record MapRenderNormalCameraTargetPlan
 
     public bool IsInitialAlias => InitialAliasOf is not null;
 
-    public byte RawSurfaceType => 1;
+    public RsxSurfaceType SurfaceType => RsxSurfaceType.Pitch;
+
+    public byte RawSurfaceType => (byte)SurfaceType;
 
     /// <summary>
     /// Final row value after the family-3 target producer patches Scene from
@@ -264,16 +356,19 @@ public sealed record MapRenderNormalCameraTargetPlan
     /// row <c>+0x38</c>, so Scene keeps a doubled sample backing but exposes a
     /// display-width surface clip.
     /// </summary>
-    public byte RawAntialias => Kind == MapRenderNormalCameraTargetKind.Scene
-        ? (byte)3
-        : (byte)0;
+    public RsxSurfaceAntialias SurfaceAntialias => Kind ==
+        MapRenderNormalCameraTargetKind.Scene
+            ? RsxSurfaceAntialias.DiagonalCentered2
+            : RsxSurfaceAntialias.Center1;
 
-    public int Ps3SurfaceSampleCount => RawAntialias switch
+    public byte RawAntialias => (byte)SurfaceAntialias;
+
+    public int Ps3SurfaceSampleCount => SurfaceAntialias switch
     {
-        0 => 1,
-        3 => 2,
+        RsxSurfaceAntialias.Center1 => 1,
+        RsxSurfaceAntialias.DiagonalCentered2 => 2,
         _ => throw new InvalidOperationException(
-            $"Unsupported PS3 surface antialias value {RawAntialias}.")
+            $"Unsupported PS3 surface antialias value {SurfaceAntialias}.")
     };
 
     public bool SurfaceClipUsesLogicalExtent => true;
@@ -284,24 +379,32 @@ public sealed record MapRenderNormalCameraTargetPlan
     /// other targets disable it. Every target retains the full 16-bit sample
     /// mask and disables alpha-to-coverage and alpha-to-one.
     /// </summary>
-    public uint RawTargetSetAntiAliasingControl => Kind ==
+    public RsxAntiAliasingControlFlags TargetSetAntiAliasingControlFlags =>
+        Kind ==
         MapRenderNormalCameraTargetKind.Scene
-            ? 0xffff_0001u
-            : 0xffff_0000u;
+            ? RsxAntiAliasingControlFlags.Multisample
+            : RsxAntiAliasingControlFlags.None;
+
+    public ushort TargetSetSampleMask => ushort.MaxValue;
+
+    public uint RawTargetSetAntiAliasingControl =>
+        ((uint)TargetSetSampleMask << 16) |
+        (uint)TargetSetAntiAliasingControlFlags;
 
     public bool TargetSetMultisampleEnabled =>
-        (RawTargetSetAntiAliasingControl & 0x1u) != 0;
+        (TargetSetAntiAliasingControlFlags &
+            RsxAntiAliasingControlFlags.Multisample) != 0;
 
     public bool TargetSetAlphaToCoverageEnabled =>
-        (RawTargetSetAntiAliasingControl & 0x10u) != 0;
+        (TargetSetAntiAliasingControlFlags &
+            RsxAntiAliasingControlFlags.AlphaToCoverage) != 0;
 
     public bool TargetSetAlphaToOneEnabled =>
-        (RawTargetSetAntiAliasingControl & 0x100u) != 0;
+        (TargetSetAntiAliasingControlFlags &
+            RsxAntiAliasingControlFlags.AlphaToOne) != 0;
 
-    public ushort TargetSetSampleMask =>
-        checked((ushort)(RawTargetSetAntiAliasingControl >> 16));
-
-    public byte RawColorTargetMask => 1;
+    public RsxSurfaceTarget Ps3SurfaceTarget =>
+        RsxSurfaceTarget.SurfaceA;
 
     public int ColorAttachmentCount => 1;
 
@@ -313,9 +416,15 @@ public sealed record MapRenderNormalCameraTargetPlan
 
     public bool SecondaryColorPitchesAre64 => true;
 
-    public byte RawDepthFormat => 2;
+    public RsxSurfaceDepthFormat DepthFormat =>
+        RsxSurfaceDepthFormat.Z24S8;
 
-    public byte RawDepthLocation => 0;
+    public byte RawDepthFormat => (byte)DepthFormat;
+
+    public GfxImageMemoryLocation DepthLocation =>
+        GfxImageMemoryLocation.Local;
+
+    public byte RawDepthLocation => (byte)DepthLocation;
 
     /// <summary>
     /// Placeholder written by PS3 target-row construction before any
@@ -370,8 +479,13 @@ public sealed record MapRenderNormalCameraTargetPlan
     public uint? RawDepthAllocationSetupFormat =>
         HasDedicatedDepthAllocation ? 0x01aa_e490u : null;
 
+    public GfxImageFormat? DepthAllocationTextureFormat =>
+        HasDedicatedDepthAllocation
+            ? new GfxImageFormat((byte)GfxImageBaseFormat.Depth24D8)
+            : null;
+
     public byte? RawDepthAllocationTextureFormatByte =>
-        HasDedicatedDepthAllocation ? (byte)0x90 : null;
+        DepthAllocationTextureFormat?.RawValue;
 
     /// <summary>
     /// Separate A8R8G8B8 linear program-image view over the dedicated depth
@@ -387,8 +501,12 @@ public sealed record MapRenderNormalCameraTargetPlan
     public uint? RawDepthSamplingViewSetupFormat =>
         HasDedicatedDepthAllocation ? 0x01aa_e485u : null;
 
+    public MapRenderNormalCameraImageSetupFlags?
+        DepthSamplingViewSetupFlags =>
+            HasDedicatedDepthAllocation ? ImageSetupFlags : null;
+
     public uint? RawDepthSamplingViewSetupFlags =>
-        HasDedicatedDepthAllocation ? 0x0200_0003u : null;
+        (uint?)DepthSamplingViewSetupFlags;
 
     public bool DedicatedDepthExtentMatchesColorBacking =>
         HasDedicatedDepthAllocation;
@@ -398,7 +516,10 @@ public sealed record MapRenderNormalCameraTargetPlan
     public ushort SurfaceY => 0;
 
     /// <summary><c>CELL_GCM_SURFACE_A8R8G8B8</c>.</summary>
-    public byte RawColorFormat => 8;
+    public RsxSurfaceColorFormat SurfaceColorFormat =>
+        RsxSurfaceColorFormat.A8R8G8B8;
+
+    public byte RawColorFormat => (byte)SurfaceColorFormat;
 
     /// <summary>
     /// Replays the PS3 dimension-family selection, arithmetic right shift,

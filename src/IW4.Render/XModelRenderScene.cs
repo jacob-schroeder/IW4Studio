@@ -57,6 +57,7 @@ public sealed class XModelRenderLod
         Surfaces = Array.AsReadOnly(surfaces.ToArray());
         TriangleCount = checked(Surfaces.Sum(surface =>
             surface.Indices.Count / 3));
+        CollisionTriangleCount = checked(Surfaces.Sum(surface => surface.CollisionIndices.Count / 3));
         VertexCount = checked(Surfaces.Sum(surface =>
             surface.Positions.Count));
     }
@@ -72,6 +73,7 @@ public sealed class XModelRenderLod
     public int TriangleCount { get; }
 
     public int VertexCount { get; }
+    public int CollisionTriangleCount { get; }
 }
 
 public sealed class XModelRenderSurface
@@ -82,6 +84,7 @@ public sealed class XModelRenderSurface
         string materialName,
         IReadOnlyList<Vector3> positions,
         IReadOnlyList<uint> indices,
+        IReadOnlyList<uint> collisionIndices,
         RenderBounds bounds,
         int selectedTechniqueSlot,
         string selectedTechniqueName,
@@ -92,6 +95,7 @@ public sealed class XModelRenderSurface
         ArgumentException.ThrowIfNullOrWhiteSpace(materialName);
         ArgumentNullException.ThrowIfNull(positions);
         ArgumentNullException.ThrowIfNull(indices);
+        ArgumentNullException.ThrowIfNull(collisionIndices);
         ArgumentNullException.ThrowIfNull(authoredPasses);
         ArgumentNullException.ThrowIfNull(authoredMaterialStatus);
         if (indices.Count % 3 != 0)
@@ -118,6 +122,7 @@ public sealed class XModelRenderSurface
         MaterialName = materialName;
         Positions = Array.AsReadOnly(positions.ToArray());
         Indices = Array.AsReadOnly(indices.ToArray());
+        CollisionIndices = Array.AsReadOnly(collisionIndices.ToArray());
         Bounds = bounds;
         SelectedTechniqueSlot = selectedTechniqueSlot;
         SelectedTechniqueName = selectedTechniqueName;
@@ -135,6 +140,7 @@ public sealed class XModelRenderSurface
     public IReadOnlyList<Vector3> Positions { get; }
 
     public IReadOnlyList<uint> Indices { get; }
+    public IReadOnlyList<uint> CollisionIndices { get; }
 
     public RenderBounds Bounds { get; }
 

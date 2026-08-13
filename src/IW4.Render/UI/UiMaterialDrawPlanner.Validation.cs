@@ -1,4 +1,5 @@
 using IW4.Render.Techniques;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution.FixedFunction;
@@ -32,15 +33,24 @@ public static partial class UiMaterialDrawPlanner
             return false;
         }
 
-        return HasRoute(declaration.Routing[0], 0, 0) &&
-               HasRoute(declaration.Routing[1], 1, 3) &&
-               HasRoute(declaration.Routing[2], 2, 8);
+        return HasRoute(
+                   declaration.Routing[0],
+                   MaterialStreamSource.Position,
+                   MaterialStreamDestination.Position) &&
+               HasRoute(
+                   declaration.Routing[1],
+                   MaterialStreamSource.Color,
+                   MaterialStreamDestination.Color0) &&
+               HasRoute(
+                   declaration.Routing[2],
+                   MaterialStreamSource.TexCoord0,
+                   MaterialStreamDestination.TexCoord0);
     }
 
     private static bool HasRoute(
         MaterialVertexStreamRouting route,
-        byte source,
-        byte destination) =>
+        MaterialStreamSource source,
+        MaterialStreamDestination destination) =>
         route.Source == source && route.Dest == destination;
 
     private static bool IsSupportedTextureTarget(
@@ -48,9 +58,9 @@ public static partial class UiMaterialDrawPlanner
         resource.Width > 0 &&
         resource.Height > 0 &&
         resource.Depth == 1 &&
-        resource.MapType == 3 &&
-        resource.DimensionCount == 2 &&
-        resource.MultiFaceControl == 0;
+        resource.MapType == MapType.TwoDimensional &&
+        resource.DimensionCount == GfxImageDimension.TwoDimensional &&
+        !resource.IsCubemap;
 
     private static bool TryResolveExpectedSampler(
         IReadOnlyList<MaterialShaderArgumentAsset> arguments,
@@ -58,13 +68,13 @@ public static partial class UiMaterialDrawPlanner
         out MaterialShaderArgumentAsset? samplerArgument)
     {
         bool hasWorld = arguments.Any(argument =>
-            argument.Type == MaterialShaderArgumentType.CodePrimBegin &&
+            argument.Type == MaterialShaderArgumentType.CodeVertexConst &&
             argument.Dest == World0Destination &&
-            unchecked((uint)argument.ArgumentRaw) == World0Argument);
+            argument.CodeConstant.PackedValue == World0Argument);
         bool hasViewProjection = arguments.Any(argument =>
-            argument.Type == MaterialShaderArgumentType.CodePrimBegin &&
+            argument.Type == MaterialShaderArgumentType.CodeVertexConst &&
             argument.Dest == ViewProjectionDestination &&
-            unchecked((uint)argument.ArgumentRaw) ==
+            argument.CodeConstant.PackedValue ==
             ViewProjectionArgument);
         var matches = arguments
             .Select((argument, index) => (Argument: argument, Index: index))
@@ -72,7 +82,7 @@ public static partial class UiMaterialDrawPlanner
                 value.Argument.Type ==
                     MaterialShaderArgumentType.MaterialPixelSampler &&
                 value.Argument.Dest == BaseColorSamplerDestination &&
-                unchecked((uint)value.Argument.ArgumentRaw) ==
+                value.Argument.MaterialNameHash ==
                     BaseColorSamplerHash)
             .ToArray();
         if (!hasWorld || !hasViewProjection || matches.Length != 1)
@@ -94,7 +104,7 @@ public static partial class UiMaterialDrawPlanner
             yield return "state missing";
         if (state.ShaderPackerSrgbEnabled)
             yield return "shader-packer sRGB enabled";
-        if (state.ColorMask != 0x01010101)
+        if (state.ColorMask != RsxColorMask.Rgba)
             yield return $"color mask 0x{state.ColorMask:X8}";
         if (AlphaTest.Resolve(state) is null)
         {
@@ -107,7 +117,7 @@ public static partial class UiMaterialDrawPlanner
             yield return
                 $"cull tuple {state.CullEnabled}/0x{state.CullFace:X4}";
         }
-        if (state.PolygonMode != 0x1B02)
+        if (state.PolygonMode != RsxPolygonMode.Fill)
             yield return $"polygon mode 0x{state.PolygonMode:X4}";
         if (!RenderBlendDecoder.TryResolve(
                 state,
@@ -128,7 +138,7 @@ public static partial class UiMaterialDrawPlanner
             yield return "depth test/write enabled";
         if (state.StencilEnabled)
             yield return "stencil enabled";
-        if (state.PolygonOffsetEnabled)
+        if (state.PolygonOffsetMode == RenderPolygonOffsetMode.Explicit)
             yield return "polygon offset enabled";
     }
 

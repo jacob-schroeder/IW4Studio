@@ -8,7 +8,7 @@ namespace IW4.Assets.Assets.Material;
 public sealed class MaterialAsset : BaseAsset
 {
     public const int SerializedSize = 0xa8;
-    public const int TechniqueSlotCount = 37;
+    public const int TechniqueSlotCount = (int)MaterialTechniqueType.Count;
 
     private IReadOnlyList<ushort> _inlineTechniqueSlotStateBits = [];
     private IReadOnlyList<ushort> _runtimeTechniqueSlotStateBits = [];
@@ -21,8 +21,8 @@ public sealed class MaterialAsset : BaseAsset
     public byte TextureCount { get; init; }
     public byte ConstantCount { get; init; }
     public byte StateBitsCount { get; init; }
-    public byte StateFlags { get; init; }
-    public byte CameraRegion { get; init; }
+    public MaterialStateFlags StateFlags { get; init; }
+    public GfxCameraRegionType CameraRegion { get; init; }
     public byte XStringCount { get; init; }
     public byte Pad43 { get; init; }
     public IReadOnlyList<ushort> InlineTechniqueSlotStateBits

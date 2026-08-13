@@ -7,7 +7,7 @@ internal static class GfxImageRegistrationPolicy
 {
     public const string PictureFramesName = "me_pictureframes";
 
-    private const int PixelDataBlockOffset = 0x0e;
+    private const int MemoryLocationOffset = 0x0e;
     private const int PixelsOffsetOffset = 0x14;
 
     public static bool IsPictureFrames(GfxImageAsset image) =>
@@ -34,7 +34,8 @@ internal static class GfxImageRegistrationPolicy
             pixelsOffset = suppliedOffset;
 
         image.ApplyNullPayloadRuntimeHeader(pixelsOffset);
-        incomingHeader[PixelDataBlockOffset] = 1;
+        incomingHeader[MemoryLocationOffset] =
+            (byte)GfxImageMemoryLocation.Main;
         if (pixelsOffset.HasValue)
         {
             BinaryPrimitives.WriteUInt32BigEndian(

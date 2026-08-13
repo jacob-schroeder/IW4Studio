@@ -24,7 +24,7 @@ public sealed class RsxShaderSemanticIdentity :
         "rsx-shader-semantic-identity/v1";
 
     public const string CurrentVertexSemanticTranslationVersion =
-        "rsx-vertex-translation/1";
+        "rsx-vertex-translation/3";
 
     private readonly ImmutableArray<byte> _canonicalContent;
 
@@ -151,7 +151,7 @@ public sealed class RsxShaderSemanticIdentity :
             writer.WriteInt32(export.ColorTarget);
             writer.WriteBoolean(export.Fp16);
             writer.WriteInt32(export.RegisterIndex);
-            writer.WriteByte(export.WrittenComponentMask);
+            writer.WriteByte((byte)export.WrittenComponentMask);
             writer.WriteString(export.WrittenComponents);
         }
 

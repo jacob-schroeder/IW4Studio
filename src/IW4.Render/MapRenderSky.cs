@@ -1,6 +1,7 @@
 using IW4.Render.Textures;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render;
 
@@ -22,7 +23,7 @@ public sealed record MapRenderSky(
 
     internal MaterialSamplerIdentity? ShaderPrimarySampler { get; init; }
 
-    internal byte ShaderTexCoordSource { get; init; }
+    internal MaterialStreamSource ShaderTexCoordSource { get; init; }
 
     /// <summary>
     /// Exact translated RSX pair selected by <see cref="ShaderPass"/>. The

@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Assets;
 using IW4.Render.OpenGl.Presentation;
 using IW4.Render.OpenGl.Shaders;
@@ -57,7 +58,7 @@ internal static class MapRenderOpenGlNormalCameraFloatZProgramResolver
                         revision,
                         recipe.ProcessedFloatZ,
                         [0],
-                        [0x20],
+                        [(ushort)MaterialConstantSource.ZNear],
                         [0, 1, 2, 3, 17, 18],
                         vertexPrograms,
                         fragmentPrograms);

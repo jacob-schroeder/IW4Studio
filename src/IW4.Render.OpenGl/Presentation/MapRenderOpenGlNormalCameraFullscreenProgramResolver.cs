@@ -89,7 +89,13 @@ internal static class
                     revision,
                     postFxColor2Contract,
                     [0, 8],
-                    [0x2e, 0x2f, 0x30, 0x2d],
+                    [
+                        (ushort)MaterialConstantSource.ColorTintBase,
+                        (ushort)MaterialConstantSource.ColorTintDelta,
+                        (ushort)MaterialConstantSource
+                            .ColorTintQuadraticDelta,
+                        (ushort)MaterialConstantSource.ColorBias
+                    ],
                     [0, 1, 2, 3],
                     vertexPrograms,
                     fragmentPrograms)
@@ -145,8 +151,20 @@ internal static class
             setupContract,
             [0, 8],
             useGlowSetupColor2
-                ? [0x2b, 0x2e, 0x2f, 0x30, 0x2d]
-                : [0x2b, 0x2e, 0x2f, 0x2d],
+                ? [
+                    (ushort)MaterialConstantSource.GlowSetup,
+                    (ushort)MaterialConstantSource.ColorTintBase,
+                    (ushort)MaterialConstantSource.ColorTintDelta,
+                    (ushort)MaterialConstantSource
+                        .ColorTintQuadraticDelta,
+                    (ushort)MaterialConstantSource.ColorBias
+                ]
+                : [
+                    (ushort)MaterialConstantSource.GlowSetup,
+                    (ushort)MaterialConstantSource.ColorTintBase,
+                    (ushort)MaterialConstantSource.ColorTintDelta,
+                    (ushort)MaterialConstantSource.ColorBias
+                ],
             [0, 1, 2, 3, 16, 467],
             vertexPrograms,
             fragmentPrograms);
@@ -155,7 +173,7 @@ internal static class
             revision,
             recipe.GlowApplyBloom,
             [0, 8],
-            [0x2c],
+            [(ushort)MaterialConstantSource.GlowApply],
             [0, 1, 2, 3],
             vertexPrograms,
             fragmentPrograms);
@@ -169,7 +187,9 @@ internal static class
                 revision,
                 recipe.GlowSymmetricFilters[index],
                 [0, 8],
-                Enumerable.Range(0x0a, tapHalfCount)
+                Enumerable.Range(
+                        (int)MaterialConstantSource.FilterTap0,
+                        tapHalfCount)
                     .Select(value => checked((ushort)value))
                     .ToArray(),
                 Enumerable.Range(12, tapHalfCount)
@@ -205,7 +225,7 @@ internal static class
         RenderState state = RenderStateDecoder.Decode(
             contract.StateBits0,
             contract.StateBits1,
-            tail: 0);
+            commandWordCount: 0);
         if (!OpenGlFixedFunctionEpilogue.TryCompose(
                 state,
                 program.Translation.FragmentProgramControl,
@@ -302,9 +322,7 @@ internal static class
         }
 
         if ((uint)contract.TechniqueSlot >=
-                (uint)material.StateBitsEntries.Count ||
-            material.StateBitsEntries[contract.TechniqueSlot].TechniqueSlot !=
-                contract.TechniqueSlot)
+                (uint)material.StateBitsEntries.Count)
         {
             throw new InvalidOperationException(
                 $"Fullscreen material '{contract.MaterialName}' has no exact state-bits slot row.");

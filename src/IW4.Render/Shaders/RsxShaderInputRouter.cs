@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Shaders;
@@ -457,7 +458,7 @@ public static class RsxShaderInputRouter
         MaterialPassAsset pass,
         MaterialShaderArgumentAsset samplerArg,
         MaterialVertexDeclarationAsset? vertexDecl,
-        out byte source)
+        out MaterialStreamSource source)
     {
         return TrySelectSamplerSourceCached(pass, samplerArg, vertexDecl, textureSemantic: -1, out source);
     }
@@ -466,9 +467,9 @@ public static class RsxShaderInputRouter
         SamplerRouteInputSnapshot snapshot,
         IReadOnlyList<PixelTextureOp> textureOps,
         RsxVertexOutputDependencyAnalysis vertexAnalysis,
-        out byte source)
+        out MaterialStreamSource source)
     {
-        source = 0;
+        source = default;
         IReadOnlyDictionary<string, IReadOnlySet<string>> outputDeps =
             vertexAnalysis.OutputDependencies;
         IReadOnlyDictionary<string, ImmutableArray<IReadOnlySet<string>>>
@@ -524,10 +525,15 @@ public static class RsxShaderInputRouter
         MaterialPassAsset pass,
         MaterialShaderArgumentAsset samplerArg,
         MaterialVertexDeclarationAsset? vertexDecl,
-        byte textureSemantic,
-        out byte source)
+        TextureSemantic textureSemantic,
+        out MaterialStreamSource source)
     {
-        return TrySelectSamplerSourceCached(pass, samplerArg, vertexDecl, textureSemantic, out source);
+        return TrySelectSamplerSourceCached(
+            pass,
+            samplerArg,
+            vertexDecl,
+            (int)textureSemantic,
+            out source);
     }
 
     private static bool TrySelectSamplerSourceCached(
@@ -535,11 +541,11 @@ public static class RsxShaderInputRouter
         MaterialShaderArgumentAsset samplerArg,
         MaterialVertexDeclarationAsset? vertexDecl,
         int textureSemantic,
-        out byte source)
+        out MaterialStreamSource source)
     {
         if (vertexDecl is null)
         {
-            source = 0;
+            source = default;
             return false;
         }
 
@@ -587,7 +593,7 @@ public static class RsxShaderInputRouter
             .TextureOps
             .Where(op => op.TextureUnit == snapshot.SamplerDestination)
             .ToArray();
-        byte source = 0;
+        MaterialStreamSource source = default;
 
         // Preserve the original fast path: name-based routes do not
         // need a vertex decode when no matching pixel texture op exists.
@@ -603,7 +609,7 @@ public static class RsxShaderInputRouter
 
         RsxVertexOutputDependencyAnalysis vertexAnalysis =
             textureOps.Length > 0 ||
-            (textureSemantic == 0x02 &&
+            (textureSemantic == (int)TextureSemantic.ColorMap &&
              snapshot.SamplerDestination == 0)
                 ? ResolveVertexOutputDependencyAnalysis(snapshot)
                 : RsxVertexOutputDependencyAnalysis.Empty;
@@ -616,7 +622,7 @@ public static class RsxShaderInputRouter
         if (!success)
             success = TrySelectPrecompiledSamplerSource(snapshot, out source);
         if (!success &&
-            textureSemantic == 0x02 &&
+            textureSemantic == (int)TextureSemantic.ColorMap &&
             snapshot.SamplerDestination == 0)
         {
             success = TrySelectMaterialColorTexcoord0Source(
@@ -716,9 +722,9 @@ public static class RsxShaderInputRouter
 
     private static bool TrySelectPrecompiledSamplerSource(
         SamplerRouteInputSnapshot snapshot,
-        out byte source)
+        out MaterialStreamSource source)
     {
-        source = 0;
+        source = default;
 
         // The bytecode decoder gets first chance. This exact table is only a fallback
         // for selected shader/dest routes already resolved outside this renderer.
@@ -731,12 +737,14 @@ public static class RsxShaderInputRouter
                 snapshot.VertexShaderName,
                 snapshot.PixelShaderName,
                 snapshot.SamplerDestination)
-                ? VertexInputName(0x0B)
+                ? VertexInputName(
+                    RsxVertexInputAttribute.TextureCoordinate3)
                 : TryGetLiveProvenPrecompiledTexcoord7FromTex4Route(
                     snapshot.VertexShaderName,
                     snapshot.PixelShaderName,
                     snapshot.SamplerDestination)
-                    ? VertexInputName(0x0C)
+                    ? VertexInputName(
+                        RsxVertexInputAttribute.TextureCoordinate4)
                     : null;
 
         if (expectedVertexInput is null)
@@ -758,9 +766,9 @@ public static class RsxShaderInputRouter
     private static bool TrySelectMaterialColorTexcoord0Source(
         RsxVertexOutputDependencyAnalysis vertexAnalysis,
         VertexDeclarationCacheIdentity vertexDeclaration,
-        out byte source)
+        out MaterialStreamSource source)
     {
-        source = 0;
+        source = default;
         IReadOnlyDictionary<string, ImmutableArray<IReadOnlySet<string>>>
             outputComponentDeps =
             vertexAnalysis.OutputComponentDependencies;
@@ -866,9 +874,9 @@ public static class RsxShaderInputRouter
             outputComponentDeps,
         string vertexOutput,
         VertexDeclarationCacheIdentity vertexDeclaration,
-        out byte source)
+        out MaterialStreamSource source)
     {
-        source = 0;
+        source = default;
         if (!TryGetTextureInputForOutputXY(outputComponentDeps, vertexOutput, out string vertexInput))
             return false;
 
@@ -978,25 +986,29 @@ public static class RsxShaderInputRouter
         Dictionary<string, SortedSet<string>[]> outputDeps)
     {
         byte opcode = scalar ? instruction.ScaOpcode : instruction.VecOpcode;
-        int writeMask = scalar ? instruction.ScaWriteMask : instruction.VecWriteMask;
-        if (opcode == 0 || writeMask == 0)
+        RsxVertexWriteMask writeMask = scalar
+            ? instruction.ScalarWriteMask
+            : instruction.VectorWriteMask;
+        if (opcode == 0 || writeMask == RsxVertexWriteMask.None)
             return;
 
         SortedSet<string>[] deps = CollectVertexSlotComponentDependencies(instruction, scalar, tempDeps);
         bool writesResult = scalar
-            ? RouterScalarWritesResult(instruction)
+            ? instruction.ScaResult
             : instruction.VecResult;
-        if (writesResult && instruction.ResultIndex != 0x1f)
+        if (writesResult && instruction.Result != RsxVertexResult.None)
         {
             WriteMaskedComponentDeps(
-                GetOrAddComponentDeps(outputDeps, VertexOutputName(instruction.ResultIndex)),
+                GetOrAddComponentDeps(
+                    outputDeps,
+                    VertexOutputName(instruction.Result)),
                 deps,
                 writeMask);
             return;
         }
 
         int temp = scalar
-            ? RouterScalarDestinationTemp(instruction)
+            ? instruction.ScaDestTemp
             : instruction.VecDestTemp;
         if (!tempDeps.TryGetValue(temp, out SortedSet<string>[]? target))
         {
@@ -1014,28 +1026,37 @@ public static class RsxShaderInputRouter
     {
         if (scalar)
         {
-            return RsxProgramDecoder.VertexScalarOperandCount(
-                       instruction.ScaOpcode) > 0
+            return RsxShaderInstructionSet.VertexScalarOperandCount(
+                       instruction.ScalarOpcode) > 0
                 ? ResolveVertexSourceComponentDependencies(instruction, instruction.Source2, tempDeps)
                 : EmptyComponentDeps();
         }
 
-        SortedSet<string>[] source0 = RouterVectorOperandCount(instruction.VecOpcode) > 0
+        RsxSourceSlotMask sourceMask =
+            RsxShaderInstructionSet.VertexSourceMask(
+                instruction.VectorOpcode);
+        SortedSet<string>[] source0 =
+            (sourceMask & RsxSourceSlotMask.Source0) != RsxSourceSlotMask.None
             ? ResolveVertexSourceComponentDependencies(instruction, instruction.Source0, tempDeps)
             : EmptyComponentDeps();
-        SortedSet<string>[] source1 = RouterVectorOperandCount(instruction.VecOpcode) > 1
+        SortedSet<string>[] source1 =
+            (sourceMask & RsxSourceSlotMask.Source1) != RsxSourceSlotMask.None
             ? ResolveVertexSourceComponentDependencies(instruction, instruction.Source1, tempDeps)
             : EmptyComponentDeps();
-        SortedSet<string>[] source2 = RouterVectorOperandCount(instruction.VecOpcode) > 2
+        SortedSet<string>[] source2 =
+            (sourceMask & RsxSourceSlotMask.Source2) != RsxSourceSlotMask.None
             ? ResolveVertexSourceComponentDependencies(instruction, instruction.Source2, tempDeps)
             : EmptyComponentDeps();
 
-        return instruction.VecOpcode switch
+        return instruction.VectorOpcode switch
         {
-            0x05 => DotComponentDeps(source0, source1, componentCount: 3),
-            0x06 => DotComponentDeps(source0, source1, componentCount: 4),
-            0x07 => DotComponentDeps(source0, source1, componentCount: 4),
-            0x08 => DstComponentDeps(source0, source1),
+            RsxVertexVectorOpcode.Dot3 =>
+                DotComponentDeps(source0, source1, componentCount: 3),
+            RsxVertexVectorOpcode.DotHomogeneous or
+                RsxVertexVectorOpcode.Dot4 =>
+                DotComponentDeps(source0, source1, componentCount: 4),
+            RsxVertexVectorOpcode.Distance =>
+                DstComponentDeps(source0, source1),
             _ => UnionComponentDeps(source0, source1, source2)
         };
     }
@@ -1045,20 +1066,31 @@ public static class RsxShaderInputRouter
         uint source,
         Dictionary<int, SortedSet<string>[]> tempDeps)
     {
-        SortedSet<string>[] baseDeps = RsxVertexInstruction.SourceRegisterType(source) switch
+        SortedSet<string>[] baseDeps =
+            RsxVertexInstruction.SourceRegisterKind(source) switch
         {
-            1 => tempDeps.TryGetValue((int)((source >> 2) & 0x1f), out SortedSet<string>[]? deps)
+            RsxVertexRegisterType.Temporary =>
+                tempDeps.TryGetValue(
+                    (int)((source >> 2) & 0x3f),
+                    out SortedSet<string>[]? deps)
                 ? CloneComponentDeps(deps)
                 : EmptyComponentDeps(),
-            2 => VertexInputComponentDeps(VertexInputName(instruction.InputSource)),
-            3 => VertexInputComponentDeps($"C{instruction.ConstSource}"),
+            RsxVertexRegisterType.Input =>
+                VertexInputComponentDeps(
+                    VertexInputName(instruction.InputAttribute)),
+            RsxVertexRegisterType.Constant =>
+                VertexInputComponentDeps($"C{instruction.ConstSource}"),
             _ => EmptyComponentDeps()
         };
 
-        int[] swizzle = RsxVertexSourceSwizzle(source);
+        RsxSwizzleComponent[] swizzle = RsxVertexSourceSwizzle(source);
         SortedSet<string>[] resolved = EmptyComponentDeps();
         for (int component = 0; component < 4; component++)
-            AddRange(resolved[component], baseDeps[swizzle[component]]);
+        {
+            AddRange(
+                resolved[component],
+                baseDeps[(int)swizzle[component]]);
+        }
 
         return resolved;
     }
@@ -1147,11 +1179,12 @@ public static class RsxShaderInputRouter
     private static void WriteMaskedComponentDeps(
         SortedSet<string>[] target,
         SortedSet<string>[] source,
-        int writeMask)
+        RsxVertexWriteMask writeMask)
     {
         for (int component = 0; component < 4; component++)
         {
-            if ((writeMask & ComponentWriteMask(component)) == 0)
+            if ((writeMask & ComponentWriteMask(component)) ==
+                RsxVertexWriteMask.None)
                 continue;
 
             target[component].Clear();
@@ -1159,7 +1192,8 @@ public static class RsxShaderInputRouter
         }
     }
 
-    private static int ComponentWriteMask(int component) => 0x8 >> component;
+    private static RsxVertexWriteMask ComponentWriteMask(int component) =>
+        (RsxVertexWriteMask)(0x8 >> component);
 
     private static string ComponentSuffix(int component)
     {
@@ -1173,14 +1207,14 @@ public static class RsxShaderInputRouter
         };
     }
 
-    private static int[] RsxVertexSourceSwizzle(uint source)
+    private static RsxSwizzleComponent[] RsxVertexSourceSwizzle(uint source)
     {
         return
         [
-            (int)((source >> 14) & 0x3),
-            (int)((source >> 12) & 0x3),
-            (int)((source >> 10) & 0x3),
-            (int)((source >> 8) & 0x3)
+            (RsxSwizzleComponent)((source >> 14) & 0x3),
+            (RsxSwizzleComponent)((source >> 12) & 0x3),
+            (RsxSwizzleComponent)((source >> 10) & 0x3),
+            (RsxSwizzleComponent)((source >> 8) & 0x3)
         ];
     }
 
@@ -1191,22 +1225,26 @@ public static class RsxShaderInputRouter
         Dictionary<string, SortedSet<string>> outputDeps)
     {
         byte opcode = scalar ? instruction.ScaOpcode : instruction.VecOpcode;
-        int writeMask = scalar ? instruction.ScaWriteMask : instruction.VecWriteMask;
-        if (opcode == 0 || writeMask == 0)
+        RsxVertexWriteMask writeMask = scalar
+            ? instruction.ScalarWriteMask
+            : instruction.VectorWriteMask;
+        if (opcode == 0 || writeMask == RsxVertexWriteMask.None)
             return;
 
         SortedSet<string> deps = CollectVertexSlotDependencies(instruction, scalar, tempDeps);
         bool writesResult = scalar
-            ? RouterScalarWritesResult(instruction)
+            ? instruction.ScaResult
             : instruction.VecResult;
-        if (writesResult && instruction.ResultIndex != 0x1f)
+        if (writesResult && instruction.Result != RsxVertexResult.None)
         {
-            AddRange(GetOrAdd(outputDeps, VertexOutputName(instruction.ResultIndex)), deps);
+            AddRange(
+                GetOrAdd(outputDeps, VertexOutputName(instruction.Result)),
+                deps);
             return;
         }
 
         int temp = scalar
-            ? RouterScalarDestinationTemp(instruction)
+            ? instruction.ScaDestTemp
             : instruction.VecDestTemp;
         tempDeps[temp] = deps;
     }
@@ -1219,14 +1257,16 @@ public static class RsxShaderInputRouter
         var deps = new SortedSet<string>(StringComparer.Ordinal);
         foreach (uint source in ActiveVertexSlotSources(instruction, scalar))
         {
-            switch (RsxVertexInstruction.SourceRegisterType(source))
+            switch (RsxVertexInstruction.SourceRegisterKind(source))
             {
-                case 1:
-                    if (tempDeps.TryGetValue((int)((source >> 2) & 0x1f), out SortedSet<string>? sourceDeps))
+                case RsxVertexRegisterType.Temporary:
+                    if (tempDeps.TryGetValue(
+                            (int)((source >> 2) & 0x3f),
+                            out SortedSet<string>? sourceDeps))
                         AddRange(deps, sourceDeps);
                     break;
-                case 2:
-                    deps.Add(VertexInputName(instruction.InputSource));
+                case RsxVertexRegisterType.Input:
+                    deps.Add(VertexInputName(instruction.InputAttribute));
                     break;
             }
         }
@@ -1240,52 +1280,34 @@ public static class RsxShaderInputRouter
     {
         if (scalar)
         {
-            if (RsxProgramDecoder.VertexScalarOperandCount(
-                    instruction.ScaOpcode) > 0)
+            if (RsxShaderInstructionSet.VertexScalarOperandCount(
+                    instruction.ScalarOpcode) > 0)
                 yield return instruction.Source2;
             yield break;
         }
 
-        int count = RouterVectorOperandCount(instruction.VecOpcode);
-        if (count > 0) yield return instruction.Source0;
-        if (count > 1) yield return instruction.Source1;
-        if (count > 2) yield return instruction.Source2;
+        RsxSourceSlotMask sourceMask =
+            RsxShaderInstructionSet.VertexSourceMask(
+                instruction.VectorOpcode);
+        if ((sourceMask & RsxSourceSlotMask.Source0) != RsxSourceSlotMask.None)
+            yield return instruction.Source0;
+        if ((sourceMask & RsxSourceSlotMask.Source1) != RsxSourceSlotMask.None)
+            yield return instruction.Source1;
+        if ((sourceMask & RsxSourceSlotMask.Source2) != RsxSourceSlotMask.None)
+            yield return instruction.Source2;
     }
 
-    // This source-slot table intentionally remains router-local. In
-    // particular, the translator treats ADD (0x03), ARL/SSG (0x11/0x15), and
-    // ARR (0x16) differently. Combining those interpretations would change
-    // routing until the PS3 discrepancy is resolved.
-    private static int RouterVectorOperandCount(byte opcode)
-    {
-        return opcode switch
-        {
-            0x00 => 0,
-            0x01 or 0x0d or 0x0e or 0x0f or 0x17 or 0x18 or 0x19 => 1,
-            0x04 => 3,
-            _ => 2
-        };
-    }
-
-    // The dependency router historically selects the scalar result from word
-    // 3 bit 12 and masks scalar temp destinations to five bits. The semantic
-    // translator uses a different interpretation. Keep this disagreement
-    // explicit until the applicable PS3 interpretation is resolved.
-    private static bool RouterScalarWritesResult(RsxVertexInstruction instruction) =>
-        instruction.RouterScalarWritesResult;
-
-    private static int RouterScalarDestinationTemp(RsxVertexInstruction instruction) =>
-        instruction.RouterScalarDestinationTemp;
-
-    private static string FragmentInputName(int input)
+    private static string FragmentInputName(RsxFragmentInputAttribute input)
     {
         return input switch
         {
-            0x0 => "position",
-            0x1 => "color0",
-            0x2 => "color1",
-            0x3 => "fog",
-            >= 0x4 and <= 0xb => $"texcoord{input - 0x4}",
+            RsxFragmentInputAttribute.WindowPosition => "position",
+            RsxFragmentInputAttribute.Color0 => "color0",
+            RsxFragmentInputAttribute.Color1 => "color1",
+            RsxFragmentInputAttribute.Fog => "fog",
+            >= RsxFragmentInputAttribute.TextureCoordinate0 and
+                <= RsxFragmentInputAttribute.TextureCoordinate7 =>
+                $"texcoord{(byte)input - (byte)RsxFragmentInputAttribute.TextureCoordinate0}",
             _ => ""
         };
     }
@@ -1296,14 +1318,17 @@ public static class RsxShaderInputRouter
             int.TryParse(input["texcoord".Length..], out int texCoord) &&
             texCoord is >= 0 and <= 7)
         {
-            return VertexOutputName(0x07 + texCoord);
+            return VertexOutputName(
+                (RsxVertexResult)(
+                    (byte)RsxVertexResult.TextureCoordinate0 + texCoord));
         }
 
         return input switch
         {
-            "color0" => VertexOutputName(0x01),
-            "color1" => VertexOutputName(0x02),
-            "fog" => VertexOutputName(0x05),
+            "color0" => VertexOutputName(RsxVertexResult.FrontColor0),
+            "color1" => VertexOutputName(RsxVertexResult.FrontColor1),
+            "fog" => VertexOutputName(
+                RsxVertexResult.FogAndUserClip0To2),
             _ => ""
         };
     }
@@ -1314,57 +1339,67 @@ public static class RsxShaderInputRouter
             int.TryParse(input["texcoord".Length..], out int texCoord) &&
             texCoord is >= 0 and <= 7)
         {
-            return VertexInputName(0x08 + texCoord);
+            return VertexInputName(
+                (RsxVertexInputAttribute)(
+                    (byte)RsxVertexInputAttribute.TextureCoordinate0 +
+                    texCoord));
         }
 
         return input switch
         {
-            "color0" => VertexInputName(0x03),
-            "color1" => VertexInputName(0x04),
-            "fog" => VertexInputName(0x05),
+            "color0" => VertexInputName(RsxVertexInputAttribute.Color0),
+            "color1" => VertexInputName(RsxVertexInputAttribute.Color1),
+            "fog" => VertexInputName(RsxVertexInputAttribute.Fog),
             _ => ""
         };
     }
 
-    private static string VertexInputName(int input)
+    private static string VertexInputName(RsxVertexInputAttribute input)
     {
         return input switch
         {
-            0x0 => "v0/POS",
-            0x1 => "v1/WEIGHT",
-            0x2 => "v2/NORMAL",
-            0x3 => "v3/COL0",
-            0x4 => "v4/COL1",
-            0x5 => "v5/FOGC",
-            >= 0x8 and <= 0xf => $"v{input}/TEX{input - 0x8}",
-            _ => $"v{input}/input"
+            RsxVertexInputAttribute.Position => "v0/POS",
+            RsxVertexInputAttribute.Weight => "v1/WEIGHT",
+            RsxVertexInputAttribute.Normal => "v2/NORMAL",
+            RsxVertexInputAttribute.Color0 => "v3/COL0",
+            RsxVertexInputAttribute.Color1 => "v4/COL1",
+            RsxVertexInputAttribute.Fog => "v5/FOGC",
+            >= RsxVertexInputAttribute.TextureCoordinate0 and
+                <= RsxVertexInputAttribute.TextureCoordinate7 =>
+                $"v{(byte)input}/TEX{(byte)input - (byte)RsxVertexInputAttribute.TextureCoordinate0}",
+            _ => $"v{(byte)input}/input"
         };
     }
 
-    private static string VertexOutputName(int output)
+    private static string VertexOutputName(RsxVertexResult output)
     {
         return output switch
         {
-            0x01 => "o1/COL0",
-            0x02 => "o2/COL1",
-            0x05 => "o5/FOGC",
-            >= 0x07 and <= 0x0e => $"o{output}/TEX{output - 0x07}",
-            _ => $"o{output}/output"
+            RsxVertexResult.FrontColor0 => "o1/COL0",
+            RsxVertexResult.FrontColor1 => "o2/COL1",
+            RsxVertexResult.FogAndUserClip0To2 => "o5/FOGC",
+            >= RsxVertexResult.TextureCoordinate0 and
+                <= RsxVertexResult.TextureCoordinate7 =>
+                $"o{(byte)output}/TEX{(byte)output - (byte)RsxVertexResult.TextureCoordinate0}",
+            _ => $"o{(byte)output}/output"
         };
     }
 
-    private static string VertexDeclarationDestinationInputName(byte dest)
+    private static string VertexDeclarationDestinationInputName(
+        MaterialStreamDestination dest)
     {
         return dest switch
         {
-            0x00 => "v0/POS",
-            0x01 => "v1/WEIGHT",
-            0x02 => "v2/NORMAL",
-            0x03 => "v3/COL0",
-            0x04 => "v4/COL1",
-            0x05 => "v5/FOGC",
-            >= 0x08 and <= 0x0f => $"v{dest}/TEX{dest - 0x08}",
-            _ => $"dest[{dest:X2}]"
+            MaterialStreamDestination.Position => "v0/POS",
+            MaterialStreamDestination.Weight => "v1/WEIGHT",
+            MaterialStreamDestination.Normal => "v2/NORMAL",
+            MaterialStreamDestination.Color0 => "v3/COL0",
+            MaterialStreamDestination.Color1 => "v4/COL1",
+            MaterialStreamDestination.Fog => "v5/FOGC",
+            >= MaterialStreamDestination.TexCoord0 and
+                <= MaterialStreamDestination.TexCoord7 =>
+                $"v{(byte)dest}/TEX{(byte)dest - (byte)MaterialStreamDestination.TexCoord0}",
+            _ => $"dest[{(byte)dest:X2}]"
         };
     }
 

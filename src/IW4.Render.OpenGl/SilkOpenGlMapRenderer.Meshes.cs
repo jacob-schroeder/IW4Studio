@@ -3,6 +3,7 @@ using System.Numerics;
 using Silk.NET.OpenGL;
 using RenderTextureTarget = IW4.Render.Textures.TextureTarget;
 
+using IW4.Assets.Assets.Material;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.EditorPreview;
@@ -825,7 +826,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         for (int planOrdinal = 0; planOrdinal < staticPlans.Count; planOrdinal++)
         {
             MapRenderEditorStaticDrawPlan plan = staticPlans[planOrdinal];
-            byte?[] passCameraRegions = plan.PassSourceOrdinals
+            GfxCameraRegionType?[] passCameraRegions = plan.PassSourceOrdinals
                 .Select(sourceOrdinal =>
                     instancedMeshes[sourceOrdinal].StaticCameraRegion)
                 .ToArray();

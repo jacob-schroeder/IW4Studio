@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 using IW4.Assets.XModel.Export;
 using IW4.FastFiles.Zone;
@@ -8,29 +9,44 @@ namespace IW4.Studio.Documents;
 public sealed class XModelDraft
 {
     private readonly List<XModelLodDraft> _lodAssembly;
+    private readonly List<XModelCollSurf> _collisionSurfaces;
 
     internal XModelDraft(XModelAsset value)
     {
         Model = CopyRoot(value);
         _lodAssembly = CreateAssembly(Model);
+        _collisionSurfaces = CopyCollSurfs(Model.CollSurfs).ToList();
         CollisionLod = Model.CollLod;
+        PhysPreset = Model.PhysPreset;
+        PhysCollmap = Model.PhysCollmap;
     }
 
     private XModelDraft(XModelDraft value)
     {
         Model = CopyRoot(value.Model);
         _lodAssembly = value._lodAssembly.Select(lod => lod.Clone()).ToList();
+        _collisionSurfaces = CopyCollSurfs(value._collisionSurfaces).ToList();
         CollisionLod = value.CollisionLod;
+        PhysPreset = value.PhysPreset;
+        PhysCollmap = value.PhysCollmap;
     }
 
     public XModelAsset Model { get; }
     public IReadOnlyList<XModelLodDraft> LodAssembly => _lodAssembly.AsReadOnly();
     public byte CollisionLod { get; private set; }
-    public bool HasStagedAssemblyChanges => !AssemblyEquals(CreateAssembly(Model), Model.CollLod, _lodAssembly, CollisionLod);
+    public IReadOnlyList<XModelCollSurf> CollisionSurfaces => _collisionSurfaces.AsReadOnly();
+    public PhysPresetAsset? PhysPreset { get; private set; }
+    public PhysCollmapAsset? PhysCollmap { get; private set; }
+    public bool HasStagedAssemblyChanges => !AssemblyEquals(CreateAssembly(Model), Model.CollLod, _lodAssembly, CollisionLod) || !CollSurfsEqual(Model.CollSurfs, _collisionSurfaces) || !ReferenceEquals(Model.PhysPreset, PhysPreset) || !ReferenceEquals(Model.PhysCollmap, PhysCollmap);
 
     internal XModelDraft Clone() => new(this);
 
-    internal XModelAsset ToAsset() => CopyRoot(Model);
+    internal XModelAsset ToAsset() => CopyRoot(
+        Model,
+        _collisionSurfaces,
+        PhysPreset,
+        PhysCollmap,
+        useAuthoredPhysicsReferences: true);
 
     public void AppendImportedLod(XModelExportDocument document, string? source)
     {
@@ -38,7 +54,7 @@ public sealed class XModelDraft
         int index = _lodAssembly.FindIndex(lod => !lod.IsOccupied);
         if (index < 0) throw new InvalidOperationException("An XModel contains at most four LODs.");
         float distance = index == 0 ? 0f : MathF.Max(_lodAssembly[index - 1].Distance + 1f, 1f);
-        _lodAssembly[index] = new XModelLodDraft(index, distance, null, XModelLodDraft.Freeze(document), source);
+        _lodAssembly[index] = new XModelLodDraft(index, distance, null, XModelLodDraft.Freeze(document), source, CreateMaterialMappings(document));
     }
 
     public void ReplaceLod(int index, XModelExportDocument document, string? source)
@@ -47,7 +63,7 @@ public sealed class XModelDraft
         ValidateIndex(index);
         if (!_lodAssembly[index].IsOccupied) throw new InvalidOperationException("Only an active LOD can be replaced.");
         XModelLodDraft previous = _lodAssembly[index];
-        _lodAssembly[index] = new XModelLodDraft(index, previous.Distance, null, XModelLodDraft.Freeze(document), source);
+        _lodAssembly[index] = new XModelLodDraft(index, previous.Distance, null, XModelLodDraft.Freeze(document), source, CreateMaterialMappings(document));
     }
 
     public void RemoveLod(int index)
@@ -57,7 +73,7 @@ public sealed class XModelDraft
         for (int i = index; i < _lodAssembly.Count - 1; i++)
         {
             XModelLodDraft next = _lodAssembly[i + 1];
-            _lodAssembly[i] = new XModelLodDraft(i, next.Distance, next.BaselineLod, next.ImportedDocument is null ? null : XModelLodDraft.Freeze(next.ImportedDocument), next.ImportSource);
+            _lodAssembly[i] = new XModelLodDraft(i, next.Distance, next.BaselineLod, next.ImportedDocument is null ? null : XModelLodDraft.Freeze(next.ImportedDocument), next.ImportSource, next.MaterialSlots);
         }
         _lodAssembly[^1] = new XModelLodDraft(_lodAssembly.Count - 1, 0f, null, null, null);
         if (CollisionLod == index) CollisionLod = 0xFF;
@@ -70,7 +86,7 @@ public sealed class XModelDraft
         if (!_lodAssembly[index].IsOccupied) throw new InvalidOperationException("Only an active LOD has a distance.");
         if (!float.IsFinite(distance) || distance < 0) throw new ArgumentOutOfRangeException(nameof(distance), "LOD distance must be finite and nonnegative.");
         XModelLodDraft previous = _lodAssembly[index];
-        _lodAssembly[index] = new XModelLodDraft(index, distance, previous.BaselineLod, previous.ImportedDocument, previous.ImportSource);
+        _lodAssembly[index] = new XModelLodDraft(index, distance, previous.BaselineLod, previous.ImportedDocument, previous.ImportSource, previous.MaterialSlots);
     }
 
     public void SetCollisionLod(byte collisionLod)
@@ -78,6 +94,28 @@ public sealed class XModelDraft
         if (collisionLod != 0xFF && (collisionLod >= _lodAssembly.Count || !_lodAssembly[collisionLod].IsOccupied)) throw new ArgumentOutOfRangeException(nameof(collisionLod), "Collision LOD must select an active LOD or None.");
         CollisionLod = collisionLod;
     }
+
+    public void SetImportedMaterialSlot(int lodIndex, int materialIndex, int? sourceSlot)
+    {
+        ValidateIndex(lodIndex);
+        XModelLodDraft previous = _lodAssembly[lodIndex];
+        if (previous.ImportedDocument is null || (uint)materialIndex >= (uint)previous.MaterialSlots.Count)
+            throw new InvalidOperationException("The selected row has no imported material mapping.");
+        if (sourceSlot is < 0 || sourceSlot >= Model.Materials.Count || sourceSlot is int slot && Model.Materials[slot] is null)
+            throw new ArgumentOutOfRangeException(nameof(sourceSlot));
+        int?[] slots = previous.MaterialSlots.ToArray();
+        slots[materialIndex] = sourceSlot;
+        _lodAssembly[lodIndex] = new XModelLodDraft(lodIndex, previous.Distance, null, previous.ImportedDocument, previous.ImportSource, slots);
+    }
+    public void SetCollisionSurface(int index, Bounds bounds, int boneIndex, int contents, int surfaceFlags)
+    {
+        if ((uint)index >= (uint)_collisionSurfaces.Count) throw new ArgumentOutOfRangeException(nameof(index));
+        if (!float.IsFinite(bounds.MidPoint.X) || !float.IsFinite(bounds.MidPoint.Y) || !float.IsFinite(bounds.MidPoint.Z) || !float.IsFinite(bounds.HalfSize.X) || !float.IsFinite(bounds.HalfSize.Y) || !float.IsFinite(bounds.HalfSize.Z) || bounds.HalfSize.X < 0 || bounds.HalfSize.Y < 0 || bounds.HalfSize.Z < 0 || boneIndex < 0 || boneIndex >= Model.NumBones)
+            throw new ArgumentOutOfRangeException(nameof(bounds));
+        _collisionSurfaces[index] = new XModelCollSurf(CopyBounds(bounds), checked((ushort)boneIndex), contents, surfaceFlags);
+    }
+    public void SetPhysPreset(PhysPresetAsset? value) => PhysPreset = value;
+    public void SetPhysCollmap(PhysCollmapAsset? value) => PhysCollmap = value;
 
     private void ValidateIndex(int index)
     {
@@ -95,11 +133,23 @@ public sealed class XModelDraft
         return result;
     }
 
+    private IReadOnlyList<int?> CreateMaterialMappings(XModelExportDocument document)
+    {
+        return document.Materials.Select(imported =>
+        {
+            int[] matches = Model.Materials.Select((material, index) => (material, index))
+                .Where(value => value.material is not null && string.Equals(value.material.Info.Name, imported.Name, StringComparison.Ordinal))
+                .Select(value => value.index).ToArray();
+            return matches.Length == 1 ? (int?)matches[0] : null;
+        }).ToArray();
+    }
+
     private static bool AssemblyEquals(IReadOnlyList<XModelLodDraft> left, byte leftCollision, IReadOnlyList<XModelLodDraft> right, byte rightCollision) =>
         leftCollision == rightCollision && left.Count == right.Count && left.Zip(right).All(pair =>
             pair.First.Distance.Equals(pair.Second.Distance) &&
             ReferenceEquals(pair.First.BaselineLod, pair.Second.BaselineLod) &&
-            DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument));
+            DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument) &&
+            pair.First.MaterialSlots.SequenceEqual(pair.Second.MaterialSlots));
 
     private static bool DocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
         XModelExportDocumentsEqual(left, right);
@@ -110,7 +160,12 @@ public sealed class XModelDraft
         left.Triangles.SequenceEqual(right.Triangles) && left.Vertices.Count == right.Vertices.Count &&
         left.Vertices.Zip(right.Vertices).All(pair => pair.First.Position.Equals(pair.Second.Position) && pair.First.Weights.SequenceEqual(pair.Second.Weights));
 
-    private static XModelAsset CopyRoot(XModelAsset value)
+    private static XModelAsset CopyRoot(
+        XModelAsset value,
+        IReadOnlyList<XModelCollSurf>? collisionSurfaces = null,
+        PhysPresetAsset? physPreset = null,
+        PhysCollmapAsset? physCollmap = null,
+        bool useAuthoredPhysicsReferences = false)
     {
         ArgumentNullException.ThrowIfNull(value);
         return new XModelAsset
@@ -123,7 +178,7 @@ public sealed class XModelDraft
             NumRootBones = value.NumRootBones,
             NumSurfs = value.NumSurfs,
             SerializedNumSurfs = value.SerializedNumSurfs,
-            Pad07 = value.Pad07,
+            LodRampType = value.LodRampType,
             Scale = value.Scale,
             NoScalePartBits = Copy(value.NoScalePartBits),
             BoneNamesPointer = value.BoneNamesPointer,
@@ -147,9 +202,9 @@ public sealed class XModelDraft
             CollLod = value.CollLod,
             Flags = value.Flags,
             CollSurfsPointer = value.CollSurfsPointer,
-            NumCollSurfs = value.NumCollSurfs,
-            Contents = value.Contents,
-            CollSurfs = CopyCollSurfs(value.CollSurfs),
+            NumCollSurfs = checked((byte)(collisionSurfaces ?? value.CollSurfs).Count),
+            Contents = (collisionSurfaces ?? value.CollSurfs).Aggregate(0, (contents, row) => contents | row.Contents),
+            CollSurfs = CopyCollSurfs(collisionSurfaces ?? value.CollSurfs),
             BoneInfoPointer = value.BoneInfoPointer,
             BoneInfo = CopyBoneInfo(value.BoneInfo),
             Radius = value.Radius,
@@ -157,10 +212,14 @@ public sealed class XModelDraft
             InvHighMipRadiusPointer = value.InvHighMipRadiusPointer,
             InvHighMipRadius = Copy(value.InvHighMipRadius),
             MemUsage = value.MemUsage,
-            PhysPresetPointer = value.PhysPresetPointer,
-            PhysPreset = value.PhysPreset,
-            PhysCollmapPointer = value.PhysCollmapPointer,
-            PhysCollmap = value.PhysCollmap
+            PhysPresetPointer = useAuthoredPhysicsReferences
+                ? default
+                : value.PhysPresetPointer,
+            PhysPreset = useAuthoredPhysicsReferences ? physPreset : value.PhysPreset,
+            PhysCollmapPointer = useAuthoredPhysicsReferences
+                ? default
+                : value.PhysCollmapPointer,
+            PhysCollmap = useAuthoredPhysicsReferences ? physCollmap : value.PhysCollmap
         };
     }
 
@@ -190,6 +249,14 @@ public sealed class XModelDraft
             HalfSize = value.HalfSize
         };
     }
+
+    private static bool CollSurfsEqual(IReadOnlyList<XModelCollSurf> left, IReadOnlyList<XModelCollSurf> right) =>
+        left.Count == right.Count && left.Zip(right).All(pair =>
+            pair.First.BoneIndex == pair.Second.BoneIndex &&
+            pair.First.Contents == pair.Second.Contents &&
+            pair.First.SurfaceFlags == pair.Second.SurfaceFlags &&
+            pair.First.Bounds.MidPoint.Equals(pair.Second.Bounds.MidPoint) &&
+            pair.First.Bounds.HalfSize.Equals(pair.Second.Bounds.HalfSize));
 }
 
 internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelDraft>
@@ -218,7 +285,7 @@ internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelD
             x.NumRootBones == y.NumRootBones &&
             x.NumSurfs == y.NumSurfs &&
             x.SerializedNumSurfs == y.SerializedNumSurfs &&
-            x.Pad07 == y.Pad07 &&
+            x.LodRampType == y.LodRampType &&
             x.Scale.Equals(y.Scale) &&
             x.NoScalePartBits.SequenceEqual(y.NoScalePartBits) &&
             x.BoneNamesPointer == y.BoneNamesPointer &&
@@ -256,7 +323,10 @@ internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelD
             ReferenceEquals(x.PhysPreset, y.PhysPreset) &&
             x.PhysCollmapPointer == y.PhysCollmapPointer &&
             ReferenceEquals(x.PhysCollmap, y.PhysCollmap) &&
-            AssemblyEqual(left, right);
+            AssemblyEqual(left, right) &&
+            CollSurfsEqual(left.CollisionSurfaces, right.CollisionSurfaces) &&
+            ReferenceEquals(left.PhysPreset, right.PhysPreset) &&
+            ReferenceEquals(left.PhysCollmap, right.PhysCollmap);
     }
 
     private static bool AssemblyEqual(XModelDraft left, XModelDraft right) =>
@@ -265,7 +335,8 @@ internal sealed class XModelAdapter : AssetAuthoringAdapter<XModelAsset, XModelD
         left.LodAssembly.Zip(right.LodAssembly).All(pair =>
             pair.First.Distance.Equals(pair.Second.Distance) &&
             ReferenceEquals(pair.First.BaselineLod, pair.Second.BaselineLod) &&
-            DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument));
+            DocumentsEqual(pair.First.ImportedDocument, pair.Second.ImportedDocument) &&
+            pair.First.MaterialSlots.SequenceEqual(pair.Second.MaterialSlots));
 
     private static bool DocumentsEqual(XModelExportDocument? left, XModelExportDocument? right) =>
         XModelDraft.XModelExportDocumentsEqual(left, right);

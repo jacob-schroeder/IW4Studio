@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
 
 namespace IW4.Render.Textures;
 
@@ -26,10 +27,10 @@ internal readonly record struct RenderTextureCacheKey(
 
     internal static RenderTextureCacheKey SkyCube(
         GfxImageAsset image,
-        byte samplerState) => new(
+        MaterialSamplerState samplerState) => new(
             RenderTextureCacheKeyKind.SkyCube,
             image,
-            samplerState,
+            (byte)samplerState,
             IncludeAuthoredMipChain: true);
 }
 

@@ -8,34 +8,42 @@ public sealed class GfxImageAsset : BaseAsset
 {
     public const int SerializedSize = 0x50;
 
-    private byte _serializedPixelDataBlock;
+    private GfxImageMemoryLocation _serializedMemoryLocation;
     private uint _serializedPixelsOffset;
-    private byte? _runtimePixelDataBlock;
+    private GfxImageMemoryLocation? _runtimeMemoryLocation;
     private uint? _runtimePixelsOffset;
 
     public override XAssetType SerializedAssetType => XAssetType.Image;
 
     // 0x00..0x03: RSX format, mip count, dimension, and cube/multiface state.
     public byte Format { get; init; }
+    public GfxImageFormat FormatEncoding => new(Format);
     public byte LevelCount { get; init; }
-    public byte DimensionCount { get; init; }
+    public GfxImageDimension DimensionCount { get; init; }
+    // Native CellGcmTexture::cubemap boolean. The raw byte is retained so
+    // malformed or not-yet-seen values still round-trip exactly.
     public byte MultiFaceControl { get; init; }
-    // 0x04: PS3 texture flags used with Format to select the storage layout.
-    public uint TextureFlags { get; init; }
+    public bool IsCubemap => MultiFaceControl != 0;
+    // 0x04: RSX SET_TEXTURE_CONTROL1 payload. Its low 24 bits also participate
+    // in the native image-storage format key.
+    public uint TextureControl1 { get; init; }
+    public GfxImageTextureRemap TextureRemap => new(TextureControl1);
     // 0x08..0x0D: current image dimensions.
     public ushort Width { get; init; }
     public ushort Height { get; init; }
     public ushort Depth { get; init; }
-    // 0x0E..0x0F: pixel block and copied alignment byte. Runtime registration
-    // may override the effective block without changing the serialized value.
-    public byte PixelDataBlock
+    // 0x0E..0x0F: CELL_GCM memory location and minimum-LOD control. Runtime
+    // registration may override the effective location without changing the
+    // serialized value.
+    public GfxImageMemoryLocation MemoryLocation
     {
-        get => _runtimePixelDataBlock ?? _serializedPixelDataBlock;
-        init => _serializedPixelDataBlock = value;
+        get => _runtimeMemoryLocation ?? _serializedMemoryLocation;
+        init => _serializedMemoryLocation = value;
     }
     /// <summary>The exact +0x0E value loaded or authored for wire output.</summary>
-    public byte SerializedPixelDataBlock => _serializedPixelDataBlock;
-    public byte Pad0F { get; init; }
+    public GfxImageMemoryLocation SerializedMemoryLocation =>
+        _serializedMemoryLocation;
+    public byte MinLodControl { get; init; }
     // 0x10..0x17: RSX pitch and pixel offset fields. Runtime registration may
     // override the effective offset without changing the serialized value.
     public uint RenderTargetPitch { get; init; }
@@ -46,11 +54,14 @@ public sealed class GfxImageAsset : BaseAsset
     }
     /// <summary>The exact +0x14 value loaded or authored for wire output.</summary>
     public uint SerializedPixelsOffset => _serializedPixelsOffset;
-    // 0x18..0x1B: map type, texture semantic, category, and copied padding.
-    public byte MapType { get; init; }
-    public byte TextureSemantic { get; init; }
-    public byte Category { get; init; }
-    public byte Pad1B { get; init; }
+    // 0x18..0x1B: map type, texture semantic, category, and sRGB-read control.
+    public MapType MapType { get; init; }
+    public TextureSemantic TextureSemantic { get; init; }
+    public ImageCategory Category { get; init; }
+    // Native useSrgbReads boolean. Only bit 0 reaches the RSX gamma-read mask;
+    // the exact raw byte is retained for lossless wire output.
+    public byte UseSrgbReads { get; init; }
+    public bool UsesSrgbReads => (UseSrgbReads & 1) != 0;
     // 0x1C..0x27: card-memory and base-level image dimensions.
     public uint CardMemory { get; init; }
     public ushort BaseWidth { get; init; }
@@ -58,7 +69,7 @@ public sealed class GfxImageAsset : BaseAsset
     public ushort BaseDepth { get; init; }
     public byte BaseLevelCount { get; init; }
     // 0x27: cached image state used by renderer release/replacement behavior.
-    public byte Cached { get; init; }
+    public GfxImageCached Cached { get; init; }
     // 0x28: presence-controlled GfxImagePixels pointer.
     public XPointerReference PayloadPointer { get; init; }
     // 0x2C..0x4B: four inline GfxImageStreamData records.
@@ -74,7 +85,7 @@ public sealed class GfxImageAsset : BaseAsset
 
     internal void ApplyNullPayloadRuntimeHeader(uint? pixelsOffset)
     {
-        _runtimePixelDataBlock = 1;
+        _runtimeMemoryLocation = GfxImageMemoryLocation.Main;
         if (pixelsOffset.HasValue)
             _runtimePixelsOffset = pixelsOffset.Value;
     }

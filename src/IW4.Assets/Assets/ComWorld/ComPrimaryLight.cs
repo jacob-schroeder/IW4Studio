@@ -11,8 +11,9 @@ public sealed class ComPrimaryLight
     public int Offset { get; init; }
 
     // 0x00..0x03: ComPrimaryLight scalar header.
-    public byte Type { get; init; }
-    public byte CanUseShadowMap { get; init; }
+    public GfxLightType Type { get; init; }
+    public byte CanUseShadowMapRaw { get; init; }
+    public bool CanUseShadowMap => CanUseShadowMapRaw != 0;
     public byte Exponent { get; init; }
     public byte Unused { get; init; }
 

@@ -9,7 +9,7 @@ namespace IW4.FastFiles.Loaders.Assets.TechniqueSet;
 
 public sealed class MaterialTechniqueSetLoader
 {
-    private const int TechniqueSlotCount = 37;
+    private const int TechniqueSlotCount = (int)MaterialTechniqueType.Count;
     private const int TechniqueSetSize = 0x9c;
     private const int TechniqueSize = 0x08;
     private const int PassSize = 0x18;
@@ -100,7 +100,7 @@ public sealed class MaterialTechniqueSetLoader
                 XPointerReference techniquePointer = techniquePointers[i];
                 MaterialTechniqueAsset? technique = ReadTechniquePointer(cursor, techniquePointer, context);
                 slots[i] = new MaterialTechniqueSlot(
-                    i,
+                    (MaterialTechniqueType)i,
                     techniquePointer.AsPointer<MaterialTechniqueAsset>(),
                     technique);
             }
@@ -161,7 +161,7 @@ public sealed class MaterialTechniqueSetLoader
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
         XPointer<string> namePointer = ReadXStringPointer(rootCursor, context);
-        ushort flags = rootCursor.ReadUInt16();
+        var flags = (MaterialTechniqueFlags)rootCursor.ReadUInt16();
         ushort passCount = rootCursor.ReadUInt16();
 
         if (rootCursor.Offset != TechniqueSize)
@@ -210,8 +210,10 @@ public sealed class MaterialTechniqueSetLoader
         byte perPrimArgCount = rootCursor.ReadByte();
         byte perObjArgCount = rootCursor.ReadByte();
         byte stableArgCount = rootCursor.ReadByte();
-        byte customSamplerFlags = rootCursor.ReadByte();
-        byte precompiledIndex = rootCursor.ReadByte();
+        MaterialCustomSamplerFlags customSamplerFlags =
+            (MaterialCustomSamplerFlags)rootCursor.ReadByte();
+        MaterialPrecompiledVertexShader precompiledVertexShader =
+            (MaterialPrecompiledVertexShader)rootCursor.ReadByte();
         rootCursor.Skip(3);
         XPointer<MaterialShaderArgumentAsset[]> args = context.PointerReader.ReadDeferredPointer<MaterialShaderArgumentAsset[]>(
             rootCursor,
@@ -231,7 +233,7 @@ public sealed class MaterialTechniqueSetLoader
             PerObjArgCount = perObjArgCount,
             StableArgCount = stableArgCount,
             CustomSamplerFlags = customSamplerFlags,
-            PrecompiledIndex = precompiledIndex,
+            PrecompiledVertexShader = precompiledVertexShader,
             ArgsPointer = args
         };
     }
@@ -286,10 +288,12 @@ public sealed class MaterialTechniqueSetLoader
 
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
         byte streamCount = rootCursor.ReadByte();
-        byte hasOptionalSource = rootCursor.ReadByte();
+        byte hasOptionalSourceRaw = rootCursor.ReadByte();
         var routing = new MaterialVertexStreamRouting[MaterialVertexDeclarationAsset.RoutingCount];
         for (int i = 0; i < routing.Length; i++)
-            routing[i] = new MaterialVertexStreamRouting(rootCursor.ReadByte(), rootCursor.ReadByte());
+            routing[i] = new MaterialVertexStreamRouting(
+                (MaterialStreamSource)rootCursor.ReadByte(),
+                (MaterialStreamDestination)rootCursor.ReadByte());
 
         if (rootCursor.Offset != MaterialVertexDeclarationAsset.SerializedSize)
             throw new InvalidDataException($"MaterialVertexDeclaration consumed 0x{rootCursor.Offset:X} bytes instead of 0x{MaterialVertexDeclarationAsset.SerializedSize:X}.");
@@ -298,7 +302,7 @@ public sealed class MaterialTechniqueSetLoader
         var declaration = new MaterialVertexDeclarationAsset
         {
             StreamCount = streamCount,
-            HasOptionalSource = hasOptionalSource,
+            HasOptionalSourceRaw = hasOptionalSourceRaw,
             Routing = routing
         };
         return context.RegisterMaterialVertexDeclaration(

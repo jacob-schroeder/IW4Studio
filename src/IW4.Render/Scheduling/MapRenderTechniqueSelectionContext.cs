@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -39,7 +41,7 @@ public sealed class MapRenderTechniqueSelectionContext
     public bool FlaggedTechniqueOverrideEnabled { get; }
 
     public ReadOnlySpan<byte> GetTechniquePage(
-        MapRenderSurfaceType surfaceType)
+        GfxDrawSurfSurfaceType surfaceType)
     {
         int pageIndex = (int)surfaceType;
         if ((uint)pageIndex >= MapRenderDrawMethodPageProducer.PageCount)
@@ -51,7 +53,7 @@ public sealed class MapRenderTechniqueSelectionContext
     }
 
     public int GetTechniqueSlot(
-        MapRenderSurfaceType surfaceType,
+        GfxDrawSurfSurfaceType surfaceType,
         int sceneLightIndex)
     {
         if ((uint)sceneLightIndex >=

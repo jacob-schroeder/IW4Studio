@@ -2,6 +2,7 @@ using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Assets.Image;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.LightDef;
+using IW4.Assets.Assets.Material;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
@@ -106,7 +107,7 @@ public sealed class LightDefLoader
             Name = name,
             ImagePointer = imagePointer,
             Image = image,
-            SamplerState = samplerState,
+            SamplerState = (MaterialSamplerState)samplerState,
             Pad09To0B = pad09To0B,
             LmapLookupStart = lmapLookupStart
         };

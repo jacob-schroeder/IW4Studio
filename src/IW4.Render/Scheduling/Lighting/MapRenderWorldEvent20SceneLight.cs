@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Assets.LightDef;
 
 namespace IW4.Render.Scheduling.Lighting;
@@ -10,8 +11,8 @@ namespace IW4.Render.Scheduling.Lighting;
 public sealed class MapRenderWorldEvent20SceneLight
 {
     internal MapRenderWorldEvent20SceneLight(
-        byte type,
-        byte canUseShadowMap,
+        GfxLightType type,
+        bool canUseShadowMap,
         byte exponent,
         Vector3 color,
         Vector3 direction,
@@ -35,9 +36,9 @@ public sealed class MapRenderWorldEvent20SceneLight
         Definition = definition;
     }
 
-    public byte Type { get; }
+    public GfxLightType Type { get; }
 
-    public byte CanUseShadowMap { get; }
+    public bool CanUseShadowMap { get; }
 
     public byte Exponent { get; }
 

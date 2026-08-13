@@ -36,8 +36,11 @@ public sealed class MapRenderOpenGlNormalCameraSceneTargetPlan
                 nameof(binding));
         }
         if (antialiasing.Target != MapRenderNormalCameraTargetKind.Scene ||
-            antialiasing.RawControl != 0xffff_0001u ||
-            antialiasing.RawSurfaceAntialias != 3 ||
+            antialiasing.ControlFlags !=
+                RsxAntiAliasingControlFlags.Multisample ||
+            antialiasing.SampleMask != ushort.MaxValue ||
+            antialiasing.SurfaceAntialias !=
+                RsxSurfaceAntialias.DiagonalCentered2 ||
             antialiasing.Ps3SurfaceSampleCount != 2 ||
             antialiasing.HostSampleCount != 2)
         {
@@ -117,7 +120,7 @@ public sealed class MapRenderOpenGlNormalCameraSceneTargetPlan
         Antialiasing = antialiasing;
         FragmentTargetOutputAvailability =
             new FragmentTargetOutputAvailability(
-                colorKey.RawColorTargetMask,
+                colorKey.Ps3SurfaceTarget,
                 binding.Resource.ColorResource.HostDrawBufferCount);
         RenderDepthStencilAttachmentPlan semanticDepthStencil =
             semanticPass.DepthStencilAttachment!;

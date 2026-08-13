@@ -34,8 +34,8 @@ public static class EditorMaterialTexturePlanner
                 EditorMaterialTextureRoleClassifier.Classify(row);
             RsxSamplerState decodedSampler = RsxSamplerDecoder.Decode(
                 row.SamplerState,
-                image?.Pad0F ?? 0,
-                image?.Pad1B ?? 0);
+                image?.MinLodControl ?? 0,
+                image?.UseSrgbReads ?? 0);
 
             var binding = new EditorMaterialTextureBinding(
                 ordinal,
@@ -90,7 +90,7 @@ internal static class MaterialTextureSelector
     internal static bool TryResolveFirst(
         IReadOnlyList<MaterialTextureDef> textures,
         uint? preferredHash,
-        byte? requiredSemantic,
+        TextureSemantic? requiredSemantic,
         Func<MaterialTextureDef, GfxImageAsset?> resolveImage,
         out MaterialTextureDef? texture,
         out GfxImageAsset? image)

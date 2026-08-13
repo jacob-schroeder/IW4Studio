@@ -18,7 +18,7 @@ internal static class AuthoredMaterialSamplerResolver
         MaterialPassAsset sourcePass,
         IReadOnlyList<MaterialShaderArgumentAsset> arguments,
         RenderAssetLookup lookup,
-        byte defaultTexCoordSource,
+        MaterialStreamSource defaultTexCoordSource,
         out AuthoredMaterialPrimarySamplerSelection? selection)
     {
         ArgumentNullException.ThrowIfNull(material);
@@ -44,7 +44,7 @@ internal static class AuthoredMaterialSamplerResolver
                 continue;
             }
 
-            uint samplerHash = unchecked((uint)argument.ArgumentRaw);
+            uint samplerHash = argument.MaterialNameHash;
             if (!MaterialTextureResolver.TryResolve(
                     material,
                     lookup,
@@ -63,9 +63,11 @@ internal static class AuthoredMaterialSamplerResolver
                 argument,
                 vertexDeclaration,
                 texture.Semantic,
-                out byte routedSource);
+                out MaterialStreamSource routedSource);
             var rank = (
-                SemanticRank: texture.Semantic == 0x02 ? 0 : 1,
+                SemanticRank: texture.Semantic == TextureSemantic.ColorMap
+                    ? 0
+                    : 1,
                 RouteRank: engineRouted ? 0 : 1,
                 DestinationRank: argument.Dest == 0 ? 0 : 1,
                 ArgumentIndex: argumentIndex);
@@ -93,5 +95,5 @@ internal sealed record AuthoredMaterialPrimarySamplerSelection(
     MaterialSamplerIdentity Identity,
     MaterialTextureDef Texture,
     GfxImageAsset Image,
-    byte TexCoordSource,
+    MaterialStreamSource TexCoordSource,
     bool TexCoordSourceIsEngineRouted);

@@ -1,6 +1,7 @@
 using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
@@ -33,15 +34,17 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
     private const float MaxReasonableTexCoord = 1_000_000f;
     private const float MinTexturedWorldTriangleArea2 = 0.000001f;
     private const float MinTexturedUvTriangleArea2 = 0.000001f;
-    private const byte ColorTextureSemantic = 0x02;
-    private const byte GenericFallbackTexCoordSource = 0x02;
+    private const TextureSemantic ColorTextureSemantic =
+        TextureSemantic.ColorMap;
+    private const MaterialStreamSource GenericFallbackTexCoordSource =
+        MaterialStreamSource.TexCoord0;
     private const string BaseSurfaceTexturePassClass = "MaterialColor";
     private const string GenericMaterialFallbackPassClass = "GenericMaterialFallback";
     private const string AuthoredMaterialCandidatePassClass = "AuthoredMaterialCandidate";
     private static readonly RenderState GenericMaterialState = RenderState.Default with
     {
         HasState = true,
-        ColorMask = 0x01010101,
+        ColorMask = RsxColorMask.Rgba,
         DepthWriteEnabled = true
     };
     private static readonly Vector4 DefaultRsxVertexInput = new(0f, 0f, 0f, 1f);
@@ -647,7 +650,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 WorldVertexDecoderSelection>();
             WorldVertexDecoderSelection ResolveCachedWorldVertexDecoder(
                 WorldVertexLayoutSelection layout,
-                byte texCoordSource,
+                MaterialStreamSource texCoordSource,
                 bool texCoordSourceIsEngineRouted)
             {
                 var key = new WorldVertexDecoderCacheKey(
@@ -725,7 +728,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
             var skyShaderPasses = new MaterialPassIdentity?[skies.Count];
             var skyShaderPrimarySamplers =
                 new MaterialSamplerIdentity?[skies.Count];
-            var skyShaderTexCoordSources = new byte[skies.Count];
+            var skyShaderTexCoordSources =
+                new MaterialStreamSource[skies.Count];
             var skyShaderExecutions =
                 new ShaderExecutionContract?[skies.Count];
             var skyShaderObservedSurfaceCounts = new int[skies.Count];
@@ -754,7 +758,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? selectedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.Triangles,
+                        GfxDrawSurfSurfaceType.Triangles,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -762,7 +766,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? shadowAllocatedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.Triangles,
+                        GfxDrawSurfSurfaceType.Triangles,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -771,7 +775,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? pageOneUnshadowedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.TrianglesNoSunShadow,
+                        GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -779,7 +783,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? pageOneShadowAllocatedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.TrianglesNoSunShadow,
+                        GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -901,7 +905,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? selectedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.Triangles,
+                        GfxDrawSurfSurfaceType.Triangles,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -909,7 +913,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? shadowAllocatedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.Triangles,
+                        GfxDrawSurfSurfaceType.Triangles,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -918,7 +922,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? pageOneUnshadowedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.TrianglesNoSunShadow,
+                        GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -926,7 +930,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 int? pageOneShadowAllocatedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        MapRenderSurfaceType.TrianglesNoSunShadow,
+                        GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
@@ -1883,7 +1887,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 editorPreviewWorldDrawMethod,
                 worldSourceBuildResult.Source?.SceneLights.Source?
                     .SelectorState,
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
                 MapRenderTechniqueVariantAllocation.Unshadowed,
                 allowPreviewFallback: true,
                 forceGenericPreview: false,
@@ -1918,7 +1922,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 editorPreviewWorldDrawMethod,
                 worldSourceBuildResult.Source?.SceneLights.Source?
                     .SelectorState,
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
                 MapRenderTechniqueVariantAllocation.Unshadowed,
                 allowPreviewFallback: true,
                 forceGenericPreview: true,
@@ -1961,7 +1965,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 editorPreviewWorldDrawMethod,
                 worldSourceBuildResult.Source?.SceneLights.Source?
                     .SelectorState,
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
                 MapRenderTechniqueVariantAllocation.ShadowMapAllocated,
                 allowPreviewFallback: false,
                 forceGenericPreview: false,
@@ -1994,7 +1998,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 editorPreviewWorldDrawMethod,
                 worldSourceBuildResult.Source?.SceneLights.Source?
                     .SelectorState,
-                MapRenderSurfaceType.StaticModelRigidNoSunShadow,
+                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
                 MapRenderTechniqueVariantAllocation.Unshadowed,
                 allowPreviewFallback: false,
                 forceGenericPreview: false,
@@ -2027,7 +2031,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 editorPreviewWorldDrawMethod,
                 worldSourceBuildResult.Source?.SceneLights.Source?
                     .SelectorState,
-                MapRenderSurfaceType.StaticModelRigidNoSunShadow,
+                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
                 MapRenderTechniqueVariantAllocation.ShadowMapAllocated,
                 allowPreviewFallback: false,
                 forceGenericPreview: false,
@@ -2720,7 +2724,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
     /// </summary>
     internal static int? ResolvePreparedEditorTechniqueVariantSlot(
         int primaryLightIndex,
-        MapRenderSurfaceType surfaceType,
+        GfxDrawSurfSurfaceType surfaceType,
         MapRenderDrawMethod? drawMethod,
         MapRenderSceneLightSelectorAssetState? sceneLightSelector,
         MapRenderTechniqueVariantAllocation allocation)

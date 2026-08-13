@@ -4,6 +4,9 @@ using IW4.FastFiles.Pointers;
 namespace IW4.Assets.Assets.TechniqueSet;
 
 public sealed record MaterialTechniqueSlot(
-    int Index,
+    MaterialTechniqueType Type,
     XPointer<MaterialTechniqueAsset> Pointer,
-    MaterialTechniqueAsset? Technique);
+    MaterialTechniqueAsset? Technique)
+{
+    public int Index => (int)Type;
+}

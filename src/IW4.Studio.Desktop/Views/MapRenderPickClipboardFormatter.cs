@@ -1,4 +1,5 @@
 using System.Globalization;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render;
 using IW4.Render.Materials;
 using IW4.Render.Techniques;
@@ -108,7 +109,7 @@ internal static class MapRenderPickClipboardFormatter
             lines.Add($"{prefix}.samplerHash=0x{layer.SamplerHash:X8}");
             lines.Add($"{prefix}.textureSemantic=0x{layer.TextureSemantic:X2}");
             lines.Add($"{prefix}.blendWeightComponent={layer.BlendWeightComponent}");
-            lines.Add($"{prefix}.texCoordSource=0x{layer.UvRoute.TexCoordSource:X2}");
+            lines.Add($"{prefix}.texCoordSource=0x{(byte)layer.UvRoute.TexCoordSource:X2}");
             lines.Add($"{prefix}.uvFormula={layer.UvRoute.Formula}");
         }
         lines.Add($"material.materialSamplerCount={material.MaterialSamplers.Count}");
@@ -134,13 +135,13 @@ internal static class MapRenderPickClipboardFormatter
         {
             ShaderVertexInputBinding input = material.ShaderExecution.VertexInputs[inputIndex];
             string prefix = $"material.shader.vertexInput.{inputIndex}";
-            lines.Add($"{prefix}.source=0x{input.Source:X2}");
-            lines.Add($"{prefix}.dest=0x{input.Destination:X2}");
+            lines.Add($"{prefix}.source=0x{(byte)input.Source:X2}");
+            lines.Add($"{prefix}.dest=0x{(byte)input.Destination:X2}");
             lines.Add($"{prefix}.stream={input.StreamIndex}");
             lines.Add($"{prefix}.stride=0x{input.Stride:X}");
             lines.Add($"{prefix}.offset=0x{input.Offset:X}");
             lines.Add($"{prefix}.components={input.ComponentCount}");
-            lines.Add($"{prefix}.rsxType=0x{input.RsxType:X2}/{input.RsxTypeName}");
+            lines.Add($"{prefix}.rsxType=0x{(byte)input.RsxType:X2}/{input.RsxTypeName}");
         }
         lines.Add($"material.shader.programCacheKey={material.ShaderExecution.ProgramCacheKey}");
         lines.Add($"material.shader.programIrReady={material.ShaderExecution.ProgramIrReady}");
@@ -176,12 +177,12 @@ internal static class MapRenderPickClipboardFormatter
             lines.Add($"{prefix}.samplerDest={samplerBinding.SamplerDest}");
             lines.Add($"{prefix}.samplerHash=0x{samplerBinding.SamplerHash:X8}");
             lines.Add($"{prefix}.textureSemantic=0x{samplerBinding.TextureSemantic:X2}");
-            lines.Add($"{prefix}.texCoordSource={(samplerBinding.UvRoute is { } route ? $"0x{route.TexCoordSource:X2}" : string.Empty)}");
+            lines.Add($"{prefix}.texCoordSource={(samplerBinding.UvRoute is { } route ? $"0x{(byte)route.TexCoordSource:X2}" : string.Empty)}");
             lines.Add($"{prefix}.uvFormula={samplerBinding.UvRoute?.Formula ?? string.Empty}");
         }
         lines.Add($"uv.label={material.UvRoute.Label}");
         lines.Add($"uv.worldVertexFormat={material.UvRoute.WorldVertexFormat}");
-        lines.Add($"uv.texCoordSource=0x{material.UvRoute.TexCoordSource:X2}");
+        lines.Add($"uv.texCoordSource=0x{(byte)material.UvRoute.TexCoordSource:X2}");
         lines.Add($"uv.texCoordSourceName={material.UvRoute.TexCoordSourceName}");
         lines.Add($"uv.streamIndex={material.UvRoute.StreamIndex}");
         lines.Add($"uv.stride=0x{material.UvRoute.Stride:X}");
@@ -204,8 +205,8 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"texture.samplerRsxTexWrapMethod=0x{RsxSamplerDecoder.RsxTexWrapMethod(material.SamplerDest):X4}");
         lines.Add($"texture.samplerRsxTexWrapPayload=0x{material.SamplerRsxTexWrapPayload:X8}");
         lines.Add($"texture.samplerRsxClampMax={material.SamplerRsxClampMax}");
-        lines.Add($"texture.samplerRsxDescriptorPad0F=0x{material.SamplerRsxDescriptorPad0F:X2}");
-        lines.Add($"texture.samplerRsxDescriptorPad1B=0x{material.SamplerRsxDescriptorPad1B:X2}");
+        lines.Add($"texture.samplerMinLodControl=0x{material.SamplerMinLodControl:X2}");
+        lines.Add($"texture.samplerUseSrgbReads=0x{material.SamplerUseSrgbReads:X2}");
         lines.Add($"texture.samplerRsxCachePayload=0x{material.SamplerRsxCachePayload:X8}");
         lines.Add($"texture.samplerFilterClass={material.SamplerFilterClass}");
         lines.Add($"texture.samplerMipClass={material.SamplerMipClass}");
@@ -231,7 +232,8 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"state.hasState={state.HasState}");
         lines.Add($"state.loadBits0=0x{state.LoadBits0:X8}");
         lines.Add($"state.loadBits1=0x{state.LoadBits1:X8}");
-        lines.Add($"state.tail=0x{state.Tail:X8}");
+        lines.Add(
+            $"state.commandWordCount=0x{state.CommandWordCount:X8}");
         lines.Add($"state.colorMask=0x{state.ColorMask:X8}");
         lines.Add($"state.alphaTestEnabled={state.AlphaTestEnabled}");
         lines.Add($"state.alphaFunc=0x{state.AlphaFunc:X4}");
@@ -264,7 +266,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"state.stencilBackPass=0x{state.Stencil.Back.PassOperation:X4}");
         lines.Add(
             $"state.stencilExecution={(state.Stencil.Enabled ? "unsupported" : "inactive")}");
-        lines.Add($"state.polygonOffsetEnabled={state.PolygonOffsetEnabled}");
+        lines.Add($"state.polygonOffsetMode={state.PolygonOffsetMode}");
         lines.Add($"state.polygonOffsetFactor={state.PolygonOffsetFactor.ToString("0.###", CultureInfo.InvariantCulture)}");
         lines.Add($"state.polygonOffsetUnits={state.PolygonOffsetUnits.ToString("0.###", CultureInfo.InvariantCulture)}");
         return string.Join(Environment.NewLine, lines);

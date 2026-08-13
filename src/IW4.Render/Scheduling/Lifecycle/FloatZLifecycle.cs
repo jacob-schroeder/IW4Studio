@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Scheduling.Lifecycle;
@@ -11,8 +12,9 @@ public sealed class MapRenderNormalCameraFloatZRecipe
 {
     public const uint StateBits0 = 0x1812_8812;
     public const uint StateBits1 = 0xE00E_0002;
-    public const int TechniqueSlot = 4;
-    public const ushort TechniqueFlags = 0x0020;
+    public const int TechniqueSlot = (int)MaterialTechniqueType.Unlit;
+    public const MaterialTechniqueFlags TechniqueFlags =
+        MaterialTechniqueFlags.UsesFloatZ;
 
     private readonly MapRenderNormalCameraFloatZTargetPlan[] _targets;
 
@@ -39,9 +41,14 @@ public sealed class MapRenderNormalCameraFloatZRecipe
                         .HalfDisplayShiftClamp ||
                 target.Ps3SurfaceSampleCount != 1 ||
                 target.RawImageSetupFormat != 0x01aa_e49c ||
-                target.RawImageSetupFlags != 0x0000_0003 ||
-                target.RawImageFormatByte != 0xbc ||
-                target.RawColorFormat != 13))
+                target.ImageSetupFlags !=
+                    (MapRenderNormalCameraImageSetupFlags.NoPicmip |
+                     MapRenderNormalCameraImageSetupFlags.NoMipmaps) ||
+                target.ImageFormat != new GfxImageFormat(
+                    (byte)((byte)GfxImageBaseFormat.X32Float |
+                        (byte)GfxImageFormatFlags.Linear)) ||
+                target.SurfaceColorFormat !=
+                    RsxSurfaceColorFormat.FloatX32))
         {
             throw new ArgumentException(
                 "FloatZ requires exact half-display single-sample target rows 5 and 8.",
@@ -100,48 +107,48 @@ public sealed class MapRenderNormalCameraFloatZRecipe
             "floatz",
             "floatz.hlsl",
             [
-                Argument(
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     0,
-                    0x0067_0004),
-                Argument(
+                    MaterialConstantSource.WorldViewProjectionMatrix0,
+                    rowCount: 4),
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     17,
-                    0x003e_0001),
-                Argument(
+                    MaterialConstantSource.ClipSpaceLookupScale),
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     18,
-                    0x003f_0001),
-                Argument(
-                    MaterialShaderArgumentType.CodePixelSampler,
+                    MaterialConstantSource.ClipSpaceLookupOffset),
+                TextureArgument(
                     0,
-                    17)
+                    MaterialTextureSource.RawFloatZ)
             ]);
         MapRenderNormalCameraMaterialAssetContract processedFloatZ = Material(
             "$processed_floatz",
             "processed_floatz",
             "processed_floatz.hlsl",
             [
-                Argument(
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     0,
-                    0x0067_0004),
-                Argument(
+                    MaterialConstantSource.WorldViewProjectionMatrix0,
+                    rowCount: 4),
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     17,
-                    0x003e_0001),
-                Argument(
+                    MaterialConstantSource.ClipSpaceLookupScale),
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     18,
-                    0x003f_0001),
-                Argument(
-                    MaterialShaderArgumentType.CodePixelSampler,
+                    MaterialConstantSource.ClipSpaceLookupOffset),
+                TextureArgument(
                     0,
-                    15),
-                Argument(
+                    MaterialTextureSource.FloatZ),
+                CodeArgument(
                     MaterialShaderArgumentType.CodePixelConst,
                     1,
-                    0x0020_0001)
+                    MaterialConstantSource.ZNear)
             ]);
 
         return new MapRenderNormalCameraFloatZRecipe(
@@ -172,10 +179,26 @@ public sealed class MapRenderNormalCameraFloatZRecipe
             StateBits1,
             arguments);
 
-    private static MapRenderNormalCameraMaterialArgumentContract Argument(
+    private static MapRenderNormalCameraMaterialArgumentContract CodeArgument(
         MaterialShaderArgumentType type,
         ushort destination,
-        uint rawValue) => new(type, destination, rawValue);
+        MaterialConstantSource source,
+        byte firstRow = 0,
+        byte rowCount = 1) => new(
+            type,
+            destination,
+            new MaterialCodeConstantArgument(
+                source,
+                firstRow,
+                rowCount).PackedValue);
+
+    private static MapRenderNormalCameraMaterialArgumentContract
+        TextureArgument(
+            ushort destination,
+            MaterialTextureSource source) => new(
+                MaterialShaderArgumentType.CodePixelSampler,
+                destination,
+                (uint)source);
 
     private static void RequireExactMaterial(
         MapRenderNormalCameraMaterialAssetContract contract,

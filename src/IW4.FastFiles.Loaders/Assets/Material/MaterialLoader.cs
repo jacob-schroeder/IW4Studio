@@ -15,7 +15,7 @@ namespace IW4.FastFiles.Loaders.Assets.Material;
 public sealed class MaterialLoader
 {
     private const int MaterialSize = 0xa8;
-    private const int TechniqueSlotCount = 37;
+    private const int TechniqueSlotCount = (int)MaterialTechniqueType.Count;
     private const int TechniqueSetSize = 0x9c;
     private const int TextureDefSize = 0x0c;
     private const int ConstantDefSize = 0x20;
@@ -98,7 +98,7 @@ public sealed class MaterialLoader
             var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
             XPointer<string> namePointer = ReadXStringPointer(rootCursor, context);
-            byte gameFlags = rootCursor.ReadByte();
+            MaterialGameFlags gameFlags = (MaterialGameFlags)rootCursor.ReadByte();
             byte sortKey = rootCursor.ReadByte();
             byte textureAtlasRowCount = rootCursor.ReadByte();
             byte textureAtlasColumnCount = rootCursor.ReadByte();
@@ -110,8 +110,8 @@ public sealed class MaterialLoader
             byte textureCount = rootCursor.ReadByte();
             byte constantCount = rootCursor.ReadByte();
             byte stateBitsCount = rootCursor.ReadByte();
-            byte stateFlags = rootCursor.ReadByte();
-            byte cameraRegion = rootCursor.ReadByte();
+            MaterialStateFlags stateFlags = (MaterialStateFlags)rootCursor.ReadByte();
+            GfxCameraRegionType cameraRegion = (GfxCameraRegionType)rootCursor.ReadByte();
             byte xstringCount = rootCursor.ReadByte();
             byte pad43 = rootCursor.ReadByte();
             ushort[] inlineTechniqueSlotStateBits = ReadUshorts(rootCursor, TechniqueSlotCount);
@@ -151,11 +151,11 @@ public sealed class MaterialLoader
                         NamePointer = namePointer,
                         Name = name,
                         GameFlags = gameFlags,
-                        SortKey = sortKey,
+                        SortKey = (MaterialSortKey)sortKey,
                         TextureAtlasRowCount = textureAtlasRowCount,
                         TextureAtlasColumnCount = textureAtlasColumnCount,
                         DrawSurf = new GfxDrawSurf(drawSurfPacked),
-                        SurfaceTypeBits = surfaceTypeBits,
+                        SurfaceTypeBits = (MaterialSurfaceTypeBits)surfaceTypeBits,
                         HashIndex = hashIndex,
                         Pad16 = materialInfoPad16
                     },
@@ -198,7 +198,7 @@ public sealed class MaterialLoader
     {
         var entries = new MaterialStateBitsEntry[count];
         for (int i = 0; i < entries.Length; i++)
-            entries[i] = new MaterialStateBitsEntry(i, cursor.ReadByte());
+            entries[i] = new MaterialStateBitsEntry(cursor.ReadByte());
 
         return entries;
     }
@@ -310,11 +310,13 @@ public sealed class MaterialLoader
             uint nameHash = textureCursor.ReadUInt32();
             byte nameStart = textureCursor.ReadByte();
             byte nameEnd = textureCursor.ReadByte();
-            byte samplerState = textureCursor.ReadByte();
-            byte semantic = textureCursor.ReadByte();
+            MaterialSamplerState samplerState =
+                (MaterialSamplerState)textureCursor.ReadByte();
+            TextureSemantic semantic =
+                (TextureSemantic)textureCursor.ReadByte();
             XPointerReference dataPointer = context.PointerReader.ReadCell(
                 textureCursor,
-                semantic == 0x0b
+                semantic == TextureSemantic.WaterMap
                     ? XPointerResolutionMode.Direct
                     : XPointerResolutionMode.AliasCell);
             textures[i] = new MaterialTextureDef
@@ -332,7 +334,7 @@ public sealed class MaterialLoader
         {
             MaterialTextureDef texture = textures[i];
 
-            if (texture.Semantic == 0x0b)
+            if (texture.Semantic == TextureSemantic.WaterMap)
                 textures[i] = CopyTexture(texture, water: ReadWaterPointer(cursor, texture.DataPointer, context));
             else
             {
@@ -504,11 +506,11 @@ public sealed class MaterialLoader
             XPointerReference loadBits = context.PointerReader.ReadCell(
                 stateCursor,
                 XPointerResolutionMode.AliasCell);
-            uint tail = stateCursor.ReadUInt32();
+            uint commandWordCount = stateCursor.ReadUInt32();
             stateBits[i] = new GfxStateBits
             {
                 LoadBitsPointer = loadBits,
-                Tail = tail
+                CommandWordCount = commandWordCount
             };
         }
 
@@ -519,7 +521,7 @@ public sealed class MaterialLoader
             {
                 LoadBitsPointer = state.LoadBitsPointer,
                 LoadBits = ReadGfxStateBitsLoadBits(cursor, state.LoadBitsPointer, context),
-                Tail = state.Tail
+                CommandWordCount = state.CommandWordCount
             };
         }
 

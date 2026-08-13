@@ -1,4 +1,5 @@
 using IW4.Render.Materials;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Geometry;
 
@@ -8,10 +9,10 @@ internal readonly record struct WorldVertexDecoderSelection(
 
 internal readonly record struct WorldVertexDecoderCacheKey(
     WorldVertexLayoutSelection Layout,
-    byte TexCoordSource,
+    MaterialStreamSource TexCoordSource,
     bool TexCoordSourceIsEngineRouted);
 
 internal delegate WorldVertexDecoderSelection WorldVertexDecoderResolver(
     WorldVertexLayoutSelection layout,
-    byte texCoordSource,
+    MaterialStreamSource texCoordSource,
     bool texCoordSourceIsEngineRouted);

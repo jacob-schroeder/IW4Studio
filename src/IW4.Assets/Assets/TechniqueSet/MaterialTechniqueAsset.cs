@@ -10,7 +10,7 @@ public sealed class MaterialTechniqueAsset
     public int Offset { get; init; }
     public XString NamePointer { get; init; }
     public string? Name { get; init; }
-    public ushort Flags { get; init; }
+    public MaterialTechniqueFlags Flags { get; init; }
     public ushort PassCount { get; init; }
     public IReadOnlyList<MaterialPassAsset> Passes { get; init; } = [];
 }

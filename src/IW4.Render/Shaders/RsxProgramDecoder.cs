@@ -5,8 +5,8 @@ namespace IW4.Render.Shaders;
 
 /// <summary>
 /// Decodes the immutable instruction stream shared by RSX translation and
-/// shader-input routing. Consumer-specific opcode interpretation remains in
-/// those consumers when the two paths do not yet agree.
+/// shader-input routing. Instruction shapes are defined centrally by
+/// <see cref="RsxShaderInstructionSet"/>.
 /// </summary>
 internal static class RsxProgramDecoder
 {
@@ -123,16 +123,21 @@ internal static class RsxProgramDecoder
                 BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pc + 8, 4)));
             uint source2 = FragmentWord(
                 BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pc + 12, 4)));
-            byte opcode = (byte)((destination >> 24) & 0x3f);
-            bool branch = (source1 & 0x80000000u) != 0;
-            int operandCount = branch ? 0 : FragmentOperandCount(opcode);
-            bool hasInlineConstant =
-                (operandCount > 0 &&
-                 RsxFragmentInstruction.SourceRegisterType(source0) == 2) ||
-                (operandCount > 1 &&
-                 RsxFragmentInstruction.SourceRegisterType(source1) == 2) ||
-                (operandCount > 2 &&
-                 RsxFragmentInstruction.SourceRegisterType(source2) == 2);
+            byte opcode = (byte)(((destination >> 24) & 0x3f) |
+                                 ((source1 >> 25) & 0x40));
+            var opcodeType = (RsxFragmentOpcode)opcode;
+            bool controlFlow =
+                RsxShaderInstructionSet.IsFragmentControlFlow(opcodeType);
+            bool canUseInlineConstant = !controlFlow &&
+                opcodeType is not RsxFragmentOpcode.FenceT and
+                not RsxFragmentOpcode.FenceB;
+            bool hasInlineConstant = canUseInlineConstant &&
+                (RsxFragmentInstruction.SourceRegisterKind(source0) ==
+                    RsxFragmentRegisterType.InlineConstant ||
+                 RsxFragmentInstruction.SourceRegisterKind(source1) ==
+                    RsxFragmentRegisterType.InlineConstant ||
+                 RsxFragmentInstruction.SourceRegisterKind(source2) ==
+                    RsxFragmentRegisterType.InlineConstant);
             int byteCount = hasInlineConstant ? 32 : 16;
             RsxFragmentInlineConstant? constant = hasInlineConstant &&
                                                   pc + byteCount <= data.Length
@@ -150,7 +155,7 @@ internal static class RsxProgramDecoder
                 source0,
                 source1,
                 source2,
-                opcode,
+                opcodeType,
                 byteCount,
                 constant));
             pc += byteCount;
@@ -170,20 +175,6 @@ internal static class RsxProgramDecoder
         ((value & 0x0000ff00u) << 16) |
         ((value & 0x00ff0000u) >> 16) |
         ((value & 0xff000000u) >> 16);
-
-    public static int FragmentOperandCount(byte opcode) => opcode switch
-    {
-        0x00 or 0x20 or 0x21 or 0x3d or 0x3e or 0x40 or 0x41 or 0x42 or 0x43 or 0x44 or 0x45 => 0,
-        0x01 or 0x10 or 0x11 or 0x12 or 0x13 or 0x14 or 0x15 or 0x16 or 0x17 or 0x18 or 0x1a or 0x1b or 0x1c or 0x1d or 0x1e or 0x22 or 0x23 or 0x24 or 0x25 or 0x27 or 0x28 or 0x29 or 0x2a or 0x2c or 0x2d or 0x39 or 0x3c => 1,
-        0x02 or 0x03 or 0x05 or 0x06 or 0x07 or 0x08 or 0x09 or 0x0a or 0x0b or 0x0c or 0x0d or 0x0e or 0x0f or 0x2f or 0x31 or 0x36 or 0x38 or 0x3a or 0x3b => 2,
-        _ => 3
-    };
-
-    public static int VertexScalarOperandCount(byte opcode) => opcode switch
-    {
-        0x00 or 0x09 or 0x0b or 0x0c or 0x13 or 0x14 => 0,
-        _ => 1
-    };
 
     private static uint FragmentConstantBits(byte[] data, int offset) =>
         FragmentWord(

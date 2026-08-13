@@ -383,7 +383,7 @@ public class DbLoadExecutionContext
                 out MaterialVertexDeclarationAsset? existing))
         {
             if (existing.StreamCount != declaration.StreamCount ||
-                existing.HasOptionalSource != declaration.HasOptionalSource ||
+                existing.HasOptionalSourceRaw != declaration.HasOptionalSourceRaw ||
                 !existing.Routing.SequenceEqual(declaration.Routing))
             {
                 throw new InvalidDataException(

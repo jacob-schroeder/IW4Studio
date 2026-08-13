@@ -16,6 +16,7 @@ public sealed class DecodedTextureResourceSnapshot
         string name,
         TextureSamplerShape shape,
         string format,
+        DecodedTexturePixelFormat pixelFormat,
         bool hasTransparency,
         IReadOnlyList<DecodedTextureSubresourceSnapshot> subresources)
     {
@@ -26,6 +27,8 @@ public sealed class DecodedTextureResourceSnapshot
             throw new ArgumentOutOfRangeException(nameof(shape));
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(format);
+        if (!Enum.IsDefined(pixelFormat))
+            throw new ArgumentOutOfRangeException(nameof(pixelFormat));
         ArgumentNullException.ThrowIfNull(subresources);
         _subresources = subresources.ToArray();
         int expectedFaceCount = shape == TextureSamplerShape.Cube
@@ -83,6 +86,7 @@ public sealed class DecodedTextureResourceSnapshot
         Name = name;
         Shape = shape;
         Format = format;
+        PixelFormat = pixelFormat;
         Width = top.Width;
         Height = top.Height;
         HasTransparency = hasTransparency;
@@ -99,6 +103,8 @@ public sealed class DecodedTextureResourceSnapshot
     public TextureSamplerShape Shape { get; }
 
     public string Format { get; }
+
+    public DecodedTexturePixelFormat PixelFormat { get; }
 
     public int Width { get; }
 
@@ -127,7 +133,7 @@ public sealed class DecodedTextureResourceSnapshot
             BinaryPrimitives.WriteInt32BigEndian(metadata[8..12], subresource.Width);
             BinaryPrimitives.WriteInt32BigEndian(metadata[12..16], subresource.Height);
             hash.AppendData(metadata);
-            hash.AppendData(subresource.RgbaSpan);
+            hash.AppendData(subresource.PixelSpan);
         }
 
         return Convert.ToHexString(hash.GetHashAndReset());
@@ -140,14 +146,14 @@ public sealed class DecodedTextureResourceSnapshot
 /// </summary>
 public sealed class DecodedTextureSubresourceSnapshot
 {
-    private readonly byte[] _rgbaBytes;
+    private readonly byte[] _pixelBytes;
 
     internal DecodedTextureSubresourceSnapshot(
         int faceOrdinal,
         int mipLevel,
         int width,
         int height,
-        byte[] rgbaBytes)
+        byte[] pixelBytes)
     {
         if (faceOrdinal < 0)
             throw new ArgumentOutOfRangeException(nameof(faceOrdinal));
@@ -157,22 +163,22 @@ public sealed class DecodedTextureSubresourceSnapshot
             throw new ArgumentOutOfRangeException(nameof(width));
         if (height <= 0)
             throw new ArgumentOutOfRangeException(nameof(height));
-        ArgumentNullException.ThrowIfNull(rgbaBytes);
-        if (rgbaBytes.Length != checked(width * height * 4))
+        ArgumentNullException.ThrowIfNull(pixelBytes);
+        if (pixelBytes.Length != checked(width * height * 4))
         {
             throw new ArgumentException(
-                "Decoded RGBA payload length does not match its dimensions.",
-                nameof(rgbaBytes));
+                "Decoded pixel payload length does not match its dimensions.",
+                nameof(pixelBytes));
         }
 
         // Factory inputs are newly decoded, uniquely owned arrays. Transfer
         // ownership into the immutable snapshot instead of cloning every mip.
-        _rgbaBytes = rgbaBytes;
+        _pixelBytes = pixelBytes;
         FaceOrdinal = faceOrdinal;
         MipLevel = mipLevel;
         Width = width;
         Height = height;
-        RgbaBytes = Array.AsReadOnly(_rgbaBytes);
+        PixelBytes = Array.AsReadOnly(_pixelBytes);
     }
 
     public int FaceOrdinal { get; }
@@ -183,12 +189,12 @@ public sealed class DecodedTextureSubresourceSnapshot
 
     public int Height { get; }
 
-    public IReadOnlyList<byte> RgbaBytes { get; }
+    public IReadOnlyList<byte> PixelBytes { get; }
 
-    internal ReadOnlySpan<byte> RgbaSpan => _rgbaBytes;
+    internal ReadOnlySpan<byte> PixelSpan => _pixelBytes;
 
     // Texture and the canonical snapshot are both retained by the
     // scene. The renderer treats texture payloads as immutable upload input,
     // so sharing this owned array avoids retaining a second full RGBA copy.
-    internal byte[] SharedRgbaBytes => _rgbaBytes;
+    internal byte[] SharedPixelBytes => _pixelBytes;
 }

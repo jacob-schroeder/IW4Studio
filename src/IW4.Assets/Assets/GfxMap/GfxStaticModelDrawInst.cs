@@ -17,7 +17,7 @@ public sealed class GfxStaticModelDrawInst
     public ushort LightingHandle { get; init; }
     public byte ReflectionProbeIndex { get; init; }
     public byte PrimaryLightIndex { get; init; }
-    public byte Flags { get; init; }
+    public GfxStaticModelDrawInstFlags Flags { get; init; }
     public byte FirstMaterialSkinIndex { get; init; }
     public GfxColor GroundLighting { get; init; } // 0x28
 }

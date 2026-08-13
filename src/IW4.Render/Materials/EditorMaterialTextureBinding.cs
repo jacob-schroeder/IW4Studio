@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
 using IW4.Render.Textures;
 
 namespace IW4.Render.Materials;
@@ -14,8 +15,8 @@ public sealed record EditorMaterialTextureBinding(
     uint NameHash,
     byte NameStart,
     byte NameEnd,
-    byte TextureSemantic,
-    byte SamplerState,
+    TextureSemantic TextureSemantic,
+    MaterialSamplerState SamplerState,
     GfxImageAsset? Image,
     Texture? ResolvedTexture,
     RsxSamplerState DecodedSamplerState)

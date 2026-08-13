@@ -53,26 +53,29 @@ public sealed class GfxImageLoader
             var rootCursor = new FastFileCursor(rootBytes, rootAddress);
             byte format = rootCursor.ReadByte();
             byte levelCount = rootCursor.ReadByte();
-            byte dimensionCount = rootCursor.ReadByte();
+            GfxImageDimension dimensionCount =
+                (GfxImageDimension)rootCursor.ReadByte();
             byte multiFaceControl = rootCursor.ReadByte();
-            uint textureFlags = rootCursor.ReadUInt32();
+            uint textureControl1 = rootCursor.ReadUInt32();
             ushort width = rootCursor.ReadUInt16();
             ushort height = rootCursor.ReadUInt16();
             ushort depth = rootCursor.ReadUInt16();
-            byte pixelDataBlock = rootCursor.ReadByte();
-            byte pad0F = rootCursor.ReadByte();
+            GfxImageMemoryLocation memoryLocation =
+                (GfxImageMemoryLocation)rootCursor.ReadByte();
+            byte minLodControl = rootCursor.ReadByte();
             uint renderTargetPitch = rootCursor.ReadUInt32();
             uint pixelsOffset = rootCursor.ReadUInt32();
-            byte mapType = rootCursor.ReadByte();
-            byte textureSemantic = rootCursor.ReadByte();
-            byte category = rootCursor.ReadByte();
-            byte pad1B = rootCursor.ReadByte();
+            MapType mapType = (MapType)rootCursor.ReadByte();
+            TextureSemantic textureSemantic =
+                (TextureSemantic)rootCursor.ReadByte();
+            ImageCategory category = (ImageCategory)rootCursor.ReadByte();
+            byte useSrgbReads = rootCursor.ReadByte();
             uint cardMemory = rootCursor.ReadUInt32();
             ushort baseWidth = rootCursor.ReadUInt16();
             ushort baseHeight = rootCursor.ReadUInt16();
             ushort baseDepth = rootCursor.ReadUInt16();
             byte baseLevelCount = rootCursor.ReadByte();
-            byte cached = rootCursor.ReadByte();
+            GfxImageCached cached = (GfxImageCached)rootCursor.ReadByte();
             XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
             IReadOnlyList<GfxImageStreamData> streamData = ReadStreamData(rootCursor);
             int[] streamPartByteCounts =
@@ -97,7 +100,7 @@ public sealed class GfxImageLoader
                     format,
                     levelCount,
                     multiFaceControl,
-                    textureFlags,
+                    textureControl1,
                     width,
                     height,
                     depth,
@@ -118,18 +121,18 @@ public sealed class GfxImageLoader
                 LevelCount = levelCount,
                 DimensionCount = dimensionCount,
                 MultiFaceControl = multiFaceControl,
-                TextureFlags = textureFlags,
+                TextureControl1 = textureControl1,
                 Width = width,
                 Height = height,
                 Depth = depth,
-                PixelDataBlock = pixelDataBlock,
-                Pad0F = pad0F,
+                MemoryLocation = memoryLocation,
+                MinLodControl = minLodControl,
                 RenderTargetPitch = renderTargetPitch,
                 PixelsOffset = pixelsOffset,
                 MapType = mapType,
                 TextureSemantic = textureSemantic,
                 Category = category,
-                Pad1B = pad1B,
+                UseSrgbReads = useSrgbReads,
                 CardMemory = cardMemory,
                 BaseWidth = baseWidth,
                 BaseHeight = baseHeight,
@@ -175,11 +178,11 @@ public sealed class GfxImageLoader
         byte format,
         byte levelCount,
         byte multiFaceControl,
-        uint textureFlags,
+        uint textureControl1,
         ushort width,
         ushort height,
         ushort depth,
-        byte textureSemantic,
+        TextureSemantic textureSemantic,
         DbLoadExecutionContext context)
     {
         // GfxImage +0x28 is a presence field, not a generic XFile pointer.
@@ -189,10 +192,10 @@ public sealed class GfxImageLoader
             return [];
 
         int byteCount = GfxImagePixelLayout.ComputePayloadByteCount(
-            format,
+            new GfxImageFormat(format),
             levelCount,
-            multiFaceControl,
-            textureFlags,
+            multiFaceControl != 0,
+            new GfxImageTextureRemap(textureControl1),
             width,
             height,
             depth);
@@ -200,7 +203,8 @@ public sealed class GfxImageLoader
         if (pointer.CellAddress is not { } cellAddress)
             throw new InvalidDataException($"GfxImage payload pointer 0x{pointer.Raw:X8} has no destination cell address.");
 
-        XFileBlockType payloadBlock = textureSemantic == 0x0b
+        XFileBlockType payloadBlock =
+            textureSemantic == TextureSemantic.WaterMap
             ? XFileBlockType.RUNTIME
             : XFileBlockType.PHYSICAL;
 

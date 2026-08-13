@@ -23,6 +23,7 @@ namespace IW4.Render.Resources;
 public static class RenderSceneSnapshotBuilder
 {
     private const string DecodedRgba8Format = "RGBA8_UNORM";
+    private const string DecodedRg16FloatFormat = "RG16_FLOAT";
 
     public static RenderSceneSnapshot Create(
         MapRenderScene scene,
@@ -177,7 +178,7 @@ public static class RenderSceneSnapshotBuilder
                     resources.Sampler.Identity,
                     source.ShaderPass,
                     source.ShaderPrimarySampler,
-                    source.ShaderTexCoordSource,
+                    (byte)source.ShaderTexCoordSource,
                     source.ShaderExecution));
             }
             catch (Exception exception) when (
@@ -466,7 +467,7 @@ public static class RenderSceneSnapshotBuilder
                 (!RenderLoadedCameraColorCompatibilityProfile.MatchesPass(
                      pass,
                      source.PrimarySampler,
-                     source.UvRoute.TexCoordSource) ||
+                     (byte)source.UvRoute.TexCoordSource) ||
                  shader.MaterialSamplerDestinations.Count != 1 ||
                  shader.MaterialSamplerDestinations.Count == 1 &&
                  (shader.MaterialSamplerDestinations[0].ArgumentIndex !=
@@ -570,7 +571,7 @@ public static class RenderSceneSnapshotBuilder
             Add(RenderWorldDrawPacketCandidateRejectionCode
                 .TextureNotTwoDimensional);
         }
-        else if (!texture.HasCompleteDecodedRgbaPayload)
+        else if (!texture.HasCompleteDecodedPayload)
         {
             Add(RenderWorldDrawPacketCandidateRejectionCode
                 .DecodedRgbaMipChainIncomplete);
@@ -722,7 +723,7 @@ public static class RenderSceneSnapshotBuilder
             new RenderMaterialPassProvenanceSnapshot(
                 source.Pass,
                 source.PrimarySampler,
-                source.UvRoute.TexCoordSource),
+                (byte)source.UvRoute.TexCoordSource),
             new RenderMaterialTextureBindingProvenanceSnapshot(
                 source.ColorLayers[0],
                 source.MaterialSamplers[0].Binding,
@@ -939,7 +940,7 @@ public static class RenderSceneSnapshotBuilder
                 RenderMaterialDrawPacketCandidateRejectionCode
                     .TextureNotTwoDimensional);
         }
-        else if (!texture.HasCompleteDecodedRgbaPayload)
+        else if (!texture.HasCompleteDecodedPayload)
         {
             codes.Add(
                 RenderMaterialDrawPacketCandidateRejectionCode
@@ -1066,7 +1067,7 @@ public static class RenderSceneSnapshotBuilder
             new RenderMaterialPassProvenanceSnapshot(
                 source.Pass,
                 source.PrimarySampler,
-                source.UvRoute.TexCoordSource),
+                (byte)source.UvRoute.TexCoordSource),
             new RenderMaterialTextureBindingProvenanceSnapshot(
                 layer,
                 binding,
@@ -1599,7 +1600,8 @@ public static class RenderSceneSnapshotBuilder
                     arrayLayer: layer,
                     width,
                     height,
-                    decoded?.RgbaBytes,
+                    decoded?.PixelBytes,
+                    texture.PixelFormat,
                     authored,
                     preferProvenAuthoredPayload);
                 width = Math.Max(1, width / 2);
@@ -1631,7 +1633,7 @@ public static class RenderSceneSnapshotBuilder
             DecodedTextureSubresource>();
         if (texture.Target == TextureTarget.Texture2D)
         {
-            if (texture.RgbaBytes.Length == 0)
+            if (texture.PixelBytes.Length == 0)
             {
                 if (texture.MipLevels.Count != 0)
                 {
@@ -1641,7 +1643,7 @@ public static class RenderSceneSnapshotBuilder
                 return decoded;
             }
 
-            AddDecoded(texture.RgbaBytes, texture.Width, texture.Height, 0, 0);
+            AddDecoded(texture.PixelBytes, texture.Width, texture.Height, 0, 0);
             int width = texture.Width;
             int height = texture.Height;
             for (int mipIndex = 0;
@@ -1659,7 +1661,7 @@ public static class RenderSceneSnapshotBuilder
                         $"2D texture mip {mipIndex + 1} has noncanonical dimensions");
                 }
                 AddDecoded(
-                    mip.RgbaBytes,
+                    mip.PixelBytes,
                     width,
                     height,
                     face: 0,
@@ -1670,7 +1672,7 @@ public static class RenderSceneSnapshotBuilder
 
         if (texture.CubeFaces is null)
         {
-            if (texture.RgbaBytes.Length != 0 || texture.MipLevels.Count != 0)
+            if (texture.PixelBytes.Length != 0 || texture.MipLevels.Count != 0)
             {
                 throw new InvalidDataException(
                     "An authored-only cubemap cannot retain orphaned top-level decoded payloads.");
@@ -1717,7 +1719,7 @@ public static class RenderSceneSnapshotBuilder
                         $"cubemap face {layer} mip {mipIndex + 1} has noncanonical dimensions");
                 }
                 AddDecoded(
-                    mip.RgbaBytes,
+                    mip.PixelBytes,
                     width,
                     height,
                     layer,
@@ -1726,7 +1728,7 @@ public static class RenderSceneSnapshotBuilder
         }
 
         TextureCubeFace firstFace = faces[0];
-        if (!texture.RgbaBytes.AsSpan().SequenceEqual(firstFace.RgbaBytes))
+        if (!texture.PixelBytes.AsSpan().SequenceEqual(firstFace.RgbaBytes))
         {
             throw new InvalidDataException(
                 "top-level cubemap payload must match face zero");
@@ -1744,8 +1746,8 @@ public static class RenderSceneSnapshotBuilder
             TextureMip faceMip = firstFace.MipLevels[mipIndex];
             if (topLevelMip.Width != faceMip.Width ||
                 topLevelMip.Height != faceMip.Height ||
-                !topLevelMip.RgbaBytes.AsSpan().SequenceEqual(
-                    faceMip.RgbaBytes))
+                !topLevelMip.PixelBytes.AsSpan().SequenceEqual(
+                    faceMip.PixelBytes))
             {
                 throw new InvalidDataException(
                     $"top-level cubemap mip {mipIndex + 1} must match face zero");
@@ -1754,14 +1756,14 @@ public static class RenderSceneSnapshotBuilder
         return decoded;
 
         void AddDecoded(
-            byte[] rgbaBytes,
+            byte[] pixelBytes,
             int width,
             int height,
             int face,
             int mip)
         {
-            ValidateRgbaPayload(
-                rgbaBytes,
+            ValidatePixelPayload(
+                pixelBytes,
                 width,
                 height,
                 $"texture layer {face}, mip {mip}");
@@ -1770,7 +1772,7 @@ public static class RenderSceneSnapshotBuilder
                 new DecodedTextureSubresource(
                     width,
                     height,
-                    rgbaBytes));
+                    pixelBytes));
         }
     }
 
@@ -1780,12 +1782,13 @@ public static class RenderSceneSnapshotBuilder
         int arrayLayer,
         int width,
         int height,
-        byte[]? rgbaBytes,
+        byte[]? pixelBytes,
+        DecodedTexturePixelFormat pixelFormat,
         TextureAuthoredSubresource? authored,
         bool preferProvenAuthoredPayload = false)
     {
         var payloads = new List<RenderTexturePayloadDescriptor>(
-            authored is null || rgbaBytes is null ? 1 : 2);
+            authored is null || pixelBytes is null ? 1 : 2);
         if (authored is not null)
         {
             if (authored.FaceOrdinal != arrayLayer ||
@@ -1804,18 +1807,31 @@ public static class RenderSceneSnapshotBuilder
                 authored.SharedPayload,
                 authored.IsDirectUploadLayoutProven));
         }
-        if (rgbaBytes is not null &&
+        if (pixelBytes is not null &&
             !(preferProvenAuthoredPayload &&
               authored?.IsDirectUploadLayoutProven == true))
         {
             int rowPitch = checked(width * 4);
             int slicePitch = checked(rowPitch * height);
+            (RenderTexturePayloadKind kind, string format) = pixelFormat switch
+            {
+                DecodedTexturePixelFormat.Rgba8Unorm =>
+                    (RenderTexturePayloadKind.DecodedRgba8,
+                     DecodedRgba8Format),
+                DecodedTexturePixelFormat.Rg16Float =>
+                    (RenderTexturePayloadKind.DecodedRg16Float,
+                     DecodedRg16FloatFormat),
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(pixelFormat),
+                    pixelFormat,
+                    null)
+            };
             payloads.Add(new RenderTexturePayloadDescriptor(
-                RenderTexturePayloadKind.DecodedRgba8,
-                DecodedRgba8Format,
+                kind,
+                format,
                 rowPitch,
                 slicePitch,
-                rgbaBytes,
+                pixelBytes,
                 isDirectUploadLayoutProven: true));
         }
         destination.Add(new RenderTextureSubresourceDescriptor(
@@ -1892,12 +1908,12 @@ public static class RenderSceneSnapshotBuilder
             throw new InvalidDataException(
                 "texture sampler byte does not match the decoded sampler state");
         }
-        ArgumentNullException.ThrowIfNull(texture.RgbaBytes);
+        ArgumentNullException.ThrowIfNull(texture.PixelBytes);
         ArgumentNullException.ThrowIfNull(texture.MipLevels);
         ArgumentNullException.ThrowIfNull(texture.EffectiveAuthoredSubresources);
     }
 
-    private static void ValidateRgbaPayload(
+    private static void ValidatePixelPayload(
         byte[] payload,
         int width,
         int height,
@@ -1907,7 +1923,7 @@ public static class RenderSceneSnapshotBuilder
         if (payload.Length != expectedLength)
         {
             throw new InvalidDataException(
-                $"{label} has {payload.Length} decoded RGBA bytes; expected {expectedLength}");
+                $"{label} has {payload.Length} decoded pixel bytes; expected {expectedLength}");
         }
     }
 
@@ -2693,7 +2709,7 @@ public static class RenderSceneSnapshotBuilder
             new RenderMaterialPassProvenanceSnapshot(
                 pass,
                 primarySampler,
-                uvRoute.TexCoordSource),
+                (byte)uvRoute.TexCoordSource),
             new RenderMaterialUvRouteSnapshot(uvRoute),
             state,
             sceneLightIndex,
@@ -3232,7 +3248,7 @@ public static class RenderSceneSnapshotBuilder
     private sealed record DecodedTextureSubresource(
         int Width,
         int Height,
-        byte[] RgbaBytes);
+        byte[] PixelBytes);
 
     private static byte[] EncodeSingles(float[] source)
     {

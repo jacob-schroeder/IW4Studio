@@ -99,7 +99,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 AssetEditorViewRegistry.CreateDefault(
                     _gscWorkspace,
                     _gscSourceNavigation,
-                    _gscUsagesPresenter);
+                    _gscUsagesPresenter,
+                    assetReferencePicker);
             editorViewRegistry.Register(new MenuEditorViewFactory(
                 _menuEditingCoordinator,
                 assetReferencePicker,

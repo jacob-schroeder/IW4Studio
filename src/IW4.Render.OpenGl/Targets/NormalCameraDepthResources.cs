@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Image;
 using IW4.Render.Scheduling.Lifecycle;
 using System.Collections.ObjectModel;
 
@@ -42,17 +43,17 @@ public sealed record MapRenderOpenGlNormalCameraDepthStencilTargetKey
         Target = target.Kind;
         ColorTargetKey = colorTargetKey;
         Extent = colorTargetKey.Extent;
-        RawDepthFormat = target.RawDepthFormat;
-        RawDepthLocation = target.RawDepthLocation;
+        DepthFormat = target.DepthFormat;
+        DepthLocation = target.DepthLocation;
         RawDepthAllocationSetupFormat = target.RawDepthAllocationSetupFormat!.Value;
-        RawDepthAllocationTextureFormatByte =
-            target.RawDepthAllocationTextureFormatByte!.Value;
+        DepthAllocationTextureFormat =
+            target.DepthAllocationTextureFormat!.Value;
         RawDepthSamplingViewProgramImageSlot =
             target.RawDepthSamplingViewProgramImageSlot!.Value;
         RawDepthSamplingViewSetupFormat =
             target.RawDepthSamplingViewSetupFormat!.Value;
-        RawDepthSamplingViewSetupFlags =
-            target.RawDepthSamplingViewSetupFlags!.Value;
+        DepthSamplingViewSetupFlags =
+            target.DepthSamplingViewSetupFlags!.Value;
     }
 
     public MapRenderNormalCameraTargetKind Target { get; }
@@ -61,19 +62,30 @@ public sealed record MapRenderOpenGlNormalCameraDepthStencilTargetKey
 
     public MapRenderNormalCameraTargetExtent Extent { get; }
 
-    public byte RawDepthFormat { get; }
+    public RsxSurfaceDepthFormat DepthFormat { get; }
 
-    public byte RawDepthLocation { get; }
+    public byte RawDepthFormat => (byte)DepthFormat;
+
+    public GfxImageMemoryLocation DepthLocation { get; }
+
+    public byte RawDepthLocation => (byte)DepthLocation;
 
     public uint RawDepthAllocationSetupFormat { get; }
 
-    public byte RawDepthAllocationTextureFormatByte { get; }
+    public GfxImageFormat DepthAllocationTextureFormat { get; }
+
+    public byte RawDepthAllocationTextureFormatByte =>
+        DepthAllocationTextureFormat.RawValue;
 
     public byte RawDepthSamplingViewProgramImageSlot { get; }
 
     public uint RawDepthSamplingViewSetupFormat { get; }
 
-    public uint RawDepthSamplingViewSetupFlags { get; }
+    public MapRenderNormalCameraImageSetupFlags
+        DepthSamplingViewSetupFlags { get; }
+
+    public uint RawDepthSamplingViewSetupFlags =>
+        (uint)DepthSamplingViewSetupFlags;
 
     public MapRenderOpenGlNormalCameraDepthStencilStorageSemantics
         HostStorageSemantics =>

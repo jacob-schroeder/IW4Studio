@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using IW4.Assets.Math;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.XModel.Export;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
 using IW4.Render.Shaders;
@@ -10,21 +12,26 @@ namespace IW4.Render.Geometry;
 
 /// <summary>
 /// Decodes the recovered PS3 static-XSurface vertex streams described by
-/// backend source-table row 2 (MTL_WORLDVERT_TEX_2_NRM_2).
+/// backend source-table row 2 (the static-model-cache declaration).
 /// </summary>
 internal sealed class XSurfaceVertexDecoder
 {
     internal const int RsxVertexInputCount = 16;
     internal const int RsxVertexInputComponentCount = 4;
     internal const int BackendRow =
-        (int)MaterialWorldVertexFormat.MTL_WORLDVERT_TEX_2_NRM_2;
-    internal const byte DefaultTexCoordSourceIndex = 2;
+        (int)MaterialVertexDeclarationType.StaticModelCache;
+    internal const MaterialStreamSource DefaultTexCoordSource =
+        MaterialStreamSource.TexCoord0;
 
     private const int PositionStride = 0x10;
-    private const byte ColorSourceIndex = 1;
-    private const byte NormalSourceIndex = 3;
-    private const byte TangentSourceIndex = 4;
-    private const byte PackedDirectionRsxType = 0x06;
+    private const MaterialStreamSource ColorSource =
+        MaterialStreamSource.Color;
+    private const MaterialStreamSource NormalSource =
+        MaterialStreamSource.Normal;
+    private const MaterialStreamSource TangentSource =
+        MaterialStreamSource.Tangent;
+    private const RsxVertexElementType PackedDirectionRsxType =
+        RsxVertexElementType.Signed11_11_10Normalized;
     private const float MaximumReasonableCoordinate = 1_000_000f;
 
     private readonly VertexSource _texCoord;
@@ -35,7 +42,7 @@ internal sealed class XSurfaceVertexDecoder
     }
 
     internal static bool TryCreate(
-        byte texCoordSource,
+        MaterialStreamSource texCoordSource,
         out XSurfaceVertexDecoder? decoder)
     {
         decoder = null;
@@ -73,7 +80,7 @@ internal sealed class XSurfaceVertexDecoder
         return true;
     }
 
-    internal static UvRoute CreateUvRoute(byte texCoordSource)
+    internal static UvRoute CreateUvRoute(MaterialStreamSource texCoordSource)
     {
         if (!WorldVertexLayout.TryGetSource(
                 BackendRow,
@@ -92,8 +99,7 @@ internal sealed class XSurfaceVertexDecoder
             : UvBaseMode.Stream0LocalIndexOnly;
         return new UvRoute(
             "static model tc0",
-            MaterialWorldVertexFormat.MTL_WORLDVERT_TEX_2_NRM_2
-                .ToString(),
+            MaterialVertexDeclarationType.StaticModelCache.ToString(),
             texCoordSource,
             source.StreamIndex,
             stride,
@@ -127,9 +133,10 @@ internal sealed class XSurfaceVertexDecoder
         blocker = string.Empty;
         foreach (ShaderVertexInputBinding binding in bindings)
         {
-            if (binding.Destination >= values.Length)
+            int destination = (byte)binding.Destination;
+            if (destination >= values.Length)
             {
-                blocker = $"dest0x{binding.Destination:X2}:OUT_OF_RANGE";
+                blocker = $"dest0x{destination:X2}:OUT_OF_RANGE";
                 return false;
             }
             if (binding.IsDisabledDefaultAttribute)
@@ -137,7 +144,7 @@ internal sealed class XSurfaceVertexDecoder
             if (binding.StreamIndex > 1)
             {
                 blocker =
-                    $"dest0x{binding.Destination:X2}:STREAM{binding.StreamIndex}_UNAVAILABLE";
+                    $"dest0x{destination:X2}:STREAM{binding.StreamIndex}_UNAVAILABLE";
                 return false;
             }
 
@@ -150,7 +157,7 @@ internal sealed class XSurfaceVertexDecoder
             catch (OverflowException)
             {
                 blocker =
-                    $"dest0x{binding.Destination:X2}:VERTEX_OFFSET_OVERFLOW";
+                    $"dest0x{destination:X2}:VERTEX_OFFSET_OVERFLOW";
                 return false;
             }
             IReadOnlyList<byte> stream = binding.StreamIndex == 0
@@ -165,10 +172,10 @@ internal sealed class XSurfaceVertexDecoder
                     out string decodeBlocker))
             {
                 blocker =
-                    $"dest0x{binding.Destination:X2}:{decodeBlocker}:offset0x{offset:X}";
+                    $"dest0x{destination:X2}:{decodeBlocker}:offset0x{offset:X}";
                 return false;
             }
-            values[binding.Destination] = value;
+            values[destination] = value;
         }
 
         return bindings.Count > 0;
@@ -179,27 +186,10 @@ internal sealed class XSurfaceVertexDecoder
         int vertexIndex,
         out Vector3 value)
     {
-        value = default;
-        if (!TryGetVertexOffset(
-                vertexIndex,
-                PositionStride,
-                attributeOffset: 0,
-                out int offset) ||
-            surface.Verts0.Count < 3 * sizeof(float) ||
-            offset > surface.Verts0.Count - 3 * sizeof(float))
-        {
-            return false;
-        }
-
-        value = new Vector3(
-            VertexElementDecoder.ReadSingleBigEndian(surface.Verts0, offset),
-            VertexElementDecoder.ReadSingleBigEndian(
-                surface.Verts0,
-                offset + sizeof(float)),
-            VertexElementDecoder.ReadSingleBigEndian(
-                surface.Verts0,
-                offset + 2 * sizeof(float)));
-        return IsReasonablePosition(value);
+        return XSurfaceVertexCodec.TryReadPosition(
+            surface.Verts0,
+            vertexIndex,
+            out value) && IsReasonablePosition(value);
     }
 
     internal bool TryReadTexCoord(
@@ -229,6 +219,10 @@ internal sealed class XSurfaceVertexDecoder
             1 => surface.Verts1,
             _ => null
         };
+        if (_texCoord.StreamIndex == 1 && _texCoord.Offset == 4 &&
+            _texCoord.FormatByte0 == 2 &&
+            _texCoord.FormatByte1 == RsxVertexElementType.Float16)
+            return XSurfaceVertexCodec.TryReadUv0(surface.Verts1, vertexIndex, out value);
         if (bytes is null ||
             !VertexElementDecoder.TryReadBackendTexCoord(
                 bytes,
@@ -253,9 +247,9 @@ internal sealed class XSurfaceVertexDecoder
         out Vector4 value)
     {
         value = Vector4.One;
-        if (!TryGetSource(ColorSourceIndex, out VertexSource source) ||
+        if (!TryGetSource(ColorSource, out VertexSource source) ||
             source.FormatByte0 != 4 ||
-            source.FormatByte1 != 0x04 ||
+            source.FormatByte1 != RsxVertexElementType.Unsigned8Normalized ||
             !TryGetVertexOffset(
                 vertexIndex,
                 source.Stride,
@@ -271,6 +265,8 @@ internal sealed class XSurfaceVertexDecoder
             1 => surface.Verts1,
             _ => null
         };
+        if (source.StreamIndex == 1 && source.Offset == 0)
+            return XSurfaceVertexCodec.TryReadColor(surface.Verts1, vertexIndex, out value);
         if (bytes is null ||
             bytes.Count < 4 ||
             offset > bytes.Count - 4)
@@ -292,8 +288,10 @@ internal sealed class XSurfaceVertexDecoder
         out Vector3 value)
     {
         value = default;
-        return TryGetSource(NormalSourceIndex, out VertexSource source) &&
-            TryReadPackedDirection(surface, vertexIndex, source, out value);
+        return TryGetSource(NormalSource, out VertexSource source) &&
+            source.StreamIndex == 1 && source.Offset == 8 &&
+            source.FormatByte0 == 1 && source.FormatByte1 == PackedDirectionRsxType &&
+            XSurfaceVertexCodec.TryReadNormal(surface.Verts1, vertexIndex, out value);
     }
 
     internal bool TryReadTangent(
@@ -302,18 +300,20 @@ internal sealed class XSurfaceVertexDecoder
         out Vector3 value)
     {
         value = default;
-        return TryGetSource(TangentSourceIndex, out VertexSource source) &&
-            TryReadPackedDirection(surface, vertexIndex, source, out value);
+        return TryGetSource(TangentSource, out VertexSource source) &&
+            source.StreamIndex == 1 && source.Offset == 12 &&
+            source.FormatByte0 == 1 && source.FormatByte1 == PackedDirectionRsxType &&
+            XSurfaceVertexCodec.TryReadTangent(surface.Verts1, vertexIndex, out value);
     }
 
     private static bool TryGetSource(
-        byte sourceIndex,
+        MaterialStreamSource sourceSlot,
         out VertexSource source)
     {
         source = default;
         if (!WorldVertexLayout.TryGetSource(
                 BackendRow,
-                sourceIndex,
+                sourceSlot,
                 out WorldVertexSource backendSource) ||
             !WorldVertexLayout.TryGetStreamStride(
                 BackendRow,
@@ -365,13 +365,8 @@ internal sealed class XSurfaceVertexDecoder
                 packedBytes[index] = surface.Verts1[offset + index];
         }
 
-        uint packed = BinaryPrimitives.ReadUInt32BigEndian(packedBytes);
-        var decoded = new Vector3(
-            (SignExtend((int)(packed & 0x7ff), 11) << 5) / 32767f,
-            (SignExtend((int)((packed >> 11) & 0x7ff), 11) << 5) / 32767f,
-            (SignExtend((int)((packed >> 22) & 0x3ff), 10) << 6) / 32767f);
-        return StaticVertexBasisTransformer.TryNormalizeDirection(
-            decoded,
+        return XSurfaceVertexCodec.TryDecodeDirection(
+            BinaryPrimitives.ReadUInt32BigEndian(packedBytes),
             out value);
     }
 
@@ -379,7 +374,7 @@ internal sealed class XSurfaceVertexDecoder
         IReadOnlyList<byte> stream,
         int offset,
         byte componentCount,
-        byte rsxType,
+        RsxVertexElementType rsxType,
         out Vector4 value,
         out string blocker)
     {
@@ -387,15 +382,18 @@ internal sealed class XSurfaceVertexDecoder
         blocker = string.Empty;
         int byteCount = rsxType switch
         {
-            0x01 or 0x03 or 0x05 => componentCount * 2,
-            0x02 => componentCount * 4,
-            0x04 or 0x07 => componentCount,
-            0x06 => 4,
+            RsxVertexElementType.Signed16Normalized or
+            RsxVertexElementType.Float16 or
+            RsxVertexElementType.Signed16Unnormalized => componentCount * 2,
+            RsxVertexElementType.Float32 => componentCount * 4,
+            RsxVertexElementType.Unsigned8Normalized or
+            RsxVertexElementType.Unsigned8Unnormalized => componentCount,
+            RsxVertexElementType.Signed11_11_10Normalized => 4,
             _ => 0
         };
         if (byteCount <= 0 || offset < 0)
         {
-            blocker = $"TYPE0x{rsxType:X2}_OR_OFFSET_INVALID";
+            blocker = $"TYPE0x{(byte)rsxType:X2}_OR_OFFSET_INVALID";
             return false;
         }
         if (offset > stream.Count - byteCount)
@@ -420,17 +418,14 @@ internal sealed class XSurfaceVertexDecoder
 
         Span<float> decoded = stackalloc float[4];
         decoded[3] = 1f;
-        if (rsxType == 0x06)
+        if (rsxType == RsxVertexElementType.Signed11_11_10Normalized)
         {
-            uint packed = BinaryPrimitives.ReadUInt32BigEndian(bytes);
-            decoded[0] =
-                (SignExtend((int)(packed & 0x7ff), 11) << 5) / 32767f;
-            decoded[1] =
-                (SignExtend((int)((packed >> 11) & 0x7ff), 11) << 5) /
-                32767f;
-            decoded[2] =
-                (SignExtend((int)((packed >> 22) & 0x3ff), 10) << 6) /
-                32767f;
+            Vector3 decodedPacked = new PackedSigned11_11_10(
+                BinaryPrimitives.ReadUInt32BigEndian(bytes))
+                .DecodeRsxNormalized();
+            decoded[0] = decodedPacked.X;
+            decoded[1] = decodedPacked.Y;
+            decoded[2] = decodedPacked.Z;
         }
         else
         {
@@ -440,18 +435,23 @@ internal sealed class XSurfaceVertexDecoder
             {
                 decoded[component] = rsxType switch
                 {
-                    0x01 =>
+                    RsxVertexElementType.Signed16Normalized =>
                         (BinaryPrimitives.ReadInt16BigEndian(
                             bytes[(component * 2)..]) + 0.5f) / 32767.5f,
-                    0x02 => BinaryPrimitives.ReadSingleBigEndian(
+                    RsxVertexElementType.Float32 =>
+                        BinaryPrimitives.ReadSingleBigEndian(
                         bytes[(component * 4)..]),
-                    0x03 => (float)BitConverter.UInt16BitsToHalf(
+                    RsxVertexElementType.Float16 =>
+                        (float)BitConverter.UInt16BitsToHalf(
                         BinaryPrimitives.ReadUInt16BigEndian(
                             bytes[(component * 2)..])),
-                    0x04 => bytes[component] / 255f,
-                    0x05 => BinaryPrimitives.ReadInt16BigEndian(
+                    RsxVertexElementType.Unsigned8Normalized =>
+                        bytes[component] / 255f,
+                    RsxVertexElementType.Signed16Unnormalized =>
+                        BinaryPrimitives.ReadInt16BigEndian(
                         bytes[(component * 2)..]),
-                    0x07 => bytes[component],
+                    RsxVertexElementType.Unsigned8Unnormalized =>
+                        bytes[component],
                     _ => 0f
                 };
             }
@@ -497,9 +497,4 @@ internal sealed class XSurfaceVertexDecoder
         MathF.Abs(value.Y) < MaximumReasonableCoordinate &&
         MathF.Abs(value.Z) < MaximumReasonableCoordinate;
 
-    private static int SignExtend(int value, int bits)
-    {
-        int sign = 1 << (bits - 1);
-        return (value ^ sign) - sign;
-    }
 }

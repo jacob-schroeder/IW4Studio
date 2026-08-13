@@ -2,9 +2,6 @@ namespace IW4.Render.Techniques;
 
 public static class MaterialPassClassifier
 {
-    private const uint RsxPolygonModeLine = 0x1B01;
-    private const uint RsxPolygonModeFill = 0x1B02;
-
     public const string CameraColor = "CameraColor";
     public const string CameraColorWithUnresolvedCodeSamplers = "CameraColorWithUnresolvedCodeSamplers";
     public const string CameraColorWithMissingState = "CameraColorWithMissingState";
@@ -21,13 +18,14 @@ public static class MaterialPassClassifier
         if (!state.HasState)
             return CameraColorWithMissingState;
 
-        if (state.ColorMask == 0 && state.PolygonMode == RsxPolygonModeLine)
+        if (state.ColorMask == RsxColorMask.None &&
+            state.PolygonMode == RsxPolygonMode.Line)
             return NonColorWire;
 
-        if (state.ColorMask == 0)
+        if (state.ColorMask == RsxColorMask.None)
             return NonColorWrite;
 
-        if (state.PolygonMode != RsxPolygonModeFill)
+        if (state.PolygonMode != RsxPolygonMode.Fill)
             return NonFillColorWrite;
 
         return unresolvedCodeSamplerCount > 0

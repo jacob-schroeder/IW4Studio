@@ -179,12 +179,14 @@ public sealed class AssetReferencePickerViewModel
         if (assetType is not (
                 XAssetType.Material or
                 XAssetType.Sound or
-                XAssetType.Menu))
+                XAssetType.Menu or
+                XAssetType.PhysPreset or
+                XAssetType.PhysCollmap))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(assetType),
                 assetType,
-                "The Menu editors support Material, Sound, and Menu asset selection.");
+                "The asset-reference picker does not support this asset type.");
         }
 
         AssetType = assetType;

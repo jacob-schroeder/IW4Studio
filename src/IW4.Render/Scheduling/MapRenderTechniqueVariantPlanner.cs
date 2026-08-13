@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -7,16 +9,16 @@ namespace IW4.Render.Scheduling;
 /// </summary>
 public static class MapRenderTechniqueVariantPlanner
 {
-    private static readonly MapRenderSurfaceType[] WorldSurfaceTypes =
+    private static readonly GfxDrawSurfSurfaceType[] WorldSurfaceTypes =
     [
-        MapRenderSurfaceType.Triangles,
-        MapRenderSurfaceType.TrianglesNoSunShadow
+        GfxDrawSurfSurfaceType.Triangles,
+        GfxDrawSurfSurfaceType.TrianglesNoSunShadow
     ];
 
-    private static readonly MapRenderSurfaceType[] StaticModelSurfaceTypes =
+    private static readonly GfxDrawSurfSurfaceType[] StaticModelSurfaceTypes =
     [
-        MapRenderSurfaceType.StaticModelRigid,
-        MapRenderSurfaceType.StaticModelRigidNoSunShadow
+        GfxDrawSurfSurfaceType.StaticModelRigid,
+        GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow
     ];
 
     public static MapRenderTechniqueVariantSet Plan(
@@ -71,7 +73,7 @@ public static class MapRenderTechniqueVariantPlanner
 
     private static MapRenderTechniqueVariant[] CreateVariants(
         MapRenderDrawMethod drawMethod,
-        IReadOnlyList<MapRenderSurfaceType> surfaceTypes,
+        IReadOnlyList<GfxDrawSurfSurfaceType> surfaceTypes,
         int baseVariant,
         bool canPrepareShadowAllocatedVariant,
         int allocatedVariant)
@@ -80,7 +82,7 @@ public static class MapRenderTechniqueVariantPlanner
             canPrepareShadowAllocatedVariant
                 ? surfaceTypes.Count * 2
                 : surfaceTypes.Count);
-        foreach (MapRenderSurfaceType surfaceType in surfaceTypes)
+        foreach (GfxDrawSurfSurfaceType surfaceType in surfaceTypes)
         {
             result.Add(Create(
                 drawMethod,
@@ -101,7 +103,7 @@ public static class MapRenderTechniqueVariantPlanner
 
     private static MapRenderTechniqueVariant Create(
         MapRenderDrawMethod drawMethod,
-        MapRenderSurfaceType surfaceType,
+        GfxDrawSurfSurfaceType surfaceType,
         MapRenderTechniqueVariantAllocation allocation,
         int variant)
     {

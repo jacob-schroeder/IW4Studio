@@ -24,7 +24,8 @@ public sealed partial class RenderAssetLookup :
 {
     private const int ShaderArgSize = 0x08;
     private const int LiteralFloat4Size = 0x10;
-    private const int MaterialSortedIndexCount = 0x2000;
+    private const int MaterialSortedIndexCount =
+        GfxDrawSurf.MaterialSortedIndexMask + 1;
 
     private readonly IXAssetSourceMemory _blocks;
     private readonly XAssetPool? _assetPool;

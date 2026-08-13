@@ -10,12 +10,13 @@ public sealed class GfxLightGrid
 {
     public const int SerializedSize = 0x38;
 
-    public uint HasLightRegions { get; init; }
+    public uint HasLightRegionsRaw { get; init; }
+    public bool HasLightRegions => HasLightRegionsRaw != 0;
     public uint SunPrimaryLightIndex { get; init; }
     public IReadOnlyList<ushort> Mins { get; init; } = [];
     public IReadOnlyList<ushort> Maxs { get; init; } = [];
-    public uint RowAxis { get; init; }
-    public uint ColAxis { get; init; }
+    public GfxLightGridHorizontalAxis RowAxis { get; init; }
+    public GfxLightGridHorizontalAxis ColAxis { get; init; }
     public XPointer<ushort[]> RowDataStartPointer { get; init; }
     public IReadOnlyList<ushort> RowDataStart { get; init; } = [];
     public uint RawRowDataSize { get; init; }

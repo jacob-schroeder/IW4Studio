@@ -1,6 +1,7 @@
 using IW4.Render.Techniques;
 using System.Buffers;
 using System.Numerics;
+using IW4.Assets.Math;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
@@ -261,33 +262,33 @@ public sealed partial class MapSceneBuilder
     {
         var requests = new List<RenderTextureDecodeRequest>();
         var seen = new HashSet<RenderTextureCacheKey>();
-        (MapRenderSurfaceType SurfaceType,
+        (GfxDrawSurfSurfaceType SurfaceType,
             MapRenderTechniqueVariantAllocation Allocation,
             bool AllowPreviewFallback,
             bool ForceGenericPreview)[] variants =
         [
             (
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
                 MapRenderTechniqueVariantAllocation.Unshadowed,
                 true,
                 false),
             (
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
                 MapRenderTechniqueVariantAllocation.Unshadowed,
                 true,
                 true),
             (
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
                 MapRenderTechniqueVariantAllocation.ShadowMapAllocated,
                 false,
                 false),
             (
-                MapRenderSurfaceType.StaticModelRigidNoSunShadow,
+                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
                 MapRenderTechniqueVariantAllocation.Unshadowed,
                 false,
                 false),
             (
-                MapRenderSurfaceType.StaticModelRigidNoSunShadow,
+                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
                 MapRenderTechniqueVariantAllocation.ShadowMapAllocated,
                 false,
                 false)
@@ -466,7 +467,7 @@ public sealed partial class MapSceneBuilder
                     materialSurfaceIndex,
                     drawInst.Model?.Name ?? $"smodel_{drawInstIndex}",
                     material?.Info.Name ?? string.Empty,
-                    material?.CameraRegion ?? byte.MaxValue,
+                    material?.CameraRegion ?? (GfxCameraRegionType)byte.MaxValue,
                     drawInst.PrimaryLightIndex,
                     drawInst.ReflectionProbeIndex,
                     drawInst.LightingHandle,
@@ -560,7 +561,7 @@ public sealed partial class MapSceneBuilder
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         MapRenderDrawMethod? editorPreviewDrawMethod,
         MapRenderSceneLightSelectorAssetState? sceneLightSelector,
-        MapRenderSurfaceType surfaceType,
+        GfxDrawSurfSurfaceType surfaceType,
         MapRenderTechniqueVariantAllocation techniqueAllocation,
         bool allowPreviewFallback,
         bool forceGenericPreview,
@@ -1425,16 +1426,7 @@ public sealed partial class MapSceneBuilder
 
     private static Vector3 DecodePackedAxis(uint packed)
     {
-        return new Vector3(
-            SignExtend((int)(packed & 0x7ff), 11) / 1023f,
-            SignExtend((int)((packed >> 11) & 0x7ff), 11) / 1023f,
-            SignExtend((int)((packed >> 22) & 0x3ff), 10) / 511f);
-    }
-
-    private static int SignExtend(int value, int bits)
-    {
-        int sign = 1 << (bits - 1);
-        return (value ^ sign) - sign;
+        return new PackedSigned11_11_10(packed).DecodePlacement();
     }
 
     private static MapRenderStaticModelInstance CreateStaticModelInstance(
@@ -1444,12 +1436,12 @@ public sealed partial class MapSceneBuilder
         int surfaceIndex,
         string name,
         string authoredMaterialName,
-        byte cameraRegion,
+        GfxCameraRegionType cameraRegion,
         int primaryLightIndex,
         byte reflectionProbeIndex,
         ushort lightingHandle,
         GfxColor groundLighting,
-        byte flags)
+        GfxStaticModelDrawInstFlags flags)
     {
         ArgumentNullException.ThrowIfNull(lightingAtlas);
         if ((uint)objectIndex >=

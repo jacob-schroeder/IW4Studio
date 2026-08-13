@@ -2,6 +2,8 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
+using IW4.Assets.Assets.TechniqueSet;
+using IW4.Assets.Math;
 using IW4.Render.Geometry;
 using IW4.Render.Shaders;
 
@@ -545,14 +547,15 @@ public sealed partial class MapSceneBuilder
         blocker = string.Empty;
         foreach (ShaderVertexInputBinding binding in bindings)
         {
-            if (binding.Destination >= values.Length)
+            int destination = (byte)binding.Destination;
+            if (destination >= values.Length)
             {
-                blocker = $"dest0x{binding.Destination:X2}:OUT_OF_RANGE";
+                blocker = $"dest0x{destination:X2}:OUT_OF_RANGE";
                 return false;
             }
             if (binding.IsDisabledDefaultAttribute)
             {
-                values[binding.Destination] = DefaultRsxVertexInput;
+                values[destination] = DefaultRsxVertexInput;
                 continue;
             }
 
@@ -564,7 +567,7 @@ public sealed partial class MapSceneBuilder
             };
             if (streamBase < 0)
             {
-                blocker = $"dest0x{binding.Destination:X2}:STREAM{binding.StreamIndex}_UNAVAILABLE";
+                blocker = $"dest0x{destination:X2}:STREAM{binding.StreamIndex}_UNAVAILABLE";
                 return false;
             }
             int offset = checked(streamBase + surfaceVertexIndex * binding.Stride + binding.Offset);
@@ -578,10 +581,10 @@ public sealed partial class MapSceneBuilder
                     out Vector4 value,
                     out string decodeBlocker))
             {
-                blocker = $"dest0x{binding.Destination:X2}:{decodeBlocker}:offset0x{offset:X}";
+                blocker = $"dest0x{destination:X2}:{decodeBlocker}:offset0x{offset:X}";
                 return false;
             }
-            values[binding.Destination] = value;
+            values[destination] = value;
         }
         return bindings.Count > 0;
     }
@@ -592,7 +595,7 @@ public sealed partial class MapSceneBuilder
         byte streamIndex,
         int offset,
         byte componentCount,
-        byte rsxType,
+        RsxVertexElementType rsxType,
         out Vector4 value,
         out string blocker)
     {
@@ -600,15 +603,18 @@ public sealed partial class MapSceneBuilder
         blocker = string.Empty;
         int byteCount = rsxType switch
         {
-            0x01 or 0x03 or 0x05 => componentCount * 2,
-            0x02 => componentCount * 4,
-            0x04 or 0x07 => componentCount,
-            0x06 => 4,
+            RsxVertexElementType.Signed16Normalized or
+            RsxVertexElementType.Float16 or
+            RsxVertexElementType.Signed16Unnormalized => componentCount * 2,
+            RsxVertexElementType.Float32 => componentCount * 4,
+            RsxVertexElementType.Unsigned8Normalized or
+            RsxVertexElementType.Unsigned8Unnormalized => componentCount,
+            RsxVertexElementType.Signed11_11_10Normalized => 4,
             _ => 0
         };
         if (byteCount <= 0 || offset < 0)
         {
-            blocker = $"TYPE0x{rsxType:X2}_OR_OFFSET_INVALID";
+            blocker = $"TYPE0x{(byte)rsxType:X2}_OR_OFFSET_INVALID";
             return false;
         }
 
@@ -640,12 +646,14 @@ public sealed partial class MapSceneBuilder
 
         Span<float> decoded = stackalloc float[4];
         decoded[3] = 1f;
-        if (rsxType == 0x06)
+        if (rsxType == RsxVertexElementType.Signed11_11_10Normalized)
         {
             uint packed = BinaryPrimitives.ReadUInt32BigEndian(bytes);
-            decoded[0] = (SignExtend((int)(packed & 0x7ff), 11) << 5) / 32767f;
-            decoded[1] = (SignExtend((int)((packed >> 11) & 0x7ff), 11) << 5) / 32767f;
-            decoded[2] = (SignExtend((int)((packed >> 22) & 0x3ff), 10) << 6) / 32767f;
+            Vector3 decodedPacked =
+                new PackedSigned11_11_10(packed).DecodeRsxNormalized();
+            decoded[0] = decodedPacked.X;
+            decoded[1] = decodedPacked.Y;
+            decoded[2] = decodedPacked.Z;
         }
         else
         {
@@ -653,12 +661,18 @@ public sealed partial class MapSceneBuilder
             {
                 decoded[component] = rsxType switch
                 {
-                    0x01 => (BinaryPrimitives.ReadInt16BigEndian(bytes[(component * 2)..]) + 0.5f) / 32767.5f,
-                    0x02 => BinaryPrimitives.ReadSingleBigEndian(bytes[(component * 4)..]),
-                    0x03 => (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16BigEndian(bytes[(component * 2)..])),
-                    0x04 => bytes[component] / 255f,
-                    0x05 => BinaryPrimitives.ReadInt16BigEndian(bytes[(component * 2)..]),
-                    0x07 => bytes[component],
+                    RsxVertexElementType.Signed16Normalized =>
+                        (BinaryPrimitives.ReadInt16BigEndian(bytes[(component * 2)..]) + 0.5f) / 32767.5f,
+                    RsxVertexElementType.Float32 =>
+                        BinaryPrimitives.ReadSingleBigEndian(bytes[(component * 4)..]),
+                    RsxVertexElementType.Float16 =>
+                        (float)BitConverter.UInt16BitsToHalf(
+                            BinaryPrimitives.ReadUInt16BigEndian(bytes[(component * 2)..])),
+                    RsxVertexElementType.Unsigned8Normalized =>
+                        bytes[component] / 255f,
+                    RsxVertexElementType.Signed16Unnormalized =>
+                        BinaryPrimitives.ReadInt16BigEndian(bytes[(component * 2)..]),
+                    RsxVertexElementType.Unsigned8Unnormalized => bytes[component],
                     _ => 0f
                 };
             }

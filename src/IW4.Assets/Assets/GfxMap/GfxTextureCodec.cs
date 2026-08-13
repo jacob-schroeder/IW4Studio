@@ -52,11 +52,11 @@ public static class GfxTextureCodec
             (uint)image.LevelCount << 16 |
             (uint)image.DimensionCount << 8 |
             image.MultiFaceControl,
-            image.TextureFlags,
+            image.TextureControl1,
             (uint)image.Width << 16 | image.Height,
             (uint)image.Depth << 16 |
-            (uint)image.PixelDataBlock << 8 |
-            image.Pad0F,
+            (uint)image.MemoryLocation << 8 |
+            image.MinLodControl,
             image.RenderTargetPitch,
             image.PixelsOffset
         ]);

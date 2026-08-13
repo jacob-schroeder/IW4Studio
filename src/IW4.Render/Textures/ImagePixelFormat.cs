@@ -10,6 +10,7 @@ internal enum ImagePixelFormat
     Bgra32,
     Bgrx32,
     Drgb32,
+    Rg16Float,
     G8B8,
     Rgb565,
     A1Rgb555,

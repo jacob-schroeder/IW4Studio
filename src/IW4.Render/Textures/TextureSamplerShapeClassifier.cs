@@ -8,13 +8,15 @@ internal static class TextureSamplerShapeClassifier
     {
         if (image is null)
             return TextureSamplerShape.Unknown;
-        if (image.MapType == 3 && image.DimensionCount == 2 &&
-            image.MultiFaceControl == 0 && image.Depth == 1)
+        if (image.MapType == MapType.TwoDimensional &&
+            image.DimensionCount == GfxImageDimension.TwoDimensional &&
+            !image.IsCubemap && image.Depth == 1)
         {
             return TextureSamplerShape.TwoDimensional;
         }
-        return image.MapType == 5 && image.DimensionCount == 2 &&
-            image.MultiFaceControl != 0 && image.Depth == 1 &&
+        return image.MapType == MapType.Cube &&
+            image.DimensionCount == GfxImageDimension.TwoDimensional &&
+            image.IsCubemap && image.Depth == 1 &&
             image.Width != 0 && image.Width == image.Height
                 ? TextureSamplerShape.Cube
                 : TextureSamplerShape.Unknown;

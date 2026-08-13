@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;
 
 namespace IW4.Render.Lighting;
@@ -84,7 +85,8 @@ internal readonly record struct MapRenderStaticModelLightingContract(
         ShaderRuntimeSamplerRequirement[] requirements = execution
             .RuntimeSamplerRequirements
             .Where(requirement =>
-                requirement.CodeSamplerArgument == 3 &&
+                requirement.CodeSamplerArgument ==
+                    MaterialTextureSource.ModelLighting &&
                 requirement.ResourceKind ==
                     ShaderRuntimeSamplerResourceKind
                         .ModelLightingAtlas &&
@@ -106,7 +108,8 @@ internal readonly record struct MapRenderStaticModelLightingContract(
                 "CodePixelSampler",
                 StringComparison.Ordinal) &&
             destination.Destination == requirement.Destination &&
-            destination.Argument == 3 &&
+            destination.Argument ==
+                (uint)MaterialTextureSource.ModelLighting &&
             string.Equals(
                 destination.TextureTarget,
                 "Texture3D",

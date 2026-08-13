@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Materials;
 
 /// <summary>
@@ -11,17 +13,17 @@ public readonly record struct MaterialCustomSamplerSelection
         MaterialCustomSamplerFlags.PrimaryLightmap |
         MaterialCustomSamplerFlags.SecondaryLightmap);
 
-    public MaterialCustomSamplerSelection(byte rawFlags)
+    public MaterialCustomSamplerSelection(
+        MaterialCustomSamplerFlags rawFlags)
     {
         RawFlags = rawFlags;
     }
 
-    public byte RawFlags { get; }
+    public MaterialCustomSamplerFlags RawFlags { get; }
 
-    public MaterialCustomSamplerFlags Flags =>
-        (MaterialCustomSamplerFlags)RawFlags;
+    public MaterialCustomSamplerFlags Flags => RawFlags;
 
-    public byte UnknownFlags => (byte)(RawFlags & ~KnownMask);
+    public byte UnknownFlags => (byte)((byte)RawFlags & ~KnownMask);
 
     public bool BindsReflectionProbe =>
         (Flags & MaterialCustomSamplerFlags.ReflectionProbe) != 0;

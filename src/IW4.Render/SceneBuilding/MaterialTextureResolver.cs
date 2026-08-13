@@ -23,7 +23,7 @@ internal static class MaterialTextureResolver
         return MaterialTextureSelector.TryResolveFirst(
             material.Textures,
             preferredHash,
-            requireColor ? (byte)0x02 : null,
+            requireColor ? TextureSemantic.ColorMap : null,
             candidate => ResolveCanonicalImage(candidate, lookup),
             out texture,
             out image);

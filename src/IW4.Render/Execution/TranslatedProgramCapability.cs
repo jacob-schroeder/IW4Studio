@@ -23,7 +23,7 @@ public static class TranslatedProgramCapability
     /// </summary>
     public static FragmentTargetOutputAvailability
         CreateSurfaceAOutputAvailability() => new(
-            rawPs3SurfaceColorTarget: 0x01,
+            ps3SurfaceColorTarget: RsxSurfaceTarget.SurfaceA,
             hostDrawBufferCount: 1);
 
     public static IReadOnlyList<string> FindBlockers(
@@ -44,14 +44,14 @@ public static class TranslatedProgramCapability
 
         bool writesVisibleTarget = fragmentColorExports.Any(export =>
             export.ColorTarget == 0 &&
-            export.WrittenComponentMask != 0 &&
+            export.WrittenComponentMask != RsxFragmentWriteMask.None &&
             targetOutputs.IsNativeOutputActive(export.ColorTarget) &&
             targetOutputs.IsHostDrawBufferAvailable(export.ColorTarget));
         if (!writesVisibleTarget)
             blockers.Add(ColorTargetZeroBlocker);
 
         if (fragmentColorExports.Any(export =>
-                export.WrittenComponentMask != 0 &&
+                export.WrittenComponentMask != RsxFragmentWriteMask.None &&
                 targetOutputs.IsNativeOutputActive(export.ColorTarget) &&
                 !targetOutputs.IsHostDrawBufferAvailable(export.ColorTarget)) &&
             !blockers.Contains(AdditionalMrtBlocker, StringComparer.Ordinal))

@@ -139,7 +139,8 @@ public sealed class XModelLoader
             byte numBones = rootCursor.ReadByte();
             byte numRootBones = rootCursor.ReadByte();
             byte numSurfs = rootCursor.ReadByte();
-            byte pad07 = rootCursor.ReadByte();
+            XModelLodRampType lodRampType =
+                (XModelLodRampType)rootCursor.ReadByte();
             float scale = rootCursor.ReadSingle();
             IReadOnlyList<uint> noScalePartBits = ReadUInt32Values(rootCursor, 6);
             XPointer<ushort[]> boneNamesPointer = ReadPointer<ushort[]>(rootCursor, context, XPointerResolutionMode.Direct);
@@ -154,7 +155,7 @@ public sealed class XModelLoader
             byte maxLoadedLod = rootCursor.ReadByte();
             byte numLods = rootCursor.ReadByte();
             byte collLod = rootCursor.ReadByte();
-            byte flags = rootCursor.ReadByte();
+            XModelFlags flags = (XModelFlags)rootCursor.ReadByte();
             XPointer<byte[]> collSurfsPointer = ReadPointer<byte[]>(rootCursor, context, XPointerResolutionMode.Direct);
             int numCollSurfs = rootCursor.ReadInt32();
             int contents = rootCursor.ReadInt32();
@@ -271,7 +272,7 @@ public sealed class XModelLoader
                     NumRootBones = numRootBones,
                     NumSurfs = numSurfs,
                     SerializedNumSurfs = numSurfs,
-                    Pad07 = pad07,
+                    LodRampType = lodRampType,
                     Scale = scale,
                     NoScalePartBits = noScalePartBits,
                     BoneNamesPointer = boneNamesPointer,
@@ -512,8 +513,11 @@ public sealed class XModelLoader
         FastFileCursor surfaceCursor,
         DbLoadExecutionContext context)
     {
-        ushort flagsOrPad00 = surfaceCursor.ReadUInt16();
-        byte streamFlags = surfaceCursor.ReadByte();
+        XSurfaceTileMode tileMode =
+            (XSurfaceTileMode)surfaceCursor.ReadByte();
+        byte deformedRaw = surfaceCursor.ReadByte();
+        XSurfaceStreamFlags streamFlags =
+            (XSurfaceStreamFlags)surfaceCursor.ReadByte();
         byte pad03 = surfaceCursor.ReadByte();
         ushort vertCount = surfaceCursor.ReadUInt16();
         ushort triCount = surfaceCursor.ReadUInt16();
@@ -537,14 +541,15 @@ public sealed class XModelLoader
         int blendCount = blend0 + (blend1 * 3) + (blend2 * 5) + (blend3 * 7);
 
         IReadOnlyList<ushort> vertsBlend = ReadUInt16Array(cursor, vertsBlendPointer.Untyped, blendCount, context, out XBlockAddress? vertsBlendAddress);
-        IReadOnlyList<byte> verts0 = ReadSurfaceStreamBytes(cursor, verts0Pointer.Untyped, checked(vertCount * 0x10), alignment: 16, pushPhysical: (streamFlags & 0x01) == 0, context, out _);
-        IReadOnlyList<byte> verts1 = ReadSurfaceStreamBytes(cursor, verts1Pointer.Untyped, checked(vertCount * 0x10), alignment: 16, pushPhysical: (streamFlags & 0x02) == 0, context, out _);
+        IReadOnlyList<byte> verts0 = ReadSurfaceStreamBytes(cursor, verts0Pointer.Untyped, checked(vertCount * 0x10), alignment: 16, pushPhysical: (streamFlags & XSurfaceStreamFlags.Verts0InLarge) == 0, context, out _);
+        IReadOnlyList<byte> verts1 = ReadSurfaceStreamBytes(cursor, verts1Pointer.Untyped, checked(vertCount * 0x10), alignment: 16, pushPhysical: (streamFlags & XSurfaceStreamFlags.Verts1InLarge) == 0, context, out _);
         IReadOnlyList<XRigidVertList> vertList = ReadRigidVertListArray(cursor, vertListPointer.Untyped, vertListCount, context);
-        IReadOnlyList<ushort> triIndices = ReadSurfaceStreamUshorts(cursor, triIndicesPointer.Untyped, checked(triCount * 3), alignment: 16, pushPhysical: (streamFlags & 0x04) == 0, context, out _);
+        IReadOnlyList<ushort> triIndices = ReadSurfaceStreamUshorts(cursor, triIndicesPointer.Untyped, checked(triCount * 3), alignment: 16, pushPhysical: (streamFlags & XSurfaceStreamFlags.TriIndicesInLarge) == 0, context, out _);
 
         return new XSurface
         {
-            FlagsOrPad00 = flagsOrPad00,
+            TileMode = tileMode,
+            DeformedRaw = deformedRaw,
             StreamFlags = streamFlags,
             Pad03 = pad03,
             VertCount = vertCount,

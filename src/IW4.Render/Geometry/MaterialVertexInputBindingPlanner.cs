@@ -23,7 +23,8 @@ internal static class MaterialVertexInputBindingPlanner
             fixedVertexSourceBackendRow);
     }
     internal static ShaderVertexInputBinding[] Create(
-        MaterialTechniqueSetAsset? techset, ushort techniqueFlags,
+        MaterialTechniqueSetAsset? techset,
+        MaterialTechniqueFlags techniqueFlags,
         MaterialVertexDeclarationAsset? vertexDecl,
         IReadOnlyList<int>? requiredInputs, int? fixedVertexSourceBackendRow = null)
     {
@@ -35,16 +36,14 @@ internal static class MaterialVertexInputBindingPlanner
         {
             MaterialVertexStreamRouting route = vertexDecl.Routing[index];
             if (!WorldVertexLayout.TryGetSource(format, route.Source, out WorldVertexSource source))
-            { bindings.Add(new(index, route.Source, route.Dest, 0, 0, 0, 0, 0, "Unknown")); continue; }
+            { bindings.Add(new(index, route.Source, route.Dest, 0, 0, 0, 0, RsxVertexElementType.Disabled)); continue; }
             _ = WorldVertexLayout.TryGetStreamStride(format, source.StreamIndex, out byte stride);
-            bindings.Add(new(index, route.Source, route.Dest, source.StreamIndex, stride, source.ByteOffset, source.ComponentCount, source.RsxType, TypeName(source.RsxType)));
+            bindings.Add(new(index, route.Source, route.Dest, source.StreamIndex, stride, source.ByteOffset, source.ComponentCount, source.RsxType));
         }
         if (requiredInputs is null) return bindings.ToArray();
-        var selected = bindings.Where(binding => requiredInputs.Contains(binding.Destination)).ToList();
-        foreach (int destination in requiredInputs.Where(destination => selected.All(binding => binding.Destination != destination)))
-            selected.Add(new(-1, 0, checked((byte)destination), 0, 0, 0, 0, 0, "Unknown"));
+        var selected = bindings.Where(binding => requiredInputs.Contains((byte)binding.Destination)).ToList();
+        foreach (int destination in requiredInputs.Where(destination => selected.All(binding => (byte)binding.Destination != destination)))
+            selected.Add(new(-1, MaterialStreamSource.Position, checked((MaterialStreamDestination)destination), 0, 0, 0, 0, RsxVertexElementType.Disabled));
         return selected.OrderBy(binding => binding.Destination).ToArray();
     }
-
-    private static string TypeName(byte type) => type switch { 0x00 => "B8G8R8A8_UNORM", 0x01 => "V16_SNORM", 0x02 => "V32_FLOAT", 0x03 => "V16_FLOAT", 0x04 => "U8_UNORM", 0x05 => "V16_SSCALED", 0x06 => "S11_11_10_NR", 0x07 => "U8_USCALED", _ => "Unknown" };
 }

@@ -105,7 +105,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             definition.DpvsDyn.DynEntClientCount.Any(value => value != 0) ||
             definition.HeroOnlyLightCount != 0 ||
             definition.HeroOnlyLights.Count != 0 ||
-            definition.FogTypesAllowed != 0 ||
+            definition.FogTypesAllowed != FogTypesAllowed.None ||
             definition.UmbraGateCount != 0 ||
             HasNonzeroValues(definition.Mins) ||
             HasNonzeroValues(definition.Maxs) ||
@@ -146,12 +146,12 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             value.IndexBufferRaw != 0;
 
         static bool HasLightGridPayload(GfxLightGrid value) =>
-            value.HasLightRegions != 0 ||
+            value.HasLightRegions ||
             value.SunPrimaryLightIndex != 0 ||
             value.Mins.Any(item => item != 0) ||
             value.Maxs.Any(item => item != 0) ||
-            value.RowAxis != 0 ||
-            value.ColAxis != 0 ||
+            value.RowAxis != GfxLightGridHorizontalAxis.X ||
+            value.ColAxis != GfxLightGridHorizontalAxis.X ||
             value.RowDataStart.Any(item => item != 0) ||
             value.RawRowDataSize != 0 ||
             value.RawRowData.Any(item => item != 0) ||
@@ -161,7 +161,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             value.Colors.Count != 0;
 
         static bool HasSunPayload(Sunflare value) =>
-            value.HasValidData != 0 ||
+            value.HasValidData ||
             value.SpriteMaterialPointer.Raw != 0 ||
             value.SpriteMaterial is not null ||
             value.FlareMaterialPointer.Raw != 0 ||
@@ -388,7 +388,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             writer.WriteUInt32(value.MapVertexChecksum);
             writer.WriteUInt32(value.HeroOnlyLightCount);
             writer.Skip(sizeof(int));
-            writer.WriteByte(value.FogTypesAllowed);
+            writer.WriteByte((byte)value.FogTypesAllowed);
             writer.WriteBytes(value.Pad279To27B.Count == 0
                 ? new byte[3]
                 : value.Pad279To27B.ToArray());
@@ -1284,7 +1284,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 writer.WriteByte(value.LightmapIndex);
                 writer.WriteByte(value.ReflectionProbeIndex);
                 writer.WriteByte(value.PrimaryLightIndex);
-                writer.WriteByte(value.CastsSunShadow);
+                writer.WriteByte((byte)value.Flags);
             }
             return FreezeTable(
                 pointer,
@@ -1322,7 +1322,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 writer.WriteUInt16(value.LightingHandle);
                 writer.WriteByte(value.ReflectionProbeIndex);
                 writer.WriteByte(value.PrimaryLightIndex);
-                writer.WriteByte(value.Flags);
+                writer.WriteByte((byte)value.Flags);
                 writer.WriteByte(value.FirstMaterialSkinIndex);
                 writer.WriteUInt32(value.GroundLighting.Packed);
             }
@@ -1633,8 +1633,13 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
         {
             RequireCount(value.Mins, 3, "GfxWorld.LightGrid.Mins");
             RequireCount(value.Maxs, 3, "GfxWorld.LightGrid.Maxs");
-            if (value.RowAxis > 2)
-                throw new InvalidDataException("GfxWorld.LightGrid.RowAxis must be 0, 1, or 2.");
+            if ((value.RowAxis, value.ColAxis) is not
+                (GfxLightGridHorizontalAxis.X, GfxLightGridHorizontalAxis.Y) and not
+                (GfxLightGridHorizontalAxis.Y, GfxLightGridHorizontalAxis.X))
+            {
+                throw new InvalidDataException(
+                    "GfxWorld.LightGrid axes must be the complementary X/Y pair.");
+            }
             int rowCount = checked(value.Maxs[(int)value.RowAxis] - value.Mins[(int)value.RowAxis] + 1);
             if (value.RowDataStart.Count != rowCount || value.RawRowDataSize != value.RawRowData.Count || value.EntryCount != value.Entries.Count || value.ColorCount != value.Colors.Count)
                 throw new InvalidDataException("GfxWorld.LightGrid scalar counts disagree with their tables.");
@@ -1696,12 +1701,12 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
 
         private static void WriteLightGrid(LinkTemplateWriter writer, GfxLightGrid value)
         {
-            writer.WriteUInt32(value.HasLightRegions);
+            writer.WriteUInt32(value.HasLightRegionsRaw);
             writer.WriteUInt32(value.SunPrimaryLightIndex);
             foreach (ushort item in value.Mins) writer.WriteUInt16(item);
             foreach (ushort item in value.Maxs) writer.WriteUInt16(item);
-            writer.WriteUInt32(value.RowAxis);
-            writer.WriteUInt32(value.ColAxis);
+            writer.WriteUInt32((uint)value.RowAxis);
+            writer.WriteUInt32((uint)value.ColAxis);
             writer.Skip(sizeof(int));
             writer.WriteUInt32(value.RawRowDataSize);
             writer.Skip(sizeof(int));
@@ -1713,7 +1718,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
 
         private static void WriteSunflare(LinkTemplateWriter writer, Sunflare value)
         {
-            writer.WriteUInt32(value.HasValidData);
+            writer.WriteUInt32(value.HasValidDataRaw);
             writer.Skip(2 * sizeof(int));
             writer.WriteSingle(value.SpriteSize);
             writer.WriteSingle(value.FlareMinSize);

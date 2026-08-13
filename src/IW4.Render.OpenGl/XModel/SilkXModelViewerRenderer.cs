@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Render.EditorPreview;
@@ -74,8 +75,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private readonly uint _checkerboardVertexArray;
     private readonly uint _wireframeProgram;
     private readonly int _wireframeViewProjectionLocation;
+    private readonly int _wireframeColorLocation;
     private readonly List<AuthoredDrawGroup> _drawGroups = [];
     private WireframeGeometry _wireframe;
+    private WireframeGeometry _collisionWireframe;
     private uint _neutralModelLightingAtlas;
     private uint _viewerReflectionEnvironment;
     private bool? _viewerReflectionEnvironmentStudioEnabled;
@@ -108,6 +111,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 WireframeFragmentShaderSource);
             _wireframeViewProjectionLocation =
                 RequireUniform(_wireframeProgram, "uViewProjection");
+            _wireframeColorLocation = RequireUniform(_wireframeProgram, "uColor");
         }
         catch
         {
@@ -136,6 +140,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         try
         {
             _wireframe = CreateWireframeGeometry(lod.Surfaces);
+            _collisionWireframe = CreateWireframeGeometry(lod.Surfaces, collisionOnly: true);
             foreach (XModelRenderSurface surface in lod.Surfaces)
             {
                 string identity =
@@ -238,7 +243,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         RenderCamera camera,
         float materialTimeSeconds,
         bool studioEnvironmentEnabled,
-        bool showWireframe)
+        bool showWireframe,
+        bool showCollision = false)
     {
         ThrowIfDisposed();
         if (width <= 0 || height <= 0)
@@ -260,7 +266,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         DrawCheckerboard();
         if (showWireframe)
         {
-            DrawWireframe(CreateHostViewProjection(camera, aspect));
+            DrawWireframe(_wireframe, CreateHostViewProjection(camera, aspect), 0.55f, 0.88f, 0.22f);
+            return;
+        }
+        if (showCollision)
+        {
+            DrawWireframe(_collisionWireframe, CreateHostViewProjection(camera, aspect), 1f, 0.45f, 0.05f);
             return;
         }
 
@@ -577,7 +588,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     ShaderRuntimeSamplerRequirementStatus
                         .ImmutableSceneAtlasRequired ||
                 requirement.CodeSamplerArgument !=
-                    (uint)CodePixelSamplerSource.ModelLighting ||
+                    MaterialTextureSource.ModelLighting ||
                 !string.Equals(
                     requirement.ResourceIdentity,
                     "modelLightingSampler",
@@ -800,12 +811,13 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     }
 
     private WireframeGeometry CreateWireframeGeometry(
-        IReadOnlyList<XModelRenderSurface> surfaces)
+        IReadOnlyList<XModelRenderSurface> surfaces,
+        bool collisionOnly = false)
     {
         int vertexCount = checked(surfaces.Sum(surface =>
             surface.Positions.Count));
         int triangleIndexCount = checked(surfaces.Sum(surface =>
-            surface.Indices.Count));
+            (collisionOnly ? surface.CollisionIndices : surface.Indices).Count));
         if (vertexCount == 0 || triangleIndexCount == 0)
             return default;
 
@@ -823,16 +835,17 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 positions[destination + 1] = value.Y;
                 positions[destination + 2] = value.Z;
             }
+            IReadOnlyList<uint> sourceIndices = collisionOnly ? surface.CollisionIndices : surface.Indices;
             for (int triangle = 0;
-                 triangle < surface.Indices.Count;
+                 triangle < sourceIndices.Count;
                  triangle += 3)
             {
                 uint a = checked((uint)vertexOffset +
-                    surface.Indices[triangle]);
+                    sourceIndices[triangle]);
                 uint b = checked((uint)vertexOffset +
-                    surface.Indices[triangle + 1]);
+                    sourceIndices[triangle + 1]);
                 uint c = checked((uint)vertexOffset +
-                    surface.Indices[triangle + 2]);
+                    sourceIndices[triangle + 2]);
                 edges[edgeOffset++] = a;
                 edges[edgeOffset++] = b;
                 edges[edgeOffset++] = b;
@@ -975,9 +988,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _state.UseProgram(0);
     }
 
-    private void DrawWireframe(Matrix4x4 viewProjection)
+    private void DrawWireframe(WireframeGeometry geometry, Matrix4x4 viewProjection, float red, float green, float blue)
     {
-        if (_wireframe.IndexCount == 0)
+        if (geometry.IndexCount == 0)
             return;
 
         _state.SetEnabled(EnableCap.FramebufferSrgb, false);
@@ -995,10 +1008,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _state.UniformMatrix4(
             _wireframeViewProjectionLocation,
             viewProjection);
-        _state.BindVertexArray(_wireframe.VertexArray);
+        _state.Uniform3(_wireframeColorLocation, red, green, blue);
+        _state.BindVertexArray(geometry.VertexArray);
         _gl.DrawElements(
             PrimitiveType.Lines,
-            _wireframe.IndexCount,
+            geometry.IndexCount,
             DrawElementsType.UnsignedInt,
             null);
         _state.BindVertexArray(0);
@@ -1049,7 +1063,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     0,
                     texture.Width,
                     texture.Height,
-                    texture.RgbaBytes);
+                    texture.PixelBytes,
+                    texture.PixelFormat,
+                    texture.DecodedSamplerState.UsesSrgbReads);
                 for (int mipIndex = 0;
                      mipIndex < texture.MipLevels.Count;
                      mipIndex++)
@@ -1060,7 +1076,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         checked(mipIndex + 1),
                         mip.Width,
                         mip.Height,
-                        mip.RgbaBytes);
+                        mip.PixelBytes,
+                        texture.PixelFormat,
+                        texture.DecodedSamplerState.UsesSrgbReads);
                 }
             }
             else
@@ -1079,7 +1097,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         0,
                         texture.Width,
                         texture.Height,
-                        face.RgbaBytes);
+                        face.RgbaBytes,
+                        texture.PixelFormat,
+                        texture.DecodedSamplerState.UsesSrgbReads);
                     for (int mipIndex = 0;
                          mipIndex < face.MipLevels.Count;
                          mipIndex++)
@@ -1090,7 +1110,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                             checked(mipIndex + 1),
                             mip.Width,
                             mip.Height,
-                            mip.RgbaBytes);
+                            mip.PixelBytes,
+                            texture.PixelFormat,
+                            texture.DecodedSamplerState.UsesSrgbReads);
                     }
                 }
             }
@@ -1399,19 +1421,40 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         int level,
         int width,
         int height,
-        byte[] rgbaBytes)
+        byte[] pixelBytes,
+        DecodedTexturePixelFormat pixelFormat,
+        bool useSrgbReads)
     {
-        fixed (byte* pixels = rgbaBytes)
+        (InternalFormat internalFormat,
+         PixelFormat uploadFormat,
+         PixelType uploadType) = pixelFormat switch
+        {
+            DecodedTexturePixelFormat.Rgba8Unorm =>
+                (useSrgbReads
+                    ? InternalFormat.Srgb8Alpha8
+                    : InternalFormat.Rgba8,
+                 PixelFormat.Rgba,
+                 PixelType.UnsignedByte),
+            DecodedTexturePixelFormat.Rg16Float =>
+                (InternalFormat.RG16f,
+                 PixelFormat.RG,
+                 PixelType.HalfFloat),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(pixelFormat),
+                pixelFormat,
+                null)
+        };
+        fixed (byte* pixels = pixelBytes)
         {
             _gl.TexImage2D(
                 target,
                 level,
-                InternalFormat.Rgba8,
+                internalFormat,
                 checked((uint)width),
                 checked((uint)height),
                 0,
-                PixelFormat.Rgba,
-                PixelType.UnsignedByte,
+                uploadFormat,
+                uploadType,
                 pixels);
         }
     }
@@ -1427,7 +1470,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             blocker = $"TARGET_{texture.Target}_UNSUPPORTED";
             return false;
         }
-        if (!texture.HasCompleteDecodedRgbaPayload)
+        if (!texture.HasCompleteDecodedPayload)
         {
             blocker = "DECODED_RGBA_CHAIN_INCOMPLETE";
             return false;
@@ -1563,6 +1606,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _viewerReflectionEnvironmentStudioEnabled = null;
         DeleteWireframe(_wireframe);
         _wireframe = default;
+        DeleteWireframe(_collisionWireframe);
+        _collisionWireframe = default;
         _state.InvalidateAll();
     }
 
@@ -1677,9 +1722,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private const string WireframeFragmentShaderSource = """
         #version 330 core
         out vec4 FragColor;
+        uniform vec3 uColor;
         void main()
         {
-            FragColor = vec4(0.55, 0.88, 0.22, 1.0);
+            FragColor = vec4(uColor, 1.0);
         }
         """;
 }

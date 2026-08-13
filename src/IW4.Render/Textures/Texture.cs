@@ -10,11 +10,13 @@ public sealed record Texture(
     RsxSamplerState DecodedSamplerState,
     RsxTextureCommandState RsxTextureCommandState,
     bool HasTransparency,
-    byte[] RgbaBytes,
+    byte[] PixelBytes,
     IReadOnlyList<TextureMip> MipLevels,
     TextureTarget Target = TextureTarget.Texture2D,
     IReadOnlyList<TextureCubeFace>? CubeFaces = null,
-    IReadOnlyList<TextureAuthoredSubresource>? AuthoredSubresources = null)
+    IReadOnlyList<TextureAuthoredSubresource>? AuthoredSubresources = null,
+    DecodedTexturePixelFormat PixelFormat =
+        DecodedTexturePixelFormat.Rgba8Unorm)
 {
     public IReadOnlyList<TextureAuthoredSubresource>
         EffectiveAuthoredSubresources => AuthoredSubresources ?? [];
@@ -26,7 +28,7 @@ public sealed record Texture(
     /// or an entirely authored-only texture, independently. Compatibility
     /// backends must check this property before attempting an RGBA upload.
     /// </summary>
-    public bool HasCompleteDecodedRgbaPayload => Target switch
+    public bool HasCompleteDecodedPayload => Target switch
     {
         TextureTarget.Texture2D =>
             HasCompleteDecodedTwoDimensionalPayload(),
@@ -34,6 +36,10 @@ public sealed record Texture(
             HasCompleteDecodedCubePayload(),
         _ => false,
     };
+
+    public bool HasCompleteDecodedRgbaPayload =>
+        PixelFormat == DecodedTexturePixelFormat.Rgba8Unorm &&
+        HasCompleteDecodedPayload;
 
     public string BindingIdentity => string.Join(
         ':',
@@ -45,7 +51,8 @@ public sealed record Texture(
             $"sampler={SamplerState:X2}",
             $"mips={MipLevels.Count}",
             $"cubeFaces={CubeFaces?.Count ?? 0}",
-            $"rgbaBytes={RgbaBytes.Length}",
+            $"pixelFormat={PixelFormat}",
+            $"pixelBytes={PixelBytes.Length}",
             $"authoredSubresources={EffectiveAuthoredSubresources.Count}",
             $"authoredBytes={EffectiveAuthoredSubresources.Sum(value => (long)value.SlicePitchBytes)}",
             $"filter={DecodedSamplerState.RsxTexFilterPayload:X8}",
@@ -73,11 +80,11 @@ public sealed record Texture(
         Action<byte[]> visitor)
     {
         ArgumentNullException.ThrowIfNull(visitor);
-        Add(RgbaBytes);
+        Add(PixelBytes);
         foreach (TextureMip? mip in MipLevels)
         {
             if (mip is not null)
-                Add(mip.RgbaBytes);
+                Add(mip.PixelBytes);
         }
         if (CubeFaces is not null)
         {
@@ -89,7 +96,7 @@ public sealed record Texture(
                 foreach (TextureMip? mip in face.MipLevels)
                 {
                     if (mip is not null)
-                        Add(mip.RgbaBytes);
+                        Add(mip.PixelBytes);
                 }
             }
         }
@@ -103,7 +110,7 @@ public sealed record Texture(
 
     private bool HasCompleteDecodedTwoDimensionalPayload()
     {
-        if (!HasRgbaLength(RgbaBytes, Width, Height) ||
+        if (!HasPixelLength(PixelBytes, Width, Height) ||
             MipLevels is null)
         {
             return false;
@@ -118,7 +125,7 @@ public sealed record Texture(
             if (mip is null ||
                 mip.Width != width ||
                 mip.Height != height ||
-                !HasRgbaLength(mip.RgbaBytes, width, height))
+                !HasPixelLength(mip.PixelBytes, width, height))
             {
                 return false;
             }
@@ -147,7 +154,7 @@ public sealed record Texture(
         for (int layer = 0; layer < faces.Count; layer++)
         {
             TextureCubeFace face = faces[layer];
-            if (!HasRgbaLength(face.RgbaBytes, Width, Height) ||
+            if (!HasPixelLength(face.RgbaBytes, Width, Height) ||
                 face.MipLevels is null ||
                 face.MipLevels.Count != expectedMipCount)
             {
@@ -163,7 +170,7 @@ public sealed record Texture(
                 if (mip is null ||
                     mip.Width != width ||
                     mip.Height != height ||
-                    !HasRgbaLength(mip.RgbaBytes, width, height))
+                    !HasPixelLength(mip.PixelBytes, width, height))
                 {
                     return false;
                 }
@@ -171,8 +178,9 @@ public sealed record Texture(
         }
 
         TextureCubeFace firstFace = faces[0];
-        if (RgbaBytes is null ||
-            !RgbaBytes.AsSpan().SequenceEqual(firstFace.RgbaBytes))
+        if (PixelFormat != DecodedTexturePixelFormat.Rgba8Unorm ||
+            PixelBytes is null ||
+            !PixelBytes.AsSpan().SequenceEqual(firstFace.RgbaBytes))
         {
             return false;
         }
@@ -183,8 +191,8 @@ public sealed record Texture(
             if (topMip is null ||
                 topMip.Width != faceMip.Width ||
                 topMip.Height != faceMip.Height ||
-                topMip.RgbaBytes is null ||
-                !topMip.RgbaBytes.AsSpan().SequenceEqual(faceMip.RgbaBytes))
+                topMip.PixelBytes is null ||
+                !topMip.PixelBytes.AsSpan().SequenceEqual(faceMip.PixelBytes))
             {
                 return false;
             }
@@ -193,7 +201,7 @@ public sealed record Texture(
         return true;
     }
 
-    private static bool HasRgbaLength(
+    private static bool HasPixelLength(
         byte[]? payload,
         int width,
         int height)

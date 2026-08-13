@@ -10,7 +10,7 @@ public sealed record GfxImageStreamData(
     uint LevelSizeAndOffset)
 {
     public const int SerializedSize = 0x08;
-    public const int EntryCount = 4;
+    public const int EntryCount = (int)GfxImageStreamPart.Count;
 
     public int LevelMarker => (int)(LevelSizeAndOffset >> 26);
     public int CumulativeByteCount => (int)(LevelSizeAndOffset & 0x03ffffff);

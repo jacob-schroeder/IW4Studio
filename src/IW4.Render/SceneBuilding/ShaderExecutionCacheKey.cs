@@ -13,7 +13,7 @@ internal readonly record struct ShaderExecutionCacheKey(
     MaterialTechniqueSetAsset? TechniqueSet,
     MaterialPassIdentity Pass,
     MaterialSamplerIdentity PrimarySampler,
-    byte TexCoordSource,
+    MaterialStreamSource TexCoordSource,
     RenderState RenderState,
     ShaderExecutionPurpose Purpose,
     bool AuthoredProgramExecutable,

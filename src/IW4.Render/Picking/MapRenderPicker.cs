@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
 
+using IW4.Assets.Assets.Image;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Materials;
@@ -1432,7 +1433,8 @@ public static class MapRenderPicker
         bool isCameraColorCandidate = material is not null && MaterialPassClassifier.CanSubmitToCameraColor(material.PassClass);
         bool isFallbackMaterialCandidate = material?.PassClass is
             "GenericMaterialFallback" or "MaterialColor" or "AuthoredMaterialCandidate";
-        bool hasColorSemantic = material?.TextureSemantic == 0x02;
+        bool hasColorSemantic = material?.TextureSemantic ==
+            (byte)TextureSemantic.ColorMap;
         float uvArea = hit.TexCoords is { } texCoords ? UvArea(texCoords) : 0f;
         bool hasNonDegenerateUv = uvArea > UvAreaEpsilon;
 
@@ -1590,7 +1592,7 @@ public static class MapRenderPicker
             primarySampler.SamplerArgIndex,
             primarySampler.SamplerDest,
             primarySampler.SamplerHash,
-            primarySampler.TextureSemantic,
+            (byte)primarySampler.TextureSemantic,
             uvRoute.TexCoordSource,
             texture.Name,
             texture.Width,
@@ -1598,8 +1600,8 @@ public static class MapRenderPicker
             texture.Format,
             texture.SamplerState,
             sampler.RsxClampMax,
-            sampler.RsxDescriptorPad0F,
-            sampler.RsxDescriptorPad1B,
+            sampler.MinLodControl,
+            sampler.UseSrgbReads,
             sampler.RsxSamplerCachePayload,
             sampler.RsxTexEnablePayload,
             sampler.RsxTexFilterPayload,
@@ -1622,7 +1624,7 @@ public static class MapRenderPicker
                 layer.Identity.SamplerArgIndex,
                 layer.Identity.SamplerDest,
                 layer.Identity.SamplerHash,
-                layer.Identity.TextureSemantic,
+                (byte)layer.Identity.TextureSemantic,
                 layer.Texture.Name,
                 layer.BlendWeightComponent,
                 layer.UvRoute)).ToArray(),
@@ -1630,7 +1632,7 @@ public static class MapRenderPicker
                 binding.Identity.SamplerArgIndex,
                 binding.Identity.SamplerDest,
                 binding.Identity.SamplerHash,
-                binding.Identity.TextureSemantic,
+                (byte)binding.Identity.TextureSemantic,
                 binding.TextureName,
                 binding.UvRoute)).ToArray(),
             shaderExecution,

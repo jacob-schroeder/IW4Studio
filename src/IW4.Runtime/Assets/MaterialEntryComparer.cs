@@ -39,8 +39,12 @@ internal sealed class MaterialEntryComparer : IComparer<XAssetPoolEntry>
         }
         else
         {
-            comparison = IsSet(second.Material.Info.GameFlags, 0x02)
-                .CompareTo(IsSet(first.Material.Info.GameFlags, 0x02));
+            comparison = IsSet(
+                    second.Material.Info.GameFlags,
+                    MaterialGameFlags.HasLightmap)
+                .CompareTo(IsSet(
+                    first.Material.Info.GameFlags,
+                    MaterialGameFlags.HasLightmap));
         }
         if (comparison != 0)
             return comparison;
@@ -89,7 +93,11 @@ internal sealed class MaterialEntryComparer : IComparer<XAssetPoolEntry>
     }
 
     private static int IsPresent(object? value) => value is null ? 0 : 1;
-    private static bool IsSet(byte value, byte mask) => (value & mask) != 0;
+    private static bool IsSet(MaterialGameFlags value, MaterialGameFlags mask) =>
+        (value & mask) != 0;
+
+    private static bool IsSet(MaterialStateFlags value, MaterialStateFlags mask) =>
+        (value & mask) != 0;
 
     // Compare only the stable argument tail. Code constants compare by their
     // 16-bit source index. Material/literal pixel constants are resolved,
@@ -164,7 +172,7 @@ internal sealed class MaterialEntryComparer : IComparer<XAssetPoolEntry>
             MaterialPostLoadProcessor.GetStandardPrepassSortKey(
                 material,
                 _resolver),
-            IsSet(material.StateFlags, 0x08),
+            IsSet(material.StateFlags, MaterialStateFlags.WritesDepth),
             pass is null
                 ? string.Empty
                 : MaterialPostLoadProcessor.GetShader(
@@ -192,7 +200,7 @@ internal sealed class MaterialEntryComparer : IComparer<XAssetPoolEntry>
         MaterialTechniqueAsset? LitTechnique,
         MaterialTechniqueAsset? EmissiveTechnique,
         MaterialTechniqueAsset? ComparisonTechnique,
-        int StandardPrepassSortKey,
+        MaterialPrepassType StandardPrepassSortKey,
         bool WritesDepth,
         string PixelShaderName,
         string VertexShaderName,

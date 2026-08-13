@@ -100,8 +100,8 @@ internal sealed class ComWorldLinkPlan : AssetLinkPlan
                 light.DefName,
                 light.DefNamePointer.Untyped,
                 $"ComWorld.PrimaryLights[{index}].DefName");
-            writer.WriteByte(light.Type);
-            writer.WriteByte(light.CanUseShadowMap);
+            writer.WriteByte((byte)light.Type);
+            writer.WriteByte(light.CanUseShadowMapRaw);
             writer.WriteByte(light.Exponent);
             writer.WriteByte(light.Unused);
             WriteVec3(writer, light.Color);

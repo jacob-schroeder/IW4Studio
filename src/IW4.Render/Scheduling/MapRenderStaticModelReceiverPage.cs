@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -7,9 +9,9 @@ namespace IW4.Render.Scheduling;
 /// </summary>
 public enum MapRenderStaticModelReceiverPage : byte
 {
-    StaticModelRigidPage2 = (byte)MapRenderSurfaceType.StaticModelRigid,
+    StaticModelRigidPage2 = (byte)GfxDrawSurfSurfaceType.StaticModelRigid,
     StaticModelRigidNoSunShadowPage3 =
-        (byte)MapRenderSurfaceType.StaticModelRigidNoSunShadow,
+        (byte)GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
 
     // Compatibility aliases for the original catalog-local ordinal names.
     // They denote the first and second static receiver pages; they were never
@@ -41,13 +43,14 @@ public static class MapRenderStaticModelReceiverRouting
     /// </summary>
     public static bool CanPrepareAuthoredRegion(
         MapRenderStaticModelReceiverPage page,
-        byte cameraRegion) => (byte)page switch
+        GfxCameraRegionType cameraRegion) => (byte)page switch
     {
         (byte)MapRenderStaticModelReceiverPage.StaticModelRigidPage2 =>
-            cameraRegion == 0,
+            cameraRegion == GfxCameraRegionType.LitOpaque,
         (byte)MapRenderStaticModelReceiverPage
             .StaticModelRigidNoSunShadowPage3 =>
-            cameraRegion is 0 or 4,
+            cameraRegion is GfxCameraRegionType.LitOpaque or
+                GfxCameraRegionType.LightMapOpaque,
         _ => throw new ArgumentOutOfRangeException(nameof(page))
     };
 }

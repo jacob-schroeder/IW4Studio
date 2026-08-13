@@ -10,7 +10,8 @@ public sealed class Sunflare
 {
     public const int SerializedSize = 0x60;
 
-    public uint HasValidData { get; init; }
+    public uint HasValidDataRaw { get; init; }
+    public bool HasValidData => HasValidDataRaw != 0;
     public XPointer<MaterialAsset> SpriteMaterialPointer { get; init; }
     public MaterialAsset? SpriteMaterial { get; init; }
     public XPointer<MaterialAsset> FlareMaterialPointer { get; init; }

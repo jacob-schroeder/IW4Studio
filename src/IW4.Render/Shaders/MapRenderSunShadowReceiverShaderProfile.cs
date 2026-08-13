@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Shaders;
 
@@ -15,11 +16,13 @@ public static class MapRenderSunShadowReceiverShaderProfile
 
     public const ushort ShadowLookupBaseVertexDestination = 24;
 
-    public const ushort SwitchPartitionSourceRow = 0x1E;
+    public const ushort SwitchPartitionSourceRow =
+        (ushort)MaterialConstantSource.ShadowMapSwitchPartition;
 
     public const ushort SwitchPartitionFragmentDestination = 0x0D;
 
-    public const ushort ShadowMapScaleSourceRow = 0x1F;
+    public const ushort ShadowMapScaleSourceRow =
+        (ushort)MaterialConstantSource.ShadowMapScale;
 
     public const ushort ShadowMapScaleFragmentDestination = 0x0E;
 
@@ -77,7 +80,18 @@ public static class MapRenderSunShadowReceiverShaderProfile
         { get; } = [6, 7, 8, 9, 10, 11, 12, 13, 14];
 
     public static ImmutableArray<ushort> FragmentConstantSourceRows
-        { get; } = [0x00, 0x01, 0x02, 0x25, 0x27, 0x2A, 0x28, 0x1E, 0x1F];
+        { get; } =
+        [
+            (ushort)MaterialConstantSource.LightPosition,
+            (ushort)MaterialConstantSource.LightDiffuse,
+            (ushort)MaterialConstantSource.LightSpecular,
+            (ushort)MaterialConstantSource.FogColorLinear,
+            (ushort)MaterialConstantSource.FogSunConstants,
+            (ushort)MaterialConstantSource.FogSunDirection,
+            (ushort)MaterialConstantSource.FogSunColorLinear,
+            (ushort)MaterialConstantSource.ShadowMapSwitchPartition,
+            (ushort)MaterialConstantSource.ShadowMapScale
+        ];
 
     public static ImmutableArray<int> FragmentConstantPatchSiteCounts
         { get; } = [2, 1, 1, 2, 2, 1, 1, 1, 1];
@@ -162,8 +176,11 @@ public static class MapRenderSunShadowReceiverShaderProfile
                 binding.Destination !=
                     FragmentConstantDestinations[index] ||
                 binding.CodeIndex != FragmentConstantSourceRows[index] ||
-                binding.ArgumentRaw !=
-                    ((FragmentConstantSourceRows[index] << 16) | 1) ||
+                binding.ArgumentRaw != new MaterialCodeConstantArgument(
+                    (MaterialConstantSource)
+                        FragmentConstantSourceRows[index],
+                    FirstRow: 0,
+                    RowCount: 1).Raw ||
                 binding.PatchSites.Length !=
                     FragmentConstantPatchSiteCounts[index])
             {

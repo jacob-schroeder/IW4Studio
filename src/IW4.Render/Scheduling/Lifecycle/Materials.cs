@@ -41,7 +41,7 @@ public sealed record MapRenderNormalCameraMaterialAssetContract
         string techniqueSetName,
         string techniqueName,
         int techniqueSlot,
-        ushort techniqueFlags,
+        MaterialTechniqueFlags techniqueFlags,
         string vertexShaderName,
         string pixelShaderName,
         uint stateBits0,
@@ -81,7 +81,7 @@ public sealed record MapRenderNormalCameraMaterialAssetContract
 
     public int TechniqueSlot { get; }
 
-    public ushort TechniqueFlags { get; }
+    public MaterialTechniqueFlags TechniqueFlags { get; }
 
     public int PassCount => 1;
 

@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution.Fog;
 using IW4.Render.Shaders;
 
@@ -17,46 +18,67 @@ internal readonly record struct ClipSpaceLookupCodeConstants(
 /// </summary>
 internal static class FrameDirectCodeConstants
 {
-    internal const ushort DirectionalLightDirectionRowIndex = 0x00;
-    internal const ushort DirectionalLightDiffuseRowIndex = 0x01;
-    internal const ushort DirectionalLightSpecularRowIndex = 0x02;
+    internal const ushort DirectionalLightDirectionRowIndex =
+        (ushort)MaterialConstantSource.LightPosition;
+    internal const ushort DirectionalLightDiffuseRowIndex =
+        (ushort)MaterialConstantSource.LightDiffuse;
+    internal const ushort DirectionalLightSpecularRowIndex =
+        (ushort)MaterialConstantSource.LightSpecular;
     // Registered default: r_diffuseColorScale=1.0.
     internal const float DefaultDiffuseColorScale = 1.0f;
     // Registered default: r_specularColorScale=2.5.
     internal const float DefaultSpecularColorScale = 2.5f;
-    internal const int GameTimeRowIndex = 0x07;
+    internal const int GameTimeRowIndex =
+        (int)MaterialConstantSource.GameTime;
     internal const float GameTimeWrapSeconds = 43200.0f;
 
     // PS3 R_SetupSunShadowMaps publishes these two rows with the same
     // projection revision as the shadow lookup matrix and atlas contents.
     // They deliberately have no source-initialization value: treating either
     // row as zero before that projection exists changes cascade selection.
-    internal const ushort SunShadowSwitchPartitionRowIndex = 0x1E;
-    internal const ushort SunShadowMapScaleRowIndex = 0x1F;
-    internal const ushort ZNearRowIndex = 0x20;
+    internal const ushort SunShadowSwitchPartitionRowIndex =
+        (ushort)MaterialConstantSource.ShadowMapSwitchPartition;
+    internal const ushort SunShadowMapScaleRowIndex =
+        (ushort)MaterialConstantSource.ShadowMapScale;
+    internal const ushort ZNearRowIndex =
+        (ushort)MaterialConstantSource.ZNear;
     internal const float ZNearScale = 0.984375f;
 
     // Sampling transform for the 512x256x4 model-lighting program image.
-    internal const ushort ModelLightingSamplerRowIndex = 0x21;
-    internal const ushort StaticModelBaseLightingCoordsRowIndex = 0x39;
+    internal const ushort ModelLightingSamplerRowIndex =
+        (ushort)MaterialConstantSource.LightingLookupScale;
+    internal const ushort MaterialColorRowIndex =
+        (ushort)MaterialConstantSource.MaterialColor;
+    internal const ushort StaticModelBaseLightingCoordsRowIndex =
+        (ushort)MaterialConstantSource.BaseLightingCoords;
     // The static-model light-probe path uploads this row from the draw-instance
     // GroundLighting value (or its light-grid-derived runtime equivalent)
     // immediately before the Event22 draw.
-    internal const ushort StaticModelLightProbeAmbientRowIndex = 0x3A;
+    internal const ushort StaticModelLightProbeAmbientRowIndex =
+        (ushort)MaterialConstantSource.LightProbeAmbient;
 
     // R_UpdateViewport writes these from the active render-target extent and
     // viewport. PS3's direct-table indices differ from the correlated desktop
     // IW4 names, but the fastfile arguments establish rows 0x3E/0x3F.
-    internal const ushort ClipSpaceLookupScaleRowIndex = 0x3E;
-    internal const ushort ClipSpaceLookupOffsetRowIndex = 0x3F;
+    internal const ushort ClipSpaceLookupScaleRowIndex =
+        (ushort)MaterialConstantSource.ClipSpaceLookupScale;
+    internal const ushort ClipSpaceLookupOffsetRowIndex =
+        (ushort)MaterialConstantSource.ClipSpaceLookupOffset;
 
-    internal const ushort FogRowIndex = 0x24;
-    internal const ushort FogColorLinearRowIndex = 0x25;
-    internal const ushort FogColorGammaRowIndex = 0x26;
-    internal const ushort SunFogConstantsRowIndex = 0x27;
-    internal const ushort SunFogColorLinearRowIndex = 0x28;
-    internal const ushort SunFogColorGammaRowIndex = 0x29;
-    internal const ushort SunFogDirectionRowIndex = 0x2A;
+    internal const ushort FogRowIndex =
+        (ushort)MaterialConstantSource.Fog;
+    internal const ushort FogColorLinearRowIndex =
+        (ushort)MaterialConstantSource.FogColorLinear;
+    internal const ushort FogColorGammaRowIndex =
+        (ushort)MaterialConstantSource.FogColorGamma;
+    internal const ushort SunFogConstantsRowIndex =
+        (ushort)MaterialConstantSource.FogSunConstants;
+    internal const ushort SunFogColorLinearRowIndex =
+        (ushort)MaterialConstantSource.FogSunColorLinear;
+    internal const ushort SunFogColorGammaRowIndex =
+        (ushort)MaterialConstantSource.FogSunColorGamma;
+    internal const ushort SunFogDirectionRowIndex =
+        (ushort)MaterialConstantSource.FogSunDirection;
 
     private const float TwoPi = 6.283185482025146484375f;
 
@@ -71,7 +93,7 @@ internal static class FrameDirectCodeConstants
         // Row 0x05 uses scalar initialization even when the normal-view caller
         // supplies its input table.
         new(
-            0x05,
+            (int)MaterialConstantSource.LightFalloffPlacement,
             new ShaderConstantValue(
                 float.MaxValue,
                 float.MaxValue,
@@ -82,7 +104,7 @@ internal static class FrameDirectCodeConstants
         // preserves the copied view-input zero instead of taking the scalar
         // sentinel branch.
         new(
-            0x23,
+            MaterialColorRowIndex,
             new ShaderConstantValue(
                 0.0f,
                 0.0f,

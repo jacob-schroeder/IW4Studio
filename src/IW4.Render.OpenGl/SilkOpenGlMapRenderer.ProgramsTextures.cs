@@ -698,7 +698,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
         }
 
-        if (!texture.HasCompleteDecodedRgbaPayload)
+        if (!texture.HasCompleteDecodedPayload)
             return false;
 
         faceCount = texture.Target ==
@@ -754,7 +754,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
         else
         {
-            UploadDecodedRgbaStorageBound(entry);
+            UploadDecodedTextureStorageBound(entry);
         }
 
         _textureParameters.Apply(
@@ -768,7 +768,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         OpenGlAuthoredBcUploadPlan plan)
     {
         InternalFormat internalFormat =
-            ToGlCompressedInternalFormat(plan.BlockCompression);
+            ToGlCompressedInternalFormat(
+                plan.BlockCompression,
+                entry.Source.DecodedSamplerState.UsesSrgbReads);
         for (int face = 0; face < plan.FaceCount; face++)
         {
             TextureTarget uploadTarget = plan.FaceCount == 6
@@ -796,11 +798,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private void UploadDecodedRgbaStorageBound(
+    private void UploadDecodedTextureStorageBound(
         MapRenderOpenGlTextureResidencyEntry entry)
     {
         Texture texture =
-            ResolveDecodedRgbaUploadTexture(entry);
+            ResolveDecodedUploadTexture(entry);
         if (texture.Target == RenderTextureTarget.TextureCube)
         {
             if (texture.CubeFaces is not { Count: 6 } cubeFaces)
@@ -816,23 +818,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 TextureTarget faceTarget = (TextureTarget)(
                     (int)TextureTarget.TextureCubeMapPositiveX +
                     faceIndex);
-                UploadDecodedRgbaLevelBound(
+                UploadDecodedTextureLevelBound(
                     faceTarget,
                     level: 0,
                     texture.Width,
                     texture.Height,
-                    face.RgbaBytes);
+                    face.RgbaBytes,
+                    texture.PixelFormat,
+                    texture.DecodedSamplerState.UsesSrgbReads);
                 for (int level = 0;
                      level < face.MipLevels.Count;
                      level++)
                 {
                     TextureMip mip = face.MipLevels[level];
-                    UploadDecodedRgbaLevelBound(
+                    UploadDecodedTextureLevelBound(
                         faceTarget,
                         checked(level + 1),
                         mip.Width,
                         mip.Height,
-                        mip.RgbaBytes);
+                        mip.PixelBytes,
+                        texture.PixelFormat,
+                        texture.DecodedSamplerState.UsesSrgbReads);
                 }
             }
             if (texture.MipLevels.Count == 0 &&
@@ -843,23 +849,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return;
         }
 
-        UploadDecodedRgbaLevelBound(
+        UploadDecodedTextureLevelBound(
             TextureTarget.Texture2D,
             level: 0,
             texture.Width,
             texture.Height,
-            texture.RgbaBytes);
+            texture.PixelBytes,
+            texture.PixelFormat,
+            texture.DecodedSamplerState.UsesSrgbReads);
         for (int level = 0;
              level < texture.MipLevels.Count;
              level++)
         {
             TextureMip mip = texture.MipLevels[level];
-            UploadDecodedRgbaLevelBound(
+            UploadDecodedTextureLevelBound(
                 TextureTarget.Texture2D,
                 checked(level + 1),
                 mip.Width,
                 mip.Height,
-                mip.RgbaBytes);
+                mip.PixelBytes,
+                texture.PixelFormat,
+                texture.DecodedSamplerState.UsesSrgbReads);
         }
         if (texture.MipLevels.Count == 0 &&
             entry.StorageLevelCount > 1)
@@ -868,10 +878,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private Texture ResolveDecodedRgbaUploadTexture(
+    private Texture ResolveDecodedUploadTexture(
         MapRenderOpenGlTextureResidencyEntry entry)
     {
-        if (entry.Source.HasCompleteDecodedRgbaPayload)
+        if (entry.Source.HasCompleteDecodedPayload)
             return entry.Source;
         if (entry.DecodedAuthoredBcFallback is { } cachedFallback)
             return cachedFallback;
@@ -916,7 +926,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
             Texture result = source with
             {
-                RgbaBytes = top,
+                PixelBytes = top,
                 MipLevels = mips,
                 CubeFaces = null
             };
@@ -957,7 +967,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         TextureCubeFace firstFace = faces[0];
         Texture cubeResult = source with
         {
-            RgbaBytes = firstFace.RgbaBytes,
+            PixelBytes = firstFace.RgbaBytes,
             MipLevels = firstFace.MipLevels,
             CubeFaces = faces
         };
@@ -983,24 +993,45 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private void UploadDecodedRgbaLevelBound(
+    private void UploadDecodedTextureLevelBound(
         TextureTarget target,
         int level,
         int width,
         int height,
-        byte[] rgbaBytes)
+        byte[] pixelBytes,
+        DecodedTexturePixelFormat pixelFormat,
+        bool useSrgbReads)
     {
-        fixed (byte* pixelPtr = rgbaBytes)
+        (InternalFormat internalFormat,
+         PixelFormat uploadFormat,
+         PixelType uploadType) = pixelFormat switch
+        {
+            DecodedTexturePixelFormat.Rgba8Unorm =>
+                (useSrgbReads
+                    ? InternalFormat.Srgb8Alpha8
+                    : InternalFormat.Rgba8,
+                 PixelFormat.Rgba,
+                 PixelType.UnsignedByte),
+            DecodedTexturePixelFormat.Rg16Float =>
+                (InternalFormat.RG16f,
+                 PixelFormat.RG,
+                 PixelType.HalfFloat),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(pixelFormat),
+                pixelFormat,
+                null)
+        };
+        fixed (byte* pixelPtr = pixelBytes)
         {
             _gl.TexImage2D(
                 target,
                 level,
-                InternalFormat.Rgba8,
+                internalFormat,
                 checked((uint)width),
                 checked((uint)height),
                 border: 0,
-                PixelFormat.Rgba,
-                PixelType.UnsignedByte,
+                uploadFormat,
+                uploadType,
                 pixelPtr);
         }
     }
@@ -1033,15 +1064,22 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static InternalFormat ToGlCompressedInternalFormat(
-        AuthoredBlockCompression compression) =>
-        compression switch
+        AuthoredBlockCompression compression,
+        bool useSrgbReads) =>
+        (compression, useSrgbReads) switch
         {
-            AuthoredBlockCompression.Bc1 =>
+            (AuthoredBlockCompression.Bc1, false) =>
                 InternalFormat.CompressedRgbaS3TCDxt1Ext,
-            AuthoredBlockCompression.Bc2 =>
+            (AuthoredBlockCompression.Bc2, false) =>
                 InternalFormat.CompressedRgbaS3TCDxt3Ext,
-            AuthoredBlockCompression.Bc3 =>
+            (AuthoredBlockCompression.Bc3, false) =>
                 InternalFormat.CompressedRgbaS3TCDxt5Ext,
+            (AuthoredBlockCompression.Bc1, true) =>
+                InternalFormat.CompressedSrgbAlphaS3TCDxt1Ext,
+            (AuthoredBlockCompression.Bc2, true) =>
+                InternalFormat.CompressedSrgbAlphaS3TCDxt3Ext,
+            (AuthoredBlockCompression.Bc3, true) =>
+                InternalFormat.CompressedSrgbAlphaS3TCDxt5Ext,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(compression),
                 compression,

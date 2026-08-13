@@ -34,49 +34,60 @@ internal static class DecodedTextureResourceSnapshotFactory
             out _) == true && streamMips.Count != 0;
         var subresources = new List<DecodedTextureSubresourceSnapshot>();
         string? format = null;
+        DecodedTexturePixelFormat? pixelFormat = null;
+        bool hasTransparency = false;
         if (hasStream)
         {
             for (int mipLevel = 0; mipLevel < streamMips.Count; mipLevel++)
             {
                 GfxImagePayload mip = streamMips[mipLevel];
-                if (!GfxImageDecoder.TryDecodeRgba(
+                if (!GfxImageDecoder.TryDecodeTexture(
                         image,
                         mip.Payload,
                         mip.Width,
                         mip.Height,
-                        out DecodedRgbaGfxImage decodedMip,
+                        out DecodedTextureImage decodedMip,
                         out reason))
                 {
                     return false;
                 }
                 format ??= decodedMip.Format;
+                pixelFormat ??= decodedMip.PixelFormat;
+                if (pixelFormat != decodedMip.PixelFormat)
+                {
+                    reason = "Decoded mip chain changed pixel format.";
+                    return false;
+                }
+                hasTransparency |= decodedMip.HasTransparency;
                 subresources.Add(new DecodedTextureSubresourceSnapshot(
                     0,
                     mipLevel,
                     decodedMip.Width,
                     decodedMip.Height,
-                    decodedMip.RgbaBytes));
+                    decodedMip.PixelBytes));
             }
         }
         else
         {
-            if (!GfxImageDecoder.TryDecodeRgba(
+            if (!GfxImageDecoder.TryDecodeTexture(
                     image,
                     image.PayloadBytes,
                     image.Width,
                     image.Height,
-                    out DecodedRgbaGfxImage decoded,
+                    out DecodedTextureImage decoded,
                     out reason))
             {
                 return false;
             }
             format = decoded.Format;
+            pixelFormat = decoded.PixelFormat;
+            hasTransparency = decoded.HasTransparency;
             subresources.Add(new DecodedTextureSubresourceSnapshot(
                 0,
                 0,
                 decoded.Width,
                 decoded.Height,
-                decoded.RgbaBytes));
+                decoded.PixelBytes));
         }
 
         resource = new DecodedTextureResourceSnapshot(
@@ -84,7 +95,9 @@ internal static class DecodedTextureResourceSnapshotFactory
             TextureSamplerShape.TwoDimensional,
             format ?? throw new InvalidOperationException(
                 "A decoded 2D texture lost its format identity."),
-            subresources.Any(subresource => HasTransparency(subresource.RgbaBytes)),
+            pixelFormat ?? throw new InvalidOperationException(
+                "A decoded 2D texture lost its pixel-format identity."),
+            hasTransparency,
             subresources);
         reason = string.Empty;
         return true;
@@ -148,7 +161,7 @@ internal static class DecodedTextureResourceSnapshotFactory
                         mip,
                         source.Width,
                         source.Height,
-                        source.RgbaBytes));
+                        source.PixelBytes));
                 }
             }
         }
@@ -164,7 +177,7 @@ internal static class DecodedTextureResourceSnapshotFactory
                         mip,
                         source.Width,
                         source.Height,
-                        source.RgbaBytes));
+                        source.PixelBytes));
                 }
             }
         }
@@ -174,20 +187,11 @@ internal static class DecodedTextureResourceSnapshotFactory
             image.Name ?? "unnamed_cube",
             TextureSamplerShape.Cube,
             top.Format,
+            DecodedTexturePixelFormat.Rgba8Unorm,
             decodedLevels.Any(level => level.HasTransparency),
             subresources);
         reason = string.Empty;
         return true;
-    }
-
-    private static bool HasTransparency(IReadOnlyList<byte> rgba)
-    {
-        for (int index = 3; index < rgba.Count; index += 4)
-        {
-            if (rgba[index] != byte.MaxValue)
-                return true;
-        }
-        return false;
     }
 
     private static bool ThrowUnknownShape(

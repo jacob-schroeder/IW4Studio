@@ -415,8 +415,8 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
             image.MapType,
             image.DimensionCount,
             image.MultiFaceControl,
-            image.Pad0F,
-            image.Pad1B);
+            image.MinLodControl,
+            image.UseSrgbReads);
     }
 
     private static UiMaterialQuad CreateUnitQuad()

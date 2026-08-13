@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Geometry;
 
@@ -10,7 +11,7 @@ internal static class VertexElementDecoder
         IReadOnlyList<byte> bytes,
         int offset,
         byte componentCount,
-        byte rsxType,
+        RsxVertexElementType rsxType,
         int componentA,
         int componentB,
         out float u,
@@ -27,7 +28,7 @@ internal static class VertexElementDecoder
 
         switch (rsxType)
         {
-            case 0x02: // V32_FLOAT, use XY components.
+            case RsxVertexElementType.Float32:
                 int floatOffsetA = offset + componentA * sizeof(float);
                 int floatOffsetB = offset + componentB * sizeof(float);
                 if (floatOffsetA + sizeof(float) > bytes.Count ||
@@ -37,7 +38,7 @@ internal static class VertexElementDecoder
                 v = ReadSingleBigEndian(bytes, floatOffsetB);
                 return true;
 
-            case 0x03: // V16_FLOAT, use half-float XY components.
+            case RsxVertexElementType.Float16:
                 int halfOffsetA = offset + componentA * sizeof(ushort);
                 int halfOffsetB = offset + componentB * sizeof(ushort);
                 if (halfOffsetA + sizeof(ushort) > bytes.Count ||

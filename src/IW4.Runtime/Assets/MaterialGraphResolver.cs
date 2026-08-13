@@ -157,7 +157,8 @@ internal sealed class MaterialGraphResolver
 
         XPointer<string> namePointer = ReadPointer<string>(
             root, 0, XPointerResolutionMode.Direct, address);
-        ushort flags = BinaryPrimitives.ReadUInt16BigEndian(root.AsSpan(4, 2));
+        var flags = (MaterialTechniqueFlags)BinaryPrimitives.ReadUInt16BigEndian(
+            root.AsSpan(4, 2));
         ushort passCount = BinaryPrimitives.ReadUInt16BigEndian(root.AsSpan(6, 2));
         if (passCount > 128)
             return null;
@@ -190,8 +191,10 @@ internal sealed class MaterialGraphResolver
                 PerPrimArgCount = pass[12],
                 PerObjArgCount = pass[13],
                 StableArgCount = pass[14],
-                CustomSamplerFlags = pass[15],
-                PrecompiledIndex = pass[16],
+                CustomSamplerFlags =
+                    (MaterialCustomSamplerFlags)pass[15],
+                PrecompiledVertexShader =
+                    (MaterialPrecompiledVertexShader)pass[16],
                 ArgsPointer = ReadPointer<MaterialShaderArgumentAsset[]>(
                     pass, 20, XPointerResolutionMode.Direct, passAddress)
             };

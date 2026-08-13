@@ -1,46 +1,13 @@
-namespace IW4.Render.Execution;
+using IW4.Assets.Assets.TechniqueSet;
 
-/// <summary>
-/// Exact IW4 <c>MaterialTextureSource</c> values used by
-/// <c>CodePixelSampler</c> arguments.
-/// </summary>
-public enum CodePixelSamplerSource : uint
-{
-    Black = 0,
-    White = 1,
-    IdentityNormalMap = 2,
-    ModelLighting = 3,
-    LightmapPrimary = 4,
-    LightmapSecondary = 5,
-    ShadowmapSun = 6,
-    ShadowmapSpot = 7,
-    Feedback = 8,
-    ResolvedPostSun = 9,
-    ResolvedScene = 10,
-    PostEffect0 = 11,
-    PostEffect1 = 12,
-    LightAttenuation = 13,
-    Outdoor = 14,
-    FloatZ = 15,
-    ProcessedFloatZ = 16,
-    RawFloatZ = 17,
-    HalfParticles = 18,
-    HalfParticlesZ = 19,
-    CaseTexture = 20,
-    CinematicY = 21,
-    CinematicCr = 22,
-    CinematicCb = 23,
-    CinematicA = 24,
-    ReflectionProbe = 25,
-    AlternateScene = 26
-}
+namespace IW4.Render.Execution;
 
 /// <summary>
 /// One authored code-sampler ABI entry. Runtime ownership is present only
 /// after the renderer has a concrete publication contract for that source.
 /// </summary>
 public sealed record CodePixelSamplerAbiEntry(
-    CodePixelSamplerSource Source,
+    MaterialTextureSource Source,
     string AuthoredName,
     string ResourceIdentity,
     string TextureTarget,
@@ -72,16 +39,16 @@ public static class CodePixelSamplerAbi
         Catalog = Array.AsReadOnly(
         [
             Entry(
-                CodePixelSamplerSource.Black,
+                MaterialTextureSource.Black,
                 "TEXTURE_SRC_CODE_BLACK"),
             Entry(
-                CodePixelSamplerSource.White,
+                MaterialTextureSource.White,
                 "TEXTURE_SRC_CODE_WHITE"),
             Entry(
-                CodePixelSamplerSource.IdentityNormalMap,
+                MaterialTextureSource.IdentityNormalMap,
                 "TEXTURE_SRC_CODE_IDENTITY_NORMAL_MAP"),
             Entry(
-                CodePixelSamplerSource.ModelLighting,
+                MaterialTextureSource.ModelLighting,
                 "TEXTURE_SRC_CODE_MODEL_LIGHTING",
                 resourceIdentity: "modelLightingSampler",
                 textureTarget: "Texture3D",
@@ -91,13 +58,13 @@ public static class CodePixelSamplerAbi
                     ShaderRuntimeSamplerRequirementStatus
                     .ImmutableSceneAtlasRequired),
             Entry(
-                CodePixelSamplerSource.LightmapPrimary,
+                MaterialTextureSource.LightmapPrimary,
                 "TEXTURE_SRC_CODE_LIGHTMAP_PRIMARY"),
             Entry(
-                CodePixelSamplerSource.LightmapSecondary,
+                MaterialTextureSource.LightmapSecondary,
                 "TEXTURE_SRC_CODE_LIGHTMAP_SECONDARY"),
             Entry(
-                CodePixelSamplerSource.ShadowmapSun,
+                MaterialTextureSource.ShadowMapSun,
                 "TEXTURE_SRC_CODE_SHADOWMAP_SUN",
                 resourceIdentity: "shadowmapSamplerSun",
                 textureTarget: "Texture2DShadow",
@@ -107,35 +74,35 @@ public static class CodePixelSamplerAbi
                     ShaderRuntimeSamplerRequirementStatus
                     .SameRevisionAtlasRequired),
             Entry(
-                CodePixelSamplerSource.ShadowmapSpot,
+                MaterialTextureSource.ShadowMapSpot,
                 "TEXTURE_SRC_CODE_SHADOWMAP_SPOT",
                 textureTarget: "Texture2DShadow"),
             Entry(
-                CodePixelSamplerSource.Feedback,
+                MaterialTextureSource.Feedback,
                 "TEXTURE_SRC_CODE_FEEDBACK"),
             Entry(
-                CodePixelSamplerSource.ResolvedPostSun,
+                MaterialTextureSource.ResolvedPostSun,
                 "TEXTURE_SRC_CODE_RESOLVED_POST_SUN"),
             Entry(
-                CodePixelSamplerSource.ResolvedScene,
+                MaterialTextureSource.ResolvedScene,
                 "TEXTURE_SRC_CODE_RESOLVED_SCENE"),
             Entry(
-                CodePixelSamplerSource.PostEffect0,
+                MaterialTextureSource.PostEffect0,
                 "TEXTURE_SRC_CODE_POST_EFFECT_0"),
             Entry(
-                CodePixelSamplerSource.PostEffect1,
+                MaterialTextureSource.PostEffect1,
                 "TEXTURE_SRC_CODE_POST_EFFECT_1"),
             Entry(
-                CodePixelSamplerSource.LightAttenuation,
+                MaterialTextureSource.LightAttenuation,
                 "TEXTURE_SRC_CODE_LIGHT_ATTENUATION"),
             Entry(
-                CodePixelSamplerSource.Outdoor,
+                MaterialTextureSource.Outdoor,
                 "TEXTURE_SRC_CODE_OUTDOOR"),
             Entry(
-                CodePixelSamplerSource.FloatZ,
+                MaterialTextureSource.FloatZ,
                 "TEXTURE_SRC_CODE_FLOATZ"),
             Entry(
-                CodePixelSamplerSource.ProcessedFloatZ,
+                MaterialTextureSource.ProcessedFloatZ,
                 "TEXTURE_SRC_CODE_PROCESSED_FLOATZ",
                 resourceIdentity: "processedFloatZ",
                 textureTarget: "Texture2D",
@@ -145,35 +112,35 @@ public static class CodePixelSamplerAbi
                     ShaderRuntimeSamplerRequirementStatus
                     .SameRevisionTextureRequired),
             Entry(
-                CodePixelSamplerSource.RawFloatZ,
+                MaterialTextureSource.RawFloatZ,
                 "TEXTURE_SRC_CODE_RAW_FLOATZ"),
             Entry(
-                CodePixelSamplerSource.HalfParticles,
+                MaterialTextureSource.HalfParticles,
                 "TEXTURE_SRC_CODE_HALF_PARTICLES"),
             Entry(
-                CodePixelSamplerSource.HalfParticlesZ,
+                MaterialTextureSource.HalfParticlesZ,
                 "TEXTURE_SRC_CODE_HALF_PARTICLES_Z"),
             Entry(
-                CodePixelSamplerSource.CaseTexture,
+                MaterialTextureSource.CaseTexture,
                 "TEXTURE_SRC_CODE_CASE_TEXTURE"),
             Entry(
-                CodePixelSamplerSource.CinematicY,
+                MaterialTextureSource.CinematicY,
                 "TEXTURE_SRC_CODE_CINEMATIC_Y"),
             Entry(
-                CodePixelSamplerSource.CinematicCr,
+                MaterialTextureSource.CinematicCr,
                 "TEXTURE_SRC_CODE_CINEMATIC_CR"),
             Entry(
-                CodePixelSamplerSource.CinematicCb,
+                MaterialTextureSource.CinematicCb,
                 "TEXTURE_SRC_CODE_CINEMATIC_CB"),
             Entry(
-                CodePixelSamplerSource.CinematicA,
+                MaterialTextureSource.CinematicA,
                 "TEXTURE_SRC_CODE_CINEMATIC_A"),
             Entry(
-                CodePixelSamplerSource.ReflectionProbe,
+                MaterialTextureSource.ReflectionProbe,
                 "TEXTURE_SRC_CODE_REFLECTION_PROBE",
                 textureTarget: "TextureCube"),
             Entry(
-                CodePixelSamplerSource.AlternateScene,
+                MaterialTextureSource.AlternateScene,
                 "TEXTURE_SRC_CODE_ALTERNATE_SCENE")
         ]);
 
@@ -199,12 +166,21 @@ public static class CodePixelSamplerAbi
         return false;
     }
 
+    public static bool TryResolve(
+        MaterialTextureSource source,
+        out CodePixelSamplerAbiEntry entry) =>
+        TryResolve((uint)source, out entry);
+
     internal static bool HasRuntimeRequirement(uint argument) =>
         TryResolve(argument, out CodePixelSamplerAbiEntry entry) &&
         entry.HasRuntimeRequirement;
 
+    internal static bool HasRuntimeRequirement(MaterialTextureSource source) =>
+        TryResolve(source, out CodePixelSamplerAbiEntry entry) &&
+        entry.HasRuntimeRequirement;
+
     private static CodePixelSamplerAbiEntry Entry(
-        CodePixelSamplerSource source,
+        MaterialTextureSource source,
         string authoredName,
         string? resourceIdentity = null,
         string textureTarget = "Texture2D",

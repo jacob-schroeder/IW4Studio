@@ -1,16 +1,19 @@
 namespace IW4.Render.Textures;
 
 /// <summary>
-/// Decodes the low 16 bits of the RSX SET_TEXTURE_CONTROL1 payload.
-/// The four two-bit source and control tables are ordered A-R-G-B.
-///
+/// Decodes the format-aware low 16 bits of the RSX SET_TEXTURE_CONTROL1
+/// payload. The four two-bit source and control tables are ordered A-R-G-B.
 /// </summary>
 public static class RsxTextureSwizzleDecoder
 {
     public const uint IdentityPayload = 0x0000AAE4;
 
-    public static RsxTextureSwizzle Decode(uint payload)
+    public static RsxTextureSwizzle Decode(
+        RsxTextureCommandState commandState)
     {
+        ArgumentNullException.ThrowIfNull(commandState);
+        ushort payload = commandState.TextureRemap
+            .EffectiveComponentEncoding(commandState.Format.BaseFormat);
         // RSX output slots are A=0, R=1, G=2, B=3. Rendering intent retains
         // the resulting swizzle in canonical R-G-B-A component order.
         return new RsxTextureSwizzle(

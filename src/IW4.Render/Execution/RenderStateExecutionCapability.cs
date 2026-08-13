@@ -27,13 +27,13 @@ public static class RenderStateExecutionCapability
                 $"renderStateCull=unsupportedTuple(" +
                 $"enabled={state.CullEnabled},face=0x{state.CullFace:X4})");
         }
-        if (state.PolygonMode is not 0x1B01u and not 0x1B02u)
+        if (!Enum.IsDefined(state.PolygonMode))
         {
             blockers.Add(
                 $"renderStatePolygonMode=unsupportedTuple(0x{state.PolygonMode:X4})");
         }
         if (state.DepthTestEnabled &&
-            state.DepthFunc is < 0x0200u or > 0x0207u)
+            !Enum.IsDefined(state.DepthFunc))
         {
             blockers.Add(
                 $"renderStateDepthFunc=unsupportedTuple(0x{state.DepthFunc:X4})");
@@ -48,6 +48,18 @@ public static class RenderStateExecutionCapability
         {
             blockers.Add(
                 "renderStateStencilMrtWriteMaskAndFaceConvention=OPEN");
+        }
+        if (!Enum.IsDefined(state.PolygonOffsetMode))
+        {
+            blockers.Add(
+                $"renderStatePolygonOffset=unsupportedMode({(byte)state.PolygonOffsetMode})");
+        }
+        else if (state.PolygonOffsetMode ==
+                     RenderPolygonOffsetMode.Explicit &&
+                 (!float.IsFinite(state.PolygonOffsetFactor) ||
+                  !float.IsFinite(state.PolygonOffsetUnits)))
+        {
+            blockers.Add("renderStatePolygonOffset=NONFINITE");
         }
 
         return blockers.ToArray();

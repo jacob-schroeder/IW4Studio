@@ -12,8 +12,10 @@ public static class EditorPreviewTechniquePolicy
     // These slots are the standard lit and emissive comparison slots used by
     // the PS3 material post-load path. EditorPreview tries them before
     // the remaining authored slots, but still requires a camera-color pass.
-    public const int PreferredLitTechniqueSlot = 9;
-    public const int PreferredEmissiveTechniqueSlot = 5;
+    public const int PreferredLitTechniqueSlot =
+        (int)MaterialTechniqueType.Lit;
+    public const int PreferredEmissiveTechniqueSlot =
+        (int)MaterialTechniqueType.Emissive;
 
     public static IReadOnlyList<int> OrderCandidateSlots(
         IReadOnlyList<MaterialTechniqueSlot> techniqueSlots)

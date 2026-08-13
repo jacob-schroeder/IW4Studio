@@ -25,7 +25,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
     {
         MaterialInfo info = definition.Info ?? throw new InvalidDataException(
             "Material.Info cannot be null.");
-        if (info.SortKey >= 0x40)
+        if ((byte)info.SortKey >= 0x40)
         {
             throw new InvalidDataException(
                 "Material.SortKey must fit the engine's six-bit post-load field.");
@@ -91,21 +91,21 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
 
         var writer = new LinkTemplateWriter(MaterialAsset.SerializedSize);
         writer.Skip(sizeof(int));
-        writer.WriteByte(info.GameFlags);
-        writer.WriteByte(info.SortKey);
+        writer.WriteByte((byte)info.GameFlags);
+        writer.WriteByte((byte)info.SortKey);
         writer.WriteByte(info.TextureAtlasRowCount);
         writer.WriteByte(info.TextureAtlasColumnCount);
         writer.WriteUInt32(0);
         writer.WriteUInt32(0);
-        writer.WriteUInt32(info.SurfaceTypeBits);
+        writer.WriteUInt32((uint)info.SurfaceTypeBits);
         writer.WriteUInt16(info.HashIndex);
         writer.WriteUInt16(info.Pad16);
         writer.WriteBytes(stateBitsEntries);
         writer.WriteByte(checked((byte)textures.Length));
         writer.WriteByte(checked((byte)constants.Length));
         writer.WriteByte(checked((byte)stateBits.Length));
-        writer.WriteByte(definition.StateFlags);
-        writer.WriteByte(definition.CameraRegion);
+        writer.WriteByte((byte)definition.StateFlags);
+        writer.WriteByte((byte)definition.CameraRegion);
         writer.WriteByte(checked((byte)xstrings.Length));
         writer.WriteByte(definition.Pad43);
         writer.Skip(MaterialAsset.TechniqueSlotCount * sizeof(ushort));
@@ -219,15 +219,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
 
         var values = new byte[source.Count];
         for (int index = 0; index < values.Length; index++)
-        {
-            MaterialStateBitsEntry entry = source[index];
-            if (entry.TechniqueSlot != index)
-            {
-                throw new InvalidDataException(
-                    $"Material.StateBitsEntries[{index}] declares slot {entry.TechniqueSlot}.");
-            }
-            values[index] = entry.StateBitsIndex;
-        }
+            values[index] = source[index].StateBitsIndex;
         return values;
     }
 
@@ -371,7 +363,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         MaterialInfo info = definition.Info ?? throw new InvalidDataException(
             "A comma-prefixed Material provider requires Material.Info.");
         bool hasNonzeroInfo =
-            info.GameFlags != 0 ||
+            info.GameFlags != MaterialGameFlags.None ||
             info.SortKey != 0 ||
             info.TextureAtlasRowCount != 0 ||
             info.TextureAtlasColumnCount != 0 ||
@@ -383,8 +375,8 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             definition.TextureCount != 0 ||
             definition.ConstantCount != 0 ||
             definition.StateBitsCount != 0 ||
-            definition.StateFlags != 0 ||
-            definition.CameraRegion != 0 ||
+            definition.StateFlags != MaterialStateFlags.None ||
+            definition.CameraRegion != GfxCameraRegionType.LitOpaque ||
             definition.XStringCount != 0 ||
             definition.Pad43 != 0 ||
             definition.Pad8E != 0;
@@ -483,11 +475,11 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                 writer.WriteUInt32(texture.NameHash);
                 writer.WriteByte(texture.NameStart);
                 writer.WriteByte(texture.NameEnd);
-                writer.WriteByte(texture.SamplerState);
-                writer.WriteByte(texture.Semantic);
+                writer.WriteByte((byte)texture.SamplerState);
+                writer.WriteByte((byte)texture.Semantic);
                 writer.Skip(sizeof(int));
 
-                if (texture.Semantic == 0x0b)
+                if (texture.Semantic == TextureSemantic.WaterMap)
                 {
                     if (texture.Image is not null)
                     {
@@ -557,7 +549,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                         $"Material.StateBits[{index}].LoadBits must be absent or contain exactly two words.");
                 }
                 writer.Skip(sizeof(int));
-                writer.WriteUInt32(state.Tail);
+                writer.WriteUInt32(state.CommandWordCount);
                 if (loadBits.Count != 0)
                     aliases[index] = FreezeLoadBits(
                         state.LoadBitsPointer,

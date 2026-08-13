@@ -143,12 +143,12 @@ public sealed record MapRenderSunShadowCutoutSamplerBinding(
     int ArgumentIndex,
     ushort Destination,
     uint NameHash,
-    byte TextureSemantic,
-    byte EngineRouteSource,
+    TextureSemantic TextureSemantic,
+    MaterialStreamSource EngineRouteSource,
     int TextureTableOrdinal,
     MaterialTextureDef Texture,
     GfxImageAsset Image,
-    byte RawSamplerState,
+    MaterialSamplerState RawSamplerState,
     RsxSamplerState DecodedSamplerState);
 
 public sealed class MapRenderSunShadowCutoutCasterMaterialPlan :
@@ -196,7 +196,8 @@ public sealed class MapRenderSunShadowCutoutCasterMaterialPlan :
 /// </summary>
 public static class MapRenderSunShadowCasterMaterialPlanner
 {
-    public const int SunShadowTechniqueSlot = 2;
+    public const int SunShadowTechniqueSlot =
+        (int)MaterialTechniqueType.BuildShadowmapDepth;
     public const int SunShadowPassIndex = 0;
     public const string OpaqueTechniqueName = "build_shadowmap_depth";
     public const string WorldOpaqueNoColorTechniqueName =
@@ -223,13 +224,24 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         "vertcol_simple_atest.hlsl";
     public const string StaticModelCutoutNoColorShaderName =
         "vertcol_simple_atest_nc.hlsl";
-    public const uint StaticModelWorldMatrixCodeConstant = 0x005F0004u;
-    public const uint StaticModelViewProjectionCodeConstant = 0x00530004u;
+    public static readonly uint StaticModelWorldMatrixCodeConstant =
+        new MaterialCodeConstantArgument(
+            MaterialConstantSource.WorldMatrix0,
+            FirstRow: 0,
+            RowCount: 4).PackedValue;
+    public static readonly uint StaticModelViewProjectionCodeConstant =
+        new MaterialCodeConstantArgument(
+            MaterialConstantSource.ViewProjectionMatrix,
+            FirstRow: 0,
+            RowCount: 4).PackedValue;
     public const uint CutoutColorSamplerHash = 0xA0AB1041u;
     public const ushort CutoutSamplerDestination = 0;
-    public const byte ColorTextureSemantic = 0x02;
-    public const byte CutoutEngineRouteSource = 0x02;
-    public const uint CutoutAlphaFunction = 0x0206;
+    public const TextureSemantic ColorTextureSemantic =
+        TextureSemantic.ColorMap;
+    public const MaterialStreamSource CutoutEngineRouteSource =
+        MaterialStreamSource.TexCoord0;
+    public const RsxCompareFunction CutoutAlphaFunction =
+        RsxCompareFunction.GreaterThanOrEqual;
     public const byte CutoutAlphaReference = 0x80;
 
     /// <summary>
@@ -513,27 +525,30 @@ public static class MapRenderSunShadowCasterMaterialPlanner
             }
             if (sources.VertexDeclaration is not { } declaration ||
                 declaration.StreamCount != 1 ||
-                declaration.HasOptionalSource != 0 ||
+                declaration.HasOptionalSource ||
                 declaration.Routing.Count < 1 ||
                 declaration.Routing[0] !=
-                    new MaterialVertexStreamRouting(0x00, 0x00))
+                    new MaterialVertexStreamRouting(
+                        MaterialStreamSource.Position,
+                        MaterialStreamDestination.Position))
             {
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
                     MapRenderSunShadowCasterMaterialFailureKind
                         .VertexDeclarationUnavailable,
                     "build_shadowmap_model_nc requires its authored one-stream Source0-to-Dest0 declaration; Event22 row 2 independently maps that source to the physical vertex stream.");
             }
-            if (technique.Flags != 0 ||
+            if (technique.Flags != MaterialTechniqueFlags.None ||
                 pass.PerPrimArgCount != 1 ||
                 pass.PerObjArgCount != 1 ||
                 pass.StableArgCount != 0 ||
-                pass.CustomSamplerFlags != 0 ||
-                pass.PrecompiledIndex != 2)
+                pass.CustomSamplerFlags != MaterialCustomSamplerFlags.None ||
+                pass.PrecompiledVertexShader !=
+                    MaterialPrecompiledVertexShader.ModelUnlit)
             {
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
                     MapRenderSunShadowCasterMaterialFailureKind
                         .ShaderArgumentContractMismatch,
-                    "build_shadowmap_model_nc requires flags 0, argument counts 1/1/0, sampler flags 0, and precompiled index 2.");
+                    "build_shadowmap_model_nc requires flags 0, argument counts 1/1/0, sampler flags 0, and the ModelUnlit precompiled vertex-shader selector.");
             }
             if (!string.Equals(
                     NormalizeName(sources.VertexProgram.Name),
@@ -566,16 +581,16 @@ public static class MapRenderSunShadowCasterMaterialPlanner
             }
             if (state.LoadBits0 != 0x00128812u ||
                 state.LoadBits1 != 0x0000003Du ||
-                state.Tail != 0 ||
-                state.ColorMask != 0 ||
+                state.CommandWordCount != 0 ||
+                state.ColorMask != RsxColorMask.None ||
                 state.AlphaTestEnabled ||
                 !state.CullEnabled ||
-                state.CullFace != 0x0404 ||
+                state.CullFace != RsxCullFace.Front ||
                 state.BlendEnabled ||
                 !state.DepthTestEnabled ||
                 !state.DepthWriteEnabled ||
-                state.DepthFunc != 0x0203 ||
-                state.PolygonOffsetEnabled ||
+                state.DepthFunc != RsxCompareFunction.LessThanOrEqual ||
+                state.PolygonOffsetMode == RenderPolygonOffsetMode.Explicit ||
                 state.StencilEnabled)
             {
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
@@ -610,12 +625,13 @@ public static class MapRenderSunShadowCasterMaterialPlanner
                 WorldOpaqueNoColorTechniqueName,
                 StringComparison.Ordinal))
         {
-            if (technique.Flags != 0 ||
+            if (technique.Flags != MaterialTechniqueFlags.None ||
                 pass.PerPrimArgCount != 1 ||
                 pass.PerObjArgCount != 1 ||
                 pass.StableArgCount != 0 ||
-                pass.CustomSamplerFlags != 0 ||
-                pass.PrecompiledIndex != 2 ||
+                pass.CustomSamplerFlags != MaterialCustomSamplerFlags.None ||
+                pass.PrecompiledVertexShader !=
+                    MaterialPrecompiledVertexShader.ModelUnlit ||
                 sources.Arguments.Count != 2 ||
                 !MatchesCodeConstant(
                     sources.Arguments[0],
@@ -629,7 +645,7 @@ public static class MapRenderSunShadowCasterMaterialPlanner
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
                     MapRenderSunShadowCasterMaterialFailureKind
                         .ShaderArgumentContractMismatch,
-                    $"{techniqueName} requires World0 and ViewProjection with counts 1/1/0, flags 0, sampler flags 0, and precompiled index 2.");
+                    $"{techniqueName} requires World0 and ViewProjection with counts 1/1/0, flags 0, sampler flags 0, and the ModelUnlit precompiled vertex-shader selector.");
             }
             if (!MatchesOpaqueDeclaration(sources.VertexDeclaration) ||
                 !string.Equals(
@@ -648,15 +664,15 @@ public static class MapRenderSunShadowCasterMaterialPlanner
             }
             if (state.LoadBits0 != 0x00124812u ||
                 state.LoadBits1 != 0x0000003Du ||
-                state.Tail != 0 ||
-                state.ColorMask != 0 ||
+                state.CommandWordCount != 0 ||
+                state.ColorMask != RsxColorMask.None ||
                 state.AlphaTestEnabled ||
                 state.CullEnabled ||
                 state.BlendEnabled ||
                 !state.DepthTestEnabled ||
                 !state.DepthWriteEnabled ||
-                state.DepthFunc != 0x0203 ||
-                state.PolygonOffsetEnabled ||
+                state.DepthFunc != RsxCompareFunction.LessThanOrEqual ||
+                state.PolygonOffsetMode == RenderPolygonOffsetMode.Explicit ||
                 state.StencilEnabled)
             {
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
@@ -698,17 +714,19 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         int samplerArgumentIndex;
         MaterialShaderArgumentAsset samplerArgument;
         {
-            if (technique.Flags != 0x0008 ||
+            if (technique.Flags !=
+                    MaterialTechniqueFlags.DeclarationHasOptionalSource ||
                 pass.PerPrimArgCount != 1 ||
                 pass.PerObjArgCount != 1 ||
                 pass.StableArgCount != 1 ||
-                pass.CustomSamplerFlags != 0 ||
-                pass.PrecompiledIndex != 2)
+                pass.CustomSamplerFlags != MaterialCustomSamplerFlags.None ||
+                pass.PrecompiledVertexShader !=
+                    MaterialPrecompiledVertexShader.ModelUnlit)
             {
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
                     MapRenderSunShadowCasterMaterialFailureKind
                         .ShaderArgumentContractMismatch,
-                    $"{techniqueName} requires flags 0x0008, argument counts 1/1/1, sampler flags 0, and precompiled index 2.");
+                    $"{techniqueName} requires flags 0x0008, argument counts 1/1/1, sampler flags 0, and the ModelUnlit precompiled vertex-shader selector.");
             }
 
             string expectedShader = usesColorRoute
@@ -755,13 +773,13 @@ public static class MapRenderSunShadowCasterMaterialPlanner
             }
             if (!acceptedLoadBits0.Contains(state.LoadBits0) ||
                 state.LoadBits1 != 0x0000003Du ||
-                state.Tail != 0 ||
-                state.ColorMask != 0 ||
+                state.CommandWordCount != 0 ||
+                state.ColorMask != RsxColorMask.None ||
                 state.BlendEnabled ||
                 !state.DepthTestEnabled ||
                 !state.DepthWriteEnabled ||
-                state.DepthFunc != 0x0203 ||
-                state.PolygonOffsetEnabled ||
+                state.DepthFunc != RsxCompareFunction.LessThanOrEqual ||
+                state.PolygonOffsetMode == RenderPolygonOffsetMode.Explicit ||
                 state.StencilEnabled)
             {
                 return MapRenderSunShadowCasterMaterialPlanResult.Failed(
@@ -777,7 +795,7 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         if (
             samplerArgument.Type != MaterialShaderArgumentType.MaterialPixelSampler ||
             samplerArgument.Dest != CutoutSamplerDestination ||
-            unchecked((uint)samplerArgument.ArgumentRaw) !=
+            samplerArgument.MaterialNameHash !=
                 CutoutColorSamplerHash)
         {
             return MapRenderSunShadowCasterMaterialPlanResult.Failed(
@@ -841,12 +859,12 @@ public static class MapRenderSunShadowCasterMaterialPlanner
 
         RsxSamplerState decodedSampler = RsxSamplerDecoder.Decode(
             textureRow.SamplerState,
-            image.Pad0F,
-            image.Pad1B);
+            image.MinLodControl,
+            image.UseSrgbReads);
         var sampler = new MapRenderSunShadowCutoutSamplerBinding(
             ArgumentIndex: samplerArgumentIndex,
             Destination: samplerArgument.Dest,
-            NameHash: unchecked((uint)samplerArgument.ArgumentRaw),
+            NameHash: samplerArgument.MaterialNameHash,
             TextureSemantic: textureRow.Semantic,
             EngineRouteSource: CutoutEngineRouteSource,
             TextureTableOrdinal: textureOrdinal,
@@ -878,17 +896,19 @@ public static class MapRenderSunShadowCasterMaterialPlanner
         MaterialShaderArgumentAsset argument,
         ushort destination,
         uint raw) =>
-        argument.Type == MaterialShaderArgumentType.CodePrimBegin &&
+        argument.Type == MaterialShaderArgumentType.CodeVertexConst &&
         argument.Dest == destination &&
-        unchecked((uint)argument.ArgumentRaw) == raw;
+        argument.CodeConstant.PackedValue == raw;
 
     private static bool MatchesOpaqueDeclaration(
         MaterialVertexDeclarationAsset declaration) =>
         declaration.StreamCount == 1 &&
-        declaration.HasOptionalSource == 0 &&
+        !declaration.HasOptionalSource &&
         declaration.Routing.Count >= 1 &&
         declaration.Routing[0] ==
-            new MaterialVertexStreamRouting(0x00, 0x00);
+            new MaterialVertexStreamRouting(
+                MaterialStreamSource.Position,
+                MaterialStreamDestination.Position);
 
     private static bool TryGetWorldCutoutContract(
         string techniqueName,
@@ -949,27 +969,33 @@ public static class MapRenderSunShadowCasterMaterialPlanner
     {
         int expectedCount = usesColorRoute ? 3 : 2;
         if (declaration.StreamCount != expectedCount ||
-            declaration.HasOptionalSource != 1 ||
+            !declaration.HasOptionalSource ||
             declaration.Routing.Count < expectedCount)
         {
             return false;
         }
 
         if (declaration.Routing[0] !=
-            new MaterialVertexStreamRouting(0x00, 0x00))
+            new MaterialVertexStreamRouting(
+                MaterialStreamSource.Position,
+                MaterialStreamDestination.Position))
         {
             return false;
         }
         if (usesColorRoute &&
             declaration.Routing[1] !=
-                new MaterialVertexStreamRouting(0x01, 0x03))
+                new MaterialVertexStreamRouting(
+                    MaterialStreamSource.Color,
+                    MaterialStreamDestination.Color0))
         {
             return false;
         }
 
         int uvIndex = usesColorRoute ? 2 : 1;
         return declaration.Routing[uvIndex] ==
-            new MaterialVertexStreamRouting(0x02, 0x08);
+            new MaterialVertexStreamRouting(
+                MaterialStreamSource.TexCoord0,
+                MaterialStreamDestination.TexCoord0);
     }
 
     private static SelectedPassProgramSources
@@ -1002,14 +1028,6 @@ public static class MapRenderSunShadowCasterMaterialPlanner
 
 }
 
-[Flags]
-public enum MapRenderSunShadowStaticMaterialRouteBits : byte
-{
-    None = 0,
-    SharedModelCaster = 0x40,
-    AuthoredCaster = 0x80
-}
-
 /// <summary>
 /// Selects the material-sorted-index source used by the static-model sun-shadow
 /// list builder.
@@ -1036,20 +1054,19 @@ public enum MapRenderSunShadowStaticMaterialExecutionPath : byte
 /// exactly the nonzero result of MaterialInfo.gameFlags &amp; 0xC0.
 /// </summary>
 public readonly record struct MapRenderSunShadowStaticMaterialEligibility(
-    byte RawGameFlags,
-    byte RawRouteBits,
-    MapRenderSunShadowStaticMaterialRouteBits RouteBits)
+    MaterialGameFlags GameFlags,
+    MaterialGameFlags RouteBits)
 {
-    public bool IsEligible => RawRouteBits != 0;
+    public bool IsEligible => RouteBits != 0;
 
     /// <summary>
     /// Bit 0x40 has priority when both route bits are set.
     /// </summary>
     public MapRenderSunShadowStaticMaterialExecutionPath ExecutionPath =>
-        (RawRouteBits & 0x40) != 0
+        (RouteBits & MaterialGameFlags.CastsShadow) != 0
             ? MapRenderSunShadowStaticMaterialExecutionPath
                 .SharedCasterUsingModelShadowCasterKey
-            : (RawRouteBits & 0x80) != 0
+            : (RouteBits & MaterialGameFlags.MaterialSpecificShadowCaster) != 0
                 ? MapRenderSunShadowStaticMaterialExecutionPath
                     .AuthoredCasterUsingSourceMaterialSortKey
                 : MapRenderSunShadowStaticMaterialExecutionPath.Ineligible;
@@ -1057,7 +1074,8 @@ public readonly record struct MapRenderSunShadowStaticMaterialEligibility(
 
 public static class MapRenderSunShadowStaticMaterialEligibilityClassifier
 {
-    public const byte RouteMask = 0xC0;
+    public const MaterialGameFlags RouteMask =
+        MaterialGameFlags.ShadowCasterRouteMask;
 
     public static MapRenderSunShadowStaticMaterialEligibility Classify(
         MaterialAsset material)
@@ -1070,11 +1088,10 @@ public static class MapRenderSunShadowStaticMaterialEligibilityClassifier
         MaterialInfo materialInfo)
     {
         ArgumentNullException.ThrowIfNull(materialInfo);
-        byte routeBits = (byte)(materialInfo.GameFlags & RouteMask);
+        MaterialGameFlags routeBits = materialInfo.GameFlags & RouteMask;
         return new MapRenderSunShadowStaticMaterialEligibility(
             materialInfo.GameFlags,
-            routeBits,
-            (MapRenderSunShadowStaticMaterialRouteBits)routeBits);
+            routeBits);
     }
 
     public static bool IsEligible(MaterialAsset material) =>

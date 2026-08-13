@@ -1,4 +1,6 @@
+using IW4.Assets.Assets.Image;
 using IW4.Render.Scheduling.Lifecycle;
+using IW4.Render.Shaders;
 using System.Collections.ObjectModel;
 
 namespace IW4.Render.OpenGl.Targets;
@@ -39,12 +41,12 @@ public sealed record MapRenderOpenGlNormalCameraColorTargetKey
         RawDimensionFamily = canonicalTarget.RawDimensionFamily;
         RawDimensionShift = canonicalTarget.RawDimensionShift;
         RawImageSetupFormat = canonicalTarget.RawImageSetupFormat;
-        RawImageSetupFlags = canonicalTarget.RawImageSetupFlags;
-        RawImageFormatByte = canonicalTarget.RawImageFormatByte;
-        RawSurfaceType = canonicalTarget.RawSurfaceType;
-        RawAntialias = canonicalTarget.RawAntialias;
-        RawColorTargetMask = canonicalTarget.RawColorTargetMask;
-        RawColorFormat = canonicalTarget.RawColorFormat;
+        ImageSetupFlags = canonicalTarget.ImageSetupFlags;
+        ImageFormat = canonicalTarget.ImageFormat;
+        SurfaceType = canonicalTarget.SurfaceType;
+        SurfaceAntialias = canonicalTarget.SurfaceAntialias;
+        Ps3SurfaceTarget = canonicalTarget.Ps3SurfaceTarget;
+        SurfaceColorFormat = canonicalTarget.SurfaceColorFormat;
     }
 
     public MapRenderNormalCameraTargetKind CanonicalTarget { get; }
@@ -63,17 +65,27 @@ public sealed record MapRenderOpenGlNormalCameraColorTargetKey
 
     public uint RawImageSetupFormat { get; }
 
-    public uint RawImageSetupFlags { get; }
+    public MapRenderNormalCameraImageSetupFlags ImageSetupFlags { get; }
 
-    public byte RawImageFormatByte { get; }
+    public uint RawImageSetupFlags => (uint)ImageSetupFlags;
 
-    public byte RawSurfaceType { get; }
+    public GfxImageFormat ImageFormat { get; }
 
-    public byte RawAntialias { get; }
+    public byte RawImageFormatByte => ImageFormat.RawValue;
 
-    public byte RawColorTargetMask { get; }
+    public RsxSurfaceType SurfaceType { get; }
 
-    public byte RawColorFormat { get; }
+    public byte RawSurfaceType => (byte)SurfaceType;
+
+    public RsxSurfaceAntialias SurfaceAntialias { get; }
+
+    public byte RawAntialias => (byte)SurfaceAntialias;
+
+    public RsxSurfaceTarget Ps3SurfaceTarget { get; }
+
+    public RsxSurfaceColorFormat SurfaceColorFormat { get; }
+
+    public byte RawColorFormat => (byte)SurfaceColorFormat;
 
     public MapRenderOpenGlNormalCameraColorStorageSemantics HostStorageSemantics =>
         MapRenderOpenGlNormalCameraColorStorageSemantics.LogicalRgba8Unorm;
@@ -82,12 +94,12 @@ public sealed record MapRenderOpenGlNormalCameraColorTargetKey
 
     public int HostMipLevelCount => 1;
 
-    public int Ps3SurfaceSampleCount => RawAntialias switch
+    public int Ps3SurfaceSampleCount => SurfaceAntialias switch
     {
-        0 => 1,
-        3 => 2,
+        RsxSurfaceAntialias.Center1 => 1,
+        RsxSurfaceAntialias.DiagonalCentered2 => 2,
         _ => throw new InvalidOperationException(
-            $"Unsupported PS3 surface antialias value {RawAntialias}.")
+            $"Unsupported PS3 surface antialias value {SurfaceAntialias}.")
     };
 
     public int HostSampleCount => Ps3SurfaceSampleCount;
@@ -137,12 +149,12 @@ public sealed record MapRenderOpenGlNormalCameraColorTargetKey
         RawDimensionFamily == target.RawDimensionFamily &&
         RawDimensionShift == target.RawDimensionShift &&
         RawImageSetupFormat == target.RawImageSetupFormat &&
-        RawImageSetupFlags == target.RawImageSetupFlags &&
-        RawImageFormatByte == target.RawImageFormatByte &&
-        RawSurfaceType == target.RawSurfaceType &&
-        RawAntialias == target.RawAntialias &&
-        RawColorTargetMask == target.RawColorTargetMask &&
-        RawColorFormat == target.RawColorFormat;
+        ImageSetupFlags == target.ImageSetupFlags &&
+        ImageFormat == target.ImageFormat &&
+        SurfaceType == target.SurfaceType &&
+        SurfaceAntialias == target.SurfaceAntialias &&
+        Ps3SurfaceTarget == target.Ps3SurfaceTarget &&
+        SurfaceColorFormat == target.SurfaceColorFormat;
 }
 
 /// <summary>

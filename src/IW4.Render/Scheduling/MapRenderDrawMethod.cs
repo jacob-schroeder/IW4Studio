@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -42,7 +44,7 @@ public sealed class MapRenderDrawMethod
     internal ReadOnlySpan<byte> TechniqueTableSpan => _techniqueTable;
 
     public ReadOnlySpan<byte> GetTechniqueRow(
-        MapRenderSurfaceType surfaceType)
+        GfxDrawSurfSurfaceType surfaceType)
     {
         int pageIndex = (int)surfaceType;
         if ((uint)pageIndex >= MapRenderDrawMethodPageProducer.PageCount)

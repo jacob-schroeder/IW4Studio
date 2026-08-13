@@ -137,7 +137,7 @@ public sealed class UiMaterialCpuPreviewPlan
                 "The selected material owns depth state, which a 2D Menu " +
                 "preview cannot reproduce.");
         }
-        if (state.PolygonOffsetEnabled)
+        if (state.PolygonOffsetMode == RenderPolygonOffsetMode.Explicit)
         {
             Block(
                 diagnostics,
@@ -152,7 +152,7 @@ public sealed class UiMaterialCpuPreviewPlan
                 "The selected material has an unsupported cull tuple " +
                 $"{state.CullEnabled}/0x{state.CullFace:X4}.");
         }
-        if (state.PolygonMode != 0x1B02)
+        if (state.PolygonMode != RsxPolygonMode.Fill)
         {
             Block(
                 diagnostics,
@@ -219,12 +219,13 @@ public sealed class UiMaterialCpuPreviewPlan
     }
 
     private static UiMaterialCpuPreviewColorWriteMask? DecodeColorWriteMask(
-        uint value) =>
+        RsxColorMask value) =>
         value switch
         {
-            0x00010101 => UiMaterialCpuPreviewColorWriteMask.RedGreenBlue,
-            0x01000000 => UiMaterialCpuPreviewColorWriteMask.Alpha,
-            0x01010101 =>
+            RsxColorMask.Rgb =>
+                UiMaterialCpuPreviewColorWriteMask.RedGreenBlue,
+            RsxColorMask.Alpha => UiMaterialCpuPreviewColorWriteMask.Alpha,
+            RsxColorMask.Rgba =>
                 UiMaterialCpuPreviewColorWriteMask.RedGreenBlueAlpha,
             _ => null
         };

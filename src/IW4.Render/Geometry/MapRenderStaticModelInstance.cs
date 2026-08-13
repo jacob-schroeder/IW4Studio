@@ -1,6 +1,7 @@
 using System.Numerics;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
+using IW4.Assets.Assets.Material;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 
@@ -14,7 +15,7 @@ public readonly record struct MapRenderStaticModelInstance(
     int SurfaceIndex,
     string Name,
     string AuthoredMaterialName,
-    byte CameraRegion,
+    GfxCameraRegionType CameraRegion,
     int PrimaryLightIndex)
 {
     /// <summary>

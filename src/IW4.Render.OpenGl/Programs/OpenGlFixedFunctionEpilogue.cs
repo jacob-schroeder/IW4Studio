@@ -132,7 +132,9 @@ internal static class OpenGlFixedFunctionEpilogue
         // Integer render targets honor NV4097_SET_SHADER_PACKER only when the
         // fragment program does not use
         // CELL_GCM_SHADER_CONTROL_32_BITS_EXPORTS (our preserved control 0x40).
-        if ((fragmentProgramControl & 0x40u) != 0)
+        if (((RsxFragmentProgramControlFlags)fragmentProgramControl &
+                RsxFragmentProgramControlFlags.Exports32Bit) !=
+            RsxFragmentProgramControlFlags.None)
             return OpenGlRsxShaderPackerMode.SuppressedForFp32Exports;
         if (suppressForDiagnosticOutput)
         {
@@ -159,9 +161,9 @@ internal static class OpenGlFixedFunctionEpilogue
     internal static bool RequiresPremultipliedSourceRgb(
         RenderState state) =>
         state.BlendEnabled &&
-        state.BlendEquationRgb == 0x8006u &&
-        state.BlendSourceRgb == 1u &&
-        state.BlendDestinationRgb == 0x0303u;
+        state.BlendEquationRgb == RsxBlendEquation.Add &&
+        state.BlendSourceRgb == RsxBlendFactor.One &&
+        state.BlendDestinationRgb == RsxBlendFactor.OneMinusSourceAlpha;
 
     private static string CreateShaderPackerEpilogue()
     {

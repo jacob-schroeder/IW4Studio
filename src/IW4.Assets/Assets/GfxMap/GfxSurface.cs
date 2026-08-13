@@ -16,5 +16,5 @@ public sealed class GfxSurface
     public byte LightmapIndex { get; init; }
     public byte ReflectionProbeIndex { get; init; }
     public byte PrimaryLightIndex { get; init; }
-    public byte CastsSunShadow { get; init; }
+    public GfxSurfaceFlags Flags { get; init; }
 }

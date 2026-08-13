@@ -1,11 +1,14 @@
+using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.UI;
 
 public sealed record UiMaterialPreviewMaterialMetadata(
     string Name,
-    byte GameFlags,
-    byte SortKey,
-    byte StateFlags,
-    byte CameraRegion,
+    MaterialGameFlags GameFlags,
+    MaterialSortKey SortKey,
+    MaterialStateFlags StateFlags,
+    GfxCameraRegionType CameraRegion,
     string? TechniqueSetName);
 
 /// <summary>
@@ -37,6 +40,6 @@ public sealed record UiMaterialPreviewImageMetadata(
     int Depth,
     byte Format,
     byte LevelCount,
-    byte MapType,
-    byte DimensionCount,
+    MapType MapType,
+    GfxImageDimension DimensionCount,
     byte MultiFaceControl);

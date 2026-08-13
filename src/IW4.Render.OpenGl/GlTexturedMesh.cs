@@ -2,6 +2,7 @@ using IW4.Render.Techniques;
 using System.Numerics;
 using Silk.NET.OpenGL;
 
+using IW4.Assets.Assets.Material;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
@@ -107,7 +108,7 @@ internal readonly record struct GlTexturedMesh(
     /// buffer. A null value means the buffer is empty, mixed, or unresolved
     /// and therefore must retain the legacy fail-open camera path.
     /// </summary>
-    public byte? StaticCameraRegion { get; init; }
+    public GfxCameraRegionType? StaticCameraRegion { get; init; }
 
     /// <summary>
     /// The generic fallback owns the selected program's row-0x39 /

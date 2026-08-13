@@ -37,9 +37,10 @@ public sealed class RenderMaterialPassProvenanceSnapshot
         SamplerArgIndex = primarySampler.SamplerArgIndex;
         SamplerDest = primarySampler.SamplerDest;
         SamplerHash = primarySampler.SamplerHash;
-        TextureSemantic = primarySampler.TextureSemantic;
+        TextureSemantic = (byte)primarySampler.TextureSemantic;
         TexCoordSource = texCoordSource;
-        CustomSamplerFlags = source.TechniquePass.CustomSamplerFlags;
+        CustomSamplerFlags =
+            (byte)source.TechniquePass.CustomSamplerFlags;
         ContentDigest = RenderContentDigest.Compute(AppendContent);
     }
 
@@ -102,12 +103,12 @@ public sealed class RenderMaterialUvRouteSnapshot
 
         Label = source.Label;
         WorldVertexFormat = source.WorldVertexFormat;
-        TexCoordSource = source.TexCoordSource;
+        TexCoordSource = (byte)source.TexCoordSource;
         StreamIndex = source.StreamIndex;
         Stride = source.Stride;
         Offset = source.Offset;
         FormatByte0 = source.FormatByte0;
-        FormatByte1 = source.FormatByte1;
+        FormatByte1 = (byte)source.FormatByte1;
         BaseMode = source.BaseMode;
         ComponentA = source.ComponentA;
         ComponentB = source.ComponentB;
@@ -190,7 +191,7 @@ public sealed class RenderMaterialTextureBindingProvenanceSnapshot
         SamplerArgIndex = layer.Identity.SamplerArgIndex;
         SamplerDest = layer.Identity.SamplerDest;
         SamplerHash = layer.Identity.SamplerHash;
-        TextureSemantic = layer.Identity.TextureSemantic;
+        TextureSemantic = (byte)layer.Identity.TextureSemantic;
         BlendWeightComponent = layer.BlendWeightComponent;
         TextureName = sampler.TextureName;
         WorldRuntimeTextureIdentity = runtimeTextureIdentity;
@@ -503,10 +504,12 @@ public sealed class RenderMaterialDrawPacketSnapshot
             texture.FaceCount != 1 ||
             texture.Subresources.Any(subresource =>
                 !subresource.Payloads.Any(payload =>
-                    payload.Kind == RenderTexturePayloadKind.DecodedRgba8)))
+                    payload.Kind is
+                        (RenderTexturePayloadKind.DecodedRgba8 or
+                         RenderTexturePayloadKind.DecodedRg16Float))))
         {
             throw new ArgumentException(
-                "Material preview texture requires a complete decoded RGBA8 2D mip chain.",
+                "Material preview texture requires a complete decoded 2D mip chain.",
                 nameof(texture));
         }
         RenderVertexLayoutDescriptor.RequireIdentity(

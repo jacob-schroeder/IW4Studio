@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
 using IW4.Runtime.Assets.Images;
 
 using IW4.Render.Assets;
@@ -386,7 +387,7 @@ public sealed partial class MapSceneBuilder
 
         IReadOnlyList<TextureCubeFace>? faces = decoded?.Faces
             .Select(face => new TextureCubeFace(
-                face[0].RgbaBytes,
+                face[0].PixelBytes,
                 face.Skip(1).ToArray()))
             .ToArray();
         TextureMip? top = decoded?.Faces[0][0];
@@ -395,11 +396,14 @@ public sealed partial class MapSceneBuilder
             top?.Width ?? authoredTop!.Width,
             top?.Height ?? authoredTop!.Height,
             decoded?.Format ?? authoredFormat,
-            candidate.SamplerState,
-            RsxSamplerDecoder.Decode(candidate.SamplerState, image.Pad0F, image.Pad1B),
+            (byte)candidate.SamplerState,
+            RsxSamplerDecoder.Decode(
+                candidate.SamplerState,
+                image.MinLodControl,
+                image.UseSrgbReads),
             RsxTextureCommandBuilder.FromImage(image),
             decoded?.HasTransparency ?? true,
-            top?.RgbaBytes ?? [],
+            top?.PixelBytes ?? [],
             faces is null ? [] : faces[0].MipLevels,
             TextureTarget.TextureCube,
             faces,
@@ -463,5 +467,26 @@ public sealed partial class MapSceneBuilder
             skippedTextureCount++;
         return true;
     }
+
+    private static bool TryDecodeTexture(
+        GfxImageAsset image,
+        MaterialSamplerState samplerState,
+        IGfxImagePayloadResolver imageStreams,
+        RenderTextureCache textureCache,
+        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+        bool includeAuthoredMipChain,
+        ref int decodedTextureCount,
+        ref int skippedTextureCount,
+        out Texture? texture) =>
+        TryDecodeTexture(
+            image,
+            (byte)samplerState,
+            imageStreams,
+            textureCache,
+            failedTextureCacheKeys,
+            includeAuthoredMipChain,
+            ref decodedTextureCount,
+            ref skippedTextureCount,
+            out texture);
 
 }

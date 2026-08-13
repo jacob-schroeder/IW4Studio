@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.XModel.Export;
@@ -12,7 +13,8 @@ namespace IW4.Render.Geometry.XModel;
 /// </summary>
 public static class XModelExportProjector
 {
-    private const byte ColorTextureSemantic = 0x02;
+    private const TextureSemantic ColorTextureSemantic =
+        TextureSemantic.ColorMap;
     private const int DObjSkelMatSize = 0x40;
 
     public static bool TryProjectLoadedLod(
@@ -38,7 +40,7 @@ public static class XModelExportProjector
             return false;
         }
         if (!XSurfaceVertexDecoder.TryCreate(
-                XSurfaceVertexDecoder.DefaultTexCoordSourceIndex,
+                XSurfaceVertexDecoder.DefaultTexCoordSource,
                 out XSurfaceVertexDecoder? decoder) ||
             decoder is null)
         {

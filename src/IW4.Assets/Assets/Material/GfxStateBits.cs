@@ -11,5 +11,10 @@ public sealed class GfxStateBits
 
     public XPointerReference LoadBitsPointer { get; init; }
     public IReadOnlyList<uint> LoadBits { get; init; } = [];
-    public uint Tail { get; init; }
+
+    /// <summary>
+    /// Number of compiled RSX command words, excluding the appended return
+    /// command.
+    /// </summary>
+    public uint CommandWordCount { get; init; }
 }

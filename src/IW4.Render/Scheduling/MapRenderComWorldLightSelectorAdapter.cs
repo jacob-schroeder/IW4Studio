@@ -42,8 +42,8 @@ public static class MapRenderComWorldLightSelectorAdapter
             ComPrimaryLight light = comWorld.PrimaryLights[lightIndex]
                 ?? throw new InvalidDataException($"ComWorld primary light {lightIndex} is null.");
 
-            baseColumns[lightIndex] = light.Type;
-            canUseShadowMap[lightIndex] = light.CanUseShadowMap;
+            baseColumns[lightIndex] = (byte)light.Type;
+            canUseShadowMap[lightIndex] = light.CanUseShadowMapRaw;
         }
 
         return new MapRenderSceneLightSelectorAssetState(baseColumns, canUseShadowMap);

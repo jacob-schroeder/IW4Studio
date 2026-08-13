@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Material;
 using IW4.Render.Scheduling.Dpvs;
 
 namespace IW4.Render.Scheduling;
@@ -73,7 +74,7 @@ public sealed class MapRenderStaticModelReceiverVisibilityState
         MapRenderStaticModelReceiverPage? page =
             identity.CameraRegion switch
             {
-                0 => TestMsbFirstBit(
+                GfxCameraRegionType.LitOpaque => TestMsbFirstBit(
                          _sunShadowPartition0.StaticModelBitSpan,
                          identity.ObjectIndex) ||
                      TestMsbFirstBit(
@@ -83,7 +84,8 @@ public sealed class MapRenderStaticModelReceiverVisibilityState
                         .StaticModelRigidPage2
                     : MapRenderStaticModelReceiverPage
                         .StaticModelRigidNoSunShadowPage3,
-                4 => MapRenderStaticModelReceiverPage
+                GfxCameraRegionType.LightMapOpaque =>
+                    MapRenderStaticModelReceiverPage
                     .StaticModelRigidNoSunShadowPage3,
                 _ => null
             };

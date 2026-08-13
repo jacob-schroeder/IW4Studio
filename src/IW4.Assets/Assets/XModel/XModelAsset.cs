@@ -27,7 +27,7 @@ public sealed class XModelAsset : BaseAsset
     // Original +0x06 wire value before DB canonical LOD fixups mutate
     // NumSurfs for runtime consumption. Null identifies authored definitions.
     public byte? SerializedNumSurfs { get; init; }
-    public byte Pad07 { get; init; }
+    public XModelLodRampType LodRampType { get; init; }
     public float Scale { get; init; }
     public IReadOnlyList<uint> NoScalePartBits { get; init; } = [];
     public XPointer<ushort[]> BoneNamesPointer { get; init; }
@@ -49,7 +49,7 @@ public sealed class XModelAsset : BaseAsset
     public byte MaxLoadedLod { get; init; }
     public byte NumLods { get; init; }
     public byte CollLod { get; init; }
-    public byte Flags { get; init; }
+    public XModelFlags Flags { get; init; }
     public XPointer<byte[]> CollSurfsPointer { get; init; }
     public int NumCollSurfs { get; init; }
     public int Contents { get; init; }

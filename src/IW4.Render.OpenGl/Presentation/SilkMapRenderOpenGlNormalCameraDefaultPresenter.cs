@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.EditorPreview;
 using IW4.Render.OpenGl.Programs;
 using IW4.Render.SceneBuilding;
@@ -620,7 +621,8 @@ internal sealed unsafe class
                 tap.Y,
                 tap.Z,
                 tap.W);
-            int codeRow = 0x0a + tapIndex;
+            int codeRow =
+                (int)MaterialConstantSource.FilterTap0 + tapIndex;
             if (!program.TryGetCodePixelConstantUniformLocation(
                     codeRow,
                     out int location))

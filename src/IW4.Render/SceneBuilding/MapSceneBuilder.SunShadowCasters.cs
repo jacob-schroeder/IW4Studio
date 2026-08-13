@@ -283,7 +283,8 @@ public sealed partial class MapSceneBuilder
                     // m/shadowcaster sorted-index key. The phase root sets
                     // baseTechType 2 and the generic backend executes
                     // build_shadowmap_model_nc.
-                    if ((eligibility.RawRouteBits & 0x40) != 0)
+                    if ((eligibility.RouteBits &
+                            MaterialGameFlags.CastsShadow) != 0)
                     {
                         plan = sharedModelCasterPlan;
                     }

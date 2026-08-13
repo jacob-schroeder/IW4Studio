@@ -12,7 +12,7 @@ public sealed class RsxVertexProgramIr
     /// Decoder version included in <see cref="Identity"/>. Increment this when
     /// instruction decoding semantics change.
     /// </summary>
-    public const string CurrentDecoderVersion = "rsx-vertex-semantic-ir/2";
+    public const string CurrentDecoderVersion = "rsx-vertex-semantic-ir/4";
 
     internal RsxVertexProgramIr(
         ReadOnlySpan<byte> input,
@@ -100,44 +100,30 @@ public readonly record struct RsxVertexInstruction(
     uint Word2,
     uint Word3)
 {
-    public static int SourceRegisterType(uint source) => (int)(source & 3);
+    public static RsxVertexRegisterType SourceRegisterKind(uint source) =>
+        (RsxVertexRegisterType)(source & 3);
 
     /// <summary>
-    /// Source slots read by the existing RSX vector-opcode interpretation.
+    /// Source slots read by the RSX vector opcode.
     /// Bits 0, 1 and 2 identify source slots 0, 1 and 2 respectively.
     /// </summary>
-    public static int VectorSourceMask(byte opcode) => opcode switch
-    {
-        0x00 => 0,
-        0x11 or 0x15 => 0,
-        0x01 or 0x0d or 0x0e or 0x0f or 0x16 or 0x17 or 0x18 or 0x19 => 1,
-        // NV40 VP ADD consumes source slots 0 and 2.
-        0x03 => 1 | 4,
-        0x04 => 1 | 2 | 4,
-        _ => 1 | 2
-    };
+    public static RsxSourceSlotMask VectorSourceMask(
+        RsxVertexVectorOpcode opcode) =>
+        RsxShaderInstructionSet.VertexSourceMask(opcode);
 
     /// <summary>
-    /// Whether the existing RSX scalar-opcode interpretation consumes source
-    /// slot 2.
+    /// Whether the RSX scalar opcode consumes source slot 2.
     /// </summary>
-    public static bool ScalarReadsSource2(byte opcode) =>
-        RsxProgramDecoder.VertexScalarOperandCount(opcode) > 0;
+    public static bool ScalarReadsSource2(RsxVertexScalarOpcode opcode) =>
+        RsxShaderInstructionSet.VertexScalarOperandCount(opcode) > 0;
 
     public bool VecResult => (Word0 & 0x40000000u) != 0;
 
     /// <summary>
-    /// Curie CDST_WM: enables a condition-register update from this VLIW
-    /// instruction. Bit 29 selects the contributing ALU slot; it is not a
-    /// second enable bit.
+    /// NV40 condition-code updates require both encoded enable bits.
     /// </summary>
-    public bool CondUpdateEnabled => (Word0 & 0x00004000u) != 0;
-
-    /// <summary>
-    /// Curie CDST_IS_VEC: selects the vector result when true and the scalar
-    /// result when false for an enabled condition-register update.
-    /// </summary>
-    public bool CondUpdateFromVector => (Word0 & 0x20000000u) != 0;
+    public bool CondUpdateEnabled =>
+        (Word0 & 0x20004000u) == 0x20004000u;
 
     public bool Saturate => (Word0 & 0x04000000u) != 0;
     public bool Source2Abs => (Word0 & 0x00800000u) != 0;
@@ -145,38 +131,46 @@ public readonly record struct RsxVertexInstruction(
     public bool Source0Abs => (Word0 & 0x00200000u) != 0;
     public int VecDestTemp => (int)((Word0 >> 15) & 0x3f);
     public bool CondTestEnabled => (Word0 & 0x00002000u) != 0;
-    public int ConditionCode => (int)((Word0 >> 10) & 7);
-    public int ConditionSwizzleX => (int)((Word0 >> 8) & 3);
-    public int ConditionSwizzleY => (int)((Word0 >> 6) & 3);
-    public int ConditionSwizzleZ => (int)((Word0 >> 4) & 3);
-    public int ConditionSwizzleW => (int)((Word0 >> 2) & 3);
+    public RsxConditionTest ConditionTest =>
+        (RsxConditionTest)((Word0 >> 10) & 7);
+    public RsxSwizzleComponent ConditionSwizzleX =>
+        (RsxSwizzleComponent)((Word0 >> 8) & 3);
+    public RsxSwizzleComponent ConditionSwizzleY =>
+        (RsxSwizzleComponent)((Word0 >> 6) & 3);
+    public RsxSwizzleComponent ConditionSwizzleZ =>
+        (RsxSwizzleComponent)((Word0 >> 4) & 3);
+    public RsxSwizzleComponent ConditionSwizzleW =>
+        (RsxSwizzleComponent)((Word0 >> 2) & 3);
     public int ConditionRegister => (int)((Word0 >> 25) & 1);
     public byte VecOpcode => (byte)((Word1 >> 22) & 0x1f);
     public byte ScaOpcode => (byte)((Word1 >> 27) & 0x1f);
-    public int ConstSource => (int)((Word1 >> 12) & 0x1ff);
-    public int InputSource => (int)((Word1 >> 8) & 0x0f);
+    public RsxVertexVectorOpcode VectorOpcode =>
+        (RsxVertexVectorOpcode)VecOpcode;
+    public RsxVertexScalarOpcode ScalarOpcode =>
+        (RsxVertexScalarOpcode)ScaOpcode;
+    public int ConstSource => (int)((Word1 >> 12) & 0x3ff);
+    public RsxVertexInputAttribute InputAttribute =>
+        (RsxVertexInputAttribute)((Word1 >> 8) & 0x0f);
     public uint Source0 => ((Word1 & 0xffu) << 9) | ((Word2 >> 23) & 0x1ffu);
     public uint Source1 => (Word2 >> 6) & 0x1ffffu;
     public uint Source2 => ((Word2 & 0x3fu) << 11) | ((Word3 >> 21) & 0x7ffu);
-    public int ScaWriteMask => (int)((Word3 >> 17) & 0x0f);
-    public int VecWriteMask => (int)((Word3 >> 13) & 0x0f);
+    public RsxVertexWriteMask ScalarWriteMask =>
+        (RsxVertexWriteMask)((Word3 >> 17) & 0x0f);
+    public RsxVertexWriteMask VectorWriteMask =>
+        (RsxVertexWriteMask)((Word3 >> 13) & 0x0f);
 
-    /// <summary>
-    /// Existing translator interpretation: scalar result selection is the
-    /// complement of <see cref="VecResult"/>.
-    /// </summary>
-    public bool ScaResult => !VecResult;
+    public bool ScaResult => (Word3 & 0x00001000u) != 0;
 
-    /// <summary>
-    /// Existing translator interpretation of the six-bit scalar destination.
-    /// </summary>
-    public int ScaDestTemp => (int)((Word3 >> 7) & 0x3f);
+    public int ScaDestTemp => (int)((Word3 >> 7) & 0x1f);
 
-    public int ResultIndex => (int)((Word3 >> 2) & 0x1f);
+    public RsxVertexResult Result =>
+        (RsxVertexResult)((Word3 >> 2) & 0x1f);
     public bool IndexConst => (Word3 & 2) != 0;
-    public bool HasControlFlow => ScaOpcode is 0x09 or 0x0b or 0x0c;
+    public bool HasControlFlow =>
+        RsxShaderInstructionSet.IsVertexScalarControlFlow(ScalarOpcode);
 
-    public int ConditionSwizzle(int component) => component switch
+    public RsxSwizzleComponent ConditionSwizzle(int component) =>
+        component switch
     {
         0 => ConditionSwizzleX,
         1 => ConditionSwizzleY,
@@ -185,14 +179,4 @@ public readonly record struct RsxVertexInstruction(
         _ => throw new ArgumentOutOfRangeException(nameof(component))
     };
 
-    /// <summary>
-    /// Input-router interpretation retained separately from
-    /// <see cref="ScaResult"/> until the PS3 paths are reconciled.
-    /// </summary>
-    public bool RouterScalarWritesResult => (Word3 & 0x00001000u) != 0;
-
-    /// <summary>
-    /// Input-router interpretation of the five-bit scalar destination.
-    /// </summary>
-    public int RouterScalarDestinationTemp => (int)((Word3 >> 7) & 0x1f);
 }

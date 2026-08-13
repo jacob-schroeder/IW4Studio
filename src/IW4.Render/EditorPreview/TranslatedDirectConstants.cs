@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;
 using IW4.Render.Lighting;
 using IW4.Render.Execution.Fog;
@@ -374,7 +375,7 @@ public static class
         IsStaticModelLightProbeAmbientSourceRow(sourceRow) ||
         IsClipSpaceLookupSourceRow(sourceRow) ||
         IsZNearSourceRow(sourceRow) ||
-        sourceRow == 0x23 ||
+        sourceRow == FrameDirectCodeConstants.MaterialColorRowIndex ||
         IsFogSourceRow(sourceRow);
 
     public static bool IsSunShadowProjectionSourceRow(ushort sourceRow) =>
@@ -413,7 +414,8 @@ public static class
         IsZNearSourceRow(sourceRow);
 
     public static bool IsSceneLightSourceRow(ushort sourceRow) =>
-        sourceRow is >= 0x00 and <= 0x05;
+        sourceRow is >= (ushort)MaterialConstantSource.LightPosition and
+            <= (ushort)MaterialConstantSource.LightFalloffPlacement;
 
     private static bool IsFogSourceRow(ushort sourceRow) =>
         sourceRow is >=

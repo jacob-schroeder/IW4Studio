@@ -547,8 +547,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             entry.FaceCount);
         ApplyTextureSwizzle(
             RsxTextureSwizzleDecoder.Decode(
-                entry.Source.RsxTextureCommandState
-                    .TexSwizzlePayload),
+                entry.Source.RsxTextureCommandState),
             entry.Target);
         ApplyTextureSampler(
             entry.Source.DecodedSamplerState,

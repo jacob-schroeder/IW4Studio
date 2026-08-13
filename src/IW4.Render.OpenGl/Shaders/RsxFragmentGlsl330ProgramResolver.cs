@@ -42,7 +42,7 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
 
     /// <summary>
     /// Logical bytes copied into exact-key payloads, excluding CLR array and
-    /// object headers. Each entry retains 14 fixed bytes, 41 bytes per decoded
+    /// object headers. Each entry retains 14 fixed bytes, 49 bytes per decoded
     /// instruction, and 8 bytes per sampler-profile entry.
     /// </summary>
     internal long RetainedKeyPayloadByteCount { get; private set; }
@@ -148,6 +148,8 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
             sizeof(uint);
         private const int InstructionLogicalByteCount =
             sizeof(int) +
+            sizeof(int) +
+            sizeof(int) +
             (4 * sizeof(uint)) +
             sizeof(byte) +
             sizeof(byte) +
@@ -228,6 +230,8 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
 
     private readonly record struct InstructionSnapshot(
         int Index,
+        int Offset,
+        int ByteCount,
         uint Dst,
         uint Src0,
         uint Src1,
@@ -244,6 +248,8 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
         internal InstructionSnapshot(RsxFragmentInstruction instruction)
             : this(
                 instruction.Index,
+                instruction.Offset,
+                instruction.ByteCount,
                 instruction.Dst,
                 instruction.Src0,
                 instruction.Src1,
@@ -262,6 +268,8 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
         internal bool Matches(RsxFragmentInstruction instruction)
         {
             if (Index != instruction.Index ||
+                Offset != instruction.Offset ||
+                ByteCount != instruction.ByteCount ||
                 Dst != instruction.Dst ||
                 Src0 != instruction.Src0 ||
                 Src1 != instruction.Src1 ||

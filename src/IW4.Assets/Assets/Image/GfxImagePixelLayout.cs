@@ -6,15 +6,15 @@ namespace IW4.Assets.Assets.Image;
 public static class GfxImagePixelLayout
 {
     public static int ComputePayloadByteCount(
-        byte format,
+        GfxImageFormat format,
         byte levelCount,
-        byte multiFaceControl,
-        uint textureFlags,
+        bool isCubemap,
+        GfxImageTextureRemap textureRemap,
         ushort width,
         ushort height,
         ushort depth)
     {
-        uint formatKey = BuildFormatKey(format, textureFlags);
+        uint formatKey = BuildFormatKey(format, textureRemap);
         long byteCount = 0;
 
         for (int level = 0; level < levelCount; level++)
@@ -30,17 +30,20 @@ public static class GfxImagePixelLayout
         }
 
         byteCount = Align(byteCount, 0x80);
-        if (multiFaceControl != 0)
+        if (isCubemap)
             byteCount = Align(checked(byteCount * 6), 0x80);
 
         return checked((int)byteCount);
     }
 
-    public static uint BuildFormatKey(byte format, uint textureFlags)
+    public static uint BuildFormatKey(
+        GfxImageFormat format,
+        GfxImageTextureRemap textureRemap)
     {
         // Preserve format bits 7 and 0..4 and combine them with the low
-        // 24 texture-flag bits.
-        return ((textureFlags & 0x00ff_ffff) << 8) | (uint)(format & 0x9f);
+        // 24 texture-control bits.
+        return (textureRemap.StorageFormatBits << 8) |
+               (byte)format.BaseFormat;
     }
 
     public static int ComputeMipByteCount(

@@ -182,8 +182,6 @@ public sealed class MapRenderStaticModelLightingAtlas
 /// </summary>
 public static class MapRenderStaticModelLightingAtlasBuilder
 {
-    // (drawInst->flags & 2) selects the serialized GroundLighting fill path.
-    private const byte GroundLightingFlag = 0x02;
     private const float GridOrigin = -131072f;
     private const float MinimumCornerWeight = 0.001f;
 
@@ -235,7 +233,7 @@ public static class MapRenderStaticModelLightingAtlasBuilder
         for (int entryIndex = 0; entryIndex < draws.Count; entryIndex++)
         {
             GfxStaticModelDrawInst draw = draws[entryIndex];
-            if ((draw.Flags & GroundLightingFlag) != 0)
+            if ((draw.Flags & GfxStaticModelDrawInstFlags.GroundLighting) != 0)
             {
                 WriteGroundTile(
                     sourceTiles,
@@ -325,12 +323,11 @@ public static class MapRenderStaticModelLightingAtlasBuilder
             blue += rgb[offset + 2];
         }
 
-        uint packed =
-            (uint)((red + 4) >> 3) << 24 |
-            (uint)((green + 4) >> 3) << 16 |
-            (uint)((blue + 4) >> 3) << 8 |
-            alpha;
-        return new GfxColor(packed);
+        return GfxColor.FromRgba(
+            (byte)((red + 4) >> 3),
+            (byte)((green + 4) >> 3),
+            (byte)((blue + 4) >> 3),
+            alpha);
     }
 
     /// <summary>
@@ -339,15 +336,14 @@ public static class MapRenderStaticModelLightingAtlasBuilder
     /// </summary>
     internal static Vector4 DecodeLightProbeAmbientRow(GfxColor color)
     {
-        uint packed = color.Packed;
-        float red = (byte)(packed >> 24) * LightProbeRgbScale;
-        float green = (byte)(packed >> 16) * LightProbeRgbScale;
-        float blue = (byte)(packed >> 8) * LightProbeRgbScale;
+        float red = color.Red * LightProbeRgbScale;
+        float green = color.Green * LightProbeRgbScale;
+        float blue = color.Blue * LightProbeRgbScale;
         return new Vector4(
             red * red,
             green * green,
             blue * blue,
-            (byte)packed * LightProbeAlphaScale);
+            color.Alpha * LightProbeAlphaScale);
     }
 
     private static bool TrySampleLightGrid(
@@ -359,8 +355,10 @@ public static class MapRenderStaticModelLightingAtlasBuilder
     {
         primaryWeight = 0;
         if (grid.Mins.Count < 3 || grid.Maxs.Count < 3 ||
-            grid.RowAxis > 1 || grid.ColAxis > 1 ||
-            grid.RowAxis == grid.ColAxis || grid.Entries.Count == 0 ||
+            (grid.RowAxis, grid.ColAxis) is not
+                (GfxLightGridHorizontalAxis.X, GfxLightGridHorizontalAxis.Y) and not
+                (GfxLightGridHorizontalAxis.Y, GfxLightGridHorizontalAxis.X) ||
+            grid.Entries.Count == 0 ||
             grid.Colors.Count == 0)
         {
             return false;
@@ -411,7 +409,7 @@ public static class MapRenderStaticModelLightingAtlasBuilder
 
         if (primaryIndex == byte.MaxValue)
             primaryIndex = checked((byte)grid.SunPrimaryLightIndex);
-        else if (grid.HasLightRegions != 0 &&
+        else if (grid.HasLightRegions &&
                  primaryIndex != checked((byte)grid.SunPrimaryLightIndex))
             primaryIndex = nonSunPrimaryLightIndex;
 
@@ -700,11 +698,6 @@ public static class MapRenderStaticModelLightingAtlasBuilder
         int entryIndex,
         GfxColor color)
     {
-        uint packed = color.Packed;
-        byte r = (byte)(packed >> 24);
-        byte g = (byte)(packed >> 16);
-        byte b = (byte)(packed >> 8);
-        byte a = (byte)packed;
         for (int output = 0;
              output < MapRenderStaticModelLightingAtlas.TilePixelCount;
              output++)
@@ -713,10 +706,10 @@ public static class MapRenderStaticModelLightingAtlasBuilder
                 sourceTiles,
                 entryIndex,
                 output,
-                r,
-                g,
-                b,
-                a);
+                color.Red,
+                color.Green,
+                color.Blue,
+                color.Alpha);
         }
     }
 

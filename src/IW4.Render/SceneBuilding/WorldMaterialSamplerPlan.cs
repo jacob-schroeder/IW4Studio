@@ -40,7 +40,7 @@ internal sealed class WorldMaterialSamplerPlan
                 continue;
             }
 
-            uint hash = unchecked((uint)argument.ArgumentRaw);
+            uint hash = argument.MaterialNameHash;
             if (!_uniqueArgumentByHash.TryAdd(
                     hash,
                     new WorldMaterialSamplerArgumentMatch(argument, index)))

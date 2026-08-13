@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
 using IW4.Render.Techniques;
 using IW4.Assets.Zone;
 using IW4.Render.Execution;
@@ -49,11 +51,14 @@ public sealed record UiMaterialTextureResource(
     int Width,
     int Height,
     int Depth,
-    byte MapType,
-    byte DimensionCount,
+    MapType MapType,
+    GfxImageDimension DimensionCount,
     byte MultiFaceControl,
-    byte DescriptorPad0F,
-    byte DescriptorPad1B);
+    byte MinLodControl,
+    byte UseSrgbReads)
+{
+    public bool IsCubemap => MultiFaceControl != 0;
+}
 
 public sealed record UiMaterialTextureBinding(
     string ResourceKey,
@@ -62,8 +67,8 @@ public sealed record UiMaterialTextureBinding(
     XAssetPoolAddress CanonicalImageSlot,
     int TextureTableOrdinal,
     uint NameHash,
-    byte TextureSemantic,
-    byte AuthoredSamplerState,
+    TextureSemantic TextureSemantic,
+    MaterialSamplerState AuthoredSamplerState,
     RsxSamplerState SamplerState);
 
 public sealed record UiMaterialPassIdentity(

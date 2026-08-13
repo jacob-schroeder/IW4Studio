@@ -11,10 +11,13 @@ public static class RsxTextureCommandBuilder
     {
         return new RsxTextureCommandState(
             image.PixelsOffset,
-            BuildTexFormatPayload(image, image.LevelCount, image.PixelDataBlock),
+            BuildTexFormatPayload(
+                image,
+                image.LevelCount,
+                image.MemoryLocation),
             ((uint)image.Width << 16) | image.Height,
             ((uint)image.Depth << 20) | image.RenderTargetPitch,
-            image.TextureFlags);
+            image.TextureControl1);
     }
 
     public static RsxTextureCommandState FromDescriptor(GfxTexture texture)
@@ -27,10 +30,11 @@ public static class RsxTextureCommandBuilder
         byte dimensionCount = (byte)(header >> 8);
         byte multiFaceControl = (byte)header;
         ushort depth = (ushort)(depthAndBlock >> 16);
-        byte pixelDataBlock = (byte)(depthAndBlock >> 8);
+        GfxImageMemoryLocation memoryLocation =
+            (GfxImageMemoryLocation)(byte)(depthAndBlock >> 8);
         return new RsxTextureCommandState(
             texture.Words[5],
-            (uint)(pixelDataBlock + 1) |
+            (uint)((byte)memoryLocation + 1) |
             ((uint)multiFaceControl << 2) |
             ((uint)dimensionCount << 4) |
             ((uint)format << 8) |
@@ -51,9 +55,12 @@ public static class RsxTextureCommandBuilder
 
     public static uint RsxTexSize1Method(ushort samplerSlot) => 0x1840u + ((uint)samplerSlot * 0x04u);
 
-    private static uint BuildTexFormatPayload(GfxImageAsset image, byte levelCount, byte pixelDataBlock)
+    private static uint BuildTexFormatPayload(
+        GfxImageAsset image,
+        byte levelCount,
+        GfxImageMemoryLocation memoryLocation)
     {
-        return (uint)(pixelDataBlock + 1) |
+        return (uint)((byte)memoryLocation + 1) |
                ((uint)image.MultiFaceControl << 2) |
                ((uint)image.DimensionCount << 4) |
                ((uint)image.Format << 8) |

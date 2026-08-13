@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using IW4.Assets.Assets.Material;
 using IW4.Render.Diagnostics;
 using Silk.NET.OpenGL;
 
@@ -1049,7 +1050,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                     new MapRenderStaticModelReceiverIdentity(
                         instance,
                         batch.LodIndex)))
-                .Where(identity => identity.CameraRegion is 0 or 4)
+                .Where(identity => identity.CameraRegion is
+                    GfxCameraRegionType.LitOpaque or
+                    GfxCameraRegionType.LightMapOpaque)
                 .Distinct()
                 .ToArray();
         MapRenderInstancedTexturedBatch[] exactNormalCameraStaticBatches =

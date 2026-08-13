@@ -41,8 +41,8 @@ public sealed partial class RenderAssetLookup
                 out _))
             return false;
 
-        int currentMaterialSortedIndex = checked((int)(
-            (currentMaterial.Info.DrawSurf.Packed >> 30) & (MaterialSortedIndexCount - 1)));
+        int currentMaterialSortedIndex =
+            currentMaterial.Info.DrawSurf.MaterialSortedIndex;
         if (currentMaterialSortedIndex != materialSortedIndex)
             return false;
 

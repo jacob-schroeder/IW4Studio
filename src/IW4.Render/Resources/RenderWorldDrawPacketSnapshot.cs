@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 
+using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Materials;
@@ -30,24 +32,28 @@ public static class RenderLoadedCameraColorCompatibilityProfile
 {
     public const uint LoadBits0 = 0x5812B012u;
     public const uint LoadBits1 = 0x0000000Du;
-    public const uint ColorMask = 0x01010101u;
-    public const uint AlphaFuncGequal = 0x0206u;
+    public const RsxColorMask ColorMask = RsxColorMask.Rgba;
+    public const RsxCompareFunction AlphaFuncGequal =
+        RsxCompareFunction.GreaterThanOrEqual;
     public const byte AlphaRef = 0x80;
-    public const uint CullFaceFront = 0x0404u;
-    public const uint PolygonModeFill = 0x1B02u;
-    public const uint BlendSourceOne = 1u;
-    public const uint BlendDestinationZero = 0u;
-    public const uint DepthFuncLessOrEqual = 0x0203u;
+    public const RsxCullFace CullFaceFront = RsxCullFace.Front;
+    public const RsxPolygonMode PolygonModeFill = RsxPolygonMode.Fill;
+    public const RsxBlendFactor BlendSourceOne = RsxBlendFactor.One;
+    public const RsxBlendFactor BlendDestinationZero = RsxBlendFactor.Zero;
+    public const RsxCompareFunction DepthFuncLessOrEqual =
+        RsxCompareFunction.LessThanOrEqual;
     public const uint FragmentProgramControl = 0x02008400u;
     public const string FragmentExportPrecision = "Fp16";
-    public const int TechniqueSlot = 10;
+    public const int TechniqueSlot = (int)MaterialTechniqueType.LitDfog;
     public const int PassIndex = 0;
     public const string TechniqueName = "vcsh_t0c0_nc_dfog";
     public const int SamplerArgIndex = 2;
     public const ushort SamplerDestination = 0;
     public const uint SamplerHash = 0xA0AB1041u;
-    public const byte TextureSemantic = 0x02;
-    public const byte TexCoordSource = 0x02;
+    public const byte TextureSemantic =
+        (byte)IW4.Assets.Assets.Image.TextureSemantic.ColorMap;
+    public const byte TexCoordSource =
+        (byte)MaterialStreamSource.TexCoord0;
     public const string UvLabel = "engine effective row 5";
     public const string WorldVertexFormat =
         "MTL_WORLDVERT_TEX_1_NRM_1/backendRow5";
@@ -59,7 +65,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
         state.HasState &&
         state.LoadBits0 == LoadBits0 &&
         state.LoadBits1 == LoadBits1 &&
-        state.Tail == 0;
+        state.CommandWordCount == 0;
 
     public static bool Matches(RenderState state) =>
         MatchesRawState(state) && state == RequiredState;
@@ -84,7 +90,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
         primarySampler.SamplerArgIndex == SamplerArgIndex &&
         primarySampler.SamplerDest == SamplerDestination &&
         primarySampler.SamplerHash == SamplerHash &&
-        primarySampler.TextureSemantic == TextureSemantic &&
+        (byte)primarySampler.TextureSemantic == TextureSemantic &&
         texCoordSource == TexCoordSource;
 
     public static bool MatchesTechnique(
@@ -133,12 +139,12 @@ public static class RenderLoadedCameraColorCompatibilityProfile
             route.WorldVertexFormat,
             WorldVertexFormat,
             StringComparison.Ordinal) &&
-        route.TexCoordSource == 0x02 &&
+        route.TexCoordSource == MaterialStreamSource.TexCoord0 &&
         route.StreamIndex == 1 &&
         route.Stride == 28 &&
         route.Offset == 4 &&
         route.FormatByte0 == 0x04 &&
-        route.FormatByte1 == 0x02 &&
+        route.FormatByte1 == RsxVertexElementType.Float32 &&
         route.BaseMode == UvBaseMode.Engine &&
         route.ComponentA == 0 &&
         route.ComponentB == 1 &&
@@ -158,7 +164,7 @@ public static class RenderLoadedCameraColorCompatibilityProfile
         route.Stride == 28 &&
         route.Offset == 4 &&
         route.FormatByte0 == 0x04 &&
-        route.FormatByte1 == 0x02 &&
+        route.FormatByte1 == (byte)RsxVertexElementType.Float32 &&
         route.BaseMode == UvBaseMode.Engine &&
         route.ComponentA == 0 &&
         route.ComponentB == 1 &&
@@ -324,13 +330,13 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         foreach (ShaderVertexInputBinding input in VertexInputs)
         {
             writer.WriteInt32(input.RouteIndex);
-            writer.WriteByte(input.Source);
-            writer.WriteByte(input.Destination);
+            writer.WriteByte((byte)input.Source);
+            writer.WriteByte((byte)input.Destination);
             writer.WriteByte(input.StreamIndex);
             writer.WriteInt32(input.Stride);
             writer.WriteInt32(input.Offset);
             writer.WriteByte(input.ComponentCount);
-            writer.WriteByte(input.RsxType);
+            writer.WriteByte((byte)input.RsxType);
             writer.WriteString(input.RsxTypeName);
         }
         AppendSamplerDestinations(writer, MaterialSamplerDestinations);
@@ -342,7 +348,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         {
             writer.WriteInt32(requirement.ArgumentIndex);
             writer.WriteInt32(requirement.Destination);
-            writer.WriteUInt32(requirement.CodeSamplerArgument);
+            writer.WriteUInt32((uint)requirement.CodeSamplerArgument);
             writer.WriteInt32((int)requirement.ResourceKind);
             writer.WriteInt32((int)requirement.Status);
             writer.WriteString(requirement.ResourceIdentity);
@@ -397,7 +403,7 @@ public sealed class RenderWorldShaderProvenanceSnapshot
         {
             writer.WriteInt32(export.ColorTarget);
             writer.WriteString(export.Register);
-            writer.WriteByte(export.WrittenComponentMask);
+            writer.WriteByte((byte)export.WrittenComponentMask);
             writer.WriteString(export.WrittenComponents);
         }
         writer.WriteInt32(RendererBlockers.Length);
@@ -834,10 +840,12 @@ public sealed class RenderWorldDrawPacketSnapshot
             texture.FaceCount != 1 ||
             texture.Subresources.Any(subresource =>
                 !subresource.Payloads.Any(payload =>
-                    payload.Kind == RenderTexturePayloadKind.DecodedRgba8)))
+                    payload.Kind is
+                        (RenderTexturePayloadKind.DecodedRgba8 or
+                         RenderTexturePayloadKind.DecodedRg16Float))))
         {
             throw new ArgumentException(
-                "Loaded CameraColor compatibility resources must be stride-88 U32 triangles with a complete decoded RGBA8 Texture2D.");
+                "Loaded CameraColor compatibility resources must be stride-88 U32 triangles with a complete decoded Texture2D.");
         }
         RenderVertexLayoutDescriptor.RequireIdentity(
             sampler.Identity,

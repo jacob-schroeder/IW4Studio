@@ -50,13 +50,14 @@ internal readonly record struct OpenGlPackedRsxVertexLayout
         foreach (ShaderVertexInputBinding input in
                  execution.VertexInputs)
         {
-            if (input.Destination >= SourceAttributeCount)
+            int destination = (byte)input.Destination;
+            if (destination >= SourceAttributeCount)
             {
                 throw new InvalidOperationException(
-                    $"Translated RSX vertex input destination {input.Destination} is outside the OpenGL attribute domain.");
+                    $"Translated RSX vertex input destination {destination} is outside the OpenGL attribute domain.");
             }
 
-            mask |= 1 << input.Destination;
+            mask |= 1 << destination;
         }
 
         return mask;

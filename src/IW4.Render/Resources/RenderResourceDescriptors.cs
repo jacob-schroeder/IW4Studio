@@ -357,7 +357,13 @@ public enum RenderTexturePayloadKind
     /// <summary>
     /// Canonical tightly packed RGBA8 rows produced by the shared decoder.
     /// </summary>
-    DecodedRgba8
+    DecodedRgba8,
+
+    /// <summary>
+    /// Canonical tightly packed host-endian RG16F rows produced by the shared
+    /// decoder from PS3 CELL_GCM_TEXTURE_Y16_X16_FLOAT storage.
+    /// </summary>
+    DecodedRg16Float
 }
 
 public sealed class RenderTexturePayloadDescriptor
@@ -530,12 +536,14 @@ public sealed class RenderTextureSubresourceDescriptor
                     "Texture payload depth must match its subresource depth.",
                     nameof(payloads));
             }
-            if (payload.Kind != RenderTexturePayloadKind.DecodedRgba8)
+            if (payload.Kind is not
+                (RenderTexturePayloadKind.DecodedRgba8 or
+                 RenderTexturePayloadKind.DecodedRg16Float))
                 continue;
             if (!payload.IsDirectUploadLayoutProven)
             {
                 throw new ArgumentException(
-                    "Canonical decoded RGBA8 payloads must carry tightly packed layout metadata.",
+                    "Canonical decoded pixel payloads must carry tightly packed layout metadata.",
                     nameof(payloads));
             }
             int expectedRowPitch = checked(width * 4);
@@ -544,7 +552,7 @@ public sealed class RenderTextureSubresourceDescriptor
                 payload.SlicePitchBytes != expectedSlicePitch)
             {
                 throw new ArgumentException(
-                    "Decoded RGBA8 payload pitch does not match its dimensions.",
+                    "Decoded pixel payload pitch does not match its dimensions.",
                     nameof(payloads));
             }
         }
@@ -952,8 +960,8 @@ public sealed class RenderSamplerDescriptor
             identity,
             source?.RawState ?? throw new ArgumentNullException(nameof(source)),
             source.RsxClampMax,
-            source.RsxDescriptorPad0F,
-            source.RsxDescriptorPad1B,
+            source.MinLodControl,
+            source.UseSrgbReads,
             source.RsxSamplerCachePayload,
             source.RsxTexEnablePayload,
             source.RsxTexFilterPayload,
@@ -976,8 +984,8 @@ public sealed class RenderSamplerDescriptor
         RenderSemanticIdentity identity,
         byte rawState,
         int rsxClampMax,
-        byte rsxDescriptorPad0F,
-        byte rsxDescriptorPad1B,
+        byte minLodControl,
+        byte useSrgbReads,
         uint samplerCachePayload,
         uint rsxTexEnablePayload,
         uint rsxTexFilterPayload,
@@ -1015,8 +1023,8 @@ public sealed class RenderSamplerDescriptor
         Identity = identity;
         RawState = rawState;
         RsxClampMax = rsxClampMax;
-        RsxDescriptorPad0F = rsxDescriptorPad0F;
-        RsxDescriptorPad1B = rsxDescriptorPad1B;
+        MinLodControl = minLodControl;
+        UseSrgbReads = useSrgbReads;
         RsxSamplerCachePayload = samplerCachePayload;
         RsxTexEnablePayload = rsxTexEnablePayload;
         RsxTexFilterPayload = rsxTexFilterPayload;
@@ -1038,8 +1046,8 @@ public sealed class RenderSamplerDescriptor
     public RenderSemanticIdentity Identity { get; }
     public byte RawState { get; }
     public int RsxClampMax { get; }
-    public byte RsxDescriptorPad0F { get; }
-    public byte RsxDescriptorPad1B { get; }
+    public byte MinLodControl { get; }
+    public byte UseSrgbReads { get; }
     public uint RsxSamplerCachePayload { get; }
     public uint RsxTexEnablePayload { get; }
     public uint RsxTexFilterPayload { get; }
@@ -1063,8 +1071,8 @@ public sealed class RenderSamplerDescriptor
         writer.WriteIdentity(Identity);
         writer.WriteByte(RawState);
         writer.WriteInt32(RsxClampMax);
-        writer.WriteByte(RsxDescriptorPad0F);
-        writer.WriteByte(RsxDescriptorPad1B);
+        writer.WriteByte(MinLodControl);
+        writer.WriteByte(UseSrgbReads);
         writer.WriteUInt32(RsxSamplerCachePayload);
         writer.WriteUInt32(RsxTexEnablePayload);
         writer.WriteUInt32(RsxTexFilterPayload);

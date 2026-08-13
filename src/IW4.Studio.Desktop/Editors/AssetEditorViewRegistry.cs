@@ -9,6 +9,7 @@ using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
+using IW4.Studio.Desktop.Editors.AssetReferences;
 
 namespace IW4.Studio.Desktop.Editors;
 
@@ -57,7 +58,8 @@ public sealed class AssetEditorViewRegistry
     public static AssetEditorViewRegistry CreateDefault(
         GscWorkspaceIndexService? gscWorkspace = null,
         IGscSourceNavigator? gscSourceNavigator = null,
-        IGscUsagesPresenter? gscUsagesPresenter = null)
+        IGscUsagesPresenter? gscUsagesPresenter = null,
+        AssetReferencePickerService? assetReferencePicker = null)
     {
         var registry = new AssetEditorViewRegistry();
         registry.Register(new RawFileViewFactory(
@@ -67,7 +69,7 @@ public sealed class AssetEditorViewRegistry
             gscUsagesPresenter));
         registry.Register(new StringTableViewFactory());
         registry.Register(new LocalizeViewFactory());
-        registry.Register(new XModelViewFactory());
+        registry.Register(new XModelViewFactory(assetReferencePicker));
         return registry;
     }
 

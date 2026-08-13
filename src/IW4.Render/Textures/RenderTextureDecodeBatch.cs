@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
 using IW4.Runtime.Assets.Images;
 
 namespace IW4.Render.Textures;
@@ -15,6 +16,12 @@ internal readonly record struct RenderTextureDecodeRequest(
                 image,
                 samplerState,
                 includeAuthoredMipChain));
+
+    internal static RenderTextureDecodeRequest Create(
+        GfxImageAsset image,
+        MaterialSamplerState samplerState,
+        bool includeAuthoredMipChain) =>
+        Create(image, (byte)samplerState, includeAuthoredMipChain);
 }
 
 internal readonly record struct RenderTextureDecodeResult(
@@ -30,16 +37,16 @@ internal static class RenderTextureDecodeBatch
         Decode(
             request,
             imageStreams,
-            GfxImageDecoder.TryDecodeRgba,
+            GfxImageDecoder.TryDecodeTexture,
             preferProvenAuthoredPayloads);
 
     private static RenderTextureDecodeResult Decode(
         RenderTextureDecodeRequest request,
         IGfxImagePayloadResolver imageStreams,
-        TryDecodeRgba tryDecodeRgba,
+        TryDecodeTexture tryDecodeTexture,
         bool preferProvenAuthoredPayloads)
     {
-        ArgumentNullException.ThrowIfNull(tryDecodeRgba);
+        ArgumentNullException.ThrowIfNull(tryDecodeTexture);
         try
         {
             ValidateTwoDimensionalRequest(request);
@@ -48,7 +55,7 @@ internal static class RenderTextureDecodeBatch
                     request.Key.Image,
                     request.Key.IncludeAuthoredMipChain),
                 imageStreams,
-                tryDecodeRgba,
+                tryDecodeTexture,
                 preferProvenAuthoredPayloads);
             return new RenderTextureDecodeResult(
                 pixels is null
@@ -110,7 +117,7 @@ internal static class RenderTextureDecodeBatch
             pixelResults[0] = DecodePixelsSafely(
                 pixelKeys[0],
                 imageStreams,
-                GfxImageDecoder.TryDecodeRgba,
+                GfxImageDecoder.TryDecodeTexture,
                 textureCache.PreferProvenAuthoredPayloads);
         }
         else
@@ -130,7 +137,7 @@ internal static class RenderTextureDecodeBatch
                 index => pixelResults[index] = DecodePixelsSafely(
                     pixelKeys[index],
                     imageStreams,
-                    GfxImageDecoder.TryDecodeRgba,
+                    GfxImageDecoder.TryDecodeTexture,
                     textureCache.PreferProvenAuthoredPayloads));
         }
 
@@ -166,7 +173,7 @@ internal static class RenderTextureDecodeBatch
     private static PixelDecodeResult DecodePixelsSafely(
         PixelDecodeKey key,
         IGfxImagePayloadResolver imageStreams,
-        TryDecodeRgba tryDecodeRgba,
+        TryDecodeTexture tryDecodeTexture,
         bool preferProvenAuthoredPayloads)
     {
         try
@@ -175,7 +182,7 @@ internal static class RenderTextureDecodeBatch
                 DecodePixels(
                     key,
                     imageStreams,
-                    tryDecodeRgba,
+                    tryDecodeTexture,
                     preferProvenAuthoredPayloads),
                 null);
         }
@@ -190,7 +197,7 @@ internal static class RenderTextureDecodeBatch
     private static DecodedPixelChain? DecodePixels(
         PixelDecodeKey key,
         IGfxImagePayloadResolver imageStreams,
-        TryDecodeRgba tryDecodeRgba,
+        TryDecodeTexture tryDecodeTexture,
         bool preferProvenAuthoredPayloads)
     {
         GfxImageAsset image = key.Image;
@@ -302,12 +309,12 @@ internal static class RenderTextureDecodeBatch
                 authoredSubresources);
         }
 
-        bool hasDecodedTop = tryDecodeRgba(
+        bool hasDecodedTop = tryDecodeTexture(
             image,
             payload,
             width,
             height,
-            out DecodedRgbaGfxImage decoded,
+            out DecodedTextureImage decoded,
             out reason);
         // Authored-only publication is reserved for the complete proven-chain
         // fast path above. A partial capture must never masquerade as a usable
@@ -325,8 +332,8 @@ internal static class RenderTextureDecodeBatch
                  sourceMipIndex++)
             {
                 GfxImagePayload mip = streamMips[sourceMipIndex];
-                DecodedRgbaGfxImage mipDecoded = default;
-                bool decodedMip = decodedMipChainOpen && tryDecodeRgba(
+                DecodedTextureImage mipDecoded = default;
+                bool decodedMip = decodedMipChainOpen && tryDecodeTexture(
                     image,
                     mip.Payload,
                     mip.Width,
@@ -338,7 +345,7 @@ internal static class RenderTextureDecodeBatch
                     mipLevels.Add(new TextureMip(
                         mipDecoded.Width,
                         mipDecoded.Height,
-                        mipDecoded.RgbaBytes));
+                        mipDecoded.PixelBytes));
                 }
                 else
                 {
@@ -364,7 +371,7 @@ internal static class RenderTextureDecodeBatch
         DecodedPixelChain pixels)
     {
         GfxImageAsset image = key.Image;
-        DecodedRgbaGfxImage? decoded = pixels.Top;
+        DecodedTextureImage? decoded = pixels.Top;
         return new Texture(
             decoded?.Name ?? pixels.Name,
             decoded?.Width ?? pixels.Width,
@@ -373,13 +380,15 @@ internal static class RenderTextureDecodeBatch
             key.SamplerState,
             RsxSamplerDecoder.Decode(
                 key.SamplerState,
-                image.Pad0F,
-                image.Pad1B),
+                image.MinLodControl,
+                image.UseSrgbReads),
             RsxTextureCommandBuilder.FromImage(image),
             decoded?.HasTransparency ?? true,
-            decoded?.RgbaBytes ?? [],
+            decoded?.PixelBytes ?? [],
             decoded is null ? [] : pixels.MipLevels,
-            AuthoredSubresources: pixels.AuthoredSubresources);
+            AuthoredSubresources: pixels.AuthoredSubresources,
+            PixelFormat: decoded?.PixelFormat ??
+                DecodedTexturePixelFormat.Rgba8Unorm);
     }
 
     private static void ValidateTwoDimensionalRequest(
@@ -403,7 +412,7 @@ internal static class RenderTextureDecodeBatch
         ExceptionDispatchInfo? Exception);
 
     private sealed record DecodedPixelChain(
-        DecodedRgbaGfxImage? Top,
+        DecodedTextureImage? Top,
         string Name,
         int Width,
         int Height,
@@ -415,11 +424,11 @@ internal static class RenderTextureDecodeBatch
         internal bool HasDecodedTop => Top is not null;
     }
 
-    private delegate bool TryDecodeRgba(
+    private delegate bool TryDecodeTexture(
         GfxImageAsset image,
         IReadOnlyList<byte> payloadBytes,
         int width,
         int height,
-        out DecodedRgbaGfxImage decoded,
+        out DecodedTextureImage decoded,
         out string reason);
 }

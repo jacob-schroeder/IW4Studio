@@ -129,9 +129,12 @@ internal static class RsxVertexGlsl330Lowerer
         }
 
         AppendVertexExportGlsl(builder);
-        builder.AppendLine("  rsxColor0 = O[1]; rsxColor1 = O[2];");
+        builder.AppendLine(
+            $"  rsxColor0 = O[{(byte)RsxVertexResult.FrontColor0}]; " +
+            $"rsxColor1 = O[{(byte)RsxVertexResult.FrontColor1}];");
         for (int i = 0; i < 8; i++)
-            builder.AppendLine($"  rsxTexcoord{i} = O[{i + 7}];");
+            builder.AppendLine(
+                $"  rsxTexcoord{i} = O[{(byte)RsxVertexResult.TextureCoordinate0 + i}];");
         builder.AppendLine("}");
         return builder.ToString();
     }
@@ -145,28 +148,30 @@ internal static class RsxVertexGlsl330Lowerer
         {
             // Fixed translated-shader exports. O[0] is native clip position;
             // O[1]/O[2] are colors; O[7]..O[14] are texture coordinates.
-            0,
-            1,
-            2,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14
+            (byte)RsxVertexResult.Position,
+            (byte)RsxVertexResult.FrontColor0,
+            (byte)RsxVertexResult.FrontColor1,
+            (byte)RsxVertexResult.TextureCoordinate0,
+            (byte)RsxVertexResult.TextureCoordinate1,
+            (byte)RsxVertexResult.TextureCoordinate2,
+            (byte)RsxVertexResult.TextureCoordinate3,
+            (byte)RsxVertexResult.TextureCoordinate4,
+            (byte)RsxVertexResult.TextureCoordinate5,
+            (byte)RsxVertexResult.TextureCoordinate6,
+            (byte)RsxVertexResult.TextureCoordinate7
         };
 
         foreach (RsxVertexInstruction instruction in instructions)
         {
-            if (instruction.VecOpcode != 0 &&
-                instruction.VecWriteMask != 0 &&
+            if (instruction.VectorOpcode != RsxVertexVectorOpcode.Nop &&
+                instruction.VectorWriteMask != RsxVertexWriteMask.None &&
                 VertexExpression(instruction, scalar: false) is not null)
             {
-                int sourceMask = RsxVertexInstruction.VectorSourceMask(
-                    instruction.VecOpcode);
-                if ((sourceMask & 1) != 0)
+                RsxSourceSlotMask sourceMask =
+                    RsxVertexInstruction.VectorSourceMask(
+                        instruction.VectorOpcode);
+                if ((sourceMask & RsxSourceSlotMask.Source0) !=
+                    RsxSourceSlotMask.None)
                 {
                     AddVertexSourceRegister(
                         instruction,
@@ -174,7 +179,8 @@ internal static class RsxVertexGlsl330Lowerer
                         inputRegisters,
                         tempRegisters);
                 }
-                if ((sourceMask & 2) != 0)
+                if ((sourceMask & RsxSourceSlotMask.Source1) !=
+                    RsxSourceSlotMask.None)
                 {
                     AddVertexSourceRegister(
                         instruction,
@@ -182,7 +188,8 @@ internal static class RsxVertexGlsl330Lowerer
                         inputRegisters,
                         tempRegisters);
                 }
-                if ((sourceMask & 4) != 0)
+                if ((sourceMask & RsxSourceSlotMask.Source2) !=
+                    RsxSourceSlotMask.None)
                 {
                     AddVertexSourceRegister(
                         instruction,
@@ -197,10 +204,10 @@ internal static class RsxVertexGlsl330Lowerer
                     outputRegisters);
             }
 
-            if (instruction.ScaOpcode != 0 &&
-                instruction.ScaWriteMask != 0 &&
+            if (instruction.ScalarOpcode != RsxVertexScalarOpcode.Nop &&
+                instruction.ScalarWriteMask != RsxVertexWriteMask.None &&
                 RsxVertexInstruction.ScalarReadsSource2(
-                    instruction.ScaOpcode) &&
+                    instruction.ScalarOpcode) &&
                 VertexExpression(instruction, scalar: true) is not null)
             {
                 AddVertexSourceRegister(
@@ -228,13 +235,13 @@ internal static class RsxVertexGlsl330Lowerer
         ISet<int> inputRegisters,
         ISet<int> tempRegisters)
     {
-        switch (RsxVertexInstruction.SourceRegisterType(source))
+        switch (RsxVertexInstruction.SourceRegisterKind(source))
         {
-            case 1:
+            case RsxVertexRegisterType.Temporary:
                 tempRegisters.Add((int)((source >> 2) & 0x3f));
                 break;
-            case 2:
-                inputRegisters.Add(instruction.InputSource);
+            case RsxVertexRegisterType.Input:
+                inputRegisters.Add((byte)instruction.InputAttribute);
                 break;
         }
     }
@@ -248,8 +255,8 @@ internal static class RsxVertexGlsl330Lowerer
         bool writesOutput = scalar
             ? instruction.ScaResult
             : instruction.VecResult;
-        if (writesOutput && instruction.ResultIndex != 0x1f)
-            outputRegisters.Add(instruction.ResultIndex);
+        if (writesOutput && instruction.Result != RsxVertexResult.None)
+            outputRegisters.Add((byte)instruction.Result);
 
         int temp = scalar
             ? instruction.ScaDestTemp
@@ -299,9 +306,14 @@ internal static class RsxVertexGlsl330Lowerer
         if (!instruction.CondUpdateEnabled)
             return;
 
-        VertexSlotValue? conditionValue = instruction.CondUpdateFromVector
-            ? vectorValue
-            : scalarValue;
+        VertexSlotValue? conditionValue;
+        if (vectorValue is not null && scalarValue is not null)
+        {
+            blockers.Add("vertexDualSlotConditionUpdate=unlowered");
+            return;
+        }
+
+        conditionValue = vectorValue ?? scalarValue;
         if (conditionValue is not { } selected)
         {
             blockers.Add("vertexConditionUpdateSource=unlowered");
@@ -325,10 +337,10 @@ internal static class RsxVertexGlsl330Lowerer
         byte opcode = scalar
             ? instruction.ScaOpcode
             : instruction.VecOpcode;
-        int mask = scalar
-            ? instruction.ScaWriteMask
-            : instruction.VecWriteMask;
-        if (opcode == 0 || mask == 0)
+        RsxVertexWriteMask mask = scalar
+            ? instruction.ScalarWriteMask
+            : instruction.VectorWriteMask;
+        if (opcode == 0 || mask == RsxVertexWriteMask.None)
             return null;
         string? expression = VertexExpression(instruction, scalar);
         if (expression is null)
@@ -353,14 +365,14 @@ internal static class RsxVertexGlsl330Lowerer
         RsxVertexInstruction instruction)
     {
         if (!instruction.CondTestEnabled ||
-            instruction.ConditionCode == 7)
+            instruction.ConditionTest == RsxConditionTest.True)
         {
             return null;
         }
 
         string predicateName = $"rsxPredicate{instruction.Index}";
         string test = VertexConditionTestName(
-            instruction.ConditionCode);
+            instruction.ConditionTest);
         builder.Append($"  bvec4 {predicateName} = bvec4(");
         for (int component = 0; component < 4; component++)
         {
@@ -375,17 +387,17 @@ internal static class RsxVertexGlsl330Lowerer
         return predicateName;
     }
 
-    private static string VertexConditionTestName(int condition) =>
+    private static string VertexConditionTestName(RsxConditionTest condition) =>
         condition switch
         {
-            0 => "FL",
-            1 => "LT",
-            2 => "EQ",
-            3 => "LE",
-            4 => "GT",
-            5 => "NE",
-            6 => "GE",
-            7 => "TR",
+            RsxConditionTest.False => "FL",
+            RsxConditionTest.LessThan => "LT",
+            RsxConditionTest.Equal => "EQ",
+            RsxConditionTest.LessThanOrEqual => "LE",
+            RsxConditionTest.GreaterThan => "GT",
+            RsxConditionTest.NotEqual => "NE",
+            RsxConditionTest.GreaterThanOrEqual => "GE",
+            RsxConditionTest.True => "TR",
             _ => throw new ArgumentOutOfRangeException(nameof(condition))
         };
 
@@ -399,11 +411,11 @@ internal static class RsxVertexGlsl330Lowerer
         bool writesOutput = scalar
             ? instruction.ScaResult
             : instruction.VecResult;
-        if (writesOutput && instruction.ResultIndex != 0x1f)
+        if (writesOutput && instruction.Result != RsxVertexResult.None)
         {
             AppendMaskedVertexWrite(
                 builder,
-                $"O[{instruction.ResultIndex}]",
+                $"O[{(byte)instruction.Result}]",
                 value.Name,
                 value.Mask,
                 predicate);
@@ -427,7 +439,7 @@ internal static class RsxVertexGlsl330Lowerer
         StringBuilder builder,
         string destination,
         string value,
-        int mask,
+        RsxVertexWriteMask mask,
         string? predicate)
     {
         if (predicate is null)
@@ -440,10 +452,12 @@ internal static class RsxVertexGlsl330Lowerer
 
         for (int component = 0; component < 4; component++)
         {
-            int maskBit = 1 << (3 - component);
-            if ((mask & maskBit) == 0)
+            RsxVertexWriteMask maskBit =
+                (RsxVertexWriteMask)(1 << (3 - component));
+            if ((mask & maskBit) == RsxVertexWriteMask.None)
                 continue;
-            char destinationComponent = SwizzleChar(component);
+            char destinationComponent = SwizzleChar(
+                (RsxSwizzleComponent)component);
             builder.AppendLine(
                 $"  if ({predicate}.{destinationComponent}) {destination}.{destinationComponent} = {value}.{destinationComponent};");
         }
@@ -459,19 +473,21 @@ internal static class RsxVertexGlsl330Lowerer
                 instruction,
                 instruction.Source2,
                 2);
-            // NV/RSX scalar operands consume the first post-swizzle lane and
-            // replicate the result. Treating the operation as component-wise
-            // makes a non-X destination read an unrelated register lane.
             string scalarSource = $"({source}).x";
-            return instruction.ScaOpcode switch
+            return instruction.ScalarOpcode switch
             {
-                0x01 => $"rsxSplat({scalarSource})",
-                0x02 or 0x03 => $"rsxSplat(1.0 / {scalarSource})",
-                0x04 => $"rsxSplat(inversesqrt(max({scalarSource}, 0.0000001)))",
-                0x0d => $"rsxSplat(log2(max({scalarSource}, 0.0000001)))",
-                0x0e => $"rsxSplat(exp2({scalarSource}))",
-                0x0f => $"rsxSplat(sin({scalarSource}))",
-                0x10 => $"rsxSplat(cos({scalarSource}))",
+                RsxVertexScalarOpcode.Move => source,
+                RsxVertexScalarOpcode.Reciprocal => $"(1.0 / {source})",
+                RsxVertexScalarOpcode.ReciprocalClamped =>
+                    $"clamp(1.0 / {source}, vec4(5.42101e-20), vec4(1.884467e19))",
+                RsxVertexScalarOpcode.ReciprocalSquareRoot =>
+                    $"rsxSplat(1.0 / sqrt(max({scalarSource}, 0.0000000001)))",
+                RsxVertexScalarOpcode.LogarithmBase2 =>
+                    $"log2(max({source}, vec4(0.0000000001)))",
+                RsxVertexScalarOpcode.ExponentBase2 =>
+                    $"exp2({source})",
+                RsxVertexScalarOpcode.Sine => $"sin({source})",
+                RsxVertexScalarOpcode.Cosine => $"cos({source})",
                 _ => null
             };
         }
@@ -488,32 +504,40 @@ internal static class RsxVertexGlsl330Lowerer
             instruction,
             instruction.Source2,
             2);
-        return instruction.VecOpcode switch
+        return instruction.VectorOpcode switch
         {
-            0x01 => s0,
-            0x02 => $"({s0} * {s1})",
+            RsxVertexVectorOpcode.Move => s0,
+            RsxVertexVectorOpcode.Multiply => $"({s0} * {s1})",
             // NV40 VP ADD consumes source slots 0 and 2. Source slot 1 is
             // unused padding for this opcode; using it replaces matrix
             // translation operands with unrelated vertex inputs.
-            0x03 => $"({s0} + {s2})",
-            0x04 => $"({s0} * {s1} + {s2})",
-            0x05 => $"rsxSplat(dot(({s0}).xyz, ({s1}).xyz))",
-            0x06 => $"rsxSplat(dot(vec4(({s0}).xyz, 1.0), {s1}))",
-            0x07 => $"rsxSplat(dot({s0}, {s1}))",
-            0x08 => $"vec4(1.0, ({s0}).y * ({s1}).y, ({s0}).z, ({s1}).w)",
-            0x09 => $"min({s0}, {s1})",
-            0x0a => $"max({s0}, {s1})",
-            0x0b => $"rsxBool4(lessThan({s0}, {s1}))",
-            0x0c => $"rsxBool4(greaterThanEqual({s0}, {s1}))",
-            0x0e => $"fract({s0})",
-            0x0f => $"floor({s0})",
-            0x10 => $"rsxBool4(equal({s0}, {s1}))",
-            0x11 => "vec4(0.0)",
-            0x12 => $"rsxBool4(greaterThan({s0}, {s1}))",
-            0x13 => $"rsxBool4(lessThanEqual({s0}, {s1}))",
-            0x14 => $"rsxBool4(notEqual({s0}, {s1}))",
-            0x15 => "vec4(1.0)",
-            0x16 => $"sign({s0})",
+            RsxVertexVectorOpcode.Add => $"({s0} + {s2})",
+            RsxVertexVectorOpcode.MultiplyAdd => $"({s0} * {s1} + {s2})",
+            RsxVertexVectorOpcode.Dot3 => $"rsxSplat(dot(({s0}).xyz, ({s1}).xyz))",
+            RsxVertexVectorOpcode.DotHomogeneous =>
+                $"rsxSplat(dot(vec4(({s0}).xyz, 1.0), {s1}))",
+            RsxVertexVectorOpcode.Dot4 => $"rsxSplat(dot({s0}, {s1}))",
+            RsxVertexVectorOpcode.Distance =>
+                $"vec4(1.0, ({s0}).y * ({s1}).y, ({s0}).z, ({s1}).w)",
+            RsxVertexVectorOpcode.Minimum => $"min({s0}, {s1})",
+            RsxVertexVectorOpcode.Maximum => $"max({s0}, {s1})",
+            RsxVertexVectorOpcode.SetLessThan =>
+                $"rsxBool4(lessThan({s0}, {s1}))",
+            RsxVertexVectorOpcode.SetGreaterThanOrEqual =>
+                $"rsxBool4(greaterThanEqual({s0}, {s1}))",
+            RsxVertexVectorOpcode.Fraction => $"fract({s0})",
+            RsxVertexVectorOpcode.Floor => $"floor({s0})",
+            RsxVertexVectorOpcode.SetEqual =>
+                $"rsxBool4(equal({s0}, {s1}))",
+            RsxVertexVectorOpcode.SetFalse => "vec4(0.0)",
+            RsxVertexVectorOpcode.SetGreaterThan =>
+                $"rsxBool4(greaterThan({s0}, {s1}))",
+            RsxVertexVectorOpcode.SetLessThanOrEqual =>
+                $"rsxBool4(lessThanEqual({s0}, {s1}))",
+            RsxVertexVectorOpcode.SetNotEqual =>
+                $"rsxBool4(notEqual({s0}, {s1}))",
+            RsxVertexVectorOpcode.SetTrue => "vec4(1.0)",
+            RsxVertexVectorOpcode.SetSign => $"sign({s0})",
             _ => null
         };
     }
@@ -523,11 +547,13 @@ internal static class RsxVertexGlsl330Lowerer
         uint source,
         int sourceIndex)
     {
-        string value = RsxVertexInstruction.SourceRegisterType(source) switch
+        string value = RsxVertexInstruction.SourceRegisterKind(source) switch
         {
-            1 => $"R[{(source >> 2) & 0x3f}]",
-            2 => $"V[{instruction.InputSource}]",
-            3 => $"rsxVertexConst[{instruction.ConstSource}]",
+            RsxVertexRegisterType.Temporary => $"R[{(source >> 2) & 0x3f}]",
+            RsxVertexRegisterType.Input =>
+                $"V[{(byte)instruction.InputAttribute}]",
+            RsxVertexRegisterType.Constant =>
+                $"rsxVertexConst[{instruction.ConstSource}]",
             _ => "vec4(0.0)"
         };
         value += $".{VertexSwizzle(source)}";
@@ -547,21 +573,33 @@ internal static class RsxVertexGlsl330Lowerer
     private static string VertexSwizzle(uint source) =>
         string.Create(4, source, static (span, value) =>
         {
-            span[0] = SwizzleChar((int)((value >> 14) & 3));
-            span[1] = SwizzleChar((int)((value >> 12) & 3));
-            span[2] = SwizzleChar((int)((value >> 10) & 3));
-            span[3] = SwizzleChar((int)((value >> 8) & 3));
+            span[0] = SwizzleChar(
+                (RsxSwizzleComponent)((value >> 14) & 3));
+            span[1] = SwizzleChar(
+                (RsxSwizzleComponent)((value >> 12) & 3));
+            span[2] = SwizzleChar(
+                (RsxSwizzleComponent)((value >> 10) & 3));
+            span[3] = SwizzleChar(
+                (RsxSwizzleComponent)((value >> 8) & 3));
         });
 
-    private static char SwizzleChar(int value) => "xyzw"[value & 3];
+    private static char SwizzleChar(RsxSwizzleComponent component) =>
+        component switch
+        {
+            RsxSwizzleComponent.X => 'x',
+            RsxSwizzleComponent.Y => 'y',
+            RsxSwizzleComponent.Z => 'z',
+            RsxSwizzleComponent.W => 'w',
+            _ => throw new ArgumentOutOfRangeException(nameof(component))
+        };
 
-    private static string VertexWriteMask(int mask)
+    private static string VertexWriteMask(RsxVertexWriteMask mask)
     {
         var value = new StringBuilder(4);
-        if ((mask & 8) != 0) value.Append('x');
-        if ((mask & 4) != 0) value.Append('y');
-        if ((mask & 2) != 0) value.Append('z');
-        if ((mask & 1) != 0) value.Append('w');
+        if ((mask & RsxVertexWriteMask.X) != 0) value.Append('x');
+        if ((mask & RsxVertexWriteMask.Y) != 0) value.Append('y');
+        if ((mask & RsxVertexWriteMask.Z) != 0) value.Append('z');
+        if ((mask & RsxVertexWriteMask.W) != 0) value.Append('w');
         return value.ToString();
     }
 
@@ -587,7 +625,8 @@ internal static class RsxVertexGlsl330Lowerer
 
     private static void AppendVertexExportGlsl(StringBuilder builder)
     {
-        builder.AppendLine("  gl_Position = O[0];");
+        builder.AppendLine(
+            $"  gl_Position = O[{(byte)RsxVertexResult.Position}];");
         builder.AppendLine("  // RSX viewport Y scale is negative; desktop OpenGL's is positive.");
         builder.AppendLine("  gl_Position.y = -gl_Position.y;");
         builder.AppendLine("  // Native RSX clip Z [0,W] lowers to OpenGL clip Z [-W,W].");
@@ -601,7 +640,7 @@ internal static class RsxVertexGlsl330Lowerer
 
     private readonly record struct VertexSlotValue(
         string Name,
-        int Mask);
+        RsxVertexWriteMask Mask);
 }
 
 internal sealed record RsxVertexGlsl330LoweringResult(

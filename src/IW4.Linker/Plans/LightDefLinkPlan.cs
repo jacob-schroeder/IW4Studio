@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.LightDef;
+using IW4.Assets.Assets.Material;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 
@@ -14,7 +15,7 @@ internal sealed class LightDefLinkPlan : AssetLinkPlan
         AssetKey key,
         string name,
         AssetDependency? image,
-        byte samplerState,
+        MaterialSamplerState samplerState,
         byte[] padding,
         uint lmapLookupStart,
         LinkAssetFreezeScope freeze)
@@ -26,7 +27,7 @@ internal sealed class LightDefLinkPlan : AssetLinkPlan
         var writer = new LinkTemplateWriter(LightDefAsset.SerializedSize);
         writer.Skip(sizeof(int));
         writer.Skip(sizeof(int));
-        writer.WriteByte(samplerState);
+        writer.WriteByte((byte)samplerState);
         writer.WriteBytes(padding);
         writer.WriteUInt32(lmapLookupStart);
         Root = LinkStorageSymbol.SourceBytes(
@@ -51,7 +52,7 @@ internal sealed class LightDefLinkPlan : AssetLinkPlan
         {
             if (definition.Image is not null ||
                 definition.ImagePointer.Raw != 0 ||
-                definition.SamplerState != 0 ||
+                definition.SamplerState != MaterialSamplerState.None ||
                 definition.Pad09To0B is null ||
                 definition.Pad09To0B.Length is not (0 or 3) ||
                 definition.Pad09To0B.Any(value => value != 0) ||

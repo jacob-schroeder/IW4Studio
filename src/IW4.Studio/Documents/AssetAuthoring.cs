@@ -183,6 +183,20 @@ public sealed class AssetEditorSession : AssetEditorSurface
 
     public T ReadDraft<T>() where T : notnull => OpenDraft<T>();
 
+    /// <summary>Resolves a picker name only to a live, typed workspace catalog definition.</summary>
+    public bool TryResolveWorkspaceDefinition<T>(string? name, out T? definition)
+        where T : IW4.Assets.Assets.BaseAsset
+    {
+        definition = null;
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        WorkspaceAssetCatalogEntry[] matches = Workspace.AssetCatalog.Entries
+            .Where(entry => entry.Definition is T && (string.Equals(entry.OriginalName, name, StringComparison.Ordinal) || string.Equals(entry.NormalizedName, name, StringComparison.Ordinal)))
+            .ToArray();
+        if (matches.Length != 1) return false;
+        definition = matches[0].Definition as T;
+        return definition is not null;
+    }
+
     /// <summary>Validates a local candidate without publishing it to the editing session.</summary>
     public AssetEditorValidationState ValidateCandidate<T>(T candidate) where T : notnull
     {
@@ -221,6 +235,32 @@ public sealed class AssetEditorSession : AssetEditorSurface
             _adapter,
             next);
         Validation = validation;
+        return changed;
+    }
+
+    /// <summary>Publishes a fully compiled XModel and its generated XModelSurfs in one revision.</summary>
+    public bool ApplyCompiledXModel(
+        XModelDraft candidate,
+        out IReadOnlyList<AssetValidationIssue> issues)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (!CanEdit)
+            throw new InvalidOperationException("This asset is not editable.");
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.XModel)
+            throw new InvalidOperationException("This editor does not host an XModel.");
+        TargetZoneRowIdentity identity = _rowIdentity ?? throw new InvalidOperationException(
+            "An editable editor requires a stable target row.");
+        XModelAssemblyCompileResult compiled = XModelAssemblyCompiler.Compile(candidate);
+        AssetValidationIssue[] validation = _adapter.Validate(candidate)
+            .Concat(compiled.Issues)
+            .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))
+            .Select(group => group.First()).ToArray();
+        issues = Array.AsReadOnly(validation);
+        if (validation.Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            return false;
+        bool changed = _session.PublishCompiledXModel(identity, compiled.Definition, compiled.Providers);
+        Validation = new AssetEditorValidationState(validation);
         return changed;
     }
     public T ApplyAndRead<T>(Action<T> mutation) where T : notnull

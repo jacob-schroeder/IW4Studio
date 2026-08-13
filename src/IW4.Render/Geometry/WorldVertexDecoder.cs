@@ -220,10 +220,12 @@ internal sealed class WorldVertexDecoder(
 
     private static bool IsLightmapTexCoordSource(VertexSource source) =>
         source.FormatByte0 == 4 &&
-        source.FormatByte1 == 0x02 &&
+        source.FormatByte1 == RsxVertexElementType.Float32 &&
         source.ComponentA == 2 &&
         source.ComponentB == 3;
 
     private static bool IsNormalSource(VertexSource source) =>
-        source.FormatByte0 == 1 && source.FormatByte1 == 0x06;
+        source.FormatByte0 == 1 &&
+        source.FormatByte1 ==
+            RsxVertexElementType.Signed11_11_10Normalized;
 }

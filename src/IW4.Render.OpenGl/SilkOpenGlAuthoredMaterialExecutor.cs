@@ -555,14 +555,14 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 break;
         }
 
-        _state.PolygonMode(state.PolygonMode == 0x1B01u
+        _state.PolygonMode(state.PolygonMode == RsxPolygonMode.Line
             ? PolygonMode.Line
             : PolygonMode.Fill);
         _state.ColorMask(
-            (state.ColorMask & 0x0001_0000u) != 0,
-            (state.ColorMask & 0x0000_0100u) != 0,
-            (state.ColorMask & 0x0000_0001u) != 0,
-            (state.ColorMask & 0x0100_0000u) != 0);
+            (state.ColorMask & RsxColorMask.Red) != 0,
+            (state.ColorMask & RsxColorMask.Green) != 0,
+            (state.ColorMask & RsxColorMask.Blue) != 0,
+            (state.ColorMask & RsxColorMask.Alpha) != 0);
 
         if (state.BlendEnabled)
         {
@@ -581,16 +581,19 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             _state.SetEnabled(EnableCap.Blend, false);
         }
 
-        if (state.PolygonOffsetEnabled)
+        switch (state.PolygonOffsetMode)
         {
-            _state.SetEnabled(EnableCap.PolygonOffsetFill, true);
-            _state.PolygonOffset(
-                state.PolygonOffsetFactor,
-                state.PolygonOffsetUnits);
-        }
-        else
-        {
-            _state.SetEnabled(EnableCap.PolygonOffsetFill, false);
+            case RenderPolygonOffsetMode.Disabled:
+                _state.SetEnabled(EnableCap.PolygonOffsetFill, false);
+                break;
+            case RenderPolygonOffsetMode.Explicit:
+                _state.SetEnabled(EnableCap.PolygonOffsetFill, true);
+                _state.PolygonOffset(
+                    state.PolygonOffsetFactor,
+                    state.PolygonOffsetUnits);
+                break;
+            case RenderPolygonOffsetMode.Inherit:
+                break;
         }
         return true;
     }
@@ -634,7 +637,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 "renderStateStencil=MRT_WRITE_MASK_AND_FACE_CONVENTION_UNAVAILABLE";
             return false;
         }
-        if (state.PolygonMode is not (0x1B01u or 0x1B02u))
+        if (!Enum.IsDefined(state.PolygonMode))
         {
             blocker =
                 $"renderStatePolygonMode=unsupportedValue(0x{state.PolygonMode:X4})";
@@ -656,12 +659,6 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         {
             blocker =
                 $"renderStateBlend=unsupportedTuple(eqRgb=0x{state.BlendEquationRgb:X4},eqA=0x{state.BlendEquationAlpha:X4},srcRgb=0x{state.BlendSourceRgb:X4},dstRgb=0x{state.BlendDestinationRgb:X4},srcA=0x{state.BlendSourceAlpha:X4},dstA=0x{state.BlendDestinationAlpha:X4})";
-            return false;
-        }
-        if (!float.IsFinite(state.PolygonOffsetFactor) ||
-            !float.IsFinite(state.PolygonOffsetUnits))
-        {
-            blocker = "renderStatePolygonOffset=NONFINITE";
             return false;
         }
         return true;
@@ -708,51 +705,57 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         return binding.CodeMatrixRow is >= 0 and <= 3;
     }
 
-    private static bool IsDepthFunction(uint value) =>
-        value is >= 0x0200u and <= 0x0207u;
+    private static bool IsDepthFunction(RsxCompareFunction value) =>
+        Enum.IsDefined(value);
 
-    private static DepthFunction ToDepthFunction(uint value) => value switch
+    private static DepthFunction ToDepthFunction(RsxCompareFunction value) =>
+        value switch
     {
-        0x0200u => DepthFunction.Never,
-        0x0201u => DepthFunction.Less,
-        0x0202u => DepthFunction.Equal,
-        0x0203u => DepthFunction.Lequal,
-        0x0204u => DepthFunction.Greater,
-        0x0205u => DepthFunction.Notequal,
-        0x0206u => DepthFunction.Gequal,
-        0x0207u => DepthFunction.Always,
+        RsxCompareFunction.Never => DepthFunction.Never,
+        RsxCompareFunction.Less => DepthFunction.Less,
+        RsxCompareFunction.Equal => DepthFunction.Equal,
+        RsxCompareFunction.LessThanOrEqual => DepthFunction.Lequal,
+        RsxCompareFunction.Greater => DepthFunction.Greater,
+        RsxCompareFunction.NotEqual => DepthFunction.Notequal,
+        RsxCompareFunction.GreaterThanOrEqual => DepthFunction.Gequal,
+        RsxCompareFunction.Always => DepthFunction.Always,
         _ => throw new ArgumentOutOfRangeException(nameof(value))
     };
 
-    private static bool IsBlendEquation(uint value) =>
-        value is 0x8006u or 0x800Au or 0x800Bu or 0x8007u or 0x8008u;
+    private static bool IsBlendEquation(RsxBlendEquation value) =>
+        Enum.IsDefined(value);
 
-    private static BlendEquationModeEXT ToBlendEquation(uint value) =>
+    private static BlendEquationModeEXT ToBlendEquation(
+        RsxBlendEquation value) =>
         value switch
         {
-            0x8006u => BlendEquationModeEXT.FuncAdd,
-            0x800Au => BlendEquationModeEXT.FuncSubtract,
-            0x800Bu => BlendEquationModeEXT.FuncReverseSubtract,
-            0x8007u => BlendEquationModeEXT.Min,
-            0x8008u => BlendEquationModeEXT.Max,
+            RsxBlendEquation.Add => BlendEquationModeEXT.FuncAdd,
+            RsxBlendEquation.Subtract => BlendEquationModeEXT.FuncSubtract,
+            RsxBlendEquation.ReverseSubtract =>
+                BlendEquationModeEXT.FuncReverseSubtract,
+            RsxBlendEquation.Minimum => BlendEquationModeEXT.Min,
+            RsxBlendEquation.Maximum => BlendEquationModeEXT.Max,
             _ => throw new ArgumentOutOfRangeException(nameof(value))
         };
 
-    private static bool IsBlendFactor(uint value) =>
-        value is 0u or 1u or >= 0x0300u and <= 0x0307u;
+    private static bool IsBlendFactor(RsxBlendFactor value) =>
+        Enum.IsDefined(value);
 
-    private static BlendingFactor ToBlendFactor(uint value) => value switch
+    private static BlendingFactor ToBlendFactor(RsxBlendFactor value) =>
+        value switch
     {
-        0u => BlendingFactor.Zero,
-        1u => BlendingFactor.One,
-        0x0300u => BlendingFactor.SrcColor,
-        0x0301u => BlendingFactor.OneMinusSrcColor,
-        0x0302u => BlendingFactor.SrcAlpha,
-        0x0303u => BlendingFactor.OneMinusSrcAlpha,
-        0x0304u => BlendingFactor.DstAlpha,
-        0x0305u => BlendingFactor.OneMinusDstAlpha,
-        0x0306u => BlendingFactor.DstColor,
-        0x0307u => BlendingFactor.OneMinusDstColor,
+        RsxBlendFactor.Zero => BlendingFactor.Zero,
+        RsxBlendFactor.One => BlendingFactor.One,
+        RsxBlendFactor.SourceColor => BlendingFactor.SrcColor,
+        RsxBlendFactor.OneMinusSourceColor => BlendingFactor.OneMinusSrcColor,
+        RsxBlendFactor.SourceAlpha => BlendingFactor.SrcAlpha,
+        RsxBlendFactor.OneMinusSourceAlpha => BlendingFactor.OneMinusSrcAlpha,
+        RsxBlendFactor.DestinationAlpha => BlendingFactor.DstAlpha,
+        RsxBlendFactor.OneMinusDestinationAlpha =>
+            BlendingFactor.OneMinusDstAlpha,
+        RsxBlendFactor.DestinationColor => BlendingFactor.DstColor,
+        RsxBlendFactor.OneMinusDestinationColor =>
+            BlendingFactor.OneMinusDstColor,
         _ => throw new ArgumentOutOfRangeException(nameof(value))
     };
 

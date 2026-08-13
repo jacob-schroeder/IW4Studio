@@ -1,5 +1,6 @@
 namespace IW4.Render.Scheduling;
 
+using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Scheduling.Shadows;
 
 /// <summary>
@@ -63,7 +64,8 @@ public sealed class MapRenderSceneLightSelectorAssetState
         if ((uint)lightIndex >= (uint)SceneLightCount)
             throw new ArgumentOutOfRangeException(nameof(lightIndex));
 
-        return _baseColumnByLight[lightIndex] == 1 ||
+        return _baseColumnByLight[lightIndex] ==
+                (byte)GfxLightType.Directional ||
             _canUseShadowMapByLight[lightIndex] != 0;
     }
 
@@ -160,7 +162,8 @@ public sealed class MapRenderSceneLightSelectorAssetState
             bool allocated =
                 (runtimeSunShadowMapBits[lightIndex >> 5] &
                  (1u << (lightIndex & 31))) != 0;
-            if (allocated && _baseColumnByLight[lightIndex] != 1)
+            if (allocated && _baseColumnByLight[lightIndex] !=
+                    (byte)GfxLightType.Directional)
             {
                 throw new InvalidDataException(
                     $"Scene light {lightIndex} cannot consume the directional-sun shadow atlas.");

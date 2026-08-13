@@ -2,6 +2,7 @@ using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.FastFiles.Zone;
 using IW4.Runtime.Database;
 
@@ -22,15 +23,15 @@ public sealed record MapRenderPickMaterialInfo(
     ushort SamplerDest,
     uint SamplerHash,
     byte TextureSemantic,
-    byte TexCoordSource,
+    MaterialStreamSource TexCoordSource,
     string TextureName,
     int TextureWidth,
     int TextureHeight,
     string TextureFormat,
     byte SamplerState,
     int SamplerRsxClampMax,
-    byte SamplerRsxDescriptorPad0F,
-    byte SamplerRsxDescriptorPad1B,
+    byte SamplerMinLodControl,
+    byte SamplerUseSrgbReads,
     uint SamplerRsxCachePayload,
     uint SamplerRsxTexEnablePayload,
     uint SamplerRsxTexFilterPayload,

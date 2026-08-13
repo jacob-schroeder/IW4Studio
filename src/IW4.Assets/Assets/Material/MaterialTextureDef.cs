@@ -12,8 +12,8 @@ public sealed class MaterialTextureDef
     public uint NameHash { get; init; }
     public byte NameStart { get; init; }
     public byte NameEnd { get; init; }
-    public byte SamplerState { get; init; }
-    public byte Semantic { get; init; }
+    public MaterialSamplerState SamplerState { get; init; }
+    public TextureSemantic Semantic { get; init; }
     public XPointerReference DataPointer { get; init; }
     public GfxImageAsset? Image { get; init; }
     public MaterialWater? Water { get; init; }

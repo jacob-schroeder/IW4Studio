@@ -46,7 +46,8 @@
                   MinHeight="30"
                   Padding="12,5"
                   IsEnabled="{Binding CanApply}"
-                  ToolTip.Tip="Runtime XSurface compilation and material remapping are required before Apply">
+                  ToolTip.Tip="Apply the compiled XSurface candidate and generated providers"
+                  Click="ApplyButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
               <TextBlock Text="Apply" />
@@ -62,7 +63,7 @@
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid ColumnDefinitions="Auto,164,Auto,*,Auto,Auto,Auto"
+        <Grid ColumnDefinitions="Auto,164,Auto,*,Auto,Auto,Auto,Auto"
             ColumnSpacing="9">
         <TextBlock Text="LOD"
                    VerticalAlignment="Center"
@@ -95,6 +96,11 @@
                   VerticalAlignment="Center"
                   IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
         <CheckBox Grid.Column="6"
+                  Content="Collision"
+                  VerticalAlignment="Center"
+                  IsEnabled="{Binding CanShowCollision}"
+                  IsChecked="{Binding IsCollisionEnabled, Mode=TwoWay}" />
+        <CheckBox Grid.Column="7"
                   Content="Bone tags"
                   VerticalAlignment="Center"
                   IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
@@ -113,6 +119,7 @@
                                     SelectedLodIndex="{Binding SelectedLodIndex}"
                                     UseStudioEnvironment="{Binding IsStudioEnvironmentEnabled}"
                                     ShowWireframe="{Binding IsWireframeEnabled}"
+                                    ShowCollision="{Binding IsCollisionEnabled}"
                                     ShowBoneTags="{Binding ShowBoneTags}" />
 
         <Border x:Name="PreviewInputSurface"
@@ -178,8 +185,8 @@
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid RowDefinitions="Auto,8,Auto">
-      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto"
+      <Grid RowDefinitions="Auto,8,Auto,6,Auto">
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="14">
         <StackPanel Spacing="2"
                     VerticalAlignment="Center">
@@ -214,13 +221,23 @@
                 MinHeight="30"
                 Padding="12,5"
                 IsEnabled="{Binding CanExportXModel}"
+                ToolTip.Tip="Export the selected loaded LOD as a portable binary glTF model"
+                AutomationProperties.Name="Export selected XModel LOD as GLB"
+                Click="ExportGlbButton_Click">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="Export" Width="15" Height="15" />
+            <TextBlock Text="Export GLB…" />
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="5"
+                Classes="ghost"
+                MinHeight="30"
+                Padding="12,5"
+                IsEnabled="{Binding CanExportXModel}"
                 ToolTip.Tip="Validate and export the selected loaded LOD as XMODEL_EXPORT version 6"
                 AutomationProperties.Name="Export selected XModel LOD as XMODEL_EXPORT"
                 Click="ExportXModelButton_Click">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <materialIcons:MaterialIcon Kind="Export" Width="15" Height="15" />
-            <TextBlock Text="Export XMODEL_EXPORT…" />
-          </StackPanel>
+          <TextBlock Text="Export XMODEL_EXPORT…" />
         </Button>
       </Grid>
       <ListBox Grid.Row="2"
@@ -240,6 +257,23 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
+      <ItemsControl Grid.Row="4"
+                    IsVisible="{Binding IsImportedLodSelected}"
+                    ItemsSource="{Binding ImportedMaterialMappings}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="*,220" ColumnSpacing="8" Margin="0,2">
+              <TextBlock Text="{Binding MaterialName}"
+                         VerticalAlignment="Center"
+                         FontSize="10" />
+              <ComboBox Grid.Column="1"
+                        ItemsSource="{Binding $parent[UserControl].DataContext.MaterialSlotOptions}"
+                        SelectedItem="{Binding SelectedSourceSlot, Mode=TwoWay}"
+                        MinHeight="26" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
       </Grid>
     </Border>
   </Grid>

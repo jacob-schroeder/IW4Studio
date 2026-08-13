@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Geometry;
 
 /// <summary>
@@ -11,8 +13,10 @@ internal readonly record struct WorldVertexLightingSources(
 
 internal static class WorldVertexLightingSourceResolver
 {
-    private const byte LightmapTexCoordSource = 0x02;
-    private const byte NormalSource = 0x03;
+    private const MaterialStreamSource LightmapTexCoordSource =
+        MaterialStreamSource.TexCoord0;
+    private const MaterialStreamSource NormalSource =
+        MaterialStreamSource.Normal;
 
     internal static WorldVertexLightingSources Resolve(
         WorldVertexLayoutSelection layout) =>
@@ -34,14 +38,14 @@ internal static class WorldVertexLightingSourceResolver
             backendRow,
             LightmapTexCoordSource,
             requiredComponentCount: 4,
-            requiredRsxType: 0x02,
+            requiredRsxType: RsxVertexElementType.Float32,
             componentA: 2,
             componentB: 3);
         VertexSource? normal = ResolveSource(
             backendRow,
             NormalSource,
             requiredComponentCount: 1,
-            requiredRsxType: 0x06,
+            requiredRsxType: RsxVertexElementType.Signed11_11_10Normalized,
             componentA: 0,
             componentB: 0);
         return new WorldVertexLightingSources(lightmapTexCoord, normal);
@@ -49,9 +53,9 @@ internal static class WorldVertexLightingSourceResolver
 
     private static VertexSource? ResolveSource(
         int backendRow,
-        byte sourceIndex,
+        MaterialStreamSource sourceIndex,
         byte requiredComponentCount,
-        byte requiredRsxType,
+        RsxVertexElementType requiredRsxType,
         int componentA,
         int componentB)
     {

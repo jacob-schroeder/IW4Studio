@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Shaders;
 
 namespace IW4.Render.Execution;
@@ -41,7 +42,8 @@ internal static class TranslatedProgramDirectCodeConstantRows
         sourceRow == FrameDirectCodeConstants.GameTimeRowIndex ||
         sourceRow == FrameDirectCodeConstants.ModelLightingSamplerRowIndex ||
         IsStaticModelBaseLightingCoordsSourceRow(sourceRow) || IsStaticModelLightProbeAmbientSourceRow(sourceRow) ||
-        IsClipSpaceLookupSourceRow(sourceRow) || IsZNearSourceRow(sourceRow) || sourceRow == 0x23 || IsFogSourceRow(sourceRow);
+        IsClipSpaceLookupSourceRow(sourceRow) || IsZNearSourceRow(sourceRow) ||
+        sourceRow == FrameDirectCodeConstants.MaterialColorRowIndex || IsFogSourceRow(sourceRow);
     internal static bool IsSunShadowProjectionSourceRow(ushort sourceRow) => sourceRow is FrameDirectCodeConstants.SunShadowSwitchPartitionRowIndex or FrameDirectCodeConstants.SunShadowMapScaleRowIndex;
     internal static bool IsStaticModelBaseLightingCoordsSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.StaticModelBaseLightingCoordsRowIndex;
     internal static bool IsStaticModelLightProbeAmbientSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.StaticModelLightProbeAmbientRowIndex;
@@ -49,6 +51,8 @@ internal static class TranslatedProgramDirectCodeConstantRows
     internal static bool IsZNearSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.ZNearRowIndex;
     internal static bool IsPerInstanceStaticModelSourceRow(ushort sourceRow) => IsStaticModelBaseLightingCoordsSourceRow(sourceRow) || IsStaticModelLightProbeAmbientSourceRow(sourceRow);
     internal static bool IsRuntimeOwnedSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.DirectionalLightDirectionRowIndex || IsSunShadowProjectionSourceRow(sourceRow) || IsPerInstanceStaticModelSourceRow(sourceRow) || IsClipSpaceLookupSourceRow(sourceRow) || IsZNearSourceRow(sourceRow);
-    internal static bool IsSceneLightSourceRow(ushort sourceRow) => sourceRow is >= 0x00 and <= 0x05;
+    internal static bool IsSceneLightSourceRow(ushort sourceRow) =>
+        sourceRow is >= (ushort)MaterialConstantSource.LightPosition and
+            <= (ushort)MaterialConstantSource.LightFalloffPlacement;
     private static bool IsFogSourceRow(ushort sourceRow) => sourceRow is >= FrameDirectCodeConstants.FogRowIndex and <= FrameDirectCodeConstants.SunFogDirectionRowIndex;
 }

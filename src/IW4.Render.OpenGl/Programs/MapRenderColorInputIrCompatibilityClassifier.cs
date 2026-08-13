@@ -11,7 +11,10 @@ namespace IW4.Render.OpenGl.Programs;
 /// </summary>
 internal static class MapRenderColorInputIrCompatibilityClassifier
 {
-    private const byte RgbComponentMask = 0x07;
+    private const RsxFragmentWriteMask RgbComponentMask =
+        RsxFragmentWriteMask.X |
+        RsxFragmentWriteMask.Y |
+        RsxFragmentWriteMask.Z;
 
     internal static bool RequiresLinearization(
         RsxFragmentProgramIr program,
@@ -61,12 +64,13 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
         int samplerDestination)
     {
         if (instruction.TextureUnit != samplerDestination ||
-            instruction.Branch ||
+            instruction.IsControlFlow ||
             IsConditionSensitive(instruction) ||
             instruction.NoDest ||
             !WritesRgb(instruction.WriteMask) ||
             instruction.Saturate ||
-            instruction.Scale is not 0 and not 4)
+            instruction.Scale is not RsxFragmentResultScale.None and
+                not RsxFragmentResultScale.Reserved4)
         {
             return false;
         }
@@ -77,13 +81,14 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
         bool shadow = HasFeature(
             samplerFeatures,
             RsxFragmentSamplerFeatures.Shadow);
-        return instruction.Opcode switch
+        return instruction.OpcodeType switch
         {
             // These are the only lowerer spellings matched by the independent
             // legacy `texture(?:Lod)?` assignment regex. Projective samples
             // and scalar-wrapped shadow samples intentionally remain hidden.
-            0x17 => !shadow || cube,
-            0x2f or 0x31 => !shadow,
+            RsxFragmentOpcode.Texture => !shadow || cube,
+            RsxFragmentOpcode.TextureLod or
+                RsxFragmentOpcode.TextureBias => !shadow,
             _ => false
         };
     }
@@ -137,10 +142,10 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
         RsxFragmentSamplerFeatures samplerFeatures,
         out FragmentAssignmentFacts facts)
     {
-        if (instruction.Branch ||
+        if (instruction.IsControlFlow ||
             IsConditionSensitive(instruction) ||
             instruction.NoDest ||
-            instruction.WriteMask == 0 ||
+            instruction.WriteMask == RsxFragmentWriteMask.None ||
             !TryReadExpressionFacts(
                 instruction,
                 samplerFeatures,
@@ -150,7 +155,13 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
             return false;
         }
 
-        bool scaled = instruction.Scale is 1 or 2 or 3 or 5 or 6 or 7;
+        bool scaled = instruction.Scale is
+            RsxFragmentResultScale.MultiplyBy2 or
+            RsxFragmentResultScale.MultiplyBy4 or
+            RsxFragmentResultScale.MultiplyBy8 or
+            RsxFragmentResultScale.DivideBy2 or
+            RsxFragmentResultScale.DivideBy4 or
+            RsxFragmentResultScale.DivideBy8;
         facts = new FragmentAssignmentFacts(
             expression.SourceOccurrences,
             expression.ContainsAsterisk || scaled);
@@ -174,60 +185,61 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
 
         SourceOccurrencePattern occurrences;
         bool containsAsterisk = false;
-        switch (instruction.Opcode)
+        switch (instruction.OpcodeType)
         {
-            case 0x01:
-            case 0x10:
-            case 0x11:
-            case 0x15:
-            case 0x16:
-            case 0x1a:
-            case 0x1b:
-            case 0x1c:
-            case 0x1d:
-            case 0x22:
-            case 0x23:
+            case RsxFragmentOpcode.Move:
+            case RsxFragmentOpcode.Fraction:
+            case RsxFragmentOpcode.Floor:
+            case RsxFragmentOpcode.DerivativeX:
+            case RsxFragmentOpcode.DerivativeY:
+            case RsxFragmentOpcode.Reciprocal:
+            case RsxFragmentOpcode.ReciprocalSquareRoot:
+            case RsxFragmentOpcode.ExponentBase2:
+            case RsxFragmentOpcode.LogarithmBase2:
+            case RsxFragmentOpcode.Cosine:
+            case RsxFragmentOpcode.Sine:
                 occurrences = SourceOccurrencePattern.Source0;
                 break;
-            case 0x02:
-            case 0x3b:
+            case RsxFragmentOpcode.Multiply:
+            case RsxFragmentOpcode.DivideBySquareRoot:
                 occurrences = SourceOccurrencePattern.Source01;
                 containsAsterisk = true;
                 break;
-            case 0x03:
-            case 0x05:
-            case 0x06:
-            case 0x08:
-            case 0x09:
-            case 0x0a:
-            case 0x0b:
-            case 0x0c:
-            case 0x0d:
-            case 0x0e:
-            case 0x0f:
-            case 0x38:
-            case 0x3a:
+            case RsxFragmentOpcode.Add:
+            case RsxFragmentOpcode.Dot3:
+            case RsxFragmentOpcode.Dot4:
+            case RsxFragmentOpcode.Minimum:
+            case RsxFragmentOpcode.Maximum:
+            case RsxFragmentOpcode.SetLessThan:
+            case RsxFragmentOpcode.SetGreaterThanOrEqual:
+            case RsxFragmentOpcode.SetLessThanOrEqual:
+            case RsxFragmentOpcode.SetGreaterThan:
+            case RsxFragmentOpcode.SetNotEqual:
+            case RsxFragmentOpcode.SetEqual:
+            case RsxFragmentOpcode.Dot2:
+            case RsxFragmentOpcode.Divide:
                 occurrences = SourceOccurrencePattern.Source01;
                 break;
-            case 0x04:
+            case RsxFragmentOpcode.MultiplyAdd:
                 // Intentional legacy text quirk: the regex sees the MAD
                 // asterisk and then counts every register token on the line,
                 // including the additive source2 operand.
                 occurrences = SourceOccurrencePattern.Source012;
                 containsAsterisk = true;
                 break;
-            case 0x17:
+            case RsxFragmentOpcode.Texture:
                 occurrences = SourceOccurrencePattern.Source0;
                 break;
-            case 0x18 when !cube && !volume:
+            case RsxFragmentOpcode.TextureProjective
+                when !cube && !volume:
                 occurrences = SourceOccurrencePattern.Source0;
                 break;
-            case 0x20:
-            case 0x21:
+            case RsxFragmentOpcode.SetTrue:
+            case RsxFragmentOpcode.SetFalse:
                 occurrences = SourceOccurrencePattern.None;
                 break;
-            case 0x2f:
-            case 0x31:
+            case RsxFragmentOpcode.TextureLod:
+            case RsxFragmentOpcode.TextureBias:
                 if (shadow)
                 {
                     facts = default;
@@ -235,7 +247,7 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
                 }
                 occurrences = SourceOccurrencePattern.Source01;
                 break;
-            case 0x39:
+            case RsxFragmentOpcode.Normalize:
                 // The lowerer spells source0 twice in normalize(vec.xyz),
                 // vec.w. The legacy regex counts both only when an outer scale
                 // contributes an actual '*' character to the assignment.
@@ -291,23 +303,23 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
     private static bool IsLegacyRegexRgbRegisterToken(
         RsxFragmentOperand operand,
         FragmentRegister target) =>
-        operand.RegisterType == 0 &&
+        operand.RegisterKind == RsxFragmentRegisterType.Temporary &&
         operand.Fp16 == target.Fp16 &&
         operand.RegisterIndex == target.Index &&
-        (operand.SwizzleX != 3 ||
-         operand.SwizzleY != 3 ||
-         operand.SwizzleZ != 3 ||
-         operand.SwizzleW != 3);
+        (operand.SwizzleX != RsxSwizzleComponent.W ||
+         operand.SwizzleY != RsxSwizzleComponent.W ||
+         operand.SwizzleZ != RsxSwizzleComponent.W ||
+         operand.SwizzleW != RsxSwizzleComponent.W);
 
     private static bool IsConditionSensitive(
         RsxFragmentInstruction instruction) =>
         instruction.CondWriteEnabled ||
-        instruction.ConditionTest != RsxFragmentConditionTest.True ||
+        instruction.ConditionTest != RsxConditionTest.True ||
         instruction.ConditionWriteRegister1 ||
         instruction.ConditionReadRegister1;
 
-    private static bool WritesRgb(int componentMask) =>
-        (componentMask & RgbComponentMask) != 0;
+    private static bool WritesRgb(RsxFragmentWriteMask componentMask) =>
+        (componentMask & RgbComponentMask) != RsxFragmentWriteMask.None;
 
     private static bool HasFeature(
         RsxFragmentSamplerFeatures features,

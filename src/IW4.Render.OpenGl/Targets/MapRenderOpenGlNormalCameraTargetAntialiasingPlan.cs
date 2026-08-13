@@ -19,20 +19,20 @@ public sealed record MapRenderOpenGlNormalCameraTargetAntialiasingPlan
         }
 
         Target = target.Kind;
-        RawSurfaceAntialias = target.RawAntialias;
+        SurfaceAntialias = target.SurfaceAntialias;
         Ps3SurfaceSampleCount = target.Ps3SurfaceSampleCount;
-        RawControl = target.RawTargetSetAntiAliasingControl;
+        ControlFlags = target.TargetSetAntiAliasingControlFlags;
+        SampleMask = target.TargetSetSampleMask;
         MultisampleEnabled = target.TargetSetMultisampleEnabled;
         AlphaToCoverageEnabled = target.TargetSetAlphaToCoverageEnabled;
         AlphaToOneEnabled = target.TargetSetAlphaToOneEnabled;
-        SampleMask = target.TargetSetSampleMask;
         HostSampleCount = hostSampleCount;
-        bool sampleTopologyMatches = RawSurfaceAntialias switch
+        bool sampleTopologyMatches = SurfaceAntialias switch
         {
-            0 => hostSampleCount == 1,
-            3 => hostSampleCount == 2,
+            RsxSurfaceAntialias.Center1 => hostSampleCount == 1,
+            RsxSurfaceAntialias.DiagonalCentered2 => hostSampleCount == 2,
             _ => throw new InvalidOperationException(
-                $"Unsupported target antialias value {RawSurfaceAntialias}.")
+                $"Unsupported target antialias value {SurfaceAntialias}.")
         };
         if (!sampleTopologyMatches)
         {
@@ -43,11 +43,16 @@ public sealed record MapRenderOpenGlNormalCameraTargetAntialiasingPlan
 
     public MapRenderNormalCameraTargetKind Target { get; }
 
-    public byte RawSurfaceAntialias { get; }
+    public RsxSurfaceAntialias SurfaceAntialias { get; }
+
+    public byte RawSurfaceAntialias => (byte)SurfaceAntialias;
 
     public int Ps3SurfaceSampleCount { get; }
 
-    public uint RawControl { get; }
+    public RsxAntiAliasingControlFlags ControlFlags { get; }
+
+    public uint RawControl =>
+        ((uint)SampleMask << 16) | (uint)ControlFlags;
 
     public bool MultisampleEnabled { get; }
 

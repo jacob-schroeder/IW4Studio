@@ -7,9 +7,6 @@ namespace IW4.Render.Scheduling;
 /// </summary>
 public static class MapRenderWorldDrawMethodSettingsAdapter
 {
-    private const byte FogModeZeroAllowed = 0x01;
-    private const byte FogModeOneAllowed = 0x02;
-
     public static MapRenderDrawMethodSettings Adapt(
         GfxWorldAsset world,
         MapRenderDrawMethodSettings baseSettings,
@@ -25,20 +22,20 @@ public static class MapRenderWorldDrawMethodSettingsAdapter
     }
 
     public static bool ResolveUseSunDirFog(
-        byte fogTypesAllowed,
+        FogTypesAllowed fogTypesAllowed,
         bool activeSunFogEnabled)
     {
         if (activeSunFogEnabled &&
-            (fogTypesAllowed & FogModeOneAllowed) != 0)
+            (fogTypesAllowed & FogTypesAllowed.Dfog) != 0)
         {
             return true;
         }
 
-        return (fogTypesAllowed & FogModeZeroAllowed) == 0;
+        return (fogTypesAllowed & FogTypesAllowed.Normal) == 0;
     }
 
     public static bool TryResolveUseSunDirFogWithoutActiveFogState(
-        byte fogTypesAllowed,
+        FogTypesAllowed fogTypesAllowed,
         out bool useSunDirFog)
     {
         bool whenDisabled = ResolveUseSunDirFog(

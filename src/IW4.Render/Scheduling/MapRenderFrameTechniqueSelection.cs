@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -9,7 +11,7 @@ public sealed record MapRenderFrameTechniqueSelection(
     int SurfaceIndex,
     int PrimaryLightIndex,
     MapRenderWorldSurfacePageMembership PageMembership,
-    MapRenderSurfaceType SurfaceType,
+    GfxDrawSurfSurfaceType SurfaceType,
     int SceneLightVariant,
     int TechniqueSlot,
     bool ShadowMapAllocated);

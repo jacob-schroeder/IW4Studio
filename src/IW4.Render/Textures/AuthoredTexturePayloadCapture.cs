@@ -229,19 +229,19 @@ internal static class AuthoredTexturePayloadCapture
         if (width <= 0 || height <= 0 || image.Depth != 1)
             return false;
 
-        byte baseFormat = (byte)(image.Format & 0x9f);
-        int blockBytes = baseFormat switch
+        int blockBytes = image.FormatEncoding.BaseFormat switch
         {
-            0x86 => 8,
-            0x87 or 0x88 => 16,
+            GfxImageBaseFormat.CompressedDxt1 => 8,
+            GfxImageBaseFormat.CompressedDxt23 or
+            GfxImageBaseFormat.CompressedDxt45 => 16,
             _ => 0,
         };
         if (blockBytes == 0)
             return false;
 
         uint formatKey = GfxImagePixelLayout.BuildFormatKey(
-            image.Format,
-            image.TextureFlags);
+            image.FormatEncoding,
+            image.TextureRemap);
         int provenSize = GfxImagePixelLayout.ComputeMipByteCount(
             formatKey,
             width,
@@ -257,11 +257,14 @@ internal static class AuthoredTexturePayloadCapture
 
     private static AuthoredBlockCompression
         DescribeBlockCompression(byte format) =>
-        (byte)(format & 0x9f) switch
+        new GfxImageFormat(format).BaseFormat switch
         {
-            0x86 => AuthoredBlockCompression.Bc1,
-            0x87 => AuthoredBlockCompression.Bc2,
-            0x88 => AuthoredBlockCompression.Bc3,
+            GfxImageBaseFormat.CompressedDxt1 =>
+                AuthoredBlockCompression.Bc1,
+            GfxImageBaseFormat.CompressedDxt23 =>
+                AuthoredBlockCompression.Bc2,
+            GfxImageBaseFormat.CompressedDxt45 =>
+                AuthoredBlockCompression.Bc3,
             _ => AuthoredBlockCompression.Unknown,
         };
 

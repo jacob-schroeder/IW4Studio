@@ -119,10 +119,10 @@ internal sealed class GfxImageLinkPlan : AssetLinkPlan
         }
 
         int expectedByteCount = GfxImagePixelLayout.ComputePayloadByteCount(
-            definition.Format,
+            definition.FormatEncoding,
             definition.LevelCount,
-            definition.MultiFaceControl,
-            definition.TextureFlags,
+            definition.IsCubemap,
+            definition.TextureRemap,
             definition.Width,
             definition.Height,
             definition.Depth);
@@ -140,7 +140,7 @@ internal sealed class GfxImageLinkPlan : AssetLinkPlan
         }
         if (payload.Length != 0)
         {
-            if (definition.TextureSemantic == 0x0b)
+            if (definition.TextureSemantic == TextureSemantic.WaterMap)
             {
                 if (payload.Any(value => value != 0))
                 {
@@ -247,26 +247,27 @@ internal sealed class GfxImageLinkPlan : AssetLinkPlan
             entry.Width != 0 || entry.Height != 0 || entry.LevelSizeAndOffset != 0);
         if (definition.Format != 0 ||
             definition.LevelCount != 0 ||
-            definition.DimensionCount != 0 ||
+            definition.DimensionCount != default ||
             definition.MultiFaceControl != 0 ||
-            definition.TextureFlags != 0 ||
+            definition.TextureControl1 != 0 ||
             definition.Width != 0 ||
             definition.Height != 0 ||
             definition.Depth != 0 ||
-            definition.SerializedPixelDataBlock != 0 ||
-            definition.Pad0F != 0 ||
+            definition.SerializedMemoryLocation !=
+                GfxImageMemoryLocation.Local ||
+            definition.MinLodControl != 0 ||
             definition.RenderTargetPitch != 0 ||
             definition.SerializedPixelsOffset != 0 ||
-            definition.MapType != 0 ||
-            definition.TextureSemantic != 0 ||
-            definition.Category != 0 ||
-            definition.Pad1B != 0 ||
+            definition.MapType != MapType.None ||
+            definition.TextureSemantic != TextureSemantic.TwoDimensional ||
+            definition.Category != ImageCategory.Unknown ||
+            definition.UseSrgbReads != 0 ||
             definition.CardMemory != 0 ||
             definition.BaseWidth != 0 ||
             definition.BaseHeight != 0 ||
             definition.BaseDepth != 0 ||
             definition.BaseLevelCount != 0 ||
-            definition.Cached != 0 ||
+            definition.Cached != GfxImageCached.No ||
             definition.PayloadPointer.Type != IW4.FastFiles.Pointers.PointerType.Null ||
             definition.PayloadBytes.Count != 0 ||
             definition.PayloadByteCount != 0 ||
@@ -308,26 +309,26 @@ internal sealed class GfxImageLinkPlan : AssetLinkPlan
         var writer = new LinkTemplateWriter(GfxImageAsset.SerializedSize);
         writer.WriteByte(definition.Format);
         writer.WriteByte(definition.LevelCount);
-        writer.WriteByte(definition.DimensionCount);
+        writer.WriteByte((byte)definition.DimensionCount);
         writer.WriteByte(definition.MultiFaceControl);
-        writer.WriteUInt32(definition.TextureFlags);
+        writer.WriteUInt32(definition.TextureControl1);
         writer.WriteUInt16(definition.Width);
         writer.WriteUInt16(definition.Height);
         writer.WriteUInt16(definition.Depth);
-        writer.WriteByte(definition.SerializedPixelDataBlock);
-        writer.WriteByte(definition.Pad0F);
+        writer.WriteByte((byte)definition.SerializedMemoryLocation);
+        writer.WriteByte(definition.MinLodControl);
         writer.WriteUInt32(definition.RenderTargetPitch);
         writer.WriteUInt32(definition.SerializedPixelsOffset);
-        writer.WriteByte(definition.MapType);
-        writer.WriteByte(definition.TextureSemantic);
-        writer.WriteByte(definition.Category);
-        writer.WriteByte(definition.Pad1B);
+        writer.WriteByte((byte)definition.MapType);
+        writer.WriteByte((byte)definition.TextureSemantic);
+        writer.WriteByte((byte)definition.Category);
+        writer.WriteByte(definition.UseSrgbReads);
         writer.WriteUInt32(definition.CardMemory);
         writer.WriteUInt16(definition.BaseWidth);
         writer.WriteUInt16(definition.BaseHeight);
         writer.WriteUInt16(definition.BaseDepth);
         writer.WriteByte(definition.BaseLevelCount);
-        writer.WriteByte(definition.Cached);
+        writer.WriteByte((byte)definition.Cached);
         writer.Skip(sizeof(int));
         foreach (GfxImageStreamData entry in streamData)
         {

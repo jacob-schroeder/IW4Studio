@@ -76,7 +76,7 @@ public static class RsxGenericMaterialFallbackProgramFactory
             1u | // end
             (0x0fu << 9) |
             (1u << 13) |
-            (0x17u << 24); // texture2D, sampler destination zero
+            ((uint)RsxFragmentOpcode.Texture << 24); // sampler destination zero
         var instruction = new RsxFragmentInstruction(
             Index: 0,
             Offset: 0,
@@ -84,7 +84,7 @@ public static class RsxGenericMaterialFallbackProgramFactory
             Src0: 2u,
             Src1: 0,
             Src2: 0,
-            Opcode: 0x17,
+            OpcodeType: RsxFragmentOpcode.Texture,
             ByteCount: 32,
             Constant: null);
 
@@ -111,10 +111,14 @@ public static class RsxGenericMaterialFallbackProgramFactory
                 new HashSet<int>(),
                 new HashSet<int>()),
             [
-                new RsxFragmentColorExport(0, true, 0, 0x0f, "xyzw"),
-                new RsxFragmentColorExport(1, true, 4, 0, string.Empty),
-                new RsxFragmentColorExport(2, true, 6, 0, string.Empty),
-                new RsxFragmentColorExport(3, true, 8, 0, string.Empty)
+                new RsxFragmentColorExport(
+                    0, true, 0, RsxFragmentWriteMask.All, "xyzw"),
+                new RsxFragmentColorExport(
+                    1, true, 4, RsxFragmentWriteMask.None, string.Empty),
+                new RsxFragmentColorExport(
+                    2, true, 6, RsxFragmentWriteMask.None, string.Empty),
+                new RsxFragmentColorExport(
+                    3, true, 8, RsxFragmentWriteMask.None, string.Empty)
             ]);
     }
 

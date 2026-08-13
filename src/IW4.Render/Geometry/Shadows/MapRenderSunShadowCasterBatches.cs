@@ -184,7 +184,8 @@ public sealed class MapRenderWorldSunShadowCasterBatch
         }
         if (cutout &&
             cutoutUvRoute!.TexCoordSource !=
-                MapRenderSunShadowCasterMaterialPlanner.CutoutEngineRouteSource)
+                MapRenderSunShadowCasterMaterialPlanner
+                    .CutoutEngineRouteSource)
         {
             throw new ArgumentException(
                 "A cutout caster UV payload must retain native engine route 0x02.",
@@ -192,7 +193,8 @@ public sealed class MapRenderWorldSunShadowCasterBatch
         }
         if (cutout &&
             material is MapRenderSunShadowCutoutCasterMaterialPlan cutoutPlan &&
-            cutoutTexture!.SamplerState != cutoutPlan.Sampler.RawSamplerState)
+            cutoutTexture!.SamplerState !=
+                (byte)cutoutPlan.Sampler.RawSamplerState)
         {
             throw new ArgumentException(
                 "The decoded cutout texture lost its authored sampler state.",

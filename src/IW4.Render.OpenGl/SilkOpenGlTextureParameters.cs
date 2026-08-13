@@ -41,7 +41,7 @@ internal sealed class SilkOpenGlTextureParameters
         ArgumentNullException.ThrowIfNull(texture);
         ApplySwizzle(
             RsxTextureSwizzleDecoder.Decode(
-                texture.RsxTextureCommandState.TexSwizzlePayload),
+                texture.RsxTextureCommandState),
             textureTarget);
         ApplySampler(texture.DecodedSamplerState, maxMipLevel, textureTarget);
     }

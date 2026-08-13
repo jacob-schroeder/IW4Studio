@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.EditorPreview;
 
@@ -12,8 +13,10 @@ public readonly record struct MapRenderEditorPreviewGlowCodeConstantRow(
 /// </summary>
 public static class MapRenderEditorPreviewGlowCodeConstantProducer
 {
-    public const ushort GlowSetupRowIndex = 0x2b;
-    public const ushort GlowApplyRowIndex = 0x2c;
+    public const ushort GlowSetupRowIndex =
+        (ushort)MaterialConstantSource.GlowSetup;
+    public const ushort GlowApplyRowIndex =
+        (ushort)MaterialConstantSource.GlowApply;
 
     // IEC 61966-2-1 transfer constants used by the renderer.
     private const float LinearCutoffThreshold = 0.0392800010740757f;

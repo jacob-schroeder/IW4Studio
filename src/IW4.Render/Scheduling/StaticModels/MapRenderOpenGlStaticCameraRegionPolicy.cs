@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Material;
 using IW4.Render.Geometry;
 
 namespace IW4.Render.Scheduling.StaticModels;
@@ -9,8 +10,10 @@ namespace IW4.Render.Scheduling.StaticModels;
 /// </summary>
 internal static class MapRenderOpenGlStaticCameraRegionPolicy
 {
-    internal const byte EmissiveCameraRegion = 2;
-    internal const byte AuxiliaryTargetCameraRegion = 5;
+    internal const GfxCameraRegionType EmissiveCameraRegion =
+        GfxCameraRegionType.Emissive;
+    internal const GfxCameraRegionType AuxiliaryTargetCameraRegion =
+        GfxCameraRegionType.None;
 
     /// <summary>
     /// Resolves the technique selected by the native normal-camera phase.
@@ -19,7 +22,7 @@ internal static class MapRenderOpenGlStaticCameraRegionPolicy
     /// the page/light-selector technique.
     /// </summary>
     internal static int? ResolveNormalCameraTechniqueSlot(
-        byte cameraRegion,
+        GfxCameraRegionType cameraRegion,
         int? pageTechniqueSlot,
         MapRenderDrawMethod? drawMethod)
     {
@@ -35,8 +38,9 @@ internal static class MapRenderOpenGlStaticCameraRegionPolicy
         return drawMethod.EmissiveTechnique;
     }
 
-    internal static bool OwnsNormalCameraColor(byte cameraRegion) =>
-        cameraRegion < AuxiliaryTargetCameraRegion;
+    internal static bool OwnsNormalCameraColor(
+        GfxCameraRegionType cameraRegion) =>
+        (byte)cameraRegion < (byte)AuxiliaryTargetCameraRegion;
 
     /// <summary>
     /// A generic material preview may stand in for ordinary camera regions,
@@ -44,18 +48,18 @@ internal static class MapRenderOpenGlStaticCameraRegionPolicy
     /// view-dependent program semantics require the exact authored group.
     /// </summary>
     internal static bool AllowsGenericNormalCameraFallback(
-        byte cameraRegion) =>
+        GfxCameraRegionType cameraRegion) =>
         OwnsNormalCameraColor(cameraRegion) &&
         cameraRegion != EmissiveCameraRegion;
 
-    internal static byte? ResolveUniformRegion(
+    internal static GfxCameraRegionType? ResolveUniformRegion(
         IReadOnlyList<MapRenderStaticModelInstance> instances)
     {
         ArgumentNullException.ThrowIfNull(instances);
         if (instances.Count == 0)
             return null;
 
-        byte region = instances[0].CameraRegion;
+        GfxCameraRegionType region = instances[0].CameraRegion;
         for (int index = 1; index < instances.Count; index++)
         {
             if (instances[index].CameraRegion != region)
@@ -71,7 +75,7 @@ internal static class MapRenderOpenGlStaticCameraRegionPolicy
     /// incomplete metadata cannot silently remove visible geometry.
     /// </summary>
     internal static bool SuppressNormalCameraGroup(
-        IReadOnlyList<byte?> passCameraRegions)
+        IReadOnlyList<GfxCameraRegionType?> passCameraRegions)
     {
         ArgumentNullException.ThrowIfNull(passCameraRegions);
         return passCameraRegions.Count > 0 &&

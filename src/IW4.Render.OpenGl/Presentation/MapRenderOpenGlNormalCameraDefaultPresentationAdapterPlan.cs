@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.OpenGl.Targets;
 using IW4.Render.EditorPreview;
 using IW4.Render.SceneBuilding;
@@ -185,10 +186,23 @@ public sealed class MapRenderOpenGlNormalCameraDefaultPresentationAdapterPlan
     private static bool HasExactPostFxColor2Rows(
         IReadOnlyList<MapRenderNormalCameraMaterialArgumentContract> rows) =>
         rows.Count == 4 &&
-        rows[0].Destination == 1 && rows[0].RawValue == 0x002e_0001u &&
-        rows[1].Destination == 2 && rows[1].RawValue == 0x002f_0001u &&
-        rows[2].Destination == 3 && rows[2].RawValue == 0x0030_0001u &&
-        rows[3].Destination == 4 && rows[3].RawValue == 0x002d_0001u;
+        IsCodeConstant(rows[0], 1, MaterialConstantSource.ColorTintBase) &&
+        IsCodeConstant(rows[1], 2, MaterialConstantSource.ColorTintDelta) &&
+        IsCodeConstant(
+            rows[2],
+            3,
+            MaterialConstantSource.ColorTintQuadraticDelta) &&
+        IsCodeConstant(rows[3], 4, MaterialConstantSource.ColorBias);
+
+    private static bool IsCodeConstant(
+        MapRenderNormalCameraMaterialArgumentContract argument,
+        ushort destination,
+        MaterialConstantSource source) =>
+        argument.Destination == destination &&
+        argument.RawValue == new MaterialCodeConstantArgument(
+            source,
+            FirstRow: 0,
+            RowCount: 1).PackedValue;
 }
 
 public static class

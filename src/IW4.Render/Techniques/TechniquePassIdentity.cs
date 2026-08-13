@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Techniques;
 
 public sealed record TechniquePassIdentity(
@@ -6,4 +8,4 @@ public sealed record TechniquePassIdentity(
     string TechniqueName,
     string PassClass,
     int PassIndex,
-    byte CustomSamplerFlags);
+    MaterialCustomSamplerFlags CustomSamplerFlags);

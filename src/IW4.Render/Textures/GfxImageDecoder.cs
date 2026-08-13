@@ -23,16 +23,8 @@ internal static class GfxImageDecoder
     private const int D3dFormatDxt3Be = 0x44585433;
     private const int D3dFormatDxt5Le = 0x35545844;
     private const int D3dFormatDxt5Be = 0x44585435;
-    private const int GcmFormatA8R8G8B8 = 0x85;
-    private const int GcmFormatA8R8G8B8Alt = 0x9f;
-    private const int GcmFormatB8 = 0x81;
-    private const int GcmFormatDxt1 = 0x86;
-    private const int GcmFormatDxt23 = 0x87;
-    private const int GcmFormatDxt45 = 0x88;
-    private const int GcmFormatG8B8 = 0x8b;
-    private const int GcmFormatD8R8G8B8 = 0x9e;
-    private const int GcmLinearFlag = 0x20;
     private const uint GcmFormatKeyG8B8 = 0x01AAAB8B;
+    private const uint GcmFormatKeyY16X16Float = 0x00AAFE9F;
 
     /// <summary>
     /// Decodes a capture-time-proven, tightly packed BC subresource without
@@ -132,10 +124,18 @@ internal static class GfxImageDecoder
             return false;
         }
 
-        uint formatKey = GfxImagePixelLayout.BuildFormatKey(image.Format, image.TextureFlags);
+        uint formatKey = GfxImagePixelLayout.BuildFormatKey(
+            image.FormatEncoding,
+            image.TextureRemap);
         if (pixelFormat == ImagePixelFormat.G8B8 && formatKey != GcmFormatKeyG8B8)
         {
             reason = $"unsupported CELL_GCM_TEXTURE_G8B8 native format key 0x{formatKey:X8}";
+            return false;
+        }
+        if (pixelFormat == ImagePixelFormat.Rg16Float &&
+            formatKey != GcmFormatKeyY16X16Float)
+        {
+            reason = $"unsupported CELL_GCM_TEXTURE_Y16_X16_FLOAT native format key 0x{formatKey:X8}";
             return false;
         }
 
@@ -147,6 +147,7 @@ internal static class GfxImageDecoder
         }
         if ((pixelFormat is ImagePixelFormat.Bgra32 or
                             ImagePixelFormat.Drgb32 or
+                            ImagePixelFormat.Rg16Float or
                             ImagePixelFormat.G8B8 or
                             ImagePixelFormat.Luminance8) &&
             IsSwizzledGcmFormat(image.Format) &&
@@ -155,6 +156,7 @@ internal static class GfxImageDecoder
             string formatName = pixelFormat switch
             {
                 ImagePixelFormat.Bgra32 => "CELL_GCM_TEXTURE_A8R8G8B8",
+                ImagePixelFormat.Rg16Float => "CELL_GCM_TEXTURE_Y16_X16_FLOAT",
                 ImagePixelFormat.G8B8 => "CELL_GCM_TEXTURE_G8B8",
                 ImagePixelFormat.Luminance8 => "CELL_GCM_TEXTURE_B8",
                 _ => "CELL_GCM_TEXTURE_D8R8G8B8"
@@ -171,6 +173,8 @@ internal static class GfxImageDecoder
                 ImagePixelFormat.Bc1 => DecodeBc1(payloadBytes, width, height),
                 ImagePixelFormat.Bc2 => DecodeBc2(payloadBytes, width, height),
                 ImagePixelFormat.Bc3 => DecodeBc3(payloadBytes, width, height),
+                ImagePixelFormat.Rg16Float => DecodeRg16FloatPreview(
+                    DecodeRg16Float(payloadBytes, width, height, image.Format, expectedBytes)),
                 _ => DecodeLinear(payloadBytes, width, height, pixelFormat, image.Format, expectedBytes)
             };
         }
@@ -188,6 +192,105 @@ internal static class GfxImageDecoder
             HasTransparency(rgba),
             rgba);
         return true;
+    }
+
+    public static bool TryDecodeTexture(
+        GfxImageAsset image,
+        IReadOnlyList<byte> payloadBytes,
+        int width,
+        int height,
+        out DecodedTextureImage decoded,
+        out string reason)
+    {
+        decoded = default;
+        ImagePixelFormat pixelFormat = ResolvePixelFormat(image.Format);
+        if (pixelFormat != ImagePixelFormat.Rg16Float)
+        {
+            if (!TryDecodeRgba(
+                    image,
+                    payloadBytes,
+                    width,
+                    height,
+                    out DecodedRgbaGfxImage rgba,
+                    out reason))
+            {
+                return false;
+            }
+
+            decoded = new DecodedTextureImage(
+                rgba.Name,
+                rgba.Width,
+                rgba.Height,
+                rgba.Format,
+                DecodedTexturePixelFormat.Rgba8Unorm,
+                rgba.HasTransparency,
+                rgba.RgbaBytes);
+            return true;
+        }
+
+        reason = string.Empty;
+        if (payloadBytes.Count == 0)
+        {
+            reason = "no payload bytes";
+            return false;
+        }
+        if (width <= 0 || height <= 0)
+        {
+            reason = $"invalid dimensions {width}x{height}";
+            return false;
+        }
+        if (image.Depth > 1)
+        {
+            reason = $"3D/depth textures are not decoded yet (depth={image.Depth})";
+            return false;
+        }
+
+        uint formatKey = GfxImagePixelLayout.BuildFormatKey(
+            image.FormatEncoding,
+            image.TextureRemap);
+        if (formatKey != GcmFormatKeyY16X16Float)
+        {
+            reason = $"unsupported CELL_GCM_TEXTURE_Y16_X16_FLOAT native format key 0x{formatKey:X8}";
+            return false;
+        }
+
+        int expectedBytes = GetTopMipSize(width, height, pixelFormat);
+        if (payloadBytes.Count < expectedBytes)
+        {
+            reason = $"payload has 0x{payloadBytes.Count:X} byte(s), needs 0x{expectedBytes:X}";
+            return false;
+        }
+        if (IsSwizzledGcmFormat(image.Format) &&
+            (!IsPowerOfTwo(width) || !IsPowerOfTwo(height)))
+        {
+            reason = $"swizzled CELL_GCM_TEXTURE_Y16_X16_FLOAT dimensions {width}x{height} are unsupported";
+            return false;
+        }
+
+        try
+        {
+            decoded = new DecodedTextureImage(
+                image.Name ?? "unnamed_image",
+                width,
+                height,
+                DescribeFormat(image.Format),
+                DecodedTexturePixelFormat.Rg16Float,
+                HasTransparency: false,
+                DecodeRg16Float(
+                    payloadBytes,
+                    width,
+                    height,
+                    image.Format,
+                    expectedBytes));
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or
+                                   NotSupportedException or
+                                   ArgumentOutOfRangeException)
+        {
+            reason = ex.Message;
+            return false;
+        }
     }
 
     public static bool TryDecodeCubeRgba(
@@ -215,9 +318,9 @@ internal static class GfxImageDecoder
     {
         decoded = default;
         reason = string.Empty;
-        if (image.MapType != 5 || image.MultiFaceControl == 0)
+        if (image.MapType != MapType.Cube || !image.IsCubemap)
         {
-            reason = $"image is not an RSX cubemap (mapType=0x{image.MapType:X2}, multiFace=0x{image.MultiFaceControl:X2})";
+            reason = $"image is not an RSX cubemap (mapType=0x{(byte)image.MapType:X2}, multiFace=0x{image.MultiFaceControl:X2})";
             return false;
         }
         if (image.Depth != 1 || width != height || !IsPowerOfTwo(width))
@@ -354,7 +457,7 @@ internal static class GfxImageDecoder
         {
             ImagePixelFormat.Bc1 => checked(Math.Max(1, (width + 3) / 4) * Math.Max(1, (height + 3) / 4) * 8),
             ImagePixelFormat.Bc2 or ImagePixelFormat.Bc3 => checked(Math.Max(1, (width + 3) / 4) * Math.Max(1, (height + 3) / 4) * 16),
-            ImagePixelFormat.Bgra32 or ImagePixelFormat.Bgrx32 or ImagePixelFormat.Drgb32 => checked(width * height * 4),
+            ImagePixelFormat.Bgra32 or ImagePixelFormat.Bgrx32 or ImagePixelFormat.Drgb32 or ImagePixelFormat.Rg16Float => checked(width * height * 4),
             ImagePixelFormat.G8B8 or ImagePixelFormat.Rgb565 or ImagePixelFormat.A1Rgb555 or ImagePixelFormat.Argb4444 or ImagePixelFormat.AlphaLuminance8 => checked(width * height * 2),
             ImagePixelFormat.Alpha8 or ImagePixelFormat.Luminance8 => checked(width * height),
             _ => 0
@@ -365,19 +468,27 @@ internal static class GfxImageDecoder
     {
         return StripGcmFlags(format) switch
         {
-            D3dFormatA8R8G8B8 or GcmFormatA8R8G8B8 or GcmFormatA8R8G8B8Alt => ImagePixelFormat.Bgra32,
-            GcmFormatD8R8G8B8 => ImagePixelFormat.Drgb32,
-            GcmFormatG8B8 => ImagePixelFormat.G8B8,
+            D3dFormatA8R8G8B8 or
+            (int)GfxImageBaseFormat.A8R8G8B8 => ImagePixelFormat.Bgra32,
+            (int)GfxImageBaseFormat.Y16X16Float =>
+                ImagePixelFormat.Rg16Float,
+            (int)GfxImageBaseFormat.D8R8G8B8 =>
+                ImagePixelFormat.Drgb32,
+            (int)GfxImageBaseFormat.G8B8 => ImagePixelFormat.G8B8,
             D3dFormatX8R8G8B8 => ImagePixelFormat.Bgrx32,
             D3dFormatR5G6B5 => ImagePixelFormat.Rgb565,
             D3dFormatA1R5G5B5 => ImagePixelFormat.A1Rgb555,
             D3dFormatA4R4G4B4 => ImagePixelFormat.Argb4444,
             D3dFormatA8 => ImagePixelFormat.Alpha8,
-            D3dFormatL8 or GcmFormatB8 => ImagePixelFormat.Luminance8,
+            D3dFormatL8 or (int)GfxImageBaseFormat.B8 =>
+                ImagePixelFormat.Luminance8,
             D3dFormatA8L8 => ImagePixelFormat.AlphaLuminance8,
-            D3dFormatDxt1Le or D3dFormatDxt1Be or GcmFormatDxt1 => ImagePixelFormat.Bc1,
-            D3dFormatDxt3Le or D3dFormatDxt3Be or GcmFormatDxt23 => ImagePixelFormat.Bc2,
-            D3dFormatDxt5Le or D3dFormatDxt5Be or GcmFormatDxt45 => ImagePixelFormat.Bc3,
+            D3dFormatDxt1Le or D3dFormatDxt1Be or
+            (int)GfxImageBaseFormat.CompressedDxt1 => ImagePixelFormat.Bc1,
+            D3dFormatDxt3Le or D3dFormatDxt3Be or
+            (int)GfxImageBaseFormat.CompressedDxt23 => ImagePixelFormat.Bc2,
+            D3dFormatDxt5Le or D3dFormatDxt5Be or
+            (int)GfxImageBaseFormat.CompressedDxt45 => ImagePixelFormat.Bc3,
             _ => ImagePixelFormat.Unknown
         };
     }
@@ -397,13 +508,22 @@ internal static class GfxImageDecoder
             D3dFormatDxt1Le or D3dFormatDxt1Be => $"D3DFMT_DXT1 (0x{format:X8})",
             D3dFormatDxt3Le or D3dFormatDxt3Be => $"D3DFMT_DXT3 (0x{format:X8})",
             D3dFormatDxt5Le or D3dFormatDxt5Be => $"D3DFMT_DXT5 (0x{format:X8})",
-            GcmFormatA8R8G8B8 or GcmFormatA8R8G8B8Alt => $"CELL_GCM_TEXTURE_A8R8G8B8 (0x{format:X2})",
-            GcmFormatB8 => $"CELL_GCM_TEXTURE_B8 (0x{format:X2})",
-            GcmFormatDxt1 => $"CELL_GCM_TEXTURE_COMPRESSED_DXT1 (0x{format:X2})",
-            GcmFormatDxt23 => $"CELL_GCM_TEXTURE_COMPRESSED_DXT23 (0x{format:X2})",
-            GcmFormatDxt45 => $"CELL_GCM_TEXTURE_COMPRESSED_DXT45 (0x{format:X2})",
-            GcmFormatG8B8 => $"CELL_GCM_TEXTURE_G8B8 (0x{format:X2})",
-            GcmFormatD8R8G8B8 => $"CELL_GCM_TEXTURE_D8R8G8B8 (0x{format:X2})",
+            (int)GfxImageBaseFormat.A8R8G8B8 =>
+                $"CELL_GCM_TEXTURE_A8R8G8B8 (0x{format:X2})",
+            (int)GfxImageBaseFormat.Y16X16Float =>
+                $"CELL_GCM_TEXTURE_Y16_X16_FLOAT (0x{format:X2})",
+            (int)GfxImageBaseFormat.B8 =>
+                $"CELL_GCM_TEXTURE_B8 (0x{format:X2})",
+            (int)GfxImageBaseFormat.CompressedDxt1 =>
+                $"CELL_GCM_TEXTURE_COMPRESSED_DXT1 (0x{format:X2})",
+            (int)GfxImageBaseFormat.CompressedDxt23 =>
+                $"CELL_GCM_TEXTURE_COMPRESSED_DXT23 (0x{format:X2})",
+            (int)GfxImageBaseFormat.CompressedDxt45 =>
+                $"CELL_GCM_TEXTURE_COMPRESSED_DXT45 (0x{format:X2})",
+            (int)GfxImageBaseFormat.G8B8 =>
+                $"CELL_GCM_TEXTURE_G8B8 (0x{format:X2})",
+            (int)GfxImageBaseFormat.D8R8G8B8 =>
+                $"CELL_GCM_TEXTURE_D8R8G8B8 (0x{format:X2})",
             _ => $"Unknown (0x{format:X2})"
         };
     }
@@ -411,7 +531,7 @@ internal static class GfxImageDecoder
     private static int StripGcmFlags(int format)
     {
         return format is >= 0x80 and <= 0xff
-            ? format & 0x9f
+            ? (byte)new GfxImageFormat((byte)format).BaseFormat
             : format;
     }
 
@@ -484,6 +604,62 @@ internal static class GfxImageDecoder
         }
 
         return pixels;
+    }
+
+    private static byte[] DecodeRg16Float(
+        IReadOnlyList<byte> payloadBytes,
+        int width,
+        int height,
+        int rawFormat,
+        int byteCount)
+    {
+        byte[] payload = payloadBytes as byte[] ?? payloadBytes.ToArray();
+        if (IsSwizzledGcmFormat(rawFormat))
+        {
+            payload = DeswizzleMorton2D(
+                payload.AsSpan(0, byteCount).ToArray(),
+                width,
+                height,
+                bytesPerPixel: 4);
+        }
+
+        ReadOnlySpan<byte> source = payload.AsSpan(0, byteCount);
+        byte[] result = new byte[byteCount];
+        for (int index = 0; index < byteCount; index += 4)
+        {
+            // PS3 memory is big-endian and CELL_GCM_TEXTURE_Y16_X16_FLOAT
+            // packs Y in the high halfword and X in the low halfword. OpenGL
+            // GL_RG/GL_HALF_FLOAT expects host-endian X, Y components.
+            ushort y = BinaryPrimitives.ReadUInt16BigEndian(source[index..]);
+            ushort x = BinaryPrimitives.ReadUInt16BigEndian(source[(index + 2)..]);
+            BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(index), x);
+            BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(index + 2), y);
+        }
+        return result;
+    }
+
+    private static byte[] DecodeRg16FloatPreview(byte[] rg16Float)
+    {
+        byte[] rgba = new byte[rg16Float.Length];
+        for (int index = 0; index < rg16Float.Length; index += 4)
+        {
+            ushort x = BinaryPrimitives.ReadUInt16LittleEndian(
+                rg16Float.AsSpan(index));
+            ushort y = BinaryPrimitives.ReadUInt16LittleEndian(
+                rg16Float.AsSpan(index + 2));
+            rgba[index] = FloatToUnorm8((float)BitConverter.UInt16BitsToHalf(x));
+            rgba[index + 1] = FloatToUnorm8((float)BitConverter.UInt16BitsToHalf(y));
+            rgba[index + 2] = 0;
+            rgba[index + 3] = byte.MaxValue;
+        }
+        return rgba;
+    }
+
+    private static byte FloatToUnorm8(float value)
+    {
+        if (!float.IsFinite(value))
+            return 0;
+        return (byte)MathF.Round(Math.Clamp(value, 0f, 1f) * byte.MaxValue);
     }
 
     private static void DecodeBgra32(ReadOnlySpan<byte> data, byte[] pixels, bool isGcmFormat)
@@ -801,7 +977,8 @@ internal static class GfxImageDecoder
     }
 
     private static bool IsSwizzledGcmFormat(int format) =>
-        IsGcmFormat(format) && (format & GcmLinearFlag) == 0;
+        IsGcmFormat(format) &&
+        !new GfxImageFormat((byte)format).IsLinear;
 
 
 }

@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.EditorPreview;
 
@@ -47,10 +48,14 @@ public sealed record MapRenderEditorPreviewFilmDvarState(
 /// </summary>
 public static class MapRenderEditorPreviewFilmCodeConstantProducer
 {
-    public const ushort ColorBiasRowIndex = 0x2d;
-    public const ushort ColorTintBaseRowIndex = 0x2e;
-    public const ushort ColorTintDeltaRowIndex = 0x2f;
-    public const ushort ColorTintQuadraticRowIndex = 0x30;
+    public const ushort ColorBiasRowIndex =
+        (ushort)MaterialConstantSource.ColorBias;
+    public const ushort ColorTintBaseRowIndex =
+        (ushort)MaterialConstantSource.ColorTintBase;
+    public const ushort ColorTintDeltaRowIndex =
+        (ushort)MaterialConstantSource.ColorTintDelta;
+    public const ushort ColorTintQuadraticRowIndex =
+        (ushort)MaterialConstantSource.ColorTintQuadraticDelta;
 
     private const float MinimumDesaturation = 1f / 4096f;
 

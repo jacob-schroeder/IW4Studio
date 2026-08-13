@@ -1,4 +1,5 @@
 using IW4.Render.Scheduling.Dpvs;
+using IW4.Assets.Assets.Material;
 
 namespace IW4.Render.Scheduling;
 
@@ -84,12 +85,12 @@ public sealed class MapRenderFrameTechniqueSelector
             throw new ArgumentOutOfRangeException(nameof(primaryLightIndex));
         }
 
-        MapRenderSurfaceType surfaceType = membership switch
+        GfxDrawSurfSurfaceType surfaceType = membership switch
         {
             MapRenderWorldSurfacePageMembership.PageZero =>
-                MapRenderSurfaceType.Triangles,
+                GfxDrawSurfSurfaceType.Triangles,
             MapRenderWorldSurfacePageMembership.PageOne =>
-                MapRenderSurfaceType.TrianglesNoSunShadow,
+                GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
             _ => throw new InvalidOperationException(
                 "An included world surface must own Event20 page zero or one.")
         };
@@ -153,13 +154,13 @@ public sealed class MapRenderFrameTechniqueSelector
             throw new ArgumentOutOfRangeException(nameof(identity));
         }
 
-        MapRenderSurfaceType surfaceType = page switch
+        GfxDrawSurfSurfaceType surfaceType = page switch
         {
             MapRenderStaticModelReceiverPage.StaticModelRigidPage2 =>
-                MapRenderSurfaceType.StaticModelRigid,
+                GfxDrawSurfSurfaceType.StaticModelRigid,
             MapRenderStaticModelReceiverPage
                 .StaticModelRigidNoSunShadowPage3 =>
-                MapRenderSurfaceType.StaticModelRigidNoSunShadow,
+                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
             _ => throw new InvalidOperationException(
                 "An included rigid static-model surface must own native page two or three.")
         };
@@ -183,14 +184,14 @@ public sealed class MapRenderFrameTechniqueSelector
 
 internal readonly record struct MapRenderFrameTechniqueSelectionValue(
     MapRenderWorldSurfacePageMembership PageMembership,
-    MapRenderSurfaceType SurfaceType,
+    GfxDrawSurfSurfaceType SurfaceType,
     int SceneLightVariant,
     int TechniqueSlot,
     bool ShadowMapAllocated);
 
 internal readonly record struct MapRenderStaticModelFrameTechniqueSelectionValue(
     MapRenderStaticModelReceiverPage Page,
-    MapRenderSurfaceType SurfaceType,
+    GfxDrawSurfSurfaceType SurfaceType,
     int SceneLightVariant,
     int TechniqueSlot,
     bool ShadowMapAllocated);

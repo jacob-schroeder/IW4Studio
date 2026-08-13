@@ -43,12 +43,12 @@ public sealed record MapRenderOpenGlNormalCameraColorTargetBindingPlan
             target.RawDimensionFamily != resourceKey.RawDimensionFamily ||
             target.RawDimensionShift != resourceKey.RawDimensionShift ||
             target.RawImageSetupFormat != resourceKey.RawImageSetupFormat ||
-            target.RawImageSetupFlags != resourceKey.RawImageSetupFlags ||
-            target.RawImageFormatByte != resourceKey.RawImageFormatByte ||
-            target.RawSurfaceType != resourceKey.RawSurfaceType ||
-            target.RawAntialias != resourceKey.RawAntialias ||
-            target.RawColorTargetMask != resourceKey.RawColorTargetMask ||
-            target.RawColorFormat != resourceKey.RawColorFormat)
+            target.ImageSetupFlags != resourceKey.ImageSetupFlags ||
+            target.ImageFormat != resourceKey.ImageFormat ||
+            target.SurfaceType != resourceKey.SurfaceType ||
+            target.SurfaceAntialias != resourceKey.SurfaceAntialias ||
+            target.Ps3SurfaceTarget != resourceKey.Ps3SurfaceTarget ||
+            target.SurfaceColorFormat != resourceKey.SurfaceColorFormat)
         {
             throw new ArgumentException(
                 "An aliased target row must match every color allocation fact of its canonical row.",

@@ -306,7 +306,7 @@ public sealed class GfxWorldLoader
             MapVertexChecksum = cursor.ReadUInt32(),
             HeroOnlyLightCount = cursor.ReadUInt32(),
             HeroOnlyLightsPointer = context.PointerReader.ReadPointer<GfxHeroOnlyLight[]>(cursor, XPointerResolutionMode.Direct),
-            FogTypesAllowed = cursor.ReadByte(),
+            FogTypesAllowed = (FogTypesAllowed)cursor.ReadByte(),
             Pad279To27B = cursor.ReadBytes(3),
             UmbraGateCount = cursor.ReadInt32(),
             UmbraGateDataPointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct),
@@ -387,12 +387,12 @@ public sealed class GfxWorldLoader
     {
         return new GfxLightGrid
         {
-            HasLightRegions = cursor.ReadUInt32(),
+            HasLightRegionsRaw = cursor.ReadUInt32(),
             SunPrimaryLightIndex = cursor.ReadUInt32(),
             Mins = ReadUInt16Values(cursor, 3),
             Maxs = ReadUInt16Values(cursor, 3),
-            RowAxis = cursor.ReadUInt32(),
-            ColAxis = cursor.ReadUInt32(),
+            RowAxis = (GfxLightGridHorizontalAxis)cursor.ReadUInt32(),
+            ColAxis = (GfxLightGridHorizontalAxis)cursor.ReadUInt32(),
             RowDataStartPointer = context.PointerReader.ReadPointer<ushort[]>(cursor, XPointerResolutionMode.Direct),
             RawRowDataSize = cursor.ReadUInt32(),
             RawRowDataPointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct),
@@ -409,7 +409,7 @@ public sealed class GfxWorldLoader
     {
         return new Sunflare
         {
-            HasValidData = cursor.ReadUInt32(),
+            HasValidDataRaw = cursor.ReadUInt32(),
             SpriteMaterialPointer = context.PointerReader.ReadPointer<MaterialAsset>(cursor, XPointerResolutionMode.AliasCell),
             FlareMaterialPointer = context.PointerReader.ReadPointer<MaterialAsset>(cursor, XPointerResolutionMode.AliasCell),
             SpriteSize = cursor.ReadSingle(),
@@ -1009,7 +1009,7 @@ public sealed class GfxWorldLoader
         IReadOnlyList<GfxLightGridColors> colors = ReadLightGridColors(cursor, header.ColorsPointer.Untyped, Count(header.ColorCount, "colorCount"), context);
         return new GfxLightGrid
         {
-            HasLightRegions = header.HasLightRegions,
+            HasLightRegionsRaw = header.HasLightRegionsRaw,
             SunPrimaryLightIndex = header.SunPrimaryLightIndex,
             Mins = header.Mins,
             Maxs = header.Maxs,
@@ -1128,7 +1128,7 @@ public sealed class GfxWorldLoader
             context);
         return new Sunflare
         {
-            HasValidData = header.HasValidData,
+            HasValidDataRaw = header.HasValidDataRaw,
             SpriteMaterialPointer = header.SpriteMaterialPointer,
             SpriteMaterial = spriteMaterial,
             FlareMaterialPointer = header.FlareMaterialPointer,
@@ -1322,7 +1322,7 @@ public sealed class GfxWorldLoader
             byte lightmapIndex = rowCursor.ReadByte();
             byte reflectionProbeIndex = rowCursor.ReadByte();
             byte primaryLightIndex = rowCursor.ReadByte();
-            byte castsSunShadow = rowCursor.ReadByte();
+            GfxSurfaceFlags flags = (GfxSurfaceFlags)rowCursor.ReadByte();
             MaterialAsset? material = _materialLoader.LoadFromPointer(
                 cursor,
                 materialPointer.Untyped,
@@ -1335,7 +1335,7 @@ public sealed class GfxWorldLoader
                 LightmapIndex = lightmapIndex,
                 ReflectionProbeIndex = reflectionProbeIndex,
                 PrimaryLightIndex = primaryLightIndex,
-                CastsSunShadow = castsSunShadow
+                Flags = flags
             };
         }
 
@@ -1360,7 +1360,8 @@ public sealed class GfxWorldLoader
             ushort lightingHandle = rowCursor.ReadUInt16();
             byte reflectionProbeIndex = rowCursor.ReadByte();
             byte primaryLightIndex = rowCursor.ReadByte();
-            byte flags = rowCursor.ReadByte();
+            GfxStaticModelDrawInstFlags flags =
+                (GfxStaticModelDrawInstFlags)rowCursor.ReadByte();
             byte firstMaterialSkinIndex = rowCursor.ReadByte();
             var groundLighting = new GfxColor(rowCursor.ReadUInt32());
             XModelAsset? model = _xmodelLoader.LoadFromPointer(
@@ -1963,9 +1964,15 @@ public sealed class GfxWorldLoader
         if (header.Mins.Count < 3 || header.Maxs.Count < 3)
             throw new InvalidDataException("GfxLightGrid mins/maxs were not parsed.");
 
-        uint rowAxis = header.RowAxis;
-        if (rowAxis > 2)
-            throw new InvalidDataException($"GfxLightGrid has invalid row axis {rowAxis}.");
+        GfxLightGridHorizontalAxis rowAxis = header.RowAxis;
+        GfxLightGridHorizontalAxis colAxis = header.ColAxis;
+        if ((rowAxis, colAxis) is not
+            (GfxLightGridHorizontalAxis.X, GfxLightGridHorizontalAxis.Y) and not
+            (GfxLightGridHorizontalAxis.Y, GfxLightGridHorizontalAxis.X))
+        {
+            throw new InvalidDataException(
+                $"GfxLightGrid has invalid horizontal axes {rowAxis}/{colAxis}.");
+        }
 
         return checked(header.Maxs[(int)rowAxis] - header.Mins[(int)rowAxis] + 1);
     }

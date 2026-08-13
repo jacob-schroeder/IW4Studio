@@ -1,31 +1,42 @@
 
 namespace IW4.Render.Techniques;
 
+/// <summary>
+/// Action emitted by one PS3 material state row for polygon-offset state.
+/// Inherit deliberately leaves the current graphics state untouched.
+/// </summary>
+public enum RenderPolygonOffsetMode : byte
+{
+    Disabled = 0,
+    Explicit = 1,
+    Inherit = 2
+}
+
 public readonly record struct RenderState(
     bool HasState,
     uint LoadBits0,
     uint LoadBits1,
-    uint Tail,
+    uint CommandWordCount,
     bool ShaderPackerSrgbEnabled,
-    uint ColorMask,
+    RsxColorMask ColorMask,
     bool AlphaTestEnabled,
-    uint AlphaFunc,
+    RsxCompareFunction AlphaFunc,
     byte AlphaRef,
     bool CullEnabled,
-    uint CullFace,
-    uint PolygonMode,
+    RsxCullFace CullFace,
+    RsxPolygonMode PolygonMode,
     bool BlendEnabled,
-    uint BlendEquationRgb,
-    uint BlendEquationAlpha,
-    uint BlendSourceRgb,
-    uint BlendSourceAlpha,
-    uint BlendDestinationRgb,
-    uint BlendDestinationAlpha,
+    RsxBlendEquation BlendEquationRgb,
+    RsxBlendEquation BlendEquationAlpha,
+    RsxBlendFactor BlendSourceRgb,
+    RsxBlendFactor BlendSourceAlpha,
+    RsxBlendFactor BlendDestinationRgb,
+    RsxBlendFactor BlendDestinationAlpha,
     bool DepthTestEnabled,
     bool DepthWriteEnabled,
-    uint DepthFunc,
+    RsxCompareFunction DepthFunc,
     StencilState Stencil,
-    bool PolygonOffsetEnabled,
+    RenderPolygonOffsetMode PolygonOffsetMode,
     float PolygonOffsetFactor,
     float PolygonOffsetUnits)
 {
@@ -33,27 +44,27 @@ public readonly record struct RenderState(
         HasState: false,
         LoadBits0: 0,
         LoadBits1: 0,
-        Tail: 0,
+        CommandWordCount: 0,
         ShaderPackerSrgbEnabled: false,
-        ColorMask: 0x01010101,
+        ColorMask: RsxColorMask.Rgba,
         AlphaTestEnabled: false,
-        AlphaFunc: 0x0207,
+        AlphaFunc: RsxCompareFunction.Always,
         AlphaRef: 0,
         CullEnabled: false,
-        CullFace: 0x0404,
-        PolygonMode: 0x1B02,
+        CullFace: RsxCullFace.Front,
+        PolygonMode: RsxPolygonMode.Fill,
         BlendEnabled: false,
-        BlendEquationRgb: 0x8006,
-        BlendEquationAlpha: 0x8006,
-        BlendSourceRgb: 1,
-        BlendSourceAlpha: 1,
-        BlendDestinationRgb: 0,
-        BlendDestinationAlpha: 0,
+        BlendEquationRgb: RsxBlendEquation.Add,
+        BlendEquationAlpha: RsxBlendEquation.Add,
+        BlendSourceRgb: RsxBlendFactor.One,
+        BlendSourceAlpha: RsxBlendFactor.One,
+        BlendDestinationRgb: RsxBlendFactor.Zero,
+        BlendDestinationAlpha: RsxBlendFactor.Zero,
         DepthTestEnabled: true,
         DepthWriteEnabled: true,
-        DepthFunc: 0x0203,
+        DepthFunc: RsxCompareFunction.LessThanOrEqual,
         Stencil: StencilState.Disabled,
-        PolygonOffsetEnabled: false,
+        PolygonOffsetMode: RenderPolygonOffsetMode.Disabled,
         PolygonOffsetFactor: 0f,
         PolygonOffsetUnits: 0f);
 
@@ -64,5 +75,5 @@ public readonly record struct RenderState(
 
     // Conservatively counts any enabled stencil state as a possible write.
     public bool FramebufferWriteEnabled =>
-        ColorMask != 0 || DepthWriteEnabled || StencilEnabled;
+        ColorMask != RsxColorMask.None || DepthWriteEnabled || StencilEnabled;
 }

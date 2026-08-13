@@ -17,14 +17,14 @@ public sealed class RsxFragmentProgramIr
     /// instruction decoding semantics change.
     /// </summary>
     public const string CurrentDecoderVersion =
-        "rsx-fragment-semantic-ir/1";
+        "rsx-fragment-semantic-ir/2";
 
     /// <summary>
     /// Version of the backend-neutral static specialization and dynamic
     /// CodePixel binding rules included in <see cref="Identity"/>.
     /// </summary>
     public const string CurrentSemanticTranslationVersion =
-        "rsx-fragment-specialization/2";
+        "rsx-fragment-specialization/3";
 
     internal RsxFragmentProgramIr(
         ReadOnlySpan<byte> originalProgram,
@@ -96,11 +96,11 @@ public sealed class RsxFragmentProgramIr
             .Select(instruction => new RsxFragmentSamplerUse(
                 instruction.Index,
                 instruction.TextureUnit,
-                instruction.Opcode,
+                instruction.OpcodeType,
                 instruction.SourceAttribute,
                 instruction.DestRegister,
                 instruction.DestFp16,
-                (byte)instruction.WriteMask))
+                instruction.WriteMask))
             .ToImmutableArray();
         ColorExports = colorExports;
         SamplerDataflow = SamplerUses
@@ -211,15 +211,33 @@ public readonly record struct RsxFragmentProgramControl(
     byte ControlFlagsRaw,
     uint EmittedControl)
 {
+    public RsxFragmentProgramControlFlags EmittedFlags =>
+        (RsxFragmentProgramControlFlags)EmittedControl;
+
+    public byte UsedTemporaryRegisterCount =>
+        checked((byte)(EmittedControl >> 24));
+
     public bool UsesFp32ColorExports =>
-        IsValid && (EmittedControl & 0x40) != 0;
+        IsValid && HasFlag(RsxFragmentProgramControlFlags.Exports32Bit);
+
+    public bool UsesKill =>
+        IsValid && HasFlag(RsxFragmentProgramControlFlags.UsesKill);
+
+    public bool TexturePerspectiveCorrectionEnabled =>
+        IsValid && HasFlag(
+            RsxFragmentProgramControlFlags.TexturePerspectiveCorrection);
 
     public string ExportPrecision => !IsValid
         ? string.Empty
         : UsesFp32ColorExports ? "Fp32" : "Fp16";
 
     public bool DepthExportEnabled =>
-        IsValid && (EmittedControl & 0x0e) != 0;
+        IsValid &&
+        (EmittedFlags & RsxFragmentProgramControlFlags.DepthExportMask) !=
+            RsxFragmentProgramControlFlags.None;
+
+    private bool HasFlag(RsxFragmentProgramControlFlags flag) =>
+        (EmittedFlags & flag) == flag;
 }
 
 /// <summary>
@@ -229,17 +247,19 @@ public readonly record struct RsxFragmentProgramControl(
 public readonly record struct RsxFragmentSamplerUse(
     int InstructionIndex,
     int Destination,
-    byte Opcode,
-    int SourceAttribute,
+    RsxFragmentOpcode Opcode,
+    RsxFragmentInputAttribute SourceAttribute,
     int DestinationRegister,
     bool DestinationFp16,
-    byte WrittenComponentMask)
+    RsxFragmentWriteMask WrittenComponentMask)
 {
-    public bool IsProjected => Opcode == 0x18;
+    public bool IsProjected => Opcode is
+        RsxFragmentOpcode.TextureProjective or
+        RsxFragmentOpcode.TextureProjectiveBumpEnvironmentMap;
 
-    public bool HasExplicitLod => Opcode == 0x2f;
+    public bool HasExplicitLod => Opcode == RsxFragmentOpcode.TextureLod;
 
-    public bool HasBias => Opcode == 0x31;
+    public bool HasBias => Opcode == RsxFragmentOpcode.TextureBias;
 }
 
 [Flags]
@@ -449,7 +469,8 @@ public sealed class RsxFragmentDirectCodeConstantBinding
 /// </summary>
 public readonly record struct RsxFragmentOperand(int SourceIndex, uint Raw)
 {
-    public int RegisterType => RsxFragmentInstruction.SourceRegisterType(Raw);
+    public RsxFragmentRegisterType RegisterKind =>
+        RsxFragmentInstruction.SourceRegisterKind(Raw);
 
     public int RegisterIndex => (int)((Raw >> 2) & 0x3f);
 
@@ -461,13 +482,17 @@ public readonly record struct RsxFragmentOperand(int SourceIndex, uint Raw)
         ? ((Raw >> 29) & 1) != 0
         : ((Raw >> 18) & 1) != 0;
 
-    public int SwizzleX => (int)((Raw >> 9) & 3);
+    public RsxSwizzleComponent SwizzleX =>
+        (RsxSwizzleComponent)((Raw >> 9) & 3);
 
-    public int SwizzleY => (int)((Raw >> 11) & 3);
+    public RsxSwizzleComponent SwizzleY =>
+        (RsxSwizzleComponent)((Raw >> 11) & 3);
 
-    public int SwizzleZ => (int)((Raw >> 13) & 3);
+    public RsxSwizzleComponent SwizzleZ =>
+        (RsxSwizzleComponent)((Raw >> 13) & 3);
 
-    public int SwizzleW => (int)((Raw >> 15) & 3);
+    public RsxSwizzleComponent SwizzleW =>
+        (RsxSwizzleComponent)((Raw >> 15) & 3);
 }
 
 /// <summary>Exact decoded fragment destination word.</summary>
@@ -481,13 +506,15 @@ public readonly record struct RsxFragmentDestination(uint Raw)
 
     public bool ConditionWriteEnabled => ((Raw >> 8) & 1) != 0;
 
-    public byte WriteMask => (byte)((Raw >> 9) & 0x0f);
+    public RsxFragmentWriteMask WriteMask =>
+        (RsxFragmentWriteMask)((Raw >> 9) & 0x0f);
 
-    public int SourceAttribute => (int)((Raw >> 13) & 0x0f);
+    public RsxFragmentInputAttribute SourceAttribute =>
+        (RsxFragmentInputAttribute)((Raw >> 13) & 0x0f);
 
     public int TextureUnit => (int)((Raw >> 17) & 0x0f);
 
-    public byte Opcode => (byte)((Raw >> 24) & 0x3f);
+    public byte OpcodeLowBits => (byte)((Raw >> 24) & 0x3f);
 
     public bool NoDestination => ((Raw >> 30) & 1) != 0;
 
@@ -513,18 +540,6 @@ public readonly record struct RsxFragmentInlineConstant(
     public float W => BitConverter.Int32BitsToSingle(unchecked((int)WBits));
 }
 
-public enum RsxFragmentConditionTest
-{
-    False = 0,
-    LessThan = 1,
-    Equal = 2,
-    LessThanOrEqual = 3,
-    GreaterThan = 4,
-    NotEqual = 5,
-    GreaterThanOrEqual = 6,
-    True = 7
-}
-
 /// <summary>
 /// One immutable RSX fragment instruction. Raw lane-transformed words remain
 /// available alongside the current semantic interpretations.
@@ -536,11 +551,12 @@ public readonly record struct RsxFragmentInstruction(
     uint Src0,
     uint Src1,
     uint Src2,
-    byte Opcode,
+    RsxFragmentOpcode OpcodeType,
     int ByteCount,
     RsxFragmentInlineConstant? Constant)
 {
-    public static int SourceRegisterType(uint source) => (int)(source & 3);
+    public static RsxFragmentRegisterType SourceRegisterKind(uint source) =>
+        (RsxFragmentRegisterType)(source & 3);
 
     /// <summary>
     /// Direct backend-neutral CodePixel source row associated with this
@@ -558,33 +574,44 @@ public readonly record struct RsxFragmentInstruction(
 
     public RsxFragmentInlineConstant? InlineConstant => Constant;
 
-    public int OperandCount => Branch
+    public int OperandCount => IsControlFlow
         ? 0
-        : RsxProgramDecoder.FragmentOperandCount(Opcode);
+        : RsxShaderInstructionSet.FragmentOperandCount(OpcodeType);
+
+    public byte Opcode => (byte)OpcodeType;
 
     public bool End => (Dst & 1) != 0;
     public int DestRegister => (int)((Dst >> 1) & 0x3f);
     public bool DestFp16 => ((Dst >> 7) & 1) != 0;
     public bool CondWriteEnabled => ((Dst >> 8) & 1) != 0;
-    public int WriteMask => (int)((Dst >> 9) & 0x0f);
-    public int SourceAttribute => (int)((Dst >> 13) & 0x0f);
+    public RsxFragmentWriteMask WriteMask =>
+        (RsxFragmentWriteMask)((Dst >> 9) & 0x0f);
+    public RsxFragmentInputAttribute SourceAttribute =>
+        (RsxFragmentInputAttribute)((Dst >> 13) & 0x0f);
     public int TextureUnit => (int)((Dst >> 17) & 0x0f);
     public bool NoDest => ((Dst >> 30) & 1) != 0;
     public bool Saturate => ((Dst >> 31) & 1) != 0;
-    public RsxFragmentConditionTest ConditionTest =>
-        (RsxFragmentConditionTest)((Src0 >> 18) & 7);
-    public int ConditionSwizzleX => (int)((Src0 >> 21) & 3);
-    public int ConditionSwizzleY => (int)((Src0 >> 23) & 3);
-    public int ConditionSwizzleZ => (int)((Src0 >> 25) & 3);
-    public int ConditionSwizzleW => (int)((Src0 >> 27) & 3);
+    public RsxConditionTest ConditionTest =>
+        (RsxConditionTest)((Src0 >> 18) & 7);
+    public RsxSwizzleComponent ConditionSwizzleX =>
+        (RsxSwizzleComponent)((Src0 >> 21) & 3);
+    public RsxSwizzleComponent ConditionSwizzleY =>
+        (RsxSwizzleComponent)((Src0 >> 23) & 3);
+    public RsxSwizzleComponent ConditionSwizzleZ =>
+        (RsxSwizzleComponent)((Src0 >> 25) & 3);
+    public RsxSwizzleComponent ConditionSwizzleW =>
+        (RsxSwizzleComponent)((Src0 >> 27) & 3);
     public bool ConditionWriteRegister1 => ((Src0 >> 30) & 1) != 0;
     public bool ConditionReadRegister1 => ((Src0 >> 31) & 1) != 0;
-    public bool Branch => (Src1 & 0x80000000u) != 0;
-    public int Scale => (int)((Src1 >> 28) & 7);
+    public bool IsControlFlow =>
+        RsxShaderInstructionSet.IsFragmentControlFlow(OpcodeType);
+    public RsxFragmentResultScale Scale =>
+        (RsxFragmentResultScale)((Src1 >> 28) & 7);
     public bool IsTexture =>
-        !Branch && Opcode is 0x17 or 0x18 or 0x19 or 0x2f or 0x31;
+        !IsControlFlow && RsxShaderInstructionSet.IsFragmentTexture(OpcodeType);
 
-    public int ConditionSwizzle(int component) => component switch
+    public RsxSwizzleComponent ConditionSwizzle(int component) =>
+        component switch
     {
         0 => ConditionSwizzleX,
         1 => ConditionSwizzleY,

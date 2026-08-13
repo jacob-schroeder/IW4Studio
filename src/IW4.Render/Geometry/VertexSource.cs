@@ -19,7 +19,7 @@ internal readonly record struct VertexSource(
     int Stride,
     int Offset,
     byte FormatByte0,
-    byte FormatByte1,
+    RsxVertexElementType FormatByte1,
     UvBaseMode BaseMode = UvBaseMode.Engine,
     int ComponentA = 0,
     int ComponentB = 1,

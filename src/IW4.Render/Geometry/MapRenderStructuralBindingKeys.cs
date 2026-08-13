@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Materials;
 using IW4.Render.Textures;
 
@@ -31,7 +32,7 @@ internal readonly record struct TextureBindingKey(
         texture.SamplerState,
         texture.MipLevels.Count,
         texture.CubeFaces?.Count ?? 0,
-        texture.RgbaBytes.Length,
+        texture.PixelBytes.Length,
         texture.DecodedSamplerState.RsxTexFilterPayload,
         texture.DecodedSamplerState.RsxTexWrapPayload,
         texture.DecodedSamplerState.RsxTexEnablePayload,
@@ -44,12 +45,12 @@ internal readonly record struct TextureBindingKey(
 /// </summary>
 internal readonly record struct UvRouteBatchKey(
     string WorldVertexFormat,
-    byte TexCoordSource,
+    MaterialStreamSource TexCoordSource,
     byte StreamIndex,
     int Stride,
     int Offset,
     byte FormatByte0,
-    byte FormatByte1,
+    RsxVertexElementType FormatByte1,
     UvBaseMode BaseMode,
     int ComponentA,
     int ComponentB,

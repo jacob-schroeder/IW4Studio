@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Scheduling.Lighting;
 using IW4.Render.Shaders;
 
@@ -34,7 +35,7 @@ internal static class
 
         MapRenderWorldEvent20SceneLight light =
             frame.GetSceneLight(sceneLightIndex);
-        if (light.Type == 1)
+        if (light.Type == GfxLightType.Directional)
         {
             return
             [
@@ -86,7 +87,7 @@ internal static class
 
         // The all-clear branch writes row 0x04 only for type 2. Row 0x05 is
         // not written here and retains source initialization (FLT_MAX xyz,0).
-        if (light.Type == 2)
+        if (light.Type == GfxLightType.Spot)
         {
             float denominator =
                 light.CosHalfFovInner - light.CosHalfFovOuter;
@@ -129,7 +130,7 @@ internal static class
 
         MapRenderWorldEvent20SceneLight light =
             frame.GetSceneLight(sceneLightIndex);
-        if (light.Type == 1)
+        if (light.Type == GfxLightType.Directional)
         {
             throw new InvalidOperationException(
                 $"Event20 scene light {sceneLightIndex} is directional and does not own a dynamic eye-relative position row.");

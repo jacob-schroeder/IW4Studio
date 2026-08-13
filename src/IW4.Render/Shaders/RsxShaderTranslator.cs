@@ -8,7 +8,7 @@ namespace IW4.Render.Shaders;
 internal static class RsxShaderTranslator
 {
     internal const string CurrentSemanticTranslationVersion =
-        "rsx-shader-translator/2";
+        "rsx-shader-translator/4";
 
     public static RsxShaderTranslationResult Translate(
         byte[] vertexData,
@@ -155,7 +155,7 @@ internal static class RsxShaderTranslator
             hasFragmentProgramControl
                 ? ReadFragmentColorExports(
                     translatedPixelInstructions,
-                    fragmentProgramControl.EmittedControl)
+                    fragmentProgramControl)
                 : ImmutableArray<RsxFragmentColorExport>.Empty;
         int pixelUploadSize = pixelOffset < 0
             ? 0
@@ -249,17 +249,17 @@ internal static class RsxShaderTranslator
         // These four descriptor bytes form NV4097_SET_SHADER_CONTROL (0x1D60).
         // Only the documented RSX export bits are consumed by the translator,
         // but the execution contract retains the exact emitted value.
-        uint control = 0;
+        RsxFragmentProgramControlFlags flags =
+            RsxFragmentProgramControlFlags.UnknownAlwaysSet0400 |
+            RsxFragmentProgramControlFlags.TexturePerspectiveCorrection;
         if (registerCount > 1)
-            control |= (uint)registerCount << 24;
+            flags |= (RsxFragmentProgramControlFlags)((uint)registerCount << 24);
         if (exportPrecision == 0)
-            control |= 0x40;
-        control |= 0x8000;
+            flags |= RsxFragmentProgramControlFlags.Exports32Bit;
         if (controlFlags != 0)
-            control |= 0x80;
+            flags |= RsxFragmentProgramControlFlags.UsesKill;
         if (depthExport > 0)
-            control |= 0x0e;
-        control |= 0x400;
+            flags |= RsxFragmentProgramControlFlags.DepthExportMask;
         return new RsxFragmentProgramControl(
             IsValid: true,
             descriptorOffset,
@@ -267,15 +267,15 @@ internal static class RsxShaderTranslator
             exportPrecision,
             depthExport,
             controlFlags,
-            control);
+            (uint)flags);
     }
 
     private static ImmutableArray<RsxFragmentColorExport>
         ReadFragmentColorExports(
         IReadOnlyList<RsxFragmentInstruction> instructions,
-        uint fragmentProgramControl)
+        RsxFragmentProgramControl fragmentProgramControl)
     {
-        bool fp32 = (fragmentProgramControl & 0x40) != 0;
+        bool fp32 = fragmentProgramControl.UsesFp32ColorExports;
         (bool Fp16, int Register)[] registers = fp32
             ? [(false, 0), (false, 2), (false, 3), (false, 4)]
             : [(true, 0), (true, 4), (true, 6), (true, 8)];
@@ -283,30 +283,32 @@ internal static class RsxShaderTranslator
         return registers
             .Select((register, colorTarget) =>
             {
-                int writtenMask = instructions
-                    .Where(instruction => !instruction.Branch &&
+                RsxFragmentWriteMask writtenMask = instructions
+                    .Where(instruction => !instruction.IsControlFlow &&
                                           !instruction.NoDest &&
                                           instruction.DestFp16 == register.Fp16 &&
                                           instruction.DestRegister == register.Register)
-                    .Aggregate(0, (mask, instruction) => mask | instruction.WriteMask);
+                    .Aggregate(
+                        RsxFragmentWriteMask.None,
+                        (mask, instruction) => mask | instruction.WriteMask);
                 return new RsxFragmentColorExport(
                     colorTarget,
                     register.Fp16,
                     register.Register,
-                    (byte)writtenMask,
+                    writtenMask,
                     FragmentComponentMask(writtenMask));
             })
             .ToImmutableArray();
     }
 
-    private static string FragmentComponentMask(int mask)
+    private static string FragmentComponentMask(RsxFragmentWriteMask mask)
     {
         Span<char> components = stackalloc char[4];
         int count = 0;
-        if ((mask & 1) != 0) components[count++] = 'x';
-        if ((mask & 2) != 0) components[count++] = 'y';
-        if ((mask & 4) != 0) components[count++] = 'z';
-        if ((mask & 8) != 0) components[count++] = 'w';
+        if ((mask & RsxFragmentWriteMask.X) != 0) components[count++] = 'x';
+        if ((mask & RsxFragmentWriteMask.Y) != 0) components[count++] = 'y';
+        if ((mask & RsxFragmentWriteMask.Z) != 0) components[count++] = 'z';
+        if ((mask & RsxFragmentWriteMask.W) != 0) components[count++] = 'w';
         return new string(components[..count]);
     }
 
@@ -332,16 +334,29 @@ internal static class RsxShaderTranslator
         var inputs = new SortedSet<int>();
         foreach (RsxVertexInstruction instruction in instructions)
         {
-            int vectorSources = RsxVertexInstruction.VectorSourceMask(
-                instruction.VecOpcode);
-            if ((vectorSources & 1) != 0 && RsxVertexInstruction.SourceRegisterType(instruction.Source0) == 2) inputs.Add(instruction.InputSource);
-            if ((vectorSources & 2) != 0 && RsxVertexInstruction.SourceRegisterType(instruction.Source1) == 2) inputs.Add(instruction.InputSource);
-            if ((vectorSources & 4) != 0 && RsxVertexInstruction.SourceRegisterType(instruction.Source2) == 2) inputs.Add(instruction.InputSource);
+            RsxSourceSlotMask vectorSources =
+                RsxVertexInstruction.VectorSourceMask(
+                    instruction.VectorOpcode);
+            if ((vectorSources & RsxSourceSlotMask.Source0) !=
+                    RsxSourceSlotMask.None &&
+                RsxVertexInstruction.SourceRegisterKind(instruction.Source0) ==
+                    RsxVertexRegisterType.Input)
+                inputs.Add((int)instruction.InputAttribute);
+            if ((vectorSources & RsxSourceSlotMask.Source1) !=
+                    RsxSourceSlotMask.None &&
+                RsxVertexInstruction.SourceRegisterKind(instruction.Source1) ==
+                    RsxVertexRegisterType.Input)
+                inputs.Add((int)instruction.InputAttribute);
+            if ((vectorSources & RsxSourceSlotMask.Source2) !=
+                    RsxSourceSlotMask.None &&
+                RsxVertexInstruction.SourceRegisterKind(instruction.Source2) ==
+                    RsxVertexRegisterType.Input)
+                inputs.Add((int)instruction.InputAttribute);
             if (RsxVertexInstruction.ScalarReadsSource2(
-                    instruction.ScaOpcode) &&
-                RsxVertexInstruction.SourceRegisterType(
-                    instruction.Source2) == 2)
-                inputs.Add(instruction.InputSource);
+                    instruction.ScalarOpcode) &&
+                RsxVertexInstruction.SourceRegisterKind(
+                    instruction.Source2) == RsxVertexRegisterType.Input)
+                inputs.Add((int)instruction.InputAttribute);
         }
         return inputs.ToArray();
     }
@@ -352,15 +367,17 @@ internal static class RsxShaderTranslator
         var constants = new SortedSet<int>();
         foreach (RsxVertexInstruction instruction in instructions)
         {
-            int vectorSources = RsxVertexInstruction.VectorSourceMask(
-                instruction.VecOpcode);
+            RsxSourceSlotMask vectorSources =
+                RsxVertexInstruction.VectorSourceMask(
+                    instruction.VectorOpcode);
             bool readsConstant =
-                ((vectorSources & 1) != 0 && RsxVertexInstruction.SourceRegisterType(instruction.Source0) == 3) ||
-                ((vectorSources & 2) != 0 && RsxVertexInstruction.SourceRegisterType(instruction.Source1) == 3) ||
-                ((vectorSources & 4) != 0 && RsxVertexInstruction.SourceRegisterType(instruction.Source2) == 3) ||
+                ((vectorSources & RsxSourceSlotMask.Source0) != RsxSourceSlotMask.None && RsxVertexInstruction.SourceRegisterKind(instruction.Source0) == RsxVertexRegisterType.Constant) ||
+                ((vectorSources & RsxSourceSlotMask.Source1) != RsxSourceSlotMask.None && RsxVertexInstruction.SourceRegisterKind(instruction.Source1) == RsxVertexRegisterType.Constant) ||
+                ((vectorSources & RsxSourceSlotMask.Source2) != RsxSourceSlotMask.None && RsxVertexInstruction.SourceRegisterKind(instruction.Source2) == RsxVertexRegisterType.Constant) ||
                 (RsxVertexInstruction.ScalarReadsSource2(
-                     instruction.ScaOpcode) &&
-                 RsxVertexInstruction.SourceRegisterType(instruction.Source2) == 3);
+                     instruction.ScalarOpcode) &&
+                 RsxVertexInstruction.SourceRegisterKind(instruction.Source2) ==
+                    RsxVertexRegisterType.Constant);
             if (readsConstant)
                 constants.Add(instruction.ConstSource);
         }
@@ -383,46 +400,51 @@ internal static class RsxShaderTranslator
         IReadOnlyList<RsxFragmentInstruction> fragmentInstructions,
         ISet<string> blockers)
     {
-        var writtenOutputs = new HashSet<int>();
+        var writtenOutputs = new HashSet<RsxVertexResult>();
         foreach (RsxVertexInstruction instruction in vertexInstructions)
         {
-            if (instruction.VecOpcode != 0 && instruction.VecWriteMask != 0 &&
-                instruction.VecResult && instruction.ResultIndex != 0x1f)
+            if (instruction.VectorOpcode != RsxVertexVectorOpcode.Nop &&
+                instruction.VectorWriteMask != RsxVertexWriteMask.None &&
+                instruction.VecResult && instruction.Result != RsxVertexResult.None)
             {
-                writtenOutputs.Add(instruction.ResultIndex);
+                writtenOutputs.Add(instruction.Result);
             }
-            if (instruction.ScaOpcode != 0 && instruction.ScaWriteMask != 0 &&
-                instruction.ScaResult && instruction.ResultIndex != 0x1f)
+            if (instruction.ScalarOpcode != RsxVertexScalarOpcode.Nop &&
+                instruction.ScalarWriteMask != RsxVertexWriteMask.None &&
+                instruction.ScaResult && instruction.Result != RsxVertexResult.None)
             {
-                writtenOutputs.Add(instruction.ResultIndex);
+                writtenOutputs.Add(instruction.Result);
             }
         }
 
-        foreach (RsxFragmentInstruction instruction in fragmentInstructions.Where(instruction => !instruction.Branch))
+        foreach (RsxFragmentInstruction instruction in fragmentInstructions.Where(instruction => !instruction.IsControlFlow))
         {
-            int operandCount = RsxProgramDecoder.FragmentOperandCount(
-                instruction.Opcode);
+            int operandCount = RsxShaderInstructionSet.FragmentOperandCount(
+                instruction.OpcodeType);
             bool readsInput =
-                (operandCount > 0 && RsxFragmentInstruction.SourceRegisterType(instruction.Src0) == 1) ||
-                (operandCount > 1 && RsxFragmentInstruction.SourceRegisterType(instruction.Src1) == 1) ||
-                (operandCount > 2 && RsxFragmentInstruction.SourceRegisterType(instruction.Src2) == 1);
-            if (!readsInput || FragmentInputOutputIndex(instruction.SourceAttribute) is not { } outputIndex ||
-                writtenOutputs.Contains(outputIndex))
+                (operandCount > 0 && instruction.Source0Operand.RegisterKind == RsxFragmentRegisterType.Input) ||
+                (operandCount > 1 && instruction.Source1Operand.RegisterKind == RsxFragmentRegisterType.Input) ||
+                (operandCount > 2 && instruction.Source2Operand.RegisterKind == RsxFragmentRegisterType.Input);
+            if (!readsInput || FragmentInputResult(instruction.SourceAttribute) is not { } output ||
+                writtenOutputs.Contains(output))
             {
                 continue;
             }
 
             blockers.Add(
-                $"vertexOutput{outputIndex}=DEFAULT_0_0_0_1_NO_SELECTED_PROGRAM_WRITER");
+                $"vertexOutput{(byte)output}=DEFAULT_0_0_0_1_NO_SELECTED_PROGRAM_WRITER");
         }
     }
 
-    private static int? FragmentInputOutputIndex(int input) => input switch
+    private static RsxVertexResult? FragmentInputResult(
+        RsxFragmentInputAttribute input) => input switch
     {
-        1 => 1,
-        2 => 2,
-        3 => 5,
-        >= 4 and <= 11 => input + 3,
+        RsxFragmentInputAttribute.Color0 => RsxVertexResult.FrontColor0,
+        RsxFragmentInputAttribute.Color1 => RsxVertexResult.FrontColor1,
+        RsxFragmentInputAttribute.Fog => RsxVertexResult.FogAndUserClip0To2,
+        >= RsxFragmentInputAttribute.TextureCoordinate0 and
+            <= RsxFragmentInputAttribute.TextureCoordinate7 =>
+            (RsxVertexResult)((byte)input + 3),
         _ => null
     };
 
@@ -500,7 +522,8 @@ internal static class RsxShaderTranslator
         Dictionary<uint, MaterialConstantDef> constants = material?.Constants
             .GroupBy(value => value.NameHash)
             .ToDictionary(group => group.Key, group => group.First()) ?? [];
-        int stableStart = pass.PerPrimArgCount + pass.PerObjArgCount;
+        int stableStart = pass.GetArgumentRange(
+            MaterialUpdateFrequency.Rarely).Start.Value;
         for (int ordinal = 0;
              ordinal < Math.Min(stableStart, pass.Args.Count);
              ordinal++)
@@ -509,8 +532,7 @@ internal static class RsxShaderTranslator
             if (argument.Type != MaterialShaderArgumentType.CodePixelConst)
                 continue;
 
-            ushort codeIndex = checked((ushort)(
-                unchecked((uint)argument.ArgumentRaw) >> 16));
+            ushort codeIndex = argument.CodeConstant.SourceIndex;
             codePixelCandidates.Add(new(
                 ordinal,
                 argument.Dest,
@@ -538,7 +560,7 @@ internal static class RsxShaderTranslator
                 // a big-endian u16 at argument+0x04. Retain the exact
                 // destination/value pair; the two union-tail bytes are not a
                 // fragment row shape.
-                ushort codeIndex = checked((ushort)(raw >> 16));
+                ushort codeIndex = argument.CodeConstant.SourceIndex;
                 if (codeIndex >= CodeConstantLayout.Float4Count)
                 {
                     codePixelCandidates.Add(new(
@@ -619,7 +641,7 @@ internal static class RsxShaderTranslator
 
             switch (argument.Type)
             {
-                case MaterialShaderArgumentType.MaterialPixelConst when constants.TryGetValue(raw, out MaterialConstantDef? constant):
+                case MaterialShaderArgumentType.MaterialPixelConst when constants.TryGetValue(argument.MaterialNameHash, out MaterialConstantDef? constant):
                     ApplyFragmentConstant(patched, runtimeInfo, entry, constant.Literal.X, constant.Literal.Y, constant.Literal.Z, constant.Literal.W);
                     appliedPatches.Add(new StaticFragmentConstantPatch(
                         ordinal,

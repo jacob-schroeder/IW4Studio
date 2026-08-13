@@ -29,6 +29,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     public static readonly StyledProperty<bool> ShowWireframeProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
             nameof(ShowWireframe));
+    public static readonly StyledProperty<bool> ShowCollisionProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(ShowCollision));
 
     public static readonly StyledProperty<bool> UseStudioEnvironmentProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
@@ -95,6 +97,11 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     {
         get => GetValue(ShowWireframeProperty);
         set => SetValue(ShowWireframeProperty, value);
+    }
+    public bool ShowCollision
+    {
+        get => GetValue(ShowCollisionProperty);
+        set => SetValue(ShowCollisionProperty, value);
     }
 
     public bool UseStudioEnvironment
@@ -231,7 +238,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
                 camera,
                 materialTimeSeconds: 0f,
                 studioEnvironmentEnabled: UseStudioEnvironment,
-                showWireframe: ShowWireframe);
+                showWireframe: ShowWireframe,
+                showCollision: ShowCollision);
             if (!ShowWireframe &&
                 _uploadResult is not null &&
                 _rendererFailure is not null)
@@ -267,7 +275,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             PublishRendererStatus(-1, null, null);
             Fit();
         }
-        else if (change.Property == ShowWireframeProperty ||
+        else if (change.Property == ShowWireframeProperty || change.Property == ShowCollisionProperty ||
                  change.Property == UseStudioEnvironmentProperty)
         {
             RequestNextFrameRendering();

@@ -20,5 +20,6 @@ public sealed class GfxSky
     // PS3 stores the authored sampler byte at +0x0C followed by three zero pad bytes.
     // The loader preserves the copied big-endian word so the effective byte is its MSB.
     public int SkySamplerState { get; init; }
-    public byte SamplerState => unchecked((byte)((uint)SkySamplerState >> 24));
+    public MaterialSamplerState SamplerState =>
+        (MaterialSamplerState)unchecked((byte)((uint)SkySamplerState >> 24));
 }

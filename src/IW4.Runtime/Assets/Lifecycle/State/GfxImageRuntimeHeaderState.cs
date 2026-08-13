@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Image;
+
 namespace IW4.Runtime.Assets.Lifecycle.State;
 
 /// <summary>
@@ -9,5 +11,5 @@ public readonly record struct GfxImageRuntimeHeaderState(
     ushort BaseHeight,
     ushort BaseDepth,
     byte BaseLevelCount,
-    byte Cached,
+    GfxImageCached Cached,
     uint Pixels);

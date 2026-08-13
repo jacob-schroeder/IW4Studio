@@ -202,12 +202,12 @@ internal static class ShaderExecutionContractFactory
 
         string vertexDeclIdentity = vertexDecl is null
             ? string.Empty
-            : $"streams={vertexDecl.StreamCount};optional={vertexDecl.HasOptionalSource};routes={string.Join(',', vertexDecl.Routing.Select(route => $"{route.Source:X2}>{route.Dest:X2}"))}";
+            : $"streams={vertexDecl.StreamCount};optional={(vertexDecl.HasOptionalSource ? 1 : 0)};routes={string.Join(',', vertexDecl.Routing.Select(route => $"{(byte)route.Source:X2}>{(byte)route.Dest:X2}"))}";
         string cacheMaterial = string.Join('|',
             vertexProgram.DataSha256,
             pixelProgram.DataSha256,
             vertexDeclIdentity,
-            string.Join(',', vertexInputs.Select(input => $"v{input.Source}>{input.Destination}:s{input.StreamIndex}:o{input.Offset}:n{input.ComponentCount}:t{input.RsxType}")),
+            string.Join(',', vertexInputs.Select(input => $"v{(byte)input.Source}>{(byte)input.Destination}:s{input.StreamIndex}:o{input.Offset}:n{input.ComponentCount}:t{(byte)input.RsxType}")),
             string.Join(',', materialDestinations.Select(binding => $"m{binding.Destination}")),
             string.Join(',', customDestinations.Select(binding => $"u{binding.Destination}:{binding.TextureTarget}")),
             string.Join(',', codeDestinations.Select(binding =>
@@ -227,7 +227,7 @@ internal static class ShaderExecutionContractFactory
                     $"{FloatIdentity(constant.Value.W)}")),
             translation is null ? string.Empty : $"fpctrl:{translation.FragmentProgramControl:X8}",
             translation is null ? string.Empty : string.Join(',', translation.FragmentColorExports.Select(export =>
-                $"o{export.ColorTarget}:{export.Register}:{export.WrittenComponentMask:X1}")));
+                $"o{export.ColorTarget}:{export.Register}:{(byte)export.WrittenComponentMask:X1}")));
         string cacheKey = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(cacheMaterial)));
         var rendererBlockers = new List<string>();
         if (!authoredSourcePassAvailable || sourcePass is null)
@@ -248,7 +248,7 @@ internal static class ShaderExecutionContractFactory
         }
         rendererBlockers.AddRange(RenderStateExecutionCapability.FindBlockers(selectedPass.State));
         if (purpose == ShaderExecutionPurpose.DepthOnly &&
-            (selectedPass.State.ColorMask != 0 ||
+            (selectedPass.State.ColorMask != RsxColorMask.None ||
              !selectedPass.State.DepthTestEnabled ||
              !selectedPass.State.DepthWriteEnabled))
         {
@@ -302,7 +302,7 @@ internal static class ShaderExecutionContractFactory
 
             foreach (int destination in translation.ReadVertexInputDestinations)
             {
-                if (!vertexInputs.Any(input => input.Destination == destination))
+                if (!vertexInputs.Any(input => (byte)input.Destination == destination))
                     rendererBlockers.Add($"vertexInputDest{destination}=routeMissing");
             }
 
@@ -419,7 +419,8 @@ internal static class ShaderExecutionContractFactory
                 HasProgramData: true);
         ShaderFragmentExport[] fragmentExports =
         [
-            new ShaderFragmentExport(0, "0", 0x0f, "xyzw")
+            new ShaderFragmentExport(
+                0, "0", RsxFragmentWriteMask.All, "xyzw")
         ];
         string cacheMaterial = string.Join(
             '|',
@@ -456,7 +457,8 @@ internal static class ShaderExecutionContractFactory
             FragmentExportPrecision: "Fp16",
             FragmentDepthExportEnabled: false,
             FragmentColorExports: [
-                new RsxFragmentColorExport(0, true, 0, 0x0f, "xyzw")
+                new RsxFragmentColorExport(
+                    0, true, 0, RsxFragmentWriteMask.All, "xyzw")
             ],
             StaticFragmentConstantPatches: [],
             CodePixelConstantPatchPlans: [],
@@ -518,7 +520,7 @@ internal static class ShaderExecutionContractFactory
             PerObjArgCount = source.PerObjArgCount,
             StableArgCount = source.StableArgCount,
             CustomSamplerFlags = source.CustomSamplerFlags,
-            PrecompiledIndex = source.PrecompiledIndex,
+            PrecompiledVertexShader = source.PrecompiledVertexShader,
             ArgsPointer = source.ArgsPointer,
             VertexDeclaration = source.VertexDeclaration,
             VertexShader = source.VertexShader,
@@ -534,9 +536,10 @@ internal static class ShaderExecutionContractFactory
         int argumentIndex,
         MaterialShaderArgumentAsset argument)
     {
-        uint raw = unchecked((uint)argument.ArgumentRaw);
+        MaterialTextureSource source = argument.CodeTextureSource;
+        uint raw = (uint)source;
         if (CodePixelSamplerAbi.TryResolve(
-                raw,
+                source,
                 out CodePixelSamplerAbiEntry entry))
         {
             return new ShaderSamplerDestination(
@@ -576,8 +579,8 @@ internal static class ShaderExecutionContractFactory
                 new ShaderRuntimeSamplerRequirement(
                     item.Destination.ArgumentIndex,
                     item.Destination.Destination,
-                    item.Destination.Argument,
-                    item.Entry!.RuntimeResourceKind,
+                    item.Entry!.Source,
+                    item.Entry.RuntimeResourceKind,
                     item.Entry.RuntimeRequirementStatus,
                     item.Entry.ResourceIdentity))
             .ToArray();
@@ -631,7 +634,8 @@ internal static class ShaderExecutionContractFactory
 
         if (argument.Type is MaterialShaderArgumentType.MaterialVertexConst or MaterialShaderArgumentType.MaterialPixelConst)
         {
-            MaterialConstantDef? materialConstant = material?.Constants.FirstOrDefault(value => value.NameHash == raw);
+            uint nameHash = argument.MaterialNameHash;
+            MaterialConstantDef? materialConstant = material?.Constants.FirstOrDefault(value => value.NameHash == nameHash);
             if (materialConstant is not null)
             {
                 MaterialVec4 value = materialConstant.Literal;
@@ -654,16 +658,18 @@ internal static class ShaderExecutionContractFactory
                 argumentIndex,
                 argument.Type.ToString(),
                 argument.Dest,
-                raw,
-                $"materialConstantHash0x{raw:X8}",
+                nameHash,
+                $"materialConstantHash0x{nameHash:X8}",
                 IsOperationallyResolved: false);
             yield break;
         }
 
-        ushort codeIndex = checked((ushort)(raw >> 16));
-        byte firstRow = checked((byte)((raw >> 8) & 0xFF));
-        byte rowCount = checked((byte)(raw & 0xFF));
-        string argumentType = argument.Type == MaterialShaderArgumentType.CodePrimBegin
+        MaterialCodeConstantArgument codeArgument = argument.CodeConstant;
+        ushort codeIndex = codeArgument.SourceIndex;
+        byte firstRow = codeArgument.FirstRow;
+        byte rowCount = codeArgument.RowCount;
+        string argumentType = argument.Type ==
+            MaterialShaderArgumentType.CodeVertexConst
             ? "CodeVertexConst"
             : argument.Type.ToString();
         if (rowCount == 0)

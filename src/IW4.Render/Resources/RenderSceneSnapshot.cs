@@ -2,6 +2,7 @@ using IW4.Render.Techniques;
 using System.Collections.Immutable;
 using System.Numerics;
 
+using IW4.Assets.Assets.Material;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
@@ -698,7 +699,7 @@ public sealed class RenderNormalCameraColorLayerSnapshot
         SamplerArgIndex = source.Identity.SamplerArgIndex;
         SamplerDest = source.Identity.SamplerDest;
         SamplerHash = source.Identity.SamplerHash;
-        TextureSemantic = source.Identity.TextureSemantic;
+        TextureSemantic = (byte)source.Identity.TextureSemantic;
         UvRoute = new RenderMaterialUvRouteSnapshot(source.UvRoute);
         BlendWeightComponent = source.BlendWeightComponent;
         TextureIdentity = resource.TextureIdentity;
@@ -749,7 +750,7 @@ public sealed class RenderNormalCameraMaterialSamplerSnapshot
         SamplerArgIndex = source.Identity.SamplerArgIndex;
         SamplerDest = source.Identity.SamplerDest;
         SamplerHash = source.Identity.SamplerHash;
-        TextureSemantic = source.Identity.TextureSemantic;
+        TextureSemantic = (byte)source.Identity.TextureSemantic;
         TextureName = source.TextureName;
         WorldRuntimeTextureIdentity = runtimeTextureIdentity;
         EditorTextureRole = source.EditorTextureRole;
@@ -834,7 +835,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         IEnumerable<RenderNormalCameraMaterialSamplerSnapshot> materialSamplers,
         IEnumerable<RenderMaterialPickRangeSnapshot> pickRanges,
         IEnumerable<MapRenderStaticModelInstance> staticInstances,
-        byte? staticCameraRegion,
+        GfxCameraRegionType? staticCameraRegion,
         IEnumerable<RenderNormalCameraTextureResourceSnapshot> textureResources,
         RenderSemanticIdentity baseTextureIdentity,
         RenderSemanticIdentity baseSamplerIdentity,
@@ -1062,7 +1063,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         MaterialSamplers { get; }
     public ImmutableArray<RenderMaterialPickRangeSnapshot> PickRanges { get; }
     public ImmutableArray<MapRenderStaticModelInstance> StaticInstances { get; }
-    public byte? StaticCameraRegion { get; }
+    public GfxCameraRegionType? StaticCameraRegion { get; }
     public ImmutableArray<RenderNormalCameraTextureResourceSnapshot>
         TextureResources { get; }
     public RenderSemanticIdentity BaseTextureIdentity { get; }
@@ -1143,7 +1144,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
             writer.WriteInt32(depth.TechniqueSlot);
             writer.WriteString(depth.TechniqueName);
             writer.WriteInt32(depth.PassIndex);
-            writer.WriteInt32(depth.TechniqueFlags);
+            writer.WriteInt32((int)depth.TechniqueFlags);
             writer.WriteString(depth.VertexProgramName);
             writer.WriteString(depth.PixelProgramName);
             writer.WriteInt32((int)depth.Program);
@@ -1178,7 +1179,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
             AppendInstance(writer, instance);
         writer.WriteBoolean(StaticCameraRegion.HasValue);
         if (StaticCameraRegion is { } cameraRegion)
-            writer.WriteByte(cameraRegion);
+            writer.WriteByte((byte)cameraRegion);
         writer.WriteInt32(TextureResources.Length);
         foreach (RenderNormalCameraTextureResourceSnapshot resource in
                  TextureResources)
@@ -1244,7 +1245,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         writer.WriteInt32(instance.SurfaceIndex);
         writer.WriteString(instance.Name);
         writer.WriteString(instance.AuthoredMaterialName);
-        writer.WriteByte(instance.CameraRegion);
+        writer.WriteByte((byte)instance.CameraRegion);
         writer.WriteInt32(instance.PrimaryLightIndex);
         writer.WriteByte(instance.ReflectionProbeIndex);
         writer.WriteBoolean(instance.AuthoredLightingIdentity.HasValue);
@@ -1252,7 +1253,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         {
             writer.WriteInt32(lighting.LightingHandle);
             writer.WriteUInt32(lighting.GroundLighting.Packed);
-            writer.WriteByte(lighting.Flags);
+            writer.WriteByte((byte)lighting.Flags);
         }
         AppendVector(writer, instance.BaseLightingCoords);
         AppendVector(writer, instance.LightProbeAmbient);

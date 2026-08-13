@@ -74,7 +74,7 @@ internal static class AuthoredCameraColorTechniqueSelector
                     argument.Type ==
                         MaterialShaderArgumentType.CodePixelSampler &&
                     !CodePixelSamplerAbi.HasRuntimeRequirement(
-                        unchecked((uint)argument.ArgumentRaw)));
+                        argument.CodeTextureSource));
                 bool stateReady = RenderStateDecoder.TryDecode(
                     material,
                     slotIndex,

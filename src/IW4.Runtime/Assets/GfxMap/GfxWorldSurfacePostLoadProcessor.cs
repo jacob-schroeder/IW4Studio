@@ -15,10 +15,6 @@ namespace IW4.Runtime.Assets.GfxMap;
 public static class GfxWorldSurfacePostLoadProcessor
 {
     private const int MaterialPointerOffset = 0x14;
-    private const int MaterialSortedIndexShift = 30;
-    private const int MaterialSortedIndexMask = 0x1fff;
-    private const ulong SurfaceMaterialDrawSurfMask = 0xffc03fffffffffffUL;
-    private const ulong CastsSunShadowMaterialMask = 0x000000003e000000UL;
 
     public static void Process(
         GfxWorldAsset world,
@@ -185,9 +181,10 @@ public static class GfxWorldSurfacePostLoadProcessor
         var surfaceMaterialBytes = new byte[checked(surfaceCount * GfxMapDrawSurf.SerializedSize)];
         for (int runtimeSlot = 0; runtimeSlot < surfaceCount; runtimeSlot++)
         {
-            ulong packed =
-                (sortedMaterials[runtimeSlot].Info.DrawSurf.Packed & SurfaceMaterialDrawSurfMask) |
-                ((ulong)sortedSurfaces[runtimeSlot].PrimaryLightIndex << 46);
+            ulong packed = sortedMaterials[runtimeSlot].Info.DrawSurf
+                .WithSceneLightIndex(
+                    sortedSurfaces[runtimeSlot].PrimaryLightIndex)
+                .Packed;
             surfaceMaterials[runtimeSlot] = new GfxMapDrawSurf(packed);
             BinaryPrimitives.WriteUInt64BigEndian(
                 surfaceMaterialBytes.AsSpan(
@@ -313,8 +310,8 @@ public static class GfxWorldSurfacePostLoadProcessor
         Array.Clear(words, 0, requiredWordCount);
         for (int surfaceIndex = 0; surfaceIndex < sortSurfaceCount; surfaceIndex++)
         {
-            if ((materials[surfaceIndex].Info.DrawSurf.Packed & CastsSunShadowMaterialMask) == 0 ||
-                (surfaces[surfaceIndex].CastsSunShadow & 1) == 0)
+            if (materials[surfaceIndex].Info.DrawSurf.CustomIndex == 0 ||
+                (surfaces[surfaceIndex].Flags & GfxSurfaceFlags.CastsSunShadow) == 0)
             {
                 continue;
             }
@@ -340,7 +337,7 @@ public static class GfxWorldSurfacePostLoadProcessor
             LightmapIndex = source.LightmapIndex,
             ReflectionProbeIndex = source.ReflectionProbeIndex,
             PrimaryLightIndex = source.PrimaryLightIndex,
-            CastsSunShadow = source.CastsSunShadow
+            Flags = source.Flags
         };
     }
 
@@ -374,7 +371,7 @@ public static class GfxWorldSurfacePostLoadProcessor
     }
 
     private static int GetMaterialSortedIndex(MaterialAsset material) =>
-        (int)((material.Info.DrawSurf.Packed >> MaterialSortedIndexShift) & MaterialSortedIndexMask);
+        material.Info.DrawSurf.MaterialSortedIndex;
 
     private static void ValidateHeaderAndCollectionCounts(
         GfxWorldAsset world,

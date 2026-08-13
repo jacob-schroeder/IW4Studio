@@ -1,6 +1,7 @@
 using System.Numerics;
 using Silk.NET.OpenGL;
 
+using IW4.Assets.Assets.Material;
 using IW4.Render.Diagnostics;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
@@ -58,7 +59,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
                 if (singlePassCandidate &&
                     command.InstanceIndex is int sourceIndex &&
-                    command.Mesh.StaticCameraRegion is 0 or 4 &&
+                    command.Mesh.StaticCameraRegion is
+                        GfxCameraRegionType.LitOpaque or
+                        GfxCameraRegionType.LightMapOpaque &&
                     (command.Mesh.RsxProgram.Handle == 0 ||
                      command.Mesh.StaticModelProgramUniforms is not null))
                 {

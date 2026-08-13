@@ -35,7 +35,7 @@ internal static class RsxFragmentGlsl330Lowerer
             program.Instructions,
             program.SamplerFeatureProfile,
             program.ProgramControl.IsValid
-                ? program.ProgramControl.EmittedControl
+                ? program.ProgramControl.EmittedFlags
                 : null,
             blockers);
         return CreateResult(glsl, blockers);
@@ -85,7 +85,7 @@ internal static class RsxFragmentGlsl330Lowerer
     private static string BuildGlsl(
         IReadOnlyList<RsxFragmentInstruction> instructions,
         RsxFragmentSamplerFeatureProfile samplerProfile,
-        uint? fragmentProgramControl,
+        RsxFragmentProgramControlFlags? fragmentProgramControl,
         ISet<string> blockers)
     {
         FragmentRegisterUsage registerUsage = ReadFragmentRegisterUsage(
@@ -123,6 +123,8 @@ internal static class RsxFragmentGlsl330Lowerer
         builder.AppendLine("layout(location = 2) out vec4 rsxMrtColor2;");
         builder.AppendLine("layout(location = 3) out vec4 rsxMrtColor3;");
         builder.AppendLine("vec4 rsxSplat(float v) { return vec4(v); }");
+        builder.AppendLine("vec4 rsxNormalize(vec3 v) { return length(v) > 0.0 ? normalize(v).xyzz : v.xyzz; }");
+        builder.AppendLine("vec4 rsxDivideBySqrt(vec4 a, float b) { vec4 q = a / sqrt(abs(b)); return vec4(abs(a.x) > 0.0 ? q.x : a.x, abs(a.y) > 0.0 ? q.y : a.y, abs(a.z) > 0.0 ? q.z : a.z, abs(a.w) > 0.0 ? q.w : a.w); }");
         builder.AppendLine("vec4 rsxBool4(bvec4 v) { return vec4(v.x ? 1.0 : 0.0, v.y ? 1.0 : 0.0, v.z ? 1.0 : 0.0, v.w ? 1.0 : 0.0); }");
         builder.AppendLine("bool rsxCcTestFL(float v) { return false; }");
         builder.AppendLine("bool rsxCcTestLT(float v) { return !isnan(v) && v < 0.0; }");
@@ -152,16 +154,32 @@ internal static class RsxFragmentGlsl330Lowerer
             registerUsage.HalfRegisters,
             "vec4(0.0)");
         builder.AppendLine("  vec4 rsxCc0 = vec4(0.0);");
+        builder.AppendLine("  vec4 rsxCc1 = vec4(0.0);");
+        FragmentControlFlowPlan? controlFlow =
+            TryCreateFragmentControlFlowPlan(instructions);
         foreach (RsxFragmentInstruction instruction in instructions)
         {
-            if (instruction.Branch)
+            if (controlFlow is { } closingFlow &&
+                instruction.Offset == closingFlow.CloseOffset)
             {
-                blockers.Add("fragmentBranchControlFlow=unlowered");
-                builder.AppendLine(
-                    "  // branch/control-flow instruction; no behavior invented");
+                builder.AppendLine("  }");
+            }
+            if (instruction.IsControlFlow)
+            {
+                if (controlFlow is { } supportedFlow &&
+                    instruction.Index == supportedFlow.InstructionIndex)
+                {
+                    builder.AppendLine(supportedFlow.OpeningStatement);
+                }
+                else
+                {
+                    blockers.Add("fragmentBranchControlFlow=unlowered");
+                    builder.AppendLine(
+                        "  // control-flow instruction; no behavior invented");
+                }
                 continue;
             }
-            if (instruction.Opcode == 0x12)
+            if (instruction.OpcodeType == RsxFragmentOpcode.Kill)
             {
                 blockers.Add("fragmentConditionalKill=unlowered");
                 builder.AppendLine(
@@ -169,29 +187,12 @@ internal static class RsxFragmentGlsl330Lowerer
                 continue;
             }
 
-            bool conditionSensitive =
-                instruction.CondWriteEnabled ||
-                instruction.ConditionTest != RsxFragmentConditionTest.True ||
-                instruction.ConditionWriteRegister1 ||
-                instruction.ConditionReadRegister1;
-            bool conditionProducer = conditionSensitive &&
-                                     IsSelectedFragmentConditionProducer(
-                                         instruction);
-            bool conditionConsumer = conditionSensitive &&
-                                     IsSelectedFragmentConditionConsumer(
-                                         instruction);
-            if (conditionSensitive && !conditionProducer && !conditionConsumer)
-            {
-                AddFragmentConditionBlocker(instruction, blockers);
-                builder.AppendLine(
-                    "  // fragment condition form is outside the supported CC0 subset");
-                continue;
-            }
-            if (instruction.Scale == 4)
+            if (instruction.Scale == RsxFragmentResultScale.Reserved4)
                 blockers.Add("fragmentScale4=unmapped");
             if (HasSourceType3(instruction))
                 blockers.Add("fragmentSourceRegisterType3=unmapped");
-            if (instruction.Opcode == 0 || IsReservedNoOp(instruction))
+            if (instruction.OpcodeType == RsxFragmentOpcode.Nop ||
+                IsFenceNoOp(instruction))
                 continue;
 
             string? expression = FragmentExpression(
@@ -212,51 +213,20 @@ internal static class RsxFragmentGlsl330Lowerer
             if (scale is not null && scale != "1.0")
                 expression = $"({expression} * {scale})";
 
-            if (conditionProducer || conditionConsumer)
-            {
-                string value = $"rsxCcValue{instruction.Index}";
-                builder.AppendLine($"  vec4 {value} = {expression};");
-                if (conditionProducer)
-                {
-                    string ccMask = FragmentWriteMask(instruction.WriteMask);
-                    if (!instruction.NoDest)
-                    {
-                        string destination = instruction.DestFp16
-                            ? $"H[{instruction.DestRegister}]"
-                            : $"R[{instruction.DestRegister}]";
-                        builder.AppendLine(
-                            $"  {destination}.{ccMask} = {value}.{ccMask};");
-                        builder.AppendLine(
-                            $"  rsxCc0.{ccMask} = {destination}.{ccMask};");
-                    }
-                    else
-                    {
-                        builder.AppendLine(
-                            $"  rsxCc0.{ccMask} = {value}.{ccMask};");
-                    }
-                }
-                else
-                {
-                    AppendSelectedFragmentConditionWrite(
-                        builder,
-                        instruction,
-                        value);
-                }
-                continue;
-            }
-
-            if (!instruction.NoDest && instruction.WriteMask != 0)
-            {
-                string destination = instruction.DestFp16
-                    ? $"H[{instruction.DestRegister}]"
-                    : $"R[{instruction.DestRegister}]";
-                string mask = FragmentWriteMask(instruction.WriteMask);
-                builder.AppendLine(
-                    $"  {destination}.{mask} = ({expression}).{mask};");
-            }
+            AppendFragmentInstructionWrites(
+                builder,
+                instruction,
+                expression);
+        }
+        if (controlFlow is { } trailingFlow &&
+            trailingFlow.CloseOffset == FragmentProgramEndOffset(instructions))
+        {
+            builder.AppendLine("  }");
         }
         bool fp32Exports = fragmentProgramControl is { } control &&
-                           (control & 0x40) != 0;
+            HasControlFlag(
+                control,
+                RsxFragmentProgramControlFlags.Exports32Bit);
         if (fragmentProgramControl is null)
             blockers.Add("fragmentExportBank=unsupported");
         string[] outputRegisters = fp32Exports
@@ -267,7 +237,9 @@ internal static class RsxFragmentGlsl330Lowerer
         builder.AppendLine($"  rsxMrtColor2 = {outputRegisters[2]};");
         builder.AppendLine($"  rsxMrtColor3 = {outputRegisters[3]};");
         if (fragmentProgramControl is { } depthControl &&
-            (depthControl & 0x0e) != 0)
+            HasAnyControlFlag(
+                depthControl,
+                RsxFragmentProgramControlFlags.DepthExportMask))
         {
             builder.AppendLine("  gl_FragDepth = R[1].z;");
         }
@@ -319,19 +291,23 @@ internal static class RsxFragmentGlsl330Lowerer
         return BuildGlsl(
             instructions,
             profile,
-            fragmentProgramControl,
+            fragmentProgramControl.HasValue
+                ? (RsxFragmentProgramControlFlags)fragmentProgramControl.Value
+                : null,
             blockers);
     }
 
     private static FragmentRegisterUsage ReadFragmentRegisterUsage(
         IReadOnlyList<RsxFragmentInstruction> instructions,
         RsxFragmentSamplerFeatureProfile samplerProfile,
-        uint? fragmentProgramControl)
+        RsxFragmentProgramControlFlags? fragmentProgramControl)
     {
         var fullRegisters = new SortedSet<int>();
         var halfRegisters = new SortedSet<int>();
         bool fp32Exports = fragmentProgramControl is { } control &&
-                           (control & 0x40) != 0;
+            HasControlFlag(
+                control,
+                RsxFragmentProgramControlFlags.Exports32Bit);
         ISet<int> colorExportRegisters = fp32Exports
             ? fullRegisters
             : halfRegisters;
@@ -342,7 +318,9 @@ internal static class RsxFragmentGlsl330Lowerer
             colorExportRegisters.Add(register);
         }
         if (fragmentProgramControl is { } depthControl &&
-            (depthControl & 0x0e) != 0)
+            HasAnyControlFlag(
+                depthControl,
+                RsxFragmentProgramControlFlags.DepthExportMask))
         {
             fullRegisters.Add(1);
         }
@@ -351,8 +329,7 @@ internal static class RsxFragmentGlsl330Lowerer
         {
             if (!FragmentInstructionEmitsExpression(
                     instruction,
-                    samplerProfile,
-                    out bool conditionProducer))
+                    samplerProfile))
             {
                 continue;
             }
@@ -381,7 +358,7 @@ internal static class RsxFragmentGlsl330Lowerer
             }
 
             if (!instruction.NoDest &&
-                instruction.WriteMask != 0)
+                instruction.WriteMask != RsxFragmentWriteMask.None)
             {
                 (instruction.DestFp16
                         ? halfRegisters
@@ -397,26 +374,13 @@ internal static class RsxFragmentGlsl330Lowerer
 
     private static bool FragmentInstructionEmitsExpression(
         RsxFragmentInstruction instruction,
-        RsxFragmentSamplerFeatureProfile samplerProfile,
-        out bool conditionProducer)
+        RsxFragmentSamplerFeatureProfile samplerProfile)
     {
-        conditionProducer = false;
-        if (instruction.Branch || instruction.Opcode == 0x12)
+        if (instruction.IsControlFlow ||
+            instruction.OpcodeType == RsxFragmentOpcode.Kill)
             return false;
-
-        bool conditionSensitive =
-            instruction.CondWriteEnabled ||
-            instruction.ConditionTest != RsxFragmentConditionTest.True ||
-            instruction.ConditionWriteRegister1 ||
-            instruction.ConditionReadRegister1;
-        conditionProducer = conditionSensitive &&
-                            IsSelectedFragmentConditionProducer(instruction);
-        bool conditionConsumer = conditionSensitive &&
-                                 IsSelectedFragmentConditionConsumer(
-                                     instruction);
-        if (conditionSensitive && !conditionProducer && !conditionConsumer)
-            return false;
-        if (instruction.Opcode == 0 || IsReservedNoOp(instruction))
+        if (instruction.OpcodeType == RsxFragmentOpcode.Nop ||
+            IsFenceNoOp(instruction))
             return false;
 
         return FragmentExpression(
@@ -430,121 +394,180 @@ internal static class RsxFragmentGlsl330Lowerer
         ISet<int> fullRegisters,
         ISet<int> halfRegisters)
     {
-        if (RsxFragmentInstruction.SourceRegisterType(source) != 0)
+        if (RsxFragmentInstruction.SourceRegisterKind(source) !=
+            RsxFragmentRegisterType.Temporary)
             return;
-        (FragmentSourceFp16(source)
+        var operand = new RsxFragmentOperand(0, source);
+        (operand.Fp16
                 ? halfRegisters
                 : fullRegisters)
-            .Add(FragmentSourceIndex(source));
+            .Add(operand.RegisterIndex);
     }
 
-    private static bool IsSelectedFragmentConditionProducer(
-        RsxFragmentInstruction instruction) =>
-        instruction.CondWriteEnabled &&
-        instruction.ConditionTest == RsxFragmentConditionTest.True &&
-        !instruction.ConditionWriteRegister1 &&
-        !instruction.ConditionReadRegister1 &&
-        instruction.WriteMask is 0x1 or 0x4 or 0x8 &&
-        (instruction.NoDest
-            ? instruction.Opcode is 0x01 or 0x0b or 0x0e ||
-              (instruction.Opcode == 0x0a &&
-               instruction.WriteMask == 0x1)
-            : instruction.Opcode == 0x01 &&
-              instruction.WriteMask == 0x08);
-
-    private static bool IsSelectedFragmentConditionConsumer(
-        RsxFragmentInstruction instruction) =>
-        !instruction.CondWriteEnabled &&
-        !instruction.ConditionWriteRegister1 &&
-        !instruction.ConditionReadRegister1 &&
-        !instruction.NoDest &&
-        instruction.WriteMask != 0 &&
-        (instruction.ConditionTest is RsxFragmentConditionTest.Equal or
-            RsxFragmentConditionTest.GreaterThan or
-            RsxFragmentConditionTest.NotEqual) &&
-        (ConditionSwizzleIsComponent(instruction, 0) ||
-         ConditionSwizzleIsComponent(instruction, 2) ||
-         ConditionSwizzleIsComponent(instruction, 3)) &&
-        (instruction.Opcode is 0x01 or 0x02 or 0x04 or 0x0b or 0x1c ||
-         (instruction.Opcode == 0x17 &&
-          instruction.ConditionTest == RsxFragmentConditionTest.NotEqual &&
-          ConditionSwizzleIsComponent(instruction, 3) &&
-          instruction.WriteMask == 0x07) ||
-         (instruction.Opcode == 0x3a &&
-          instruction.ConditionTest == RsxFragmentConditionTest.Equal &&
-          ConditionSwizzleIsComponent(instruction, 0) &&
-          instruction.WriteMask == 0x8));
-
-    private static bool ConditionSwizzleIsComponent(
-        RsxFragmentInstruction instruction,
-        int component) =>
-        instruction.ConditionSwizzleX == component &&
-        instruction.ConditionSwizzleY == component &&
-        instruction.ConditionSwizzleZ == component &&
-        instruction.ConditionSwizzleW == component;
-
-    private static void AddFragmentConditionBlocker(
-        RsxFragmentInstruction instruction,
-        ISet<string> blockers)
-    {
-        if (instruction.ConditionWriteRegister1 ||
-            instruction.ConditionReadRegister1)
-        {
-            blockers.Add("fragmentConditionRegister1=unlowered");
-            return;
-        }
-        if (instruction.CondWriteEnabled &&
-            instruction.ConditionTest != RsxFragmentConditionTest.True)
-        {
-            blockers.Add("fragmentPredicatedConditionWrite=unlowered");
-            return;
-        }
-        if (instruction.CondWriteEnabled &&
-            !instruction.NoDest &&
-            instruction.WriteMask != 0)
-        {
-            blockers.Add("fragmentDestinationConditionWrite=unlowered");
-            return;
-        }
-        blockers.Add(instruction.CondWriteEnabled
-            ? "fragmentConditionProducerShape=unlowered"
-            : "fragmentConditionConsumerShape=unlowered");
-    }
-
-    private static void AppendSelectedFragmentConditionWrite(
+    private static void AppendFragmentInstructionWrites(
         StringBuilder builder,
         RsxFragmentInstruction instruction,
-        string value)
+        string expression)
     {
+        if (instruction.WriteMask == RsxFragmentWriteMask.None)
+            return;
+
+        bool unconditional =
+            instruction.ConditionTest == RsxConditionTest.True;
+        if (instruction.NoDest)
+        {
+            if (!instruction.CondWriteEnabled)
+                return;
+            string conditionValue = $"rsxCcValue{instruction.Index}";
+            string conditionRegister = instruction.ConditionWriteRegister1
+                ? "rsxCc1"
+                : "rsxCc0";
+            string mask = FragmentWriteMask(instruction.WriteMask);
+            builder.AppendLine($"  vec4 {conditionValue} = {expression};");
+            builder.AppendLine(unconditional
+                ? $"  {conditionRegister}.{mask} = {conditionValue}.{mask};"
+                : $"  if ({FragmentFlowConditionExpression(instruction)}) {conditionRegister}.{mask} = {conditionValue}.{mask};");
+            return;
+        }
+
         string destination = instruction.DestFp16
             ? $"H[{instruction.DestRegister}]"
             : $"R[{instruction.DestRegister}]";
-        string test = FragmentConditionTestName(instruction.ConditionTest);
+        if (unconditional &&
+            !instruction.CondWriteEnabled)
+        {
+            string mask = FragmentWriteMask(instruction.WriteMask);
+            builder.AppendLine(
+                $"  {destination}.{mask} = ({expression}).{mask};");
+            return;
+        }
+
+        bool needsValue = instruction.CondWriteEnabled || !unconditional;
+        string value = needsValue
+            ? $"rsxCcValue{instruction.Index}"
+            : $"({expression})";
+        if (needsValue)
+            builder.AppendLine($"  vec4 {value} = {expression};");
         for (int component = 0; component < 4; component++)
         {
-            if ((instruction.WriteMask & (1 << component)) == 0)
+            if ((instruction.WriteMask &
+                    (RsxFragmentWriteMask)(1 << component)) ==
+                RsxFragmentWriteMask.None)
                 continue;
-            char destinationComponent = SwizzleChar(component);
-            char conditionComponent = SwizzleChar(
-                instruction.ConditionSwizzle(component));
+            char destinationComponent = SwizzleChar(
+                (RsxSwizzleComponent)component);
+            string condition = FragmentComponentConditionExpression(
+                instruction,
+                component);
+            builder.AppendLine(unconditional
+                ? $"  {destination}.{destinationComponent} = {value}.{destinationComponent};"
+                : $"  if ({condition}) {destination}.{destinationComponent} = {value}.{destinationComponent};");
+        }
+
+        if (instruction.CondWriteEnabled)
+        {
+            string conditionRegister = instruction.ConditionWriteRegister1
+                ? "rsxCc1"
+                : "rsxCc0";
+            string mask = FragmentWriteMask(instruction.WriteMask);
             builder.AppendLine(
-                $"  if (rsxCcTest{test}(rsxCc0.{conditionComponent})) {destination}.{destinationComponent} = {value}.{destinationComponent};");
+                $"  {conditionRegister}.{mask} = {destination}.{mask};");
         }
     }
 
     private static string FragmentConditionTestName(
-        RsxFragmentConditionTest test) => test switch
+        RsxConditionTest test) => test switch
     {
-        RsxFragmentConditionTest.False => "FL",
-        RsxFragmentConditionTest.LessThan => "LT",
-        RsxFragmentConditionTest.Equal => "EQ",
-        RsxFragmentConditionTest.LessThanOrEqual => "LE",
-        RsxFragmentConditionTest.GreaterThan => "GT",
-        RsxFragmentConditionTest.NotEqual => "NE",
-        RsxFragmentConditionTest.GreaterThanOrEqual => "GE",
-        RsxFragmentConditionTest.True => "TR",
+        RsxConditionTest.False => "FL",
+        RsxConditionTest.LessThan => "LT",
+        RsxConditionTest.Equal => "EQ",
+        RsxConditionTest.LessThanOrEqual => "LE",
+        RsxConditionTest.GreaterThan => "GT",
+        RsxConditionTest.NotEqual => "NE",
+        RsxConditionTest.GreaterThanOrEqual => "GE",
+        RsxConditionTest.True => "TR",
         _ => throw new ArgumentOutOfRangeException(nameof(test))
     };
+
+    private static string FragmentComponentConditionExpression(
+        RsxFragmentInstruction instruction,
+        int destinationComponent)
+    {
+        string conditionRegister = instruction.ConditionReadRegister1
+            ? "rsxCc1"
+            : "rsxCc0";
+        char conditionComponent = SwizzleChar(
+            instruction.ConditionSwizzle(destinationComponent));
+        string test = FragmentConditionTestName(instruction.ConditionTest);
+        return $"rsxCcTest{test}({conditionRegister}.{conditionComponent})";
+    }
+
+    private static FragmentControlFlowPlan? TryCreateFragmentControlFlowPlan(
+        IReadOnlyList<RsxFragmentInstruction> instructions)
+    {
+        RsxFragmentInstruction[] flowInstructions = instructions
+            .Where(instruction => instruction.IsControlFlow)
+            .ToArray();
+        if (flowInstructions.Length != 1 || instructions.Count == 0)
+            return null;
+
+        RsxFragmentInstruction flow = flowInstructions[0];
+        if (flow.ConditionWriteRegister1 ||
+            flow.CondWriteEnabled ||
+            !flow.NoDest ||
+            flow.WriteMask != RsxFragmentWriteMask.None ||
+            flow.Saturate ||
+            flow.Scale != RsxFragmentResultScale.None)
+            return null;
+
+        string condition = FragmentFlowConditionExpression(flow);
+        int programEndOffset = FragmentProgramEndOffset(instructions);
+        if (flow.OpcodeType == RsxFragmentOpcode.Return)
+        {
+            return new FragmentControlFlowPlan(
+                flow.Index,
+                programEndOffset,
+                $"  if (!({condition})) {{");
+        }
+        if (flow.OpcodeType != RsxFragmentOpcode.If ||
+            (flow.Src1 & 0x7fff_ffffu) != flow.Src2)
+        {
+            return null;
+        }
+
+        uint targetSlot = flow.Src2 >> 2;
+        if (targetSlot > (uint)(int.MaxValue / 16))
+            return null;
+        int closeOffset = checked(
+            instructions[0].Offset + (int)targetSlot * 16);
+        bool targetExists = closeOffset == programEndOffset ||
+            instructions.Any(instruction => instruction.Offset == closeOffset);
+        if (!targetExists || closeOffset <= flow.Offset)
+            return null;
+
+        return new FragmentControlFlowPlan(
+            flow.Index,
+            closeOffset,
+            $"  if ({condition}) {{");
+    }
+
+    private static int FragmentProgramEndOffset(
+        IReadOnlyList<RsxFragmentInstruction> instructions) =>
+        instructions.Count == 0
+            ? 0
+            : instructions.Max(instruction =>
+                checked(instruction.Offset + instruction.ByteCount));
+
+    private static string FragmentFlowConditionExpression(
+        RsxFragmentInstruction instruction)
+    {
+        return string.Join(
+            " || ",
+            Enumerable.Range(0, 4).Select(component =>
+                FragmentComponentConditionExpression(
+                    instruction,
+                    component)));
+    }
 
     private static string? FragmentExpression(
         RsxFragmentInstruction instruction,
@@ -567,86 +590,103 @@ internal static class RsxFragmentGlsl330Lowerer
         bool volumeSampler = HasFeature(
             features,
             RsxFragmentSamplerFeatures.Volume);
-        if (shadowSampler && IsFragmentTextureOpcode(instruction.Opcode) &&
-            instruction.Opcode is not 0x17 and not 0x18)
+        if (shadowSampler &&
+            RsxShaderInstructionSet.IsFragmentTexture(
+                instruction.OpcodeType) &&
+            instruction.OpcodeType is not RsxFragmentOpcode.Texture and
+                not RsxFragmentOpcode.TextureProjective)
         {
             blockers.Add(
                 $"fragmentShadowSamplerDest{instruction.TextureUnit}=opcode0x{instruction.Opcode:X2}_unlowered");
             return null;
         }
-        if (cubeSampler && instruction.Opcode == 0x18)
+        if (cubeSampler &&
+            instruction.OpcodeType == RsxFragmentOpcode.TextureProjective)
         {
             blockers.Add(
                 $"fragmentCubeSamplerDest{instruction.TextureUnit}=projectiveTextureOpcodeUnlowered");
         }
-        if (volumeSampler && instruction.Opcode == 0x18)
+        if (volumeSampler &&
+            instruction.OpcodeType == RsxFragmentOpcode.TextureProjective)
         {
             blockers.Add(
                 $"fragmentVolumeSamplerDest{instruction.TextureUnit}=projectiveTextureOpcodeUnlowered");
             return null;
         }
-        return instruction.Opcode switch
+        return instruction.OpcodeType switch
         {
-            0x01 => s0,
-            0x02 => $"({s0} * {s1})",
-            0x03 => $"({s0} + {s1})",
-            0x04 => $"({s0} * {s1} + {s2})",
-            0x05 => $"rsxSplat(dot(({s0}).xyz, ({s1}).xyz))",
-            0x06 => $"rsxSplat(dot({s0}, {s1}))",
-            0x08 => $"min({s0}, {s1})",
-            0x09 => $"max({s0}, {s1})",
-            0x0a => $"rsxBool4(lessThan({s0}, {s1}))",
-            0x0b => $"rsxBool4(greaterThanEqual({s0}, {s1}))",
-            0x0c => $"rsxBool4(lessThanEqual({s0}, {s1}))",
-            0x0d => $"rsxBool4(greaterThan({s0}, {s1}))",
-            0x0e => $"rsxBool4(notEqual({s0}, {s1}))",
-            0x0f => $"rsxBool4(equal({s0}, {s1}))",
-            0x10 => $"fract({s0})",
-            0x11 => $"floor({s0})",
-            0x15 => $"dFdx({s0})",
-            0x16 => $"dFdy({s0})",
-            0x17 when shadowSampler && !cubeSampler =>
+            RsxFragmentOpcode.Move => s0,
+            RsxFragmentOpcode.Multiply => $"({s0} * {s1})",
+            RsxFragmentOpcode.Add => $"({s0} + {s1})",
+            RsxFragmentOpcode.MultiplyAdd => $"({s0} * {s1} + {s2})",
+            RsxFragmentOpcode.Dot3 =>
+                $"rsxSplat(dot(({s0}).xyz, ({s1}).xyz))",
+            RsxFragmentOpcode.Dot4 => $"rsxSplat(dot({s0}, {s1}))",
+            RsxFragmentOpcode.Minimum => $"min({s0}, {s1})",
+            RsxFragmentOpcode.Maximum => $"max({s0}, {s1})",
+            RsxFragmentOpcode.SetLessThan =>
+                $"rsxBool4(lessThan({s0}, {s1}))",
+            RsxFragmentOpcode.SetGreaterThanOrEqual =>
+                $"rsxBool4(greaterThanEqual({s0}, {s1}))",
+            RsxFragmentOpcode.SetLessThanOrEqual =>
+                $"rsxBool4(lessThanEqual({s0}, {s1}))",
+            RsxFragmentOpcode.SetGreaterThan =>
+                $"rsxBool4(greaterThan({s0}, {s1}))",
+            RsxFragmentOpcode.SetNotEqual =>
+                $"rsxBool4(notEqual({s0}, {s1}))",
+            RsxFragmentOpcode.SetEqual => $"rsxBool4(equal({s0}, {s1}))",
+            RsxFragmentOpcode.Fraction => $"fract({s0})",
+            RsxFragmentOpcode.Floor => $"floor({s0})",
+            RsxFragmentOpcode.DerivativeX => $"dFdx({s0})",
+            RsxFragmentOpcode.DerivativeY => $"dFdy({s0})",
+            RsxFragmentOpcode.Texture when shadowSampler && !cubeSampler =>
                 $"rsxSplat(texture(rsxSampler{instruction.TextureUnit}, ({s0}).xyz))",
-            0x17 =>
+            RsxFragmentOpcode.Texture =>
                 $"texture(rsxSampler{instruction.TextureUnit}, ({s0}).{(cubeSampler || volumeSampler ? "xyz" : "xy")})",
-            0x18 when shadowSampler && !cubeSampler =>
+            RsxFragmentOpcode.TextureProjective when shadowSampler && !cubeSampler =>
                 $"rsxSplat(textureProj(rsxSampler{instruction.TextureUnit}, {s0}))",
-            0x18 when !cubeSampler && !volumeSampler =>
+            RsxFragmentOpcode.TextureProjective when !cubeSampler && !volumeSampler =>
                 $"textureProj(rsxSampler{instruction.TextureUnit}, {s0})",
-            0x1a => $"rsxSplat(1.0 / {scalar0})",
-            0x1b => $"rsxSplat(inversesqrt(max({scalar0}, 0.0000001)))",
-            0x1c => $"rsxSplat(exp2({scalar0}))",
-            0x1d => $"rsxSplat(log2(max({scalar0}, 0.0000001)))",
-            0x20 => "vec4(1.0)",
-            0x21 => "vec4(0.0)",
-            0x22 => $"rsxSplat(cos({scalar0}))",
-            0x23 => $"rsxSplat(sin({scalar0}))",
-            0x2f =>
+            RsxFragmentOpcode.Reciprocal => $"rsxSplat(1.0 / {scalar0})",
+            RsxFragmentOpcode.ReciprocalSquareRoot =>
+                $"rsxSplat(1.0 / sqrt(abs({scalar0})))",
+            RsxFragmentOpcode.ExponentBase2 =>
+                $"rsxSplat(exp2({scalar0}))",
+            RsxFragmentOpcode.LogarithmBase2 =>
+                $"rsxSplat(log2({scalar0}))",
+            RsxFragmentOpcode.SetTrue => "vec4(1.0)",
+            RsxFragmentOpcode.SetFalse => "vec4(0.0)",
+            RsxFragmentOpcode.Cosine => $"rsxSplat(cos({scalar0}))",
+            RsxFragmentOpcode.Sine => $"rsxSplat(sin({scalar0}))",
+            RsxFragmentOpcode.TextureLod =>
                 $"textureLod(rsxSampler{instruction.TextureUnit}, ({s0}).{(cubeSampler || volumeSampler ? "xyz" : "xy")}, {scalar1})",
-            0x31 =>
+            RsxFragmentOpcode.TextureBias =>
                 $"texture(rsxSampler{instruction.TextureUnit}, ({s0}).{(cubeSampler || volumeSampler ? "xyz" : "xy")}, {scalar1})",
-            0x38 => $"rsxSplat(dot(({s0}).xy, ({s1}).xy))",
-            0x39 => $"vec4(normalize(({s0}).xyz), ({s0}).w)",
-            0x3a => $"({s0} / {scalar1})",
-            0x3b =>
-                $"({s0} * inversesqrt(max({scalar1}, 0.0000001)))",
+            RsxFragmentOpcode.Dot2 =>
+                $"rsxSplat(dot(({s0}).xy, ({s1}).xy))",
+            RsxFragmentOpcode.Normalize =>
+                $"rsxNormalize(({s0}).xyz)",
+            RsxFragmentOpcode.Divide => $"({s0} / {scalar1})",
+            RsxFragmentOpcode.DivideBySquareRoot =>
+                $"rsxDivideBySqrt({s0}, {scalar1})",
             _ => null
         };
     }
-
-    private static bool IsFragmentTextureOpcode(byte opcode) =>
-        opcode is 0x17 or 0x18 or 0x19 or 0x2f or 0x31;
 
     private static string FragmentSource(
         RsxFragmentInstruction instruction,
         uint source,
         int sourceIndex)
     {
-        string value = RsxFragmentInstruction.SourceRegisterType(source) switch
+        var operand = new RsxFragmentOperand(sourceIndex, source);
+        string value = operand.RegisterKind switch
         {
-            0 => $"{(FragmentSourceFp16(source) ? "H" : "R")}[{FragmentSourceIndex(source)}]",
-            1 => FragmentInput(instruction.SourceAttribute),
-            2 => instruction.DirectCodeConstantIndex is { } codeIndex
+            RsxFragmentRegisterType.Temporary =>
+                $"{(operand.Fp16 ? "H" : "R")}[{operand.RegisterIndex}]",
+            RsxFragmentRegisterType.Input =>
+                FragmentInput(instruction.SourceAttribute),
+            RsxFragmentRegisterType.InlineConstant =>
+                instruction.DirectCodeConstantIndex is { } codeIndex
                 ? OpenGlCodePixelConstantUniformLayout.ElementName(
                     codeIndex)
                 : instruction.Constant is { } constant
@@ -654,22 +694,27 @@ internal static class RsxFragmentGlsl330Lowerer
                     : "vec4(0.0)",
             _ => "vec4(0.0)"
         };
-        value += $".{FragmentSwizzle(source)}";
-        if (FragmentSourceAbs(source, sourceIndex))
+        value += $".{FragmentSwizzle(operand)}";
+        if (operand.Absolute)
             value = $"abs({value})";
-        if (FragmentSourceNeg(source))
+        if (operand.Negate)
             value = $"(-{value})";
         return value;
     }
 
-    private static string FragmentInput(int input) => input switch
+    private static string FragmentInput(
+        RsxFragmentInputAttribute input) => input switch
     {
-        0 => "vec4(gl_FragCoord.xyz, 1.0)",
-        1 => "rsxColor0",
-        2 => "rsxColor1",
-        3 => "vec4(0.0)",
-        >= 4 and <= 11 => $"rsxTexcoord{input - 4}",
-        14 => "vec4(gl_FrontFacing ? 1.0 : -1.0)",
+        RsxFragmentInputAttribute.WindowPosition =>
+            "vec4(gl_FragCoord.xyz, 1.0)",
+        RsxFragmentInputAttribute.Color0 => "rsxColor0",
+        RsxFragmentInputAttribute.Color1 => "rsxColor1",
+        RsxFragmentInputAttribute.Fog => "vec4(0.0)",
+        >= RsxFragmentInputAttribute.TextureCoordinate0 and
+            <= RsxFragmentInputAttribute.TextureCoordinate7 =>
+            $"rsxTexcoord{(byte)input - (byte)RsxFragmentInputAttribute.TextureCoordinate0}",
+        RsxFragmentInputAttribute.SignedSideArea =>
+            "vec4(gl_FrontFacing ? 1.0 : -1.0)",
         _ => "vec4(0.0)"
     };
 
@@ -682,19 +727,20 @@ internal static class RsxFragmentGlsl330Lowerer
     {
         int count = instruction.OperandCount;
         return (count > 0 &&
-                RsxFragmentInstruction.SourceRegisterType(
-                    instruction.Src0) == 3) ||
+                instruction.Source0Operand.RegisterKind ==
+                    RsxFragmentRegisterType.Unknown3) ||
                (count > 1 &&
-                RsxFragmentInstruction.SourceRegisterType(
-                    instruction.Src1) == 3) ||
+                instruction.Source1Operand.RegisterKind ==
+                    RsxFragmentRegisterType.Unknown3) ||
                (count > 2 &&
-                RsxFragmentInstruction.SourceRegisterType(
-                    instruction.Src2) == 3);
+                instruction.Source2Operand.RegisterKind ==
+                    RsxFragmentRegisterType.Unknown3);
     }
 
-    private static bool IsReservedNoOp(RsxFragmentInstruction instruction) =>
-        !instruction.Branch &&
-        instruction.Opcode is 0x3d or 0x3e &&
+    private static bool IsFenceNoOp(RsxFragmentInstruction instruction) =>
+        !instruction.IsControlFlow &&
+        (instruction.OpcodeType is RsxFragmentOpcode.FenceT or
+            RsxFragmentOpcode.FenceB) &&
         (instruction.Dst & 0xff00ffffu) ==
         ((0x40u | instruction.Opcode) << 24 | 0x001e7eu) &&
         instruction.Src0 == 0x1c9dc800u &&
@@ -703,56 +749,61 @@ internal static class RsxFragmentGlsl330Lowerer
         instruction.NoDest &&
         !instruction.End &&
         !instruction.Saturate &&
-        instruction.Scale == 0 &&
+        instruction.Scale == RsxFragmentResultScale.None &&
         !instruction.CondWriteEnabled &&
-        instruction.ConditionTest == RsxFragmentConditionTest.True;
+        instruction.ConditionTest == RsxConditionTest.True;
 
-    private static string? FragmentScale(int scale) => scale switch
+    private static string? FragmentScale(
+        RsxFragmentResultScale scale) => scale switch
     {
-        0 => "1.0",
-        1 => "2.0",
-        2 => "4.0",
-        3 => "8.0",
-        5 => "0.5",
-        6 => "0.25",
-        7 => "0.125",
+        RsxFragmentResultScale.None => "1.0",
+        RsxFragmentResultScale.MultiplyBy2 => "2.0",
+        RsxFragmentResultScale.MultiplyBy4 => "4.0",
+        RsxFragmentResultScale.MultiplyBy8 => "8.0",
+        RsxFragmentResultScale.DivideBy2 => "0.5",
+        RsxFragmentResultScale.DivideBy4 => "0.25",
+        RsxFragmentResultScale.DivideBy8 => "0.125",
         _ => null
     };
 
-    private static int FragmentSourceIndex(uint source) =>
-        (int)((source >> 2) & 0x3f);
-
-    private static bool FragmentSourceFp16(uint source) =>
-        ((source >> 8) & 1) != 0;
-
-    private static bool FragmentSourceNeg(uint source) =>
-        ((source >> 17) & 1) != 0;
-
-    private static bool FragmentSourceAbs(uint source, int index) =>
-        index == 0
-            ? ((source >> 29) & 1) != 0
-            : ((source >> 18) & 1) != 0;
-
-    private static string FragmentSwizzle(uint source) =>
-        string.Create(4, source, static (span, value) =>
+    private static string FragmentSwizzle(RsxFragmentOperand operand) =>
+        string.Create(4, operand, static (span, value) =>
         {
-            span[0] = SwizzleChar((int)((value >> 9) & 3));
-            span[1] = SwizzleChar((int)((value >> 11) & 3));
-            span[2] = SwizzleChar((int)((value >> 13) & 3));
-            span[3] = SwizzleChar((int)((value >> 15) & 3));
+            span[0] = SwizzleChar(value.SwizzleX);
+            span[1] = SwizzleChar(value.SwizzleY);
+            span[2] = SwizzleChar(value.SwizzleZ);
+            span[3] = SwizzleChar(value.SwizzleW);
         });
 
-    private static char SwizzleChar(int value) => "xyzw"[value & 3];
+    private static char SwizzleChar(RsxSwizzleComponent component) =>
+        component switch
+        {
+            RsxSwizzleComponent.X => 'x',
+            RsxSwizzleComponent.Y => 'y',
+            RsxSwizzleComponent.Z => 'z',
+            RsxSwizzleComponent.W => 'w',
+            _ => throw new ArgumentOutOfRangeException(nameof(component))
+        };
 
-    private static string FragmentWriteMask(int mask)
+    private static string FragmentWriteMask(RsxFragmentWriteMask mask)
     {
         var value = new StringBuilder(4);
-        if ((mask & 1) != 0) value.Append('x');
-        if ((mask & 2) != 0) value.Append('y');
-        if ((mask & 4) != 0) value.Append('z');
-        if ((mask & 8) != 0) value.Append('w');
+        if ((mask & RsxFragmentWriteMask.X) != 0) value.Append('x');
+        if ((mask & RsxFragmentWriteMask.Y) != 0) value.Append('y');
+        if ((mask & RsxFragmentWriteMask.Z) != 0) value.Append('z');
+        if ((mask & RsxFragmentWriteMask.W) != 0) value.Append('w');
         return value.ToString();
     }
+
+    private static bool HasControlFlag(
+        RsxFragmentProgramControlFlags flags,
+        RsxFragmentProgramControlFlags flag) =>
+        (flags & flag) == flag;
+
+    private static bool HasAnyControlFlag(
+        RsxFragmentProgramControlFlags flags,
+        RsxFragmentProgramControlFlags mask) =>
+        (flags & mask) != RsxFragmentProgramControlFlags.None;
 
     private static void AppendRegisterBankDeclaration(
         StringBuilder builder,
@@ -778,6 +829,11 @@ internal static class RsxFragmentGlsl330Lowerer
         RsxFragmentSamplerFeatures features,
         RsxFragmentSamplerFeatures feature) =>
         (features & feature) != 0;
+
+    private readonly record struct FragmentControlFlowPlan(
+        int InstructionIndex,
+        int CloseOffset,
+        string OpeningStatement);
 
     private readonly record struct FragmentRegisterUsage(
         int[] FullRegisters,

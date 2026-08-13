@@ -15,8 +15,10 @@ internal static class MaterialStableArgumentResolver
         if (pass is null || pass.StableArgCount == 0)
             return [];
 
-        int start = pass.PerPrimArgCount + pass.PerObjArgCount;
-        int requiredCount = checked(start + pass.StableArgCount);
+        Range stableRange = pass.GetArgumentRange(
+            MaterialUpdateFrequency.Rarely);
+        int start = stableRange.Start.Value;
+        int requiredCount = stableRange.End.Value;
         if (requireComplete && pass.Args.Count < requiredCount)
         {
             throw new InvalidDataException(
@@ -32,7 +34,7 @@ internal static class MaterialStableArgumentResolver
         ArgumentNullException.ThrowIfNull(stableArguments);
         return stableArguments
             .Where(argument => argument.Type == MaterialShaderArgumentType.CodePixelConst)
-            .Select(argument => unchecked((ushort)((uint)argument.ArgumentRaw >> 16)))
+            .Select(argument => argument.CodeConstant.SourceIndex)
             .ToArray();
     }
 
@@ -51,7 +53,7 @@ internal static class MaterialStableArgumentResolver
             {
                 MaterialShaderArgumentType.MaterialPixelConst => ResolveMaterialConstant(
                     material,
-                    argument.ArgumentRaw),
+                    argument.MaterialNameHash),
                 MaterialShaderArgumentType.LiteralPixelConst => argument.LiteralConstant,
                 _ => null
             };
@@ -84,10 +86,10 @@ internal static class MaterialStableArgumentResolver
 
     private static MaterialShaderLiteralConstant? ResolveMaterialConstant(
         MaterialAsset material,
-        int nameHash)
+        uint nameHash)
     {
         MaterialConstantDef? constant = material.Constants.FirstOrDefault(
-            candidate => unchecked((int)candidate.NameHash) == nameHash);
+            candidate => candidate.NameHash == nameHash);
         return constant is null
             ? null
             : new MaterialShaderLiteralConstant(

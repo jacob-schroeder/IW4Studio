@@ -17,6 +17,10 @@ public sealed class FastFileEditingSession : IDisposable
         new HashSet<AssetKey>();
     private readonly Dictionary<TargetZoneRowIdentity, DraftState> _drafts = [];
     private readonly Dictionary<TargetZoneRowIdentity, long> _addedRows = [];
+    // Generated XModelSurfs are dependency providers, not catalog rows. Their
+    // ownership is revision workflow state so a later compiled definition can
+    // withdraw only its own prior auxiliaries.
+    private readonly Dictionary<TargetZoneRowIdentity, Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset>> _xmodelAuxiliaryProviders = [];
     private readonly CancellationTokenSource _cancellation = new();
     private AssetChangeSet _changeSet = new([]);
     private FastFileSaveRevision _revision;
@@ -262,7 +266,8 @@ public sealed class FastFileEditingSession : IDisposable
         IEnumerable<(TargetZoneRowIdentity Identity,
             IW4.Assets.Assets.BaseAsset Definition,
             IReadOnlyList<IW4.Assets.Assets.BaseAsset> Providers)> publications,
-        IEnumerable<AssetKey> withdrawnProviderKeys)
+        IEnumerable<AssetKey> withdrawnProviderKeys,
+        bool raiseAppliedAssetsChanged = true)
     {
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(withdrawnProviderKeys);
@@ -349,8 +354,58 @@ public sealed class FastFileEditingSession : IDisposable
             RebuildChangeSet();
         }
 
-        AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        if (raiseAppliedAssetsChanged)
+            AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
         return true;
+    }
+
+    internal bool PublishCompiledXModel(
+        TargetZoneRowIdentity identity,
+        IW4.Assets.Assets.XModel.XModelAsset definition,
+        IReadOnlyList<IW4.Assets.Assets.XModel.XModelSurfsAsset> providers)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(providers);
+        AssetKey[] suppliedKeys = providers.Select(AssetKey.FromDefinition).Distinct().ToArray();
+        bool changed;
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            if (RequireDraft(identity).Entry.AssetType != XAssetType.XModel)
+                throw new InvalidOperationException("Only an XModel row can publish compiled XModelSurfs providers.");
+            Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset> prior =
+                _xmodelAuxiliaryProviders.TryGetValue(identity, out Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset>? existing)
+                    ? existing : [];
+            AssetKey[] nextKeys = ReferencedAuxiliaryKeys(definition, prior.Keys.Concat(suppliedKeys))
+                .Concat(ReferencedAuxiliaryKeys(
+                    RequireDraft(identity).CreateSavedDefinition() as IW4.Assets.Assets.XModel.XModelAsset,
+                    prior.Keys))
+                .Distinct().ToArray();
+            foreach (AssetKey key in suppliedKeys)
+            {
+                bool ownedCurrent = prior.ContainsKey(key);
+                bool liveCollision = _revision.LinkRequest.Assets.Providers.Any(provider => provider.Key == key);
+                if (liveCollision && !ownedCurrent)
+                    throw new InvalidDataException($"Generated XModelSurfs provider key '{key}' collides with an unrelated live provider.");
+            }
+            AssetKey[] withdrawn = prior.Keys.Where(key => !nextKeys.Contains(key)).ToArray();
+            changed = PublishAppliedDefinitions(
+                [(identity, definition, providers.Cast<IW4.Assets.Assets.BaseAsset>().ToArray())],
+                withdrawn,
+                raiseAppliedAssetsChanged: false);
+            if (changed)
+            {
+                Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset> next = prior
+                    .Where(pair => nextKeys.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                foreach (IW4.Assets.Assets.XModel.XModelSurfsAsset provider in providers)
+                    next[AssetKey.FromDefinition(provider)] = provider;
+                _xmodelAuxiliaryProviders[identity] = next;
+            }
+        }
+        if (changed)
+            AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return changed;
     }
 
     internal object CloneCurrentDraft(
@@ -399,11 +454,49 @@ public sealed class FastFileEditingSession : IDisposable
             DraftState state = RequireDraft(identity, adapter);
             if (!state.IsChanged)
                 return false;
-            PublishDefinitionCore(state, state.CloneSaved());
+            if (state.Adapter.AssetType == XAssetType.XModel)
+                RevertCompiledXModelCore(identity, state);
+            else
+                PublishDefinitionCore(state, state.CloneSaved());
         }
 
         AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
         return true;
+    }
+
+    private void RevertCompiledXModelCore(TargetZoneRowIdentity identity, DraftState state)
+    {
+        if (state.CreateSavedDefinition() is not IW4.Assets.Assets.XModel.XModelAsset saved)
+        {
+            PublishDefinitionCore(state, state.CloneSaved());
+            return;
+        }
+        Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset> owned =
+            _xmodelAuxiliaryProviders.TryGetValue(identity, out Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset>? existing)
+                ? existing : [];
+        AssetKey[] savedKeys = ReferencedAuxiliaryKeys(saved, owned.Keys).ToArray();
+        IW4.Assets.Assets.BaseAsset[] providers = savedKeys
+            .Select(key => (IW4.Assets.Assets.BaseAsset)owned[key]).ToArray();
+        AssetKey[] withdrawn = owned.Keys.Where(key => !savedKeys.Contains(key)).ToArray();
+        _ = PublishAppliedDefinitions(
+            [(identity, saved, providers)],
+            withdrawn,
+            raiseAppliedAssetsChanged: false);
+        _xmodelAuxiliaryProviders[identity] = savedKeys
+            .ToDictionary(key => key, key => owned[key]);
+    }
+
+    private static AssetKey[] ReferencedAuxiliaryKeys(
+        IW4.Assets.Assets.XModel.XModelAsset? definition,
+        IEnumerable<AssetKey> ownedKeys)
+    {
+        if (definition is null)
+            return [];
+        var owned = ownedKeys.ToHashSet();
+        return definition.Lods.Select(lod => lod.ModelSurfs)
+            .Where(provider => provider is not null)
+            .Select(provider => AssetKey.FromDefinition(provider!))
+            .Where(owned.Contains).Distinct().ToArray();
     }
 
     internal IW4.Assets.Assets.BaseAsset CaptureSavedDefinition(
@@ -433,10 +526,28 @@ public sealed class FastFileEditingSession : IDisposable
             commit();
             foreach (DraftState state in _drafts.Values)
                 state.AcknowledgeSaved();
+            WithdrawSavedAuxiliaries();
             _addedRows.Clear();
             RebuildChangeSet();
             return true;
         }
+    }
+
+    private void WithdrawSavedAuxiliaries()
+    {
+        var withdrawn = new List<AssetKey>();
+        foreach ((TargetZoneRowIdentity identity, Dictionary<AssetKey, IW4.Assets.Assets.XModel.XModelSurfsAsset> owned) in _xmodelAuxiliaryProviders)
+        {
+            IW4.Assets.Assets.XModel.XModelAsset? current = RequireDraft(identity).CreateCurrentDefinition() as IW4.Assets.Assets.XModel.XModelAsset;
+            AssetKey[] retained = ReferencedAuxiliaryKeys(current, owned.Keys);
+            withdrawn.AddRange(owned.Keys.Where(key => !retained.Contains(key)));
+            _xmodelAuxiliaryProviders[identity] = retained.ToDictionary(key => key, key => owned[key]);
+        }
+        AssetKey[] keys = withdrawn.Distinct().ToArray();
+        if (keys.Length == 0)
+            return;
+        LinkAssetPool authored = _authoredAssets.WithoutProviders(keys);
+        Publish(authored, _revision.LinkRequest.Roots, withdrawnTargetProviderKeys: keys);
     }
 
     internal void ThrowIfDisposed()

@@ -4,14 +4,15 @@ namespace IW4.Render.Geometry;
 
 /// <summary>
 /// PS3 backend world-vertex source table. Event20 selects row 4 by default and
-/// row 5 + worldVertexFormat when the selected MaterialTechnique has flag
-/// 0x0008.
+/// row 5 + worldVertexFormat when the selected MaterialTechnique declares an
+/// optional source.
 /// </summary>
 internal static class WorldVertexLayout
 {
-    internal const ushort WorldFormatTechniqueFlag = 0x0008;
-    internal const int DefaultBackendRow = 4;
-    internal const int WorldFormatBackendRowBase = 5;
+    internal const int DefaultBackendRow =
+        (int)MaterialVertexDeclarationType.WorldPositionOnly;
+    internal const int WorldFormatBackendRowBase =
+        (int)MaterialVertexDeclarationType.WorldTex1Nrm1;
     internal const int SourceTableRowSize = 0x26;
 
     // Rows 0..16 cover every serialized MaterialWorldVertexFormat value used
@@ -39,6 +40,12 @@ internal static class WorldVertexLayout
 
     static WorldVertexLayout()
     {
+        if (SourceRows.Length !=
+            (int)MaterialVertexDeclarationType.Count)
+        {
+            throw new InvalidDataException(
+                "PS3 world-vertex source table has an unexpected row count.");
+        }
         if (SourceRows.Any(row => row.Length != SourceTableRowSize))
             throw new InvalidDataException("PS3 world-vertex source table contains a malformed row.");
     }
@@ -46,10 +53,11 @@ internal static class WorldVertexLayout
     internal static int BackendRowCount => SourceRows.Length;
 
     internal static int ResolveEffectiveBackendRow(
-        ushort techniqueFlags,
+        MaterialTechniqueFlags techniqueFlags,
         MaterialWorldVertexFormat worldVertexFormat)
     {
-        return (techniqueFlags & WorldFormatTechniqueFlag) != 0
+        return (techniqueFlags &
+                MaterialTechniqueFlags.DeclarationHasOptionalSource) != 0
             ? WorldFormatBackendRowBase + (int)worldVertexFormat
             : DefaultBackendRow;
     }
@@ -62,10 +70,10 @@ internal static class WorldVertexLayout
 
     internal static bool TryGetSource(
         int backendRow,
-        byte source,
+        MaterialStreamSource source,
         out WorldVertexSource vertexSource)
     {
-        int sourceOffset = 2 + source * 4;
+        int sourceOffset = 2 + (int)source * 4;
         if (!HasBackendRow(backendRow) ||
             (uint)(sourceOffset + 3) >= (uint)SourceRows[backendRow].Length)
         {
@@ -78,7 +86,7 @@ internal static class WorldVertexLayout
             row[sourceOffset],
             row[sourceOffset + 1],
             row[sourceOffset + 2],
-            row[sourceOffset + 3]);
+            (RsxVertexElementType)row[sourceOffset + 3]);
         return true;
     }
 

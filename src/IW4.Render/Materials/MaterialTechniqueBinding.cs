@@ -10,8 +10,6 @@ namespace IW4.Render.Materials;
 /// </summary>
 public sealed class MaterialTechniqueBinding
 {
-    private const int MaterialSortedIndexMask = 0x1fff;
-
     internal MaterialTechniqueBinding(
         MaterialAsset material,
         MaterialTechniqueSetAsset techniqueSet,
@@ -31,8 +29,7 @@ public sealed class MaterialTechniqueBinding
 
         Material = material;
         TechniqueSet = techniqueSet;
-        MaterialSortedIndex = checked((int)(
-            (material.Info.DrawSurf.Packed >> 30) & MaterialSortedIndexMask));
+        MaterialSortedIndex = material.Info.DrawSurf.MaterialSortedIndex;
         TechniqueSlots = Array.AsReadOnly(resolvedTechniqueSlots.ToArray());
     }
 

@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Material;
 using IW4.Render.Geometry;
 
 namespace IW4.Render.Scheduling;
@@ -26,7 +27,7 @@ public readonly record struct MapRenderStaticModelReceiverIdentity
         int objectIndex,
         int lodIndex,
         int materialSurfaceIndex,
-        byte cameraRegion,
+        GfxCameraRegionType cameraRegion,
         int primaryLightIndex)
     {
         if (objectIndex < 0)
@@ -57,7 +58,7 @@ public readonly record struct MapRenderStaticModelReceiverIdentity
 
     public int MaterialSurfaceIndex { get; }
 
-    public byte CameraRegion { get; }
+    public GfxCameraRegionType CameraRegion { get; }
 
     public int PrimaryLightIndex { get; }
 }

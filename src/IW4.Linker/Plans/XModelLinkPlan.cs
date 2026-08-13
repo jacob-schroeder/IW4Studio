@@ -259,7 +259,7 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
         writer.WriteByte(definition.NumBones);
         writer.WriteByte(definition.NumRootBones);
         writer.WriteByte(numSurfs);
-        writer.WriteByte(definition.Pad07);
+        writer.WriteByte((byte)definition.LodRampType);
         WriteSingle(writer, definition.Scale, "XModel.Scale");
         foreach (uint value in definition.NoScalePartBits)
             writer.WriteUInt32(value);
@@ -278,7 +278,7 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
         writer.WriteByte(definition.MaxLoadedLod);
         writer.WriteByte(definition.NumLods);
         writer.WriteByte(definition.CollLod);
-        writer.WriteByte(definition.Flags);
+        writer.WriteByte((byte)definition.Flags);
         writer.Skip(sizeof(int));
         writer.WriteInt32(definition.NumCollSurfs);
         writer.WriteInt32(definition.Contents);
@@ -670,7 +670,8 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
             lod.ModelSurfsPointer.Type == PointerType.Null &&
             lod.ModelSurfs is null);
         return definition.NumBones == 0 && definition.NumRootBones == 0 &&
-            definition.NumSurfs == 0 && definition.Pad07 == 0 &&
+            definition.NumSurfs == 0 &&
+            definition.LodRampType == XModelLodRampType.Rigid &&
             BitConverter.SingleToInt32Bits(definition.Scale) == 0 &&
             definition.NoScalePartBits.All(value => value == 0) &&
             definition.NoScalePartBits.Count is 0 or 6 &&
@@ -681,7 +682,7 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
             definition.MaterialPointers.All(pointer => pointer.Type == PointerType.Null) &&
             definition.Materials.Count == 0 && zeroLods &&
             definition.MaxLoadedLod == 0 && definition.NumLods == 0 &&
-            definition.CollLod == 0 && definition.Flags == 0 &&
+            definition.CollLod == 0 && definition.Flags == XModelFlags.None &&
             definition.NumCollSurfs == 0 && definition.Contents == 0 &&
             definition.CollSurfs.Count == 0 && definition.BoneInfo.Count == 0 &&
             BitConverter.SingleToInt32Bits(definition.Radius) == 0 &&

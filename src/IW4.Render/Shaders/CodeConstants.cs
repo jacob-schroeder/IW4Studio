@@ -1,10 +1,12 @@
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Shaders;
 
 public static class CodeConstantLayout
 {
     // IW4 code constants [0, 0x4B) are float4 draw-context values. Derived
     // matrix groups begin at 0x4B and occupy four transform variants each.
-    public const int Float4Count = 0x4B;
+    public const int Float4Count = (int)MaterialConstantSource.Float4Count;
 }
 
 /// <summary>

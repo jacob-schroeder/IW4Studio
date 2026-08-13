@@ -252,7 +252,7 @@ public sealed class XModelSceneBuilder
                 selectedPass.SourcePass,
                 selectedPass.Arguments,
                 lookup,
-                XSurfaceVertexDecoder.DefaultTexCoordSourceIndex,
+                XSurfaceVertexDecoder.DefaultTexCoordSource,
                 out AuthoredMaterialPrimarySamplerSelection? primarySampler);
             var materialPass = new MaterialPassIdentity(
                 material.Info.Name ?? string.Empty,
@@ -415,6 +415,7 @@ public sealed class XModelSceneBuilder
         }
 
         var indices = new List<uint>(surface.TriCount * 3);
+        var collisionIndices = new List<uint>();
         RenderBounds topologyBounds = RenderBounds.Empty;
         RenderBounds visibleBounds = RenderBounds.Empty;
         int skippedTriangles = 0;
@@ -423,7 +424,7 @@ public sealed class XModelSceneBuilder
             authoredGroupReady &&
             AllPassesProveVertexAlphaTest(authoredPasses);
         XSurfaceVertexDecoder.TryCreate(
-            XSurfaceVertexDecoder.DefaultTexCoordSourceIndex,
+            XSurfaceVertexDecoder.DefaultTexCoordSource,
             out XSurfaceVertexDecoder? colorDecoder);
         for (int triangleIndex = 0;
              triangleIndex < surface.TriCount;
@@ -453,6 +454,12 @@ public sealed class XModelSceneBuilder
             indices.Add(checked((uint)projectedIndexBySource[i0]));
             indices.Add(checked((uint)projectedIndexBySource[i1]));
             indices.Add(checked((uint)projectedIndexBySource[i2]));
+            if (surface.VertList.Any(rigid => rigid.CollisionTree is not null && triangleIndex >= rigid.TriOffset && triangleIndex < rigid.TriOffset + rigid.TriCount))
+            {
+                collisionIndices.Add(checked((uint)projectedIndexBySource[i0]));
+                collisionIndices.Add(checked((uint)projectedIndexBySource[i1]));
+                collisionIndices.Add(checked((uint)projectedIndexBySource[i2]));
+            }
             topologyBounds = topologyBounds
                 .Include(decodedPositions[i0])
                 .Include(decodedPositions[i1])
@@ -494,6 +501,7 @@ public sealed class XModelSceneBuilder
             materialName,
             positions,
             indices,
+            collisionIndices,
             visibleBounds,
             selectedTechniqueSlot,
             selectedTechniqueName,
@@ -618,14 +626,14 @@ public sealed class XModelSceneBuilder
         IReadOnlyList<ShaderVertexInputBinding> bindings)
     {
         ShaderVertexInputBinding[] colorBindings = bindings
-            .Where(binding => binding.Destination == 0x03)
+            .Where(binding => binding.Destination == MaterialStreamDestination.Color0)
             .ToArray();
         return colorBindings.Length == 1 &&
                colorBindings[0] is
                {
-                   Source: 0x01,
+                   Source: MaterialStreamSource.Color,
                    ComponentCount: 4,
-                   RsxType: 0x04
+                   RsxType: RsxVertexElementType.Unsigned8Normalized
                } &&
                !colorBindings[0].IsDisabledDefaultAttribute;
     }
@@ -643,7 +651,7 @@ public sealed class XModelSceneBuilder
             samplerBindings[0].Texture is not
             {
                 Target: TextureTarget.Texture2D,
-                HasCompleteDecodedRgbaPayload: true
+                HasCompleteDecodedPayload: true
             })
         {
             return false;
@@ -673,17 +681,17 @@ public sealed class XModelSceneBuilder
             bool Scalar)>();
         foreach (RsxVertexInstruction instruction in program.Instructions)
         {
-            if (instruction.ResultIndex != 1)
+            if (instruction.Result != RsxVertexResult.FrontColor0)
                 continue;
             if (instruction.VecResult &&
-                instruction.VecOpcode != 0 &&
-                (instruction.VecWriteMask & 0x01) != 0)
+                instruction.VectorOpcode != RsxVertexVectorOpcode.Nop &&
+                (instruction.VectorWriteMask & RsxVertexWriteMask.W) != 0)
             {
                 outputAlphaWriters.Add((instruction, Scalar: false));
             }
             if (instruction.ScaResult &&
-                instruction.ScaOpcode != 0 &&
-                (instruction.ScaWriteMask & 0x01) != 0)
+                instruction.ScalarOpcode != RsxVertexScalarOpcode.Nop &&
+                (instruction.ScalarWriteMask & RsxVertexWriteMask.W) != 0)
             {
                 outputAlphaWriters.Add((instruction, Scalar: true));
             }
@@ -696,12 +704,14 @@ public sealed class XModelSceneBuilder
         }
 
         RsxVertexInstruction writer = outputAlphaWriters[0].Instruction;
-        return writer.VecOpcode == 0x01 &&
+        return writer.VectorOpcode == RsxVertexVectorOpcode.Move &&
                !writer.Saturate &&
                !writer.Source0Abs &&
-               (!writer.CondTestEnabled || writer.ConditionCode == 7) &&
-               RsxVertexInstruction.SourceRegisterType(writer.Source0) == 2 &&
-               writer.InputSource == 3 &&
+               (!writer.CondTestEnabled ||
+                writer.ConditionTest == RsxConditionTest.True) &&
+               RsxVertexInstruction.SourceRegisterKind(writer.Source0) ==
+                    RsxVertexRegisterType.Input &&
+               writer.InputAttribute == RsxVertexInputAttribute.Color0 &&
                (writer.Source0 & 0x10000u) == 0 &&
                ((writer.Source0 >> 8) & 3) == 3 &&
                !writer.IndexConst;
@@ -725,19 +735,21 @@ public sealed class XModelSceneBuilder
         if (targetZeroExports.Length != 1 ||
             targetZeroExports[0].Fp16 != expectedFp16 ||
             targetZeroExports[0].RegisterIndex != 0 ||
-            (targetZeroExports[0].WrittenComponentMask & 0x08) == 0 ||
+            (targetZeroExports[0].WrittenComponentMask &
+                RsxFragmentWriteMask.W) == 0 ||
             !IsUnconditionalFullWrite(sample, end: false) ||
-            sample.Opcode != 0x17 ||
+            sample.OpcodeType != RsxFragmentOpcode.Texture ||
             sample.TextureUnit != 0 ||
             sample.DestFp16 != expectedFp16 ||
             sample.DestRegister != 0 ||
-            sample.SourceAttribute != 4 ||
+            sample.SourceAttribute !=
+                RsxFragmentInputAttribute.TextureCoordinate0 ||
             !IsIdentityFragmentInput(sample.Source0Operand) ||
             !IsUnconditionalFullWrite(multiply, end: true) ||
-            multiply.Opcode != 0x02 ||
+            multiply.OpcodeType != RsxFragmentOpcode.Multiply ||
             multiply.DestFp16 != expectedFp16 ||
             multiply.DestRegister != 0 ||
-            multiply.SourceAttribute != 1)
+            multiply.SourceAttribute != RsxFragmentInputAttribute.Color0)
         {
             return false;
         }
@@ -757,32 +769,32 @@ public sealed class XModelSceneBuilder
     private static bool IsUnconditionalFullWrite(
         RsxFragmentInstruction instruction,
         bool end) =>
-        !instruction.Branch &&
+        !instruction.IsControlFlow &&
         instruction.End == end &&
         !instruction.NoDest &&
-        instruction.WriteMask == 0x0f &&
+        instruction.WriteMask == RsxFragmentWriteMask.All &&
         !instruction.Saturate &&
-        instruction.Scale == 0 &&
+        instruction.Scale == RsxFragmentResultScale.None &&
         !instruction.CondWriteEnabled &&
-        instruction.ConditionTest == RsxFragmentConditionTest.True &&
+        instruction.ConditionTest == RsxConditionTest.True &&
         !instruction.ConditionWriteRegister1 &&
         !instruction.ConditionReadRegister1;
 
     private static bool IsIdentityFragmentInput(
         RsxFragmentOperand operand) =>
-        operand.RegisterType == 1 &&
+        operand.RegisterKind == RsxFragmentRegisterType.Input &&
         IsIdentityFragmentOperand(operand);
 
     private static bool IsColorZeroInput(
         RsxFragmentOperand operand) =>
-        operand.RegisterType == 1 &&
+        operand.RegisterKind == RsxFragmentRegisterType.Input &&
         IsIdentityFragmentOperand(operand);
 
     private static bool IsRegister(
         RsxFragmentOperand operand,
         bool fp16,
         int registerIndex) =>
-        operand.RegisterType == 0 &&
+        operand.RegisterKind == RsxFragmentRegisterType.Temporary &&
         operand.Fp16 == fp16 &&
         operand.RegisterIndex == registerIndex &&
         IsIdentityFragmentOperand(operand);
@@ -791,10 +803,10 @@ public sealed class XModelSceneBuilder
         RsxFragmentOperand operand) =>
         !operand.Negate &&
         !operand.Absolute &&
-        operand.SwizzleX == 0 &&
-        operand.SwizzleY == 1 &&
-        operand.SwizzleZ == 2 &&
-        operand.SwizzleW == 3;
+        operand.SwizzleX == RsxSwizzleComponent.X &&
+        operand.SwizzleY == RsxSwizzleComponent.Y &&
+        operand.SwizzleZ == RsxSwizzleComponent.Z &&
+        operand.SwizzleW == RsxSwizzleComponent.W;
 
     private static bool IsFullyTransparent(
         XSurfaceVertexDecoder decoder,

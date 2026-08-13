@@ -8,6 +8,7 @@ using IW4.Assets.XModel.Export;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.ViewModels;
+using IW4.Studio.Desktop.Editors.AssetReferences;
 
 namespace IW4.Studio.Desktop.Editors.XModel;
 
@@ -17,6 +18,7 @@ public sealed partial class XModelEditorView : UserControl
     private readonly XModelBoneTagOverlay? _boneTagOverlay;
     private bool _isAttached;
     private bool _isExportInProgress;
+    private bool _isGlbExportInProgress;
     private bool _isImportInProgress;
 
     public XModelEditorView()
@@ -30,6 +32,17 @@ public sealed partial class XModelEditorView : UserControl
             this.FindControl<XModelBoneTagOverlay>("BoneTagOverlay");
         if (_preview is not null && previewInputSurface is not null)
             _preview.AttachCameraInput(previewInputSurface);
+    }
+
+    internal XModelEditorView(XModelEditorViewModel viewModel, AssetReferencePickerService assetReferencePicker)
+        : this()
+    {
+        DataContext = viewModel;
+        viewModel.AssetReferenceSelectionRequested += async (_, args) =>
+        {
+            if (TopLevel.GetTopLevel(this) is Window owner)
+                await assetReferencePicker.ShowAsync(owner, args.Row);
+        };
     }
 
     protected override void OnAttachedToVisualTree(
@@ -69,6 +82,9 @@ public sealed partial class XModelEditorView : UserControl
 
     private void RevertButton_Click(object? sender, RoutedEventArgs e) =>
         (DataContext as XModelEditorViewModel)?.RevertDraft();
+
+    private void ApplyButton_Click(object? sender, RoutedEventArgs e) =>
+        (DataContext as XModelEditorViewModel)?.ApplyCompiledDraft();
 
     private async void AddLodButton_Click(object? sender, RoutedEventArgs e) =>
         await ImportLodAsync(replaceSelected: false);
@@ -134,36 +150,10 @@ public sealed partial class XModelEditorView : UserControl
         if (DataContext is not XModelEditorViewModel viewModel)
             return;
 
-        if (!viewModel.TryCreateXModelExportDocument(
-                out XModelExportDocument? document,
-                out IReadOnlyList<string> blockers) || document is null)
-        {
-            string detail = blockers.Count > 0
-                ? string.Join(" ", blockers)
-                : "The selected LOD could not be projected to XMODEL_EXPORT.";
-            viewModel.ReportXModelExportStatus(
-                $"XMODEL_EXPORT blocked: {detail}",
-                IW4.Studio.Documents.AssetValidationSeverity.Error);
-            return;
-        }
-
-        XModelExportDocument exportDocument = document;
         string modelName = viewModel.Name;
         int lodIndex = viewModel.SelectedLodIndex;
-        string exported;
-        try
-        {
-            using var text = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
-            XModelExportWriter.Write(text, exportDocument);
-            exported = text.ToString();
-        }
-        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
-        {
-            viewModel.ReportXModelExportStatus(
-                $"XMODEL_EXPORT blocked: {exception.Message}",
-                IW4.Studio.Documents.AssetValidationSeverity.Error);
+        if (!TrySerializeXModelExport(viewModel, out string? exported) || exported is null)
             return;
-        }
 
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storageProvider)
         {
@@ -262,6 +252,153 @@ public sealed partial class XModelEditorView : UserControl
         }
     }
 
+    private async void ExportGlbButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (_isGlbExportInProgress ||
+            DataContext is not XModelEditorViewModel viewModel)
+        {
+            return;
+        }
+
+        _isGlbExportInProgress = true;
+        try
+        {
+            if (!viewModel.TryCreateGlb(
+                    out byte[]? glb,
+                    out int texturedMaterialCount,
+                    out int materialCount,
+                    out IReadOnlyList<string> blockers) ||
+                glb is null)
+            {
+                string detail = blockers.Count == 0
+                    ? "The selected LOD could not be represented as GLB."
+                    : string.Join(" ", blockers);
+                viewModel.ReportXModelExportStatus(
+                    $"GLB export blocked: {detail}",
+                    IW4.Studio.Documents.AssetValidationSeverity.Error);
+                return;
+            }
+
+            if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storageProvider)
+            {
+                viewModel.ReportXModelExportStatus(
+                    "GLB export blocked: the desktop file picker is unavailable.",
+                    IW4.Studio.Documents.AssetValidationSeverity.Error);
+                return;
+            }
+
+            string modelName = viewModel.Name;
+            int lodIndex = viewModel.SelectedLodIndex;
+            IStorageFile? destination = await storageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = "Export binary glTF 2.0",
+                    SuggestedFileName = SuggestedGlbFileName(modelName, lodIndex),
+                    DefaultExtension = "glb",
+                    ShowOverwritePrompt = true,
+                    FileTypeChoices =
+                    [
+                        new FilePickerFileType("Binary glTF files")
+                        {
+                            Patterns = ["*.glb"]
+                        },
+                        FilePickerFileTypes.All
+                    ]
+                });
+            if (destination is null)
+                return;
+
+            string? localPath = destination.TryGetLocalPath();
+            if (localPath is not null)
+            {
+                string directory = Path.GetDirectoryName(localPath) ??
+                    throw new IOException("The selected destination has no parent directory.");
+                string temporaryPath = Path.Combine(
+                    directory,
+                    $".{Path.GetFileName(localPath)}.{Guid.NewGuid():N}.tmp");
+                try
+                {
+                    await File.WriteAllBytesAsync(temporaryPath, glb);
+                    File.Move(temporaryPath, localPath, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temporaryPath))
+                        File.Delete(temporaryPath);
+                }
+            }
+            else
+            {
+                await using Stream stream = await destination.OpenWriteAsync();
+                if (!stream.CanSeek)
+                {
+                    throw new NotSupportedException(
+                        "The selected storage destination does not support a safe replacement write.");
+                }
+                stream.SetLength(0);
+                stream.Position = 0;
+                await stream.WriteAsync(glb);
+                await stream.FlushAsync();
+            }
+
+            viewModel.ReportXModelExportSuccess(
+                $"Exported GLB for {modelName} LOD {lodIndex} to {destination.Name}; " +
+                $"embedded {texturedMaterialCount} of {materialCount} resolved base-color textures. " +
+                "IW4 authored techniques remain available only in Studio.");
+        }
+        catch (Exception exception) when (exception is
+                   IOException or
+                   UnauthorizedAccessException or
+                   NotSupportedException or
+                   ArgumentException or
+                   InvalidOperationException)
+        {
+            viewModel.ReportXModelExportStatus(
+                $"GLB export failed: {exception.Message}",
+                IW4.Studio.Documents.AssetValidationSeverity.Error);
+        }
+        finally
+        {
+            _isGlbExportInProgress = false;
+        }
+    }
+
+    private static bool TrySerializeXModelExport(
+        XModelEditorViewModel viewModel,
+        out string? exported)
+    {
+        exported = null;
+        if (!viewModel.TryCreateXModelExportDocument(
+                out XModelExportDocument? document,
+                out IReadOnlyList<string> blockers) || document is null)
+        {
+            string detail = blockers.Count > 0
+                ? string.Join(" ", blockers)
+                : "The selected LOD could not be projected to XMODEL_EXPORT.";
+            viewModel.ReportXModelExportStatus(
+                $"XMODEL_EXPORT blocked: {detail}",
+                IW4.Studio.Documents.AssetValidationSeverity.Error);
+            return false;
+        }
+
+        try
+        {
+            using var text = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+            XModelExportWriter.Write(text, document);
+            exported = text.ToString();
+            return true;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
+        {
+            viewModel.ReportXModelExportStatus(
+                $"XMODEL_EXPORT blocked: {exception.Message}",
+                IW4.Studio.Documents.AssetValidationSeverity.Error);
+            return false;
+        }
+    }
+
     private static string SuggestedExportFileName(string modelName, int lodIndex)
     {
         var name = new System.Text.StringBuilder(modelName.Length);
@@ -277,6 +414,14 @@ public sealed partial class XModelEditorView : UserControl
         if (string.IsNullOrEmpty(sanitized))
             sanitized = "xmodel";
         return $"{sanitized}_lod{lodIndex}.XMODEL_EXPORT";
+    }
+
+    private static string SuggestedGlbFileName(string modelName, int lodIndex)
+    {
+        string source = SuggestedExportFileName(modelName, lodIndex);
+        int extensionIndex = source.IndexOf(".XMODEL_EXPORT", StringComparison.Ordinal);
+        string stem = extensionIndex >= 0 ? source[..extensionIndex] : source;
+        return stem + ".glb";
     }
 
     private void Preview_RendererStatusChanged(

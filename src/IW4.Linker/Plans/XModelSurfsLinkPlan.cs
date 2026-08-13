@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.XModel.Export;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
@@ -170,7 +171,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             surface.Verts0Pointer.Untyped,
             surface.Verts0,
             checked(surface.VertCount * 0x10),
-            (surface.StreamFlags & 0x01) == 0
+            (surface.StreamFlags & XSurfaceStreamFlags.Verts0InLarge) == 0
                 ? XFileBlockType.PHYSICAL
                 : XFileBlockType.LARGE,
             alignment: 16,
@@ -180,7 +181,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             surface.Verts1Pointer.Untyped,
             surface.Verts1,
             checked(surface.VertCount * 0x10),
-            (surface.StreamFlags & 0x02) == 0
+            (surface.StreamFlags & XSurfaceStreamFlags.Verts1InLarge) == 0
                 ? XFileBlockType.PHYSICAL
                 : XFileBlockType.LARGE,
             alignment: 16,
@@ -191,7 +192,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             surface.TriIndicesPointer.Untyped,
             surface.TriIndices,
             checked(surface.TriCount * 3),
-            (surface.StreamFlags & 0x04) == 0
+            (surface.StreamFlags & XSurfaceStreamFlags.TriIndicesInLarge) == 0
                 ? XFileBlockType.PHYSICAL
                 : XFileBlockType.LARGE,
             alignment: 16,
@@ -268,7 +269,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             if ((int)rigid.TriOffset + rigid.TriCount > surface.TriCount)
                 throw new InvalidDataException($"{fieldPath}[{index}] triangle range exceeds its surface.");
             rigidVertexCount = checked(rigidVertexCount + rigid.VertCount);
-            trees[index] = ResolveTree(rigid, freeze, $"{fieldPath}[{index}].CollisionTree");
+            trees[index] = ResolveTree(rigid, surface, freeze, $"{fieldPath}[{index}].CollisionTree");
             writer.WriteUInt16(rigid.BoneOffset);
             writer.WriteUInt16(rigid.VertCount);
             writer.WriteUInt16(rigid.TriOffset);
@@ -307,6 +308,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
 
     private static LinkStorageTarget? ResolveTree(
         XRigidVertList rigid,
+        XSurface surface,
         LinkAssetFreezeScope freeze,
         string fieldPath)
     {
@@ -336,7 +338,13 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
 
         LinkStorageTarget? nodes = ResolveNodes(tree, freeze, $"{fieldPath}.Nodes");
         LinkStorageTarget? leafs = ResolveLeafs(tree, freeze, $"{fieldPath}.Leafs");
-        ValidateTree(tree, fieldPath);
+        if (!XModelCollisionTreeCompiler.TryValidate(
+                tree,
+                rigid,
+                surface,
+                fieldPath,
+                out string? blocker))
+            throw new InvalidDataException(blocker);
         var writer = new LinkTemplateWriter(XSurfaceCollisionTree.SerializedSize);
         WriteVec3(writer, tree.Trans, $"{fieldPath}.Trans", allowPositiveInfinity: false);
         WriteVec3(writer, tree.Scale, $"{fieldPath}.Scale", allowPositiveInfinity: true);
@@ -426,18 +434,6 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             alignment: 2,
             freeze,
             fieldPath);
-
-    private static void ValidateTree(XSurfaceCollisionTree tree, string fieldPath)
-    {
-        foreach (XSurfaceCollisionNode node in tree.Nodes)
-        {
-            bool targetsLeafs = (node.ChildCount & 0x8000) != 0;
-            int count = node.ChildCount & 0x7fff;
-            int available = targetsLeafs ? tree.LeafCount : tree.NodeCount;
-            if ((int)node.ChildBeginIndex + count > available)
-                throw new InvalidDataException($"{fieldPath} contains an out-of-range child span.");
-        }
-    }
 
     private static LinkStorageTarget? ResolveBytes(
         XPointerReference pointer,
@@ -535,8 +531,9 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
         XSurface surface,
         string fieldPath)
     {
-        writer.WriteUInt16(surface.FlagsOrPad00);
-        writer.WriteByte(surface.StreamFlags);
+        writer.WriteByte((byte)surface.TileMode);
+        writer.WriteByte(surface.DeformedRaw);
+        writer.WriteByte((byte)surface.StreamFlags);
         writer.WriteByte(surface.Pad03);
         writer.WriteUInt16(surface.VertCount);
         writer.WriteUInt16(surface.TriCount);

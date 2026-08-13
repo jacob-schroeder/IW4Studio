@@ -248,8 +248,8 @@ public static class UiMaterialPreviewPlanner
             image.MultiFaceControl);
 
     private static bool IsTwoDimensional(GfxImageAsset image) =>
-        image.MapType == 3 &&
-        image.DimensionCount == 2 &&
-        image.MultiFaceControl == 0 &&
+        image.MapType == MapType.TwoDimensional &&
+        image.DimensionCount == GfxImageDimension.TwoDimensional &&
+        !image.IsCubemap &&
         image.Depth == 1;
 }

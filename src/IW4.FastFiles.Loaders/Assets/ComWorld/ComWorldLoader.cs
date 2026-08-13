@@ -154,7 +154,7 @@ public sealed class ComWorldLoader
         {
             int rowStart = lightCursor.Offset;
             XBlockAddress rowAddress = primaryLightsAddress.Add(rowStart);
-            byte type = lightCursor.ReadByte();
+            GfxLightType type = (GfxLightType)lightCursor.ReadByte();
             byte canUseShadowMap = lightCursor.ReadByte();
             byte exponent = lightCursor.ReadByte();
             byte unused = lightCursor.ReadByte();
@@ -178,7 +178,7 @@ public sealed class ComWorldLoader
             {
                 Offset = rowAddress.Offset,
                 Type = type,
-                CanUseShadowMap = canUseShadowMap,
+                CanUseShadowMapRaw = canUseShadowMap,
                 Exponent = exponent,
                 Unused = unused,
                 Color = color,

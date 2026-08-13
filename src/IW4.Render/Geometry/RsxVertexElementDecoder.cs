@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using IW4.Assets.Assets.TechniqueSet;
+using IW4.Assets.Math;
 
 namespace IW4.Render.Geometry;
 
@@ -15,11 +17,14 @@ internal static class RsxVertexElementDecoder
     {
         byteWidth = source.RsxType switch
         {
-            0x02 when source.ComponentCount is 2 or 4 =>
+            RsxVertexElementType.Float32 when
+                source.ComponentCount is 2 or 4 =>
                 source.ComponentCount * sizeof(uint),
-            0x04 when source.ComponentCount == 4 =>
+            RsxVertexElementType.Unsigned8Normalized when
+                source.ComponentCount == 4 =>
                 source.ComponentCount,
-            0x06 when source.ComponentCount == 1 => sizeof(uint),
+            RsxVertexElementType.Signed11_11_10Normalized when
+                source.ComponentCount == 1 => sizeof(uint),
             _ => 0
         };
         return byteWidth != 0;
@@ -43,7 +48,7 @@ internal static class RsxVertexElementDecoder
         destinationBits[3] = 0x3f800000u;
         switch (source.RsxType)
         {
-            case 0x02:
+            case RsxVertexElementType.Float32:
                 for (int component = 0;
                      component < source.ComponentCount;
                      component++)
@@ -56,7 +61,7 @@ internal static class RsxVertexElementDecoder
                 }
                 return true;
 
-            case 0x04:
+            case RsxVertexElementType.Unsigned8Normalized:
                 for (int component = 0; component < 4; component++)
                 {
                     float value = sourceBytes[component] / 255f;
@@ -65,19 +70,13 @@ internal static class RsxVertexElementDecoder
                 }
                 return true;
 
-            case 0x06:
+            case RsxVertexElementType.Signed11_11_10Normalized:
                 uint packed = BinaryPrimitives.ReadUInt32BigEndian(sourceBytes);
-                float x = (SignExtend((int)(packed & 0x7ff), 11) << 5) /
-                    32767f;
-                float y = (SignExtend(
-                    (int)((packed >> 11) & 0x7ff),
-                    11) << 5) / 32767f;
-                float z = (SignExtend(
-                    (int)((packed >> 22) & 0x3ff),
-                    10) << 6) / 32767f;
-                destinationBits[0] = BitConverter.SingleToUInt32Bits(x);
-                destinationBits[1] = BitConverter.SingleToUInt32Bits(y);
-                destinationBits[2] = BitConverter.SingleToUInt32Bits(z);
+                System.Numerics.Vector3 decoded =
+                    new PackedSigned11_11_10(packed).DecodeRsxNormalized();
+                destinationBits[0] = BitConverter.SingleToUInt32Bits(decoded.X);
+                destinationBits[1] = BitConverter.SingleToUInt32Bits(decoded.Y);
+                destinationBits[2] = BitConverter.SingleToUInt32Bits(decoded.Z);
                 return true;
 
             default:
@@ -85,9 +84,4 @@ internal static class RsxVertexElementDecoder
         }
     }
 
-    private static int SignExtend(int value, int bitCount)
-    {
-        int shift = 32 - bitCount;
-        return (value << shift) >> shift;
-    }
 }

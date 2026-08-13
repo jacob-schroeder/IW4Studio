@@ -472,7 +472,8 @@ public sealed partial class MapSceneBuilder
         // Source 0 is Verts0 position data and must never be used as UVs. Avoid
         // hydrating/scanning dependency-zone technique graphs for this
         // explicit generic material route.
-        const byte staticTexCoordSource = GenericFallbackTexCoordSource;
+        const MaterialStreamSource staticTexCoordSource =
+            GenericFallbackTexCoordSource;
         var primarySampler = new MaterialSamplerIdentity(
             SamplerArgIndex: -1,
             SamplerDest: 0,
@@ -522,7 +523,8 @@ public sealed partial class MapSceneBuilder
         // test tuple below; it does not make this an authored-program draw.
         // World backend source 0x02 is the primary color UV row for every
         // eligible mp_boneyard surface.
-        const byte texCoordSource = GenericFallbackTexCoordSource;
+        const MaterialStreamSource texCoordSource =
+            GenericFallbackTexCoordSource;
         RenderState fallbackState = GenericMaterialState;
         if (techset is not null &&
             TrySelectRoutedBaseSurfaceTexturePass(
@@ -592,10 +594,9 @@ public sealed partial class MapSceneBuilder
                 for (int argIndex = 0; argIndex < args.Count; argIndex++)
                 {
                     MaterialShaderArgumentAsset arg = args[argIndex];
-                    uint samplerHash = unchecked((uint)arg.ArgumentRaw);
                     if (arg.Type != MaterialShaderArgumentType.MaterialPixelSampler ||
-                        !colorTexturesByHash.TryGetValue(samplerHash, out MaterialTextureDef? texture) ||
-                        !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture.Semantic, out byte texCoordSource))
+                        !colorTexturesByHash.TryGetValue(arg.MaterialNameHash, out MaterialTextureDef? texture) ||
+                        !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture.Semantic, out MaterialStreamSource texCoordSource))
                     {
                         continue;
                     }
@@ -617,7 +618,7 @@ public sealed partial class MapSceneBuilder
                     var primarySampler = new MaterialSamplerIdentity(
                         argIndex,
                         arg.Dest,
-                        samplerHash,
+                        arg.MaterialNameHash,
                         texture.Semantic);
                     var renderPass = new MaterialPassIdentity(
                         material.Info.Name ?? string.Empty,
@@ -827,7 +828,7 @@ public sealed partial class MapSceneBuilder
                         if (arg.Type != MaterialShaderArgumentType.MaterialPixelSampler)
                             continue;
 
-                        uint samplerHash = unchecked((uint)arg.ArgumentRaw);
+                    uint samplerHash = arg.MaterialNameHash;
                         if (MaterialTextureResolver.TryResolve(material, lookup, samplerHash, requireColor: true, out MaterialTextureDef? texture, out GfxImageAsset? image))
                         {
                             bool texCoordSourceIsEngineRouted = RsxShaderInputRouter.TrySelectSamplerSource(
@@ -835,8 +836,8 @@ public sealed partial class MapSceneBuilder
                                 arg,
                                 vertexDecl,
                                 texture!.Semantic,
-                                out byte routedTexCoordSource);
-                            byte texCoordSource = texCoordSourceIsEngineRouted
+                                out MaterialStreamSource routedTexCoordSource);
+                            MaterialStreamSource texCoordSource = texCoordSourceIsEngineRouted
                                 ? routedTexCoordSource
                                 : GenericFallbackTexCoordSource;
                             return CreateGenericMaterialFallbackPass(
@@ -865,8 +866,8 @@ public sealed partial class MapSceneBuilder
                                 arg,
                                 vertexDecl,
                                 texture!.Semantic,
-                                out byte routedTexCoordSource);
-                            byte texCoordSource = texCoordSourceIsEngineRouted
+                                out MaterialStreamSource routedTexCoordSource);
+                            MaterialStreamSource texCoordSource = texCoordSourceIsEngineRouted
                                 ? routedTexCoordSource
                                 : GenericFallbackTexCoordSource;
                             fallbackSelectedPass = CreateGenericMaterialFallbackPass(
@@ -913,9 +914,9 @@ public sealed partial class MapSceneBuilder
                         if (arg.Type != MaterialShaderArgumentType.MaterialPixelSampler)
                             continue;
 
-                        uint samplerHash = unchecked((uint)arg.ArgumentRaw);
+                        uint samplerHash = arg.MaterialNameHash;
                         if (!MaterialTextureResolver.TryResolve(material, lookup, samplerHash, requireColor: true, out MaterialTextureDef? texture, out GfxImageAsset? image) ||
-                            !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture!.Semantic, out byte texCoordSource))
+                            !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture!.Semantic, out MaterialStreamSource texCoordSource))
                         {
                             continue;
                         }
@@ -977,10 +978,10 @@ public sealed partial class MapSceneBuilder
         MaterialTextureDef texture,
         GfxImageAsset image,
         int unresolvedCodeSamplerCount,
-        byte texCoordSource,
+        MaterialStreamSource texCoordSource,
         bool texCoordSourceIsEngineRouted,
         bool authoredProgramExecutable,
-        byte customSamplerFlags)
+        MaterialCustomSamplerFlags customSamplerFlags)
     {
         var primarySampler = new MaterialSamplerIdentity(
             argIndex,
@@ -1034,8 +1035,8 @@ public sealed partial class MapSceneBuilder
                 {
                     MaterialShaderArgumentAsset arg = args[argIndex];
                     if (arg.Type != MaterialShaderArgumentType.MaterialPixelSampler ||
-                        !texturesByHash.TryGetValue(unchecked((uint)arg.ArgumentRaw), out MaterialTextureDef? texture) ||
-                        !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture.Semantic, out byte texCoordSource))
+                        !texturesByHash.TryGetValue(arg.MaterialNameHash, out MaterialTextureDef? texture) ||
+                        !RsxShaderInputRouter.TrySelectSamplerSource(pass, arg, vertexDecl, texture.Semantic, out MaterialStreamSource texCoordSource))
                     {
                         continue;
                     }
@@ -1047,7 +1048,7 @@ public sealed partial class MapSceneBuilder
                     var primarySampler = new MaterialSamplerIdentity(
                         argIndex,
                         arg.Dest,
-                        unchecked((uint)arg.ArgumentRaw),
+                        arg.MaterialNameHash,
                         texture.Semantic);
                     var candidatePass = new MaterialPassIdentity(
                         material.Info.Name ?? string.Empty,
@@ -1082,7 +1083,7 @@ public sealed partial class MapSceneBuilder
         {
             if (arg.Type == MaterialShaderArgumentType.CodePixelSampler &&
                 !CodePixelSamplerAbi.HasRuntimeRequirement(
-                    unchecked((uint)arg.ArgumentRaw)))
+                    arg.CodeTextureSource))
             {
                 count++;
             }
@@ -1163,7 +1164,7 @@ public sealed partial class MapSceneBuilder
     private static WorldVertexDecoder? SelectWorldVertexDecoder(
         GfxWorldAsset gfxMap,
         WorldVertexLayoutSelection layout,
-        byte texCoordSource,
+        MaterialStreamSource texCoordSource,
         bool texCoordSourceIsEngineRouted,
         out UvRoute uvRoute)
     {
@@ -1189,9 +1190,13 @@ public sealed partial class MapSceneBuilder
 
         VertexSource? texCoord = null;
         VertexSource? blendWeights = null;
-        if (WorldVertexLayout.TryGetSource(layout.BackendRow, source: 0x01, out WorldVertexSource blendSource) &&
+        if (WorldVertexLayout.TryGetSource(
+                layout.BackendRow,
+            MaterialStreamSource.Color,
+            out WorldVertexSource blendSource) &&
             blendSource.ComponentCount >= 4 &&
-            blendSource.RsxType == 0x04 &&
+            blendSource.RsxType ==
+                RsxVertexElementType.Unsigned8Normalized &&
             WorldVertexLayout.TryGetStreamStride(layout.BackendRow, blendSource.StreamIndex, out byte blendStride))
         {
             blendWeights = new VertexSource(
@@ -1255,7 +1260,7 @@ public sealed partial class MapSceneBuilder
 
     private static UvRoute BuildUvRoute(
         WorldVertexLayoutSelection layout,
-        byte texCoordSource,
+        MaterialStreamSource texCoordSource,
         VertexSource source,
         string label)
     {
@@ -1278,7 +1283,7 @@ public sealed partial class MapSceneBuilder
     }
 
     private static XSurfaceVertexDecoder? SelectStaticVertexDecoder(
-        byte texCoordSource)
+        MaterialStreamSource texCoordSource)
     {
         return XSurfaceVertexDecoder.TryCreate(
             texCoordSource,
@@ -1287,7 +1292,8 @@ public sealed partial class MapSceneBuilder
                 : null;
     }
 
-    private static UvRoute BuildStaticModelUvRoute(byte texCoordSource)
-        => XSurfaceVertexDecoder.CreateUvRoute(texCoordSource);
+    private static UvRoute BuildStaticModelUvRoute(
+        MaterialStreamSource texCoordSource) =>
+        XSurfaceVertexDecoder.CreateUvRoute(texCoordSource);
 
 }

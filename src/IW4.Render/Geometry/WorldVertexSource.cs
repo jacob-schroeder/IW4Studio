@@ -6,7 +6,7 @@ internal readonly record struct WorldVertexSource(
     byte StreamIndex,
     byte ByteOffset,
     byte ComponentCount,
-    byte RsxType)
+    RsxVertexElementType RsxType)
 {
     internal bool IsUnavailableSourceTuple =>
         StreamIndex == 2 && ByteOffset == 0 && ComponentCount == 0 && RsxType == 0;

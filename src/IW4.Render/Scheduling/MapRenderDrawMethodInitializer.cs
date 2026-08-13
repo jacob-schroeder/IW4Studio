@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -7,24 +9,77 @@ namespace IW4.Render.Scheduling;
 /// </summary>
 public static class MapRenderDrawMethodInitializer
 {
-    public const byte FullbrightTechnique = 4;
-    public const byte StandardEmissiveTechnique = 5;
-    public const byte StandardBaseTechnique = 9;
-    public const byte DebugShaderTechnique = 36;
-    public const byte NoneTechnique = 39;
+    public const byte FullbrightTechnique =
+        (byte)MaterialTechniqueType.Unlit;
+    public const byte StandardEmissiveTechnique =
+        (byte)MaterialTechniqueType.Emissive;
+    public const byte StandardBaseTechnique =
+        (byte)MaterialTechniqueType.Lit;
+    public const byte DebugShaderTechnique =
+        (byte)MaterialTechniqueType.DebugNormals;
+    public const byte NoneTechnique =
+        (byte)MaterialTechniqueType.None;
 
     private static readonly byte[] BasicTechniques =
-        [9, 11, 15, 19, 13, 17, 21];
+        [
+            (byte)MaterialTechniqueType.Lit,
+            (byte)MaterialTechniqueType.LitSun,
+            (byte)MaterialTechniqueType.LitSpot,
+            (byte)MaterialTechniqueType.LitOmni,
+            (byte)MaterialTechniqueType.LitSunShadow,
+            (byte)MaterialTechniqueType.LitSpotShadow,
+            (byte)MaterialTechniqueType.LitOmniShadow
+        ];
     private static readonly byte[] BasicDfogTechniques =
-        [10, 12, 16, 20, 14, 18, 22];
+        [
+            (byte)MaterialTechniqueType.LitDfog,
+            (byte)MaterialTechniqueType.LitSunDfog,
+            (byte)MaterialTechniqueType.LitSpotDfog,
+            (byte)MaterialTechniqueType.LitOmniDfog,
+            (byte)MaterialTechniqueType.LitSunShadowDfog,
+            (byte)MaterialTechniqueType.LitSpotShadowDfog,
+            (byte)MaterialTechniqueType.LitOmniShadowDfog
+        ];
     private static readonly byte[] NoSunTechniques =
-        [9, 11, 15, 19, 11, 17, 21];
+        [
+            (byte)MaterialTechniqueType.Lit,
+            (byte)MaterialTechniqueType.LitSun,
+            (byte)MaterialTechniqueType.LitSpot,
+            (byte)MaterialTechniqueType.LitOmni,
+            (byte)MaterialTechniqueType.LitSun,
+            (byte)MaterialTechniqueType.LitSpotShadow,
+            (byte)MaterialTechniqueType.LitOmniShadow
+        ];
     private static readonly byte[] NoSunDfogTechniques =
-        [10, 12, 16, 20, 12, 18, 22];
+        [
+            (byte)MaterialTechniqueType.LitDfog,
+            (byte)MaterialTechniqueType.LitSunDfog,
+            (byte)MaterialTechniqueType.LitSpotDfog,
+            (byte)MaterialTechniqueType.LitOmniDfog,
+            (byte)MaterialTechniqueType.LitSunDfog,
+            (byte)MaterialTechniqueType.LitSpotShadowDfog,
+            (byte)MaterialTechniqueType.LitOmniShadowDfog
+        ];
     private static readonly byte[] NoSunLodTechniques =
-        [23, 25, 15, 19, 25, 17, 21];
+        [
+            (byte)MaterialTechniqueType.LitInstanced,
+            (byte)MaterialTechniqueType.LitInstancedSun,
+            (byte)MaterialTechniqueType.LitSpot,
+            (byte)MaterialTechniqueType.LitOmni,
+            (byte)MaterialTechniqueType.LitInstancedSun,
+            (byte)MaterialTechniqueType.LitSpotShadow,
+            (byte)MaterialTechniqueType.LitOmniShadow
+        ];
     private static readonly byte[] NoSunLodDfogTechniques =
-        [24, 26, 16, 20, 26, 18, 22];
+        [
+            (byte)MaterialTechniqueType.LitInstancedDfog,
+            (byte)MaterialTechniqueType.LitInstancedSunDfog,
+            (byte)MaterialTechniqueType.LitSpotDfog,
+            (byte)MaterialTechniqueType.LitOmniDfog,
+            (byte)MaterialTechniqueType.LitInstancedSunDfog,
+            (byte)MaterialTechniqueType.LitSpotShadowDfog,
+            (byte)MaterialTechniqueType.LitOmniShadowDfog
+        ];
 
     public static MapRenderDrawMethod Initialize(
         MapRenderDrawMethodSettings settings)

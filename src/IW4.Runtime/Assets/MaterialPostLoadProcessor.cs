@@ -13,9 +13,11 @@ namespace IW4.Runtime.Assets;
 public static class MaterialPostLoadProcessor
 {
     private const int MaterialDrawSurfOffset = 0x08;
-    private const int MaxSortedMaterialCount = 0x2000;
-    internal const int EmissiveTechniqueSlot = 5;
-    internal const int LitTechniqueSlot = 9;
+    private const int MaxSortedMaterialCount =
+        GfxDrawSurf.MaterialSortedIndexMask + 1;
+    internal const int EmissiveTechniqueSlot =
+        (int)MaterialTechniqueType.Emissive;
+    internal const int LitTechniqueSlot = (int)MaterialTechniqueType.Lit;
 
     public static void RebuildDrawSurfs(XAssetPool assetPool)
     {
@@ -67,28 +69,44 @@ public static class MaterialPostLoadProcessor
         ArgumentNullException.ThrowIfNull(assetPool);
         if ((uint)sortedIndex >= MaxSortedMaterialCount)
             throw new ArgumentOutOfRangeException(nameof(sortedIndex));
-        if (material.Info.SortKey >= 0x40)
-            throw new InvalidDataException($"Material '{material.Info.Name}' has invalid 6-bit sort key {material.Info.SortKey}.");
+        if ((byte)material.Info.SortKey >= 0x40)
+            throw new InvalidDataException($"Material '{material.Info.Name}' has invalid 6-bit sort key {(byte)material.Info.SortKey}.");
 
         return PackDrawSurf(material, sortedIndex, new MaterialGraphResolver(assetPool));
     }
 
     private static ulong PackDrawSurf(MaterialAsset material, int sortedIndex, MaterialGraphResolver resolver)
     {
-        ulong primarySortKey = (ulong)material.Info.SortKey << 58;
-        ulong prepass = (ulong)GetStandardPrepassSortKey(material, resolver) << 43;
-        ulong customIndex = (ulong)((material.Info.GameFlags >> 6) & 0x03) << 25;
-        ulong materialSortedIndex = (ulong)sortedIndex << 30;
+        ulong primarySortKey =
+            (ulong)(byte)material.Info.SortKey << GfxDrawSurf.PrimarySortKeyShift;
+        ulong prepass =
+            (ulong)(byte)GetStandardPrepassSortKey(material, resolver) <<
+            GfxDrawSurf.PrepassShift;
+        ulong customIndex =
+            (ulong)((byte)(material.Info.GameFlags &
+                MaterialGameFlags.ShadowCasterRouteMask) >> 6) <<
+            GfxDrawSurf.CustomIndexShift;
+        ulong materialSortedIndex =
+            (ulong)sortedIndex << GfxDrawSurf.MaterialSortedIndexShift;
         return primarySortKey | prepass | customIndex | materialSortedIndex;
     }
 
-    internal static int GetStandardPrepassSortKey(MaterialAsset material, MaterialGraphResolver resolver)
+    internal static MaterialPrepassType GetStandardPrepassSortKey(
+        MaterialAsset material,
+        MaterialGraphResolver resolver)
     {
-        MaterialTechniqueAsset? technique = resolver.GetTechnique(material, 0);
-        if (technique is null || (material.StateFlags & 0x04) != 0)
-            return 3;
+        MaterialTechniqueAsset? technique = resolver.GetTechnique(
+            material,
+            (int)MaterialTechniqueType.DepthPrepass);
+        if (technique is null ||
+            (material.StateFlags & MaterialStateFlags.Decal) != 0)
+        {
+            return MaterialPrepassType.None;
+        }
 
-        return ((technique.Flags ^ 0x04) >> 2) & 1;
+        return (technique.Flags & MaterialTechniqueFlags.ZPrepass) != 0
+            ? MaterialPrepassType.Standard
+            : MaterialPrepassType.Alpha;
     }
 
     internal static MaterialShaderAsset? GetShader(

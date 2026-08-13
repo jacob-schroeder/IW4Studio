@@ -80,7 +80,7 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
             for (int index = 0; index < techniques.Length; index++)
             {
                 techniques[index] = new MaterialTechniqueSlot(
-                    index,
+                    (MaterialTechniqueType)index,
                     default,
                     Technique: null);
             }
@@ -127,7 +127,8 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
         }
     }
 
-    private const int MaterialAssetTechniqueSlotCount = 37;
+    private const int MaterialAssetTechniqueSlotCount =
+        (int)MaterialTechniqueType.Count;
 
     private sealed class StorageFreezer
     {
@@ -197,7 +198,7 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
             var writer = new LinkTemplateWriter(
                 MaterialTechniqueAsset.SerializedSize);
             writer.Skip(sizeof(int));
-            writer.WriteUInt16(definition.Flags);
+            writer.WriteUInt16((ushort)definition.Flags);
             writer.WriteUInt16(checked((ushort)passes.Length));
             return _freeze.FreezeStorage(
                 pointer,
@@ -273,8 +274,8 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
                 writer.WriteByte(pass.PerPrimArgCount);
                 writer.WriteByte(pass.PerObjArgCount);
                 writer.WriteByte(pass.StableArgCount);
-                writer.WriteByte(pass.CustomSamplerFlags);
-                writer.WriteByte(pass.PrecompiledIndex);
+                writer.WriteByte((byte)pass.CustomSamplerFlags);
+                writer.WriteByte((byte)pass.PrecompiledVertexShader);
                 writer.Skip(3);
                 writer.Skip(sizeof(int));
             }
@@ -336,7 +337,7 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
                 definition.PerObjArgCount,
                 definition.StableArgCount,
                 definition.CustomSamplerFlags,
-                definition.PrecompiledIndex,
+                definition.PrecompiledVertexShader,
                 fieldPath);
         }
 
@@ -399,11 +400,11 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
             var writer = new LinkTemplateWriter(
                 MaterialVertexDeclarationAsset.SerializedSize);
             writer.WriteByte(definition.StreamCount);
-            writer.WriteByte(definition.HasOptionalSource);
+            writer.WriteByte(definition.HasOptionalSourceRaw);
             foreach (MaterialVertexStreamRouting route in routing)
             {
-                writer.WriteByte(route.Source);
-                writer.WriteByte(route.Dest);
+                writer.WriteByte((byte)route.Source);
+                writer.WriteByte((byte)route.Dest);
             }
             return _freeze.FreezeStorage(
                 pointer,
@@ -534,8 +535,8 @@ internal sealed class MaterialTechniqueSetLinkPlan : AssetLinkPlan
             byte PerPrimArgCount,
             byte PerObjArgCount,
             byte StableArgCount,
-            byte CustomSamplerFlags,
-            byte PrecompiledIndex,
+            MaterialCustomSamplerFlags CustomSamplerFlags,
+            MaterialPrecompiledVertexShader PrecompiledVertexShader,
             string FieldPath);
     }
 }

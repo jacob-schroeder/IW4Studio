@@ -34,10 +34,14 @@ public static class MapRenderWorldCameraColorPhasePlanner
     public const string ShadowOnlyTechniqueSetName = "w_shadowcaster";
     public const string FullbrightTechniqueName = "vertcol_simple_fog_nc";
     public const string WireframeTechniqueName = "wireframe_solid_nc";
-    public const byte ShadowOnlyGameFlags = 0x84;
-    public const byte ShadowOnlySortKey = 34;
-    public const byte ShadowOnlyStateFlags = 0x18;
-    public const byte ShadowOnlyCameraRegion = 0x05;
+    public const MaterialGameFlags ShadowOnlyGameFlags =
+        MaterialGameFlags.MaterialSpecificShadowCaster |
+        MaterialGameFlags.NoMarks;
+    public const MaterialSortKey ShadowOnlySortKey = (MaterialSortKey)34;
+    public const MaterialStateFlags ShadowOnlyStateFlags =
+        MaterialStateFlags.WritesDepth | MaterialStateFlags.UsesDepthBuffer;
+    public const GfxCameraRegionType ShadowOnlyCameraRegion =
+        GfxCameraRegionType.None;
 
     public static MapRenderWorldCameraColorPhasePlan Plan(
         MaterialAsset material,
@@ -155,7 +159,8 @@ public static class MapRenderWorldCameraColorPhasePlanner
             !ReferenceEquals(
                 materializedSlots[0].Technique,
                 casterPlan.Technique) ||
-            materializedSlots[1].Index != 4 ||
+            materializedSlots[1].Index !=
+                (int)MaterialTechniqueType.Unlit ||
             materializedSlots[1].Technique is not { } fullbright ||
             fullbright.PassCount != 1 ||
             fullbright.Passes.Count != 1 ||
@@ -163,7 +168,8 @@ public static class MapRenderWorldCameraColorPhasePlanner
                 NormalizeName(fullbright.Name),
                 FullbrightTechniqueName,
                 StringComparison.Ordinal) ||
-            materializedSlots[2].Index != 34 ||
+            materializedSlots[2].Index !=
+                (int)MaterialTechniqueType.WireframeSolid ||
             materializedSlots[2].Technique is not { } wireframe ||
             wireframe.PassCount != 1 ||
             wireframe.Passes.Count != 1 ||

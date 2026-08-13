@@ -159,88 +159,97 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
             "feedbackreplace",
             "passthru_alpha",
             "passthru_alpha",
-            0x0008,
+            MaterialTechniqueFlags.DeclarationHasOptionalSource,
             "textured_simple.hlsl",
             "textured_simple.hlsl",
             [
-                Argument(
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     0,
-                    0x0067_0004),
-                Argument(
-                    MaterialShaderArgumentType.CodePixelSampler,
+                    MaterialConstantSource.WorldViewProjectionMatrix0,
+                    rowCount: 4),
+                TextureArgument(
                     0,
-                    8)
+                    MaterialTextureSource.Feedback)
             ]);
         MapRenderNormalCameraMaterialAssetContract postFx = Material(
             "postfx",
             "postfx",
             "postfx",
-            0x000a,
+            MaterialTechniqueFlags.NeedsResolvedScene |
+                MaterialTechniqueFlags.DeclarationHasOptionalSource,
             "textured_simple.hlsl",
             "postfx.hlsl",
             [
-                Argument(
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     0,
-                    0x0067_0004),
-                Argument(MaterialShaderArgumentType.CodePixelSampler, 0, 10)
+                    MaterialConstantSource.WorldViewProjectionMatrix0,
+                    rowCount: 4),
+                TextureArgument(0, MaterialTextureSource.ResolvedScene)
             ]);
         MapRenderNormalCameraMaterialAssetContract postFxColor2 = Material(
             "postfx_color2",
             "postfx_color2",
             "postfx_color2",
-            0x000a,
+            MaterialTechniqueFlags.NeedsResolvedScene |
+                MaterialTechniqueFlags.DeclarationHasOptionalSource,
             "textured_simple.hlsl",
             "postfx_color2.hlsl",
             [
-                Argument(
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     0,
-                    0x0067_0004),
-                Argument(MaterialShaderArgumentType.CodePixelSampler, 0, 10),
-                Argument(MaterialShaderArgumentType.CodePixelConst, 1, 0x002e_0001),
-                Argument(MaterialShaderArgumentType.CodePixelConst, 2, 0x002f_0001),
-                Argument(MaterialShaderArgumentType.CodePixelConst, 3, 0x0030_0001),
-                Argument(MaterialShaderArgumentType.CodePixelConst, 4, 0x002d_0001)
+                    MaterialConstantSource.WorldViewProjectionMatrix0,
+                    rowCount: 4),
+                TextureArgument(0, MaterialTextureSource.ResolvedScene),
+                CodeArgument(MaterialShaderArgumentType.CodePixelConst, 1,
+                    MaterialConstantSource.ColorTintBase),
+                CodeArgument(MaterialShaderArgumentType.CodePixelConst, 2,
+                    MaterialConstantSource.ColorTintDelta),
+                CodeArgument(MaterialShaderArgumentType.CodePixelConst, 3,
+                    MaterialConstantSource.ColorTintQuadraticDelta),
+                CodeArgument(MaterialShaderArgumentType.CodePixelConst, 4,
+                    MaterialConstantSource.ColorBias)
             ]);
         MapRenderNormalCameraMaterialAssetContract glowConsistentSetup =
             Material(
                 "glow_consistent_setup",
                 "glow_consistent_setup",
                 "glow_consistent_setup",
-                0x000a,
+                MaterialTechniqueFlags.NeedsResolvedScene |
+                    MaterialTechniqueFlags.DeclarationHasOptionalSource,
                 "glow_consistent_setup.hlsl",
                 "glow_consistent_setup.hlsl",
                 [
-                    Argument(
+                    CodeArgument(
                         MaterialShaderArgumentType.CodeVertexConst,
                         0,
-                        0x0067_0004),
-                    Argument(
+                        MaterialConstantSource.WorldViewProjectionMatrix0,
+                        rowCount: 4),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodeVertexConst,
                         16,
-                        0x0015_0001),
-                    Argument(
-                        MaterialShaderArgumentType.CodePixelSampler,
+                        MaterialConstantSource.RenderTargetSize),
+                    TextureArgument(
                         0,
-                        10),
-                    Argument(
+                        MaterialTextureSource.ResolvedScene),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         4,
-                        0x002b_0001),
-                    Argument(
+                        MaterialConstantSource.GlowSetup),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         5,
-                        0x002e_0001),
-                    Argument(
+                        MaterialConstantSource.ColorTintBase),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         6,
-                        0x002f_0001),
-                    Argument(
+                        MaterialConstantSource.ColorTintDelta),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         7,
-                        0x002d_0001)
+                        MaterialConstantSource.ColorBias)
                 ],
                 GlowSetupStateBits0);
         MapRenderNormalCameraMaterialAssetContract glowConsistentSetupColor2 =
@@ -248,64 +257,65 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
                 "glow_consistent_setup_color2",
                 "glow_consistent_setup_color2",
                 "glow_consistent_setup_color2",
-                0x000a,
+                MaterialTechniqueFlags.NeedsResolvedScene |
+                    MaterialTechniqueFlags.DeclarationHasOptionalSource,
                 "glow_consistent_setup.hlsl",
                 "glow_consistent_setup_color2.hlsl",
                 [
-                    Argument(
+                    CodeArgument(
                         MaterialShaderArgumentType.CodeVertexConst,
                         0,
-                        0x0067_0004),
-                    Argument(
+                        MaterialConstantSource.WorldViewProjectionMatrix0,
+                        rowCount: 4),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodeVertexConst,
                         16,
-                        0x0015_0001),
-                    Argument(
-                        MaterialShaderArgumentType.CodePixelSampler,
+                        MaterialConstantSource.RenderTargetSize),
+                    TextureArgument(
                         0,
-                        10),
-                    Argument(
+                        MaterialTextureSource.ResolvedScene),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         4,
-                        0x002b_0001),
-                    Argument(
+                        MaterialConstantSource.GlowSetup),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         5,
-                        0x002e_0001),
-                    Argument(
+                        MaterialConstantSource.ColorTintBase),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         6,
-                        0x002f_0001),
-                    Argument(
+                        MaterialConstantSource.ColorTintDelta),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         7,
-                        0x0030_0001),
-                    Argument(
+                        MaterialConstantSource.ColorTintQuadraticDelta),
+                    CodeArgument(
                         MaterialShaderArgumentType.CodePixelConst,
                         8,
-                        0x002d_0001)
+                        MaterialConstantSource.ColorBias)
                 ],
                 GlowSetupStateBits0);
         MapRenderNormalCameraMaterialAssetContract glowApplyBloom = Material(
             "glow_apply_bloom",
             "glow_apply_bloom",
             "glow_apply_bloom",
-            0x0008,
+            MaterialTechniqueFlags.DeclarationHasOptionalSource,
             "glow_apply_bloom.hlsl",
             "glow_apply_bloom.hlsl",
             [
-                Argument(
+                CodeArgument(
                     MaterialShaderArgumentType.CodeVertexConst,
                     0,
-                    0x0067_0004),
-                Argument(
-                    MaterialShaderArgumentType.CodePixelSampler,
+                    MaterialConstantSource.WorldViewProjectionMatrix0,
+                    rowCount: 4),
+                TextureArgument(
                     0,
-                    8),
-                Argument(
+                    MaterialTextureSource.Feedback),
+                CodeArgument(
                     MaterialShaderArgumentType.CodePixelConst,
                     1,
-                    0x002c_0001)
+                    MaterialConstantSource.GlowApply)
             ],
             GlowApplyStateBits0);
         MapRenderNormalCameraMaterialAssetContract[] glowSymmetricFilters =
@@ -364,28 +374,30 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
         var arguments = new List<MapRenderNormalCameraMaterialArgumentContract>(
             2 + tapHalfCount * 2)
         {
-            Argument(
+            CodeArgument(
                 MaterialShaderArgumentType.CodeVertexConst,
                 0,
-                0x0067_0004),
-            Argument(
-                MaterialShaderArgumentType.CodePixelSampler,
+                MaterialConstantSource.WorldViewProjectionMatrix0,
+                rowCount: 4),
+            TextureArgument(
                 0,
-                8)
+                MaterialTextureSource.Feedback)
         };
         for (int index = 0; index < tapHalfCount; index++)
         {
-            arguments.Add(Argument(
+            arguments.Add(CodeArgument(
                 MaterialShaderArgumentType.CodeVertexConst,
                 checked((ushort)(12 + index)),
-                checked((uint)(0x000a + index) << 16 | 1u)));
+                (MaterialConstantSource)(
+                    (ushort)MaterialConstantSource.FilterTap0 + index)));
         }
         for (int index = 0; index < tapHalfCount; index++)
         {
-            arguments.Add(Argument(
+            arguments.Add(CodeArgument(
                 MaterialShaderArgumentType.CodePixelConst,
                 checked((ushort)(firstPixelDestination + index)),
-                checked((uint)(0x000a + index) << 16 | 1u)));
+                (MaterialConstantSource)(
+                    (ushort)MaterialConstantSource.FilterTap0 + index)));
         }
 
         string name = $"filter_symmetric_{tapHalfCount}";
@@ -393,7 +405,7 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
             name,
             name,
             name,
-            0x0008,
+            MaterialTechniqueFlags.DeclarationHasOptionalSource,
             $"{name}.hlsl",
             $"{name}.hlsl",
             arguments);
@@ -403,7 +415,7 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
         string materialName,
         string techniqueSetName,
         string techniqueName,
-        ushort techniqueFlags,
+        MaterialTechniqueFlags techniqueFlags,
         string vertexShaderName,
         string pixelShaderName,
         IReadOnlyList<MapRenderNormalCameraMaterialArgumentContract> arguments,
@@ -412,7 +424,7 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
             materialName,
             techniqueSetName,
             techniqueName,
-            techniqueSlot: 4,
+            techniqueSlot: (int)MaterialTechniqueType.Unlit,
             techniqueFlags,
             vertexShaderName,
             pixelShaderName,
@@ -420,8 +432,24 @@ public sealed class MapRenderEditorPreviewNormalCameraRecipe
             FullscreenCopyStateBits1,
             arguments);
 
-    private static MapRenderNormalCameraMaterialArgumentContract Argument(
+    private static MapRenderNormalCameraMaterialArgumentContract CodeArgument(
         MaterialShaderArgumentType type,
         ushort destination,
-        uint rawValue) => new(type, destination, rawValue);
+        MaterialConstantSource source,
+        byte firstRow = 0,
+        byte rowCount = 1) => new(
+            type,
+            destination,
+            new MaterialCodeConstantArgument(
+                source,
+                firstRow,
+                rowCount).PackedValue);
+
+    private static MapRenderNormalCameraMaterialArgumentContract
+        TextureArgument(
+            ushort destination,
+            MaterialTextureSource source) => new(
+                MaterialShaderArgumentType.CodePixelSampler,
+                destination,
+                (uint)source);
 }

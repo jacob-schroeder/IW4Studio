@@ -1,4 +1,5 @@
 using IW4.Render.Techniques;
+using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Materials;
 
@@ -22,7 +23,7 @@ public sealed record MapRenderEditorDepthPrepassPlan(
     int TechniqueSlot,
     string TechniqueName,
     int PassIndex,
-    ushort TechniqueFlags,
+    MaterialTechniqueFlags TechniqueFlags,
     string VertexProgramName,
     string PixelProgramName,
     MapRenderEditorDepthPrepassProgram Program,
@@ -35,27 +36,36 @@ public sealed record MapRenderEditorDepthPrepassPlan(
 /// </summary>
 public static class MapRenderEditorDepthPrepassPlanner
 {
-    public const int StandardTechniqueSlot = 0;
+    public const int StandardTechniqueSlot =
+        (int)MaterialTechniqueType.DepthPrepass;
     public const int StandardPassIndex = 0;
-    public const byte MaterialStateFlagStandardDepthPrepass = 0x01;
-    public const ushort TransformOnlyTechniqueFlags = 0x0004;
+    public const MaterialTechniqueFlags TransformOnlyTechniqueFlags =
+        MaterialTechniqueFlags.ZPrepass;
     public const string StandardTechniqueName = "zprepass";
     public const string TransformOnlyVertexProgramName = "transform_only.hlsl";
     public const string NullPixelProgramName = "null.hlsl";
     public const ushort World0VertexConstantDestination = 4;
-    public const int World0VertexConstantArgument = 0x005F0004;
+    public static readonly int World0VertexConstantArgument =
+        new MaterialCodeConstantArgument(
+            MaterialConstantSource.WorldMatrix0,
+            FirstRow: 0,
+            RowCount: 4).Raw;
     public const ushort ViewProjectionVertexConstantDestination = 0;
-    public const int ViewProjectionVertexConstantArgument = 0x00530004;
+    public static readonly int ViewProjectionVertexConstantArgument =
+        new MaterialCodeConstantArgument(
+            MaterialConstantSource.ViewProjectionMatrix,
+            FirstRow: 0,
+            RowCount: 4).Raw;
 
     public static bool TryCreateStandard(
         string materialName,
         string techniqueSetName,
-        byte materialStateFlags,
+        MaterialStateFlags materialStateFlags,
         int techniqueSlot,
         string techniqueName,
         int passIndex,
         int techniquePassCount,
-        ushort techniqueFlags,
+        MaterialTechniqueFlags techniqueFlags,
         IReadOnlyList<MaterialShaderArgumentAsset> arguments,
         string vertexProgramName,
         string pixelProgramName,
@@ -66,9 +76,9 @@ public static class MapRenderEditorDepthPrepassPlanner
         plan = null;
         blocker = string.Empty;
         ArgumentNullException.ThrowIfNull(arguments);
-        if ((materialStateFlags & MaterialStateFlagStandardDepthPrepass) == 0)
+        if ((materialStateFlags & MaterialStateFlags.CullBack) == 0)
         {
-            blocker = "MATERIAL_STANDARD_DEPTH_PREPASS_FLAG_NOT_SET";
+            blocker = "MATERIAL_CULL_BACK_FLAG_NOT_SET";
             return false;
         }
         if (techniqueSlot != StandardTechniqueSlot ||
@@ -115,12 +125,12 @@ public static class MapRenderEditorDepthPrepassPlanner
             return false;
         }
         if (!state.HasState ||
-            state.ColorMask != 0 ||
+            state.ColorMask != RsxColorMask.None ||
             state.AlphaTestEnabled ||
             state.BlendEnabled ||
             !state.DepthTestEnabled ||
             !state.DepthWriteEnabled ||
-            state.DepthFunc != 0x0203 ||
+            state.DepthFunc != RsxCompareFunction.LessThanOrEqual ||
             state.Stencil.Enabled)
         {
             blocker = "STANDARD_DEPTH_PREPASS_STATE_CONTRACT_MISMATCH";
@@ -159,7 +169,7 @@ public static class MapRenderEditorDepthPrepassPlanner
         int rawArgument) =>
         argument.Type == MaterialShaderArgumentType.CodeVertexConst &&
         argument.Dest == destination &&
-        argument.ArgumentRaw == rawArgument;
+        argument.CodeConstant.Raw == rawArgument;
 
     private static bool ProgramNameMatches(
         string observed,

@@ -236,7 +236,7 @@ public sealed class RenderAuthoredRsxProgramDescriptor :
             writer.WriteInt32(export.ColorTarget);
             writer.WriteBoolean(export.Fp16);
             writer.WriteInt32(export.RegisterIndex);
-            writer.WriteByte(export.WrittenComponentMask);
+            writer.WriteByte((byte)export.WrittenComponentMask);
             writer.WriteString(export.WrittenComponents);
         }
 

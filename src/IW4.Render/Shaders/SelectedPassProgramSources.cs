@@ -56,7 +56,7 @@ public sealed class SelectedPassProgramSources
         : new MaterialVertexDeclarationAsset
         {
             StreamCount = declaration.StreamCount,
-            HasOptionalSource = declaration.HasOptionalSource,
+            HasOptionalSourceRaw = declaration.HasOptionalSourceRaw,
             Routing = Array.AsReadOnly(declaration.Routing.ToArray())
         };
 }

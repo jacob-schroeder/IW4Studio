@@ -9,7 +9,7 @@ public readonly record struct RsxFragmentColorExport(
     int ColorTarget,
     bool Fp16,
     int RegisterIndex,
-    byte WrittenComponentMask,
+    RsxFragmentWriteMask WrittenComponentMask,
     string WrittenComponents)
 {
     public string Register => $"{(Fp16 ? 'H' : 'R')}{RegisterIndex}";

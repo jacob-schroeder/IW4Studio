@@ -1,4 +1,5 @@
 using IW4.FastFiles.Zone;
+using IW4.Assets.Assets.Image;
 using IW4.Runtime.Assets.Lifecycle.State;
 
 namespace IW4.Runtime.Assets.Lifecycle.Policies;
@@ -45,8 +46,8 @@ public sealed class GfxImageStreamLifecyclePolicy : XAssetRuntimeLifecyclePolicy
         }
 
         if (context.Mode is 1 or 3 &&
-            source.Header.Cached != 0 &&
-            destination.Header.Cached != 0)
+            source.Header.Cached != GfxImageCached.No &&
+            destination.Header.Cached != GfxImageCached.No)
         {
             if (!source.IsSideRecordAuthoritative ||
                 !destination.IsSideRecordAuthoritative)
@@ -126,7 +127,7 @@ public sealed class GfxImageStreamLifecyclePolicy : XAssetRuntimeLifecyclePolicy
         GfxImageRuntimeRecord current = GetRequired(allocation, assetName);
         GfxImageRuntimeHeaderState header = current.Header;
 
-        if (header.Cached != 0)
+        if (header.Cached != GfxImageCached.No)
         {
             if (header.CardMemory != 0)
                 _state.ReleaseFirstOverlappingRange(header.Pixels, header.CardMemory);
@@ -153,7 +154,9 @@ public sealed class GfxImageStreamLifecyclePolicy : XAssetRuntimeLifecyclePolicy
                 StreamPart1Marked = false,
                 StreamPart2Marked = false,
                 StreamPart3Marked = false,
-                CardMemoryMarked = header.Cached == 0 && current.CardMemoryMarked
+                CardMemoryMarked =
+                    header.Cached == GfxImageCached.No &&
+                    current.CardMemoryMarked
             });
     }
 

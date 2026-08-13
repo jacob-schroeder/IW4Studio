@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.Material;
+
 namespace IW4.Render.Scheduling;
 
 /// <summary>
@@ -60,12 +62,12 @@ public sealed class MapRenderTechniqueVariantSet
         MapRenderWorldSurfacePageMembership page,
         MapRenderTechniqueVariantAllocation allocation)
     {
-        MapRenderSurfaceType surfaceType = page switch
+        GfxDrawSurfSurfaceType surfaceType = page switch
         {
             MapRenderWorldSurfacePageMembership.PageZero =>
-                MapRenderSurfaceType.Triangles,
+                GfxDrawSurfSurfaceType.Triangles,
             MapRenderWorldSurfacePageMembership.PageOne =>
-                MapRenderSurfaceType.TrianglesNoSunShadow,
+                GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
             _ => throw new ArgumentOutOfRangeException(nameof(page))
         };
         return GetVariant(_worldVariants, surfaceType, allocation);
@@ -77,13 +79,13 @@ public sealed class MapRenderTechniqueVariantSet
         GetVariant(
             _staticModelVariants,
             noSunShadowPage
-                ? MapRenderSurfaceType.StaticModelRigidNoSunShadow
-                : MapRenderSurfaceType.StaticModelRigid,
+                ? GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow
+                : GfxDrawSurfSurfaceType.StaticModelRigid,
             allocation);
 
     private static MapRenderTechniqueVariant GetVariant(
         IReadOnlyList<MapRenderTechniqueVariant> variants,
-        MapRenderSurfaceType surfaceType,
+        GfxDrawSurfSurfaceType surfaceType,
         MapRenderTechniqueVariantAllocation allocation)
     {
         MapRenderTechniqueVariant? result = variants.SingleOrDefault(

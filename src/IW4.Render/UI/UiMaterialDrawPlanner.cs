@@ -17,15 +17,23 @@ namespace IW4.Render.UI;
 /// </summary>
 public static partial class UiMaterialDrawPlanner
 {
-    public const int TechniqueSlot = 4;
+    public const int TechniqueSlot = (int)MaterialTechniqueType.Unlit;
     public const int PassIndex = 0;
     public const string TechniqueSetName = "2d";
     public const string TechniqueName = "trivial_vertcol_simple2d";
     public const string ProgramName = "trivial_vertcol_simple.hlsl";
 
-    private const uint World0Argument = 0x005F0004;
+    private static readonly uint World0Argument =
+        new MaterialCodeConstantArgument(
+            MaterialConstantSource.WorldMatrix0,
+            FirstRow: 0,
+            RowCount: 4).PackedValue;
     private const ushort World0Destination = 4;
-    private const uint ViewProjectionArgument = 0x00530004;
+    private static readonly uint ViewProjectionArgument =
+        new MaterialCodeConstantArgument(
+            MaterialConstantSource.ViewProjectionMatrix,
+            FirstRow: 0,
+            RowCount: 4).PackedValue;
     private const ushort ViewProjectionDestination = 0;
     private const uint BaseColorSamplerHash =
         EditorMaterialTextureRoleClassifier.BaseColorHash;
@@ -35,34 +43,31 @@ public static partial class UiMaterialDrawPlanner
     [
         new(
             RouteIndex: 0,
-            Source: 0,
-            Destination: 0,
+            Source: MaterialStreamSource.Position,
+            Destination: MaterialStreamDestination.Position,
             StreamIndex: 0,
             Stride: 40,
             Offset: 0,
             ComponentCount: 4,
-            RsxType: 0x02,
-            RsxTypeName: "V32_FLOAT"),
+            RsxType: RsxVertexElementType.Float32),
         new(
             RouteIndex: 1,
-            Source: 1,
-            Destination: 3,
+            Source: MaterialStreamSource.Color,
+            Destination: MaterialStreamDestination.Color0,
             StreamIndex: 0,
             Stride: 40,
             Offset: 16,
             ComponentCount: 4,
-            RsxType: 0x02,
-            RsxTypeName: "V32_FLOAT"),
+            RsxType: RsxVertexElementType.Float32),
         new(
             RouteIndex: 2,
-            Source: 2,
-            Destination: 8,
+            Source: MaterialStreamSource.TexCoord0,
+            Destination: MaterialStreamDestination.TexCoord0,
             StreamIndex: 0,
             Stride: 40,
             Offset: 32,
             ComponentCount: 2,
-            RsxType: 0x02,
-            RsxTypeName: "V32_FLOAT")
+            RsxType: RsxVertexElementType.Float32)
     ];
 
     public static UiMaterialDrawPlan Plan(
@@ -290,8 +295,8 @@ public static partial class UiMaterialDrawPlanner
 
         RsxSamplerState samplerState = RsxSamplerDecoder.Decode(
             textureRow.SamplerState,
-            textureResource.DescriptorPad0F,
-            textureResource.DescriptorPad1B);
+            textureResource.MinLodControl,
+            textureResource.UseSrgbReads);
         var textureBinding = new UiMaterialTextureBinding(
             textureResource.ResourceKey,
             textureResource.ImageName,
@@ -315,7 +320,7 @@ public static partial class UiMaterialDrawPlanner
         var primarySampler = new MaterialSamplerIdentity(
             samplerArgumentIndex,
             samplerArgument.Dest,
-            unchecked((uint)samplerArgument.ArgumentRaw),
+            samplerArgument.MaterialNameHash,
             textureRow.Semantic);
         var renderPass = new MaterialPassIdentity(
             passIdentity.MaterialName,
@@ -329,12 +334,12 @@ public static partial class UiMaterialDrawPlanner
         var uvRoute = new UvRoute(
             "UI packet TEXCOORD_0",
             "UI_MATERIAL_VERTEX",
-            TexCoordSource: 2,
+            TexCoordSource: MaterialStreamSource.TexCoord0,
             StreamIndex: 0,
             Stride: 40,
             Offset: 32,
             FormatByte0: 0,
-            FormatByte1: 0x02,
+            FormatByte1: RsxVertexElementType.Float32,
             UvBaseMode.Engine,
             ComponentA: 0,
             ComponentB: 1,

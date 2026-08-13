@@ -5,18 +5,18 @@ namespace IW4.Render.Techniques;
 /// platform terminology.
 /// </summary>
 public readonly record struct StencilFaceState(
-    uint Function,
+    RsxCompareFunction Function,
     int Reference,
     uint CompareMask,
-    uint FailOperation,
-    uint DepthFailOperation,
-    uint PassOperation)
+    RsxStencilOperation FailOperation,
+    RsxStencilOperation DepthFailOperation,
+    RsxStencilOperation PassOperation)
 {
     public static StencilFaceState KeepAlways { get; } = new(
-        Function: 0x0207,
+        Function: RsxCompareFunction.Always,
         Reference: 0,
         CompareMask: 0xff,
-        FailOperation: 0x1e00,
-        DepthFailOperation: 0x1e00,
-        PassOperation: 0x1e00);
+        FailOperation: RsxStencilOperation.Keep,
+        DepthFailOperation: RsxStencilOperation.Keep,
+        PassOperation: RsxStencilOperation.Keep);
 }

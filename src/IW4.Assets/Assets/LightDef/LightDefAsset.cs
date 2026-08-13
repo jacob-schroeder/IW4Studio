@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Material;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
 
@@ -20,7 +21,7 @@ public sealed class LightDefAsset : BaseAsset
     public GfxImageAsset? Image { get; init; }
 
     // 0x08: GfxLightImage.samplerState.
-    public byte SamplerState { get; init; }
+    public MaterialSamplerState SamplerState { get; init; }
     public byte[] Pad09To0B { get; init; } = [];
 
     // 0x0C: GfxLightDef.lmapLookupStart.

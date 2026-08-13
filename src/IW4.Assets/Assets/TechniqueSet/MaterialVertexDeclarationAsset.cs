@@ -9,6 +9,7 @@ public sealed class MaterialVertexDeclarationAsset
     public const int RoutingCount = 13;
 
     public byte StreamCount { get; init; }
-    public byte HasOptionalSource { get; init; }
+    public byte HasOptionalSourceRaw { get; init; }
+    public bool HasOptionalSource => HasOptionalSourceRaw != 0;
     public IReadOnlyList<MaterialVertexStreamRouting> Routing { get; init; } = [];
 }

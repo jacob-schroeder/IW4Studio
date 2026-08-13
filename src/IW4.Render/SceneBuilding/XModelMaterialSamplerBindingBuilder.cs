@@ -49,7 +49,7 @@ internal static class XModelMaterialSamplerBindingBuilder
                 continue;
             }
 
-            uint samplerHash = unchecked((uint)argument.ArgumentRaw);
+            uint samplerHash = argument.MaterialNameHash;
             if (!seen.Add((argument.Dest, samplerHash)))
                 continue;
 
@@ -60,15 +60,15 @@ internal static class XModelMaterialSamplerBindingBuilder
                 requireColor: false,
                 out MaterialTextureDef? materialTexture,
                 out GfxImageAsset? image);
-            byte textureCoordinateSource =
-                XSurfaceVertexDecoder.DefaultTexCoordSourceIndex;
+            MaterialStreamSource textureCoordinateSource =
+                XSurfaceVertexDecoder.DefaultTexCoordSource;
             if (materialTexture is not null &&
                 RsxShaderInputRouter.TrySelectSamplerSource(
                     sourcePass,
                     argument,
                     vertexDeclaration,
                     materialTexture.Semantic,
-                    out byte routedSource))
+                    out MaterialStreamSource routedSource))
             {
                 textureCoordinateSource = routedSource;
             }
@@ -149,7 +149,7 @@ internal static class XModelMaterialSamplerBindingBuilder
             imagePayloads,
             textureCache.PreferProvenAuthoredPayloads);
         if (result.Texture is not { } decoded ||
-            !decoded.HasCompleteDecodedRgbaPayload)
+            !decoded.HasCompleteDecodedPayload)
         {
             failedTextureCacheKeys.Add(request.Key);
             return null;

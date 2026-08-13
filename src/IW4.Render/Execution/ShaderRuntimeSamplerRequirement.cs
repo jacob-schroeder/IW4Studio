@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Execution;
 
 /// <summary>
@@ -29,7 +31,7 @@ public enum ShaderRuntimeSamplerRequirementStatus
 public sealed record ShaderRuntimeSamplerRequirement(
     int ArgumentIndex,
     ushort Destination,
-    uint CodeSamplerArgument,
+    MaterialTextureSource CodeSamplerArgument,
     ShaderRuntimeSamplerResourceKind ResourceKind,
     ShaderRuntimeSamplerRequirementStatus Status,
     string ResourceIdentity);

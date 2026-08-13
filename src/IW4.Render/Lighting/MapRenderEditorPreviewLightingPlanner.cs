@@ -8,12 +8,14 @@ namespace IW4.Render.Lighting;
 
 /// <summary>
 /// Produces a conservative editor-lighting policy from loaded ComWorld data.
-/// Index zero remains the engine sentinel. Without exactly one usable type-1
+/// Index zero remains the engine sentinel. Without exactly one usable
+/// directional
 /// light at a nonzero index, preview rendering stays ambient-only.
 /// </summary>
 public static class MapRenderEditorPreviewLightingPlanner
 {
-    public const byte DirectionalLightType = 1;
+    public const GfxLightType DirectionalLightType =
+        GfxLightType.Directional;
     public const float NeutralAmbientChannel = 0.25f;
 
     private const float MinimumDirectionLengthSquared = 1e-12f;
@@ -76,7 +78,7 @@ public static class MapRenderEditorPreviewLightingPlanner
             return AmbientOnly(
                 MapRenderEditorPreviewLightingStatus
                     .AmbientOnlyNoUsableDirectionalSun,
-                "ComWorld contains no usable nonzero type-1 directional light; Live Preview uses explicit neutral ambient only.");
+                "ComWorld contains no usable nonzero directional light; Live Preview uses explicit neutral ambient only.");
         }
 
         if (candidates.Count > 1)
@@ -86,7 +88,7 @@ public static class MapRenderEditorPreviewLightingPlanner
             return AmbientOnly(
                 MapRenderEditorPreviewLightingStatus
                     .AmbientOnlyDirectionalSunAmbiguous,
-                $"ComWorld contains multiple usable nonzero type-1 directional lights at indices [{indices}]; active stage ownership is unavailable, so Live Preview uses explicit neutral ambient only.");
+                $"ComWorld contains multiple usable nonzero directional lights at indices [{indices}]; active stage ownership is unavailable, so Live Preview uses explicit neutral ambient only.");
         }
 
         DirectionalSunCandidate sun = candidates[0];
@@ -97,7 +99,7 @@ public static class MapRenderEditorPreviewLightingPlanner
             sun.CodeDirection,
             sun.Direction,
             sun.Color,
-            $"Live Preview selected the sole usable nonzero type-1 directional light at primary-light index {sun.PrimaryLightIndex}.");
+            $"Live Preview selected the sole usable nonzero directional light at primary-light index {sun.PrimaryLightIndex}.");
     }
 
     private static bool TryCreateCandidate(

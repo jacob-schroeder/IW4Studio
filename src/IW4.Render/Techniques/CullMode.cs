@@ -21,8 +21,8 @@ public static class Cull
 
         return state.CullFace switch
         {
-            0x0404u => CullMode.Front,
-            0x0405u => CullMode.Back,
+            RsxCullFace.Front => CullMode.Front,
+            RsxCullFace.Back => CullMode.Back,
             _ => null
         };
     }

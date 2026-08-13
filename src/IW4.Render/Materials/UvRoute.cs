@@ -1,15 +1,17 @@
 
+using IW4.Assets.Assets.TechniqueSet;
+
 namespace IW4.Render.Materials;
 
 public sealed record UvRoute(
     string Label,
     string WorldVertexFormat,
-    byte TexCoordSource,
+    MaterialStreamSource TexCoordSource,
     byte StreamIndex,
     int Stride,
     int Offset,
     byte FormatByte0,
-    byte FormatByte1,
+    RsxVertexElementType FormatByte1,
     UvBaseMode BaseMode,
     int ComponentA,
     int ComponentB,
@@ -22,9 +24,9 @@ public sealed record UvRoute(
 
     public string FormatName => FormatByte1 switch
     {
-        0x02 => "V32_FLOAT",
-        0x03 => "V16_FLOAT",
-        _ => $"RSX_TYPE_0x{FormatByte1:X2}"
+        RsxVertexElementType.Float32 => "V32_FLOAT",
+        RsxVertexElementType.Float16 => "V16_FLOAT",
+        _ => $"RSX_TYPE_0x{(byte)FormatByte1:X2}"
     };
 
     public string ComponentText => ComponentA == 0 && ComponentB == 1
@@ -64,12 +66,12 @@ public sealed record UvRoute(
           $"{AddV.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)})";
 
     public string BatchKey =>
-        $"{WorldVertexFormat}_{TexCoordSource:X2}_{StreamIndex}_{Stride}_{Offset}_{FormatByte0:X2}_{FormatByte1:X2}_" +
+        $"{WorldVertexFormat}_{(byte)TexCoordSource:X2}_{StreamIndex}_{Stride}_{Offset}_{FormatByte0:X2}_{(byte)FormatByte1:X2}_" +
         $"{BaseMode}_{ComponentA}_{ComponentB}_{ScaleU.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}_" +
         $"{ScaleV.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}_{AddU.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}_" +
         AddV.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
 
-    public static UvRoute StaticModel(byte texCoordSource) =>
+    public static UvRoute StaticModel(MaterialStreamSource texCoordSource) =>
         new(
             "static model",
             "STATIC_XSURFACE",
@@ -78,7 +80,7 @@ public sealed record UvRoute(
             0x10,
             0,
             0,
-            0,
+            RsxVertexElementType.Disabled,
             UvBaseMode.Engine,
             0,
             1,
@@ -96,18 +98,19 @@ public sealed record UvRoute(
         _ => component.ToString(System.Globalization.CultureInfo.InvariantCulture)
     };
 
-    public static string StreamSourceName(byte source) => source switch
+    public static string StreamSourceName(MaterialStreamSource source) =>
+        source switch
     {
-        0x00 => "POSITION",
-        0x01 => "COLOR",
-        0x02 => "TEXCOORD_0",
-        0x03 => "NORMAL",
-        0x04 => "TANGENT",
-        0x05 => "TEXCOORD_1",
-        0x06 => "TEXCOORD_2",
-        0x07 => "NORMAL_TRANSFORM_0",
-        0x08 => "NORMAL_TRANSFORM_1",
-        _ => $"SOURCE_0x{source:X2}"
+        MaterialStreamSource.Position => "POSITION",
+        MaterialStreamSource.Color => "COLOR",
+        MaterialStreamSource.TexCoord0 => "TEXCOORD_0",
+        MaterialStreamSource.Normal => "NORMAL",
+        MaterialStreamSource.Tangent => "TANGENT",
+        MaterialStreamSource.TexCoord1 => "TEXCOORD_1",
+        MaterialStreamSource.TexCoord2 => "TEXCOORD_2",
+        MaterialStreamSource.NormalTransform0 => "NORMAL_TRANSFORM_0",
+        MaterialStreamSource.NormalTransform1 => "NORMAL_TRANSFORM_1",
+        _ => $"SOURCE_0x{(byte)source:X2}"
     };
 
     private static string Hex(int value) => value < 0 ? $"-0x{-value:X}" : $"0x{value:X}";

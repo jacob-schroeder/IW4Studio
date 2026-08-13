@@ -55,7 +55,7 @@ internal sealed class WorldTexturedBatchKey :
         UvRoute = UvRouteBatchKey.Create(uvRoute);
         LoadBits0 = state.LoadBits0;
         LoadBits1 = state.LoadBits1;
-        StateTail = state.Tail;
+        StateCommandWordCount = state.CommandWordCount;
         EditorDepthPrepass = editorDepthPrepass;
         DepthPrepassProgramCacheKey =
             depthPrepassShaderExecution?.ProgramCacheKey;
@@ -76,7 +76,7 @@ internal sealed class WorldTexturedBatchKey :
         hash.Add(UvRoute);
         hash.Add(LoadBits0);
         hash.Add(LoadBits1);
-        hash.Add(StateTail);
+        hash.Add(StateCommandWordCount);
         hash.Add(EditorDepthPrepass);
         hash.Add(DepthPrepassProgramCacheKey, StringComparer.Ordinal);
         hash.Add(UnresolvedCodeSamplerCount);
@@ -101,7 +101,7 @@ internal sealed class WorldTexturedBatchKey :
 
     private uint LoadBits1 { get; }
 
-    private uint StateTail { get; }
+    private uint StateCommandWordCount { get; }
 
     private MapRenderEditorDepthPrepassPlan? EditorDepthPrepass { get; }
 
@@ -129,7 +129,7 @@ internal sealed class WorldTexturedBatchKey :
             UvRoute != other.UvRoute ||
             LoadBits0 != other.LoadBits0 ||
             LoadBits1 != other.LoadBits1 ||
-            StateTail != other.StateTail ||
+            StateCommandWordCount != other.StateCommandWordCount ||
             EditorDepthPrepass != other.EditorDepthPrepass ||
             !string.Equals(
                 DepthPrepassProgramCacheKey,

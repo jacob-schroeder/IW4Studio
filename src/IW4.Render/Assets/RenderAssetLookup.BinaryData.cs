@@ -25,20 +25,21 @@ public sealed partial class RenderAssetLookup
     private MaterialVertexDeclarationAsset ReadVertexDeclaration(XBlockAddress address)
     {
         byte streamCount = _blocks.ReadByte(address);
-        byte hasOptionalSource = _blocks.ReadByte(address.Add(1));
+        byte hasOptionalSourceRaw = _blocks.ReadByte(address.Add(1));
         var routing = new MaterialVertexStreamRouting[MaterialVertexDeclarationAsset.RoutingCount];
         for (int i = 0; i < routing.Length; i++)
         {
             XBlockAddress routeAddress = address.Add(2 + i * 2);
             routing[i] = new MaterialVertexStreamRouting(
-                _blocks.ReadByte(routeAddress),
-                _blocks.ReadByte(routeAddress.Add(1)));
+                (MaterialStreamSource)_blocks.ReadByte(routeAddress),
+                (MaterialStreamDestination)_blocks.ReadByte(
+                    routeAddress.Add(1)));
         }
 
         return new MaterialVertexDeclarationAsset
         {
             StreamCount = streamCount,
-            HasOptionalSource = hasOptionalSource,
+            HasOptionalSourceRaw = hasOptionalSourceRaw,
             Routing = routing
         };
     }

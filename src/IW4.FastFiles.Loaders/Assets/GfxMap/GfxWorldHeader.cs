@@ -50,7 +50,7 @@ internal sealed class GfxWorldHeader
     public uint MapVertexChecksum { get; init; }
     public uint HeroOnlyLightCount { get; init; }
     public XPointer<GfxHeroOnlyLight[]> HeroOnlyLightsPointer { get; init; }
-    public byte FogTypesAllowed { get; init; }
+    public FogTypesAllowed FogTypesAllowed { get; init; }
     public IReadOnlyList<byte> Pad279To27B { get; init; } = [];
     public int UmbraGateCount { get; init; }
     public XPointer<byte[]> UmbraGateDataPointer { get; init; }

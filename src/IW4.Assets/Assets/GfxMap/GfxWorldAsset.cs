@@ -89,7 +89,7 @@ public sealed class GfxWorldAsset : BaseAsset
     public XPointer<GfxHeroOnlyLight[]> HeroOnlyLightsPointer { get; init; }
     public IReadOnlyList<GfxHeroOnlyLight> HeroOnlyLights { get; init; } = [];
     // 0x278: allowed fog-type flags.
-    public byte FogTypesAllowed { get; init; }
+    public FogTypesAllowed FogTypesAllowed { get; init; }
     public IReadOnlyList<byte> Pad279To27B { get; init; } = [];
     public int UmbraGateCount { get; init; }
     public XPointer<byte[]> UmbraGateDataPointer { get; init; }

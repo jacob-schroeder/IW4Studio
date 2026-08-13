@@ -125,7 +125,7 @@ public sealed partial class MapSceneBuilder
                 TextureSemantic: 0),
             plan.State,
             UnresolvedCodeSamplerCount: 0,
-            TexCoordSource: 0,
+            TexCoordSource: MaterialStreamSource.Position,
             TexCoordSourceIsEngineRouted: false,
             AuthoredProgramExecutable: true);
 
@@ -144,7 +144,7 @@ public sealed partial class MapSceneBuilder
         ArgumentNullException.ThrowIfNull(colorBindings);
         ArgumentNullException.ThrowIfNull(depthBindings);
 
-        var byDestination = new Dictionary<byte, ShaderVertexInputBinding>();
+        var byDestination = new Dictionary<MaterialStreamDestination, ShaderVertexInputBinding>();
         var result = new List<ShaderVertexInputBinding>(
             colorBindings.Count + depthBindings.Count);
         foreach (ShaderVertexInputBinding binding in colorBindings)
@@ -156,7 +156,7 @@ public sealed partial class MapSceneBuilder
             {
                 merged = [];
                 blocker =
-                    $"COLOR_VERTEX_INPUT_DEST{binding.Destination}_ROUTE_CONFLICT";
+                    $"COLOR_VERTEX_INPUT_DEST{(byte)binding.Destination}_ROUTE_CONFLICT";
                 return false;
             }
             if (existing is not null)
@@ -175,7 +175,7 @@ public sealed partial class MapSceneBuilder
                 {
                     merged = colorBindings.ToArray();
                     blocker =
-                        $"DEPTH_VERTEX_INPUT_DEST{binding.Destination}_ROUTE_CONFLICT";
+                        $"DEPTH_VERTEX_INPUT_DEST{(byte)binding.Destination}_ROUTE_CONFLICT";
                     return false;
                 }
                 continue;

@@ -207,7 +207,7 @@ public sealed partial class MapSceneBuilder
                     arg,
                     vertexDecl,
                     texture.Semantic,
-                    out byte texCoordSource))
+                    out MaterialStreamSource texCoordSource))
             {
                 return;
             }
@@ -296,7 +296,7 @@ public sealed partial class MapSceneBuilder
                         continue;
                     }
 
-                    uint samplerHash = unchecked((uint)arg.ArgumentRaw);
+                    uint samplerHash = arg.MaterialNameHash;
                     if (!seen.Add((arg.Dest, samplerHash)))
                         continue;
 
@@ -391,7 +391,7 @@ public sealed partial class MapSceneBuilder
 
     private static void AppendStaticCustomSamplerBindings(
         List<MapRenderWorldMaterialSamplerBinding> bindings,
-        byte customSamplerFlags,
+        MaterialCustomSamplerFlags customSamplerFlags,
         GfxWorldAsset gfxMap,
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         byte? reflectionProbeIndex,
@@ -423,7 +423,7 @@ public sealed partial class MapSceneBuilder
 
     internal static MapRenderWorldRuntimeTextureIdentity?
         ResolveStaticReflectionProbeIdentity(
-            byte customSamplerFlags,
+            MaterialCustomSamplerFlags customSamplerFlags,
             byte? reflectionProbeIndex)
     {
         var selection = new MaterialCustomSamplerSelection(
@@ -534,7 +534,7 @@ public sealed partial class MapSceneBuilder
                     .Where(candidate =>
                         candidate.argument.Type ==
                             MaterialShaderArgumentType.MaterialPixelSampler &&
-                        unchecked((uint)candidate.argument.ArgumentRaw) ==
+                        candidate.argument.MaterialNameHash ==
                             planned.NameHash)
                     .Select(candidate =>
                         (candidate.argument, candidate.index))
@@ -553,7 +553,7 @@ public sealed partial class MapSceneBuilder
                     arg,
                     vertexDecl,
                     planned.TextureSemantic,
-                    out byte texCoordSource) &&
+                    out MaterialStreamSource texCoordSource) &&
                 SelectStaticVertexDecoder(texCoordSource) is { } routedDecoder)
             {
                 decoder = routedDecoder;
@@ -638,7 +638,7 @@ public sealed partial class MapSceneBuilder
                 continue;
             }
 
-            uint samplerHash = unchecked((uint)argument.ArgumentRaw);
+            uint samplerHash = argument.MaterialNameHash;
             if (!seen.Add((argument.Dest, samplerHash)))
                 continue;
 
@@ -737,7 +737,7 @@ public sealed partial class MapSceneBuilder
             }
 
             UvRoute? samplerUvRoute = null;
-            byte texCoordSource = 0;
+            MaterialStreamSource texCoordSource = default;
             bool routeResolved = samplerPlan.SourcePass is { } sourcePass &&
                 samplerPlan.VertexDeclaration is { } vertexDeclaration &&
                 RsxShaderInputRouter.TrySelectSamplerSource(
@@ -802,7 +802,7 @@ public sealed partial class MapSceneBuilder
 
     private static void AppendWorldCustomSamplerBindings(
         List<MapRenderWorldMaterialSamplerBinding> bindings,
-        byte customSamplerFlags,
+        MaterialCustomSamplerFlags customSamplerFlags,
         GfxWorldAsset gfxMap,
         IMapRenderWorldTextureBindingResolver worldTextureBindings,
         GfxSurface surface,
@@ -980,8 +980,8 @@ public sealed partial class MapSceneBuilder
                     RsxImplicitSamplerStateEncoding.ReflectionProbe,
                     RsxSamplerDecoder.Decode(
                         RsxImplicitSamplerStateEncoding.ReflectionProbe,
-                        image.Pad0F,
-                        image.Pad1B),
+                        image.MinLodControl,
+                        image.UseSrgbReads),
                     RsxTextureCommandBuilder.FromDescriptor(
                         descriptor),
                     hasDecoded && cube.Faces
@@ -1158,12 +1158,12 @@ public sealed partial class MapSceneBuilder
                             .Take(mipCount)
                             .ToArray();
                     return new TextureCubeFace(
-                        face[0].SharedRgbaBytes,
+                        face[0].SharedPixelBytes,
                         face.Skip(1)
                             .Select(mip => new TextureMip(
                                 mip.Width,
                                 mip.Height,
-                                mip.SharedRgbaBytes))
+                                mip.SharedPixelBytes))
                             .ToArray());
                 })
                 .ToArray();
@@ -1174,13 +1174,13 @@ public sealed partial class MapSceneBuilder
         {
             DecodedTextureSubresourceSnapshot top =
                 resource.Subresources[0];
-            topRgba = top.SharedRgbaBytes;
+            topRgba = top.SharedPixelBytes;
             topMipLevels = resource.Subresources
                 .Skip(1)
                 .Select(mip => new TextureMip(
                     mip.Width,
                     mip.Height,
-                    mip.SharedRgbaBytes))
+                    mip.SharedPixelBytes))
                 .ToArray();
         }
 
@@ -1192,14 +1192,15 @@ public sealed partial class MapSceneBuilder
             samplerState,
             RsxSamplerDecoder.Decode(
                 samplerState,
-                image.Pad0F,
-                image.Pad1B),
+                image.MinLodControl,
+                image.UseSrgbReads),
             RsxTextureCommandBuilder.FromDescriptor(descriptor),
             resource.HasTransparency,
             topRgba,
             topMipLevels,
             target,
-            cubeFaces);
+            cubeFaces,
+            PixelFormat: resource.PixelFormat);
         return true;
     }
 

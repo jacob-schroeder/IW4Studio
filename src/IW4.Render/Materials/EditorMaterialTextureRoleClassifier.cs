@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 
 namespace IW4.Render.Materials;
@@ -22,9 +23,12 @@ public static class EditorMaterialTextureRoleClassifier
     public const uint SpecularLayer2Hash = 0xD2866321u;
     public const uint DetailHash = 0xEB529B4Du;
 
-    private const byte ColorSemantic = 0x02;
-    private const byte NormalSemantic = 0x05;
-    private const byte SpecularSemantic = 0x08;
+    private const TextureSemantic ColorSemantic =
+        TextureSemantic.ColorMap;
+    private const TextureSemantic NormalSemantic =
+        TextureSemantic.NormalMap;
+    private const TextureSemantic SpecularSemantic =
+        TextureSemantic.SpecularMap;
 
     private static readonly KnownTuple[] KnownTuples =
     [
@@ -105,7 +109,7 @@ public static class EditorMaterialTextureRoleClassifier
         char nameStart,
         char nameEnd,
         uint nameHash,
-        byte semantic,
+        TextureSemantic semantic,
         EditorMaterialTextureRole role) =>
         new(
             (byte)nameStart,
@@ -118,6 +122,6 @@ public static class EditorMaterialTextureRoleClassifier
         byte NameStart,
         byte NameEnd,
         uint NameHash,
-        byte? Semantic,
+        TextureSemantic? Semantic,
         EditorMaterialTextureRole Role);
 }
