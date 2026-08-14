@@ -29,23 +29,18 @@ public static class XModelExportLodCompiler
                 XModelExportTriangle[] triangles = partition.ToArray();
                 string partitionPrefix = $"{prefix} material {materialIndex}";
                 if (materialIndex < 0 || materialIndex >= document.Materials.Count) { blockers.Add($"{partitionPrefix}: is outside imported material rows."); continue; }
-                if (triangles.Length > ushort.MaxValue) { blockers.Add($"{partitionPrefix}: triangle count exceeds UInt16."); continue; }
-                if (!TryCompileSurface(document, triangles, boneCount, partitionPrefix, out XSurface? surface, out IReadOnlyList<string> errors) || surface is null)
-                {
-                    blockers.AddRange(errors);
-                    continue;
-                }
-                if (compileCollisionTrees && !XModelCollisionTreeCompiler.TryAttach(
-                        surface,
-                        partitionPrefix,
-                        out surface,
-                        out string? collisionBlocker))
-                {
-                    blockers.Add(collisionBlocker!);
-                    continue;
-                }
-                result.Add(surface);
-                materialIndices.Add(materialIndex);
+                CompileSurfacePartition(
+                    document,
+                    triangles,
+                    boneCount,
+                    compileCollisionTrees,
+                    materialIndex,
+                    partitionPrefix,
+                    triangleOffset: 0,
+                    isWholePartition: true,
+                    result,
+                    materialIndices,
+                    blockers);
             }
         }
         if (document.Objects.Count == 0) blockers.Add("The imported LOD has no objects.");
@@ -56,9 +51,94 @@ public static class XModelExportLodCompiler
         return new XModelExportLodCompileResult(Array.AsReadOnly(result.ToArray()), Array.AsReadOnly(materialIndices.ToArray()), Array.AsReadOnly(partBits), Array.AsReadOnly(blockers.ToArray()));
     }
 
-    private static bool TryCompileSurface(XModelExportDocument document, IReadOnlyList<XModelExportTriangle> triangles, int boneCount, string prefix, out XSurface? surface, out IReadOnlyList<string> blockers)
+    private static void CompileSurfacePartition(
+        XModelExportDocument document,
+        XModelExportTriangle[] triangles,
+        int boneCount,
+        bool compileCollisionTrees,
+        int materialIndex,
+        string partitionPrefix,
+        int triangleOffset,
+        bool isWholePartition,
+        List<XSurface> destination,
+        List<int> materialIndices,
+        List<string> blockers)
     {
-        surface = null;
+        string surfacePrefix = isWholePartition
+            ? partitionPrefix
+            : $"{partitionPrefix} triangles {triangleOffset}-{triangleOffset + triangles.Length - 1}";
+        bool exceedsTriangleLimit = triangles.Length > ushort.MaxValue;
+        bool compiled = false;
+        bool exceedsVertexLimit = false;
+        XSurface? surface = null;
+        IReadOnlyList<string> errors = [];
+        if (!exceedsTriangleLimit)
+        {
+            compiled = TryCompileSurface(
+                document,
+                triangles,
+                boneCount,
+                surfacePrefix,
+                out surface,
+                out errors,
+                out exceedsVertexLimit);
+        }
+
+        if (!compiled && triangles.Length > 1 &&
+            (exceedsTriangleLimit || exceedsVertexLimit))
+        {
+            int firstCount = triangles.Length / 2;
+            CompileSurfacePartition(
+                document,
+                triangles[..firstCount],
+                boneCount,
+                compileCollisionTrees,
+                materialIndex,
+                partitionPrefix,
+                triangleOffset,
+                isWholePartition: false,
+                destination,
+                materialIndices,
+                blockers);
+            CompileSurfacePartition(
+                document,
+                triangles[firstCount..],
+                boneCount,
+                compileCollisionTrees,
+                materialIndex,
+                partitionPrefix,
+                triangleOffset + firstCount,
+                isWholePartition: false,
+                destination,
+                materialIndices,
+                blockers);
+            return;
+        }
+
+        if (!compiled || surface is null)
+        {
+            if (exceedsTriangleLimit)
+                blockers.Add($"{surfacePrefix}: triangle count exceeds UInt16.");
+            else
+                blockers.AddRange(errors);
+            return;
+        }
+        if (compileCollisionTrees && !XModelCollisionTreeCompiler.TryAttach(
+                surface,
+                surfacePrefix,
+                out surface,
+                out string? collisionBlocker))
+        {
+            blockers.Add(collisionBlocker!);
+            return;
+        }
+        destination.Add(surface);
+        materialIndices.Add(materialIndex);
+    }
+
+    private static bool TryCompileSurface(XModelExportDocument document, IReadOnlyList<XModelExportTriangle> triangles, int boneCount, string prefix, out XSurface? surface, out IReadOnlyList<string> blockers, out bool exceedsVertexLimit)
+    {
+        surface = null; exceedsVertexLimit = false;
         var errors = new List<string>();
         var corners = new List<CompiledCorner>(checked(triangles.Count * 3));
         foreach ((XModelExportTriangle triangle, int triangleIndex) in triangles.Select((value, index) => (value, index)))
@@ -96,7 +176,7 @@ public static class XModelExportLodCompiler
             }
             cornerToUnique[index] = vertex;
         }
-        if (unique.Count == 0 || unique.Count > ushort.MaxValue) { blockers = [$"{prefix}: emitted vertex count exceeds UInt16 or is empty."]; return false; }
+        if (unique.Count == 0 || unique.Count > ushort.MaxValue) { exceedsVertexLimit = unique.Count > ushort.MaxValue; blockers = [$"{prefix}: emitted vertex count exceeds UInt16 or is empty."]; return false; }
         // The native blend stream is grouped by influence cardinality.  Reorder all corner-expanded vertices and remap triangle indices together.
         (CompiledCorner Corner, int Original)[] sorted = unique.Select((corner, index) => (corner, index)).OrderBy(value => value.corner.Weights.Count).ThenBy(value => value.index).ToArray();
         CompiledCorner[] ordered = sorted.Select(value => value.Corner).ToArray();

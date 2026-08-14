@@ -45,6 +45,14 @@ public sealed class XModelLodDraft
                             m.ImportMaterial.BaseColorImage.Width,
                             m.ImportMaterial.BaseColorImage.Height,
                             Array.AsReadOnly(m.ImportMaterial.BaseColorImage.RgbaBytes.ToArray())),
+                    m.ImportMaterial.NormalImage is null
+                        ? null
+                        : new XModelImportImage(
+                            m.ImportMaterial.NormalImage.Width,
+                            m.ImportMaterial.NormalImage.Height,
+                            Array.AsReadOnly(m.ImportMaterial.NormalImage.RgbaBytes.ToArray())),
+                    m.ImportMaterial.NormalScale,
+                    m.ImportMaterial.DoubleSided,
                     m.ImportMaterial.AlphaMode,
                     m.ImportMaterial.AlphaCutoff,
                     Array.AsReadOnly(m.ImportMaterial.Warnings.ToArray()))

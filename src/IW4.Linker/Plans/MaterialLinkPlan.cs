@@ -61,6 +61,14 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         ValidateDeclaredCount(definition.StateBitsCount, stateBits.Length, "Material.StateBits");
         ValidateDeclaredCount(definition.XStringCount, xstrings.Length, "Material.XStrings");
 
+        LinkStorageSymbol? vertexReservation = textures.Length == 0
+            ? null
+            : LinkStorageSymbol.SourceFree(
+                XFileBlockType.VERTEX,
+                checked(textures.Length * sizeof(uint)),
+                alignment: sizeof(uint),
+                LinkMaterializationKind.VertexReservation);
+
         var freezer = new StorageFreezer(freeze);
         AssetDependency? techniqueSet = FreezeProviderDependency(
             definition.TechniqueSetPointer.Untyped,
@@ -117,6 +125,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             alignment: 4,
             root => CreateRootOperations(
                 root,
+                vertexReservation,
                 runtimeState,
                 techniqueSet,
                 textureTable,
@@ -154,6 +163,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
 
     private IEnumerable<LinkOperation> CreateRootOperations(
         LinkStorageSymbol root,
+        LinkStorageSymbol? vertexReservation,
         LinkStorageSymbol? runtimeState,
         AssetDependency? techniqueSet,
         LinkStorageTarget? textureTable,
@@ -161,6 +171,12 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         LinkStorageTarget? stateBitsTable,
         LinkStorageTarget? xstringTable)
     {
+        if (vertexReservation is not null)
+        {
+            yield return new MaterializeStorageLinkOperation(
+                vertexReservation,
+                "Material.RuntimeTextureHandles");
+        }
         yield return NameOperation(root, 0);
         if (runtimeState is not null)
         {
@@ -534,27 +550,45 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                 pointer.Type == IW4.FastFiles.Pointers.PointerType.Null)
                 return null;
 
-            var aliases = new LinkAliasCellSymbol?[stateBits.Count];
+            var aliases = new FrozenStateBitsAlias?[stateBits.Count];
             var writer = new LinkTemplateWriter(
                 checked(stateBits.Count * GfxStateBits.SerializedSize));
             for (int index = 0; index < stateBits.Count; index++)
             {
                 GfxStateBits state = stateBits[index];
+                string fieldPath = $"Material.StateBits[{index}].LoadBits";
                 IReadOnlyList<uint> loadBits = state.LoadBits ??
                     throw new InvalidDataException(
-                        $"Material.StateBits[{index}].LoadBits cannot be null.");
+                        $"{fieldPath} cannot be null.");
                 if (loadBits.Count is not (0 or 2))
                 {
                     throw new InvalidDataException(
-                        $"Material.StateBits[{index}].LoadBits must be absent or contain exactly two words.");
+                        $"{fieldPath} must be absent or contain exactly two words.");
                 }
+
                 writer.Skip(sizeof(int));
-                writer.WriteUInt32(state.CommandWordCount);
-                if (loadBits.Count != 0)
-                    aliases[index] = FreezeLoadBits(
+                if (loadBits.Count == 0)
+                {
+                    writer.WriteUInt32(state.CommandWordCount);
+                }
+                else
+                {
+                    int commandWordCount = CalculateStateCommandWordCount(
+                        loadBits[0],
+                        loadBits[1]);
+                    writer.WriteUInt32(checked((uint)commandWordCount));
+                    LinkAliasCellSymbol alias = FreezeLoadBits(
                         state.LoadBitsPointer,
                         loadBits,
-                        $"Material.StateBits[{index}].LoadBits");
+                        fieldPath);
+                    aliases[index] = new FrozenStateBitsAlias(
+                        alias,
+                        LinkStorageSymbol.SourceFree(
+                            XFileBlockType.VERTEX,
+                            checked(sizeof(uint) * checked(commandWordCount + 2)),
+                            alignment: sizeof(uint),
+                            LinkMaterializationKind.VertexReservation));
+                }
             }
 
             return _freeze.FreezeStorage(
@@ -722,21 +756,47 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         private static IEnumerable<LinkOperation> CreateStateBitsOperations(
             LinkStorageSymbol table,
             int addend,
-            IReadOnlyList<LinkAliasCellSymbol?> aliases)
+            IReadOnlyList<FrozenStateBitsAlias?> aliases)
         {
             for (int index = 0; index < aliases.Count; index++)
             {
-                LinkAliasCellSymbol? alias = aliases[index];
+                FrozenStateBitsAlias? alias = aliases[index];
                 if (alias is null)
                     continue;
                 yield return new AliasCellStorageLinkOperation(
                     new LinkStorageCell(
                         table,
                         checked(addend + index * GfxStateBits.SerializedSize)),
-                    alias,
-                    $"Material.StateBits[{index}].LoadBits");
+                    alias.AliasCell,
+                    $"Material.StateBits[{index}].LoadBits",
+                    alias.VertexReservation);
             }
         }
+
+        private static int CalculateStateCommandWordCount(
+            uint loadBits0,
+            uint loadBits1)
+        {
+            int fogWordCount = (loadBits1 & 0x30u) switch
+            {
+                0x30u => 0,
+                0 => 2,
+                _ => 5
+            };
+            return checked(
+                4 +
+                ((loadBits0 & 0x800u) == 0 ? 3 : 0) +
+                ((loadBits0 & 0xC000u) == 0x4000u ? 6 : 8) +
+                ((loadBits0 & 0x700u) == 0 ? 2 : 7) +
+                2 +
+                ((loadBits1 & 2u) == 0 ? 6 : 2) +
+                fogWordCount +
+                ((loadBits1 & 0x40u) == 0 ? 2 : 18));
+        }
+
+        private sealed record FrozenStateBitsAlias(
+            LinkAliasCellSymbol AliasCell,
+            LinkStorageSymbol VertexReservation);
 
         private sealed record FrozenTexture(
             LinkStorageTarget? Water,

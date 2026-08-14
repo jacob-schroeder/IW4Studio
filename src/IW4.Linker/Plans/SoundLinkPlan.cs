@@ -468,7 +468,12 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
                 operations.Add(new AliasCellStorageLinkOperation(
                     new LinkStorageCell(table, checked(baseOffset + 0x14)),
                     SoundFiles,
-                    $"{path}.SoundFiles"));
+                    $"{path}.SoundFiles",
+                    LinkStorageSymbol.SourceFree(
+                        XFileBlockType.VERTEX,
+                        SoundFile.SerializedSize,
+                        alignment: sizeof(uint),
+                        LinkMaterializationKind.VertexReservation)));
             }
             if (VolumeFalloffCurve is { } curve)
             {

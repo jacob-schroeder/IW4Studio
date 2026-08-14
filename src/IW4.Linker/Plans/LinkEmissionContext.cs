@@ -284,6 +284,8 @@ internal sealed class LinkStorageEmissionState
         _aliasCellPublications.Add(alias.AliasCell, publication);
         Output.PatchInt32(cell.SourceOffset, marker);
         Materialize(target.Storage, emitDependency);
+        if (alias.FirstPublicationMaterialization is { } materialization)
+            Materialize(materialization, emitDependency);
     }
 
     private ResolvedCell ResolveCell(LinkStorageCell cell, int width)

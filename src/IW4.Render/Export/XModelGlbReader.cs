@@ -17,6 +17,7 @@ public static class XModelGlbReader
     private const uint JsonChunkType = 0x4E4F534A;
     private const uint BinaryChunkType = 0x004E4942;
     private const int MaximumGlbLength = 1024 * 1024 * 1024;
+    private const string MaterialsSpecularExtension = "KHR_materials_specular";
     private static readonly Matrix4x4 GameToGltf = new(
         1f, 0f, 0f, 0f,
         0f, 0f, -1f, 0f,
@@ -426,6 +427,9 @@ public static class XModelGlbReader
                         ImportMaterial = new XModelImportMaterial(
                             Vector4.One,
                             BaseColorImage: null,
+                            NormalImage: null,
+                            NormalScale: 1f,
+                            DoubleSided: false,
                             XModelImportAlphaMode.Opaque,
                             AlphaCutoff: 0.5f,
                             Warnings: [])
@@ -625,14 +629,34 @@ public static class XModelGlbReader
             if (_isBlenderExport)
             {
                 warnings.Add(
-                    "Procedural Blender nodes and arbitrary Principled BSDF graphs are not represented by this import; only GLB base color and compatible alpha behavior are authored.");
+                    "Procedural Blender nodes and arbitrary Principled BSDF graphs are not represented by this import; only GLB base color, tangent normal, and compatible alpha behavior are authored.");
+            }
+            if (material.TryGetProperty("extensions", out JsonElement extensions))
+            {
+                RequireObject(extensions, $"material {index} extensions");
+                foreach (JsonProperty extension in extensions.EnumerateObject())
+                {
+                    if (extension.NameEquals(MaterialsSpecularExtension))
+                    {
+                        warnings.Add(
+                            "KHR_materials_specular properties are not imported; the selected IW4 template retains its specular behavior.");
+                        continue;
+                    }
+
+                    throw new InvalidDataException(
+                        $"GLB material {index} uses unsupported extension '{extension.Name}'.");
+                }
             }
             XModelImportImage? baseColorImage = null;
             if (material.TryGetProperty("pbrMetallicRoughness", out JsonElement pbr))
             {
                 RequireObject(pbr, $"material {index} pbrMetallicRoughness");
                 if (pbr.TryGetProperty("baseColorTexture", out JsonElement textureInfo))
-                    baseColorImage = ReadBaseColorImage(textureInfo, index, warnings);
+                    baseColorImage = ReadTextureImage(
+                        textureInfo,
+                        index,
+                        "base-color",
+                        warnings);
                 if (pbr.TryGetProperty("metallicFactor", out _))
                     warnings.Add("Metallic factor is not imported; the selected IW4 template retains its shader behavior.");
                 if (pbr.TryGetProperty("roughnessFactor", out _))
@@ -640,15 +664,31 @@ public static class XModelGlbReader
                 if (pbr.TryGetProperty("metallicRoughnessTexture", out _))
                     warnings.Add("Metallic/roughness textures are not imported.");
             }
-            if (material.TryGetProperty("normalTexture", out _))
-                warnings.Add("Normal maps are not imported yet.");
+            XModelImportImage? normalImage = null;
+            float normalScale = 1f;
+            if (material.TryGetProperty("normalTexture", out JsonElement normalTexture))
+            {
+                RequireObject(normalTexture, $"material {index} normalTexture");
+                normalImage = ReadTextureImage(
+                    normalTexture,
+                    index,
+                    "normal",
+                    warnings);
+                if (normalTexture.TryGetProperty("scale", out JsonElement scaleProperty) &&
+                    (scaleProperty.ValueKind != JsonValueKind.Number ||
+                     !scaleProperty.TryGetSingle(out normalScale) ||
+                     !float.IsFinite(normalScale)))
+                {
+                    throw new InvalidDataException(
+                        $"GLB material {index} normal scale must be finite.");
+                }
+            }
             if (material.TryGetProperty("occlusionTexture", out _))
                 warnings.Add("Occlusion maps are not imported.");
             if (material.TryGetProperty("emissiveTexture", out _) ||
                 material.TryGetProperty("emissiveFactor", out _))
                 warnings.Add("Emissive properties are not imported.");
-            if (Boolean(material, "doubleSided", defaultValue: false))
-                warnings.Add("Double-sided state is not imported; the selected IW4 template retains its cull state.");
+            bool doubleSided = Boolean(material, "doubleSided", defaultValue: false);
 
             string alphaName = material.TryGetProperty("alphaMode", out JsonElement alphaProperty)
                 ? StrictString(alphaProperty, $"material {index} alphaMode")
@@ -678,21 +718,25 @@ public static class XModelGlbReader
             return new XModelImportMaterial(
                 baseColorFactor,
                 baseColorImage,
+                normalImage,
+                normalScale,
+                doubleSided,
                 alphaMode,
                 alphaCutoff,
                 Array.AsReadOnly(warnings.Distinct(StringComparer.Ordinal).ToArray()));
         }
 
-        private XModelImportImage ReadBaseColorImage(
+        private XModelImportImage ReadTextureImage(
             JsonElement textureInfo,
             int materialIndex,
+            string usage,
             List<string> warnings)
         {
-            RequireObject(textureInfo, $"material {materialIndex} baseColorTexture");
+            RequireObject(textureInfo, $"material {materialIndex} {usage} texture");
             if (textureInfo.TryGetProperty("extensions", out _))
                 throw new InvalidDataException("GLB texture transforms and texture extensions are not supported.");
             if (OptionalInteger(textureInfo, "texCoord", 0) != 0)
-                throw new InvalidDataException("GLB base-color textures must use TEXCOORD_0.");
+                throw new InvalidDataException($"GLB {usage} textures must use TEXCOORD_0.");
             int textureIndex = Integer(textureInfo, "index", required: true);
             JsonElement[] textures = Elements(_root, "textures", required: true);
             if (textureIndex < 0 || textureIndex >= textures.Length)
@@ -710,7 +754,7 @@ public static class XModelGlbReader
             JsonElement image = images[imageIndex];
             RequireObject(image, $"image {imageIndex}");
             if (image.TryGetProperty("uri", out _))
-                throw new InvalidDataException("GLB base-color images must be embedded in a bufferView.");
+                throw new InvalidDataException($"GLB {usage} images must be embedded in a bufferView.");
             string mimeType = String(image, "mimeType", required: true);
             if (mimeType is not ("image/png" or "image/jpeg"))
                 throw new InvalidDataException(
@@ -722,7 +766,7 @@ public static class XModelGlbReader
             XModelImportImage decoded = _imageDecoder(mimeType, encoded);
             int expected = checked(decoded.Width * decoded.Height * 4);
             if (decoded.Width <= 0 || decoded.Height <= 0 || decoded.RgbaBytes.Count != expected)
-                throw new InvalidDataException("The decoded GLB base-color image has an invalid RGBA8 layout.");
+                throw new InvalidDataException($"The decoded GLB {usage} image has an invalid RGBA8 layout.");
             return decoded;
         }
 
@@ -842,10 +886,25 @@ public static class XModelGlbReader
 
         private static void RejectExtensionsAndAnimation(JsonElement root)
         {
-            if (Elements(root, "extensionsRequired", required: false).Length != 0)
-                throw new InvalidDataException("Required glTF extensions are not supported for XModel import.");
-            if (Elements(root, "extensionsUsed", required: false).Length != 0)
-                throw new InvalidDataException("glTF extensions are not supported for XModel import.");
+            string[] unsupportedRequired = Elements(root, "extensionsRequired", required: false)
+                .Select((value, index) => StrictString(value, $"extensionsRequired[{index}]"))
+                .Where(name => !string.Equals(name, MaterialsSpecularExtension, StringComparison.Ordinal))
+                .ToArray();
+            if (unsupportedRequired.Length != 0)
+            {
+                throw new InvalidDataException(
+                    $"Required glTF extensions are not supported for XModel import: {string.Join(", ", unsupportedRequired)}.");
+            }
+
+            string[] unsupportedUsed = Elements(root, "extensionsUsed", required: false)
+                .Select((value, index) => StrictString(value, $"extensionsUsed[{index}]"))
+                .Where(name => !string.Equals(name, MaterialsSpecularExtension, StringComparison.Ordinal))
+                .ToArray();
+            if (unsupportedUsed.Length != 0)
+            {
+                throw new InvalidDataException(
+                    $"glTF extensions are not supported for XModel import: {string.Join(", ", unsupportedUsed)}.");
+            }
             if (Elements(root, "animations", required: false).Length != 0)
                 throw new InvalidDataException("GLB animations cannot be imported as static XModel LOD geometry.");
         }

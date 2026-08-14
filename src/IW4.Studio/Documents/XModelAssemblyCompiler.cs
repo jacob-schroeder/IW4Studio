@@ -84,12 +84,18 @@ public static class XModelAssemblyCompiler
                                      importedMaterial,
                                      mapping.Material,
                                      out MaterialAsset? authoredMaterial,
-                                     out GfxImageAsset? authoredImage,
+                                     out GfxImageAsset? authoredColorImage,
+                                     out GfxImageAsset? authoredNormalImage,
                                      out string? blocker))
                         {
                             material = authoredMaterial!;
                             providers[AssetKey.FromDefinition(material)] = material;
-                            providers[AssetKey.FromDefinition(authoredImage!)] = authoredImage!;
+                            providers[AssetKey.FromDefinition(authoredColorImage!)] = authoredColorImage!;
+                            if (authoredNormalImage is not null)
+                            {
+                                providers[AssetKey.FromDefinition(authoredNormalImage)] =
+                                    authoredNormalImage;
+                            }
                             foreach (string warning in importedMaterial.ImportMaterial.Warnings)
                             {
                                 issues.Add(new AssetValidationIssue(
@@ -171,6 +177,14 @@ public static class XModelAssemblyCompiler
             WriteUInt32(payload, checked((uint)image.Height));
             payload.AddRange(image.RgbaBytes);
         }
+        if (imported.NormalImage is { } normalImage)
+        {
+            WriteUInt32(payload, checked((uint)normalImage.Width));
+            WriteUInt32(payload, checked((uint)normalImage.Height));
+            payload.AddRange(normalImage.RgbaBytes);
+            WriteSingle(payload, imported.NormalScale);
+        }
+        payload.Add(imported.DoubleSided ? (byte)1 : (byte)0);
         string digest = Convert.ToHexString(hash.ComputeHash(payload.ToArray()))
             .ToLowerInvariant()[..16];
         string model = SafeNamePart(modelName, "xmodel", 40);
@@ -201,6 +215,20 @@ public static class XModelAssemblyCompiler
             blocker = "Water-material templates cannot be used for imported XModel materials.";
             return false;
         }
+        if (imported.NormalImage is not null)
+        {
+            if (template.Textures.Count(row => row.Semantic == TextureSemantic.NormalMap) != 1)
+            {
+                blocker = "A GLB normal map requires exactly one IW4 NormalMap texture row.";
+                return false;
+            }
+            if (template.Textures.Any(row => row.Semantic is not (
+                    TextureSemantic.ColorMap or TextureSemantic.NormalMap)))
+            {
+                blocker = "A GLB normal map requires a clean ColorMap + NormalMap IW4 template.";
+                return false;
+            }
+        }
         if (!TryResolveTemplateAlphaMode(
                 template,
                 out XModelImportAlphaMode templateAlpha,
@@ -229,23 +257,39 @@ public static class XModelAssemblyCompiler
         XModelExportMaterial source,
         MaterialAsset template,
         out MaterialAsset? material,
-        out GfxImageAsset? image,
+        out GfxImageAsset? colorImage,
+        out GfxImageAsset? normalImage,
         out string? blocker)
     {
         material = null;
-        image = null;
+        colorImage = null;
+        normalImage = null;
         blocker = null;
         XModelImportMaterial imported = source.ImportMaterial!;
         if (!IsCompatibleImportTemplate(source, template, out blocker))
             return false;
         MaterialTextureDef colorRow = template.Textures.Single(row =>
             row.Semantic == TextureSemantic.ColorMap);
+        MaterialTextureDef? normalRow = imported.NormalImage is null
+            ? null
+            : template.Textures.Single(row =>
+                row.Semantic == TextureSemantic.NormalMap);
 
         try
         {
             string materialName = ImportedMaterialName(modelName, source, template);
-            image = CreateColorImage(materialName + "_color", imported);
-            material = CloneMaterialTemplate(template, materialName, colorRow, image);
+            colorImage = CreateColorImage(materialName + "_color", imported);
+            normalImage = imported.NormalImage is null
+                ? null
+                : CreateNormalImage(materialName + "_normal", imported);
+            material = CloneMaterialTemplate(
+                template,
+                materialName,
+                colorRow,
+                colorImage,
+                normalRow,
+                normalImage,
+                imported.DoubleSided);
             return true;
         }
         catch (Exception exception) when (exception is
@@ -253,7 +297,8 @@ public static class XModelAssemblyCompiler
         {
             blocker = exception.Message;
             material = null;
-            image = null;
+            colorImage = null;
+            normalImage = null;
             return false;
         }
     }
@@ -333,7 +378,10 @@ public static class XModelAssemblyCompiler
         MaterialAsset template,
         string name,
         MaterialTextureDef colorRow,
-        GfxImageAsset image) => new()
+        GfxImageAsset colorImage,
+        MaterialTextureDef? normalRow,
+        GfxImageAsset? normalImage,
+        bool doubleSided) => new()
     {
         Info = new MaterialInfo
         {
@@ -351,7 +399,13 @@ public static class XModelAssemblyCompiler
         TextureCount = template.TextureCount,
         ConstantCount = template.ConstantCount,
         StateBitsCount = template.StateBitsCount,
-        StateFlags = template.StateFlags,
+        StateFlags = doubleSided
+            ? template.StateFlags & ~(
+                MaterialStateFlags.CullBack |
+                MaterialStateFlags.CullFront |
+                MaterialStateFlags.CullBackShadow |
+                MaterialStateFlags.CullFrontShadow)
+            : template.StateFlags,
         CameraRegion = template.CameraRegion,
         XStringCount = template.XStringCount,
         Pad43 = template.Pad43,
@@ -366,7 +420,11 @@ public static class XModelAssemblyCompiler
             NameEnd = row.NameEnd,
             SamplerState = row.SamplerState,
             Semantic = row.Semantic,
-            Image = ReferenceEquals(row, colorRow) ? image : row.Image,
+            Image = ReferenceEquals(row, colorRow)
+                ? colorImage
+                : ReferenceEquals(row, normalRow)
+                    ? normalImage
+                    : row.Image,
             Water = row.Water
         }).ToArray(),
         Constants = template.Constants.Select(row => new MaterialConstantDef
@@ -375,16 +433,31 @@ public static class XModelAssemblyCompiler
             NameBytes = row.NameBytes.ToArray(),
             Literal = row.Literal
         }).ToArray(),
-        StateBits = template.StateBits.Select(row => new GfxStateBits
-        {
-            LoadBits = row.LoadBits.ToArray(),
-            CommandWordCount = row.CommandWordCount
-        }).ToArray(),
+        StateBits = template.StateBits.Select(row =>
+            CloneStateBits(row, doubleSided)).ToArray(),
         XStrings = template.XStrings.Select(row => new MaterialXStringEntry(
             row.Index,
             default,
             row.Value)).ToArray()
     };
+
+    private static GfxStateBits CloneStateBits(
+        GfxStateBits source,
+        bool doubleSided)
+    {
+        uint[] loadBits = source.LoadBits.ToArray();
+        if (doubleSided && loadBits.Length > 0)
+        {
+            loadBits[0] =
+                (loadBits[0] & ~GfxStateBitsEncoding.CullFaceMask) |
+                ((uint)GfxCullFace.None << GfxStateBitsEncoding.CullFaceShift);
+        }
+        return new GfxStateBits
+        {
+            LoadBits = loadBits,
+            CommandWordCount = source.CommandWordCount
+        };
+    }
 
     private static GfxImageAsset CreateColorImage(
         string name,
@@ -430,6 +503,64 @@ public static class XModelAssemblyCompiler
             TextureSemantic = TextureSemantic.ColorMap,
             Category = ImageCategory.LoadFromFile,
             UseSrgbReads = 1,
+            CardMemory = checked((uint)payload.Length),
+            BaseWidth = checked((ushort)width),
+            BaseHeight = checked((ushort)height),
+            BaseDepth = 1,
+            BaseLevelCount = 1,
+            Cached = GfxImageCached.Auto,
+            PayloadByteCount = payload.Length,
+            PayloadBytes = payload,
+            Name = name
+        };
+    }
+
+    private static GfxImageAsset CreateNormalImage(
+        string name,
+        XModelImportMaterial material)
+    {
+        XModelImportImage source = material.NormalImage ??
+            throw new ArgumentException("The imported material has no normal image.", nameof(material));
+        int width = source.Width;
+        int height = source.Height;
+        if (width is <= 0 or > ushort.MaxValue || height is <= 0 or > ushort.MaxValue)
+            throw new InvalidDataException("Imported normal image dimensions exceed IW4 limits.");
+        int pixelBytes = checked(width * height * 4);
+        if (source.RgbaBytes.Count != pixelBytes)
+            throw new InvalidDataException("Imported normal image pixels do not match its dimensions.");
+        int payloadBytes = checked((pixelBytes + 0x7f) & ~0x7f);
+        var payload = new byte[payloadBytes];
+        for (int pixel = 0; pixel < width * height; pixel++)
+        {
+            int offset = pixel * 4;
+            var normal = new Vector3(
+                (source.RgbaBytes[offset] / 255f * 2f - 1f) * material.NormalScale,
+                (source.RgbaBytes[offset + 1] / 255f * 2f - 1f) * material.NormalScale,
+                source.RgbaBytes[offset + 2] / 255f * 2f - 1f);
+            normal = normal.LengthSquared() > 0.00000001f &&
+                float.IsFinite(normal.LengthSquared())
+                    ? Vector3.Normalize(normal)
+                    : Vector3.UnitZ;
+            byte x = ToByte(normal.X * 0.5f + 0.5f);
+            payload[offset] = x;
+            payload[offset + 1] = x;
+            payload[offset + 2] = ToByte(normal.Y * 0.5f + 0.5f);
+            payload[offset + 3] = ToByte(normal.Z * 0.5f + 0.5f);
+        }
+        return new GfxImageAsset
+        {
+            Format = (byte)((byte)GfxImageBaseFormat.A8R8G8B8 | (byte)GfxImageFormatFlags.Linear),
+            LevelCount = 1,
+            DimensionCount = GfxImageDimension.TwoDimensional,
+            TextureControl1 = 0x0001aae4,
+            Width = checked((ushort)width),
+            Height = checked((ushort)height),
+            Depth = 1,
+            MemoryLocation = GfxImageMemoryLocation.Local,
+            MapType = MapType.TwoDimensional,
+            TextureSemantic = TextureSemantic.NormalMap,
+            Category = ImageCategory.LoadFromFile,
+            UseSrgbReads = 0,
             CardMemory = checked((uint)payload.Length),
             BaseWidth = checked((ushort)width),
             BaseHeight = checked((ushort)height),

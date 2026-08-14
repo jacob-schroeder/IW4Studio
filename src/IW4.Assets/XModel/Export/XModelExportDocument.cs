@@ -59,13 +59,16 @@ public sealed record XModelExportMaterial(
 }
 
 /// <summary>
-/// The initial glTF-to-IW4 material boundary. Base color and alpha are
-/// authorable; the warning list records source properties that cannot be
+/// The glTF-to-IW4 material boundary. Base color, tangent normal, and alpha
+/// are authorable; the warning list records source properties that cannot be
 /// represented by the selected IW4 template contract.
 /// </summary>
 public sealed record XModelImportMaterial(
     Vector4 BaseColorFactor,
     XModelImportImage? BaseColorImage,
+    XModelImportImage? NormalImage,
+    float NormalScale,
+    bool DoubleSided,
     XModelImportAlphaMode AlphaMode,
     float AlphaCutoff,
     IReadOnlyList<string> Warnings);

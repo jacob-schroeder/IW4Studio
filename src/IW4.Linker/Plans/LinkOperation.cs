@@ -45,7 +45,8 @@ internal sealed record DependencyOnlyLinkOperation(
 internal sealed record AliasCellStorageLinkOperation(
     LinkStorageCell Cell,
     LinkAliasCellSymbol AliasCell,
-    string FieldPath) : LinkOperation;
+    string FieldPath,
+    LinkStorageSymbol? FirstPublicationMaterialization = null) : LinkOperation;
 
 internal sealed record ScriptStringLinkOperation : LinkOperation
 {

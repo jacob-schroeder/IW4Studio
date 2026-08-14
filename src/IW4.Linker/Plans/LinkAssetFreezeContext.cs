@@ -292,6 +292,74 @@ internal sealed class LinkAssetFreezeContext
         return true;
     }
 
+    private static bool EquivalentOptionalStorage(
+        LinkStorageSymbol? existing,
+        LinkStorageSymbol? candidate)
+    {
+        if (ReferenceEquals(existing, candidate))
+            return true;
+        if (existing is null || candidate is null)
+            return false;
+
+        return EquivalentStorageGraph(
+            existing,
+            candidate,
+            new HashSet<(
+                LinkStorageSymbol Existing,
+                LinkStorageSymbol Candidate)>());
+    }
+
+    private static bool EquivalentStorageGraph(
+        LinkStorageSymbol existing,
+        LinkStorageSymbol candidate,
+        ISet<(LinkStorageSymbol Existing, LinkStorageSymbol Candidate)> visited)
+    {
+        if (ReferenceEquals(existing, candidate) ||
+            !visited.Add((existing, candidate)))
+        {
+            return true;
+        }
+
+        LinkStorageDefinition x = existing.Definition;
+        LinkStorageDefinition y = candidate.Definition;
+        if (x.Block != y.Block ||
+            x.ByteLength != y.ByteLength ||
+            x.Alignment != y.Alignment ||
+            x.Kind != y.Kind ||
+            !x.SourceTemplate.Span.SequenceEqual(y.SourceTemplate.Span) ||
+            x.Operations.Count != y.Operations.Count)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < x.Operations.Count; index++)
+        {
+            LinkOperation left = x.Operations[index];
+            LinkOperation right = y.Operations[index];
+            if (left is MaterializeStorageLinkOperation leftMaterialize &&
+                right is MaterializeStorageLinkOperation rightMaterialize)
+            {
+                if (!EquivalentStorageGraph(
+                        leftMaterialize.Storage,
+                        rightMaterialize.Storage,
+                        visited))
+                {
+                    return false;
+                }
+            }
+            else if (!ImportedStorage.Equivalent(
+                         left,
+                         right,
+                         existing,
+                         candidate))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     [DoesNotReturn]
     private static void ThrowCompetingTechniquePassTable(string fieldPath) =>
         throw new InvalidDataException(
@@ -983,7 +1051,10 @@ internal sealed class LinkAssetFreezeContext
                 x.Dependency.Key == y.Dependency.Key &&
                 x.Dependency.SerializedType == y.Dependency.SerializedType,
             (AliasCellStorageLinkOperation x, AliasCellStorageLinkOperation y) =>
-                ReferenceEquals(x.AliasCell, y.AliasCell),
+                ReferenceEquals(x.AliasCell, y.AliasCell) &&
+                EquivalentOptionalStorage(
+                    x.FirstPublicationMaterialization,
+                    y.FirstPublicationMaterialization),
             (ScriptStringLinkOperation x, ScriptStringLinkOperation y) =>
                 x.Text == y.Text,
             _ => false
@@ -1650,7 +1721,10 @@ internal sealed class LinkAssetFreezeContext
                     x.Dependency.SerializedType == y.Dependency.SerializedType,
                 (AliasCellStorageLinkOperation x, AliasCellStorageLinkOperation y) =>
                     Equivalent(x.Cell, y.Cell, leftRoot, rightRoot) &&
-                    ReferenceEquals(x.AliasCell, y.AliasCell),
+                    ReferenceEquals(x.AliasCell, y.AliasCell) &&
+                    EquivalentOptionalStorage(
+                        x.FirstPublicationMaterialization,
+                        y.FirstPublicationMaterialization),
                 (ScriptStringLinkOperation x, ScriptStringLinkOperation y) =>
                     Equivalent(x.Cell, y.Cell, leftRoot, rightRoot) &&
                     x.Text == y.Text,

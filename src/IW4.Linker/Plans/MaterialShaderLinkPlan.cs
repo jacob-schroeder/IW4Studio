@@ -18,6 +18,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         byte[] programBytes,
         byte[]? bytecode,
         LinkAliasCellSymbol? bytecodeAlias,
+        LinkStorageSymbol? vertexReservation,
         LinkAssetFreezeScope freeze)
         : base(
             key,
@@ -42,7 +43,8 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
                     new AliasCellStorageLinkOperation(
                         new LinkStorageCell(root, sizeof(int)),
                         bytecodeAlias,
-                        $"{GetDisplayName(kind)}.Bytecode")
+                        $"{GetDisplayName(kind)}.Bytecode",
+                        vertexReservation)
                 ]);
     }
 
@@ -103,6 +105,13 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
                 $"{GetDisplayName(kind)} retains a non-null bytecode pointer without semantic bytes.");
         }
 
+        string bytecodePath = $"{GetDisplayName(kind)}.Bytecode";
+        LinkStorageSymbol? vertexReservation = bytecode is null
+            ? null
+            : MaterialShaderVertexReservation.Create(
+                kind,
+                bytecode,
+                bytecodePath);
         LinkAliasCellSymbol? bytecodeAlias = bytecode is null
             ? null
             : freeze.FreezeAliasCellStorage(
@@ -111,7 +120,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
                 XFileBlockType.TEMP,
                 alignment: 16,
                 operations: null,
-                $"{GetDisplayName(kind)}.Bytecode");
+                bytecodePath);
 
         return new MaterialShaderLinkPlan(
             key,
@@ -120,6 +129,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
             programBytes,
             bytecode,
             bytecodeAlias,
+            vertexReservation,
             freeze);
     }
 

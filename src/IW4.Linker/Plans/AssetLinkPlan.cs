@@ -89,6 +89,8 @@ internal abstract class AssetLinkPlan
                         break;
                     case AliasCellStorageLinkOperation alias:
                         VisitStorage(alias.AliasCell.Target.Storage);
+                        if (alias.FirstPublicationMaterialization is { } materialization)
+                            VisitStorage(materialization);
                         break;
                     case ScriptStringLinkOperation script:
                         visitScriptString(script);
