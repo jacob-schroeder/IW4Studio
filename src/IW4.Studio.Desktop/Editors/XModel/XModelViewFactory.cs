@@ -13,9 +13,11 @@ public sealed class XModelViewFactory : IAssetEditorViewFactory
         _assetReferencePicker = assetReferencePicker;
     public XAssetType AssetType => XAssetType.XModel;
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
+        ArgumentNullException.ThrowIfNull(surface);
+        AssetEditorSession editorSession = surface as AssetEditorSession
+            ?? throw new InvalidDataException("XModel requires an authoring session.");
         var viewModel = new XModelEditorViewModel(editorSession);
         var view = _assetReferencePicker is null
             ? new XModelEditorView { DataContext = viewModel }

@@ -5,6 +5,7 @@ using IW4.Studio.Documents;
 using IW4.Studio.Desktop.Gsc;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Localize;
+using IW4.Studio.Desktop.Editors.MaterialTechset;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Editors.XModel;
@@ -15,34 +16,40 @@ namespace IW4.Studio.Desktop.Editors;
 
 /// <summary>
 /// Desktop-only result of binding an Avalonia editor control to a backend
-/// <see cref="AssetEditorSession"/>. Studio backend projects intentionally
+/// <see cref="AssetEditorSurface"/>. Studio backend projects intentionally
 /// know nothing about this type or Avalonia.
 /// </summary>
 public sealed record AssetEditorViewHost
 {
-    public AssetEditorViewHost(Control view, object viewModel)
+    public AssetEditorViewHost(
+        Control view,
+        object viewModel,
+        bool usesWorkbenchScrollViewer = true)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(viewModel);
         View = view;
         ViewModel = viewModel;
+        UsesWorkbenchScrollViewer = usesWorkbenchScrollViewer;
     }
 
     public Control View { get; }
 
     public object ViewModel { get; }
+
+    public bool UsesWorkbenchScrollViewer { get; }
 }
 
 /// <summary>
 /// Desktop extension seam for one serialized asset type. Factories may create
-/// Avalonia controls and view models, but they receive a session-owned draft
-/// façade rather than creating or retaining drafts themselves.
+/// Avalonia controls and view models from the backend-owned editable or
+/// structural surface for the selected catalog entry.
 /// </summary>
 public interface IAssetEditorViewFactory
 {
     XAssetType AssetType { get; }
 
-    AssetEditorViewHost Create(AssetEditorSession editorSession);
+    AssetEditorViewHost Create(AssetEditorSurface surface);
 }
 
 /// <summary>
@@ -69,6 +76,7 @@ public sealed class AssetEditorViewRegistry
             gscUsagesPresenter));
         registry.Register(new StringTableViewFactory());
         registry.Register(new LocalizeViewFactory());
+        registry.Register(new MaterialTechsetViewFactory());
         registry.Register(new XModelViewFactory(assetReferencePicker));
         return registry;
     }
@@ -98,11 +106,11 @@ public sealed class AssetEditorViewRegistry
             : throw new KeyNotFoundException(
                 $"No Desktop editor view factory is registered for serialized type '{assetType}'.");
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
-        return RequireFactory(editorSession.Entry.AssetType).Create(editorSession)
+        ArgumentNullException.ThrowIfNull(surface);
+        return RequireFactory(surface.Entry.AssetType).Create(surface)
             ?? throw new InvalidDataException(
-                $"Desktop editor view factory for '{editorSession.Entry.AssetType}' returned no view host.");
+                $"Desktop editor view factory for '{surface.Entry.AssetType}' returned no view host.");
     }
 }

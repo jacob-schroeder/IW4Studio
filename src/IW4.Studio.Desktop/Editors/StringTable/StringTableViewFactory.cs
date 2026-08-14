@@ -9,11 +9,16 @@ public sealed class StringTableViewFactory : IAssetEditorViewFactory
 {
     public XAssetType AssetType => XAssetType.StringTable;
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
+        ArgumentNullException.ThrowIfNull(surface);
+        AssetEditorSession editorSession = surface as AssetEditorSession
+            ?? throw new InvalidDataException("StringTable requires an authoring session.");
         var viewModel = new StringTableEditorViewModel(editorSession);
         var view = new StringTableEditorView { DataContext = viewModel };
-        return new AssetEditorViewHost(view, viewModel);
+        return new AssetEditorViewHost(
+            view,
+            viewModel,
+            usesWorkbenchScrollViewer: false);
     }
 }

@@ -44,6 +44,9 @@ public sealed class AssetEditorHostViewModel : ObservableObject
 
     public bool HasHostedEditor => HostedView is not null;
 
+    public bool UsesWorkbenchScrollViewer =>
+        ViewHost?.UsesWorkbenchScrollViewer != false;
+
     /// <summary>
     /// True only while the hosted view owns input that has not been applied
     /// to the session draft. Applied document changes are owned by the

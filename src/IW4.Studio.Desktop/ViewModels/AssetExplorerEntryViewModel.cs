@@ -60,8 +60,8 @@ public sealed class AssetExplorerEntryViewModel
             ?? string.Empty;
         OwnershipBadge = GetOwnershipBadge(entry.Origin);
         ResolutionBadge = GetResolutionBadge(entry, ProviderZone);
-        HasUsableEditor = hasBackendAdapter &&
-                          hasDesktopView &&
+        HasUsableEditor = hasDesktopView &&
+                          entry.HasDefinition &&
                           entry.ContentSource != WorkspaceAssetContentSource.Unavailable &&
                           entry.Origin is not WorkspaceAssetOrigin.NullRow and
                               not WorkspaceAssetOrigin.OpaqueRow;

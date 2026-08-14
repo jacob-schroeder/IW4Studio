@@ -28,6 +28,8 @@ public abstract class AssetEditorSurface
         Entry = entry ?? throw new ArgumentNullException(nameof(entry));
 
     public WorkspaceAssetCatalogEntry Entry { get; }
+
+    public BaseAsset? Definition => Entry.Definition;
 }
 
 public sealed class StructuralAssetInspector : AssetEditorSurface

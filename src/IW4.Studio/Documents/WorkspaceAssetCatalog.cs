@@ -92,6 +92,7 @@ public sealed class WorkspaceAssetCatalogEntry
     internal WorkspaceAssetProviderZone? ProviderZone { get; }
     public WorkspaceAssetProviderZone? ResolvedProviderZone =>
         ResolvedProvider?.Zone;
+    public bool HasDefinition => Definition is not null;
     internal IW4.Assets.Assets.BaseAsset? Definition { get; }
 }
 

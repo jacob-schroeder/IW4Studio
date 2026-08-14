@@ -256,9 +256,9 @@ public sealed partial class StudioWorkbenchView : UserControl
         if (sender is not ScrollViewer scrollViewer)
             return;
 
-        // Preserve the old full-height editor behavior for short documents,
-        // while allowing taller editor content to establish a scroll extent.
-        if (this.FindControl<ContentControl>("CenterEditorContent") is { } editorContent)
+        // Preserve full-height behavior for short documents while allowing
+        // taller editor content to establish a scroll extent.
+        if (this.FindControl<ContentControl>("CenterScrollableEditorContent") is { } editorContent)
         {
             editorContent.MinHeight = Math.Max(
                 0,

@@ -1,0 +1,197 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:materialTechset="using:IW4.Studio.Desktop.Editors.MaterialTechset"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.MaterialTechset.MaterialTechsetViewerView"
+             x:DataType="viewModels:MaterialTechsetViewerViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1120"
+             d:DesignHeight="720">
+  <UserControl.Styles>
+    <Style Selector="ListBox.techniqueRail">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.techniqueRail > ListBoxItem">
+      <Setter Property="Padding" Value="9,7" />
+      <Setter Property="Margin" Value="0,0,0,3" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.techniqueRail > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.techniqueRail > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,10,Auto,10,*">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding TechniqueCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding WorldVertexFormat, StringFormat='World vertices: {0}'}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Column="1"
+                Padding="9,4"
+                CornerRadius="4"
+                VerticalAlignment="Center"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <TextBlock Text="READ ONLY"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     LetterSpacing="0.5"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Padding="12,8"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="Auto,220,*,Auto"
+            ColumnSpacing="9">
+        <TextBlock Text="TECHNIQUE"
+                   VerticalAlignment="Center"
+                   FontSize="9"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <ComboBox Grid.Column="1"
+                  MinHeight="30"
+                  ItemsSource="{Binding Techniques}"
+                  SelectedItem="{Binding SelectedTechnique, Mode=TwoWay}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:MaterialTechniqueSlotViewModel">
+              <TextBlock Text="{Binding DisplayName}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding SelectedTechniqueSummary}"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis"
+                   FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <Button Grid.Column="3"
+                Classes="ghost"
+                MinHeight="30"
+                Padding="9,4"
+                ToolTip.Tip="Fit the complete technique graph in the viewport"
+                Click="FitGraphButton_Click">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="15" Height="15" />
+            <TextBlock Text="Fit" />
+          </StackPanel>
+        </Button>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="4"
+            MinHeight="430"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="224,1,*">
+        <Grid Margin="10"
+              RowDefinitions="Auto,8,*">
+          <TextBlock Text="TECHNIQUE SLOTS"
+                     Margin="8,2,0,0"
+                     FontSize="8"
+                     FontWeight="Bold"
+                     LetterSpacing="0.7"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <ListBox Grid.Row="2"
+                   Classes="techniqueRail"
+                   ItemsSource="{Binding Techniques}"
+                   SelectedItem="{Binding SelectedTechnique, Mode=TwoWay}"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="viewModels:MaterialTechniqueSlotViewModel">
+                <Grid ColumnDefinitions="10,8,*,Auto">
+                  <Ellipse Width="7"
+                           Height="7"
+                           VerticalAlignment="Center"
+                           Fill="{DynamicResource StudioAccentBrush}"
+                           IsVisible="{Binding IsPopulated}" />
+                  <StackPanel Grid.Column="2" Spacing="1">
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Detail}"
+                               FontSize="8"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </StackPanel>
+                  <materialIcons:MaterialIcon Grid.Column="3"
+                                              Kind="ChevronRight"
+                                              Width="13"
+                                              Height="13"
+                                              VerticalAlignment="Center"
+                                              Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+
+        <Border Grid.Column="1"
+                Background="{DynamicResource StudioBorderBrush}" />
+
+        <Grid Grid.Column="2">
+          <materialTechset:MaterialTechniqueGraphControl x:Name="TechniqueGraph"
+                                                         Slot="{Binding SelectedTechnique.Slot}" />
+          <Border HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Margin="12"
+                  Padding="8,4"
+                  CornerRadius="4"
+                  IsHitTestVisible="False"
+                  Background="#C816191F"
+                  BorderBrush="#506D7683"
+                  BorderThickness="1">
+            <TextBlock Text="DRAG · PAN   SCROLL · ZOOM"
+                       FontSize="8"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.4"
+                       Foreground="#CDD5DF" />
+          </Border>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

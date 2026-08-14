@@ -54,6 +54,9 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
 
     public Control? HostedView => CatalogEditor?.HostedView ?? StandaloneView;
 
+    public bool UsesWorkbenchScrollViewer =>
+        CatalogEditor?.UsesWorkbenchScrollViewer != false;
+
     public ImageFilePakEntryViewModel? StreamedImage { get; }
 
     public string Title => Selection.DisplayName;

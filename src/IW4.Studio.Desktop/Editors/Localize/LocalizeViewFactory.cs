@@ -9,9 +9,11 @@ public sealed class LocalizeViewFactory : IAssetEditorViewFactory
 {
     public XAssetType AssetType => XAssetType.Localize;
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
+        ArgumentNullException.ThrowIfNull(surface);
+        AssetEditorSession editorSession = surface as AssetEditorSession
+            ?? throw new InvalidDataException("Localize requires an authoring session.");
         var viewModel = new LocalizeEditorViewModel(editorSession);
         var view = new LocalizeEditorView { DataContext = viewModel };
         return new AssetEditorViewHost(view, viewModel);

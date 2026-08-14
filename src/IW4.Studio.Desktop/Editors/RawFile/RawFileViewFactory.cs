@@ -33,9 +33,11 @@ public sealed class RawFileViewFactory : IAssetEditorViewFactory
 
     public XAssetType AssetType => XAssetType.RawFile;
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
+        ArgumentNullException.ThrowIfNull(surface);
+        AssetEditorSession editorSession = surface as AssetEditorSession
+            ?? throw new InvalidDataException("RawFile requires an authoring session.");
         var viewModel = new RawFileEditorViewModel(
             editorSession,
             _gscAnalyzer,
@@ -43,6 +45,9 @@ public sealed class RawFileViewFactory : IAssetEditorViewFactory
             _gscSourceNavigator,
             _gscUsagesPresenter);
         var view = new RawFileEditorView { DataContext = viewModel };
-        return new AssetEditorViewHost(view, viewModel);
+        return new AssetEditorViewHost(
+            view,
+            viewModel,
+            usesWorkbenchScrollViewer: false);
     }
 }

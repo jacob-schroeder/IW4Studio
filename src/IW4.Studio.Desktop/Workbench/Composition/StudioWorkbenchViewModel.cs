@@ -370,6 +370,22 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public bool HasSelectedHostedView => SelectedHostedView is not null;
 
+    public Control? SelectedScrollableHostedView =>
+        SelectedEditorTab is { UsesWorkbenchScrollViewer: true }
+            ? SelectedHostedView
+            : null;
+
+    public bool HasSelectedScrollableHostedView =>
+        SelectedScrollableHostedView is not null;
+
+    public Control? SelectedFullHeightHostedView =>
+        SelectedEditorTab is { UsesWorkbenchScrollViewer: false }
+            ? SelectedHostedView
+            : null;
+
+    public bool HasSelectedFullHeightHostedView =>
+        SelectedFullHeightHostedView is not null;
+
     public string SelectedName =>
         SelectedEditorTab?.Title ?? string.Empty;
 
@@ -955,6 +971,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasEditorFallback));
         OnPropertyChanged(nameof(SelectedHostedView));
         OnPropertyChanged(nameof(HasSelectedHostedView));
+        OnPropertyChanged(nameof(SelectedScrollableHostedView));
+        OnPropertyChanged(nameof(HasSelectedScrollableHostedView));
+        OnPropertyChanged(nameof(SelectedFullHeightHostedView));
+        OnPropertyChanged(nameof(HasSelectedFullHeightHostedView));
         OnPropertyChanged(nameof(SelectedName));
         OnPropertyChanged(nameof(SelectedKind));
         OnPropertyChanged(nameof(SelectedAccessBadge));

@@ -33,9 +33,11 @@ public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
 
     public XAssetType AssetType => XAssetType.Menu;
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
+        ArgumentNullException.ThrowIfNull(surface);
+        AssetEditorSession editorSession = surface as AssetEditorSession
+            ?? throw new InvalidDataException("Menu requires an authoring session.");
         var viewModel = new MenuEditorViewModel(
             editorSession,
             _coordinator,
@@ -74,9 +76,11 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
 
     public XAssetType AssetType => XAssetType.MenuFile;
 
-    public AssetEditorViewHost Create(AssetEditorSession editorSession)
+    public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
-        ArgumentNullException.ThrowIfNull(editorSession);
+        ArgumentNullException.ThrowIfNull(surface);
+        AssetEditorSession editorSession = surface as AssetEditorSession
+            ?? throw new InvalidDataException("MenuFile requires an authoring session.");
         var viewModel = new MenuFileEditorViewModel(
             editorSession,
             _coordinator,

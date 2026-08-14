@@ -344,15 +344,12 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         }
 
         AssetEditorSurface surface = _authoringRegistry.CreateSurface(EditingSession, entry.Entry);
-        if (surface is not AssetEditorSession editorSession)
-            return new AssetEditorHostViewModel(entry, surface, viewHost: null);
-
         if (_viewRegistry.TryGetFactory(entry.AssetType, out _))
         {
             return new AssetEditorHostViewModel(
                 entry,
-                editorSession,
-                _viewRegistry.Create(editorSession));
+                surface,
+                _viewRegistry.Create(surface));
         }
 
         return new AssetEditorHostViewModel(
