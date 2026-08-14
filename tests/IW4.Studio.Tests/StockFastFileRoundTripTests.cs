@@ -120,7 +120,8 @@ public sealed class StockFastFileRoundTripTests
 
     [Theory]
     [MemberData(nameof(StockFastFiles))]
-    public void Canonical_save_as_reloads_as_the_same_semantic_zone(string sourcePath)
+    public void Canonical_save_as_preserves_stock_zone_and_reaches_a_fixed_point(
+        string sourcePath)
     {
         string temporaryDirectory = CreateTemporaryDirectory();
         FileFingerprint? sourceBefore = null;
@@ -137,6 +138,7 @@ public sealed class StockFastFileRoundTripTests
             using FastFileWorkspace workspace = documentService.Open(
                 new FastFileDocumentOpenRequest(sourcePath, Isolated.Instance));
             ZoneLinkRequest sourceRequest = workspace.InitialLinkRequest;
+            HeaderEnvelope sourceHeader = CaptureHeaderEnvelope(workspace.LoadedZone);
 
             using (var editingSession = new FastFileEditingSession(workspace))
             {
@@ -156,6 +158,16 @@ public sealed class StockFastFileRoundTripTests
 
             using FastFileWorkspace candidate = documentService.Open(
                 new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            AssertByteSequencesMatch(
+                workspace.LoadedZone.ZoneBytes,
+                candidate.LoadedZone.ZoneBytes,
+                $"Canonical decoded zone mismatch for '{sourcePath}'");
+            AssertHeaderEnvelopeMatches(
+                sourceHeader,
+                CaptureHeaderEnvelope(candidate.LoadedZone),
+                sourcePath,
+                destinationPath);
+
             ZoneLinkRequest candidateRequest = candidate.InitialLinkRequest;
             ZoneLinkResult actual = new ZoneLinker().Link(candidateRequest);
             AssertLinkSucceeded(actual, $"Canonical candidate relink failed for '{sourcePath}'");
@@ -331,7 +343,8 @@ public sealed class StockFastFileRoundTripTests
                     new LinkAssetPool([new LinkAssetProviderSource(original)]),
                     [CreateOwnedRoot("imported-edit", original)],
                     languageMask: 1,
-                    selectedLanguageMask: 1),
+                    selectedLanguageMask: 1,
+                    scriptStrings: []),
                 sourcePath);
 
             using (FastFileWorkspace importedWorkspace = documentService.Open(
@@ -438,7 +451,8 @@ public sealed class StockFastFileRoundTripTests
                         CreateOwnedRoot("light-b", lightB)
                     ],
                     languageMask: 1,
-                    selectedLanguageMask: 1),
+                    selectedLanguageMask: 1,
+                    scriptStrings: []),
                 destinationPath);
 
             var documentService = new FastFileDocumentService();
@@ -494,7 +508,8 @@ public sealed class StockFastFileRoundTripTests
                     new LinkAssetPool([new LinkAssetProviderSource(animation)]),
                     [CreateOwnedRoot("animation", animation)],
                     languageMask: 1,
-                    selectedLanguageMask: 1),
+                    selectedLanguageMask: 1,
+                    scriptStrings: []),
                 destinationPath);
 
             var documentService = new FastFileDocumentService();
@@ -582,7 +597,8 @@ public sealed class StockFastFileRoundTripTests
                     ]),
                     [CreateOwnedRoot("streamed-image", image)],
                     languageMask: 3,
-                    selectedLanguageMask: 2),
+                    selectedLanguageMask: 2,
+                    scriptStrings: []),
                 destinationPath);
 
             Assert.True(File.Exists(destinationPath));
@@ -1269,7 +1285,8 @@ public sealed class StockFastFileRoundTripTests
                     pool,
                     roots,
                     loaded.Header.LanguageMask,
-                    loaded.Header.SelectedLanguageMask);
+                    loaded.Header.SelectedLanguageMask,
+                    loaded.XAssetList.ScriptStrings.Select(entry => entry.Value));
                 ZoneLinkResult link = new ZoneLinker().Link(request);
                 AssertLinkSucceeded(
                     link,

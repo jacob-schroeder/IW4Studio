@@ -102,7 +102,8 @@ public sealed class FastFileDocumentService
             targetAssets,
             target.LoadResult.FreezeLinkRoots(),
             target.LoadResult.Header.LanguageMask,
-            target.LoadResult.Header.SelectedLanguageMask);
+            target.LoadResult.Header.SelectedLanguageMask,
+            target.LoadResult.XAssetList.ScriptStrings.Select(entry => entry.Value));
         return new FastFileWorkspace(
             new FastFileDocument(
                 request,
@@ -140,7 +141,8 @@ public sealed class FastFileDocumentService
             new LinkAssetPool(Array.Empty<LinkAssetProviderSource>()),
             Array.Empty<LinkRoot>(),
             languageMask,
-            selectedLanguageMask);
+            selectedLanguageMask,
+            scriptStrings: []);
         return new FastFileWorkspace(new FastFileDocument(linkRequest));
     }
 }

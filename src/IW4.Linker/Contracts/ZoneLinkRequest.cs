@@ -14,15 +14,18 @@ namespace IW4.Linker.Contracts;
 public sealed class ZoneLinkRequest
 {
     private readonly IReadOnlyList<LinkRoot> _roots;
+    private readonly IReadOnlyList<string?> _scriptStrings;
 
     public ZoneLinkRequest(
         LinkAssetPool assets,
         IEnumerable<LinkRoot> roots,
         uint languageMask,
-        uint selectedLanguageMask)
+        uint selectedLanguageMask,
+        IEnumerable<string?> scriptStrings)
     {
         Assets = assets ?? throw new ArgumentNullException(nameof(assets));
         ArgumentNullException.ThrowIfNull(roots);
+        ArgumentNullException.ThrowIfNull(scriptStrings);
         if (!DbLanguageMask.IsSupported(languageMask))
         {
             throw new ArgumentOutOfRangeException(
@@ -52,12 +55,21 @@ public sealed class ZoneLinkRequest
         }
 
         _roots = Array.AsReadOnly(copied);
+        string?[] copiedScriptStrings = scriptStrings.ToArray();
+        if (copiedScriptStrings.Length > ushort.MaxValue + 1)
+        {
+            throw new ArgumentException(
+                "Script-string tables cannot exceed the 16-bit zone-local index range.",
+                nameof(scriptStrings));
+        }
+        _scriptStrings = Array.AsReadOnly(copiedScriptStrings);
         LanguageMask = languageMask;
         SelectedLanguageMask = selectedLanguageMask;
     }
 
     public LinkAssetPool Assets { get; }
     public IReadOnlyList<LinkRoot> Roots => _roots;
+    public IReadOnlyList<string?> ScriptStrings => _scriptStrings;
     public uint LanguageMask { get; }
     public uint SelectedLanguageMask { get; }
 

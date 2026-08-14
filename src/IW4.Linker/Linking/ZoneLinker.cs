@@ -127,7 +127,8 @@ public sealed class ZoneLinker
         ValidateAssetRowPublicationOrder(assetRows, dependencyClosure);
         ScriptStringTable scriptStrings = BuildScriptStringTable(
             assetRows,
-            dependencyClosure);
+            dependencyClosure,
+            request.ScriptStrings);
 
         var output = new ZoneEmissionWriter();
         int headerSourceOffset = output.ReserveSource(XFile.SerializedSize);
@@ -1144,10 +1145,17 @@ public sealed class ZoneLinker
 
     private static ScriptStringTable BuildScriptStringTable(
         IEnumerable<AssetRow> rows,
-        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure)
+        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure,
+        IReadOnlyList<string?> sourceValues)
     {
-        var values = new List<string?>();
+        var values = new List<string?>(sourceValues);
         var indices = new Dictionary<string, ushort>(StringComparer.Ordinal);
+        for (int index = 1; index < sourceValues.Count; index++)
+        {
+            string? value = sourceValues[index];
+            if (value is not null)
+                indices.TryAdd(value, checked((ushort)index));
+        }
         var visited = new HashSet<ProviderSymbol>();
         var visitedStorage = new HashSet<LinkStorageSymbol>(
             ReferenceEqualityComparer.Instance);

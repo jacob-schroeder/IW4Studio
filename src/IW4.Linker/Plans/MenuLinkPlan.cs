@@ -337,7 +337,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.WriteInt32(item.GameMsgWindowMode);
             writer.Skip(sizeof(int));
             writer.WriteInt32((int)item.ItemFlags);
-            writer.Skip(sizeof(int)); // Runtime parent is patched by DB_AddXAsset.
+            writer.WriteInt32(item.RuntimeParentPointer);
             writer.Skip(8 * sizeof(int));
             writer.Skip(2 * sizeof(int));
             writer.Skip(sizeof(int));
@@ -346,7 +346,9 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.Skip(sizeof(int));
             writer.WriteSingle(item.Special);
             WriteInts(writer, item.CursorPos, 4, $"{fieldPath}.CursorPos");
-            writer.Skip(sizeof(int));
+            writer.WriteInt32(item.TypeData.Value is NoItemDefData noData
+                ? noData.Reserved
+                : 0);
             writer.WriteInt32(item.ImageTrack);
             writer.WriteInt32(item.LoadedFloatExpressions.Count);
             writer.Skip(5 * sizeof(int));
@@ -1057,7 +1059,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                     if (!Enum.IsDefined((OperationEnum)entry.OperationCode))
                         throw new InvalidDataException($"{fieldPath}[{index}].OperationCode is unsupported.");
                     writer.WriteInt32(entry.OperationCode);
-                    writer.Skip(sizeof(int)); // Ignored operator-tail word.
+                    writer.WriteInt32(entry.OperatorTail);
                 }
                 else
                 {
@@ -1301,9 +1303,8 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
                         throw new InvalidDataException(
                             $"{fieldPath}.TypeData must retain the {item.Type} union arm, even when its pointer is null.");
                     }
-                    // IW4 never traverses the generic data arm. The source
-                    // word is non-semantic for item types without a typed arm,
-                    // so canonical output deliberately keeps the template zero.
+                    // IW4 never traverses the generic data arm. Its preserved
+                    // source word is already present in the item template.
                     break;
                 default:
                     throw new InvalidDataException($"{fieldPath}.TypeData has an unsupported union arm.");

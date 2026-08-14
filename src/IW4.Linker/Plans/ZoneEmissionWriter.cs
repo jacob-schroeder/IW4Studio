@@ -10,6 +10,8 @@ namespace IW4.Linker.Plans;
 internal sealed class ZoneEmissionWriter
 {
     private const int MaximumBlockExtent = 0x0fffffff;
+    private const uint XAssetListTempAllocationSize = 0x10;
+    private const uint VertexAllocationSlack = 0x1000;
 
     private readonly MemoryStream _source = new();
     private readonly int[] _cursors = new int[XFile.BlockCount];
@@ -120,7 +122,16 @@ internal sealed class ZoneEmissionWriter
     public uint[] GetBlockSizes()
     {
         EnsureBalanced();
-        return _highWater.Select(value => checked((uint)value)).ToArray();
+        uint[] blockSizes = _highWater.Select(value => checked((uint)value)).ToArray();
+        int tempIndex = (int)XFileBlockType.TEMP;
+
+        // The studio linker includes the XAssetList root consumed before captured TEMP allocations.
+        blockSizes[tempIndex] = checked(blockSizes[tempIndex] + XAssetListTempAllocationSize);
+
+        // The studio linker retains a fixed safety reserve above generated runtime allocations.
+        int vertexIndex = (int)XFileBlockType.VERTEX;
+        blockSizes[vertexIndex] = checked(blockSizes[vertexIndex] + VertexAllocationSlack);
+        return blockSizes;
     }
 
     public byte[] CompletePadded(int alignment)

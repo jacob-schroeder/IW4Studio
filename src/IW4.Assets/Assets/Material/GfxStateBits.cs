@@ -13,8 +13,8 @@ public sealed class GfxStateBits
     public IReadOnlyList<uint> LoadBits { get; init; } = [];
 
     /// <summary>
-    /// Number of compiled RSX command words, excluding the appended return
-    /// command.
+    /// Runtime output used for the compiled RSX command-word count. Stock
+    /// fastfiles initialize this serialized slot to zero.
     /// </summary>
     public uint CommandWordCount { get; init; }
 }

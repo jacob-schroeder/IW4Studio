@@ -651,7 +651,8 @@ public sealed class FastFileEditingSession : IDisposable
             assets,
             roots,
             previous.LanguageMask,
-            previous.SelectedLanguageMask);
+            previous.SelectedLanguageMask,
+            previous.ScriptStrings);
         var revision = new FastFileSaveRevision(
             checked(_revision.Revision + 1),
             _revision.SourcePath,
