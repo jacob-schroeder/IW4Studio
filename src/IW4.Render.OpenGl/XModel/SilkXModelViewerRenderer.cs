@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Techniques;
 using System.Numerics;
@@ -76,7 +77,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private readonly uint _wireframeProgram;
     private readonly int _wireframeViewProjectionLocation;
     private readonly int _wireframeColorLocation;
-    private readonly List<AuthoredDrawGroup> _drawGroups = [];
+    private readonly List<MapRenderEditorDrawGroup<AuthoredDraw>>
+        _drawGroups = [];
     private WireframeGeometry _wireframe;
     private WireframeGeometry _collisionWireframe;
     private uint _neutralModelLightingAtlas;
@@ -141,8 +143,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         {
             _wireframe = CreateWireframeGeometry(lod.Surfaces);
             _collisionWireframe = CreateWireframeGeometry(lod.Surfaces, collisionOnly: true);
-            foreach (XModelRenderSurface surface in lod.Surfaces)
+            for (int surfaceOrdinal = 0;
+                 surfaceOrdinal < lod.Surfaces.Count;
+                 surfaceOrdinal++)
             {
+                XModelRenderSurface surface =
+                    lod.Surfaces[surfaceOrdinal];
                 string identity =
                     $"surface{surface.GeometrySurfaceIndex}:{surface.MaterialName}";
                 if (!surface.AuthoredGroupReady ||
@@ -174,6 +180,27 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 {
                     foreach (PreparedPass pass in prepared)
                         draws.Add(CreateAuthoredDraw(surface, pass));
+                    MapRenderEditorDrawBucketClassification
+                        classification =
+                            MapRenderEditorDrawBucketClassifier.Classify(
+                                prepared
+                                    .Select(pass => pass.Packet.State)
+                                    .ToArray());
+                    MapRenderEditorDrawGroup<AuthoredDraw> drawGroup =
+                        surface.Bounds.IsValid
+                            ? MapRenderEditorDrawGroup<AuthoredDraw>
+                                .FromBounds(
+                                    surfaceOrdinal,
+                                    classification,
+                                    draws,
+                                    surface.Bounds)
+                            : MapRenderEditorDrawGroup<AuthoredDraw>
+                                .FromExplicitDepth(
+                                    surfaceOrdinal,
+                                    classification,
+                                    draws,
+                                    0f);
+                    _drawGroups.Add(drawGroup);
                 }
                 catch
                 {
@@ -181,10 +208,6 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         DeleteAuthoredDraw(draw);
                     throw;
                 }
-
-                _drawGroups.Add(new AuthoredDrawGroup(
-                    packets[0].GroupId,
-                    draws.ToArray()));
                 string[] viewerInputs = prepared
                     .SelectMany(pass => pass.MaterialSamplers)
                     .Where(binding => string.Equals(
@@ -275,16 +298,23 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             return;
         }
 
-        foreach (AuthoredDrawGroup group in _drawGroups)
+        IReadOnlyList<MapRenderEditorDrawGroup<AuthoredDraw>>
+            sortedDrawGroups = MapRenderEditorDrawQueueSorter.Sort(
+                _drawGroups,
+                camera.Position,
+                camera.Forward);
+        foreach (MapRenderEditorDrawGroup<AuthoredDraw> group in
+                 sortedDrawGroups)
         {
-            foreach (AuthoredDraw draw in group.Draws)
+            int groupId = group.AuthoredPasses[0].GroupId;
+            foreach (AuthoredDraw draw in group.AuthoredPasses)
             {
                 if (!_authoredMaterials.TryApplyRenderState(
                         draw.State,
                         out string? stateBlocker))
                 {
                     throw new InvalidOperationException(
-                        $"Preflighted XModel authored group {group.GroupId} lost its render-state contract: {stateBlocker}");
+                        $"Preflighted XModel authored group {groupId} lost its render-state contract: {stateBlocker}");
                 }
                 _state.UseProgram(draw.Program.Handle);
                 if (!_authoredMaterials.TryApplyConstantBindings(
@@ -295,7 +325,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         out string? constantBlocker))
                 {
                     throw new InvalidOperationException(
-                        $"Preflighted XModel authored group {group.GroupId} lost its constant contract: {constantBlocker}");
+                        $"Preflighted XModel authored group {groupId} lost its constant contract: {constantBlocker}");
                 }
                 _authoredMaterials.BindMaterialSamplers(
                     draw.MaterialSamplerBindings);
@@ -462,7 +492,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             .Where(row => row is not
                 (FrameDirectCodeConstants.GameTimeRowIndex or
                  FrameDirectCodeConstants
-                     .StaticModelBaseLightingCoordsRowIndex))
+                     .StaticModelBaseLightingCoordsRowIndex or
+                 FrameDirectCodeConstants
+                     .StaticModelLightProbeAmbientRowIndex))
             .ToArray();
         if (unsupportedDynamicRows.Length != 0)
         {
@@ -480,18 +512,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         execution.ConstantDestinations,
                         execution.EmbeddedVertexConstants,
                         directPlan);
-        if (!vertexResult.IsReady)
+        if (!vertexResult.IsReady ||
+            vertexResult.Plan is not { } vertexPlan)
         {
             blocker = "VERTEX_CONSTANTS:" +
                 string.Join('|', vertexResult.Blockers);
-            return false;
-        }
-        if (vertexResult.Plan!.Bindings.Any(binding => binding.Kind ==
-            TranslatedProgramVertexConstantBindingKind
-                .PerInstanceStaticModelLightProbeAmbient))
-        {
-            blocker =
-                "MODEL_LIGHTING_LIGHT_PROBE_AMBIENT_ROW_0x3A_UNAVAILABLE";
             return false;
         }
         ushort[] unsupportedDynamicPixelRows = execution
@@ -522,21 +547,31 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 (programBlocker ?? "LINK_OR_LOWERING_FAILED");
             return false;
         }
+        Vector4 neutralLightProbeAmbient =
+            MapRenderStaticModelLightingAtlasBuilder
+                .DecodeLightProbeAmbientRow(
+                    GfxColor.FromRgba(128, 128, 128, 0));
         if (!_authoredMaterials.TryCreateConstantBindings(
                 execution,
                 program,
                 directPlan,
-                vertexResult.Plan,
+                vertexPlan,
                 out GlRsxConstantBinding[] constantBindings,
                 out string? constantBlocker,
-                vertexConstantOverrides: vertexResult.Plan.Bindings
-                    .Where(binding => binding.Kind ==
+                vertexConstantOverrides: vertexPlan.Bindings
+                    .Where(binding => binding.Kind is
                         TranslatedProgramVertexConstantBindingKind
-                            .PerInstanceStaticModelBaseLightingCoords)
+                            .PerInstanceStaticModelBaseLightingCoords or
+                        TranslatedProgramVertexConstantBindingKind
+                            .PerInstanceStaticModelLightProbeAmbient)
                     .ToDictionary(
                         binding => (int)binding.Destination,
-                        _ => ModelLightingAtlasLayout.EntryCoordinates(
-                            NeutralDynamicLightingEntry))))
+                        binding => binding.Kind ==
+                            TranslatedProgramVertexConstantBindingKind
+                                .PerInstanceStaticModelBaseLightingCoords
+                            ? ModelLightingAtlasLayout.EntryCoordinates(
+                                NeutralDynamicLightingEntry)
+                            : neutralLightProbeAmbient)))
         {
             blocker = "OPENGL_CONSTANT_BINDINGS:" + constantBlocker;
             return false;
@@ -788,6 +823,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             }
 
             return new AuthoredDraw(
+                prepared.Packet.GroupId,
                 vertexArray,
                 vertexBuffer,
                 indexBuffer,
@@ -1588,9 +1624,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 
     private void DeleteUploadedResources()
     {
-        foreach (AuthoredDrawGroup group in _drawGroups)
+        foreach (MapRenderEditorDrawGroup<AuthoredDraw> group in
+                 _drawGroups)
         {
-            foreach (AuthoredDraw draw in group.Draws)
+            foreach (AuthoredDraw draw in group.AuthoredPasses)
                 DeleteAuthoredDraw(draw);
         }
         _drawGroups.Clear();
@@ -1663,11 +1700,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         ShaderRuntimeSamplerRequirement[]
             RuntimeSamplerRequirements);
 
-    private sealed record AuthoredDrawGroup(
-        int GroupId,
-        AuthoredDraw[] Draws);
-
     private readonly record struct AuthoredDraw(
+        int GroupId,
         uint VertexArray,
         uint VertexBuffer,
         uint IndexBuffer,
