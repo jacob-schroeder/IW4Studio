@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Numerics;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.FastFiles.Zone;
 
@@ -10,6 +9,10 @@ internal static class MaterialShaderVertexReservation
     private const int HeaderSize = 0x20;
     private const int ParameterSize = 0x30;
     private const int DescriptorSize = 0x18;
+    private const int PixelCommandReservationSize = 0x48;
+    private const int VertexCommandReservationSize = 0x2bc;
+    private const int VertexExtendedCommandReservationSize = 0x4d8;
+    private const int VertexExtendedDefaultWordThreshold = 12;
 
     public static LinkStorageSymbol Create(
         MaterialShaderKind kind,
@@ -63,7 +66,6 @@ internal static class MaterialShaderVertexReservation
                     bytecode,
                     parameterCount,
                     parameterTableOffset,
-                    descriptorOffset,
                     uploadSize,
                     fieldPath),
                 _ => throw new InvalidDataException(
@@ -123,30 +125,19 @@ internal static class MaterialShaderVertexReservation
                     fieldPath));
         }
 
-        int quotient = instructionCount >> 3;
-        int remainder = instructionCount & 7;
-        int commandWordCount = checked(
-            7 +
-            checked(33 * quotient) +
-            (remainder == 0 ? 0 : checked(1 + 4 * remainder)) +
-            defaultWords);
-        int allocationSize = checked(
-            sizeof(uint) * checked(commandWordCount + 1));
-        return VertexReservation(allocationSize);
+        return VertexReservation(
+            defaultWords > VertexExtendedDefaultWordThreshold
+                ? VertexExtendedCommandReservationSize
+                : VertexCommandReservationSize);
     }
 
     private static LinkStorageSymbol CreatePixel(
         ReadOnlySpan<byte> bytecode,
         int parameterCount,
         int parameterTableOffset,
-        int descriptorOffset,
         int uploadSize,
         string fieldPath)
     {
-        ushort mask = ReadUInt16(bytecode, descriptorOffset + 0x0c);
-        int programSize = checked(
-            20 + 8 * BitOperations.PopCount((uint)mask));
-
         int patchCount = 0;
         for (int index = 0; index < parameterCount; index++)
         {
@@ -216,7 +207,7 @@ internal static class MaterialShaderVertexReservation
             ]);
         return LinkStorageSymbol.SourceFree(
             XFileBlockType.VERTEX,
-            programSize,
+            PixelCommandReservationSize,
             alignment: sizeof(uint),
             LinkMaterializationKind.VertexReservation,
             _ =>
@@ -307,7 +298,4 @@ internal static class MaterialShaderVertexReservation
 
     private static uint ReadUInt32(ReadOnlySpan<byte> source, int offset) =>
         BinaryPrimitives.ReadUInt32BigEndian(source.Slice(offset, sizeof(uint)));
-
-    private static ushort ReadUInt16(ReadOnlySpan<byte> source, int offset) =>
-        BinaryPrimitives.ReadUInt16BigEndian(source.Slice(offset, sizeof(ushort)));
 }
