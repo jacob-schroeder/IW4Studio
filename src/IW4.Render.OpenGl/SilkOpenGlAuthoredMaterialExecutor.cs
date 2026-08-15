@@ -141,7 +141,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 out string fixedFunctionEpilogue))
         {
             blocker =
-                $"renderStateAlphaTest=unsupportedTuple(func=0x{state.AlphaFunc:X4},ref=0x{state.AlphaRef:X2})";
+                $"renderStateAlphaTest=unsupportedTuple(func=0x{(uint)state.AlphaFunc:X4},ref=0x{state.AlphaRef:X2})";
             return default;
         }
 
@@ -521,10 +521,21 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
 
     internal bool TryApplyRenderState(
         RenderState state,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         out string? blocker)
     {
         if (!TryValidateState(state, out blocker))
             return false;
+        MapRenderOpenGlStencilTargetContract? activeStencilTarget = null;
+        if (state.Stencil.Enabled)
+        {
+            if (stencilTargetContract is null)
+            {
+                blocker = "renderStateStencil=SCENE_D24S8_TARGET_REQUIRED";
+                return false;
+            }
+            activeStencilTarget = stencilTargetContract;
+        }
 
         _state.SetEnabled(EnableCap.FramebufferSrgb, false);
         _state.FrontFace(FrontFaceDirection.Ccw);
@@ -538,7 +549,22 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             _state.SetEnabled(EnableCap.DepthTest, false);
         }
         _state.DepthMask(state.DepthWriteEnabled);
-        _state.SetEnabled(EnableCap.StencilTest, false);
+        if (activeStencilTarget is { } stencilTarget)
+        {
+            ApplyStencilFace(
+                stencilTarget.Ps3FrontHostFace,
+                stencilTarget.FrontWriteMask,
+                state.Stencil.Front);
+            ApplyStencilFace(
+                stencilTarget.Ps3BackHostFace,
+                stencilTarget.BackWriteMask,
+                state.Stencil.Back);
+            _state.SetEnabled(EnableCap.StencilTest, true);
+        }
+        else
+        {
+            _state.SetEnabled(EnableCap.StencilTest, false);
+        }
 
         switch (Cull.Resolve(state))
         {
@@ -598,6 +624,24 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         return true;
     }
 
+    private void ApplyStencilFace(
+        TriangleFace hostFace,
+        uint writeMask,
+        StencilFaceState face)
+    {
+        _state.StencilMaskSeparate(hostFace, writeMask);
+        _state.StencilFuncSeparate(
+            hostFace,
+            ToStencilFunction(face.Function),
+            face.Reference,
+            face.CompareMask);
+        _state.StencilOpSeparate(
+            hostFace,
+            ToStencilOperation(face.FailOperation),
+            ToStencilOperation(face.DepthFailOperation),
+            ToStencilOperation(face.PassOperation));
+    }
+
     internal void Clear()
     {
         _programs.Clear();
@@ -631,22 +675,16 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             blocker = string.Join('|', sharedBlockers);
             return false;
         }
-        if (state.Stencil.Enabled)
-        {
-            blocker =
-                "renderStateStencil=MRT_WRITE_MASK_AND_FACE_CONVENTION_UNAVAILABLE";
-            return false;
-        }
         if (!Enum.IsDefined(state.PolygonMode))
         {
             blocker =
-                $"renderStatePolygonMode=unsupportedValue(0x{state.PolygonMode:X4})";
+                $"renderStatePolygonMode=unsupportedValue(0x{(uint)state.PolygonMode:X4})";
             return false;
         }
         if (state.DepthTestEnabled && !IsDepthFunction(state.DepthFunc))
         {
             blocker =
-                $"renderStateDepthFunc=unsupportedValue(0x{state.DepthFunc:X4})";
+                $"renderStateDepthFunc=unsupportedValue(0x{(uint)state.DepthFunc:X4})";
             return false;
         }
         if (state.BlendEnabled &&
@@ -658,7 +696,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
              !IsBlendFactor(state.BlendDestinationAlpha)))
         {
             blocker =
-                $"renderStateBlend=unsupportedTuple(eqRgb=0x{state.BlendEquationRgb:X4},eqA=0x{state.BlendEquationAlpha:X4},srcRgb=0x{state.BlendSourceRgb:X4},dstRgb=0x{state.BlendDestinationRgb:X4},srcA=0x{state.BlendSourceAlpha:X4},dstA=0x{state.BlendDestinationAlpha:X4})";
+                $"renderStateBlend=unsupportedTuple(eqRgb=0x{(uint)state.BlendEquationRgb:X4},eqA=0x{(uint)state.BlendEquationAlpha:X4},srcRgb=0x{(uint)state.BlendSourceRgb:X4},dstRgb=0x{(uint)state.BlendDestinationRgb:X4},srcA=0x{(uint)state.BlendSourceAlpha:X4},dstA=0x{(uint)state.BlendDestinationAlpha:X4})";
             return false;
         }
         return true;
@@ -721,6 +759,36 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         RsxCompareFunction.Always => DepthFunction.Always,
         _ => throw new ArgumentOutOfRangeException(nameof(value))
     };
+
+    private static StencilFunction ToStencilFunction(
+        RsxCompareFunction value) =>
+        value switch
+        {
+            RsxCompareFunction.Never => StencilFunction.Never,
+            RsxCompareFunction.Less => StencilFunction.Less,
+            RsxCompareFunction.Equal => StencilFunction.Equal,
+            RsxCompareFunction.LessThanOrEqual => StencilFunction.Lequal,
+            RsxCompareFunction.Greater => StencilFunction.Greater,
+            RsxCompareFunction.NotEqual => StencilFunction.Notequal,
+            RsxCompareFunction.GreaterThanOrEqual => StencilFunction.Gequal,
+            RsxCompareFunction.Always => StencilFunction.Always,
+            _ => throw new ArgumentOutOfRangeException(nameof(value))
+        };
+
+    private static StencilOp ToStencilOperation(
+        RsxStencilOperation value) =>
+        value switch
+        {
+            RsxStencilOperation.Zero => StencilOp.Zero,
+            RsxStencilOperation.Invert => StencilOp.Invert,
+            RsxStencilOperation.Keep => StencilOp.Keep,
+            RsxStencilOperation.Replace => StencilOp.Replace,
+            RsxStencilOperation.IncrementSaturate => StencilOp.Incr,
+            RsxStencilOperation.DecrementSaturate => StencilOp.Decr,
+            RsxStencilOperation.IncrementWrap => StencilOp.IncrWrap,
+            RsxStencilOperation.DecrementWrap => StencilOp.DecrWrap,
+            _ => throw new ArgumentOutOfRangeException(nameof(value))
+        };
 
     private static bool IsBlendEquation(RsxBlendEquation value) =>
         Enum.IsDefined(value);

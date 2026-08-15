@@ -19,6 +19,11 @@ internal static class AuthoredCameraColorTechniqueSelector
     {
         ArgumentNullException.ThrowIfNull(material);
         ArgumentNullException.ThrowIfNull(lookup);
+        if (material.CameraRegion == GfxCameraRegionType.None)
+        {
+            return AuthoredCameraColorTechniqueSelection.Blocked(
+                "cameraRegion=None");
+        }
         if (techniqueSet is null)
         {
             return AuthoredCameraColorTechniqueSelection.Blocked(

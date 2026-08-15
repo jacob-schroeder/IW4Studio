@@ -38,6 +38,12 @@ internal sealed unsafe class SilkOpenGlStateShadow
     private ViewportBits? _viewport;
     private ScissorBits? _scissor;
     private uint? _stencilMask;
+    private uint? _stencilFrontMask;
+    private uint? _stencilBackMask;
+    private StencilFunctionBits? _stencilFrontFunction;
+    private StencilFunctionBits? _stencilBackFunction;
+    private StencilOperationBits? _stencilFrontOperations;
+    private StencilOperationBits? _stencilBackOperations;
     private SampleMaskBits? _sampleMask;
 
     public SilkOpenGlStateShadow(GL gl)
@@ -471,6 +477,64 @@ internal sealed unsafe class SilkOpenGlStateShadow
         }
         _gl.StencilMask(mask);
         _stencilMask = mask;
+        _stencilFrontMask = mask;
+        _stencilBackMask = mask;
+        SubmittedCalls++;
+        RenderStateChanges++;
+    }
+
+    public void StencilMaskSeparate(TriangleFace face, uint mask)
+    {
+        ref uint? current = ref StencilMaskForFace(face);
+        if (current == mask)
+        {
+            ElidedCalls++;
+            return;
+        }
+        _gl.StencilMaskSeparate(face, mask);
+        current = mask;
+        _stencilMask = null;
+        SubmittedCalls++;
+        RenderStateChanges++;
+    }
+
+    public void StencilFuncSeparate(
+        TriangleFace face,
+        StencilFunction function,
+        int reference,
+        uint compareMask)
+    {
+        var value = new StencilFunctionBits(
+            function,
+            reference,
+            compareMask);
+        ref StencilFunctionBits? current = ref StencilFunctionForFace(face);
+        if (current == value)
+        {
+            ElidedCalls++;
+            return;
+        }
+        _gl.StencilFuncSeparate(face, function, reference, compareMask);
+        current = value;
+        SubmittedCalls++;
+        RenderStateChanges++;
+    }
+
+    public void StencilOpSeparate(
+        TriangleFace face,
+        StencilOp fail,
+        StencilOp depthFail,
+        StencilOp pass)
+    {
+        var value = new StencilOperationBits(fail, depthFail, pass);
+        ref StencilOperationBits? current = ref StencilOperationsForFace(face);
+        if (current == value)
+        {
+            ElidedCalls++;
+            return;
+        }
+        _gl.StencilOpSeparate(face, fail, depthFail, pass);
+        current = value;
         SubmittedCalls++;
         RenderStateChanges++;
     }
@@ -616,6 +680,12 @@ internal sealed unsafe class SilkOpenGlStateShadow
         _lineWidth = null;
         _scissor = null;
         _stencilMask = null;
+        _stencilFrontMask = null;
+        _stencilBackMask = null;
+        _stencilFrontFunction = null;
+        _stencilBackFunction = null;
+        _stencilFrontOperations = null;
+        _stencilBackOperations = null;
         _sampleMask = null;
     }
 
@@ -643,6 +713,12 @@ internal sealed unsafe class SilkOpenGlStateShadow
         _viewport = null;
         _scissor = null;
         _stencilMask = null;
+        _stencilFrontMask = null;
+        _stencilBackMask = null;
+        _stencilFrontFunction = null;
+        _stencilBackFunction = null;
+        _stencilFrontOperations = null;
+        _stencilBackOperations = null;
         _sampleMask = null;
         _uniformInts.Clear();
         _uniformFloats.Clear();
@@ -658,6 +734,35 @@ internal sealed unsafe class SilkOpenGlStateShadow
 
     private static int ToBits(float value) =>
         BitConverter.SingleToInt32Bits(value);
+
+    private ref uint? StencilMaskForFace(TriangleFace face)
+    {
+        if (face == TriangleFace.Front)
+            return ref _stencilFrontMask;
+        if (face == TriangleFace.Back)
+            return ref _stencilBackMask;
+        throw new ArgumentOutOfRangeException(nameof(face), face, null);
+    }
+
+    private ref StencilFunctionBits? StencilFunctionForFace(
+        TriangleFace face)
+    {
+        if (face == TriangleFace.Front)
+            return ref _stencilFrontFunction;
+        if (face == TriangleFace.Back)
+            return ref _stencilBackFunction;
+        throw new ArgumentOutOfRangeException(nameof(face), face, null);
+    }
+
+    private ref StencilOperationBits? StencilOperationsForFace(
+        TriangleFace face)
+    {
+        if (face == TriangleFace.Front)
+            return ref _stencilFrontOperations;
+        if (face == TriangleFace.Back)
+            return ref _stencilBackOperations;
+        throw new ArgumentOutOfRangeException(nameof(face), face, null);
+    }
 
     private readonly record struct TextureBindingKey(
         int TextureUnit,
@@ -681,6 +786,14 @@ internal sealed unsafe class SilkOpenGlStateShadow
     private readonly record struct PolygonOffsetBits(int Factor, int Units);
     private readonly record struct ViewportBits(int X, int Y, int Width, int Height);
     private readonly record struct ScissorBits(int X, int Y, int Width, int Height);
+    private readonly record struct StencilFunctionBits(
+        StencilFunction Function,
+        int Reference,
+        uint CompareMask);
+    private readonly record struct StencilOperationBits(
+        StencilOp Fail,
+        StencilOp DepthFail,
+        StencilOp Pass);
     private readonly record struct SampleMaskBits(uint WordIndex, uint Mask);
     private readonly record struct Matrix4x4Bits(
         int M11, int M12, int M13, int M14,

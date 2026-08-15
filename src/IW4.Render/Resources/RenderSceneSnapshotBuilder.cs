@@ -555,9 +555,7 @@ public static class RenderSceneSnapshotBuilder
                 source.RsxVertexInputs.Length != checked(
                     vertexCount *
                     RenderWorldDrawPacketSnapshot
-                        .RsxVertexInputFloatStride) ||
-                source.RsxVertexInputs.Any(value =>
-                    !float.IsFinite(value)))
+                        .RsxVertexInputFloatStride))
             {
                 Add(RenderWorldDrawPacketCandidateRejectionCode
                     .RsxVertexPayloadMissingOrMalformed);
@@ -2964,11 +2962,8 @@ public static class RenderSceneSnapshotBuilder
             return false;
         if (rsxVertexInputs.Length == 0)
             return true;
-        if (vertices is null ||
-            rsxVertexInputs.Any(value => !float.IsFinite(value)))
-        {
+        if (vertices is null)
             return false;
-        }
         int vertexCount = vertices.Length /
             MapRenderScene.TexturedVertexFloatCount;
         return rsxVertexInputs.Length == checked(

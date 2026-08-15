@@ -1467,7 +1467,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                                      ref textureDecodeSkippedCount)),
                                  materializedVertexInputs,
                                  gfxMap.WorldDraw.VertexLayerData.PackedLayerData,
-                                 allowUvValueSanitization: false,
+                                 allowUvValueSanitization: true,
                                  out List<float> surfaceVertices,
                                  out List<float> surfaceRsxVertexInputs,
                                  out bool surfaceRsxVertexInputsReady,

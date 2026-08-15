@@ -25,53 +25,6 @@ public static class MapRenderEditorShaderExecutionPolicy
     private static MapRenderEditorShaderExecutionDecision DecideEditor(
         MapRenderEditorShaderExecutionInput input)
     {
-        bool alphaTest = input.DecodedState.AlphaTestEnabled;
-        bool stencil = input.DecodedState.Stencil.Enabled;
-        if (stencil)
-        {
-            if (!input.GenericMaterialReady)
-            {
-                MapRenderEditorShaderExecutionReason unavailableReason =
-                    (alphaTest, stencil) switch
-                    {
-                        (true, true) => MapRenderEditorShaderExecutionReason
-                            .EditorAlphaTestAndStencilGenericMaterialUnavailable,
-                        (true, false) => MapRenderEditorShaderExecutionReason
-                            .EditorAlphaTestGenericMaterialUnavailable,
-                        (false, true) => MapRenderEditorShaderExecutionReason
-                            .EditorStencilGenericMaterialUnavailable,
-                        _ => throw new InvalidOperationException()
-                    };
-                return Decision(
-                    MapRenderEditorShaderExecutionChoice.Skip,
-                    unavailableReason,
-                    input.DecodedState,
-                    input.DecodedState);
-            }
-
-            RenderState effectiveState =
-                input.DecodedState with
-                {
-                    Stencil = StencilState.Disabled
-                };
-            MapRenderEditorShaderExecutionReason genericReason =
-                (alphaTest, stencil) switch
-                {
-                    (true, true) => MapRenderEditorShaderExecutionReason
-                        .EditorAlphaTestAndStencilDisabledGenericApproximation,
-                    (true, false) => MapRenderEditorShaderExecutionReason
-                        .EditorAlphaTestRequiresGenericMaterial,
-                    (false, true) => MapRenderEditorShaderExecutionReason
-                        .EditorStencilDisabledGenericApproximation,
-                    _ => throw new InvalidOperationException()
-                };
-            return Decision(
-                MapRenderEditorShaderExecutionChoice.GenericEditorMaterial,
-                genericReason,
-                input.DecodedState,
-                effectiveState);
-        }
-
         if (input.AuthoredProgramAvailable && input.AuthoredProgramReady)
         {
             return Decision(

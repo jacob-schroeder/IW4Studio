@@ -679,10 +679,7 @@ public sealed partial class MapSceneBuilder
         }
 
         value = new Vector4(decoded[0], decoded[1], decoded[2], decoded[3]);
-        bool finite = float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) && float.IsFinite(value.W);
-        if (!finite)
-            blocker = "NONFINITE_DECODE";
-        return finite;
+        return true;
     }
 
     private static void AddRsxVertexInputs(

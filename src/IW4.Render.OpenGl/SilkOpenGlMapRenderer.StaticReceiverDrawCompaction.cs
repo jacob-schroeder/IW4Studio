@@ -117,6 +117,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private bool TryDrawCompactedStaticReceiverGroup(
         int groupIndex,
         MapRenderEditorDrawGroup<GlTexturedDrawCommand> group,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
@@ -140,6 +141,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             Draw(
                 command with { InstanceIndex = null },
+                stencilTargetContract,
                 viewProjection,
                 rsxMatrices,
                 cameraPosition,

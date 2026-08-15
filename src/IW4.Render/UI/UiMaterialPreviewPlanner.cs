@@ -136,7 +136,7 @@ public static class UiMaterialPreviewPlanner
                     UiMaterialPreviewDiagnosticCode.NonTwoDimensionalImage,
                     UiDiagnosticSeverity.Warning,
                     "The selected image descriptor is not a standard PS3 2D " +
-                    $"texture (map type 0x{image.MapType:X2}, dimensions " +
+                    $"texture (map type 0x{(byte)image.MapType:X2}, dimensions " +
                     $"{image.DimensionCount}, multi-face " +
                     $"0x{image.MultiFaceControl:X2}).",
                     selected.TextureTableOrdinal));

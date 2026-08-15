@@ -312,7 +312,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _state.ColorMask(true, true, true, true);
     }
 
-    private void ApplyRenderState(RenderState state)
+    private void ApplyRenderState(
+        RenderState state,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract = null)
     {
         if (!state.HasState)
         {
@@ -321,6 +323,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
         if (!_authoredMaterials.TryApplyRenderState(
                 state,
+                stencilTargetContract,
                 out string? blocker))
         {
             throw new InvalidOperationException(

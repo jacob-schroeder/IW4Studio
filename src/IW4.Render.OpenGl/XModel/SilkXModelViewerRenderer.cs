@@ -311,6 +311,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             {
                 if (!_authoredMaterials.TryApplyRenderState(
                         draw.State,
+                        stencilTargetContract: null,
                         out string? stateBlocker))
                 {
                     throw new InvalidOperationException(
@@ -440,6 +441,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         if (execution.FragmentDepthExportEnabled)
         {
             blocker = "FRAGMENT_DEPTH_EXPORT_REQUIRES_OWNED_DEPTH_EXPORT_PATH";
+            return false;
+        }
+        if (packet.State.Stencil.Enabled)
+        {
+            blocker = "STENCIL_REQUIRES_OWNED_D24S8_TARGET";
             return false;
         }
         int[] programSamplerDestinations = execution

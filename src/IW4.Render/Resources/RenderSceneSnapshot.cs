@@ -895,10 +895,13 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
             frozenRanges.Any(value => value is null) ||
             frozenTextures.IsEmpty ||
             frozenTextures.Any(value => value is null) ||
-            frozenRsxInputs.Any(value => !float.IsFinite(value)))
+            (frozenRsxInputs.Length != 0 &&
+             frozenRsxInputs.Length != checked(
+                 geometry.VertexCount *
+                 RenderWorldDrawPacketSnapshot.RsxVertexInputFloatStride)))
         {
             throw new ArgumentException(
-                "Prepared pass provenance and resource collections must be initialized and finite.");
+                "Prepared pass provenance and resource collections must be initialized, and RSX vertex inputs must be empty or retain 16 float4 values per geometry vertex.");
         }
         if (frozenTextures.Select(value => value.ResourceOrdinal)
                 .Distinct().Count() != frozenTextures.Length ||

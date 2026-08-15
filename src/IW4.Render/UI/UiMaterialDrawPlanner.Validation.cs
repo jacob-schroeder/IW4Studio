@@ -105,20 +105,20 @@ public static partial class UiMaterialDrawPlanner
         if (state.ShaderPackerSrgbEnabled)
             yield return "shader-packer sRGB enabled";
         if (state.ColorMask != RsxColorMask.Rgba)
-            yield return $"color mask 0x{state.ColorMask:X8}";
+            yield return $"color mask 0x{(uint)state.ColorMask:X8}";
         if (AlphaTest.Resolve(state) is null)
         {
             yield return
                 $"alpha test {state.AlphaTestEnabled}/" +
-                $"0x{state.AlphaFunc:X4}/{state.AlphaRef}";
+                $"0x{(uint)state.AlphaFunc:X4}/{state.AlphaRef}";
         }
         if (Cull.Resolve(state) is null)
         {
             yield return
-                $"cull tuple {state.CullEnabled}/0x{state.CullFace:X4}";
+                $"cull tuple {state.CullEnabled}/0x{(uint)state.CullFace:X4}";
         }
         if (state.PolygonMode != RsxPolygonMode.Fill)
-            yield return $"polygon mode 0x{state.PolygonMode:X4}";
+            yield return $"polygon mode 0x{(uint)state.PolygonMode:X4}";
         if (!RenderBlendDecoder.TryResolve(
                 state,
                 out RenderBlendStateDescriptor blend) ||

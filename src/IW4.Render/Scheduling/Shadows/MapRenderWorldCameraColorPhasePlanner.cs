@@ -13,10 +13,10 @@ public enum MapRenderWorldCameraColorPhaseDisposition : byte
 
 /// <summary>
 /// Decides whether a completed generic material preview may stand in for the
-/// native world-material selection. A successful shadow-caster plan is not by
-/// itself sufficient: ordinary world materials also own slot 2. Suppression is
-/// limited to either an actually selected native slot-2 pass or the complete
-/// w/shadowcaster utility-material contract.
+/// native world-material selection. Camera region None belongs to an auxiliary
+/// target rather than normal-camera color. A successful shadow-caster plan is
+/// otherwise not by itself sufficient: ordinary world materials also own slot
+/// 2, so the selected native pass remains authoritative.
 /// </summary>
 public sealed record MapRenderWorldCameraColorPhasePlan(
     MapRenderWorldCameraColorPhaseDisposition Disposition,
@@ -53,13 +53,18 @@ public static class MapRenderWorldCameraColorPhasePlanner
         ArgumentNullException.ThrowIfNull(material);
         ArgumentNullException.ThrowIfNull(lookup);
 
-        if (selectedCameraColorPassAvailable)
+        if (material.CameraRegion != GfxCameraRegionType.None &&
+            selectedCameraColorPassAvailable)
             return Retain(selectedTechniqueSlot);
 
         techniqueSet ??= material.TechniqueSet ??
             lookup.ResolveTechniqueSet(material.TechniqueSetPointer);
         if (techniqueSet is null)
-            return Retain(selectedTechniqueSlot);
+        {
+            return material.CameraRegion == GfxCameraRegionType.None
+                ? NoCameraColor(selectedTechniqueSlot)
+                : Retain(selectedTechniqueSlot);
+        }
 
         MapRenderSunShadowCasterMaterialPlanResult casterResult =
             MapRenderSunShadowCasterMaterialPlanner.Plan(
@@ -89,6 +94,21 @@ public static class MapRenderWorldCameraColorPhasePlanner
         ArgumentNullException.ThrowIfNull(techniqueSet);
         ArgumentNullException.ThrowIfNull(resolvedSlots);
 
+        if (material.CameraRegion == GfxCameraRegionType.None)
+        {
+            return casterPlan is not null &&
+                MatchesShadowOnlyUtilityContract(
+                    material,
+                    techniqueSet,
+                    resolvedSlots,
+                    casterPlan)
+                ? new MapRenderWorldCameraColorPhasePlan(
+                    MapRenderWorldCameraColorPhaseDisposition
+                        .ShadowOnlyMaterialContract,
+                    selectedTechniqueSlot)
+                : NoCameraColor(selectedTechniqueSlot);
+        }
+
         if (selectedCameraColorPassAvailable || casterPlan is null)
             return Retain(selectedTechniqueSlot);
 
@@ -96,25 +116,10 @@ public static class MapRenderWorldCameraColorPhasePlanner
             MapRenderSunShadowCasterMaterialPlanner
                 .SunShadowTechniqueSlot)
         {
-            return new MapRenderWorldCameraColorPhasePlan(
-                MapRenderWorldCameraColorPhaseDisposition
-                    .NativeSelectedNoCameraColor,
-                selectedTechniqueSlot);
+            return NoCameraColor(selectedTechniqueSlot);
         }
 
-        if (!MatchesShadowOnlyUtilityContract(
-                material,
-                techniqueSet,
-                resolvedSlots,
-                casterPlan))
-        {
-            return Retain(selectedTechniqueSlot);
-        }
-
-        return new MapRenderWorldCameraColorPhasePlan(
-            MapRenderWorldCameraColorPhaseDisposition
-                .ShadowOnlyMaterialContract,
-            selectedTechniqueSlot);
+        return Retain(selectedTechniqueSlot);
     }
 
     private static bool MatchesShadowOnlyUtilityContract(
@@ -188,6 +193,12 @@ public static class MapRenderWorldCameraColorPhasePlanner
         int? selectedTechniqueSlot) => new(
         MapRenderWorldCameraColorPhaseDisposition
             .RetainCameraColorOrPreview,
+        selectedTechniqueSlot);
+
+    private static MapRenderWorldCameraColorPhasePlan NoCameraColor(
+        int? selectedTechniqueSlot) => new(
+        MapRenderWorldCameraColorPhaseDisposition
+            .NativeSelectedNoCameraColor,
         selectedTechniqueSlot);
 
     private static string NormalizeName(string? value) =>

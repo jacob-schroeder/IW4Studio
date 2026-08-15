@@ -592,8 +592,7 @@ public sealed class RenderWorldDrawPacketSnapshot
         }
         ValidateRanges(frozenRanges, geometry.IndexCount);
         if (frozenRsxVertexInputs.Length != checked(
-                geometry.VertexCount * RsxVertexInputFloatStride) ||
-            frozenRsxVertexInputs.Any(value => !float.IsFinite(value)))
+                geometry.VertexCount * RsxVertexInputFloatStride))
         {
             throw new ArgumentException(
                 "Loaded CameraColor RSX vertex inputs must retain 16 float4 values per geometry vertex.",

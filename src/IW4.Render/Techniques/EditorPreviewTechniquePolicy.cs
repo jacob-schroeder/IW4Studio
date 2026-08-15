@@ -10,8 +10,9 @@ namespace IW4.Render.Techniques;
 public static class EditorPreviewTechniquePolicy
 {
     // These slots are the standard lit and emissive comparison slots used by
-    // the PS3 material post-load path. EditorPreview tries them before
-    // the remaining authored slots, but still requires a camera-color pass.
+    // the PS3 material post-load path. EditorPreview tries them before the
+    // remaining surface slots, but never treats target-building slots 0..3 or
+    // light-volume/tooling slots 27..36 as automatic normal-camera candidates.
     public const int PreferredLitTechniqueSlot =
         (int)MaterialTechniqueType.Lit;
     public const int PreferredEmissiveTechniqueSlot =
@@ -44,7 +45,10 @@ public static class EditorPreviewTechniquePolicy
         var result = new List<int>(available.Count);
         AddPreferred(PreferredLitTechniqueSlot);
         AddPreferred(PreferredEmissiveTechniqueSlot);
-        result.AddRange(available.Keys.Where(slot => !result.Contains(slot)));
+        result.AddRange(available.Keys.Where(slot =>
+            slot is >= (int)MaterialTechniqueType.Unlit and
+                <= (int)MaterialTechniqueType.LitInstancedSunDfog &&
+            !result.Contains(slot)));
         return result.AsReadOnly();
 
         void AddPreferred(int slot)

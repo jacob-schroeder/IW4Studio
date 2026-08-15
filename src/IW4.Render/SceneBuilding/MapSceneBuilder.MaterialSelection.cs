@@ -1208,7 +1208,7 @@ public sealed partial class MapSceneBuilder
         }
         string uvLabel = texCoordSourceIsEngineRouted
             ? layout.Label
-            : $"{layout.Label} generic fallback source 0x{texCoordSource:X2}";
+            : $"{layout.Label} generic fallback source 0x{(byte)texCoordSource:X2}";
         if (WorldVertexLayout.TryGetSource(layout.BackendRow, texCoordSource, out WorldVertexSource texCoordSourceRow))
         {
             if (WorldVertexLayout.TryGetStreamStride(

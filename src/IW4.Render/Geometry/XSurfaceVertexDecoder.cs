@@ -459,15 +459,6 @@ internal sealed class XSurfaceVertexDecoder
 
         value = new Vector4(
             decoded[0], decoded[1], decoded[2], decoded[3]);
-        if (!float.IsFinite(value.X) ||
-            !float.IsFinite(value.Y) ||
-            !float.IsFinite(value.Z) ||
-            !float.IsFinite(value.W))
-        {
-            blocker = "NONFINITE_DECODE";
-            return false;
-        }
-
         return true;
     }
 

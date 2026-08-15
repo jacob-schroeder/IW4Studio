@@ -77,6 +77,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void DrawVisibleDepthPrepassGroups(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
@@ -159,6 +160,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 DrawDepthPrepass(
                     firstVisibleMesh,
                     plan,
+                    stencilTargetContract,
                     viewProjection,
                     rsxMatrices,
                     editorTimeSeconds,
@@ -181,6 +183,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 DrawDepthPrepass(
                     commands[commandIndex],
                     plan,
+                    stencilTargetContract,
                     viewProjection,
                     rsxMatrices,
                     editorTimeSeconds);
@@ -289,6 +292,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void DrawDepthPrepass(
         GlTexturedDrawCommand command,
         MapRenderEditorDepthPrepassPlan plan,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
@@ -323,6 +327,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             DrawDepthPrepass(
                 visibleMesh,
                 plan,
+                stencilTargetContract,
                 viewProjection,
                 rsxMatrices,
                 editorTimeSeconds,
@@ -352,6 +357,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         DrawDepthPrepass(
             command.Mesh,
             plan,
+            stencilTargetContract,
             viewProjection,
             rsxMatrices,
             editorTimeSeconds,
@@ -361,6 +367,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void DrawDepthPrepass(
         GlTexturedMesh mesh,
         MapRenderEditorDepthPrepassPlan plan,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         float editorTimeSeconds,
@@ -396,7 +403,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     mesh,
                     instanceIndex,
                     rsxMatrices);
-            ApplyRenderState(plan.State);
+            ApplyRenderState(plan.State, stencilTargetContract);
             _state.UseProgram(mesh.DepthPrepassRsxProgram.Handle);
             ApplyStaticModelInstancingFrame(
                 mesh.DepthStaticModelProgramUniforms,
@@ -422,7 +429,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return;
         }
 
-        ApplyRenderState(plan.State);
+        ApplyRenderState(plan.State, stencilTargetContract);
         _state.UseProgram(_depthPrepassProgram);
         _state.UniformMatrix4(
             _depthPrepassViewProjectionLocation,
@@ -490,6 +497,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void DrawVisibleTexturedGroups(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
@@ -552,6 +560,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 if (TryDrawCompactedStaticReceiverGroup(
                         groupIndex,
                         group,
+                        stencilTargetContract,
                         viewProjection,
                         rsxMatrices,
                         cameraPosition,
@@ -572,6 +581,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     {
                         Draw(
                             authoredPasses[commandIndex],
+                            stencilTargetContract,
                             viewProjection,
                             rsxMatrices,
                             cameraPosition,
@@ -623,6 +633,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
                 Draw(
                     firstVisibleMesh,
+                    stencilTargetContract,
                     viewProjection,
                     rsxMatrices,
                     cameraPosition,
@@ -1197,6 +1208,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void Draw(
         GlTexturedDrawCommand command,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
@@ -1231,6 +1243,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
             Draw(
                 visibleMesh,
+                stencilTargetContract,
                 viewProjection,
                 rsxMatrices,
                 cameraPosition,
@@ -1269,6 +1282,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         Draw(
             command.Mesh,
+            stencilTargetContract,
             viewProjection,
             rsxMatrices,
             cameraPosition,
@@ -1320,6 +1334,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void Draw(
         GlTexturedMesh mesh,
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
         DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
@@ -1339,7 +1354,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // frame rather than rendering a semantically different shader.
             return;
         }
-        ApplyRenderState(mesh.State);
+        ApplyRenderState(mesh.State, stencilTargetContract);
         if (executeTranslatedAuthored)
         {
             DerivedMatrixState drawMatrices =

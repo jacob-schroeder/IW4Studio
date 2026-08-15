@@ -253,7 +253,7 @@ public static partial class UiMaterialDrawPlanner
                 $"Image '{textureResource.ImageName}' is " +
                 $"{textureResource.Width}x{textureResource.Height}x" +
                 $"{textureResource.Depth}, map type " +
-                $"0x{textureResource.MapType:X2}, dimensions " +
+                $"0x{(byte)textureResource.MapType:X2}, dimensions " +
                 $"{textureResource.DimensionCount}, multi-face " +
                 $"0x{textureResource.MultiFaceControl:X2}; exact UI " +
                 "execution requires one positive, depth-one PS3 2D " +

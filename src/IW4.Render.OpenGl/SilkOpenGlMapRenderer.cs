@@ -1704,6 +1704,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 depthGroups);
             DrawVisibleDepthPrepassGroups(
                 depthGroups,
+                editorPresentationFrame?.SceneTarget.StencilTargetContract,
                 viewProjection,
                 rsxMatrices,
                 editorTimeSeconds);
@@ -1715,6 +1716,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             }
             DrawVisibleTexturedGroups(
                 drawGroups,
+                editorPresentationFrame?.SceneTarget.StencilTargetContract,
                 viewProjection,
                 rsxMatrices,
                 camera.Position,

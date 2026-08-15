@@ -429,7 +429,7 @@ internal static class ShaderExecutionContractFactory
             programs.FragmentProgram.Identity,
             textureIdentity,
             selectedPass.State.AlphaTestEnabled
-                ? $"alpha:{selectedPass.State.AlphaFunc:X8}:{selectedPass.State.AlphaRef}"
+                ? $"alpha:{(uint)selectedPass.State.AlphaFunc:X8}:{selectedPass.State.AlphaRef}"
                 : "alpha:disabled",
             selectedPass.State.ShaderPackerSrgbEnabled ? "srgb" : "linear",
             purpose.ToString());

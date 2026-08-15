@@ -150,7 +150,7 @@ public sealed class UiMaterialCpuPreviewPlan
             Block(
                 diagnostics,
                 "The selected material has an unsupported cull tuple " +
-                $"{state.CullEnabled}/0x{state.CullFace:X4}.");
+                $"{state.CullEnabled}/0x{(uint)state.CullFace:X4}.");
         }
         if (state.PolygonMode != RsxPolygonMode.Fill)
         {
@@ -165,7 +165,7 @@ public sealed class UiMaterialCpuPreviewPlan
         {
             Block(
                 diagnostics,
-                $"Primary color mask 0x{state.ColorMask:X8} is not one of " +
+                $"Primary color mask 0x{(uint)state.ColorMask:X8} is not one of " +
                 "the decoded PS3 RGB-only, alpha-only, or RGBA write masks.");
         }
 
@@ -175,7 +175,7 @@ public sealed class UiMaterialCpuPreviewPlan
             Block(
                 diagnostics,
                 "The selected material has an unsupported alpha-test tuple " +
-                $"0x{state.AlphaFunc:X4}/0x{state.AlphaRef:X2}.");
+                $"0x{(uint)state.AlphaFunc:X4}/0x{state.AlphaRef:X2}.");
         }
 
         UiMaterialCpuPreviewBlendState? blend = DecodeBlend(state);
@@ -184,12 +184,12 @@ public sealed class UiMaterialCpuPreviewPlan
             Block(
                 diagnostics,
                 "The selected material has an unsupported PS3 blend tuple " +
-                $"(rgb 0x{state.BlendEquationRgb:X4}/" +
-                $"0x{state.BlendSourceRgb:X4}/" +
-                $"0x{state.BlendDestinationRgb:X4}, alpha " +
-                $"0x{state.BlendEquationAlpha:X4}/" +
-                $"0x{state.BlendSourceAlpha:X4}/" +
-                $"0x{state.BlendDestinationAlpha:X4}).");
+                $"(rgb 0x{(uint)state.BlendEquationRgb:X4}/" +
+                $"0x{(uint)state.BlendSourceRgb:X4}/" +
+                $"0x{(uint)state.BlendDestinationRgb:X4}, alpha " +
+                $"0x{(uint)state.BlendEquationAlpha:X4}/" +
+                $"0x{(uint)state.BlendSourceAlpha:X4}/" +
+                $"0x{(uint)state.BlendDestinationAlpha:X4}).");
         }
         else if (colorWriteMask is { } writes &&
                  (writes & UiMaterialCpuPreviewColorWriteMask.RedGreenBlue) != 0 &&

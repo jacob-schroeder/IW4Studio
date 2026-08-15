@@ -96,7 +96,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"material.samplerDest={material.SamplerDest}");
         lines.Add($"material.samplerHash=0x{material.SamplerHash:X8}");
         lines.Add($"material.textureSemantic=0x{material.TextureSemantic:X2}");
-        lines.Add($"material.texCoordSource=0x{material.TexCoordSource:X2}");
+        lines.Add($"material.texCoordSource=0x{(byte)material.TexCoordSource:X2}");
         lines.Add($"material.texCoordSourceName={UvRoute.StreamSourceName(material.TexCoordSource)}");
         lines.Add($"material.unresolvedCodeSamplerCount={material.UnresolvedCodeSamplerCount}");
         lines.Add($"material.colorLayerCount={material.ColorLayers.Count}");
@@ -188,7 +188,7 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"uv.stride=0x{material.UvRoute.Stride:X}");
         lines.Add($"uv.offset=0x{material.UvRoute.Offset:X}");
         lines.Add($"uv.formatByte0=0x{material.UvRoute.FormatByte0:X2}");
-        lines.Add($"uv.formatByte1=0x{material.UvRoute.FormatByte1:X2}");
+        lines.Add($"uv.formatByte1=0x{(byte)material.UvRoute.FormatByte1:X2}");
         lines.Add($"uv.format={material.UvRoute.FormatName}");
         lines.Add($"uv.baseMode={material.UvRoute.BaseMode}");
         lines.Add($"uv.components={material.UvRoute.ComponentText}");
@@ -234,36 +234,36 @@ internal static class MapRenderPickClipboardFormatter
         lines.Add($"state.loadBits1=0x{state.LoadBits1:X8}");
         lines.Add(
             $"state.commandWordCount=0x{state.CommandWordCount:X8}");
-        lines.Add($"state.colorMask=0x{state.ColorMask:X8}");
+        lines.Add($"state.colorMask=0x{(uint)state.ColorMask:X8}");
         lines.Add($"state.alphaTestEnabled={state.AlphaTestEnabled}");
-        lines.Add($"state.alphaFunc=0x{state.AlphaFunc:X4}");
+        lines.Add($"state.alphaFunc=0x{(uint)state.AlphaFunc:X4}");
         lines.Add($"state.alphaRef={state.AlphaRef}");
         lines.Add($"state.cullEnabled={state.CullEnabled}");
-        lines.Add($"state.cullFace=0x{state.CullFace:X4}");
+        lines.Add($"state.cullFace=0x{(uint)state.CullFace:X4}");
         lines.Add($"state.blendEnabled={state.BlendEnabled}");
-        lines.Add($"state.blendEquationRgb=0x{state.BlendEquationRgb:X4}");
-        lines.Add($"state.blendEquationAlpha=0x{state.BlendEquationAlpha:X4}");
-        lines.Add($"state.blendSourceRgb=0x{state.BlendSourceRgb:X4}");
-        lines.Add($"state.blendSourceAlpha=0x{state.BlendSourceAlpha:X4}");
-        lines.Add($"state.blendDestinationRgb=0x{state.BlendDestinationRgb:X4}");
-        lines.Add($"state.blendDestinationAlpha=0x{state.BlendDestinationAlpha:X4}");
+        lines.Add($"state.blendEquationRgb=0x{(uint)state.BlendEquationRgb:X4}");
+        lines.Add($"state.blendEquationAlpha=0x{(uint)state.BlendEquationAlpha:X4}");
+        lines.Add($"state.blendSourceRgb=0x{(uint)state.BlendSourceRgb:X4}");
+        lines.Add($"state.blendSourceAlpha=0x{(uint)state.BlendSourceAlpha:X4}");
+        lines.Add($"state.blendDestinationRgb=0x{(uint)state.BlendDestinationRgb:X4}");
+        lines.Add($"state.blendDestinationAlpha=0x{(uint)state.BlendDestinationAlpha:X4}");
         lines.Add($"state.depthTestEnabled={state.DepthTestEnabled}");
         lines.Add($"state.depthWriteEnabled={state.DepthWriteEnabled}");
-        lines.Add($"state.depthFunc=0x{state.DepthFunc:X4}");
+        lines.Add($"state.depthFunc=0x{(uint)state.DepthFunc:X4}");
         lines.Add($"state.stencilEnabled={state.Stencil.Enabled}");
         lines.Add($"state.stencilBackFaceIndependent={state.Stencil.BackFaceStateIsIndependent}");
-        lines.Add($"state.stencilFrontFunc=0x{state.Stencil.Front.Function:X4}");
+        lines.Add($"state.stencilFrontFunc=0x{(uint)state.Stencil.Front.Function:X4}");
         lines.Add($"state.stencilFrontRef={state.Stencil.Front.Reference}");
         lines.Add($"state.stencilFrontCompareMask=0x{state.Stencil.Front.CompareMask:X2}");
-        lines.Add($"state.stencilFrontFail=0x{state.Stencil.Front.FailOperation:X4}");
-        lines.Add($"state.stencilFrontDepthFail=0x{state.Stencil.Front.DepthFailOperation:X4}");
-        lines.Add($"state.stencilFrontPass=0x{state.Stencil.Front.PassOperation:X4}");
-        lines.Add($"state.stencilBackFunc=0x{state.Stencil.Back.Function:X4}");
+        lines.Add($"state.stencilFrontFail=0x{(uint)state.Stencil.Front.FailOperation:X4}");
+        lines.Add($"state.stencilFrontDepthFail=0x{(uint)state.Stencil.Front.DepthFailOperation:X4}");
+        lines.Add($"state.stencilFrontPass=0x{(uint)state.Stencil.Front.PassOperation:X4}");
+        lines.Add($"state.stencilBackFunc=0x{(uint)state.Stencil.Back.Function:X4}");
         lines.Add($"state.stencilBackRef={state.Stencil.Back.Reference}");
         lines.Add($"state.stencilBackCompareMask=0x{state.Stencil.Back.CompareMask:X2}");
-        lines.Add($"state.stencilBackFail=0x{state.Stencil.Back.FailOperation:X4}");
-        lines.Add($"state.stencilBackDepthFail=0x{state.Stencil.Back.DepthFailOperation:X4}");
-        lines.Add($"state.stencilBackPass=0x{state.Stencil.Back.PassOperation:X4}");
+        lines.Add($"state.stencilBackFail=0x{(uint)state.Stencil.Back.FailOperation:X4}");
+        lines.Add($"state.stencilBackDepthFail=0x{(uint)state.Stencil.Back.DepthFailOperation:X4}");
+        lines.Add($"state.stencilBackPass=0x{(uint)state.Stencil.Back.PassOperation:X4}");
         lines.Add(
             $"state.stencilExecution={(state.Stencil.Enabled ? "unsupported" : "inactive")}");
         lines.Add($"state.polygonOffsetMode={state.PolygonOffsetMode}");
@@ -309,7 +309,7 @@ internal static class MapRenderPickClipboardFormatter
             lines.Add($"{prefix}.rendererPassClass={material?.PassClass ?? string.Empty}");
             lines.Add($"{prefix}.techniqueSlot={material?.TechniqueSlot.ToString(CultureInfo.InvariantCulture) ?? string.Empty}");
             lines.Add($"{prefix}.textureSemantic={(material is null ? string.Empty : $"0x{material.TextureSemantic:X2}")}");
-            lines.Add($"{prefix}.texCoordSource={(material is null ? string.Empty : $"0x{material.TexCoordSource:X2}/{UvRoute.StreamSourceName(material.TexCoordSource)}")}");
+            lines.Add($"{prefix}.texCoordSource={(material is null ? string.Empty : $"0x{(byte)material.TexCoordSource:X2}/{UvRoute.StreamSourceName(material.TexCoordSource)}")}");
         }
     }
 
