@@ -466,6 +466,7 @@ public static class RsxShaderInputRouter
     private static bool TrySelectDecodedSamplerSource(
         SamplerRouteInputSnapshot snapshot,
         IReadOnlyList<PixelTextureOp> textureOps,
+        IReadOnlyList<RsxFragmentInstruction> fragmentInstructions,
         RsxVertexOutputDependencyAnalysis vertexAnalysis,
         out MaterialStreamSource source)
     {
@@ -475,9 +476,32 @@ public static class RsxShaderInputRouter
         IReadOnlyDictionary<string, ImmutableArray<IReadOnlySet<string>>>
             outputComponentDeps =
             vertexAnalysis.OutputComponentDependencies;
+        var fragmentTracer = new FragmentCoordinateDependencyTracer(
+            fragmentInstructions);
         foreach (PixelTextureOp op in textureOps)
         {
-            string fragmentInput = FragmentInputName(op.SourceAttribute);
+            if (TrySelectTracedSamplerSource(
+                    op,
+                    fragmentTracer,
+                    vertexAnalysis,
+                    snapshot.VertexDeclaration,
+                    out source))
+            {
+                return true;
+            }
+
+            // The encoded fragment-input selector belongs only to operands
+            // whose register kind is Input. Preserve the broader legacy
+            // dependency fallback for those direct-input instructions, but
+            // never reinterpret it as the source of a temporary operand.
+            if (op.CoordinateOperand.RegisterKind !=
+                RsxFragmentRegisterType.Input)
+            {
+                continue;
+            }
+
+            string fragmentInput = FragmentInputName(
+                op.EncodedSourceAttribute);
             string vertexOutput = VertexOutputForFragmentInput(fragmentInput);
             string expectedVertexInput = VertexInputForFragmentInput(fragmentInput);
             if (vertexOutput.Length == 0 ||
@@ -519,6 +543,479 @@ public static class RsxShaderInputRouter
         }
 
         return false;
+    }
+
+    private static bool TrySelectTracedSamplerSource(
+        PixelTextureOp textureOp,
+        FragmentCoordinateDependencyTracer fragmentTracer,
+        RsxVertexOutputDependencyAnalysis vertexAnalysis,
+        VertexDeclarationCacheIdentity vertexDeclaration,
+        out MaterialStreamSource source)
+    {
+        source = default;
+        if (!TryResolveTracedSamplerVertexInput(
+                textureOp,
+                fragmentTracer,
+                vertexAnalysis,
+                out string vertexInput))
+        {
+            return false;
+        }
+
+        foreach (MaterialVertexStreamRouting route in
+                 ActiveRoutes(vertexDeclaration))
+        {
+            if (VertexDeclarationDestinationInputName(route.Dest) !=
+                vertexInput)
+            {
+                continue;
+            }
+
+            source = route.Source;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveTracedSamplerVertexInput(
+        PixelTextureOp textureOp,
+        FragmentCoordinateDependencyTracer fragmentTracer,
+        RsxVertexOutputDependencyAnalysis vertexAnalysis,
+        out string vertexInput)
+    {
+        vertexInput = "";
+        if (vertexAnalysis.VertexProgramIr is not { } vertexProgram ||
+            vertexProgram.Instructions.Any(instruction =>
+                instruction.HasControlFlow ||
+                (instruction.CondTestEnabled &&
+                 instruction.ConditionTest != RsxConditionTest.True)) ||
+            !fragmentTracer.TryTraceCoordinate(
+                textureOp,
+                out FragmentComponentDependencies coordinateX,
+                out FragmentComponentDependencies coordinateY) ||
+            coordinateX.Inputs.Length != 1 ||
+            coordinateY.Inputs.Length != 1)
+        {
+            return false;
+        }
+
+        var vertexDependenciesX = new SortedSet<string>(
+            StringComparer.Ordinal);
+        var vertexDependenciesY = new SortedSet<string>(
+            StringComparer.Ordinal);
+        IReadOnlyDictionary<string, ImmutableArray<IReadOnlySet<string>>>
+            outputComponentDeps =
+                vertexAnalysis.OutputComponentDependencies;
+        return TryCollectTracedVertexDependencies(
+                   coordinateX,
+                   outputComponentDeps,
+                   vertexDependenciesX) &&
+               TryCollectTracedVertexDependencies(
+                   coordinateY,
+                   outputComponentDeps,
+                   vertexDependenciesY) &&
+               TryGetSingleTextureInputFromComponentDependencies(
+                   vertexDependenciesX,
+                   out string vertexInputX) &&
+               TryGetSingleTextureInputFromComponentDependencies(
+                   vertexDependenciesY,
+                   out string vertexInputY) &&
+               (vertexInput = vertexInputX) == vertexInputY;
+    }
+
+    private static bool TryCollectTracedVertexDependencies(
+        FragmentComponentDependencies fragmentDependencies,
+        IReadOnlyDictionary<string, ImmutableArray<IReadOnlySet<string>>>
+            outputComponentDeps,
+        SortedSet<string> vertexDependencies)
+    {
+        if (!fragmentDependencies.IsResolved)
+            return false;
+
+        foreach (FragmentInputComponentDependency dependency in
+                 fragmentDependencies.Inputs)
+        {
+            string fragmentInput = FragmentInputName(dependency.Input);
+            string vertexOutput = VertexOutputForFragmentInput(
+                fragmentInput);
+            if (vertexOutput.Length == 0)
+                return false;
+
+            if (!outputComponentDeps.TryGetValue(
+                    vertexOutput,
+                    out ImmutableArray<IReadOnlySet<string>> components) ||
+                (uint)dependency.Component >= (uint)components.Length)
+            {
+                return false;
+            }
+
+            AddRange(
+                vertexDependencies,
+                components[dependency.Component]);
+        }
+
+        return true;
+    }
+
+    private static bool TryGetSingleTextureInputFromComponentDependencies(
+        IReadOnlySet<string> dependencies,
+        out string vertexInput)
+    {
+        vertexInput = "";
+        foreach (string dependency in dependencies)
+        {
+            string candidate = dependency.Length >= 2 &&
+                               dependency[^2] == '.' &&
+                               dependency[^1] is 'x' or 'y' or 'z' or 'w'
+                ? dependency[..^2]
+                : dependency;
+            if (!IsTextureVertexInput(candidate))
+                return false;
+
+            if (vertexInput.Length == 0)
+            {
+                vertexInput = candidate;
+                continue;
+            }
+
+            if (vertexInput != candidate)
+                return false;
+        }
+
+        return vertexInput.Length != 0;
+    }
+
+    private readonly record struct FragmentInputComponentDependency(
+        RsxFragmentInputAttribute Input,
+        int Component);
+
+    private readonly record struct FragmentComponentDependencies(
+        bool IsResolved,
+        ImmutableArray<FragmentInputComponentDependency> Inputs);
+
+    /// <summary>
+    /// Resolves the two-dimensional coordinate consumed by a texture
+    /// instruction to the fragment inputs that produced it. RSX stores an
+    /// input selector on every instruction even when the coordinate operand
+    /// is a temporary, so that selector cannot be used until temporary-bank,
+    /// masked-write, and swizzle dataflow has been followed backward.
+    /// </summary>
+    private sealed class FragmentCoordinateDependencyTracer
+    {
+        private static readonly FragmentComponentDependencies
+            ResolvedConstant = new(
+                true,
+                ImmutableArray<FragmentInputComponentDependency>.Empty);
+        private static readonly FragmentComponentDependencies Unresolved =
+            new(
+                false,
+                ImmutableArray<FragmentInputComponentDependency>.Empty);
+
+        private readonly IReadOnlyList<RsxFragmentInstruction> _instructions;
+        private readonly Dictionary<FragmentTemporaryComponentKey,
+            FragmentComponentDependencies> _temporaryComponents = new();
+        private readonly bool _hasControlFlow;
+
+        internal FragmentCoordinateDependencyTracer(
+            IReadOnlyList<RsxFragmentInstruction> instructions)
+        {
+            ArgumentNullException.ThrowIfNull(instructions);
+            _instructions = instructions;
+            _hasControlFlow = instructions.Any(instruction =>
+                instruction.IsControlFlow);
+        }
+
+        internal bool TryTraceCoordinate(
+            PixelTextureOp textureOp,
+            out FragmentComponentDependencies coordinateX,
+            out FragmentComponentDependencies coordinateY)
+        {
+            coordinateX = Unresolved;
+            coordinateY = Unresolved;
+            if (_hasControlFlow ||
+                !TryGetInstructionPosition(
+                    textureOp.InstructionIndex,
+                    out int instructionPosition))
+            {
+                return false;
+            }
+
+            RsxFragmentInstruction instruction =
+                _instructions[instructionPosition];
+            if (!instruction.IsTexture ||
+                instruction.TextureUnit != textureOp.TextureUnit ||
+                instruction.Source0Operand != textureOp.CoordinateOperand)
+            {
+                return false;
+            }
+
+            coordinateX = ResolveOperandComponent(
+                instructionPosition,
+                instruction,
+                textureOp.CoordinateOperand,
+                resultComponent: 0);
+            coordinateY = ResolveOperandComponent(
+                instructionPosition,
+                instruction,
+                textureOp.CoordinateOperand,
+                resultComponent: 1);
+            return coordinateX.IsResolved && coordinateY.IsResolved;
+        }
+
+        private bool TryGetInstructionPosition(
+            int instructionIndex,
+            out int instructionPosition)
+        {
+            if ((uint)instructionIndex < (uint)_instructions.Count &&
+                _instructions[instructionIndex].Index == instructionIndex)
+            {
+                instructionPosition = instructionIndex;
+                return true;
+            }
+
+            for (int index = 0; index < _instructions.Count; index++)
+            {
+                if (_instructions[index].Index != instructionIndex)
+                    continue;
+
+                instructionPosition = index;
+                return true;
+            }
+
+            instructionPosition = -1;
+            return false;
+        }
+
+        private FragmentComponentDependencies ResolveOperandComponent(
+            int instructionPosition,
+            RsxFragmentInstruction instruction,
+            RsxFragmentOperand operand,
+            int resultComponent)
+        {
+            int sourceComponent = OperandSwizzleComponent(
+                operand,
+                resultComponent);
+            return operand.RegisterKind switch
+            {
+                RsxFragmentRegisterType.Temporary =>
+                    ResolveTemporaryComponent(
+                        instructionPosition,
+                        operand.Fp16,
+                        operand.RegisterIndex,
+                        sourceComponent),
+                RsxFragmentRegisterType.Input => ResolvedInput(
+                    instruction.SourceAttribute,
+                    sourceComponent),
+                RsxFragmentRegisterType.InlineConstant => ResolvedConstant,
+                _ => Unresolved
+            };
+        }
+
+        private FragmentComponentDependencies ResolveTemporaryComponent(
+            int beforeInstructionPosition,
+            bool fp16,
+            int registerIndex,
+            int component)
+        {
+            var key = new FragmentTemporaryComponentKey(
+                beforeInstructionPosition,
+                fp16,
+                registerIndex,
+                component);
+            if (_temporaryComponents.TryGetValue(
+                    key,
+                    out FragmentComponentDependencies cached))
+            {
+                return cached;
+            }
+
+            FragmentComponentDependencies result = Unresolved;
+            for (int position = beforeInstructionPosition - 1;
+                 position >= 0;
+                 position--)
+            {
+                RsxFragmentInstruction writer = _instructions[position];
+                if (writer.NoDest ||
+                    writer.DestFp16 != fp16 ||
+                    writer.DestRegister != registerIndex ||
+                    !WritesFragmentComponent(writer.WriteMask, component))
+                {
+                    continue;
+                }
+
+                FragmentComponentDependencies written =
+                    ResolveInstructionResultComponent(
+                        position,
+                        writer,
+                        component);
+                result = writer.ConditionTest switch
+                {
+                    RsxConditionTest.True => written,
+                    RsxConditionTest.False => ResolveTemporaryComponent(
+                        position,
+                        fp16,
+                        registerIndex,
+                        component),
+                    _ => Merge(
+                        written,
+                        ResolveTemporaryComponent(
+                            position,
+                            fp16,
+                            registerIndex,
+                            component))
+                };
+                break;
+            }
+
+            _temporaryComponents.Add(key, result);
+            return result;
+        }
+
+        private FragmentComponentDependencies
+            ResolveInstructionResultComponent(
+                int instructionPosition,
+                RsxFragmentInstruction instruction,
+                int resultComponent)
+        {
+            if (instruction.OpcodeType is RsxFragmentOpcode.SetTrue or
+                RsxFragmentOpcode.SetFalse)
+            {
+                return ResolvedConstant;
+            }
+
+            return IsComponentWise(instruction.OpcodeType)
+                ? ResolveComponentWiseOperands(
+                    instructionPosition,
+                    instruction,
+                    resultComponent)
+                : Unresolved;
+        }
+
+        private static bool IsComponentWise(RsxFragmentOpcode opcode) =>
+            opcode is RsxFragmentOpcode.Move or
+                RsxFragmentOpcode.Multiply or
+                RsxFragmentOpcode.Add or
+                RsxFragmentOpcode.MultiplyAdd or
+                RsxFragmentOpcode.Minimum or
+                RsxFragmentOpcode.Maximum or
+                RsxFragmentOpcode.SetLessThan or
+                RsxFragmentOpcode.SetGreaterThanOrEqual or
+                RsxFragmentOpcode.SetLessThanOrEqual or
+                RsxFragmentOpcode.SetGreaterThan or
+                RsxFragmentOpcode.SetNotEqual or
+                RsxFragmentOpcode.SetEqual or
+                RsxFragmentOpcode.Fraction or
+                RsxFragmentOpcode.Floor or
+                RsxFragmentOpcode.DerivativeX or
+                RsxFragmentOpcode.DerivativeY or
+                RsxFragmentOpcode.LinearInterpolate;
+
+        private FragmentComponentDependencies ResolveComponentWiseOperands(
+            int instructionPosition,
+            RsxFragmentInstruction instruction,
+            int resultComponent)
+        {
+            int operandCount = instruction.OperandCount;
+            if (operandCount == 0)
+                return Unresolved;
+
+            var dependencies = new FragmentComponentDependencies[
+                operandCount];
+            for (int sourceIndex = 0;
+                 sourceIndex < operandCount;
+                 sourceIndex++)
+            {
+                dependencies[sourceIndex] = ResolveSourceComponent(
+                    instructionPosition,
+                    instruction,
+                    sourceIndex,
+                    resultComponent);
+            }
+
+            return Merge(dependencies);
+        }
+
+        private FragmentComponentDependencies ResolveSourceComponent(
+            int instructionPosition,
+            RsxFragmentInstruction instruction,
+            int sourceIndex,
+            int resultComponent)
+        {
+            RsxFragmentOperand operand = sourceIndex switch
+            {
+                0 => instruction.Source0Operand,
+                1 => instruction.Source1Operand,
+                2 => instruction.Source2Operand,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(sourceIndex))
+            };
+            return ResolveOperandComponent(
+                instructionPosition,
+                instruction,
+                operand,
+                resultComponent);
+        }
+
+        private static FragmentComponentDependencies ResolvedInput(
+            RsxFragmentInputAttribute input,
+            int component) => new(
+                true,
+                ImmutableArray.Create(
+                    new FragmentInputComponentDependency(
+                        input,
+                        component)));
+
+        private static FragmentComponentDependencies Merge(
+            IEnumerable<FragmentComponentDependencies> sources)
+        {
+            bool resolved = true;
+            var inputs = new HashSet<FragmentInputComponentDependency>();
+            foreach (FragmentComponentDependencies source in sources)
+            {
+                resolved &= source.IsResolved;
+                foreach (FragmentInputComponentDependency input in
+                         source.Inputs)
+                {
+                    inputs.Add(input);
+                }
+            }
+
+            return new FragmentComponentDependencies(
+                resolved,
+                inputs
+                    .OrderBy(input => (byte)input.Input)
+                    .ThenBy(input => input.Component)
+                    .ToImmutableArray());
+        }
+
+        private static FragmentComponentDependencies Merge(
+            params FragmentComponentDependencies[] sources) =>
+            Merge((IEnumerable<FragmentComponentDependencies>)sources);
+
+        private static int OperandSwizzleComponent(
+            RsxFragmentOperand operand,
+            int resultComponent) => resultComponent switch
+        {
+            0 => (int)operand.SwizzleX,
+            1 => (int)operand.SwizzleY,
+            2 => (int)operand.SwizzleZ,
+            3 => (int)operand.SwizzleW,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(resultComponent))
+        };
+
+        private static bool WritesFragmentComponent(
+            RsxFragmentWriteMask writeMask,
+            int component) =>
+            (writeMask & (RsxFragmentWriteMask)(1 << component)) !=
+            RsxFragmentWriteMask.None;
+
+        private readonly record struct FragmentTemporaryComponentKey(
+            int BeforeInstructionPosition,
+            bool Fp16,
+            int RegisterIndex,
+            int Component);
     }
 
     public static bool TrySelectSamplerSource(
@@ -617,6 +1114,7 @@ public static class RsxShaderInputRouter
             TrySelectDecodedSamplerSource(
                 snapshot,
                 textureOps,
+                snapshot.ProgramSemantics.FragmentProgram.Instructions,
                 vertexAnalysis,
                 out source);
         if (!success)
@@ -672,9 +1170,54 @@ public static class RsxShaderInputRouter
         IReadOnlyDictionary<string, ImmutableArray<IReadOnlySet<string>>>
             outputComponentDeps =
             vertexAnalysis.OutputComponentDependencies;
+        var fragmentTracer = new FragmentCoordinateDependencyTracer(
+            snapshot.ProgramSemantics.FragmentProgram.Instructions);
         foreach (PixelTextureOp op in textureOps)
         {
-            string fragmentInput = FragmentInputName(op.SourceAttribute);
+            if (fragmentTracer.TryTraceCoordinate(
+                    op,
+                    out _,
+                    out _))
+            {
+                if (!TryResolveTracedSamplerVertexInput(
+                        op,
+                        fragmentTracer,
+                        vertexAnalysis,
+                        out string tracedVertexInput))
+                {
+                    return "Pixel sampler coordinate dataflow does not prove one vertex texture input route.";
+                }
+
+                bool tracedRouteExists = false;
+                foreach (MaterialVertexStreamRouting route in
+                         ActiveRoutes(snapshot.VertexDeclaration))
+                {
+                    if (VertexDeclarationDestinationInputName(route.Dest) !=
+                        tracedVertexInput)
+                    {
+                        continue;
+                    }
+
+                    tracedRouteExists = true;
+                    break;
+                }
+
+                if (!tracedRouteExists)
+                {
+                    return "Vertex declaration has no route for the traced shader texture input.";
+                }
+
+                continue;
+            }
+
+            if (op.CoordinateOperand.RegisterKind ==
+                RsxFragmentRegisterType.Temporary)
+            {
+                return "Pixel sampler coordinate temporary dataflow could not be traced to fragment inputs.";
+            }
+
+            string fragmentInput = FragmentInputName(
+                op.EncodedSourceAttribute);
             if (fragmentInput.Length == 0)
                 return "Pixel texture op uses an unmapped fragment input.";
 

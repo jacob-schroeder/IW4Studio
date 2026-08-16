@@ -173,6 +173,8 @@ internal sealed class RsxFragmentProgramSemanticSnapshot
             .Where(instruction => instruction.IsTexture)
             .Select(instruction => new PixelTextureOp(
                 instruction.TextureUnit,
+                instruction.Index,
+                instruction.Source0Operand,
                 instruction.SourceAttribute))
             .ToImmutableArray();
     }

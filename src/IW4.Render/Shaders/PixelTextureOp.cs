@@ -7,4 +7,6 @@ namespace IW4.Render.Shaders;
 
 internal readonly record struct PixelTextureOp(
     int TextureUnit,
-    RsxFragmentInputAttribute SourceAttribute);
+    int InstructionIndex,
+    RsxFragmentOperand CoordinateOperand,
+    RsxFragmentInputAttribute EncodedSourceAttribute);
