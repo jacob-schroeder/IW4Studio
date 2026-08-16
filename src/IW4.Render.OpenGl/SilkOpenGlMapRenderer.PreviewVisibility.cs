@@ -5,6 +5,7 @@ using IW4.Render.EditorPreview;
 using IW4.Render.Diagnostics;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
+using IW4.Render.Lighting;
 using IW4.Render.OpenGl.Presentation;
 using IW4.Render.OpenGl.Programs;
 using IW4.Render.OpenGl.Scheduling;
@@ -67,6 +68,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             visibleStaticObjectCount =
                 UpdateStaticModelLightingWorkingSet();
         }
+        if (TryReusePreviewVisibilityPublication(
+                camera,
+                targetExtent,
+                visibleStaticObjectCount))
+        {
+            RecordUnchangedStaticInstanceCompactionTelemetry();
+            RecordPreviewVisibilityTelemetry(
+                _previewVisibilityWorldCount,
+                _previewVisibilityWorldRunCount,
+                _previewVisibilityWorldIndexCount,
+                visibleStaticObjectCount);
+            return;
+        }
+
+        InvalidatePreviewVisibilityPublication();
         CompactChangedStaticInstances();
 
         ReadOnlySpan<uint> dpvsSurfaceWords = default;
@@ -168,6 +184,290 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     compaction.VisibleIndexCount);
             }
         }
+        RecordPreviewVisibilityTelemetry(
+            visibleWorldCount,
+            visibleWorldRunCount,
+            visibleWorldIndexCount,
+            visibleStaticObjectCount);
+        CommitPreviewVisibilityPublication(
+            camera,
+            targetExtent,
+            visibleStaticObjectCount,
+            visibleWorldCount,
+            visibleWorldRunCount,
+            visibleWorldIndexCount);
+    }
+
+    private bool TryReusePreviewVisibilityPublication(
+        RenderCamera camera,
+        MapRenderPixelExtent targetExtent,
+        long visibleStaticObjectCount)
+    {
+        if (!_hasPreviewVisibilityPublication ||
+            _activeSunShadowDpvsPacket is not { } packet ||
+            packet.Ticket != _previewVisibilityPacketTicket ||
+            packet.Key != _previewVisibilityPacketKey ||
+            _previewVisibilitySceneGeneration !=
+                _previewSceneGeneration ||
+            _previewVisibilityCamera != camera ||
+            _previewVisibilityTargetWidth != targetExtent.Width ||
+            _previewVisibilityTargetHeight != targetExtent.Height ||
+            !ReferenceEquals(
+                _previewVisibilityFrustum,
+                _currentPreviewFrustum) ||
+            !ReferenceEquals(
+                _previewVisibilityDpvs,
+                _currentPreviewDpvs) ||
+            !ReferenceEquals(
+                _previewVisibilityTexturedMeshes,
+                _textured) ||
+            !ReferenceEquals(
+                _previewVisibilityWorldSurfaceBatches,
+                _worldSurfaceBatches) ||
+            !ReferenceEquals(
+                _previewVisibilityWorldReceiverVariants,
+                _worldReceiverVariants) ||
+            !ReferenceEquals(
+                _previewVisibilityFrameGroups,
+                ResolvePreviewVisibilityFrameGroups()) ||
+            _previewVisibilityVisibleScheduledStaticObjectCount !=
+                _visibleScheduledStaticObjectCount ||
+            _previewVisibilityVisibleStaticObjectCount !=
+                visibleStaticObjectCount ||
+            _previewVisibilityUsesDynamicStaticLods !=
+                _usesDynamicStaticLods ||
+            _staticInstanceCompactionFullInvalidationPending)
+        {
+            return false;
+        }
+
+        MapRenderStaticModelLightingWorkingSet? workingSet =
+            _staticModelLightingWorkingSet;
+        if (!ReferenceEquals(
+                _previewVisibilityStaticLightingWorkingSet,
+                workingSet) ||
+            _previewVisibilityStaticLightingAssignmentGeneration !=
+                (workingSet?.AssignmentGeneration ?? 0) ||
+            workingSet is not null &&
+            !workingSet.DirtyAssignments.IsEmpty)
+        {
+            return false;
+        }
+
+        return HasExactPreviousStaticVisibilitySelection() &&
+               HasExactPreviousWorldReceiverSelection();
+    }
+
+    private bool HasExactPreviousStaticVisibilitySelection()
+    {
+        if (!_hasPreviousStaticInstanceSelection ||
+            !HasValidStaticInstanceCandidateShape() ||
+            !ReferenceEquals(
+                _previousStaticInstanceCandidateObjectIndices,
+                _staticModelLightingObjectIndices) ||
+            _previousVisibleStaticObjectCount !=
+                _visibleStaticObjects.Length ||
+            _previousSelectedStaticLodCount !=
+                _selectedStaticLodByObject.Length ||
+            _previousUsesDynamicStaticLods !=
+                _usesDynamicStaticLods ||
+            _previousVisibleStaticObjectWorklistCount !=
+                _visibleStaticObjectWorklistCount ||
+            !HasValidStaticReceiverOccurrenceSnapshot())
+        {
+            return false;
+        }
+
+        ReadOnlySpan<int> currentWorklist =
+            _visibleStaticObjectWorklist.AsSpan(
+                0,
+                _visibleStaticObjectWorklistCount);
+        ReadOnlySpan<int> previousWorklist =
+            _previousVisibleStaticObjectWorklist.AsSpan(
+                0,
+                _previousVisibleStaticObjectWorklistCount);
+        if (!currentWorklist.SequenceEqual(previousWorklist))
+            return false;
+
+        for (int index = 0; index < currentWorklist.Length; index++)
+        {
+            int objectIndex = currentWorklist[index];
+            if ((uint)objectIndex >=
+                    (uint)_visibleStaticObjects.Length ||
+                (uint)objectIndex >=
+                    (uint)_previousVisibleStaticObjects.Length ||
+                _visibleStaticObjects[objectIndex] !=
+                    _previousVisibleStaticObjects[objectIndex])
+            {
+                return false;
+            }
+            if (_usesDynamicStaticLods &&
+                _selectedStaticLodByObject[objectIndex] !=
+                    _previousSelectedStaticLodByObject[objectIndex])
+            {
+                return false;
+            }
+        }
+
+        return _selectedStaticReceiverSurfaces.SetEquals(
+                   _previousSelectedStaticReceiverSurfaces) &&
+               _selectedStaticReceiverOccurrences.SetEquals(
+                   _previousSelectedStaticReceiverOccurrences);
+    }
+
+    private bool HasExactPreviousWorldReceiverSelection()
+    {
+        if (_previewVisibilityBaseWorldReceiverActive !=
+            _baseWorldReceiverVisibilityActive)
+        {
+            return false;
+        }
+        if (_baseWorldReceiverVisibilityActive &&
+            !_baseWorldReceiverVisibilityWords.AsSpan().SequenceEqual(
+                _previewVisibilityBaseWorldReceiverWords))
+        {
+            return false;
+        }
+        if (_previewVisibilityWorldReceiverChannels.Length !=
+                _worldReceiverVariants.Length ||
+            _previewVisibilityWorldReceiverWords.Length !=
+                _worldReceiverVariants.Length ||
+            _previewVisibilityWorldReceiverCounts.Length !=
+                _worldReceiverVariants.Length)
+        {
+            return false;
+        }
+
+        for (int channelIndex = 0;
+             channelIndex < _worldReceiverVariants.Length;
+             channelIndex++)
+        {
+            WorldReceiverVariantRuntime channel =
+                _worldReceiverVariants[channelIndex];
+            if (!ReferenceEquals(
+                    _previewVisibilityWorldReceiverChannels[channelIndex],
+                    channel) ||
+                _previewVisibilityWorldReceiverCounts[channelIndex] !=
+                    channel.SelectionCount ||
+                !channel.SelectionWords.AsSpan().SequenceEqual(
+                    _previewVisibilityWorldReceiverWords[channelIndex]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void CommitPreviewVisibilityPublication(
+        RenderCamera camera,
+        MapRenderPixelExtent targetExtent,
+        long visibleStaticObjectCount,
+        long visibleWorldCount,
+        long visibleWorldRunCount,
+        long visibleWorldIndexCount)
+    {
+        AdvancePreviewVisibilityPublicationRevision();
+        if (_activeSunShadowDpvsPacket is not { } packet ||
+            _staticInstanceCompactionFullInvalidationPending ||
+            !_hasPreviousStaticInstanceSelection)
+        {
+            return;
+        }
+
+        CaptureWorldReceiverSelectionSnapshot();
+        _previewVisibilityPacketTicket = packet.Ticket;
+        _previewVisibilityPacketKey = packet.Key;
+        _previewVisibilitySceneGeneration = _previewSceneGeneration;
+        _previewVisibilityCamera = camera;
+        _previewVisibilityTargetWidth = targetExtent.Width;
+        _previewVisibilityTargetHeight = targetExtent.Height;
+        _previewVisibilityFrustum = _currentPreviewFrustum;
+        _previewVisibilityDpvs = _currentPreviewDpvs;
+        _previewVisibilityTexturedMeshes = _textured;
+        _previewVisibilityWorldSurfaceBatches = _worldSurfaceBatches;
+        _previewVisibilityFrameGroups =
+            ResolvePreviewVisibilityFrameGroups();
+        _previewVisibilityWorldReceiverVariants =
+            _worldReceiverVariants;
+        _previewVisibilityStaticLightingWorkingSet =
+            _staticModelLightingWorkingSet;
+        _previewVisibilityStaticLightingAssignmentGeneration =
+            _staticModelLightingWorkingSet?.AssignmentGeneration ?? 0;
+        _previewVisibilityVisibleScheduledStaticObjectCount =
+            _visibleScheduledStaticObjectCount;
+        _previewVisibilityVisibleStaticObjectCount =
+            visibleStaticObjectCount;
+        _previewVisibilityUsesDynamicStaticLods =
+            _usesDynamicStaticLods;
+        _previewVisibilityWorldCount = visibleWorldCount;
+        _previewVisibilityWorldRunCount = visibleWorldRunCount;
+        _previewVisibilityWorldIndexCount = visibleWorldIndexCount;
+        _hasPreviewVisibilityPublication = true;
+    }
+
+    private void CaptureWorldReceiverSelectionSnapshot()
+    {
+        _previewVisibilityBaseWorldReceiverActive =
+            _baseWorldReceiverVisibilityActive;
+        if (_baseWorldReceiverVisibilityActive)
+        {
+            if (_previewVisibilityBaseWorldReceiverWords.Length !=
+                _baseWorldReceiverVisibilityWords.Length)
+            {
+                _previewVisibilityBaseWorldReceiverWords =
+                    new uint[_baseWorldReceiverVisibilityWords.Length];
+            }
+            _baseWorldReceiverVisibilityWords.CopyTo(
+                _previewVisibilityBaseWorldReceiverWords,
+                0);
+        }
+
+        int channelCount = _worldReceiverVariants.Length;
+        if (_previewVisibilityWorldReceiverChannels.Length !=
+            channelCount)
+        {
+            _previewVisibilityWorldReceiverChannels =
+                new WorldReceiverVariantRuntime[channelCount];
+            _previewVisibilityWorldReceiverWords =
+                new uint[channelCount][];
+            _previewVisibilityWorldReceiverCounts =
+                new int[channelCount];
+        }
+        for (int channelIndex = 0;
+             channelIndex < channelCount;
+             channelIndex++)
+        {
+            WorldReceiverVariantRuntime channel =
+                _worldReceiverVariants[channelIndex];
+            _previewVisibilityWorldReceiverChannels[channelIndex] =
+                channel;
+            _previewVisibilityWorldReceiverCounts[channelIndex] =
+                channel.SelectionCount;
+            uint[] snapshot =
+                _previewVisibilityWorldReceiverWords[channelIndex];
+            if (snapshot is null ||
+                snapshot.Length != channel.SelectionWords.Length)
+            {
+                snapshot = new uint[channel.SelectionWords.Length];
+                _previewVisibilityWorldReceiverWords[channelIndex] =
+                    snapshot;
+            }
+            channel.SelectionWords.CopyTo(snapshot, 0);
+        }
+    }
+
+    private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
+        ResolvePreviewVisibilityFrameGroups() =>
+            _currentWorldReceiverTechniqueSelector is not null
+                ? _receiverAwareEditorTexturedDrawGroups
+                : _editorTexturedDrawGroups;
+
+    private void RecordPreviewVisibilityTelemetry(
+        long visibleWorldCount,
+        long visibleWorldRunCount,
+        long visibleWorldIndexCount,
+        long visibleStaticObjectCount)
+    {
         _frameTelemetry.SetCounter(
             MapRenderFrameCounter.WorldVisible,
             visibleWorldCount);
@@ -180,6 +480,110 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _frameTelemetry.SetCounter(
             MapRenderFrameCounter.StaticModelsVisible,
             visibleStaticObjectCount);
+    }
+
+    private void RecordUnchangedStaticInstanceCompactionTelemetry()
+    {
+        int candidateCount = checked(
+            _visibleStaticObjectWorklistCount +
+            _previousVisibleStaticObjectWorklistCount);
+        _frameTelemetry.SetCounter(
+            MapRenderFrameCounter.StaticInstanceChangeCandidates,
+            candidateCount);
+        _frameTelemetry.SetCounter(
+            MapRenderFrameCounter.StaticInstanceChangedObjects,
+            0);
+        _frameTelemetry.SetCounter(
+            MapRenderFrameCounter.StaticInstanceRuntimesRescanned,
+            0);
+        _frameTelemetry.SetCounter(
+            MapRenderFrameCounter.StaticInstanceRowsRescanned,
+            0);
+    }
+
+    private void InvalidatePreviewVisibilityPublication()
+    {
+        _hasPreviewVisibilityPublication = false;
+        InvalidatePreparedTexturedDrawQueue();
+    }
+
+    private void AdvancePreviewVisibilityPublicationRevision()
+    {
+        unchecked
+        {
+            _previewVisibilityPublicationRevision++;
+            if (_previewVisibilityPublicationRevision == 0)
+                _previewVisibilityPublicationRevision = 1;
+        }
+    }
+
+    private bool CanReusePreparedTexturedDrawQueue(
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>[] frameGroups,
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> drawGroups) =>
+        _hasPreviewVisibilityPublication &&
+        _hasPreparedTexturedDrawQueue &&
+        ReferenceEquals(
+            _preparedTexturedDrawFrameGroups,
+            frameGroups) &&
+        ReferenceEquals(
+            _preparedTexturedDrawGroups,
+            drawGroups) &&
+        _preparedTexturedDrawVisibilityRevision ==
+            _previewVisibilityPublicationRevision;
+
+    private void CommitPreparedTexturedDrawQueue(
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>[] frameGroups,
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> drawGroups)
+    {
+        if (!_hasPreviewVisibilityPublication)
+            return;
+
+        _preparedTexturedDrawFrameGroups = frameGroups;
+        _preparedTexturedDrawGroups = drawGroups;
+        _preparedTexturedDrawVisibilityRevision =
+            _previewVisibilityPublicationRevision;
+        _hasPreparedTexturedDrawQueue = true;
+    }
+
+    private void InvalidatePreparedTexturedDrawQueue()
+    {
+        _hasPreparedTexturedDrawQueue = false;
+        _preparedTexturedDrawFrameGroups = null;
+        _preparedTexturedDrawGroups = null;
+        _preparedTexturedDrawVisibilityRevision = 0;
+    }
+
+    private void ClearPreviewVisibilityPublicationCache()
+    {
+        InvalidatePreviewVisibilityPublication();
+        _previewVisibilityPacketTicket = 0;
+        _previewVisibilityPacketKey = default;
+        _previewVisibilitySceneGeneration = 0;
+        _previewVisibilityCamera = default;
+        _previewVisibilityTargetWidth = 0;
+        _previewVisibilityTargetHeight = 0;
+        _previewVisibilityFrustum = null;
+        _previewVisibilityDpvs = null;
+        _previewVisibilityTexturedMeshes = null;
+        _previewVisibilityWorldSurfaceBatches = null;
+        _previewVisibilityFrameGroups = null;
+        _previewVisibilityWorldReceiverVariants = null;
+        _previewVisibilityBaseWorldReceiverActive = false;
+        _previewVisibilityBaseWorldReceiverWords = [];
+        _previewVisibilityWorldReceiverChannels = [];
+        _previewVisibilityWorldReceiverWords = [];
+        _previewVisibilityWorldReceiverCounts = [];
+        _previewVisibilityStaticLightingWorkingSet = null;
+        _previewVisibilityStaticLightingAssignmentGeneration = 0;
+        _previewVisibilityVisibleScheduledStaticObjectCount = 0;
+        _previewVisibilityVisibleStaticObjectCount = 0;
+        _previewVisibilityUsesDynamicStaticLods = false;
+        _previewVisibilityWorldCount = 0;
+        _previewVisibilityWorldRunCount = 0;
+        _previewVisibilityWorldIndexCount = 0;
+        _previewVisibilityPublicationRevision = 0;
     }
 
     private MapRenderWorldDpvsViewVisibility? TryResolvePreviewDpvs(
@@ -936,10 +1340,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 false,
                 instanceStride,
                 (void*)instanceOffset);
-            _gl.VertexAttribDivisor(
-                MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .LightingPayloadAttribute,
-                1);
         }
         for (uint row = 0; row < 3; row++)
         {
@@ -952,7 +1352,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 instanceStride,
                 (void*)(instanceOffset +
                     (placementFloatOffset + row * 4) * sizeof(float)));
-            _gl.VertexAttribDivisor(attribute, 1);
         }
     }
 

@@ -221,6 +221,32 @@ internal sealed unsafe class SilkOpenGlStateShadow
         TextureChanges++;
     }
 
+    /// <summary>
+    /// Ensures an exact texture binding without selecting its texture unit
+    /// when the authoritative shadow already contains the requested handle.
+    /// Callers must not rely on this method to leave
+    /// <paramref name="textureUnit"/> active after a cache hit.
+    /// </summary>
+    public void EnsureTextureBinding(
+        int textureUnit,
+        TextureTarget target,
+        uint texture)
+    {
+        if (textureUnit < 0)
+            throw new ArgumentOutOfRangeException(nameof(textureUnit));
+
+        var key = new TextureBindingKey(textureUnit, target);
+        if (_textureBindings.TryGetValue(key, out uint current) &&
+            current == texture)
+        {
+            ElidedCalls++;
+            return;
+        }
+
+        ActiveTexture(textureUnit);
+        BindTexture(target, texture);
+    }
+
     public uint GetTextureBinding(int textureUnit, TextureTarget target)
     {
         if (_textureBindings.TryGetValue(

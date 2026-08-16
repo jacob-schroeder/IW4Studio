@@ -371,9 +371,11 @@ internal sealed unsafe class SilkMapRenderOpenGlSunShadowAtlasApi :
 
         if (_state is not null)
         {
-            _state.ActiveTexture(textureUnit);
-            _state.BindTexture(TextureTarget.Texture2D, textureHandle);
             _state.BindSampler(checked((uint)textureUnit), samplerHandle);
+            _state.EnsureTextureBinding(
+                textureUnit,
+                TextureTarget.Texture2D,
+                textureHandle);
             return;
         }
 

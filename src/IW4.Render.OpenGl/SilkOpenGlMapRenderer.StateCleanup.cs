@@ -14,6 +14,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 {
     private void DeleteLoadedResources()
     {
+        ClearPreviewVisibilityPublicationCache();
         ResetSunShadowDpvsPipelineState();
         _sunShadowDpvsWorker?.Dispose();
         _sunShadowDpvsWorker = null;
@@ -25,6 +26,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _currentProcessedFloatZFrame = null;
         _currentSunShadowPublication = null;
         _currentSunShadowCasters = null;
+        _currentSunShadowVisibility = null;
+        InvalidateSunShadowAtlasContentCache();
         _sunShadowVisibilityProvider = null;
         _sunShadowCasterCatalogProvider = null;
         _sunShadowFrameSequence = new MapRenderSunShadowFrameSequence();
@@ -114,6 +117,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _worldSurfaceBatches = [];
         _nextWorldMultiDrawBatchGroupId = 0;
         _nextWorldDepthMultiDrawBatchGroupId = 0;
+        _staticColorSortRepresentativesByHash.Clear();
+        _nextStaticColorSortGroupId = 0;
         _worldSurfaceCandidateCount = 0;
         _worldSurfaceCandidateIndexCount = 0;
         _worldSurfaceFallbackBatchCount = 0;

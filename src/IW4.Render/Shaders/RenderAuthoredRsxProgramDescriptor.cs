@@ -169,6 +169,8 @@ public sealed class RenderAuthoredRsxProgramDescriptor :
             writer.WriteByte(instruction.Opcode);
             writer.WriteInt32(instruction.ByteCount);
             writer.WriteNullableUInt16(instruction.DirectCodeConstantIndex);
+            writer.WriteNullableInt32(
+                instruction.StaticPixelConstantArgumentOrdinal);
             writer.WriteBoolean(instruction.Constant.HasValue);
             if (instruction.Constant is { } constant)
             {
@@ -187,10 +189,6 @@ public sealed class RenderAuthoredRsxProgramDescriptor :
             writer.WriteInt32((int)patch.Kind);
             writer.WriteUInt16(patch.Destination);
             writer.WriteInt32(patch.ArgumentRaw);
-            writer.WriteSingle(patch.Value.X);
-            writer.WriteSingle(patch.Value.Y);
-            writer.WriteSingle(patch.Value.Z);
-            writer.WriteSingle(patch.Value.W);
             writer.WriteInt32(patch.PatchSiteCount);
         }
 

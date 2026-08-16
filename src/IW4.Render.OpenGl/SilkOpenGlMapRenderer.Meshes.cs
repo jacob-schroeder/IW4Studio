@@ -16,11 +16,16 @@ using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Scheduling.StaticModels;
 using IW4.Render.Textures;
+using IW4.Render.Techniques;
 
 namespace IW4.Render.OpenGl;
 
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
+    private readonly Dictionary<int, List<StaticColorSortRepresentative>>
+        _staticColorSortRepresentativesByHash = [];
+    private int _nextStaticColorSortGroupId;
+
     public long WorldGeometryArenaUploadCount { get; private set; }
 
     public long WorldGeometrySourceBatchCount { get; private set; }
@@ -730,7 +735,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    internal static MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
+    internal MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
         BuildEditorTexturedDrawGroups(
             IReadOnlyList<MapRenderTexturedBatch> worldBatches,
             IReadOnlyList<GlTexturedMesh> worldMeshes,
@@ -871,7 +876,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     instancedSourceOrdinalBase + staticOutputOrdinal++,
                     plan.Classification,
                     commands,
-                    bounds));
+                    bounds,
+                    plan.Classification.Bucket ==
+                        MapRenderEditorDrawBucket.Translucent
+                            ? null
+                            : ResolveStaticColorSortKey(commands)));
             }
         }
 
@@ -881,11 +890,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     /// <summary>
-    /// Returns the exact compatibility identity already established by
-    /// <see cref="AssignWorldMultiDrawBatchGroupIds"/> as the opaque/cutout
-    /// queue key. This makes compatible single-pass world ranges contiguous
-    /// without changing translucent depth order or breaking an authored
-    /// multipass group apart.
+    /// Returns a program-major queue key whose secondary component is the
+    /// exact compatibility identity established by
+    /// <see cref="AssignWorldMultiDrawBatchGroupIds"/>. This clusters shared
+    /// translated programs while keeping compatible single-pass ranges
+    /// contiguous, without changing translucent depth order or breaking an
+    /// authored multipass group apart.
     /// </summary>
     internal static long? ResolveWorldMultiDrawSortKey(
         IReadOnlyList<GlTexturedDrawCommand> commands)
@@ -897,14 +907,350 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlTexturedMesh mesh = commands[0].Mesh;
         return mesh.InstanceCount == 0 &&
                mesh.MultiDrawBatchGroupId >= 0
-            ? mesh.MultiDrawBatchGroupId
+            ? CreateColorQueueSortKey(
+                mesh.RsxProgram.Handle,
+                mesh.MultiDrawBatchGroupId,
+                isStatic: false)
             : null;
     }
 
+    private long? ResolveStaticColorSortKey(
+        IReadOnlyList<GlTexturedDrawCommand> commands)
+    {
+        // Hashing only narrows the renderer-lifetime candidate set. Reuse is
+        // decided below by the complete ordered-pass execution comparison.
+        if (!TryComputeStaticColorSortHash(
+                commands,
+                out int hash,
+                out uint firstProgramHandle))
+        {
+            return null;
+        }
+
+        if (_staticColorSortRepresentativesByHash.TryGetValue(
+                hash,
+                out List<StaticColorSortRepresentative>? candidates))
+        {
+            for (int candidateIndex = 0;
+                 candidateIndex < candidates.Count;
+                 candidateIndex++)
+            {
+                StaticColorSortRepresentative candidate =
+                    candidates[candidateIndex];
+                if (StaticColorSortExecutionMatches(candidate, commands))
+                {
+                    return CreateColorQueueSortKey(
+                        firstProgramHandle,
+                        candidate.Id,
+                        isStatic: true);
+                }
+            }
+        }
+
+        if (_nextStaticColorSortGroupId == int.MaxValue)
+            return null;
+
+        var programHandles = new uint[commands.Count];
+        var passes = new GlTexturedMesh[commands.Count];
+        for (int passIndex = 0; passIndex < commands.Count; passIndex++)
+        {
+            GlTexturedMesh mesh = commands[passIndex].Mesh;
+            if (!TryPrepareStaticColorSortMesh(
+                    in mesh,
+                    out programHandles[passIndex],
+                    out passes[passIndex]))
+            {
+                return null;
+            }
+        }
+        int groupId = _nextStaticColorSortGroupId++;
+        var representative = new StaticColorSortRepresentative(
+            groupId,
+            programHandles,
+            passes);
+        (candidates ??= []).Add(representative);
+        _staticColorSortRepresentativesByHash[hash] = candidates;
+        return CreateColorQueueSortKey(
+            firstProgramHandle,
+            groupId,
+            isStatic: true);
+    }
+
+    private bool TryComputeStaticColorSortHash(
+        IReadOnlyList<GlTexturedDrawCommand> commands,
+        out int hash,
+        out uint firstProgramHandle)
+    {
+        hash = 0;
+        firstProgramHandle = 0;
+        if (commands.Count == 0)
+            return false;
+
+        var builder = new HashCode();
+        builder.Add(commands.Count);
+        for (int passIndex = 0; passIndex < commands.Count; passIndex++)
+        {
+            GlTexturedDrawCommand command = commands[passIndex];
+            GlTexturedMesh mesh = command.Mesh;
+            if (command.InstanceIndex.HasValue ||
+                command.WorldBatchIndex >= 0 ||
+                command.WorldReceiverChannelIndex >= 0 ||
+                mesh.InstanceCount == 0 ||
+                mesh.IndexCount == 0 ||
+                !IsStaticColorQueueOrderIndependent(mesh.State) ||
+                !TryPrepareStaticColorSortMesh(
+                    in mesh,
+                    out uint programHandle,
+                    out GlTexturedMesh normalized) ||
+                !TryAddStaticColorSupplementalHash(
+                    ref builder,
+                    in normalized))
+            {
+                return false;
+            }
+
+            builder.Add(programHandle);
+            builder.Add(ComputeMultiDrawBatchHash(in normalized));
+            if (passIndex == 0)
+                firstProgramHandle = programHandle;
+        }
+
+        hash = builder.ToHashCode();
+        return firstProgramHandle != 0;
+    }
+
+    private static bool IsStaticColorQueueOrderIndependent(
+        RenderState state)
+    {
+        // Stencil consumes prior framebuffer contents even if the selected
+        // pass does not blend. No-state passes execute the complete default
+        // state; otherwise admit only the ordinary opaque/cutout depth owner.
+        if (state.StencilEnabled || state.BlendEnabled)
+            return false;
+        if (!state.HasState)
+            return true;
+
+        return state.DepthTestEnabled &&
+            state.DepthWriteEnabled &&
+            (state.DepthFunc is RsxCompareFunction.Less or
+                RsxCompareFunction.LessThanOrEqual) &&
+            state.ColorMask == RsxColorMask.Rgba &&
+            state.PolygonOffsetMode == RenderPolygonOffsetMode.Disabled;
+    }
+
+    private bool TryPrepareStaticColorSortMesh(
+        in GlTexturedMesh mesh,
+        out uint programHandle,
+        out GlTexturedMesh normalized)
+    {
+        bool translated = mesh.RsxProgram.Handle != 0;
+        programHandle = ResolveColorProgramHandle(in mesh);
+        normalized = default;
+        if (programHandle == 0)
+            return false;
+        if (mesh.ShaderExecution is { } execution &&
+            execution.RuntimeSamplerRequirements is null)
+        {
+            return false;
+        }
+
+        if (translated)
+        {
+            if (mesh.RsxSamplerBindings is null ||
+                mesh.RsxConstantBindings is null ||
+                mesh.StaticModelProgramUniforms is null)
+            {
+                return false;
+            }
+        }
+        else if (mesh.ColorTextures is null ||
+                 mesh.ColorTextures.Length == 0 ||
+                 mesh.BlendWeightComponents is null ||
+                 mesh.NormalTextures is null ||
+                 mesh.SpecularTextures is null)
+        {
+            return false;
+        }
+
+        // Reuse the world color execution compatibility owner after removing
+        // only geometry/instance identity. Supplemental static inputs below
+        // cover the draw-time state that the world path does not consume.
+        normalized = mesh with
+        {
+            VertexArray = 0,
+            ElementBuffer = 0,
+            InstanceCount = 0,
+            IndexType = DrawElementsType.UnsignedInt
+        };
+        return true;
+    }
+
+    private static bool TryAddStaticColorSupplementalHash(
+        ref HashCode hash,
+        in GlTexturedMesh mesh)
+    {
+        hash.Add(mesh.StaticInstanceFloatStride);
+        hash.Add(mesh.StaticInstanceLightingPayload);
+        hash.Add(mesh.LocalMinimumHeight);
+        hash.Add(mesh.LocalHeightRange);
+        AddCompositionPlanHash(ref hash, mesh.VegetationAnimation);
+        if (mesh.RsxProgram.Handle != 0)
+        {
+            return mesh.StaticModelProgramUniforms is { } uniforms &&
+                TryAddStaticProgramUniformHash(ref hash, uniforms);
+        }
+
+        hash.Add(mesh.ColorInputLinearizationMask);
+        hash.Add(mesh.UsesGenericStaticModelLighting);
+        hash.Add(mesh.GenericStaticModelLightingAddsDirectionalDiffuse);
+        hash.Add(mesh.GenericStaticModelLightingAddsDirectionalSpecular);
+        return true;
+    }
+
+    private uint ResolveColorProgramHandle(in GlTexturedMesh mesh) =>
+        mesh.RsxProgram.Handle != 0
+            ? mesh.RsxProgram.Handle
+            : _texturedProgram;
+
+    private bool StaticColorSortExecutionMatches(
+        StaticColorSortRepresentative representative,
+        IReadOnlyList<GlTexturedDrawCommand> commands)
+    {
+        if (representative.Passes.Length != commands.Count)
+            return false;
+
+        for (int passIndex = 0; passIndex < commands.Count; passIndex++)
+        {
+            GlTexturedMesh source = commands[passIndex].Mesh;
+            if (!TryPrepareStaticColorSortMesh(
+                    in source,
+                    out uint programHandle,
+                    out GlTexturedMesh candidate) ||
+                representative.ProgramHandles[passIndex] != programHandle ||
+                !CanMultiDrawTogether(
+                    in representative.Passes[passIndex],
+                    in candidate) ||
+                !StaticColorSupplementalStateMatches(
+                    in representative.Passes[passIndex],
+                    in candidate))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static bool StaticColorSupplementalStateMatches(
+        in GlTexturedMesh first,
+        in GlTexturedMesh next)
+    {
+        bool translated = first.RsxProgram.Handle != 0;
+        if (first.StaticInstanceFloatStride !=
+                next.StaticInstanceFloatStride ||
+            first.StaticInstanceLightingPayload !=
+                next.StaticInstanceLightingPayload ||
+            first.LocalMinimumHeight != next.LocalMinimumHeight ||
+            first.LocalHeightRange != next.LocalHeightRange ||
+            !CompositionPlansMatch(
+                first.VegetationAnimation,
+                next.VegetationAnimation))
+        {
+            return false;
+        }
+
+        if (translated)
+        {
+            return StaticProgramUniformsMatch(
+                first.StaticModelProgramUniforms,
+                next.StaticModelProgramUniforms);
+        }
+
+        return first.ColorInputLinearizationMask ==
+                   next.ColorInputLinearizationMask &&
+               first.UsesGenericStaticModelLighting ==
+                   next.UsesGenericStaticModelLighting &&
+               first.GenericStaticModelLightingAddsDirectionalDiffuse ==
+                   next.GenericStaticModelLightingAddsDirectionalDiffuse &&
+               first.GenericStaticModelLightingAddsDirectionalSpecular ==
+                   next.GenericStaticModelLightingAddsDirectionalSpecular;
+    }
+
+    private static bool StaticProgramUniformsMatch(
+        MapRenderOpenGlStaticModelProgramUniforms? first,
+        MapRenderOpenGlStaticModelProgramUniforms? next)
+    {
+        if (!first.HasValue || !next.HasValue)
+            return first.HasValue == next.HasValue;
+
+        MapRenderOpenGlStaticModelProgramUniforms firstValue = first.Value;
+        MapRenderOpenGlStaticModelProgramUniforms nextValue = next.Value;
+        return firstValue.ViewRowLocations is not null &&
+               nextValue.ViewRowLocations is not null &&
+               firstValue.ViewRowLocations.AsSpan().SequenceEqual(
+                   nextValue.ViewRowLocations) &&
+               firstValue.ViewProjectionRowLocations is not null &&
+               nextValue.ViewProjectionRowLocations is not null &&
+               firstValue.ViewProjectionRowLocations.AsSpan().SequenceEqual(
+                   nextValue.ViewProjectionRowLocations) &&
+               firstValue.EyeOffsetLocation == nextValue.EyeOffsetLocation &&
+               firstValue.Vegetation == nextValue.Vegetation;
+    }
+
+    private static bool TryAddStaticProgramUniformHash(
+        ref HashCode hash,
+        MapRenderOpenGlStaticModelProgramUniforms uniforms)
+    {
+        if (uniforms.ViewRowLocations is null ||
+            uniforms.ViewProjectionRowLocations is null ||
+            !uniforms.HasFrameRows ||
+            !uniforms.Vegetation.IsReady)
+        {
+            return false;
+        }
+
+        AddSequenceHash(ref hash, uniforms.ViewRowLocations);
+        AddSequenceHash(ref hash, uniforms.ViewProjectionRowLocations);
+        hash.Add(uniforms.EyeOffsetLocation);
+        hash.Add(uniforms.Vegetation);
+        return true;
+    }
+
+    private static void AddCompositionPlanHash(
+        ref HashCode hash,
+        MapRenderEditorVegetationAnimationPlan? plan)
+    {
+        hash.Add(plan is not null);
+        if (plan is null)
+            return;
+
+        // Keep this exact field set paired with CompositionPlansMatch and the
+        // owning world compatibility hash.
+        hash.Add(plan.Status);
+        hash.Add(plan.IsEnabled);
+        hash.Add(plan.Amplitude);
+        hash.Add(plan.AngularFrequency);
+        hash.Add(plan.SpatialFrequency);
+    }
+
+    private static void AddSequenceHash<T>(
+        ref HashCode hash,
+        IReadOnlyList<T> values)
+    {
+        hash.Add(values.Count);
+        for (int index = 0; index < values.Count; index++)
+            hash.Add(values[index]);
+    }
+
+    private readonly record struct StaticColorSortRepresentative(
+        int Id,
+        uint[] ProgramHandles,
+        GlTexturedMesh[] Passes);
+
     /// <summary>
-    /// Returns the depth-only compatibility identity. Unlike the color queue
-    /// key, this may intentionally join materials with different textures or
-    /// fragment programs when their standard depth owner is identical.
+    /// Returns a depth-program-major compatibility identity. Unlike the color
+    /// queue key, its exact group may intentionally join materials with
+    /// different textures or fragment programs when their standard depth
+    /// owner is identical.
     /// </summary>
     internal static long? ResolveWorldDepthMultiDrawSortKey(
         IReadOnlyList<GlTexturedDrawCommand> commands)
@@ -916,8 +1262,35 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlTexturedMesh mesh = commands[0].Mesh;
         return mesh.InstanceCount == 0 &&
                mesh.DepthMultiDrawBatchGroupId >= 0
-            ? mesh.DepthMultiDrawBatchGroupId
+            ? CreateProgramMajorMultiDrawSortKey(
+                mesh.DepthPrepassRsxProgram.Handle,
+                mesh.DepthMultiDrawBatchGroupId)
             : null;
+    }
+
+    private static long CreateProgramMajorMultiDrawSortKey(
+        uint programHandle,
+        int batchGroupId) =>
+        unchecked(
+            ((long)programHandle << 32) |
+            (uint)batchGroupId);
+
+    private static long CreateColorQueueSortKey(
+        uint programHandle,
+        int exactGroupId,
+        bool isStatic)
+    {
+        if (exactGroupId < 0)
+            throw new ArgumentOutOfRangeException(nameof(exactGroupId));
+
+        // Signed ordering keeps nullable/unkeyed world groups first, then the
+        // negative world domain, then the nonnegative static domain. Each
+        // domain retains all 32 program bits and all 31 nonnegative ID bits.
+        ulong packed = ((ulong)programHandle << 31) |
+            (uint)exactGroupId;
+        if (!isStatic)
+            packed |= 1UL << 63;
+        return unchecked((long)packed);
     }
 
     /// <summary>
@@ -1195,6 +1568,48 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
+    private void UploadElementBuffer(
+        uint buffer,
+        uint[] values,
+        DrawElementsType indexType)
+    {
+        if (indexType == DrawElementsType.UnsignedInt)
+        {
+            UploadElementBuffer(buffer, values);
+            return;
+        }
+        if (indexType != DrawElementsType.UnsignedShort)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(indexType),
+                indexType,
+                "World geometry requires unsigned 16-bit or 32-bit indices.");
+        }
+
+        ushort[] packed = ArrayPool<ushort>.Shared.Rent(values.Length);
+        try
+        {
+            for (int index = 0; index < values.Length; index++)
+                packed[index] = checked((ushort)values[index]);
+
+            _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, buffer);
+            fixed (ushort* ptr = packed)
+            {
+                _gl.BufferData(
+                    BufferTargetARB.ElementArrayBuffer,
+                    checked((nuint)values.Length * sizeof(ushort)),
+                    ptr,
+                    BufferUsageARB.StaticDraw);
+            }
+        }
+        finally
+        {
+            ArrayPool<ushort>.Shared.Return(
+                packed,
+                clearArray: false);
+        }
+    }
+
     private void PackWorldGeometryArenas(
         IReadOnlyList<MapRenderTexturedBatch> batches)
     {
@@ -1362,7 +1777,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             _gl.BindVertexArray(vao);
             UploadBuffer(vbo, packing.Vertices);
-            UploadElementBuffer(ebo, packing.Indices);
+            UploadElementBuffer(
+                ebo,
+                packing.Indices,
+                packing.IndexType);
             WorldGeometryArenaUploadCount++;
             WorldGeometrySourceBatchCount = checked(
                 WorldGeometrySourceBatchCount + packing.SourceCount);
@@ -1383,6 +1801,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     VertexArray = vao,
                     VertexBuffer = vbo,
                     ElementBuffer = ebo,
+                    IndexType = packing.IndexType,
                     IndexOffsetBytes = placement.IndexOffsetBytes,
                     BaseVertex = placement.BaseVertex,
                     OwnsGeometry = false
@@ -2090,8 +2509,15 @@ internal sealed class MapRenderOpenGlNormalCameraDrawAdapter
     private MapRenderOpenGlNormalCameraDrawAdapter(
         RenderNormalCameraDrawSnapshot source,
         IReadOnlyList<GlTexturedMesh> worldMeshes,
-        IReadOnlyList<GlTexturedMesh> staticMeshes)
+        IReadOnlyList<GlTexturedMesh> staticMeshes,
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            legacyGroups)
     {
+        if (legacyGroups.Count != source.DrawGroups.Length)
+        {
+            throw new InvalidDataException(
+                "Semantic and legacy draw-group counts do not match.");
+        }
         _source = source;
         _groups = new MapRenderEditorDrawGroup<
             GlTexturedDrawCommand>[source.DrawGroups.Length];
@@ -2115,7 +2541,7 @@ internal sealed class MapRenderOpenGlNormalCameraDrawAdapter
                     staticMeshes))
                 .ToArray();
             long? sortKey =
-                SilkOpenGlMapRenderer.ResolveWorldMultiDrawSortKey(commands);
+                legacyGroups[groupIndex].CameraIndependentSortKey;
             MapRenderEditorDrawGroup<GlTexturedDrawCommand> mapped =
                 semanticGroup.SortCenter is { } center
                     ? MapRenderEditorDrawGroup<GlTexturedDrawCommand>
@@ -2175,7 +2601,8 @@ internal sealed class MapRenderOpenGlNormalCameraDrawAdapter
             var candidate = new MapRenderOpenGlNormalCameraDrawAdapter(
                 source,
                 worldMeshes,
-                staticMeshes);
+                staticMeshes,
+                legacyGroups);
             if (!HasLegacyParity(candidate.SourceGroups, legacyGroups))
             {
                 failure = MapRenderOpenGlNormalCameraDrawAdapterFailure
@@ -2223,7 +2650,7 @@ internal sealed class MapRenderOpenGlNormalCameraDrawAdapter
                 semanticFrame.CameraPosition,
                 semanticFrame.CameraForward);
 
-        // OpenGL may reorder opaque/cutout groups by its multi-draw
+        // OpenGL may reorder opaque/cutout groups by its exact backend color
         // compatibility key. Translucent ordering has no backend key and must
         // exactly match the shared camera plan.
         int semanticTranslucentIndex = 0;

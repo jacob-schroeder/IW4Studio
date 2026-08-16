@@ -155,6 +155,8 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
             sizeof(byte) +
             sizeof(ushort) +
             sizeof(byte) +
+            sizeof(int) +
+            sizeof(byte) +
             (4 * sizeof(uint));
         private const int SamplerFeatureLogicalByteCount =
             sizeof(int) + sizeof(int);
@@ -239,6 +241,8 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
         byte Opcode,
         bool HasDirectCodeConstant,
         ushort DirectCodeConstantIndex,
+        bool HasStaticPixelConstant,
+        int StaticPixelConstantArgumentOrdinal,
         bool HasInlineConstant,
         uint ConstantX,
         uint ConstantY,
@@ -257,6 +261,9 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
                 instruction.Opcode,
                 instruction.DirectCodeConstantIndex.HasValue,
                 instruction.DirectCodeConstantIndex.GetValueOrDefault(),
+                instruction.StaticPixelConstantArgumentOrdinal.HasValue,
+                instruction.StaticPixelConstantArgumentOrdinal
+                    .GetValueOrDefault(),
                 instruction.Constant.HasValue,
                 instruction.Constant.GetValueOrDefault().XBits,
                 instruction.Constant.GetValueOrDefault().YBits,
@@ -279,6 +286,11 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
                 instruction.DirectCodeConstantIndex.HasValue ||
                 DirectCodeConstantIndex !=
                 instruction.DirectCodeConstantIndex.GetValueOrDefault() ||
+                HasStaticPixelConstant !=
+                instruction.StaticPixelConstantArgumentOrdinal.HasValue ||
+                StaticPixelConstantArgumentOrdinal !=
+                instruction.StaticPixelConstantArgumentOrdinal
+                    .GetValueOrDefault() ||
                 HasInlineConstant != instruction.Constant.HasValue)
             {
                 return false;

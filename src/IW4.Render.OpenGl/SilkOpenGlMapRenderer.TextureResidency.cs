@@ -225,14 +225,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 if (!IsTexturedDrawGroupVisibleForFrame(group))
                     continue;
 
-                IReadOnlyList<GlTexturedDrawCommand> commands =
-                    group.AuthoredPasses;
+                ReadOnlySpan<GlTexturedDrawCommand> commands =
+                    group.AuthoredPassSpan;
                 for (int commandIndex = 0;
-                     commandIndex < commands.Count;
+                     commandIndex < commands.Length;
                      commandIndex++)
                 {
+                    ref readonly GlTexturedDrawCommand command =
+                        ref commands[commandIndex];
+                    GlTexturedMesh mesh = command.Mesh;
                     RequireMeshTexturesForCurrentFrame(
-                        commands[commandIndex].Mesh);
+                        in mesh);
                 }
             }
         }
@@ -363,13 +366,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 continue;
             }
 
-            IReadOnlyList<GlTexturedDrawCommand> commands =
-                group.AuthoredPasses;
+            ReadOnlySpan<GlTexturedDrawCommand> commands =
+                group.AuthoredPassSpan;
             for (int commandIndex = 0;
-                 commandIndex < commands.Count;
+                 commandIndex < commands.Length;
                  commandIndex++)
             {
-                GlTexturedMesh mesh = commands[commandIndex].Mesh;
+                ref readonly GlTexturedDrawCommand command =
+                    ref commands[commandIndex];
+                GlTexturedMesh mesh = command.Mesh;
                 if (mesh.RsxProgram.Handle == 0)
                     continue;
                 foreach (GlRsxSamplerBinding binding in
@@ -388,13 +393,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private bool AreTranslatedAuthoredMaterialSamplersResident(
         MapRenderEditorDrawGroup<GlTexturedDrawCommand> group)
     {
-        IReadOnlyList<GlTexturedDrawCommand> commands =
-            group.AuthoredPasses;
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
         for (int commandIndex = 0;
-             commandIndex < commands.Count;
+             commandIndex < commands.Length;
              commandIndex++)
         {
-            GlTexturedMesh mesh = commands[commandIndex].Mesh;
+            ref readonly GlTexturedDrawCommand command =
+                ref commands[commandIndex];
+            GlTexturedMesh mesh = command.Mesh;
             if (mesh.RsxProgram.Handle == 0)
                 continue;
 
@@ -404,8 +411,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             foreach (int destination in
                      mesh.RsxProgram.SamplerDestinations)
             {
-                if (runtimeRequirements.Any(requirement =>
-                        requirement.Destination == destination))
+                bool isRuntimeDestination = false;
+                for (int requirementIndex = 0;
+                     requirementIndex < runtimeRequirements.Count;
+                     requirementIndex++)
+                {
+                    if (runtimeRequirements[requirementIndex].Destination !=
+                        destination)
+                    {
+                        continue;
+                    }
+
+                    isRuntimeDestination = true;
+                    break;
+                }
+                if (isRuntimeDestination)
                 {
                     continue;
                 }
@@ -438,7 +458,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void RequireMeshTexturesForCurrentFrame(
-        GlTexturedMesh mesh)
+        in GlTexturedMesh mesh)
     {
         foreach (uint texture in mesh.ColorTextures)
             RequireTextureForCurrentFrame(texture);

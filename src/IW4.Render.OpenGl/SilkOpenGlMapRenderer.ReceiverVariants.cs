@@ -373,7 +373,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             _gl.BindVertexArray(vao);
             UploadBuffer(vbo, packing.Vertices);
-            UploadElementBuffer(ebo, packing.Indices);
+            UploadElementBuffer(
+                ebo,
+                packing.Indices,
+                packing.IndexType);
             WorldGeometryArenaUploadCount++;
             WorldGeometrySourceBatchCount = checked(
                 WorldGeometrySourceBatchCount + packing.SourceCount);
@@ -394,6 +397,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         VertexArray = vao,
                         VertexBuffer = vbo,
                         ElementBuffer = ebo,
+                        IndexType = packing.IndexType,
                         IndexOffsetBytes = placement.IndexOffsetBytes,
                         BaseVertex = placement.BaseVertex,
                         OwnsGeometry = false

@@ -8,7 +8,7 @@ namespace IW4.Render.Shaders;
 internal static class RsxShaderTranslator
 {
     internal const string CurrentSemanticTranslationVersion =
-        "rsx-shader-translator/4";
+        "rsx-shader-translator/5";
 
     public static RsxShaderTranslationResult Translate(
         byte[] vertexData,
@@ -108,6 +108,8 @@ internal static class RsxShaderTranslator
             material,
             blockers,
             out StaticFragmentConstantPatch[] staticFragmentPatches,
+            out FragmentStaticPixelConstantPatchCandidate[]
+                staticPixelConstantPatchCandidates,
             out FragmentCodePixelConstantPatchCandidate[]
                 codePixelPatchCandidates);
         RsxVertexProgramIr vertexProgramIr = programSemantics.VertexProgram
@@ -130,19 +132,26 @@ internal static class RsxShaderTranslator
         ImmutableArray<RsxFragmentInstruction> translatedPixelInstructions =
             decodedFragmentProgram.SpecializeInlineConstants(
                 patchedPixelData);
-        CodePixelConstantPatchPlan[] codePixelPatchPlans;
-        if (codePixelPatchCandidates.Length == 0)
-        {
-            codePixelPatchPlans = [];
-        }
-        else
+        CodePixelConstantPatchPlan[] codePixelPatchPlans = [];
+        if (codePixelPatchCandidates.Length != 0 ||
+            staticPixelConstantPatchCandidates.Length != 0)
         {
             List<RsxFragmentInstruction> specializedInstructions =
                 translatedPixelInstructions.ToList();
-            codePixelPatchPlans = ResolveCodePixelConstantPatches(
-                specializedInstructions,
-                codePixelPatchCandidates,
-                blockers);
+            if (codePixelPatchCandidates.Length != 0)
+            {
+                codePixelPatchPlans = ResolveCodePixelConstantPatches(
+                    specializedInstructions,
+                    codePixelPatchCandidates,
+                    blockers);
+            }
+            if (staticPixelConstantPatchCandidates.Length != 0)
+            {
+                ResolveStaticPixelConstantPatches(
+                    specializedInstructions,
+                    staticPixelConstantPatchCandidates,
+                    blockers);
+            }
             translatedPixelInstructions =
                 specializedInstructions.ToImmutableArray();
         }
@@ -217,7 +226,10 @@ internal static class RsxShaderTranslator
         blocker.Contains("invalid", StringComparison.Ordinal) ||
         blocker.Contains("missing", StringComparison.Ordinal) ||
         blocker.Contains("unsupported", StringComparison.Ordinal) ||
-        blocker.Contains("unmapped", StringComparison.Ordinal);
+        blocker.Contains("unmapped", StringComparison.Ordinal) ||
+        blocker.Contains("unmatched", StringComparison.Ordinal) ||
+        blocker.Contains("ambiguous", StringComparison.Ordinal) ||
+        blocker.Contains("conflicting", StringComparison.Ordinal);
 
     private static RsxFragmentProgramControl ReadFragmentProgramControl(
         byte[] data)
@@ -455,11 +467,15 @@ internal static class RsxShaderTranslator
         MaterialAsset? material,
         ISet<string> blockers,
         out StaticFragmentConstantPatch[] staticFragmentPatches,
+        out FragmentStaticPixelConstantPatchCandidate[]
+            staticPixelConstantPatchCandidates,
         out FragmentCodePixelConstantPatchCandidate[]
             codePixelPatchCandidates)
     {
         ArgumentNullException.ThrowIfNull(decodedProgram);
         var appliedPatches = new List<StaticFragmentConstantPatch>();
+        var staticPixelCandidates = new List<
+            FragmentStaticPixelConstantPatchCandidate>();
         var codePixelCandidates = new List<
             FragmentCodePixelConstantPatchCandidate>();
         byte[] patched = data.ToArray();
@@ -467,6 +483,7 @@ internal static class RsxShaderTranslator
         {
             blockers.Add("fragmentRuntimePatchTable=invalid");
             staticFragmentPatches = [];
+            staticPixelConstantPatchCandidates = [];
             codePixelPatchCandidates = [];
             return patched;
         }
@@ -642,8 +659,7 @@ internal static class RsxShaderTranslator
             switch (argument.Type)
             {
                 case MaterialShaderArgumentType.MaterialPixelConst when constants.TryGetValue(argument.MaterialNameHash, out MaterialConstantDef? constant):
-                    ApplyFragmentConstant(patched, runtimeInfo, entry, constant.Literal.X, constant.Literal.Y, constant.Literal.Z, constant.Literal.W);
-                    appliedPatches.Add(new StaticFragmentConstantPatch(
+                    var materialPatch = new StaticFragmentConstantPatch(
                         ordinal,
                         SelectedPassConstantKind.MaterialPixel,
                         argument.Dest,
@@ -653,11 +669,15 @@ internal static class RsxShaderTranslator
                             constant.Literal.Y,
                             constant.Literal.Z,
                             constant.Literal.W),
-                        entry.PatchOffsets.Count));
+                        entry.PatchOffsets.Count);
+                    appliedPatches.Add(materialPatch);
+                    staticPixelCandidates.Add(new(
+                        materialPatch,
+                        entry.PatchOffsets.ToArray(),
+                        checked((int)runtimeInfo.UploadOffset)));
                     break;
                 case MaterialShaderArgumentType.LiteralPixelConst when argument.LiteralConstant is { } literal:
-                    ApplyFragmentConstant(patched, runtimeInfo, entry, literal.X, literal.Y, literal.Z, literal.W);
-                    appliedPatches.Add(new StaticFragmentConstantPatch(
+                    var literalPatch = new StaticFragmentConstantPatch(
                         ordinal,
                         SelectedPassConstantKind.LiteralPixel,
                         argument.Dest,
@@ -667,7 +687,12 @@ internal static class RsxShaderTranslator
                             literal.Y,
                             literal.Z,
                             literal.W),
-                        entry.PatchOffsets.Count));
+                        entry.PatchOffsets.Count);
+                    appliedPatches.Add(literalPatch);
+                    staticPixelCandidates.Add(new(
+                        literalPatch,
+                        entry.PatchOffsets.ToArray(),
+                        checked((int)runtimeInfo.UploadOffset)));
                     break;
                 default:
                     blockers.Add($"fragmentStaticConstantDest{argument.Dest}=valueMissing");
@@ -676,6 +701,7 @@ internal static class RsxShaderTranslator
         }
 
         staticFragmentPatches = appliedPatches.ToArray();
+        staticPixelConstantPatchCandidates = staticPixelCandidates.ToArray();
         codePixelPatchCandidates = codePixelCandidates.ToArray();
         return patched;
     }
@@ -831,33 +857,88 @@ internal static class RsxShaderTranslator
         return plans.ToArray();
     }
 
-    private static void ApplyFragmentConstant(
-        byte[] data,
-        RuntimeInfo runtimeInfo,
-        PatchEntry entry,
-        float x,
-        float y,
-        float z,
-        float w)
+    private static void ResolveStaticPixelConstantPatches(
+        IList<RsxFragmentInstruction> instructions,
+        IReadOnlyList<FragmentStaticPixelConstantPatchCandidate>
+            candidates,
+        ISet<string> blockers)
     {
-        Span<byte> encoded = stackalloc byte[16];
-        WriteFragmentFloat(encoded, 0, x);
-        WriteFragmentFloat(encoded, 4, y);
-        WriteFragmentFloat(encoded, 8, z);
-        WriteFragmentFloat(encoded, 12, w);
-        foreach (ushort patchOffset in entry.PatchOffsets)
+        var instructionsByPayloadOffset = instructions
+            .Where(instruction =>
+                instruction.ByteCount == 0x20 && instruction.Constant.HasValue)
+            .ToDictionary(instruction => instruction.Offset + 0x10);
+        var ownersByProgramOffset = new Dictionary<int, int>();
+        foreach (FragmentStaticPixelConstantPatchCandidate candidate in
+                 candidates.OrderBy(candidate =>
+                     candidate.Patch.ArgumentOrdinal))
         {
-            int target = checked((int)runtimeInfo.UploadOffset + patchOffset);
-            encoded.CopyTo(data.AsSpan(target, 16));
-        }
-    }
+            StaticFragmentConstantPatch patch = candidate.Patch;
+            if (candidate.RelativePatchOffsets.Count == 0 ||
+                candidate.RelativePatchOffsets.Count !=
+                candidate.RelativePatchOffsets.Distinct().Count())
+            {
+                blockers.Add(
+                    $"fragmentStaticConstantArg{patch.ArgumentOrdinal}Dest{patch.Destination}=invalidPatchSites");
+                continue;
+            }
 
-    private static void WriteFragmentFloat(Span<byte> destination, int offset, float value)
-    {
-        uint bits = unchecked((uint)BitConverter.SingleToInt32Bits(value));
-        BinaryPrimitives.WriteUInt32BigEndian(
-            destination[offset..],
-            RsxProgramDecoder.FragmentWord(bits));
+            var instructionIndices = new List<int>(
+                candidate.RelativePatchOffsets.Count);
+            bool valid = true;
+            foreach (ushort relativeOffset in candidate.RelativePatchOffsets)
+            {
+                int programOffset = checked(
+                    candidate.UploadOffset + relativeOffset);
+                if (!instructionsByPayloadOffset.TryGetValue(
+                        programOffset,
+                        out RsxFragmentInstruction instruction))
+                {
+                    blockers.Add(
+                        $"fragmentStaticConstantArg{patch.ArgumentOrdinal}Dest{patch.Destination}=unmatchedPatchSite");
+                    valid = false;
+                    continue;
+                }
+                if (ownersByProgramOffset.TryGetValue(
+                        programOffset,
+                        out int ownerOrdinal) &&
+                    ownerOrdinal != patch.ArgumentOrdinal)
+                {
+                    blockers.Add(
+                        $"fragmentStaticConstantArg{patch.ArgumentOrdinal}Dest{patch.Destination}=ambiguousPatchSite");
+                    valid = false;
+                    continue;
+                }
+                if (instruction.DirectCodeConstantIndex.HasValue ||
+                    instruction.StaticPixelConstantArgumentOrdinal.HasValue)
+                {
+                    blockers.Add(
+                        $"fragmentStaticConstantArg{patch.ArgumentOrdinal}Dest{patch.Destination}=conflictingPatchOwner");
+                    valid = false;
+                    continue;
+                }
+
+                instructionIndices.Add(instruction.Index);
+            }
+            if (!valid)
+                continue;
+
+            foreach (ushort relativeOffset in candidate.RelativePatchOffsets)
+            {
+                ownersByProgramOffset.Add(
+                    checked(candidate.UploadOffset + relativeOffset),
+                    patch.ArgumentOrdinal);
+            }
+            foreach (int instructionIndex in instructionIndices)
+            {
+                RsxFragmentInstruction instruction =
+                    instructions[instructionIndex];
+                instructions[instructionIndex] = instruction with
+                {
+                    StaticPixelConstantArgumentOrdinal =
+                        patch.ArgumentOrdinal
+                };
+            }
+        }
     }
 
     private static bool TryReadRuntimeInfo(byte[] data, out RuntimeInfo info)

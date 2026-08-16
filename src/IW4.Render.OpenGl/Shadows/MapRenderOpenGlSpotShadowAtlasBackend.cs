@@ -403,6 +403,40 @@ internal sealed class MapRenderOpenGlSpotShadowAtlasBackend : IDisposable
         long frameRevision,
         IReadOnlyList<MapRenderOpenGlSpotShadowEntryDescriptor> descriptors)
     {
+        BeginFrame(
+            frameRevision,
+            descriptors,
+            reuseCompletedContents: false);
+    }
+
+    /// <summary>
+    /// Publishes the already-complete depth contents of this persistent atlas
+    /// for a newer renderer frame without binding, clearing, or writing any
+    /// tile. The caller must prove that every selected light, caster input,
+    /// and resource is identical to the frame that produced those contents.
+    /// </summary>
+    internal void BeginReusedFrame(
+        long frameRevision,
+        IReadOnlyList<MapRenderOpenGlSpotShadowEntryDescriptor> descriptors)
+    {
+        ArgumentNullException.ThrowIfNull(descriptors);
+        if (descriptors.Count == 0)
+        {
+            throw new ArgumentException(
+                "A reused spot-shadow frame must publish at least one completed tile.",
+                nameof(descriptors));
+        }
+        BeginFrame(
+            frameRevision,
+            descriptors,
+            reuseCompletedContents: true);
+    }
+
+    private void BeginFrame(
+        long frameRevision,
+        IReadOnlyList<MapRenderOpenGlSpotShadowEntryDescriptor> descriptors,
+        bool reuseCompletedContents)
+    {
         EnsureUsable();
         if (frameRevision < 0)
             throw new ArgumentOutOfRangeException(nameof(frameRevision));
@@ -451,8 +485,16 @@ internal sealed class MapRenderOpenGlSpotShadowAtlasBackend : IDisposable
         _expectedTileMask = snapshot.Length == 0
             ? 0
             : (1 << snapshot.Length) - 1;
-        _completedTileMask = 0;
-        _readyFrame = null;
+        _completedTileMask = reuseCompletedContents
+            ? _expectedTileMask
+            : 0;
+        _readyFrame = reuseCompletedContents
+            ? new MapRenderOpenGlSpotShadowAtlasReadyFrame(
+                frameRevision,
+                _activeDescriptors,
+                _depthTextureHandle,
+                _comparisonSamplerHandle)
+            : null;
     }
 
     /// <summary>

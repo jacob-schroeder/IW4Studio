@@ -74,6 +74,8 @@ public sealed class MapRenderEditorDrawGroup<TPass>
 
     public IReadOnlyList<TPass> AuthoredPasses => _authoredPassView;
 
+    internal ReadOnlySpan<TPass> AuthoredPassSpan => _authoredPasses;
+
     public Vector3? SortCenter => _sortCenter;
 
     public float? ExplicitDepth => _explicitDepth;

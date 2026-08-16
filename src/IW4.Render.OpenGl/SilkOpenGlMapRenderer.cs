@@ -84,6 +84,16 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private MapRenderSunShadowFramePublication?
         _currentSunShadowPublication;
     private MapRenderSunShadowCasterCatalog? _currentSunShadowCasters;
+    private MapRenderWorldDpvsVisibilityBuildResult?
+        _currentSunShadowVisibility;
+    private MapRenderWorldDpvsVisibilityBuildResult?
+        _sunShadowAtlasContentVisibility;
+    private MapRenderSunShadowCasterPartition?
+        _sunShadowAtlasContentPartition0;
+    private MapRenderSunShadowCasterPartition?
+        _sunShadowAtlasContentPartition1;
+    private MapRenderOpenGlSunShadowAtlasBackend?
+        _sunShadowAtlasContentBackend;
     private long _nextSunShadowFrameRevision;
     private int? _selectedDirectionalSunPrimaryLightIndex;
     private uint _sunShadowOpaqueCasterProgram;
@@ -242,10 +252,51 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
         _receiverAwareEditorDepthPrepassDrawGroups = [];
     private bool[] _texturedDrawGroupVisibilityScratch = [];
+    private bool[] _texturedDrawGroupColorReadinessScratch = [];
+    private MapRenderGpuPhase[] _texturedDrawGroupGpuPhaseScratch = [];
     private readonly Dictionary<
         MapRenderEditorDrawGroup<GlTexturedDrawCommand>,
         bool> _texturedDrawGroupVisibilityByIdentity =
             new(ReferenceEqualityComparer.Instance);
+    private bool _hasPreviewVisibilityPublication;
+    private long _previewVisibilityPacketTicket;
+    private SunShadowDpvsWorkKey _previewVisibilityPacketKey;
+    private long _previewVisibilitySceneGeneration;
+    private RenderCamera _previewVisibilityCamera;
+    private int _previewVisibilityTargetWidth;
+    private int _previewVisibilityTargetHeight;
+    private MapRenderCameraFrustum? _previewVisibilityFrustum;
+    private MapRenderWorldDpvsViewVisibility? _previewVisibilityDpvs;
+    private GlTexturedMesh[]? _previewVisibilityTexturedMeshes;
+    private WorldSurfaceBatchRuntime?[]?
+        _previewVisibilityWorldSurfaceBatches;
+    private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]?
+        _previewVisibilityFrameGroups;
+    private WorldReceiverVariantRuntime[]?
+        _previewVisibilityWorldReceiverVariants;
+    private bool _previewVisibilityBaseWorldReceiverActive;
+    private uint[] _previewVisibilityBaseWorldReceiverWords = [];
+    private WorldReceiverVariantRuntime[]
+        _previewVisibilityWorldReceiverChannels = [];
+    private uint[][] _previewVisibilityWorldReceiverWords = [];
+    private int[] _previewVisibilityWorldReceiverCounts = [];
+    private MapRenderStaticModelLightingWorkingSet?
+        _previewVisibilityStaticLightingWorkingSet;
+    private ulong _previewVisibilityStaticLightingAssignmentGeneration;
+    private int _previewVisibilityVisibleScheduledStaticObjectCount;
+    private long _previewVisibilityVisibleStaticObjectCount;
+    private bool _previewVisibilityUsesDynamicStaticLods;
+    private long _previewVisibilityWorldCount;
+    private long _previewVisibilityWorldRunCount;
+    private long _previewVisibilityWorldIndexCount;
+    private ulong _previewVisibilityPublicationRevision;
+    private bool _hasPreparedTexturedDrawQueue;
+    private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]?
+        _preparedTexturedDrawFrameGroups;
+    private IReadOnlyList<
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
+        _preparedTexturedDrawGroups;
+    private ulong _preparedTexturedDrawVisibilityRevision;
     private readonly HashSet<uint> _visibleTextureHandles = [];
     private readonly HashSet<uint> _criticalTextureHandles = [];
     private readonly List<MapRenderOpenGlTextureResidencyEntry>
@@ -282,6 +333,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private int? _loadedIsolatedWorldSurfaceIndex;
     private readonly MapRenderOpenGlTextureHandleCache _textureHandles = new();
     private readonly SilkOpenGlAuthoredMaterialExecutor _authoredMaterials;
+    private readonly Func<ushort, int?, ShaderConstantValue?>
+        _dynamicCodeConstantResolver;
     private MapRenderStaticModelLightingAtlas?
         _staticModelLightingAtlas;
     private MapRenderStaticModelLightingWorkingSet?
@@ -334,6 +387,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _frameClipSpaceLookupOffsetCodeConstant;
     private ShaderConstantValue
         _frameZNearCodeConstant;
+    private Vector3 _currentDynamicCodeConstantEyeOffset;
     private MapRenderEditorPreviewVisionState? _editorPreviewVision;
     private MapRenderEditorPreviewEffectivePostState?
         _editorPreviewEffectivePost;
@@ -388,6 +442,49 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             StaticResourceResolvedBatchCount);
 
     public long StaticResourceMaterializationWaveCount { get; private set; }
+
+    /// <summary>
+    /// Reports whether startup-only render work for the requested camera has
+    /// reached retained resources. The desktop host consumes this after a
+    /// completed presentation before reclaiming superseded bootstrap,
+    /// residency, and publication workspaces.
+    /// </summary>
+    public bool IsStartupWorkingSetSettled(RenderCamera requestedCamera)
+    {
+        if (!_loaded ||
+            _frameTextureDeferredCount != 0 ||
+            _progressiveStaticUnpublishedBatchCount != 0 ||
+            HasPendingProgressiveStaticGroups(
+                _baseStaticGroupPlan is { } basePlan
+                    ? basePlan.SelectedGroups
+                    : []))
+        {
+            return false;
+        }
+
+        if (_sunShadowDpvsWorker is null ||
+            _sunShadowVisibilityProvider is null ||
+            _selectedDirectionalSunPrimaryLightIndex is null)
+        {
+            return _activeRenderFrameIndex >= 0;
+        }
+        if (_previewWorldSource is not { } source ||
+            _retainedSunShadowDpvsPacket is not
+                { Ticket: > 0 } retained ||
+            retained.Ticket != _lastPresentedSunShadowDpvsTicket)
+        {
+            return false;
+        }
+
+        var requestedKey = new SunShadowDpvsWorkKey(
+            source.AssetPoolRevisionAtConstruction,
+            requestedCamera,
+            _width,
+            _height,
+            RZFar: 0f,
+            RendererFallback: requestedCamera.FarPlane);
+        return retained.Key == requestedKey;
+    }
 
     public bool ShowWireframe { get; set; }
     public bool ShowDiagnosticGeometry { get; set; }
@@ -606,6 +703,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                     gl,
                     _state,
                     ResolveLinkedProgram);
+            _dynamicCodeConstantResolver =
+                ResolveCurrentMapDynamicCodeConstant;
             bool supportsS3tc = gl.IsExtensionPresent(
                 "GL_EXT_texture_compression_s3tc");
             _compressedTextureSupport =
@@ -1482,18 +1581,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
 
         MapRenderWorldDpvsThreeViewFrame? sunShadowFrame;
         MapRenderSunShadowAtlasReadyState? sunShadowAtlasReady;
+        bool sunShadowReceiverSelectionPrepared;
         using (_gpuTimers.BeginPhase(MapRenderGpuPhase.SunShadow))
         using (BeginGpuDrawPhase(MapRenderGpuPhase.SunShadow))
         using (_frameTelemetry.BeginCpuPhase(MapRenderCpuPhase.SunShadow))
         {
             sunShadowFrame = RenderSunShadowFrame(
                 camera,
-                out sunShadowAtlasReady);
+                out sunShadowAtlasReady,
+                out sunShadowReceiverSelectionPrepared);
             if (sunShadowFrame is not null)
             {
                 RenderSpotShadowFrame(
                     sunShadowFrame,
-                    sunShadowAtlasReady);
+                    sunShadowAtlasReady,
+                    sunShadowReceiverSelectionPrepared);
             }
         }
         if (sunShadowFrame is null)
@@ -1717,8 +1819,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                         frameGroups,
                         camera.Position,
                         camera.Forward);
-                PrepareTexturedDrawGroupVisibility(drawGroups);
-                PrepareStaticReceiverDrawCompaction(drawGroups);
+                if (!CanReusePreparedTexturedDrawQueue(
+                        frameGroups,
+                        drawGroups))
+                {
+                    InvalidatePreparedTexturedDrawQueue();
+                    PrepareTexturedDrawGroupVisibility(drawGroups);
+                    PrepareStaticReceiverDrawCompaction(drawGroups);
+                    CommitPreparedTexturedDrawQueue(
+                        frameGroups,
+                        drawGroups);
+                }
             }
             PrepareTextureResidencyForVisibleDraws(
                 drawGroups,
@@ -1729,6 +1840,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 viewProjection,
                 rsxMatrices,
                 editorTimeSeconds);
+            PrepareTexturedDrawGroupColorExecution(drawGroups);
             if (RequiresVisibleProcessedFloatZ(drawGroups))
             {
                 TryBuildProcessedFloatZ(
@@ -1957,10 +2069,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             ref failures);
         _activeSunShadowDpvsPacket = null;
         _retainedSunShadowDpvsPacket = null;
+        _currentSunShadowVisibility = null;
+        InvalidateSunShadowAtlasContentCache();
+        ClearCurrentSpotShadowFrame();
+        InvalidateSpotShadowAtlasContentCache();
         LastEditorPreviewPresentationResult = null;
         LastFramePlan = null;
         _editorPreviewPresentationSession = null;
         _sunShadowAtlas = null;
+        _spotShadowAtlas = null;
         TryRelease(_gpuTimers.AbandonContext, ref failures);
         TryRelease(_sharedProgramUsage.Dispose, ref failures);
         if (_ownsSharedProgramCache)

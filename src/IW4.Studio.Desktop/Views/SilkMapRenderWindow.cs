@@ -1,11 +1,14 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using Avalonia.Threading;
 using IW4.Render;
+using IW4.Render.Diagnostics;
 using IW4.Render.OpenGl;
 using IW4.Render.Picking;
 using IW4.Render.Resources;
 using IW4.Render.Transforms;
+using IW4.Studio.Desktop.Rendering;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -20,12 +23,20 @@ namespace IW4.Studio.Desktop.Views;
 /// </summary>
 internal sealed class SilkMapRenderWindow : IDisposable
 {
+    private static readonly long TelemetryRefreshTicks =
+        Math.Max(1, Stopwatch.Frequency);
+    private const double HostRenderAverageWeight = 1.0 / 32.0;
+
     private readonly MapRenderScene _scene;
     private readonly RenderSceneSnapshot _sceneSnapshot;
     private readonly Func<string, Task>? _copyTextAsync;
     private readonly DispatcherTimer _timer = new(DispatcherPriority.Render)
     {
-        Interval = TimeSpan.FromMilliseconds(1)
+        // A zero dispatcher interval immediately requeues the next native
+        // pump after the current callback yields. A fixed delay is paid on
+        // top of every frame and becomes an artificial FPS ceiling once the
+        // renderer itself is below the display interval.
+        Interval = TimeSpan.Zero
     };
     private IWindow? _window;
     private IInputContext? _input;
@@ -34,6 +45,14 @@ internal sealed class SilkMapRenderWindow : IDisposable
     private SilkMapRenderOpenGlShareGroup.Lease? _shareGroupLease;
     private SilkOpenGlMapRenderer? _renderer;
     private SilkMapRenderFpsOverlay? _fpsOverlay;
+    private MapRenderFrameTelemetrySnapshot? _telemetrySnapshot;
+    private long _nextTelemetryRefreshTimestamp;
+    private double _hostRenderMilliseconds;
+    private double _hostRenderAverageMilliseconds;
+    private bool _hasHostRenderSample;
+    private int _startupRenderedFrameCount;
+    private int _startupSettledFrameCount;
+    private bool _startupWorkingSetReclaimed;
     private RenderCamera _camera;
     private Vector2 _lastMousePosition;
     private bool _wasDragging;
@@ -381,8 +400,28 @@ internal sealed class SilkMapRenderWindow : IDisposable
                 return;
             }
 
+            long renderStartTimestamp = Stopwatch.GetTimestamp();
             window.DoRender();
+            long renderEndTimestamp = Stopwatch.GetTimestamp();
+            _hostRenderMilliseconds =
+                (renderEndTimestamp - renderStartTimestamp) * 1000.0 /
+                Stopwatch.Frequency;
+            if (_hasHostRenderSample)
+            {
+                _hostRenderAverageMilliseconds +=
+                    (_hostRenderMilliseconds -
+                     _hostRenderAverageMilliseconds) *
+                    HostRenderAverageWeight;
+            }
+            else
+            {
+                _hostRenderAverageMilliseconds = _hostRenderMilliseconds;
+                _hasHostRenderSample = true;
+            }
+
             _renderer?.RecordPresentedFrame();
+            ReclaimSettledStartupWorkingSet();
+            RefreshTelemetrySnapshot(renderEndTimestamp);
         }
         catch (Exception exception)
         {
@@ -393,6 +432,48 @@ internal sealed class SilkMapRenderWindow : IDisposable
 
     private bool ShouldStop(IWindow window) =>
         _closeRequested || window.IsClosing;
+
+    private void ReclaimSettledStartupWorkingSet()
+    {
+        if (_startupWorkingSetReclaimed || _renderer is not { } renderer)
+            return;
+
+        _startupRenderedFrameCount = checked(
+            _startupRenderedFrameCount + 1);
+        if (renderer.IsStartupWorkingSetSettled(_camera))
+        {
+            _startupSettledFrameCount = checked(
+                _startupSettledFrameCount + 1);
+        }
+        else
+        {
+            _startupSettledFrameCount = 0;
+        }
+
+        const int requiredSettledFrameCount = 2;
+        const int maximumStartupFrameCount = 120;
+        if (_startupSettledFrameCount < requiredSettledFrameCount &&
+            _startupRenderedFrameCount < maximumStartupFrameCount)
+        {
+            return;
+        }
+
+        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
+        _startupWorkingSetReclaimed = true;
+    }
+
+    private void RefreshTelemetrySnapshot(long timestamp)
+    {
+        if (_renderer is not { } renderer ||
+            (_telemetrySnapshot is not null &&
+             timestamp < _nextTelemetryRefreshTimestamp))
+        {
+            return;
+        }
+
+        _telemetrySnapshot = renderer.FrameTelemetry;
+        _nextTelemetryRefreshTimestamp = timestamp + TelemetryRefreshTicks;
+    }
 
     private void Window_Load()
     {
@@ -419,6 +500,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
             _camera,
             Math.Max(1, initialSize.X) /
             (float)Math.Max(1, initialSize.Y));
+        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
         Console.WriteLine(
             $"OpenGL program reuse for '{_scene.Name}': " +
             $"newLinks={shareGroupLease.ProgramCache.SuccessfulLinkCount - successfulLinksBefore}, " +
@@ -607,6 +689,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
         SilkOpenGlMapRenderer? renderer = _renderer;
         renderer?.Render(_camera);
         if (renderer is null || _fpsOverlay is not { } fpsOverlay ||
+            _telemetrySnapshot is not { } telemetrySnapshot ||
             _window is not { } window)
         {
             return;
@@ -620,7 +703,9 @@ internal sealed class SilkMapRenderWindow : IDisposable
         try
         {
             fpsOverlay.Render(
-                renderer.PresentedFramesPerSecond,
+                telemetrySnapshot,
+                _hostRenderMilliseconds,
+                _hostRenderAverageMilliseconds,
                 Math.Max(1, framebufferSize.X),
                 Math.Max(1, framebufferSize.Y),
                 renderScaling);
@@ -670,6 +755,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
             finally
             {
                 _fpsOverlay = null;
+                _telemetrySnapshot = null;
                 try
                 {
                     _renderer?.Dispose();

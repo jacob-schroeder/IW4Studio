@@ -35,6 +35,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         _programFailures = [];
     private readonly Dictionary<string, string> _failureDiagnostics =
         new(StringComparer.Ordinal);
+    private readonly HashSet<RenderState> _validatedStates = [];
     private long _semanticRequestCount;
     private long _uniqueLinkCount;
     private long _linkReuseCount;
@@ -432,13 +433,46 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 -1));
         }
 
+        RsxFragmentProgramIr? fragmentProgram = execution.FragmentProgramIr;
+        if (fragmentProgram is not null)
+        {
+            foreach (StaticFragmentConstantPatch patch in fragmentProgram
+                         .StaticConstantPatches
+                         .OrderBy(patch => patch.ArgumentOrdinal))
+            {
+                if (patch.Kind is not (
+                        SelectedPassConstantKind.MaterialPixel or
+                        SelectedPassConstantKind.LiteralPixel))
+                {
+                    blocker =
+                        $"staticPixelConstantArg{patch.ArgumentOrdinal}=UNSUPPORTED_KIND";
+                    return false;
+                }
+
+                int location = _uniformLocations.Get(
+                    program.Handle,
+                    OpenGlStaticPixelConstantUniformLayout.ElementName(
+                        patch.ArgumentOrdinal));
+                ShaderConstantValue value = patch.Value;
+                result.Add(new GlRsxConstantBinding(
+                    location,
+                    value.X,
+                    value.Y,
+                    value.Z,
+                    value.W,
+                    null,
+                    CodeMatrixTransform.None,
+                    -1));
+            }
+        }
+
         bindings = result.ToArray();
         return true;
     }
 
     internal bool TryApplyConstantBindings(
         IReadOnlyList<GlRsxConstantBinding> bindings,
-        DerivedMatrixState matrices,
+        in DerivedMatrixState matrices,
         float animationTimeSeconds,
         Func<ushort, int?, ShaderConstantValue?>
             resolveDynamicCodeConstant,
@@ -452,7 +486,10 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             GlRsxConstantBinding binding = bindings[index];
             if (binding.CodeMatrixSemantic.HasValue)
             {
-                if (!TryResolveCodeMatrixRow(binding, matrices, out Vector4 row))
+                if (!TryResolveCodeMatrixRow(
+                        binding,
+                        in matrices,
+                        out Vector4 row))
                 {
                     blocker =
                         $"dynamicMatrix={binding.CodeMatrixSemantic}:{binding.CodeMatrixTransform}:row{binding.CodeMatrixRow}:UNRESOLVED";
@@ -652,6 +689,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         _programs.Clear();
         _programFailures.Clear();
         _failureDiagnostics.Clear();
+        _validatedStates.Clear();
         _uniformLocations.Clear();
         _semanticRequestCount = 0;
         _uniqueLinkCount = 0;
@@ -668,11 +706,14 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             .Order()
             .ToArray();
 
-    private static bool TryValidateState(
+    private bool TryValidateState(
         RenderState state,
         out string? blocker)
     {
         blocker = null;
+        if (_validatedStates.Contains(state))
+            return true;
+
         IReadOnlyList<string> sharedBlockers =
             RenderStateExecutionCapability.FindBlockers(state);
         if (sharedBlockers.Count != 0)
@@ -704,12 +745,13 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 $"renderStateBlend=unsupportedTuple(eqRgb=0x{(uint)state.BlendEquationRgb:X4},eqA=0x{(uint)state.BlendEquationAlpha:X4},srcRgb=0x{(uint)state.BlendSourceRgb:X4},dstRgb=0x{(uint)state.BlendDestinationRgb:X4},srcA=0x{(uint)state.BlendSourceAlpha:X4},dstA=0x{(uint)state.BlendDestinationAlpha:X4})";
             return false;
         }
+        _validatedStates.Add(state);
         return true;
     }
 
     private static bool TryResolveCodeMatrixRow(
         GlRsxConstantBinding binding,
-        DerivedMatrixState matrices,
+        in DerivedMatrixState matrices,
         out Vector4 row)
     {
         if (!binding.CodeMatrixSemantic.HasValue ||

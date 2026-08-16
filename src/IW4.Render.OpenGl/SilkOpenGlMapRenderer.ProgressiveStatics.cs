@@ -1328,7 +1328,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private static void CacheExecutableStaticDrawGroups(
+    private void CacheExecutableStaticDrawGroups(
         MapRenderOpenGlStaticResourceGroupPlan plan,
         ReadOnlySpan<bool> executableGroups,
         IReadOnlyList<MapRenderInstancedTexturedBatch> batches,

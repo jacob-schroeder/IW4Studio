@@ -24,7 +24,7 @@ public sealed class RsxFragmentProgramIr
     /// CodePixel binding rules included in <see cref="Identity"/>.
     /// </summary>
     public const string CurrentSemanticTranslationVersion =
-        "rsx-fragment-specialization/3";
+        "rsx-fragment-specialization/4";
 
     internal RsxFragmentProgramIr(
         ReadOnlySpan<byte> originalProgram,
@@ -114,12 +114,16 @@ public sealed class RsxFragmentProgramIr
         string bindingDigest = HashIdentityMaterial(
             DirectCodeConstantBindings.Select(binding =>
                 binding.IdentityMaterial));
+        string staticBindingDigest = HashIdentityMaterial(
+            Instructions.Select(instruction => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{instruction.Index}:{instruction.StaticPixelConstantArgumentOrdinal?.ToString(CultureInfo.InvariantCulture) ?? "-"}")));
         Identity = string.Create(
             CultureInfo.InvariantCulture,
             $"rsx-fragment-program-ir:{decoderVersion.Length}:{decoderVersion}:" +
             $"{semanticTranslationVersion.Length}:{semanticTranslationVersion}:" +
             $"{EffectiveByteCount}:{EffectiveSha256}:" +
-            $"{bindingDigest}:{samplerFeatureProfile.Identity}");
+            $"{bindingDigest}:{staticBindingDigest}:{samplerFeatureProfile.Identity}");
     }
 
     public string DecoderVersion { get; }
@@ -133,9 +137,9 @@ public sealed class RsxFragmentProgramIr
     public ImmutableArray<byte> OriginalProgramBytes { get; }
 
     /// <summary>
-    /// Immutable snapshot decoded by this IR after the existing static patch
-    /// sequence. Runtime CodePixel values are represented as bindings and are
-    /// intentionally not written into this snapshot.
+    /// Immutable snapshot decoded by this IR after runtime-table default
+    /// specialization. Material/literal and CodePixel values are represented
+    /// as bindings and are intentionally not written into this snapshot.
     /// </summary>
     public ImmutableArray<byte> EffectiveProgramBytes { get; }
 
@@ -563,6 +567,13 @@ public readonly record struct RsxFragmentInstruction(
     /// instruction's inline constant payload, when uniquely resolved.
     /// </summary>
     public ushort? DirectCodeConstantIndex { get; init; }
+
+    /// <summary>
+    /// Stable selected-pass material/literal pixel argument owning this
+    /// instruction's inline constant payload. Backends bind its exact float4
+    /// at draw time rather than specializing it into the program image.
+    /// </summary>
+    public int? StaticPixelConstantArgumentOrdinal { get; init; }
 
     public RsxFragmentDestination Destination => new(Dst);
 

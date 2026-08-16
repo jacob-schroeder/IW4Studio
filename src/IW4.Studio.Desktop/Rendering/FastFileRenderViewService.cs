@@ -122,15 +122,20 @@ public sealed class FastFileRenderViewService : IDisposable
                 scene,
                 snapshotRevision);
         buildCancellationToken.ThrowIfCancellationRequested();
+        RenderViewSceneBuildResult result =
+            RenderViewSceneBuildResult.Renderable(
+                workspace.Document.DocumentId,
+                loadedZone,
+                gfxWorld,
+                clipMap,
+                scene,
+                sceneSnapshot);
+
+        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
+        buildCancellationToken.ThrowIfCancellationRequested();
         buildProgress?.Invoke(
             "scene resources are ready for OpenGL initialization");
-        return RenderViewSceneBuildResult.Renderable(
-            workspace.Document.DocumentId,
-            loadedZone,
-            gfxWorld,
-            clipMap,
-            scene,
-            sceneSnapshot);
+        return result;
     }
 
     /// <summary>

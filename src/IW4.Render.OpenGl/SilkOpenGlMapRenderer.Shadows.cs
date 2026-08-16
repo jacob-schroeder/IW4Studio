@@ -36,6 +36,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private readonly HashSet<int> _sunShadowWorldAdmissionScratch = [];
     private readonly HashSet<int> _sunShadowCoverageWorldScratch = [];
     private readonly HashSet<int> _sunShadowCoverageStaticScratch = [];
+    private readonly HashSet<uint>
+        _sunShadowAtlasContentTextureHandles = [];
     private readonly int[] _sunShadowUnsupportedWorldSurfaceScratch =
         new int[4];
 
@@ -465,6 +467,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _currentSunShadowReceiverFrame = null;
         _currentSunShadowPublication = null;
         _currentSunShadowCasters = null;
+        _currentSunShadowVisibility = null;
+        InvalidateSunShadowAtlasContentCache();
         _sunShadowVisibilityProvider = null;
         _sunShadowCasterCatalogProvider = null;
         _selectedDirectionalSunPrimaryLightIndex = null;
@@ -583,6 +587,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _currentSunShadowReceiverFrame = null;
         _currentSunShadowPublication = null;
         _currentSunShadowCasters = null;
+        _currentSunShadowVisibility = null;
 
         if (_previewWorldSource is not { } source ||
             _sunShadowVisibilityProvider is not { } provider ||
@@ -721,6 +726,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         casters = candidateCasters;
         _currentSunShadowPublication = publication;
         _currentSunShadowCasters = casters;
+        _currentSunShadowVisibility = visibility;
         SunShadowPipelineStatus =
             $"SUN_SHADOW_FRAME_{revision}_THREE_VIEW_READY";
         return true;
@@ -728,9 +734,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private MapRenderWorldDpvsThreeViewFrame? RenderSunShadowFrame(
         RenderCamera camera,
-        out MapRenderSunShadowAtlasReadyState? atlasReady)
+        out MapRenderSunShadowAtlasReadyState? atlasReady,
+        out bool receiverSelectionPrepared)
     {
         atlasReady = null;
+        receiverSelectionPrepared = false;
         _currentSunShadowReceiverFrame = null;
         if (!TryBuildSunShadowFrame(
                 camera,
@@ -751,14 +759,43 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             PrepareWorldReceiverVariantSelection(
                 frame,
                 sunAtlasReady: null);
+            receiverSelectionPrepared = true;
             SunShadowPipelineStatus =
                 $"SUN_SHADOW_FRAME_{frame.Revision}_THREE_VIEW_READY_SUN_ATLAS_UNAVAILABLE";
             return frame;
         }
 
-        bool receiverSelectionPrepared = false;
         try
         {
+            if (CanReuseSunShadowAtlasContents(atlas, casters))
+            {
+                atlas.BeginReusedFrame(frame.Revision);
+                if (!publication.RecordPartitionDrawCompleted(
+                        frame.Revision,
+                        MapRenderWorldDpvsViewIndex.SunShadowPartition0) ||
+                    !publication.RecordPartitionDrawCompleted(
+                        frame.Revision,
+                        MapRenderWorldDpvsViewIndex.SunShadowPartition1) ||
+                    !publication.TryGetAtlasReady(out atlasReady) ||
+                    atlasReady is null ||
+                    !atlas.TryGetReadyFrame(
+                        frame.Revision,
+                        out MapRenderOpenGlSunShadowAtlasReadyFrame?
+                            reusedBackendReady) ||
+                    reusedBackendReady is null)
+                {
+                    throw new InvalidOperationException(
+                        "A proven unchanged sun-shadow atlas could not be published for the current frame.");
+                }
+
+                _currentSunShadowReceiverFrame = new(
+                    atlasReady,
+                    reusedBackendReady);
+                SunShadowPipelineStatus =
+                    $"SUN_SHADOW_FRAME_{frame.Revision}_ATLAS_REUSED";
+                return frame;
+            }
+
             int nativeNullSlotRejectCount = EnsureCasterCoverage(casters);
 
             // Resolve and validate every allocated receiver before touching
@@ -772,6 +809,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 sunAtlasReady: null,
                 sunShadowPreflight: true);
 
+            // A target write replaces the old depth contents even if a later
+            // partition or publication fails. Do not permit the prior cache
+            // key to survive that destructive transition.
+            InvalidateSunShadowAtlasContentCache();
             atlas.BeginFrame(frame.Revision);
             for (int partitionIndex = 0;
                  partitionIndex < 2;
@@ -822,6 +863,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _currentSunShadowReceiverFrame = new(
                 atlasReady,
                 backendReady);
+            RememberSunShadowAtlasContents(atlas, casters);
             SunShadowPipelineStatus =
                 $"SUN_SHADOW_FRAME_{frame.Revision}_ATLAS_AND_RECEIVERS_READY_NATIVE_NULL_SLOT2_REJECTS_{nativeNullSlotRejectCount}";
         }
@@ -851,8 +893,91 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             PrepareWorldReceiverVariantSelection(
                 frame,
                 sunAtlasReady: null);
+            receiverSelectionPrepared = true;
         }
         return frame;
+    }
+
+    /// <summary>
+    /// The normal-camera visibility cache returns the same result object only
+    /// for an exact producer/source/camera/framebuffer/far-plane key hit.
+    /// The cached caster partitions are then the exact admitted geometry and
+    /// static-transform sequences used to write the existing atlas. Renderer
+    /// resources are immutable after scene load; cutout texture residency is
+    /// the one mutable draw dependency, so it is checked before every reuse.
+    /// </summary>
+    private bool CanReuseSunShadowAtlasContents(
+        MapRenderOpenGlSunShadowAtlasBackend atlas,
+        MapRenderSunShadowCasterCatalog casters)
+    {
+        if (!ReferenceEquals(atlas, _sunShadowAtlasContentBackend) ||
+            !ReferenceEquals(
+                _currentSunShadowVisibility,
+                _sunShadowAtlasContentVisibility) ||
+            !ReferenceEquals(
+                casters.Partition0,
+                _sunShadowAtlasContentPartition0) ||
+            !ReferenceEquals(
+                casters.Partition1,
+                _sunShadowAtlasContentPartition1))
+        {
+            return false;
+        }
+
+        foreach (uint handle in _sunShadowAtlasContentTextureHandles)
+        {
+            if (!IsSunShadowCasterTextureResident(handle))
+                return false;
+        }
+        return true;
+    }
+
+    private bool IsSunShadowCasterTextureResident(uint handle) =>
+        handle == 0 ||
+        (_textureHandles.TryGetEntry(
+             handle,
+             out MapRenderOpenGlTextureResidencyEntry entry) &&
+         entry.IsResident);
+
+    private void RememberSunShadowAtlasContents(
+        MapRenderOpenGlSunShadowAtlasBackend atlas,
+        MapRenderSunShadowCasterCatalog casters)
+    {
+        _sunShadowAtlasContentBackend = atlas;
+        _sunShadowAtlasContentVisibility = _currentSunShadowVisibility;
+        _sunShadowAtlasContentPartition0 = casters.Partition0;
+        _sunShadowAtlasContentPartition1 = casters.Partition1;
+        _sunShadowAtlasContentTextureHandles.Clear();
+        foreach (int surfaceIndex in _sunShadowCoverageWorldScratch)
+        {
+            if (_sunShadowWorldCastersBySurface.TryGetValue(
+                    surfaceIndex,
+                    out MapRenderOpenGlSunShadowWorldCasterSurfaceRuntime
+                        surfaceRuntime))
+            {
+                _sunShadowAtlasContentTextureHandles.Add(
+                    surfaceRuntime.Runtime.Mesh.CutoutTexture);
+            }
+        }
+        foreach (MapRenderOpenGlSunShadowStaticCasterRuntime runtime in
+                 _sunShadowStaticCasterRuntimes)
+        {
+            if (runtime.GetPartition(0).InstanceCount != 0 ||
+                runtime.GetPartition(1).InstanceCount != 0)
+            {
+                _sunShadowAtlasContentTextureHandles.Add(
+                    runtime.GetPartition(0).Mesh.CutoutTexture);
+            }
+        }
+    }
+
+    private void InvalidateSunShadowAtlasContentCache()
+    {
+        _sunShadowAtlasContentBackend = null;
+        _sunShadowAtlasContentVisibility = null;
+        _sunShadowAtlasContentPartition0 = null;
+        _sunShadowAtlasContentPartition1 = null;
+        _sunShadowAtlasContentTextureHandles.Clear();
     }
 
     private int EnsureCasterCoverage(

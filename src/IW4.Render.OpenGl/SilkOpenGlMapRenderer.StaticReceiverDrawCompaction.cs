@@ -40,18 +40,20 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
             MapRenderEditorDrawGroup<GlTexturedDrawCommand> group =
                 groups[groupIndex];
-            IReadOnlyList<GlTexturedDrawCommand> commands =
-                group.AuthoredPasses;
+            ReadOnlySpan<GlTexturedDrawCommand> commands =
+                group.AuthoredPassSpan;
             bool singlePassCandidate =
                 group.Bucket == MapRenderEditorDrawBucket.Translucent &&
-                commands.Count == 1;
+                commands.Length == 1;
             for (int commandIndex = 0;
-                 commandIndex < commands.Count;
+                 commandIndex < commands.Length;
                  commandIndex++)
             {
-                GlTexturedDrawCommand command = commands[commandIndex];
+                ref readonly GlTexturedDrawCommand command =
+                    ref commands[commandIndex];
+                GlTexturedMesh mesh = command.Mesh;
                 if (!TryGetIsolatedStaticReceiverRuntime(
-                        command,
+                        in mesh,
                         out StaticInstanceBufferRuntime? runtime))
                 {
                     continue;
@@ -59,11 +61,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
                 if (singlePassCandidate &&
                     command.InstanceIndex is int sourceIndex &&
-                    command.Mesh.StaticCameraRegion is
+                    mesh.StaticCameraRegion is
                         GfxCameraRegionType.LitOpaque or
                         GfxCameraRegionType.LightMapOpaque &&
-                    (command.Mesh.RsxProgram.Handle == 0 ||
-                     command.Mesh.StaticModelProgramUniforms is not null))
+                    (mesh.RsxProgram.Handle == 0 ||
+                     mesh.StaticModelProgramUniforms is not null))
                 {
                     runtime.GetReceiverDrawCompactionPlan()
                         .ObserveCandidate(
@@ -119,16 +121,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderEditorDrawGroup<GlTexturedDrawCommand> group,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds)
     {
-        if (group.AuthoredPasses.Count != 1)
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
+        if (commands.Length != 1)
             return false;
 
-        GlTexturedDrawCommand command = group.AuthoredPasses[0];
+        ref readonly GlTexturedDrawCommand command = ref commands[0];
+        GlTexturedMesh mesh = command.Mesh;
         if (!TryGetIsolatedStaticReceiverRuntime(
-                command,
+                in mesh,
                 out StaticInstanceBufferRuntime? runtime) ||
             !runtime.HasCommittedReceiverDrawCompaction ||
             !runtime.TryGetReceiverDrawCompactionPlan(
@@ -139,11 +144,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         if (groupIndex == plan.FirstGroupIndex)
         {
+            GlTexturedDrawCommand compactedCommand =
+                command with { InstanceIndex = null };
             Draw(
-                command with { InstanceIndex = null },
+                in compactedCommand,
                 stencilTargetContract,
                 viewProjection,
-                rsxMatrices,
+                in rsxMatrices,
                 cameraPosition,
                 editorTimeSeconds);
         }
@@ -151,12 +158,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private bool TryGetIsolatedStaticReceiverRuntime(
-        GlTexturedDrawCommand command,
+        in GlTexturedMesh mesh,
         out StaticInstanceBufferRuntime runtime)
     {
-        if (command.Mesh.InstanceBuffer != 0 &&
+        if (mesh.InstanceBuffer != 0 &&
             _staticInstanceBuffers.TryGetValue(
-                command.Mesh.InstanceBuffer,
+                mesh.InstanceBuffer,
                 out StaticInstanceBufferRuntime? candidate) &&
             candidate.IsReceiverVariant &&
             candidate.HasIsolatedDraw)

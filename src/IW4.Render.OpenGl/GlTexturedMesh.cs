@@ -40,6 +40,23 @@ internal readonly record struct GlTexturedMesh(
     int MultiDrawBatchGroupId = -1,
     int StaticModelLodIndex = -1)
 {
+    internal DrawElementsType IndexType { get; init; } =
+        DrawElementsType.UnsignedInt;
+
+    internal nuint IndexElementSizeBytes =>
+        ResolveIndexElementSizeBytes(IndexType);
+
+    internal static nuint ResolveIndexElementSizeBytes(
+        DrawElementsType indexType) => indexType switch
+    {
+        DrawElementsType.UnsignedShort => sizeof(ushort),
+        DrawElementsType.UnsignedInt => sizeof(uint),
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(indexType),
+            indexType,
+            "Textured geometry requires unsigned 16-bit or 32-bit indices.")
+    };
+
     /// <summary>
     /// Retains the translated-program contract at draw time. Renderer-owned
     /// code samplers cannot be treated as statically ready: each publication

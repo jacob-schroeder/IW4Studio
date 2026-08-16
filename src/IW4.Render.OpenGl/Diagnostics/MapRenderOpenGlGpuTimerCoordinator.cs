@@ -4,8 +4,8 @@ namespace IW4.Render.OpenGl.Diagnostics;
 
 /// <summary>
 /// Allocation-free scope for one coarse GL_TIME_ELAPSED interval. A default
-/// scope means that this frame is assigned to whole-frame sampling or that the
-/// phase ring was full; disposing it is a no-op.
+/// scope means that this frame is unsampled, assigned to whole-frame sampling,
+/// or that the phase ring was full; disposing it is a no-op.
 /// </summary>
 public readonly struct MapRenderOpenGlGpuPhaseScope : IDisposable
 {
@@ -27,19 +27,20 @@ public readonly struct MapRenderOpenGlGpuPhaseScope : IDisposable
 
 /// <summary>
 /// Coordinates a whole-frame query ring with one delayed query ring per coarse
-/// GPU phase. Frames alternate between attribution and an occasional
-/// whole-frame sample so GL_TIME_ELAPSED queries are never nested.
+/// GPU phase. One 32-frame cycle interleaves one whole-frame query and one
+/// query for each of the 15 phases with 16 query-free frames. Phase samples
+/// rotate across frames so GL_TIME_ELAPSED queries never nest or form a burst.
 /// </summary>
 public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
 {
-    public const int DefaultWholeFrameSamplePeriod = 8;
-
     private readonly MapRenderOpenGlTimeElapsedQueryRing _wholeFrameRing;
     private readonly MapRenderOpenGlTimeElapsedQueryRing[] _phaseRings;
     private readonly bool[] _phaseObservedThisFrame;
-    private readonly int _wholeFrameSamplePeriod;
+    private readonly int _samplingCycleFrameCount;
     private bool _frameActive;
     private bool _wholeFrameSampling;
+    private bool _phaseAttributionSampling;
+    private int _scheduledPhaseIndex = -1;
     private bool _wholeFrameQueryStarted;
     private bool _phaseQueryActive;
     private int _activePhaseIndex = -1;
@@ -54,20 +55,11 @@ public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
         IMapRenderOpenGlTimeElapsedQueryApi api,
         int capacity = MapRenderOpenGlTimeElapsedQueryRing.DefaultCapacity,
         int minimumFrameDelay =
-            MapRenderOpenGlTimeElapsedQueryRing.DefaultMinimumFrameDelay,
-        int wholeFrameSamplePeriod = DefaultWholeFrameSamplePeriod)
+            MapRenderOpenGlTimeElapsedQueryRing.DefaultMinimumFrameDelay)
     {
         ArgumentNullException.ThrowIfNull(api);
-        if (wholeFrameSamplePeriod <= 1)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(wholeFrameSamplePeriod),
-                wholeFrameSamplePeriod,
-                "Whole-frame sampling period must be greater than one.");
-        }
-
-        _wholeFrameSamplePeriod = wholeFrameSamplePeriod;
         int phaseCount = Enum.GetValues<MapRenderGpuPhase>().Length;
+        _samplingCycleFrameCount = checked((phaseCount + 1) * 2);
         _phaseRings = new MapRenderOpenGlTimeElapsedQueryRing[phaseCount];
         _phaseObservedThisFrame = new bool[phaseCount];
 
@@ -121,8 +113,17 @@ public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
         _lastObservedFrameIndex = frameIndex;
         Array.Clear(_phaseObservedThisFrame);
         _frameIndex = frameIndex;
-        _wholeFrameSampling = !enablePhaseAttribution ||
-            ((frameIndex + 1) % _wholeFrameSamplePeriod) == 0;
+        int cycleFrame = checked(
+            (int)(frameIndex % _samplingCycleFrameCount));
+        bool queryFrame = (cycleFrame & 1) == 0;
+        int querySlot = cycleFrame / 2;
+        _wholeFrameSampling = queryFrame && querySlot == 0;
+        _scheduledPhaseIndex = queryFrame &&
+            querySlot > 0 &&
+            enablePhaseAttribution
+                ? querySlot - 1
+                : -1;
+        _phaseAttributionSampling = _scheduledPhaseIndex >= 0;
         _wholeFrameQueryStarted = false;
         _frameActive = true;
 
@@ -148,7 +149,7 @@ public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
             throw new ArgumentOutOfRangeException(nameof(phase), phase, null);
         }
 
-        if (_wholeFrameSampling)
+        if (!_phaseAttributionSampling)
             return default;
 
         if (_phaseQueryActive)
@@ -165,6 +166,9 @@ public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
         }
 
         _phaseObservedThisFrame[phaseIndex] = true;
+        if (phaseIndex != _scheduledPhaseIndex)
+            return default;
+
         if (!_phaseRings[phaseIndex].TryBeginFrame(_frameIndex))
             return default;
 
@@ -193,6 +197,8 @@ public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
 
         _wholeFrameQueryStarted = false;
         _wholeFrameSampling = false;
+        _phaseAttributionSampling = false;
+        _scheduledPhaseIndex = -1;
         _frameActive = false;
     }
 
@@ -269,6 +275,8 @@ public sealed class MapRenderOpenGlGpuTimerCoordinator : IDisposable
         _wholeFrameRing.AbandonContext();
         _frameActive = false;
         _wholeFrameSampling = false;
+        _phaseAttributionSampling = false;
+        _scheduledPhaseIndex = -1;
         _wholeFrameQueryStarted = false;
         _phaseQueryActive = false;
         _activePhaseIndex = -1;

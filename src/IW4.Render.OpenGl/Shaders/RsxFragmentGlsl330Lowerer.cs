@@ -100,6 +100,18 @@ internal static class RsxFragmentGlsl330Lowerer
             builder.AppendLine(
                 $"uniform vec4 {OpenGlCodePixelConstantUniformLayout.ArrayName}[{OpenGlCodePixelConstantUniformLayout.Count}];");
         }
+        foreach (int argumentOrdinal in instructions
+                     .Where(instruction =>
+                         instruction.StaticPixelConstantArgumentOrdinal.HasValue)
+                     .Select(instruction =>
+                         instruction.StaticPixelConstantArgumentOrdinal
+                             .GetValueOrDefault())
+                     .Distinct()
+                     .Order())
+        {
+            builder.AppendLine(
+                $"uniform vec4 {OpenGlStaticPixelConstantUniformLayout.ElementName(argumentOrdinal)};");
+        }
         for (int i = 0; i < 16; i++)
         {
             RsxFragmentSamplerFeatures features =
@@ -686,7 +698,11 @@ internal static class RsxFragmentGlsl330Lowerer
             RsxFragmentRegisterType.Input =>
                 FragmentInput(instruction.SourceAttribute),
             RsxFragmentRegisterType.InlineConstant =>
-                instruction.DirectCodeConstantIndex is { } codeIndex
+                instruction.StaticPixelConstantArgumentOrdinal is
+                    { } staticArgumentOrdinal
+                ? OpenGlStaticPixelConstantUniformLayout.ElementName(
+                    staticArgumentOrdinal)
+                : instruction.DirectCodeConstantIndex is { } codeIndex
                 ? OpenGlCodePixelConstantUniformLayout.ElementName(
                     codeIndex)
                 : instruction.Constant is { } constant

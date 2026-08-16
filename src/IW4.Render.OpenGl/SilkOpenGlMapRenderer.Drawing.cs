@@ -80,7 +80,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
         using MapRenderOpenGlGpuPhaseScope gpuTiming =
@@ -103,6 +103,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     out MapRenderEditorDepthPrepassPlan? plan);
             if (commands.Count == 0 || plan is null)
                 continue;
+            ReadOnlySpan<GlTexturedDrawCommand> commandSpan =
+                group.AuthoredPassSpan;
 
             if (commands.Count == 1 &&
                 TryGetDepthMultiDrawWorldMesh(
@@ -117,25 +119,38 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 int multiDrawCount = AppendWorldMultiDrawRanges(
                     firstMesh,
                     firstSurfaceBatch,
-                    destinationIndex: 0);
+                    destinationIndex: 0,
+                    mergeAdjacentRanges: false);
+                long depthSortKey =
+                    ResolveWorldDepthMultiDrawSortKey(commands) ??
+                    throw new InvalidOperationException(
+                        "A depth multi-draw candidate has no immutable compatibility key.");
                 int groupedDrawCount = 1;
                 while (groupIndex + groupedDrawCount < groups.Count)
                 {
                     int nextGroupIndex = groupIndex + groupedDrawCount;
                     MapRenderEditorDrawGroup<GlTexturedDrawCommand> nextGroup =
                         groups[nextGroupIndex];
-                    if (!IsTexturedDrawGroupVisibleForFrame(nextGroup))
-                        break;
                     IReadOnlyList<GlTexturedDrawCommand> nextCommands =
                         SelectStandardDepthPrepassCommands(
                             nextGroup,
                             out MapRenderEditorDepthPrepassPlan? nextPlan);
                     if (nextPlan is null ||
                         nextCommands.Count != 1 ||
-                        !TryGetDepthMultiDrawWorldMesh(
-                            nextGroup,
-                            out GlTexturedMesh nextMesh,
-                            out WorldSurfaceBatchRuntime? nextSurfaceBatch))
+                        ResolveWorldDepthMultiDrawSortKey(nextCommands) !=
+                            depthSortKey)
+                    {
+                        break;
+                    }
+                    if (!IsTexturedDrawGroupVisibleForFrame(nextGroup))
+                    {
+                        groupedDrawCount++;
+                        continue;
+                    }
+                    if (!TryGetDepthMultiDrawWorldMesh(
+                             nextGroup,
+                             out GlTexturedMesh nextMesh,
+                             out WorldSurfaceBatchRuntime? nextSurfaceBatch))
                     {
                         break;
                     }
@@ -154,12 +169,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         multiDrawCount + AppendWorldMultiDrawRanges(
                             nextMesh,
                             nextSurfaceBatch,
-                            multiDrawCount));
+                            multiDrawCount,
+                            mergeAdjacentRanges: false));
                     groupedDrawCount++;
                 }
 
                 DrawDepthPrepass(
-                    firstVisibleMesh,
+                    in firstVisibleMesh,
                     plan,
                     stencilTargetContract,
                     viewProjection,
@@ -178,11 +194,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // every command so each range establishes depth. True multipass
             // duplicates are harmless under the authored LEQUAL state.
             for (int commandIndex = 0;
-                 commandIndex < commands.Count;
+                 commandIndex < commandSpan.Length;
                  commandIndex++)
             {
+                ref readonly GlTexturedDrawCommand command =
+                    ref commandSpan[commandIndex];
                 DrawDepthPrepass(
-                    commands[commandIndex],
+                    in command,
                     plan,
                     stencilTargetContract,
                     viewProjection,
@@ -229,26 +247,28 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private bool IsTexturedDrawGroupVisible(
         MapRenderEditorDrawGroup<GlTexturedDrawCommand> group)
     {
-        IReadOnlyList<GlTexturedDrawCommand> commands =
-            group.AuthoredPasses;
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
         for (int commandIndex = 0;
-             commandIndex < commands.Count;
+             commandIndex < commands.Length;
              commandIndex++)
         {
-            if (IsTexturedDrawCommandVisible(commands[commandIndex]))
+            ref readonly GlTexturedDrawCommand command =
+                ref commands[commandIndex];
+            if (IsTexturedDrawCommandVisible(in command))
                 return true;
         }
         return false;
     }
 
     private bool IsTexturedDrawCommandVisible(
-        GlTexturedDrawCommand command)
+        in GlTexturedDrawCommand command)
     {
         GlTexturedMesh mesh = command.Mesh;
         if (mesh.InstanceCount == 0)
         {
             return TryGetWorldSurfaceBatchRuntime(
-                    command,
+                    in command,
                     out WorldSurfaceBatchRuntime worldBatch)
                 ? worldBatch.RunCount != 0
                 : IsWorldMeshVisible(mesh);
@@ -266,9 +286,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     {
         ArgumentNullException.ThrowIfNull(group);
         plan = null;
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
         if (group.Bucket != MapRenderEditorDrawBucket.Opaque ||
-            group.AuthoredPasses.Count == 0 ||
-            group.AuthoredPasses[0].Mesh.EditorDepthPrepass is not
+            commands.Length == 0 ||
+            commands[0].Mesh.EditorDepthPrepass is not
                 { Program: MapRenderEditorDepthPrepassProgram.TransformOnlyNull }
                 candidate)
         {
@@ -276,10 +298,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
 
         for (int passIndex = 1;
-             passIndex < group.AuthoredPasses.Count;
+             passIndex < commands.Length;
              passIndex++)
         {
-            if (group.AuthoredPasses[passIndex].Mesh.EditorDepthPrepass !=
+            ref readonly GlTexturedDrawCommand command =
+                ref commands[passIndex];
+            if (command.Mesh.EditorDepthPrepass !=
                 candidate)
             {
                 return [];
@@ -291,23 +315,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void DrawDepthPrepass(
-        GlTexturedDrawCommand command,
+        in GlTexturedDrawCommand command,
         MapRenderEditorDepthPrepassPlan plan,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
-        if (command.Mesh.InstanceCount == 0 &&
+        GlTexturedMesh mesh = command.Mesh;
+        if (mesh.InstanceCount == 0 &&
             TryGetWorldSurfaceBatchRuntime(
-                command,
+                in command,
                 out WorldSurfaceBatchRuntime worldBatch))
         {
             if (worldBatch.RunCount == 0)
                 return;
 
             GlTexturedMesh visibleMesh = SelectWorldVisibleRun(
-                command.Mesh,
+                in mesh,
                 worldBatch.VisibleRuns[0]);
             int multiDrawCount = worldBatch.RunCount;
             if (multiDrawCount > 1)
@@ -320,57 +345,57 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     SetMultiDrawRange(
                         runIndex,
                         SelectWorldVisibleRun(
-                            command.Mesh,
+                            in mesh,
                             worldBatch.VisibleRuns[runIndex]));
                 }
             }
 
             DrawDepthPrepass(
-                visibleMesh,
+                in visibleMesh,
                 plan,
                 stencilTargetContract,
                 viewProjection,
-                rsxMatrices,
+                in rsxMatrices,
                 editorTimeSeconds,
                 instanceIndex: null,
                 multiDrawCount);
             return;
         }
-        if (command.Mesh.InstanceCount == 0 &&
-            !IsWorldMeshVisible(command.Mesh))
+        if (mesh.InstanceCount == 0 &&
+            !IsWorldMeshVisible(mesh))
         {
             return;
         }
         if (command.InstanceIndex is int visibilityInstanceIndex &&
             !IsStaticInstanceVisible(
-                command.Mesh,
+                mesh,
                 visibilityInstanceIndex))
         {
             return;
         }
-        if (command.Mesh.InstanceCount != 0 &&
+        if (mesh.InstanceCount != 0 &&
             command.InstanceIndex is null &&
-            ResolveVisibleInstanceCount(command.Mesh) == 0)
+            ResolveVisibleInstanceCount(mesh) == 0)
         {
             return;
         }
 
         DrawDepthPrepass(
-            command.Mesh,
+            in mesh,
             plan,
             stencilTargetContract,
             viewProjection,
-            rsxMatrices,
+            in rsxMatrices,
             editorTimeSeconds,
             command.InstanceIndex);
     }
 
     private void DrawDepthPrepass(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         MapRenderEditorDepthPrepassPlan plan,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         float editorTimeSeconds,
         int? instanceIndex,
         int multiDrawCount = 0)
@@ -401,9 +426,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
             DerivedMatrixState drawMatrices =
                 ResolveTranslatedDrawMatrices(
-                    mesh,
+                    in mesh,
                     instanceIndex,
-                    rsxMatrices);
+                    in rsxMatrices);
             ApplyRenderState(plan.State, stencilTargetContract);
             _state.UseProgram(mesh.DepthPrepassRsxProgram.Handle);
             ApplyStaticModelInstancingFrame(
@@ -415,7 +440,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 editorTimeSeconds);
             ApplyRsxConstantBindings(
                 mesh.DepthPrepassRsxConstantBindings,
-                drawMatrices,
+                in drawMatrices,
                 editorTimeSeconds);
             _state.BindVertexArray(mesh.VertexArray);
             if (instanceIndex.HasValue)
@@ -426,7 +451,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     MapRenderOpenGlStaticModelInstancedVertexComposer
                         .FirstPlacementAttribute);
             }
-            IssueWorldDraws(mesh, multiDrawCount, instanceIndex);
+            IssueWorldDraws(in mesh, multiDrawCount, instanceIndex);
             return;
         }
 
@@ -467,7 +492,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _state.BindVertexArray(mesh.VertexArray);
         if (mesh.InstanceCount == 0)
         {
-            IssueWorldDraws(mesh, multiDrawCount);
+            IssueWorldDraws(in mesh, multiDrawCount);
             return;
         }
 
@@ -491,7 +516,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _gl.DrawElementsInstanced(
             PrimitiveType.Triangles,
             mesh.IndexCount,
-            DrawElementsType.UnsignedInt,
+            mesh.IndexType,
             null,
             drawnInstanceCount);
     }
@@ -500,7 +525,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds)
     {
@@ -510,11 +535,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         for (int index = 0; index < groups.Count; index++)
         {
             if (!_texturedDrawGroupVisibilityScratch[index] ||
-                !IsTexturedDrawGroupReadyForColorExecution(groups[index]))
+                !_texturedDrawGroupColorReadinessScratch[index])
             {
                 continue;
             }
-            int phaseIndex = (int)ResolveTexturedGpuPhase(groups[index]);
+            int phaseIndex =
+                (int)_texturedDrawGroupGpuPhaseScratch[index];
             if (phaseIndex == previousPhaseIndex)
                 continue;
 
@@ -535,11 +561,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 MapRenderEditorDrawGroup<GlTexturedDrawCommand> group =
                     groups[groupIndex];
                 if (!_texturedDrawGroupVisibilityScratch[groupIndex] ||
-                    !IsTexturedDrawGroupReadyForColorExecution(group))
+                    !_texturedDrawGroupColorReadinessScratch[groupIndex])
                 {
                     continue;
                 }
-                MapRenderGpuPhase gpuPhase = ResolveTexturedGpuPhase(group);
+                MapRenderGpuPhase gpuPhase =
+                    _texturedDrawGroupGpuPhaseScratch[groupIndex];
                 int gpuPhaseIndex = (int)gpuPhase;
                 if (gpuPhaseIndex != activePhaseIndex)
                 {
@@ -558,7 +585,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 }
 
                 MapRenderCpuPhase cpuPhase =
-                    group.AuthoredPasses[0].Mesh.InstanceCount == 0
+                    group.AuthoredPassSpan[0].Mesh.InstanceCount == 0
                         ? MapRenderCpuPhase.WorldGeometry
                         : MapRenderCpuPhase.StaticModels;
                 if (!hasActiveCpuPhase || cpuPhase != activeCpuPhase)
@@ -573,7 +600,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         group,
                         stencilTargetContract,
                         viewProjection,
-                        rsxMatrices,
+                        in rsxMatrices,
                         cameraPosition,
                         editorTimeSeconds))
                 {
@@ -584,17 +611,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         out GlTexturedMesh firstMesh,
                         out WorldSurfaceBatchRuntime? firstSurfaceBatch))
                 {
-                    IReadOnlyList<GlTexturedDrawCommand> authoredPasses =
-                        group.AuthoredPasses;
+                    ReadOnlySpan<GlTexturedDrawCommand> authoredPasses =
+                        group.AuthoredPassSpan;
                     for (int commandIndex = 0;
-                         commandIndex < authoredPasses.Count;
+                         commandIndex < authoredPasses.Length;
                          commandIndex++)
                     {
+                        ref readonly GlTexturedDrawCommand command =
+                            ref authoredPasses[commandIndex];
                         Draw(
-                            authoredPasses[commandIndex],
+                            in command,
                             stencilTargetContract,
                             viewProjection,
-                            rsxMatrices,
+                            in rsxMatrices,
                             cameraPosition,
                             editorTimeSeconds);
                     }
@@ -608,14 +637,30 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 int multiDrawCount = AppendWorldMultiDrawRanges(
                     firstMesh,
                     firstSurfaceBatch,
-                    destinationIndex: 0);
-                int groupedDrawCount = 1;
-                while (groupIndex + groupedDrawCount < groups.Count)
+                    destinationIndex: 0,
+                    mergeAdjacentRanges: true);
+                long colorSortKey = group.CameraIndependentSortKey ??
+                    throw new InvalidOperationException(
+                        "A color multi-draw candidate has no immutable compatibility key.");
+                int consumedGroupCount = 1;
+                while (groupIndex + consumedGroupCount < groups.Count)
                 {
+                    int nextGroupIndex = groupIndex + consumedGroupCount;
                     MapRenderEditorDrawGroup<GlTexturedDrawCommand> nextGroup =
-                        groups[groupIndex + groupedDrawCount];
-                    if (nextGroup.Bucket != group.Bucket ||
-                        ResolveTexturedGpuPhase(nextGroup) != gpuPhase ||
+                        groups[nextGroupIndex];
+                    if (nextGroup.CameraIndependentSortKey != colorSortKey ||
+                        nextGroup.Bucket != group.Bucket)
+                    {
+                        break;
+                    }
+                    if (!_texturedDrawGroupVisibilityScratch[nextGroupIndex] ||
+                        !_texturedDrawGroupColorReadinessScratch[nextGroupIndex])
+                    {
+                        consumedGroupCount++;
+                        continue;
+                    }
+                    if (_texturedDrawGroupGpuPhaseScratch[nextGroupIndex] !=
+                            gpuPhase ||
                         !TryGetMultiDrawWorldMesh(
                             nextGroup,
                             out GlTexturedMesh nextMesh,
@@ -638,20 +683,32 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         multiDrawCount + AppendWorldMultiDrawRanges(
                             nextMesh,
                             nextSurfaceBatch,
-                            multiDrawCount));
-                    groupedDrawCount++;
+                            multiDrawCount,
+                            mergeAdjacentRanges: true));
+                    consumedGroupCount++;
+                }
+
+                if (multiDrawCount == 1)
+                {
+                    firstVisibleMesh = firstVisibleMesh with
+                    {
+                        IndexCount = _multiDrawIndexCounts[0],
+                        IndexOffsetBytes = checked(
+                            (nuint)_multiDrawIndexOffsets[0]),
+                        BaseVertex = _multiDrawBaseVertices[0]
+                    };
                 }
 
                 Draw(
-                    firstVisibleMesh,
+                    in firstVisibleMesh,
                     stencilTargetContract,
                     viewProjection,
-                    rsxMatrices,
+                    in rsxMatrices,
                     cameraPosition,
                     editorTimeSeconds,
                     instanceIndex: null,
                     multiDrawCount: multiDrawCount);
-                groupIndex += groupedDrawCount - 1;
+                groupIndex += consumedGroupCount - 1;
             }
         }
         finally
@@ -694,16 +751,42 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static bool RequiresProcessedFloatZ(
-        MapRenderEditorDrawGroup<GlTexturedDrawCommand> group) =>
-        group.AuthoredPasses.Any(command =>
-            command.Mesh.ShaderExecution?.RuntimeSamplerRequirements.Any(
-                requirement =>
-                    requirement.ResourceKind ==
-                        ShaderRuntimeSamplerResourceKind
-                            .ProcessedFloatZ &&
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand> group)
+    {
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
+        for (int commandIndex = 0;
+             commandIndex < commands.Length;
+             commandIndex++)
+        {
+            ref readonly GlTexturedDrawCommand command =
+                ref commands[commandIndex];
+            ShaderExecutionContract? execution =
+                command.Mesh.ShaderExecution;
+            if (execution is null)
+                continue;
+
+            IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements =
+                execution.RuntimeSamplerRequirements;
+            for (int requirementIndex = 0;
+                 requirementIndex < requirements.Count;
+                 requirementIndex++)
+            {
+                ShaderRuntimeSamplerRequirement requirement =
+                    requirements[requirementIndex];
+                if (requirement.ResourceKind ==
+                        ShaderRuntimeSamplerResourceKind.ProcessedFloatZ &&
                     requirement.Status ==
                         ShaderRuntimeSamplerRequirementStatus
-                            .SameRevisionTextureRequired) == true);
+                            .SameRevisionTextureRequired)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     private bool RequiresVisibleProcessedFloatZ(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
@@ -714,8 +797,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
              groupIndex++)
         {
             if (_texturedDrawGroupVisibilityScratch[groupIndex] &&
-                IsTexturedDrawGroupReadyForColorExecution(
-                    groups[groupIndex]) &&
+                _texturedDrawGroupColorReadinessScratch[groupIndex] &&
                 RequiresProcessedFloatZ(groups[groupIndex]))
             {
                 return true;
@@ -725,13 +807,50 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return false;
     }
 
+    private void PrepareTexturedDrawGroupColorExecution(
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        if (_texturedDrawGroupColorReadinessScratch.Length < groups.Count)
+        {
+            Array.Resize(
+                ref _texturedDrawGroupColorReadinessScratch,
+                groups.Count);
+        }
+        if (_texturedDrawGroupGpuPhaseScratch.Length < groups.Count)
+        {
+            Array.Resize(
+                ref _texturedDrawGroupGpuPhaseScratch,
+                groups.Count);
+        }
+
+        for (int groupIndex = 0;
+             groupIndex < groups.Count;
+             groupIndex++)
+        {
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> group =
+                groups[groupIndex];
+            if (!_texturedDrawGroupVisibilityScratch[groupIndex])
+            {
+                _texturedDrawGroupColorReadinessScratch[groupIndex] = false;
+                _texturedDrawGroupGpuPhaseScratch[groupIndex] = default;
+                continue;
+            }
+
+            _texturedDrawGroupColorReadinessScratch[groupIndex] =
+                IsTexturedDrawGroupReadyForColorExecution(group);
+            _texturedDrawGroupGpuPhaseScratch[groupIndex] =
+                ResolveTexturedGpuPhase(group);
+        }
+    }
+
     private static MapRenderGpuPhase ResolveTexturedGpuPhase(
         MapRenderEditorDrawGroup<GlTexturedDrawCommand> group)
     {
         if (group.Bucket == MapRenderEditorDrawBucket.Translucent)
             return MapRenderGpuPhase.Translucent;
 
-        bool isStatic = group.AuthoredPasses[0].Mesh.InstanceCount != 0;
+        bool isStatic = group.AuthoredPassSpan[0].Mesh.InstanceCount != 0;
         return (group.Bucket, isStatic) switch
         {
             (MapRenderEditorDrawBucket.Opaque, false) =>
@@ -756,13 +875,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     {
         mesh = default;
         surfaceBatch = null;
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
         if (group.Bucket == MapRenderEditorDrawBucket.Translucent ||
-            group.AuthoredPasses.Count != 1)
+            commands.Length != 1)
         {
             return false;
         }
 
-        GlTexturedDrawCommand command = group.AuthoredPasses[0];
+        ref readonly GlTexturedDrawCommand command = ref commands[0];
         mesh = command.Mesh;
         if (command.InstanceIndex is not null ||
             mesh.InstanceCount != 0 ||
@@ -775,7 +896,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
 
         if (TryGetWorldSurfaceBatchRuntime(
-                command,
+                in command,
                 out WorldSurfaceBatchRuntime runtime))
         {
             if (runtime.RunCount == 0)
@@ -794,13 +915,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     {
         mesh = default;
         surfaceBatch = null;
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
         if (group.Bucket != MapRenderEditorDrawBucket.Opaque ||
-            group.AuthoredPasses.Count != 1)
+            commands.Length != 1)
         {
             return false;
         }
 
-        GlTexturedDrawCommand command = group.AuthoredPasses[0];
+        ref readonly GlTexturedDrawCommand command = ref commands[0];
         mesh = command.Mesh;
         if (command.InstanceIndex is not null ||
             mesh.InstanceCount != 0 ||
@@ -813,7 +936,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
 
         if (TryGetWorldSurfaceBatchRuntime(
-                command,
+                in command,
                 out WorldSurfaceBatchRuntime runtime))
         {
             if (runtime.RunCount == 0)
@@ -826,29 +949,81 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private int AppendWorldMultiDrawRanges(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         WorldSurfaceBatchRuntime? surfaceBatch,
-        int destinationIndex)
+        int destinationIndex,
+        bool mergeAdjacentRanges)
     {
         int rangeCount = ResolveWorldMultiDrawRangeCount(surfaceBatch);
         EnsureMultiDrawCapacity(checked(destinationIndex + rangeCount));
         if (surfaceBatch is null)
         {
-            SetMultiDrawRange(destinationIndex, mesh);
+            if (mergeAdjacentRanges &&
+                TryMergeWorldMultiDrawRange(destinationIndex, in mesh))
+            {
+                return 0;
+            }
+
+            SetMultiDrawRange(destinationIndex, in mesh);
             return 1;
         }
 
+        int nextDestinationIndex = destinationIndex;
         for (int runIndex = 0;
              runIndex < surfaceBatch.RunCount;
              runIndex++)
         {
-            SetMultiDrawRange(
-                destinationIndex + runIndex,
-                SelectWorldVisibleRun(
-                    mesh,
-                    surfaceBatch.VisibleRuns[runIndex]));
+            GlTexturedMesh visibleRun = SelectWorldVisibleRun(
+                in mesh,
+                surfaceBatch.VisibleRuns[runIndex]);
+            if (mergeAdjacentRanges &&
+                TryMergeWorldMultiDrawRange(
+                    nextDestinationIndex,
+                    in visibleRun))
+            {
+                continue;
+            }
+
+            SetMultiDrawRange(nextDestinationIndex, in visibleRun);
+            nextDestinationIndex++;
         }
-        return rangeCount;
+        return nextDestinationIndex - destinationIndex;
+    }
+
+    private bool TryMergeWorldMultiDrawRange(
+        int destinationIndex,
+        in GlTexturedMesh next)
+    {
+        if (destinationIndex == 0)
+            return false;
+        if (next.IndexCount == 0 || next.IndexCount > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(next.IndexCount));
+        if (next.IndexOffsetBytes % next.IndexElementSizeBytes != 0)
+        {
+            throw new InvalidOperationException(
+                "A multi-draw element-buffer offset must be index-aligned.");
+        }
+
+        int previousIndex = destinationIndex - 1;
+        if (_multiDrawBaseVertices[previousIndex] != next.BaseVertex)
+            return false;
+
+        nint previousOffset = _multiDrawIndexOffsets[previousIndex];
+        nint previousByteCount = checked(
+            (nint)_multiDrawIndexCounts[previousIndex] *
+            (nint)next.IndexElementSizeBytes);
+        nint previousByteEnd = checked(previousOffset + previousByteCount);
+        nint nextOffset = checked((nint)next.IndexOffsetBytes);
+        if (previousByteEnd != nextOffset)
+            return false;
+
+        uint combinedIndexCount = checked(
+            _multiDrawIndexCounts[previousIndex] + next.IndexCount);
+        if (combinedIndexCount > int.MaxValue)
+            return false;
+
+        _multiDrawIndexCounts[previousIndex] = combinedIndexCount;
+        return true;
     }
 
     private static int ResolveWorldMultiDrawRangeCount(
@@ -856,30 +1031,30 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         surfaceBatch?.RunCount ?? 1;
 
     private static GlTexturedMesh SelectFirstWorldMultiDrawMesh(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         WorldSurfaceBatchRuntime? surfaceBatch) =>
         surfaceBatch is null
             ? mesh
-            : SelectWorldVisibleRun(mesh, surfaceBatch.VisibleRuns[0]);
+            : SelectWorldVisibleRun(in mesh, surfaceBatch.VisibleRuns[0]);
 
     internal static bool CanAggregateWorldMultiDrawGroup(
-        GlTexturedMesh first,
-        GlTexturedMesh next,
+        in GlTexturedMesh first,
+        in GlTexturedMesh next,
         int visibleRunCount) =>
         visibleRunCount > 0 &&
         first.MultiDrawBatchGroupId >= 0 &&
         first.MultiDrawBatchGroupId == next.MultiDrawBatchGroupId &&
-        CanMultiDrawTogether(first, next);
+        CanMultiDrawTogether(in first, in next);
 
     internal static bool CanAggregateWorldDepthMultiDrawGroup(
-        GlTexturedMesh first,
-        GlTexturedMesh next,
+        in GlTexturedMesh first,
+        in GlTexturedMesh next,
         int visibleRunCount) =>
         visibleRunCount > 0 &&
         first.DepthMultiDrawBatchGroupId >= 0 &&
         first.DepthMultiDrawBatchGroupId ==
             next.DepthMultiDrawBatchGroupId &&
-        CanDepthMultiDrawTogether(first, next);
+        CanDepthMultiDrawTogether(in first, in next);
 
     private void AssignWorldMultiDrawBatchGroupIds()
     {
@@ -984,11 +1159,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static int ComputeDepthMultiDrawBatchHash(
-        GlTexturedMesh mesh)
+        in GlTexturedMesh mesh)
     {
         var hash = new HashCode();
         hash.Add(mesh.VertexArray);
         hash.Add(mesh.ElementBuffer);
+        hash.Add(mesh.IndexType);
         hash.Add(mesh.RsxProgram.Handle != 0);
         hash.Add(mesh.EditorDepthPrepass?.Program);
         hash.Add(mesh.EditorDepthPrepass?.State);
@@ -1016,11 +1192,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static int ComputeMultiDrawBatchHash(
-        GlTexturedMesh mesh)
+        in GlTexturedMesh mesh)
     {
         var hash = new HashCode();
         hash.Add(mesh.VertexArray);
         hash.Add(mesh.ElementBuffer);
+        hash.Add(mesh.IndexType);
         hash.Add(mesh.State);
         hash.Add(mesh.RsxProgram.Handle);
         hash.Add(mesh.FragmentProgramControl);
@@ -1035,14 +1212,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
         if (UsesPerSceneLightRuntimeResource(mesh))
             hash.Add(mesh.SceneLightIndex);
-        hash.Add(mesh.EditorDepthPrepass?.Program);
-        hash.Add(mesh.EditorDepthPrepass?.State);
-        hash.Add(mesh.DepthPrepassRsxProgram.Handle);
-        foreach (GlRsxConstantBinding binding in
-                 mesh.DepthPrepassRsxConstantBindings)
-        {
-            hash.Add(binding);
-        }
         if (mesh.RsxProgram.Handle != 0)
         {
             foreach (GlRsxSamplerBinding binding in mesh.RsxSamplerBindings)
@@ -1079,11 +1248,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     internal static bool CanMultiDrawTogether(
-        GlTexturedMesh first,
-        GlTexturedMesh next)
+        in GlTexturedMesh first,
+        in GlTexturedMesh next)
     {
         if (first.VertexArray != next.VertexArray ||
             first.ElementBuffer != next.ElementBuffer ||
+            first.IndexType != next.IndexType ||
             first.InstanceCount != 0 ||
             next.InstanceCount != 0 ||
             first.State != next.State ||
@@ -1091,15 +1261,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             first.FragmentProgramControl != next.FragmentProgramControl ||
             (UsesPerSceneLightRuntimeResource(first) &&
              first.SceneLightIndex != next.SceneLightIndex) ||
-            !RuntimeSamplerRequirementsMatch(first, next) ||
-            first.EditorDepthPrepass?.Program !=
-                next.EditorDepthPrepass?.Program ||
-            first.EditorDepthPrepass?.State !=
-                next.EditorDepthPrepass?.State ||
-            first.DepthPrepassRsxProgram.Handle !=
-                next.DepthPrepassRsxProgram.Handle ||
-            !first.DepthPrepassRsxConstantBindings.AsSpan().SequenceEqual(
-                next.DepthPrepassRsxConstantBindings))
+            !RuntimeSamplerRequirementsMatch(in first, in next))
         {
             return false;
         }
@@ -1129,11 +1291,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     internal static bool CanDepthMultiDrawTogether(
-        GlTexturedMesh first,
-        GlTexturedMesh next)
+        in GlTexturedMesh first,
+        in GlTexturedMesh next)
     {
         if (first.VertexArray != next.VertexArray ||
             first.ElementBuffer != next.ElementBuffer ||
+            first.IndexType != next.IndexType ||
             first.InstanceCount != 0 ||
             next.InstanceCount != 0 ||
             (first.RsxProgram.Handle != 0) !=
@@ -1162,8 +1325,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static bool RuntimeSamplerRequirementsMatch(
-        GlTexturedMesh first,
-        GlTexturedMesh next)
+        in GlTexturedMesh first,
+        in GlTexturedMesh next)
     {
         IReadOnlyList<ShaderRuntimeSamplerRequirement> firstValues =
             first.ShaderExecution?.RuntimeSamplerRequirements ?? [];
@@ -1181,10 +1344,20 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static bool UsesPerSceneLightRuntimeResource(
-        GlTexturedMesh mesh) =>
-        mesh.ShaderExecution?.RuntimeSamplerRequirements.Any(
-            requirement =>
-                (requirement.ResourceKind ==
+        in GlTexturedMesh mesh)
+    {
+        if (mesh.ShaderExecution is not { } execution)
+            return false;
+
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements =
+            execution.RuntimeSamplerRequirements;
+        for (int requirementIndex = 0;
+             requirementIndex < requirements.Count;
+             requirementIndex++)
+        {
+            ShaderRuntimeSamplerRequirement requirement =
+                requirements[requirementIndex];
+            if ((requirement.ResourceKind ==
                     ShaderRuntimeSamplerResourceKind.LightAttenuation &&
                  requirement.Status ==
                     ShaderRuntimeSamplerRequirementStatus
@@ -1193,7 +1366,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     ShaderRuntimeSamplerResourceKind.SpotShadowAtlas &&
                  requirement.Status ==
                     ShaderRuntimeSamplerRequirementStatus
-                        .SameRevisionAtlasRequired)) == true;
+                        .SameRevisionAtlasRequired))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static bool CompositionPlansMatch(
         MapRenderEditorVegetationAnimationPlan? first,
@@ -1220,16 +1400,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         Array.Resize(ref _multiDrawBaseVertices, capacity);
     }
 
-    private void SetMultiDrawRange(int index, GlTexturedMesh mesh)
+    private void SetMultiDrawRange(
+        int index,
+        in GlTexturedMesh mesh)
     {
         if ((uint)index >= (uint)_multiDrawIndexCounts.Length)
             throw new ArgumentOutOfRangeException(nameof(index));
         if (mesh.IndexCount == 0 || mesh.IndexCount > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(mesh.IndexCount));
-        if ((mesh.IndexOffsetBytes & 3) != 0)
+        if (mesh.IndexOffsetBytes % mesh.IndexElementSizeBytes != 0)
         {
             throw new InvalidOperationException(
-                "A multi-draw element-buffer offset must be uint-aligned.");
+                "A multi-draw element-buffer offset must be index-aligned.");
         }
 
         _multiDrawIndexCounts[index] = mesh.IndexCount;
@@ -1238,23 +1420,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void Draw(
-        GlTexturedDrawCommand command,
+        in GlTexturedDrawCommand command,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds)
     {
-        if (command.Mesh.InstanceCount == 0 &&
+        GlTexturedMesh mesh = command.Mesh;
+        if (mesh.InstanceCount == 0 &&
             TryGetWorldSurfaceBatchRuntime(
-                command,
+                in command,
                 out WorldSurfaceBatchRuntime worldBatch))
         {
             if (worldBatch.RunCount == 0)
                 return;
 
             GlTexturedMesh visibleMesh = SelectWorldVisibleRun(
-                command.Mesh,
+                in mesh,
                 worldBatch.VisibleRuns[0]);
             int multiDrawCount = worldBatch.RunCount;
             if (multiDrawCount > 1)
@@ -1267,43 +1450,43 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     SetMultiDrawRange(
                         runIndex,
                         SelectWorldVisibleRun(
-                            command.Mesh,
+                            in mesh,
                             worldBatch.VisibleRuns[runIndex]));
                 }
             }
 
             Draw(
-                visibleMesh,
+                in visibleMesh,
                 stencilTargetContract,
                 viewProjection,
-                rsxMatrices,
+                in rsxMatrices,
                 cameraPosition,
                 editorTimeSeconds,
                 instanceIndex: null,
                 multiDrawCount);
             return;
         }
-        if (command.Mesh.InstanceCount == 0 &&
-            !IsWorldMeshVisible(command.Mesh))
+        if (mesh.InstanceCount == 0 &&
+            !IsWorldMeshVisible(mesh))
         {
             return;
         }
         if (command.InstanceIndex is int visibilityInstanceIndex &&
             !IsStaticInstanceVisible(
-                command.Mesh,
+                mesh,
                 visibilityInstanceIndex))
         {
             return;
         }
-        if (command.Mesh.InstanceCount != 0 &&
+        if (mesh.InstanceCount != 0 &&
             command.InstanceIndex is null &&
-            ResolveVisibleInstanceCount(command.Mesh) == 0)
+            ResolveVisibleInstanceCount(mesh) == 0)
         {
             return;
         }
         if (command.InstanceIndex is int instanceIndex &&
             (instanceIndex < 0 ||
-             (uint)instanceIndex >= command.Mesh.InstanceCount))
+             (uint)instanceIndex >= mesh.InstanceCount))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(command),
@@ -1312,17 +1495,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
 
         Draw(
-            command.Mesh,
+            in mesh,
             stencilTargetContract,
             viewProjection,
-            rsxMatrices,
+            in rsxMatrices,
             cameraPosition,
             editorTimeSeconds,
             command.InstanceIndex);
     }
 
     private bool TryGetWorldSurfaceBatchRuntime(
-        GlTexturedDrawCommand command,
+        in GlTexturedDrawCommand command,
         out WorldSurfaceBatchRuntime runtime)
     {
         int batchIndex = command.WorldBatchIndex;
@@ -1352,22 +1535,22 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private static GlTexturedMesh SelectWorldVisibleRun(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         MapRenderOpenGlWorldVisibleRun run) =>
         mesh with
         {
             IndexCount = checked((uint)run.IndexCount),
             IndexOffsetBytes = checked(
                 mesh.IndexOffsetBytes +
-                (nuint)run.FirstIndex * sizeof(uint)),
+                (nuint)run.FirstIndex * mesh.IndexElementSizeBytes),
             WorldSurfaceIndex = -1
         };
 
     private void Draw(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
         Matrix4x4 viewProjection,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
         float editorTimeSeconds,
         int? instanceIndex,
@@ -1378,7 +1561,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         bool executeTranslatedAuthored = mesh.RsxProgram.Handle != 0;
         if (executeTranslatedAuthored &&
-            !TryBindRuntimeSamplers(mesh))
+            !TryBindRuntimeSamplers(in mesh))
         {
             // Runtime-authored receivers have no generic substitute. A
             // missing or stale atlas keeps the exact +3 pass out of this
@@ -1390,9 +1573,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             DerivedMatrixState drawMatrices =
                 ResolveTranslatedDrawMatrices(
-                    mesh,
+                    in mesh,
                     instanceIndex,
-                    rsxMatrices);
+                    in rsxMatrices);
             _state.UseProgram(mesh.RsxProgram.Handle);
             ApplyStaticModelInstancingFrame(
                 mesh.StaticModelProgramUniforms,
@@ -1403,19 +1586,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 editorTimeSeconds);
             ApplyRsxConstantBindings(
                 mesh.RsxConstantBindings,
-                drawMatrices,
+                in drawMatrices,
                 editorTimeSeconds);
             foreach (GlRsxSamplerBinding binding in mesh.RsxSamplerBindings)
             {
-                _state.ActiveTexture(binding.Destination);
                 // A code sampler can leave an RSX-equivalent comparison
                 // sampler object on this unit. Ordinary material samplers own
                 // the texture descriptor state and must explicitly restore
                 // texture-owned filtering/wrap behavior.
                 _state.BindSampler(checked((uint)binding.Destination), 0);
-                _state.BindTexture(binding.Target, binding.Texture);
+                _state.EnsureTextureBinding(
+                    binding.Destination,
+                    binding.Target,
+                    binding.Texture);
             }
-            BindRuntimeSamplers(mesh);
+            BindRuntimeSamplers(in mesh);
             _state.BindVertexArray(mesh.VertexArray);
             if (instanceIndex.HasValue)
             {
@@ -1425,7 +1610,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     MapRenderOpenGlStaticModelInstancedVertexComposer
                         .FirstPlacementAttribute);
             }
-            IssueWorldDraws(mesh, multiDrawCount, instanceIndex);
+            IssueWorldDraws(in mesh, multiDrawCount, instanceIndex);
             _state.ActiveTexture(0);
             return;
         }
@@ -1636,55 +1821,61 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         // all active sampler uniforms before evaluating that branch.
         for (int layerIndex = 0; layerIndex < MapRenderScene.MaxColorLayerCount; layerIndex++)
         {
-            _state.ActiveTexture(layerIndex);
             _state.BindSampler(checked((uint)layerIndex), 0);
             uint texture = layerIndex < mesh.ColorTextures.Length
                 ? mesh.ColorTextures[layerIndex]
                 : mesh.ColorTextures[0];
-            _state.BindTexture(TextureTarget.Texture2D, texture);
+            _state.EnsureTextureBinding(
+                layerIndex,
+                TextureTarget.Texture2D,
+                texture);
         }
 
-        _state.ActiveTexture(MapRenderScene.MaxColorLayerCount);
         _state.BindSampler(
             checked((uint)MapRenderScene.MaxColorLayerCount),
             0);
-        _state.BindTexture(
+        _state.EnsureTextureBinding(
+            MapRenderScene.MaxColorLayerCount,
             TextureTarget.Texture2D,
             mesh.LightmapTexture == 0 ? mesh.ColorTextures[0] : mesh.LightmapTexture);
         for (int index = 0; index < _texturedNormalSamplerLocations.Length; index++)
         {
             int textureUnit = normalTextureUnitStart + index;
-            _state.ActiveTexture(textureUnit);
             _state.BindSampler(checked((uint)textureUnit), 0);
             uint texture = index < mesh.NormalTextures.Length &&
                 mesh.NormalTextures[index] != 0
                     ? mesh.NormalTextures[index]
                     : mesh.ColorTextures[0];
-            _state.BindTexture(TextureTarget.Texture2D, texture);
+            _state.EnsureTextureBinding(
+                textureUnit,
+                TextureTarget.Texture2D,
+                texture);
         }
         for (int index = 0; index < _texturedSpecularSamplerLocations.Length; index++)
         {
             int textureUnit = specularTextureUnitStart + index;
-            _state.ActiveTexture(textureUnit);
             _state.BindSampler(checked((uint)textureUnit), 0);
             uint texture = index < mesh.SpecularTextures.Length &&
                 mesh.SpecularTextures[index] != 0
                     ? mesh.SpecularTextures[index]
                     : mesh.ColorTextures[0];
-            _state.BindTexture(TextureTarget.Texture2D, texture);
+            _state.EnsureTextureBinding(
+                textureUnit,
+                TextureTarget.Texture2D,
+                texture);
         }
-        _state.ActiveTexture(GenericStaticModelLightingTextureUnit);
         _state.BindSampler(
             GenericStaticModelLightingTextureUnit,
             0);
-        _state.BindTexture(
+        _state.EnsureTextureBinding(
+            checked((int)GenericStaticModelLightingTextureUnit),
             TextureTarget.Texture3D,
             _staticModelLightingAtlasTexture);
         _state.ActiveTexture(0);
         _state.BindVertexArray(mesh.VertexArray);
         if (mesh.InstanceCount == 0)
         {
-            IssueWorldDraws(mesh, multiDrawCount);
+            IssueWorldDraws(in mesh, multiDrawCount);
         }
         else
         {
@@ -1708,23 +1899,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _gl.DrawElementsInstanced(
                 PrimitiveType.Triangles,
                 mesh.IndexCount,
-                DrawElementsType.UnsignedInt,
+                mesh.IndexType,
                 null,
                 drawnInstanceCount);
         }
     }
 
     private DerivedMatrixState ResolveTranslatedDrawMatrices(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         int? instanceIndex,
-        DerivedMatrixState frameMatrices)
+        in DerivedMatrixState frameMatrices)
     {
-        if (UsesSpotShadowAtlas(mesh))
+        DerivedMatrixState drawMatrices = frameMatrices;
+        if (UsesSpotShadowAtlas(in mesh))
         {
             MapRenderSpotShadowAtlasEntry entry =
                 ResolveCurrentSpotShadowEntry(mesh.SceneLightIndex);
-            frameMatrices = DerivedMatrixResolver.WithShadowLookupSource(
-                frameMatrices,
+            drawMatrices = DerivedMatrixResolver.WithShadowLookupSource(
+                drawMatrices,
                 entry.ShadowLookupMatrix);
         }
 
@@ -1735,13 +1927,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 throw new InvalidOperationException(
                     "A translated world draw cannot carry a static instance index.");
             }
-            return frameMatrices;
+            return drawMatrices;
         }
 
         if (instanceIndex is not int index)
         {
             if (mesh.StaticModelProgramUniforms is not null)
-                return frameMatrices;
+                return drawMatrices;
             throw new InvalidOperationException(
                 "A translated static-model draw requires one isolated placement.");
         }
@@ -1755,30 +1947,47 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
 
         return MapRenderStaticModelDerivedMatrixResolver.WithPlacement(
-            frameMatrices,
+            drawMatrices,
             runtime.Instances[index]);
     }
 
     private void ApplyRsxConstantBindings(
         IReadOnlyList<GlRsxConstantBinding> bindings,
-        DerivedMatrixState rsxMatrices,
+        in DerivedMatrixState rsxMatrices,
         float editorTimeSeconds)
     {
-        if (!_authoredMaterials.TryApplyConstantBindings(
-                bindings,
-                rsxMatrices,
-                editorTimeSeconds,
-                (sourceRow, sceneLightIndex) =>
-                    ResolveMapDynamicCodeConstant(
-                        sourceRow,
-                        sceneLightIndex,
-                        rsxMatrices.EyeOffset),
-                out string? blocker))
+        Vector3 previousEyeOffset =
+            _currentDynamicCodeConstantEyeOffset;
+        _currentDynamicCodeConstantEyeOffset = rsxMatrices.EyeOffset;
+        try
         {
-            throw new InvalidOperationException(
-                blocker ?? "Authored RSX constant execution failed.");
+            if (!_authoredMaterials.TryApplyConstantBindings(
+                    bindings,
+                    in rsxMatrices,
+                    editorTimeSeconds,
+                    _dynamicCodeConstantResolver,
+                    out string? blocker))
+            {
+                throw new InvalidOperationException(
+                    blocker ?? "Authored RSX constant execution failed.");
+            }
+        }
+        finally
+        {
+            // Draw execution is single-threaded. Restoring the scoped value
+            // also keeps this cached resolver safe if execution is ever
+            // re-entered while a binding failure is unwinding.
+            _currentDynamicCodeConstantEyeOffset = previousEyeOffset;
         }
     }
+
+    private ShaderConstantValue? ResolveCurrentMapDynamicCodeConstant(
+        ushort sourceRow,
+        int? sceneLightIndex) =>
+        ResolveMapDynamicCodeConstant(
+            sourceRow,
+            sceneLightIndex,
+            _currentDynamicCodeConstantEyeOffset);
 
     private ShaderConstantValue? ResolveMapDynamicCodeConstant(
         ushort sourceRow,
@@ -1879,13 +2088,31 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return frame;
     }
 
-    private static bool UsesSpotShadowAtlas(GlTexturedMesh mesh) =>
-        mesh.ShaderExecution?.RuntimeSamplerRequirements.Any(
-            requirement => requirement.ResourceKind ==
+    private static bool UsesSpotShadowAtlas(in GlTexturedMesh mesh)
+    {
+        if (mesh.ShaderExecution is not { } execution)
+            return false;
+
+        IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements =
+            execution.RuntimeSamplerRequirements;
+        for (int requirementIndex = 0;
+             requirementIndex < requirements.Count;
+             requirementIndex++)
+        {
+            ShaderRuntimeSamplerRequirement requirement =
+                requirements[requirementIndex];
+            if (requirement.ResourceKind ==
                     ShaderRuntimeSamplerResourceKind.SpotShadowAtlas &&
                 requirement.Status ==
                     ShaderRuntimeSamplerRequirementStatus
-                        .SameRevisionAtlasRequired) == true;
+                        .SameRevisionAtlasRequired)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private MapRenderSpotShadowAtlasEntry ResolveCurrentSpotShadowEntry(
         int sceneLightIndex)
@@ -1901,7 +2128,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return entry;
     }
 
-    private bool TryBindRuntimeSamplers(GlTexturedMesh mesh)
+    private bool TryBindRuntimeSamplers(in GlTexturedMesh mesh)
     {
         ShaderExecutionContract? execution = mesh.ShaderExecution;
         if (execution is null ||
@@ -2033,7 +2260,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return true;
     }
 
-    private void BindRuntimeSamplers(GlTexturedMesh mesh)
+    private void BindRuntimeSamplers(in GlTexturedMesh mesh)
     {
         ShaderExecutionContract? execution = mesh.ShaderExecution;
         if (execution is null ||
@@ -2063,9 +2290,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     throw new InvalidOperationException(
                         "A source-13 attenuation draw reached execution without the canonical scene-light image.");
                 }
-                _state.ActiveTexture(requirement.Destination);
                 _state.BindSampler(requirement.Destination, 0);
-                _state.BindTexture(
+                _state.EnsureTextureBinding(
+                    checked((int)requirement.Destination),
                     TextureTarget.Texture2D,
                     attenuationTexture);
                 continue;
@@ -2083,12 +2310,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     throw new InvalidOperationException(
                         "A model-lighting sampler draw reached execution without the immutable scene atlas.");
                 }
-                _state.ActiveTexture(requirement.Destination);
                 // Texture-unit sampler objects override texture parameters.
                 // Clear a possible shadow-compare sampler before publishing
                 // the immutable linear/clamp 3D atlas on the same destination.
                 _state.BindSampler(requirement.Destination, 0);
-                _state.BindTexture(
+                _state.EnsureTextureBinding(
+                    checked((int)requirement.Destination),
                     TextureTarget.Texture3D,
                     _staticModelLightingAtlasTexture);
                 continue;
@@ -2112,11 +2339,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     throw new InvalidOperationException(
                         "A processed-FloatZ draw reached execution with a stale target-8 publication.");
                 }
-                _state.ActiveTexture(requirement.Destination);
                 _state.BindSampler(
                     requirement.Destination,
                     floatZPublication.SamplerHandle);
-                _state.BindTexture(
+                _state.EnsureTextureBinding(
+                    checked((int)requirement.Destination),
                     TextureTarget.Texture2D,
                     floatZPublication.TextureHandle);
                 continue;
@@ -2205,7 +2432,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void IssueWorldDraws(
-        GlTexturedMesh mesh,
+        in GlTexturedMesh mesh,
         int multiDrawCount,
         int? instanceIndex = null)
     {
@@ -2228,7 +2455,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _gl.DrawElementsInstanced(
                 PrimitiveType.Triangles,
                 mesh.IndexCount,
-                DrawElementsType.UnsignedInt,
+                mesh.IndexType,
                 (void*)mesh.IndexOffsetBytes,
                 drawnInstanceCount);
             return;
@@ -2243,7 +2470,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _gl.DrawElementsBaseVertex(
                 PrimitiveType.Triangles,
                 mesh.IndexCount,
-                DrawElementsType.UnsignedInt,
+                mesh.IndexType,
                 (void*)mesh.IndexOffsetBytes,
                 mesh.BaseVertex);
             return;
@@ -2270,7 +2497,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _gl.MultiDrawElementsBaseVertex(
                 PrimitiveType.Triangles,
                 indexCounts,
-                DrawElementsType.UnsignedInt,
+                mesh.IndexType,
                 (void**)indexOffsets,
                 (uint)multiDrawCount,
                 baseVertices);

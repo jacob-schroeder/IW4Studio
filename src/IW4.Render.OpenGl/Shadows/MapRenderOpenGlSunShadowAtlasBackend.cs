@@ -296,6 +296,38 @@ public sealed class MapRenderOpenGlSunShadowAtlasBackend : IDisposable
     }
 
     /// <summary>
+    /// Publishes the already-complete depth contents of this persistent atlas
+    /// for a newer renderer frame without binding, clearing, or writing the
+    /// target. The caller must prove that every caster input and resource is
+    /// identical to the frame that produced those contents.
+    /// </summary>
+    internal void BeginReusedFrame(long frameRevision)
+    {
+        EnsureUsable();
+        if (frameRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(frameRevision));
+        if (_activePartition is not null)
+        {
+            throw new InvalidOperationException(
+                "An active sun-shadow partition must end before reusing an atlas frame.");
+        }
+        if (frameRevision <= _lastStartedFrameRevision)
+        {
+            throw new InvalidOperationException(
+                $"Sun-shadow frame revision {frameRevision} is not newer than {_lastStartedFrameRevision}.");
+        }
+
+        _lastStartedFrameRevision = frameRevision;
+        _activeFrameRevision = frameRevision;
+        _completedPartitionMask = CompletePartitionMask;
+        _readyFrame = new MapRenderOpenGlSunShadowAtlasReadyFrame(
+            frameRevision,
+            Plan,
+            _resource.DepthTextureHandle,
+            _resource.ComparisonSamplerHandle);
+    }
+
+    /// <summary>
     /// Binds and depth-clears one exact 1024x1024 vertical tile. Draw-time GL
     /// mutations are adopted by the renderer state shadow when supplied.
     /// </summary>

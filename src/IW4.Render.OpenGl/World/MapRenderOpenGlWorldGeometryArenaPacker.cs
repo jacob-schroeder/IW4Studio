@@ -1,3 +1,5 @@
+using Silk.NET.OpenGL;
+
 namespace IW4.Render.OpenGl.World;
 
 internal readonly record struct MapRenderOpenGlWorldGeometryArenaSource(
@@ -15,16 +17,21 @@ internal sealed class MapRenderOpenGlWorldGeometryArenaPacking
     internal MapRenderOpenGlWorldGeometryArenaPacking(
         float[] vertices,
         uint[] indices,
+        DrawElementsType indexType,
         MapRenderOpenGlWorldGeometryArenaPlacement[] placements)
     {
         Vertices = vertices;
         Indices = indices;
+        _ = GlTexturedMesh.ResolveIndexElementSizeBytes(indexType);
+        IndexType = indexType;
         Placements = placements;
     }
 
     internal float[] Vertices { get; }
 
     internal uint[] Indices { get; }
+
+    internal DrawElementsType IndexType { get; }
 
     internal MapRenderOpenGlWorldGeometryArenaPlacement[] Placements
     {
@@ -40,7 +47,8 @@ internal sealed class MapRenderOpenGlWorldGeometryArenaPacking
 
     internal long ImmutableBufferUploadBytes => checked(
         ((long)Vertices.Length * sizeof(float)) +
-        ((long)Indices.Length * sizeof(uint)));
+        ((long)Indices.Length *
+         (long)GlTexturedMesh.ResolveIndexElementSizeBytes(IndexType)));
 }
 
 internal static class MapRenderOpenGlWorldGeometryArenaPacker
@@ -79,6 +87,7 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
 
         long totalVertexFloats = 0;
         long totalIndexCount = 0;
+        bool useUnsignedShortIndices = true;
         var placementsByPayload = new Dictionary<
             (float[] Vertices, uint[] Indices),
             MapRenderOpenGlWorldGeometryArenaPlacement>();
@@ -115,7 +124,26 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
                 destinationFloatsPerVertex);
             totalIndexCount = checked(
                 totalIndexCount + source.Indices.Length);
+            if (useUnsignedShortIndices)
+            {
+                for (int index = 0;
+                     index < source.Indices.Length;
+                     index++)
+                {
+                    if (source.Indices[index] <= ushort.MaxValue)
+                        continue;
+
+                    useUnsignedShortIndices = false;
+                    break;
+                }
+            }
         }
+
+        DrawElementsType indexType = useUnsignedShortIndices
+            ? DrawElementsType.UnsignedShort
+            : DrawElementsType.UnsignedInt;
+        nuint indexElementSizeBytes =
+            GlTexturedMesh.ResolveIndexElementSizeBytes(indexType);
 
         float[] vertices = GC.AllocateUninitializedArray<float>(
             checked((int)totalVertexFloats));
@@ -168,7 +196,7 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
             var placement =
                 new MapRenderOpenGlWorldGeometryArenaPlacement(
                     source.MeshIndex,
-                    checked((nuint)indexOffset * sizeof(uint)),
+                    checked((nuint)indexOffset * indexElementSizeBytes),
                     vertexFloatOffset / destinationFloatsPerVertex);
             placements[sourceIndex] = placement;
             placementsByPayload[(source.Vertices, source.Indices)] =
@@ -182,6 +210,7 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
         return new MapRenderOpenGlWorldGeometryArenaPacking(
             vertices,
             indices,
+            indexType,
             placements);
     }
 }

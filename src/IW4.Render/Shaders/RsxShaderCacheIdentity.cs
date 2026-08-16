@@ -229,6 +229,8 @@ public sealed class RsxShaderSemanticIdentity :
         writer.WriteByte(instruction.Opcode);
         writer.WriteInt32(instruction.ByteCount);
         writer.WriteNullableUInt16(instruction.DirectCodeConstantIndex);
+        writer.WriteNullableInt32(
+            instruction.StaticPixelConstantArgumentOrdinal);
         writer.WriteBoolean(instruction.Constant.HasValue);
         if (instruction.Constant is not { } constant)
             return;
