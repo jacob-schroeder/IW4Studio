@@ -79,6 +79,9 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
 
         long totalVertexFloats = 0;
         long totalIndexCount = 0;
+        var placementsByPayload = new Dictionary<
+            (float[] Vertices, uint[] Indices),
+            MapRenderOpenGlWorldGeometryArenaPlacement>();
         for (int sourceIndex = 0;
              sourceIndex < sources.Count;
              sourceIndex++)
@@ -93,6 +96,18 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
                     $"World mesh {source.MeshIndex} does not match its selected arena vertex stride.");
             }
 
+            if (placementsByPayload.ContainsKey(
+                    (source.Vertices, source.Indices)))
+            {
+                continue;
+            }
+
+            // Arrays from the immutable geometry pool are both immutable and
+            // byte-identical when they are the same object. A placement is
+            // therefore reusable only for this exact reference pair.
+            placementsByPayload.Add(
+                (source.Vertices, source.Indices),
+                default);
             totalVertexFloats = checked(
                 totalVertexFloats +
                 ((long)source.Vertices.Length /
@@ -111,12 +126,24 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
 
         int vertexFloatOffset = 0;
         int indexOffset = 0;
+        var packedPayloads = new HashSet<(float[] Vertices, uint[] Indices)>();
         for (int sourceIndex = 0;
              sourceIndex < sources.Count;
              sourceIndex++)
         {
             MapRenderOpenGlWorldGeometryArenaSource source =
                 sources[sourceIndex];
+            if (packedPayloads.Contains((source.Vertices, source.Indices)))
+            {
+                MapRenderOpenGlWorldGeometryArenaPlacement existingPlacement =
+                    placementsByPayload[(source.Vertices, source.Indices)];
+                placements[sourceIndex] = existingPlacement with
+                {
+                    MeshIndex = source.MeshIndex
+                };
+                continue;
+            }
+
             int sourceVertexCount =
                 source.Vertices.Length / sourceFloatsPerVertex;
             int destinationVertexFloatCount = checked(
@@ -138,11 +165,15 @@ internal static class MapRenderOpenGlWorldGeometryArenaPacker
             }
             source.Indices.AsSpan().CopyTo(
                 indices.AsSpan(indexOffset));
-            placements[sourceIndex] =
+            var placement =
                 new MapRenderOpenGlWorldGeometryArenaPlacement(
                     source.MeshIndex,
                     checked((nuint)indexOffset * sizeof(uint)),
                     vertexFloatOffset / destinationFloatsPerVertex);
+            placements[sourceIndex] = placement;
+            placementsByPayload[(source.Vertices, source.Indices)] =
+                placement;
+            packedPayloads.Add((source.Vertices, source.Indices));
             vertexFloatOffset = checked(
                 vertexFloatOffset + destinationVertexFloatCount);
             indexOffset = checked(indexOffset + source.Indices.Length);

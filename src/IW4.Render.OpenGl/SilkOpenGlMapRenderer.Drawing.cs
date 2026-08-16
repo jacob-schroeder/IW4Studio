@@ -524,7 +524,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         MapRenderOpenGlGpuPhaseScope gpuTimingScope = default;
         GpuDrawPhaseScope drawWorkScope = default;
+        MapRenderCpuPhaseScope cpuTimingScope = default;
         int activePhaseIndex = -1;
+        MapRenderCpuPhase activeCpuPhase = default;
+        bool hasActiveCpuPhase = false;
         try
         {
             for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
@@ -554,10 +557,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         gpuTimingScope = _gpuTimers.BeginPhase(gpuPhase);
                 }
 
-                using var phaseTiming = _frameTelemetry.BeginCpuPhase(
+                MapRenderCpuPhase cpuPhase =
                     group.AuthoredPasses[0].Mesh.InstanceCount == 0
                         ? MapRenderCpuPhase.WorldGeometry
-                        : MapRenderCpuPhase.StaticModels);
+                        : MapRenderCpuPhase.StaticModels;
+                if (!hasActiveCpuPhase || cpuPhase != activeCpuPhase)
+                {
+                    cpuTimingScope.Dispose();
+                    cpuTimingScope = _frameTelemetry.BeginCpuPhase(cpuPhase);
+                    activeCpuPhase = cpuPhase;
+                    hasActiveCpuPhase = true;
+                }
                 if (TryDrawCompactedStaticReceiverGroup(
                         groupIndex,
                         group,
@@ -646,6 +656,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
         finally
         {
+            cpuTimingScope.Dispose();
             gpuTimingScope.Dispose();
             drawWorkScope.Dispose();
         }

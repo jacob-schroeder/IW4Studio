@@ -57,45 +57,70 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return;
         }
 
+        var batchesByChannel = new MapRenderTexturedBatch[4][];
+        var resourceShellsByChannel = new GlTexturedMesh[4][];
+        int initializedChannelCount = 0;
+        foreach (MapRenderWorldSurfacePageMembership page in
+                 ReceiverWorldPages)
+        foreach (MapRenderTechniqueVariantAllocation allocation in
+                 ReceiverAllocations)
+        {
+            MapRenderTexturedBatch[] batches = catalog
+                .GetWorldBatches(page, allocation)
+                .ToArray();
+            IReadOnlySet<AuthoredProgramGroupKey> authorized =
+                AuthorizeAtomicProgramGroups(
+                    batches,
+                    _ => true,
+                    AuthoredProgramGroup,
+                    PreflightAuthoredProgram);
+            GlTexturedMesh[] resourceShells = batches
+                .Select(batch => CreateWorldTexturedResourceShell(
+                    batch,
+                    authorized,
+                    allowGenericFallback: false))
+                .ToArray();
+            batchesByChannel[initializedChannelCount] = batches;
+            resourceShellsByChannel[initializedChannelCount] =
+                resourceShells;
+            initializedChannelCount++;
+        }
+
+        if (initializedChannelCount != batchesByChannel.Length)
+        {
+            throw new InvalidOperationException(
+                "World receiver channels must retain their fixed cardinality.");
+        }
+
+        // Resource shells contain only texture/program/state resources.
+        // Pack all receiver channels together so immutable geometry can
+        // reuse its owning arena independent of material variants.
+        (GlTexturedMesh[][] meshesByChannel,
+            GlMesh genericArena,
+            GlMesh[] translatedArenas) =
+            CreatePackedWorldReceiverGeometryArenas(
+                batchesByChannel,
+                resourceShellsByChannel);
+        bool arenaOwnershipTransferred = false;
         var result = new List<WorldReceiverVariantRuntime>(4);
         try
         {
-            foreach (MapRenderWorldSurfacePageMembership page in
-                     ReceiverWorldPages)
-            foreach (MapRenderTechniqueVariantAllocation allocation in
-                     ReceiverAllocations)
+            for (int channelIndex = 0;
+                 channelIndex < batchesByChannel.Length;
+                 channelIndex++)
             {
-                int channelIndex = result.Count;
+                MapRenderTexturedBatch[] batches =
+                    batchesByChannel[channelIndex];
+                GlTexturedMesh[] meshes = meshesByChannel[channelIndex];
+                MapRenderWorldSurfacePageMembership page =
+                    ReceiverWorldPages[channelIndex /
+                        ReceiverAllocations.Length];
+                MapRenderTechniqueVariantAllocation allocation =
+                    ReceiverAllocations[channelIndex %
+                        ReceiverAllocations.Length];
                 var key = new MapRenderWorldReceiverVariantKey(
                     page,
                     allocation);
-                MapRenderTexturedBatch[] batches = catalog
-                    .GetWorldBatches(page, allocation)
-                    .ToArray();
-                IReadOnlySet<AuthoredProgramGroupKey> authorized =
-                    AuthorizeAtomicProgramGroups(
-                        batches,
-                        _ => true,
-                        AuthoredProgramGroup,
-                        PreflightAuthoredProgram);
-                GlTexturedMesh[] resourceShells = batches
-                    .Select(batch => CreateWorldTexturedResourceShell(
-                        batch,
-                        authorized,
-                        allowGenericFallback: false))
-                    .ToArray();
-                // Resource shells contain only texture/program/state
-                // resources. Geometry is uploaded exactly once into each
-                // final arena below; there is no per-batch staging VBO/EBO.
-                (GlTexturedMesh[] meshes,
-                    GlMesh genericArena,
-                    GlMesh[] translatedArenas) =
-                    CreatePackedWorldGeometryArenas(
-                        batches,
-                        resourceShells);
-                bool arenaOwnershipTransferred = false;
-                try
-                {
 
                 var surfaceBatches =
                     new WorldSurfaceBatchRuntime?[meshes.Length];
@@ -158,10 +183,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     }
                 }
 
-                // Receiver channels own separate packed arenas. Assign exact
-                // compatibility identities after their final atomic validity
-                // gate so selected color and depth ranges can use the same
-                // multi-draw path as base world geometry.
+                // Assign exact compatibility identities after the final atomic
+                // validity gate so selected color and depth ranges can use the
+                // same multi-draw path as base world geometry.
                 AssignWorldMultiDrawBatchGroupIds(meshes);
 
                 MapRenderEditorDrawGroup<GlTexturedDrawCommand>[] groups =
@@ -177,31 +201,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     batches,
                     meshes,
                     surfaceBatches,
-                    genericArena,
-                    translatedArenas,
                     groups,
                     source.World.SurfaceCount));
-                    arenaOwnershipTransferred = true;
-                }
-                finally
-                {
-                    if (!arenaOwnershipTransferred)
-                    {
-                        DeleteMesh(genericArena);
-                        foreach (GlMesh translatedArena in translatedArenas)
-                            DeleteMesh(translatedArena);
-                    }
-                }
+            }
+
+            WorldReceiverVariantRuntime[] variants = result.ToArray();
+            _genericWorldReceiverArena = genericArena;
+            _translatedWorldReceiverArenas = translatedArenas;
+            _worldReceiverVariants = variants;
+            arenaOwnershipTransferred = true;
+        }
+        finally
+        {
+            if (!arenaOwnershipTransferred)
+            {
+                foreach (WorldReceiverVariantRuntime channel in result)
+                    DeleteWorldReceiverVariant(channel);
+                DeleteMesh(genericArena);
+                foreach (GlMesh translatedArena in translatedArenas)
+                    DeleteMesh(translatedArena);
             }
         }
-        catch
-        {
-            foreach (WorldReceiverVariantRuntime channel in result)
-                DeleteWorldReceiverVariant(channel);
-            throw;
-        }
-
-        _worldReceiverVariants = result.ToArray();
     }
 
     private void DeleteWorldReceiverVariant(
@@ -209,9 +229,198 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     {
         foreach (GlTexturedMesh mesh in channel.Meshes)
             DeleteTexturedMesh(mesh);
-        DeleteMesh(channel.GenericArena);
-        foreach (GlMesh translatedArena in channel.TranslatedArenas)
-            DeleteMesh(translatedArena);
+    }
+
+    private (GlTexturedMesh[][] Meshes,
+        GlMesh GenericArena,
+        GlMesh[] TranslatedArenas) CreatePackedWorldReceiverGeometryArenas(
+            IReadOnlyList<MapRenderTexturedBatch[]> batchesByChannel,
+            IReadOnlyList<GlTexturedMesh[]> meshesByChannel)
+    {
+        if (batchesByChannel.Count != ReceiverWorldPages.Length *
+            ReceiverAllocations.Length ||
+            meshesByChannel.Count != batchesByChannel.Count)
+        {
+            throw new ArgumentException(
+                "World receiver channels must retain their fixed ordinal space.");
+        }
+
+        GlTexturedMesh[][] replacement = meshesByChannel
+            .Select(meshes => meshes.ToArray())
+            .ToArray();
+        var genericReferences = new List<(int ChannelIndex, int MeshIndex)>();
+        var translatedReferences = new List<(int ChannelIndex, int MeshIndex)>();
+        for (int channelIndex = 0;
+             channelIndex < batchesByChannel.Count;
+             channelIndex++)
+        {
+            MapRenderTexturedBatch[] batches = batchesByChannel[channelIndex];
+            GlTexturedMesh[] meshes = meshesByChannel[channelIndex];
+            if (batches.Length != meshes.Length)
+            {
+                throw new ArgumentException(
+                    "World receiver batches and resource shells must match.");
+            }
+
+            for (int meshIndex = 0; meshIndex < meshes.Length; meshIndex++)
+            {
+                if (meshes[meshIndex].IndexCount == 0)
+                    continue;
+                if (meshes[meshIndex].RsxProgram.Handle == 0)
+                {
+                    genericReferences.Add((channelIndex, meshIndex));
+                }
+                else
+                {
+                    translatedReferences.Add((channelIndex, meshIndex));
+                }
+            }
+        }
+
+        GlMesh genericArena = default;
+        var translatedArenas = new List<GlMesh>();
+        try
+        {
+            genericArena = CreateWorldReceiverGeometryArena(
+                batchesByChannel,
+                replacement,
+                genericReferences,
+                packedRsxVertexLayout: null);
+            foreach (IGrouping<int, (int ChannelIndex, int MeshIndex)>
+                         arenaGroup in translatedReferences
+                             .GroupBy(reference =>
+                                 ResolveWorldTranslatedAttributeMask(
+                                     batchesByChannel[
+                                         reference.ChannelIndex][
+                                         reference.MeshIndex]))
+                             .OrderBy(group => group.Key))
+            {
+                var layout = new OpenGlPackedRsxVertexLayout(
+                    arenaGroup.Key);
+                GlMesh translatedArena = CreateWorldReceiverGeometryArena(
+                    batchesByChannel,
+                    replacement,
+                    arenaGroup.ToArray(),
+                    layout);
+                bool translatedArenaOwnershipTransferred = false;
+                try
+                {
+                    translatedArenas.Add(translatedArena);
+                    translatedArenaOwnershipTransferred = true;
+                }
+                finally
+                {
+                    if (!translatedArenaOwnershipTransferred)
+                        DeleteMesh(translatedArena);
+                }
+                WorldGeometryTranslatedArenaCount++;
+                WorldGeometryMaximumTranslatedArenaAttributeCount = Math.Max(
+                    WorldGeometryMaximumTranslatedArenaAttributeCount,
+                    layout.AttributeCount);
+            }
+
+            return (replacement, genericArena, translatedArenas.ToArray());
+        }
+        catch
+        {
+            DeleteMesh(genericArena);
+            foreach (GlMesh translatedArena in translatedArenas)
+                DeleteMesh(translatedArena);
+            throw;
+        }
+    }
+
+    private GlMesh CreateWorldReceiverGeometryArena(
+        IReadOnlyList<MapRenderTexturedBatch[]> batchesByChannel,
+        GlTexturedMesh[][] replacement,
+        IReadOnlyList<(int ChannelIndex, int MeshIndex)> meshReferences,
+        OpenGlPackedRsxVertexLayout? packedRsxVertexLayout)
+    {
+        if (meshReferences.Count == 0)
+            return default;
+
+        bool translated = packedRsxVertexLayout is not null;
+        int sourceFloatsPerVertex = translated
+            ? OpenGlPackedRsxVertexLayout.SourceFloatStride
+            : MapRenderScene.TexturedVertexFloatCount;
+        var sources = new MapRenderOpenGlWorldGeometryArenaSource[
+            meshReferences.Count];
+        for (int sourceIndex = 0;
+             sourceIndex < meshReferences.Count;
+             sourceIndex++)
+        {
+            (int channelIndex, int meshIndex) = meshReferences[sourceIndex];
+            MapRenderTexturedBatch batch = batchesByChannel[channelIndex][
+                meshIndex];
+            sources[sourceIndex] = new MapRenderOpenGlWorldGeometryArenaSource(
+                sourceIndex,
+                translated ? batch.RsxVertexInputs : batch.Vertices,
+                batch.Indices);
+        }
+
+        MapRenderOpenGlWorldGeometryArenaPacking packing =
+            packedRsxVertexLayout is { } rsxLayout
+                ? MapRenderOpenGlWorldGeometryArenaPacker.PackTranslatedRsx(
+                    sources,
+                    rsxLayout)
+                : MapRenderOpenGlWorldGeometryArenaPacker.Pack(
+                    sources,
+                    sourceFloatsPerVertex);
+        uint vao = _gl.GenVertexArray();
+        uint vbo = _gl.GenBuffer();
+        uint ebo = _gl.GenBuffer();
+        try
+        {
+            _gl.BindVertexArray(vao);
+            UploadBuffer(vbo, packing.Vertices);
+            UploadElementBuffer(ebo, packing.Indices);
+            WorldGeometryArenaUploadCount++;
+            WorldGeometrySourceBatchCount = checked(
+                WorldGeometrySourceBatchCount + packing.SourceCount);
+            WorldGeometryImmutableBufferUploadCount = checked(
+                WorldGeometryImmutableBufferUploadCount +
+                packing.ImmutableBufferUploadOperationCount);
+            WorldGeometryImmutableBufferUploadBytes = checked(
+                WorldGeometryImmutableBufferUploadBytes +
+                packing.ImmutableBufferUploadBytes);
+            foreach (MapRenderOpenGlWorldGeometryArenaPlacement placement in
+                     packing.Placements)
+            {
+                (int channelIndex, int meshIndex) = meshReferences[
+                    placement.MeshIndex];
+                replacement[channelIndex][meshIndex] =
+                    replacement[channelIndex][meshIndex] with
+                    {
+                        VertexArray = vao,
+                        VertexBuffer = vbo,
+                        ElementBuffer = ebo,
+                        IndexOffsetBytes = placement.IndexOffsetBytes,
+                        BaseVertex = placement.BaseVertex,
+                        OwnsGeometry = false
+                    };
+            }
+
+            if (translated)
+            {
+                ConfigureRsxVertexAttributes(packedRsxVertexLayout!.Value);
+            }
+            else
+            {
+                ConfigureTexturedVertexAttributes();
+            }
+            _gl.BindVertexArray(0);
+            return new GlMesh(
+                vao,
+                vbo,
+                ebo,
+                checked((uint)packing.Indices.Length));
+        }
+        catch
+        {
+            _gl.BindVertexArray(0);
+            DeleteMesh(new GlMesh(vao, vbo, ebo, 0));
+            throw;
+        }
     }
 
     private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]

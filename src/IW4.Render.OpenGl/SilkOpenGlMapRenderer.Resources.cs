@@ -210,8 +210,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             MapRenderTexturedBatch[] batches,
             GlTexturedMesh[] meshes,
             WorldSurfaceBatchRuntime?[] surfaceBatches,
-            GlMesh genericArena,
-            GlMesh[] translatedArenas,
             MapRenderEditorDrawGroup<GlTexturedDrawCommand>[] drawGroups,
             int surfaceCount)
         {
@@ -222,7 +220,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ArgumentNullException.ThrowIfNull(batches);
             ArgumentNullException.ThrowIfNull(meshes);
             ArgumentNullException.ThrowIfNull(surfaceBatches);
-            ArgumentNullException.ThrowIfNull(translatedArenas);
             ArgumentNullException.ThrowIfNull(drawGroups);
             if (batches.Length != meshes.Length ||
                 meshes.Length != surfaceBatches.Length)
@@ -236,8 +233,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             Batches = batches;
             Meshes = meshes;
             SurfaceBatches = surfaceBatches;
-            GenericArena = genericArena;
-            TranslatedArenas = translatedArenas;
             DrawGroups = drawGroups;
             SelectionWords = new uint[checked((surfaceCount + 31) / 32)];
             ExecutableSurfaces = new bool[surfaceCount];
@@ -266,8 +261,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         public MapRenderTexturedBatch[] Batches { get; }
         public GlTexturedMesh[] Meshes { get; }
         public WorldSurfaceBatchRuntime?[] SurfaceBatches { get; }
-        public GlMesh GenericArena { get; }
-        public GlMesh[] TranslatedArenas { get; }
         public MapRenderEditorDrawGroup<GlTexturedDrawCommand>[] DrawGroups
             { get; }
         public uint[] SelectionWords { get; }

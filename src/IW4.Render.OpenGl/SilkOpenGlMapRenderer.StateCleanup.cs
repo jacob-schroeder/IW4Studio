@@ -20,6 +20,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         LastEditorPreviewPresentationResult = null;
         LastFramePlan = null;
         ClearCurrentSpotShadowFrame();
+        ClearSpotShadowCasterMembership();
         _currentSunShadowReceiverFrame = null;
         _currentProcessedFloatZFrame = null;
         _currentSunShadowPublication = null;
@@ -80,6 +81,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             DeleteWorldReceiverVariant(channel);
         }
         _worldReceiverVariants = [];
+        DeleteMesh(_genericWorldReceiverArena);
+        _genericWorldReceiverArena = default;
+        foreach (GlMesh translatedArena in _translatedWorldReceiverArenas)
+            DeleteMesh(translatedArena);
+        _translatedWorldReceiverArenas = [];
         foreach (StaticReceiverVariantRuntime channel in
                  _staticReceiverVariants)
         {

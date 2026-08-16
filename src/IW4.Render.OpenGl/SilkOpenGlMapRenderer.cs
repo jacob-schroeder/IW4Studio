@@ -231,6 +231,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private float _lastProgressiveStaticAspectRatio;
     private GlMesh _genericWorldArena;
     private GlMesh[] _translatedWorldArenas = [];
+    private GlMesh _genericWorldReceiverArena;
+    private GlMesh[] _translatedWorldReceiverArenas = [];
     private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
         _editorTexturedDrawGroups = [];
     private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
