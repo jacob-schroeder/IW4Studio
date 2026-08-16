@@ -105,7 +105,10 @@ public sealed partial class MapRenderWindow : Window
                 return;
             }
 
-            StartNativeRenderer(result.Scene!, result.SceneSnapshot!);
+            StartNativeRenderer(
+                result.Scene!,
+                result.SceneSnapshot!,
+                result.ClipMap?.MapEnts?.EntityString);
         }
         catch (Exception exception)
         {
@@ -131,7 +134,8 @@ public sealed partial class MapRenderWindow : Window
 
     private void StartNativeRenderer(
         IW4.Render.MapRenderScene scene,
-        IW4.Render.Resources.RenderSceneSnapshot sceneSnapshot)
+        IW4.Render.Resources.RenderSceneSnapshot sceneSnapshot,
+        string? mapEntityString)
     {
         ShowStatus(
             "Starting Live Preview",
@@ -141,6 +145,7 @@ public sealed partial class MapRenderWindow : Window
             var nativeRenderWindow = new SilkMapRenderWindow(
                 scene,
                 sceneSnapshot,
+                mapEntityString,
                 text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
             nativeRenderWindow.Failed += NativeRenderWindow_Failed;
             nativeRenderWindow.Stopped += NativeRenderWindow_Stopped;

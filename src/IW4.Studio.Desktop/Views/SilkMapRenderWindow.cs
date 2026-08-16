@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Numerics;
 using Avalonia.Threading;
 using IW4.Render;
 using IW4.Render.OpenGl;
 using IW4.Render.Picking;
 using IW4.Render.Resources;
+using IW4.Render.Transforms;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -46,13 +48,14 @@ internal sealed class SilkMapRenderWindow : IDisposable
     public SilkMapRenderWindow(
         MapRenderScene scene,
         RenderSceneSnapshot sceneSnapshot,
+        string? mapEntityString = null,
         Func<string, Task>? copyTextAsync = null)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _sceneSnapshot = sceneSnapshot ??
             throw new ArgumentNullException(nameof(sceneSnapshot));
         _copyTextAsync = copyTextAsync;
-        _camera = CreateInitialCamera(scene.CameraBounds);
+        _camera = CreateInitialCamera(scene.CameraBounds, mapEntityString);
         _timer.Tick += Timer_Tick;
     }
 
@@ -60,7 +63,19 @@ internal sealed class SilkMapRenderWindow : IDisposable
 
     public event EventHandler? Stopped;
 
-    private static RenderCamera CreateInitialCamera(RenderBounds bounds)
+    private static RenderCamera CreateInitialCamera(
+        RenderBounds bounds,
+        string? mapEntityString)
+    {
+        return TryCreateGlobalIntermissionCamera(
+                bounds,
+                mapEntityString,
+                out RenderCamera camera)
+            ? camera
+            : CreateBoundsCamera(bounds);
+    }
+
+    private static RenderCamera CreateBoundsCamera(RenderBounds bounds)
     {
         const float previewNearPlane = 4f;
         float radius = bounds.Radius;
@@ -73,7 +88,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
             -radius * 0.074f);
         Vector3 position = target + new Vector3(
             -radius * 0.14f,
-            radius * 0.11f,
+            radius * 0.02f,
             radius * 0.14f);
         Vector3 direction = Vector3.Normalize(target - position);
         return new RenderCamera(
@@ -83,6 +98,210 @@ internal sealed class SilkMapRenderWindow : IDisposable
             55f * MathF.PI / 180f,
             previewNearPlane,
             MathF.Max(250000f, position.Y + radius * 4f));
+    }
+
+    private static bool TryCreateGlobalIntermissionCamera(
+        RenderBounds bounds,
+        string? mapEntityString,
+        out RenderCamera camera)
+    {
+        camera = default;
+        if (string.IsNullOrWhiteSpace(mapEntityString))
+            return false;
+
+        ReadOnlySpan<char> source = mapEntityString.AsSpan();
+        int sourceOffset = 0;
+        while (TryReadEntity(source, ref sourceOffset, out ReadOnlySpan<char> entity))
+        {
+            if (!TryReadGlobalIntermission(
+                    entity,
+                    out Vector3 gameOrigin,
+                    out Vector3 gameAngles))
+            {
+                continue;
+            }
+
+            const float previewNearPlane = 4f;
+            const float degreesToRadians = MathF.PI / 180f;
+            Vector3 position =
+                RenderCoordinateConverter.GameToRenderPosition(gameOrigin);
+            float yaw = NormalizeDegrees(90f - gameAngles.Y) *
+                degreesToRadians;
+            float pitch = -NormalizeDegrees(gameAngles.X) *
+                degreesToRadians;
+            camera = new RenderCamera(
+                position,
+                yaw,
+                pitch,
+                55f * degreesToRadians,
+                previewNearPlane,
+                MathF.Max(250000f, position.Y + bounds.Radius * 4f));
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryReadEntity(
+        ReadOnlySpan<char> source,
+        ref int sourceOffset,
+        out ReadOnlySpan<char> entity)
+    {
+        entity = default;
+        int relativeStart = source[sourceOffset..].IndexOf('{');
+        if (relativeStart < 0)
+            return false;
+
+        int entityStart = sourceOffset + relativeStart + 1;
+        bool quoted = false;
+        bool escaped = false;
+        for (int index = entityStart; index < source.Length; index++)
+        {
+            char current = source[index];
+            if (quoted)
+            {
+                if (escaped)
+                    escaped = false;
+                else if (current == '\\')
+                    escaped = true;
+                else if (current == '"')
+                    quoted = false;
+            }
+            else if (current == '"')
+            {
+                quoted = true;
+            }
+            else if (current == '}')
+            {
+                entity = source[entityStart..index];
+                sourceOffset = index + 1;
+                return true;
+            }
+        }
+
+        sourceOffset = source.Length;
+        return false;
+    }
+
+    private static bool TryReadGlobalIntermission(
+        ReadOnlySpan<char> entity,
+        out Vector3 origin,
+        out Vector3 angles)
+    {
+        origin = default;
+        angles = default;
+        bool isGlobalIntermission = false;
+        bool hasOrigin = false;
+        bool hasAngles = false;
+        int offset = 0;
+        while (offset < entity.Length)
+        {
+            SkipWhitespace(entity, ref offset);
+            if (offset == entity.Length)
+                break;
+            if (!TryReadQuotedToken(entity, ref offset, out ReadOnlySpan<char> key))
+                return false;
+
+            SkipWhitespace(entity, ref offset);
+            if (!TryReadQuotedToken(entity, ref offset, out ReadOnlySpan<char> value))
+                return false;
+
+            if (key.Equals("classname", StringComparison.OrdinalIgnoreCase))
+            {
+                isGlobalIntermission = value.Equals(
+                    "mp_global_intermission",
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            else if (key.Equals("origin", StringComparison.OrdinalIgnoreCase))
+                hasOrigin = TryParseVector3(value, out origin);
+            else if (key.Equals("angles", StringComparison.OrdinalIgnoreCase))
+                hasAngles = TryParseVector3(value, out angles);
+        }
+
+        return isGlobalIntermission && hasOrigin && hasAngles;
+    }
+
+    private static bool TryReadQuotedToken(
+        ReadOnlySpan<char> source,
+        ref int offset,
+        out ReadOnlySpan<char> value)
+    {
+        value = default;
+        if (offset >= source.Length || source[offset] != '"')
+            return false;
+
+        int valueStart = ++offset;
+        bool escaped = false;
+        while (offset < source.Length)
+        {
+            char current = source[offset];
+            if (escaped)
+            {
+                escaped = false;
+            }
+            else if (current == '\\')
+            {
+                escaped = true;
+            }
+            else if (current == '"')
+            {
+                value = source[valueStart..offset];
+                offset++;
+                return true;
+            }
+            offset++;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseVector3(
+        ReadOnlySpan<char> source,
+        out Vector3 value)
+    {
+        value = default;
+        Span<float> components = stackalloc float[3];
+        int offset = 0;
+        for (int component = 0; component < components.Length; component++)
+        {
+            SkipWhitespace(source, ref offset);
+            int start = offset;
+            while (offset < source.Length && !char.IsWhiteSpace(source[offset]))
+                offset++;
+            if (start == offset ||
+                !float.TryParse(
+                    source[start..offset],
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out components[component]) ||
+                !float.IsFinite(components[component]))
+            {
+                return false;
+            }
+        }
+
+        SkipWhitespace(source, ref offset);
+        if (offset != source.Length)
+            return false;
+
+        value = new Vector3(components[0], components[1], components[2]);
+        return true;
+    }
+
+    private static void SkipWhitespace(ReadOnlySpan<char> source, ref int offset)
+    {
+        while (offset < source.Length && char.IsWhiteSpace(source[offset]))
+            offset++;
+    }
+
+    private static float NormalizeDegrees(float degrees)
+    {
+        float normalized = degrees % 360f;
+        if (normalized > 180f)
+            return normalized - 360f;
+        if (normalized <= -180f)
+            return normalized + 360f;
+        return normalized;
     }
 
     public void Show()

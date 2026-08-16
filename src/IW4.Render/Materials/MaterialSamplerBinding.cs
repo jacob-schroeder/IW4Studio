@@ -14,16 +14,13 @@ public sealed record MaterialSamplerBinding(
 {
     /// <summary>
     /// True when the texture is either carried by the render scene or owned by a
-    /// host resource table under an immutable key. The latter lets UI packets
-    /// share translated shader contracts without embedding image bytes.
+    /// host resource table under an immutable key. Authored shaders consume the
+    /// vertex declaration independently of their texture-unit bindings, so an
+    /// editor UV projection is not part of sampler resource readiness.
     /// </summary>
     public bool IsOperationallyResolved =>
-        (Texture is not null ||
-         !string.IsNullOrWhiteSpace(ExternalResourceIdentity)) &&
-        // Material samplers consume declaration-routed coordinates. Custom
-        // cube/runtime samplers use shader-produced directions or coordinates
-        // and therefore correctly carry no host UV route.
-        (Identity.SamplerArgIndex < 0 || UvRoute is not null);
+        Texture is not null ||
+        !string.IsNullOrWhiteSpace(ExternalResourceIdentity);
 
     public string ResourceBindingIdentity =>
         Texture?.BindingIdentity ??
