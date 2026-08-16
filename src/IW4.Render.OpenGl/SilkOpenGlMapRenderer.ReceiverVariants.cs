@@ -47,8 +47,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _sceneLightSelectorAsset =
             scene.WorldSource?.SceneLights.Source?.SelectorState;
         _cachedUnshadowedReceiverSelectorState = null;
-        _cachedAllocatedReceiverSelectorState = null;
-        _cachedAllocatedReceiverSunIndex = -1;
         _worldReceiverVariants = [];
         if (isolateWorldSurface ||
             scene.ReceiverVariants is not { } catalog ||
@@ -544,16 +542,48 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void PrepareWorldReceiverVariantSelection(
         MapRenderWorldDpvsThreeViewFrame frame,
-        MapRenderSunShadowAtlasReadyState? atlasReady,
-        bool sunShadowPreflight = false)
+        MapRenderSunShadowAtlasReadyState? sunAtlasReady,
+        bool sunShadowPreflight = false,
+        MapRenderSpotShadowAtlasReadyState? spotAtlasReady = null,
+        IReadOnlyList<MapRenderSpotShadowAtlasEntry>?
+            spotShadowPreflightEntries = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        if (atlasReady is not null && sunShadowPreflight)
+        if (sunAtlasReady is not null && sunShadowPreflight)
         {
             throw new ArgumentException(
-                "A receiver selection cannot be both preflight-only and atlas-ready.",
+                "A directional-sun receiver selection cannot be both preflight-only and atlas-ready.",
                 nameof(sunShadowPreflight));
         }
+        if (spotAtlasReady is not null &&
+            spotShadowPreflightEntries is not null)
+        {
+            throw new ArgumentException(
+                "A spot-shadow receiver selection cannot be both preflight-only and atlas-ready.",
+                nameof(spotShadowPreflightEntries));
+        }
+        if (sunAtlasReady is not null &&
+            !ReferenceEquals(sunAtlasReady.Frame, frame))
+        {
+            throw new ArgumentException(
+                "Sun-shadow receiver selection requires the exact three-view frame whose atlas completed.",
+                nameof(sunAtlasReady));
+        }
+        if (spotAtlasReady is not null &&
+            !ReferenceEquals(spotAtlasReady.Frame, frame))
+        {
+            throw new ArgumentException(
+                "Spot-shadow receiver selection requires the exact three-view frame whose atlas completed.",
+                nameof(spotAtlasReady));
+        }
+
+        bool hasSunAllocation =
+            sunAtlasReady is not null || sunShadowPreflight;
+        bool hasSpotAllocation =
+            spotAtlasReady is not null ||
+            spotShadowPreflightEntries is { Count: > 0 };
+        bool hasShadowAllocation =
+            hasSunAllocation || hasSpotAllocation;
         _currentWorldReceiverTechniqueSelector = null;
         _baseWorldReceiverVisibilityActive = false;
         AdvanceReceiverSelectionGeneration();
@@ -567,10 +597,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         if (_sceneTechniqueVariants is not { } techniqueCatalog ||
             _sceneLightSelectorAsset is not { } sceneLights ||
-            ((atlasReady is not null || sunShadowPreflight) &&
+            (hasSunAllocation &&
              _selectedDirectionalSunPrimaryLightIndex is null))
         {
-            if (atlasReady is not null || sunShadowPreflight)
+            if (hasShadowAllocation)
             {
                 throw new InvalidOperationException(
                     "Exact allocated receiver coverage lacks the immutable draw-method/light-selector inputs.");
@@ -583,8 +613,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         // allocated surface cannot escape the fail-closed coverage gate.
         if (_worldReceiverVariants.Length == 0 &&
             _staticReceiverVariants.Length == 0 &&
-            atlasReady is null &&
-            !sunShadowPreflight)
+            !hasShadowAllocation)
         {
             return;
         }
@@ -593,8 +622,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ResolveReceiverSelectorFrame(
                 frame,
                 sceneLights,
-                atlasReady,
-                sunShadowPreflight);
+                sunAtlasReady,
+                sunShadowPreflight,
+                spotAtlasReady,
+                spotShadowPreflightEntries);
 
         var context = new MapRenderTechniqueSelectionContext(
             techniqueCatalog.DrawMethod,
@@ -807,17 +838,34 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void AuthorizePreflightedWorldReceiverVariantSelection(
         MapRenderWorldDpvsThreeViewFrame frame,
-        MapRenderSunShadowAtlasReadyState atlasReady)
+        MapRenderSunShadowAtlasReadyState? sunAtlasReady,
+        MapRenderSpotShadowAtlasReadyState? spotAtlasReady = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        ArgumentNullException.ThrowIfNull(atlasReady);
-        if (!ReferenceEquals(atlasReady.Frame, frame))
+        if (sunAtlasReady is null && spotAtlasReady is null)
         {
             throw new ArgumentException(
-                "Receiver authorization requires the exact preflighted three-view frame.",
-                nameof(atlasReady));
+                "Receiver authorization requires a completed sun or spot atlas.");
         }
-        if (_currentWorldReceiverTechniqueSelector is null ||
+        if (sunAtlasReady is not null &&
+            !ReferenceEquals(sunAtlasReady.Frame, frame))
+        {
+            throw new ArgumentException(
+                "Sun-shadow receiver authorization requires the exact preflighted three-view frame.",
+                nameof(sunAtlasReady));
+        }
+        if (spotAtlasReady is not null &&
+            !ReferenceEquals(spotAtlasReady.Frame, frame))
+        {
+            throw new ArgumentException(
+                "Spot-shadow receiver authorization requires the exact preflighted three-view frame.",
+                nameof(spotAtlasReady));
+        }
+        if (_currentWorldReceiverTechniqueSelector is not
+                { } preflightSelector ||
+            !ReferenceEquals(preflightSelector.Visibility, frame) ||
+            !preflightSelector.Techniques.SceneLights
+                .IsShadowAllocationPreflight ||
             _sceneTechniqueVariants is not { } techniqueCatalog ||
             _sceneLightSelectorAsset is not { } sceneLights)
         {
@@ -829,7 +877,32 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ResolveReceiverSelectorFrame(
                 frame,
                 sceneLights,
-                atlasReady);
+                sunAtlasReady,
+                sunShadowPreflight: false,
+                spotAtlasReady: spotAtlasReady);
+        MapRenderSceneLightSelectorState preflightSceneLights =
+            preflightSelector.Techniques.SceneLights.Selectors;
+        MapRenderSceneLightSelectorState readySceneLights =
+            selectorFrame.Selectors;
+        bool membershipMatches =
+            preflightSceneLights.SceneLightCount ==
+            readySceneLights.SceneLightCount;
+        for (int lightIndex = 0;
+             membershipMatches &&
+             lightIndex < readySceneLights.SceneLightCount;
+             lightIndex++)
+        {
+            membershipMatches =
+                preflightSceneLights.IsAlternateVariantAllocated(
+                    lightIndex) ==
+                readySceneLights.IsAlternateVariantAllocated(
+                    lightIndex);
+        }
+        if (!membershipMatches)
+        {
+            throw new InvalidOperationException(
+                "Completed shadow-atlas membership does not match the exact receiver preflight.");
+        }
         _currentWorldReceiverTechniqueSelector =
             new MapRenderFrameTechniqueSelector(
                 frame,
@@ -842,41 +915,71 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         ResolveReceiverSelectorFrame(
             MapRenderWorldDpvsThreeViewFrame frame,
             MapRenderSceneLightSelectorAssetState sceneLights,
-            MapRenderSunShadowAtlasReadyState? atlasReady,
-            bool sunShadowPreflight = false)
+            MapRenderSunShadowAtlasReadyState? sunAtlasReady,
+            bool sunShadowPreflight = false,
+            MapRenderSpotShadowAtlasReadyState? spotAtlasReady = null,
+            IReadOnlyList<MapRenderSpotShadowAtlasEntry>?
+                spotShadowPreflightEntries = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(sceneLights);
-        if ((atlasReady is not null || sunShadowPreflight) &&
-            _selectedDirectionalSunPrimaryLightIndex is { } sunIndex)
+        bool spotShadowPreflight =
+            spotShadowPreflightEntries is { Count: > 0 };
+        bool hasShadowAllocation =
+            sunAtlasReady is not null ||
+            sunShadowPreflight ||
+            spotAtlasReady is not null ||
+            spotShadowPreflight;
+        if (hasShadowAllocation)
         {
-            if (_cachedAllocatedReceiverSelectorState is not { } selectors ||
-                _cachedAllocatedReceiverSunIndex != sunIndex)
+            var runtimeShadowBits =
+                new uint[(sceneLights.SceneLightCount + 31) / 32];
+            if ((sunAtlasReady is not null || sunShadowPreflight) &&
+                _selectedDirectionalSunPrimaryLightIndex is { } sunIndex)
             {
-                var runtimeShadowBits =
-                    new uint[(sceneLights.SceneLightCount + 31) / 32];
+                if ((uint)sunIndex >=
+                    (uint)sceneLights.SceneLightCount)
+                {
+                    throw new InvalidDataException(
+                        $"Directional sun scene-light index {sunIndex} is outside the loaded selector table.");
+                }
                 runtimeShadowBits[sunIndex >> 5] |=
                     1u << (sunIndex & 31);
-                MapRenderSceneLightSelectorFrameState created =
-                    atlasReady is not null
-                        ? sceneLights
-                            .CreateSunShadowReadyNormalViewSelectorFrame(
-                                atlasReady,
-                                runtimeShadowBits)
-                        : sceneLights
-                            .CreateSunShadowPreflightNormalViewSelectorFrame(
-                                frame.Revision,
-                                runtimeShadowBits);
-                _cachedAllocatedReceiverSelectorState =
-                    created.Selectors;
-                _cachedAllocatedReceiverSunIndex = sunIndex;
-                return created;
             }
 
-            return new MapRenderSceneLightSelectorFrameState(
-                frame.Revision,
-                selectors,
-                atlasReady);
+            IReadOnlyList<MapRenderSpotShadowAtlasEntry>? spotEntries =
+                spotAtlasReady?.Entries ??
+                spotShadowPreflightEntries;
+            if (spotEntries is not null)
+            {
+                foreach (MapRenderSpotShadowAtlasEntry entry in spotEntries)
+                {
+                    if (entry is null)
+                    {
+                        throw new InvalidDataException(
+                            "Spot-shadow receiver selection cannot contain a null atlas entry.");
+                    }
+                    int lightIndex = entry.SceneLightIndex;
+                    if ((uint)lightIndex >=
+                        (uint)sceneLights.SceneLightCount)
+                    {
+                        throw new InvalidDataException(
+                            $"Spot-shadow scene-light index {lightIndex} is outside the loaded selector table.");
+                    }
+                    runtimeShadowBits[lightIndex >> 5] |=
+                        1u << (lightIndex & 31);
+                }
+            }
+
+            return sunShadowPreflight || spotShadowPreflight
+                ? sceneLights
+                    .CreateShadowPreflightNormalViewSelectorFrame(
+                        frame.Revision,
+                        runtimeShadowBits)
+                : sceneLights.CreateShadowReadyNormalViewSelectorFrame(
+                    sunAtlasReady,
+                    spotAtlasReady,
+                    runtimeShadowBits);
         }
 
         if (_cachedUnshadowedReceiverSelectorState is not

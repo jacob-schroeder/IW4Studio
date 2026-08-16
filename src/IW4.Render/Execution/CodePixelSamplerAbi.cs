@@ -76,7 +76,13 @@ public static class CodePixelSamplerAbi
             Entry(
                 MaterialTextureSource.ShadowMapSpot,
                 "TEXTURE_SRC_CODE_SHADOWMAP_SPOT",
-                textureTarget: "Texture2DShadow"),
+                resourceIdentity: "shadowmapSamplerSpot",
+                textureTarget: "Texture2DShadow",
+                runtimeResourceKind:
+                    ShaderRuntimeSamplerResourceKind.SpotShadowAtlas,
+                runtimeRequirementStatus:
+                    ShaderRuntimeSamplerRequirementStatus
+                        .SameRevisionAtlasRequired),
             Entry(
                 MaterialTextureSource.Feedback,
                 "TEXTURE_SRC_CODE_FEEDBACK"),
@@ -94,7 +100,14 @@ public static class CodePixelSamplerAbi
                 "TEXTURE_SRC_CODE_POST_EFFECT_1"),
             Entry(
                 MaterialTextureSource.LightAttenuation,
-                "TEXTURE_SRC_CODE_LIGHT_ATTENUATION"),
+                "TEXTURE_SRC_CODE_LIGHT_ATTENUATION",
+                resourceIdentity: "attenuationSampler",
+                textureTarget: "Texture2D",
+                runtimeResourceKind:
+                    ShaderRuntimeSamplerResourceKind.LightAttenuation,
+                runtimeRequirementStatus:
+                    ShaderRuntimeSamplerRequirementStatus
+                    .ImmutableSceneTextureRequired),
             Entry(
                 MaterialTextureSource.Outdoor,
                 "TEXTURE_SRC_CODE_OUTDOOR"),

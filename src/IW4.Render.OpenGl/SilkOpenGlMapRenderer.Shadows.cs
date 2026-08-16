@@ -22,6 +22,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 {
     private const float Ps3SunShadowPolygonOffsetFactor = 2f;
     private const float Ps3SunShadowPolygonOffsetUnits = 25f;
+    private const float Ps3SpotShadowPolygonOffsetFactor = 5f;
+    private const float Ps3SpotShadowPolygonOffsetUnits = 700f;
     private MapRenderWorldDpvsVisibilityBuildResult?
         _sunShadowCasterAdmissionVisibility;
     private MapRenderSunShadowCasterPartition?
@@ -454,6 +456,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderScene scene,
         bool isolateWorldSurface)
     {
+        ClearCurrentSpotShadowFrame();
+        _spotShadowAtlas?.Dispose();
+        _spotShadowAtlas = null;
         ResetSunShadowDpvsPipelineState();
         _sunShadowDpvsWorker?.Dispose();
         _sunShadowDpvsWorker = null;
@@ -484,17 +489,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderWorldSceneSource? source = scene.WorldSource;
         MapRenderWorldSceneLightSource? lightSource =
             source?.SceneLights.Source;
-        MapRenderEditorPreviewLightingPlan? lighting =
-            _editorPreviewLighting;
         if (source is null ||
-            lightSource is null ||
-            lighting?.DirectionalSunPrimaryLightIndex is not { } sunIndex)
+            lightSource is null)
         {
             SunShadowPipelineStatus =
-                "SUN_SHADOW_PIPELINE_BLOCKED_CANONICAL_WORLD_OR_SELECTED_SUN_MISSING";
+                "SUN_SHADOW_PIPELINE_BLOCKED_CANONICAL_WORLD_MISSING";
             return;
         }
 
+        // GfxWorld owns the active stage's exact directional-sun primary-light
+        // index. ComWorld can legitimately retain several directional lights
+        // for other stages, so the editor-lighting ambiguity policy is not an
+        // authority for native DPVS/shadow scheduling.
+        int sunIndex = source.World.SunPrimaryLightIndex;
         IReadOnlyList<ComPrimaryLight> primaryLights =
             lightSource.ComWorld.PrimaryLights;
         if ((uint)sunIndex >= (uint)primaryLights.Count || sunIndex == 0)
@@ -544,6 +551,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _staticScheduling,
             _selectedStaticLodByObject);
         _selectedDirectionalSunPrimaryLightIndex = sunIndex;
+        InitializeSpotShadowPipeline();
 
         try
         {
@@ -552,15 +560,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _state,
                 _sunShadowAtlasContextIdentity);
         }
-        catch (NotSupportedException exception)
+        catch (Exception exception) when (
+            exception is NotSupportedException or
+            AggregateException)
         {
-            _sunShadowDpvsWorker.Dispose();
-            _sunShadowDpvsWorker = null;
-            _sunShadowVisibilityProvider = null;
-            _sunShadowCasterCatalogProvider = null;
-            _selectedDirectionalSunPrimaryLightIndex = null;
             SunShadowPipelineStatus =
-                $"SUN_SHADOW_PIPELINE_BLOCKED_OPENGL_ATLAS_UNSUPPORTED:{exception.Message}";
+                $"SUN_SHADOW_PIPELINE_BLOCKED_OPENGL_ATLAS_UNAVAILABLE:{exception.Message}";
             return;
         }
 
@@ -582,7 +587,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (_previewWorldSource is not { } source ||
             _sunShadowVisibilityProvider is not { } provider ||
             _sunShadowCasterCatalogProvider is not { } casterProvider ||
-            _sunShadowAtlas is null ||
             _selectedDirectionalSunPrimaryLightIndex is null)
         {
             return false;
@@ -733,13 +737,25 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 out MapRenderSunShadowFramePublication? publication,
                 out MapRenderSunShadowCasterCatalog? casters) ||
             publication is null ||
-            casters is null ||
-            _sunShadowAtlas is not { } atlas)
+            casters is null)
         {
             return null;
         }
 
         MapRenderWorldDpvsThreeViewFrame frame = publication.Frame;
+        if (_sunShadowAtlas is not { } atlas)
+        {
+            // Local spot shadows own a separate target and readiness token.
+            // Keep the exact normal-camera/three-view frame operational when
+            // only the directional atlas is unavailable.
+            PrepareWorldReceiverVariantSelection(
+                frame,
+                sunAtlasReady: null);
+            SunShadowPipelineStatus =
+                $"SUN_SHADOW_FRAME_{frame.Revision}_THREE_VIEW_READY_SUN_ATLAS_UNAVAILABLE";
+            return frame;
+        }
+
         bool receiverSelectionPrepared = false;
         try
         {
@@ -753,7 +769,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // discarded immediately without manufacturing readiness.
             PrepareWorldReceiverVariantSelection(
                 frame,
-                atlasReady: null,
+                sunAtlasReady: null,
                 sunShadowPreflight: true);
 
             atlas.BeginFrame(frame.Revision);
@@ -832,7 +848,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // Preserve the established fail-closed behavior: an incomplete
             // atlas cannot authorize +3 receivers, but the same successful
             // three-view frame may still select exact unshadowed variants.
-            PrepareWorldReceiverVariantSelection(frame, atlasReady: null);
+            PrepareWorldReceiverVariantSelection(
+                frame,
+                sunAtlasReady: null);
         }
         return frame;
     }
@@ -942,12 +960,45 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     {
         Matrix4x4 viewProjection =
             OpenGlRsxClipSpaceLowering
-                .CreateSunShadowCasterHostViewProjection(
+                .CreateShadowCasterHostViewProjection(
                     frame.Projection.WorldToClip(
                         partition.PartitionIndex));
 
+        DrawShadowCasterSelection(
+            partition.WorldSurfaceIndices,
+            partition.StaticDrawInstances,
+            frame.Projection.CameraOrigin,
+            viewProjection,
+            partition.PartitionIndex,
+            reuseCommittedStaticSelection:
+                _currentSunShadowCasterAdmissionReused,
+            polygonOffsetFactor:
+                Ps3SunShadowPolygonOffsetFactor,
+            polygonOffsetUnits:
+                Ps3SunShadowPolygonOffsetUnits);
+    }
+
+    private void DrawShadowCasterSelection(
+        IReadOnlyList<int> worldSurfaceIndices,
+        IReadOnlyList<MapRenderSunShadowStaticCasterIdentity>
+            staticDrawInstances,
+        Vector3 nativeCameraOrigin,
+        Matrix4x4 viewProjection,
+        int partitionRuntimeIndex,
+        bool reuseCommittedStaticSelection,
+        float polygonOffsetFactor,
+        float polygonOffsetUnits)
+    {
+        ArgumentNullException.ThrowIfNull(worldSurfaceIndices);
+        ArgumentNullException.ThrowIfNull(staticDrawInstances);
+        if ((uint)partitionRuntimeIndex >= 2u)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(partitionRuntimeIndex));
+        }
+
         _sunShadowWorldAdmissionScratch.Clear();
-        foreach (int surfaceIndex in partition.WorldSurfaceIndices)
+        foreach (int surfaceIndex in worldSurfaceIndices)
         {
             if (!_sunShadowWorldCastersBySurface.TryGetValue(
                     surfaceIndex,
@@ -985,7 +1036,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 runtime.Batch.Material.State,
                 viewProjection,
                 runtime.CompactDrawRuns,
-                drawRunCount);
+                drawRunCount,
+                polygonOffsetFactor,
+                polygonOffsetUnits);
         }
 
         MapRenderOpenGlSunShadowStaticCasterIndex staticCasterIndex =
@@ -993,13 +1046,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             throw new InvalidOperationException(
                 "The static caster object index is unavailable.");
         bool evaluateStaticSelection =
-            !_currentSunShadowCasterAdmissionReused;
+            !reuseCommittedStaticSelection;
         if (!evaluateStaticSelection)
         {
             foreach (MapRenderOpenGlSunShadowStaticCasterRuntime runtime in
                      _sunShadowStaticCasterRuntimes)
             {
-                if (!runtime.GetPartition(partition.PartitionIndex)
+                if (!runtime.GetPartition(partitionRuntimeIndex)
                         .HasCommittedSelection)
                 {
                     evaluateStaticSelection = true;
@@ -1010,15 +1063,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (evaluateStaticSelection)
         {
             staticCasterIndex.PreparePartitionSelection(
-                partition.StaticDrawInstances,
-                frame.Projection.CameraOrigin);
+                staticDrawInstances,
+                nativeCameraOrigin);
         }
         foreach (MapRenderOpenGlSunShadowStaticCasterRuntime runtime in
                  _sunShadowStaticCasterRuntimes)
         {
             MapRenderOpenGlSunShadowStaticCasterPartitionRuntime
                 partitionRuntime =
-                    runtime.GetPartition(partition.PartitionIndex);
+                    runtime.GetPartition(partitionRuntimeIndex);
             bool uploadChanged = false;
             int instanceCount = partitionRuntime.InstanceCount;
             if (evaluateStaticSelection)
@@ -1039,7 +1092,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _state.BindArrayBuffer(
                     partitionRuntime.Mesh.InstanceBuffer);
                 nint destinationByteOffset = checked((nint)(
-                    partition.PartitionIndex *
+                    partitionRuntimeIndex *
                     runtime.Batch.Instances.Count *
                     12 * sizeof(float)));
                 nuint uploadBytes = checked((nuint)(
@@ -1062,7 +1115,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 runtime.Batch.Material.State,
                 viewProjection,
                 checked((uint)instanceCount),
-                useInstancing: true);
+                useInstancing: true,
+                polygonOffsetFactor,
+                polygonOffsetUnits);
         }
     }
 
@@ -1122,7 +1177,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         RenderState authoredState,
         Matrix4x4 viewProjection,
         IReadOnlyList<MapRenderSunShadowWorldCasterDrawRun> drawRuns,
-        int drawRunCount)
+        int drawRunCount,
+        float polygonOffsetFactor,
+        float polygonOffsetUnits)
     {
         if (drawRunCount <= 0 || drawRunCount > drawRuns.Count)
             throw new ArgumentOutOfRangeException(nameof(drawRunCount));
@@ -1131,7 +1188,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             mesh,
             authoredState,
             viewProjection,
-            useInstancing: false);
+            useInstancing: false,
+            polygonOffsetFactor,
+            polygonOffsetUnits);
         _state.BindVertexArray(mesh.VertexArray);
 
         if (drawRunCount == 1)
@@ -1199,7 +1258,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         RenderState authoredState,
         Matrix4x4 viewProjection,
         uint instanceCount,
-        bool useInstancing)
+        bool useInstancing,
+        float polygonOffsetFactor,
+        float polygonOffsetUnits)
     {
         if (mesh.IndexCount == 0 || instanceCount == 0)
             return;
@@ -1208,7 +1269,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             mesh,
             authoredState,
             viewProjection,
-            useInstancing);
+            useInstancing,
+            polygonOffsetFactor,
+            polygonOffsetUnits);
         _state.BindVertexArray(mesh.VertexArray);
         RecordDraw(
             mesh.IndexCount,
@@ -1237,7 +1300,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         MapRenderOpenGlSunShadowCasterMesh mesh,
         RenderState authoredState,
         Matrix4x4 viewProjection,
-        bool useInstancing)
+        bool useInstancing,
+        float polygonOffsetFactor,
+        float polygonOffsetUnits)
     {
         ApplyRenderState(authoredState);
         _state.ColorMask(false, false, false, false);
@@ -1245,8 +1310,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _state.SetEnabled(EnableCap.StencilTest, false);
         _state.SetEnabled(EnableCap.PolygonOffsetFill, true);
         _state.PolygonOffset(
-            Ps3SunShadowPolygonOffsetFactor,
-            Ps3SunShadowPolygonOffsetUnits);
+            polygonOffsetFactor,
+            polygonOffsetUnits);
 
         uint program = mesh.IsCutout
             ? _sunShadowCutoutCasterProgram

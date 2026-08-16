@@ -49,8 +49,12 @@ internal static class TranslatedProgramDirectCodeConstantRows
     internal static bool IsStaticModelLightProbeAmbientSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.StaticModelLightProbeAmbientRowIndex;
     internal static bool IsClipSpaceLookupSourceRow(ushort sourceRow) => sourceRow is FrameDirectCodeConstants.ClipSpaceLookupScaleRowIndex or FrameDirectCodeConstants.ClipSpaceLookupOffsetRowIndex;
     internal static bool IsZNearSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.ZNearRowIndex;
+    internal static bool IsDynamicSceneLightSourceRow(ushort sourceRow) =>
+        sourceRow == FrameDirectCodeConstants.DirectionalLightDirectionRowIndex ||
+        sourceRow is FrameDirectCodeConstants.LightSpotFactorsRowIndex or
+            FrameDirectCodeConstants.LightFalloffPlacementRowIndex;
     internal static bool IsPerInstanceStaticModelSourceRow(ushort sourceRow) => IsStaticModelBaseLightingCoordsSourceRow(sourceRow) || IsStaticModelLightProbeAmbientSourceRow(sourceRow);
-    internal static bool IsRuntimeOwnedSourceRow(ushort sourceRow) => sourceRow == FrameDirectCodeConstants.DirectionalLightDirectionRowIndex || IsSunShadowProjectionSourceRow(sourceRow) || IsPerInstanceStaticModelSourceRow(sourceRow) || IsClipSpaceLookupSourceRow(sourceRow) || IsZNearSourceRow(sourceRow);
+    internal static bool IsRuntimeOwnedSourceRow(ushort sourceRow) => IsDynamicSceneLightSourceRow(sourceRow) || IsSunShadowProjectionSourceRow(sourceRow) || IsPerInstanceStaticModelSourceRow(sourceRow) || IsClipSpaceLookupSourceRow(sourceRow) || IsZNearSourceRow(sourceRow);
     internal static bool IsSceneLightSourceRow(ushort sourceRow) =>
         sourceRow is >= (ushort)MaterialConstantSource.LightPosition and
             <= (ushort)MaterialConstantSource.LightFalloffPlacement;

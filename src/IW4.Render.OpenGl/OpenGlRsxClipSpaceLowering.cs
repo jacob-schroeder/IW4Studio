@@ -80,15 +80,14 @@ public static class OpenGlRsxClipSpaceLowering
     }
 
     /// <summary>
-    /// Lowers one native sun-shadow partition projection for render-space
-    /// host geometry. The projection remains the exact immutable matrix
-    /// produced with DPVS views 1/2; only the established coordinate-basis and
-    /// RSX vertex-export boundaries are applied here.
+    /// Lowers one native shadow-caster projection for render-space host
+    /// geometry. Only the established coordinate-basis and RSX vertex-export
+    /// boundaries are applied here.
     /// </summary>
-    internal static Matrix4x4 CreateSunShadowCasterHostViewProjection(
-        Matrix4x4 nativePartitionWorldToClip) =>
+    internal static Matrix4x4 CreateShadowCasterHostViewProjection(
+        Matrix4x4 nativeWorldToClip) =>
         RenderCoordinateConverter.RenderToGameMatrix *
-        nativePartitionWorldToClip *
+        nativeWorldToClip *
         VertexExportMatrix;
 
 }

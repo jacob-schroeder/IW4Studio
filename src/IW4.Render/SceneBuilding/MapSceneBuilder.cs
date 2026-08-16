@@ -578,6 +578,14 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
         int materialTextureGeometryFailedSurfaceCount = 0;
         int textureDecodedCount = 0;
         int textureDecodeSkippedCount = 0;
+        IReadOnlyList<Texture?> sceneLightAttenuationTextures =
+            BuildSceneLightAttenuationTextures(
+                worldSourceBuildResult,
+                imageStreams,
+                textureCache,
+                failedTextureCacheKeys,
+                ref textureDecodedCount,
+                ref textureDecodeSkippedCount);
         int renderStateDecodedCount = 0;
         int unresolvedCodeSamplerSurfaceCount = 0;
         int staticModelDrawInstCount = 0;
@@ -2680,6 +2688,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 worldTextureRevisionAtConstruction,
             StaticModelScheduling = staticModelScheduling,
             StaticModelLightingAtlas = staticModelLightingAtlas,
+            SceneLightAttenuationTextures = sceneLightAttenuationTextures,
             StaticModelLodTexturedBatches =
                 allStaticLodTexturedBatches,
             ExactNormalCameraStaticModelTexturedBatches =

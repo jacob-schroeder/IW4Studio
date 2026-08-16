@@ -212,9 +212,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private uint _receiverSelectionGeneration = 1;
     private MapRenderSceneLightSelectorState?
         _cachedUnshadowedReceiverSelectorState;
-    private MapRenderSceneLightSelectorState?
-        _cachedAllocatedReceiverSelectorState;
-    private int _cachedAllocatedReceiverSunIndex = -1;
     private MapRenderFrameTechniqueSelector?
         _currentWorldReceiverTechniqueSelector;
     private MapRenderSceneTechniqueVariantCatalog? _sceneTechniqueVariants;
@@ -291,6 +288,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private int[] _conservativeUnscheduledStaticObjectIndices = [];
     private byte[]? _staticModelLightingPhysicalRgbaBytes;
     private uint _staticModelLightingAtlasTexture;
+    private uint[] _sceneLightAttenuationTextureHandles = [];
     private readonly Dictionary<uint, StaticInstanceBufferRuntime>
         _staticInstanceBuffers = [];
     private readonly Dictionary<int, List<StaticInstanceBufferRuntime>>
@@ -766,7 +764,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _editorPreviewVision = scene.EditorPreviewVision?.Vision;
         _editorPreviewEffectivePost = scene.EditorPreviewEffectivePost;
         RecomputeEditorPreviewDirectionalSunColors();
-        InitializeEditorPreviewSceneLightFrame();
+        InitializeEditorPreviewSceneLightFrame(
+            scene.SceneLightAttenuationTextures);
         _editorPreviewAtmosphere = scene.EditorPreviewAtmosphere ??
             MapRenderEditorPreviewAtmospherePlanner.Create(
                 scene.Bounds);
@@ -795,6 +794,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 ? CreateStaticModelLightingAtlasTexture(
                     initialStaticLightingAtlas)
                 : 0;
+        _sceneLightAttenuationTextureHandles = scene
+            .SceneLightAttenuationTextures
+            .Select(texture =>
+                texture is not null && CanUploadTexture(texture)
+                    ? CreateTexture(
+                        texture,
+                        pinForRendererLifetime: true)
+                    : 0)
+            .ToArray();
         using var loadShaderObjectCache =
             BeginLoadShaderObjectCache();
         _solidProgram = CreateProgram(VertexShaderSource, FragmentShaderSource);
@@ -1234,8 +1242,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _editorPreviewDirectionalSunSpecularColor = Vector3.Zero;
     }
 
-    private void InitializeEditorPreviewSceneLightFrame()
+    private void InitializeEditorPreviewSceneLightFrame(
+        IReadOnlyList<Texture?> sceneLightAttenuationTextures)
     {
+        ArgumentNullException.ThrowIfNull(sceneLightAttenuationTextures);
         _editorPreviewSceneLightFrame = null;
         _editorPreviewSceneLightFrameFailure = null;
         if (_previewWorldSource is not { } source ||
@@ -1262,7 +1272,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             MapRenderWorldEvent20SceneLightFrameInputProducer.Build(
                 source,
                 dynamicInput,
-                eyeOffset: Vector3.Zero);
+                eyeOffset: Vector3.Zero,
+                sceneLightAttenuationTextures);
         _editorPreviewSceneLightFrame = result.Input;
         _editorPreviewSceneLightFrameFailure = result.Failure;
     }
@@ -1468,16 +1479,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         }
 
         MapRenderWorldDpvsThreeViewFrame? sunShadowFrame;
+        MapRenderSunShadowAtlasReadyState? sunShadowAtlasReady;
         using (_gpuTimers.BeginPhase(MapRenderGpuPhase.SunShadow))
         using (BeginGpuDrawPhase(MapRenderGpuPhase.SunShadow))
         using (_frameTelemetry.BeginCpuPhase(MapRenderCpuPhase.SunShadow))
         {
             sunShadowFrame = RenderSunShadowFrame(
                 camera,
-                out _);
+                out sunShadowAtlasReady);
+            if (sunShadowFrame is not null)
+            {
+                RenderSpotShadowFrame(
+                    sunShadowFrame,
+                    sunShadowAtlasReady);
+            }
         }
         if (sunShadowFrame is null)
         {
+            ClearCurrentSpotShadowFrame();
             ResetWorldReceiverVariantSelection();
         }
 

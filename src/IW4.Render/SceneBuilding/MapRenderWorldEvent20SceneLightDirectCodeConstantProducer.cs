@@ -1,6 +1,8 @@
 using System.Numerics;
 using IW4.Assets.Assets.ComWorld;
+using IW4.Render.Execution;
 using IW4.Render.Scheduling.Lighting;
+using IW4.Render.Scheduling.Shadows;
 using IW4.Render.Shaders;
 
 namespace IW4.Render.SceneBuilding;
@@ -13,12 +15,13 @@ internal static class
     MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
 {
     internal const string ManagedProducerIdentity =
-        "PS3_R_SET_DRAW_SURFS_SCENE_LIGHT_UNSHADOWED_MANAGED";
+        "PS3_R_SET_DRAW_SURFS_SCENE_LIGHT_MANAGED";
 
     internal static IReadOnlyList<DirectCodeConstantRow> ProduceRows(
         MapRenderWorldEvent20SceneLightFrameInput frame,
         int sceneLightIndex,
-        Vector3 eyeOffset)
+        Vector3 eyeOffset,
+        MapRenderSpotShadowAtlasEntry? spotShadowEntry = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
         if (!IsFinite(eyeOffset))
@@ -58,10 +61,11 @@ internal static class
                     frame.DynamicInput.SpecularColorScale)
             ];
         }
-        ValidateUnshadowedNonDirectionalLight(
-            frame,
+        ValidateNonDirectionalLight(sceneLightIndex, light);
+        ValidateSpotShadowEntry(
             sceneLightIndex,
-            light);
+            light,
+            spotShadowEntry);
 
         var rows = new List<DirectCodeConstantRow>(5)
         {
@@ -85,24 +89,22 @@ internal static class
                 0f)
         };
 
-        // The all-clear branch writes row 0x04 only for type 2. Row 0x05 is
-        // not written here and retains source initialization (FLT_MAX xyz,0).
+        // Event20 always writes row 0x04 for spots. Allocation changes only
+        // its fade component and whether row 0x05 replaces source
+        // initialization; those two rows remain dynamic in translated plans.
         if (light.Type == GfxLightType.Spot)
         {
-            float denominator =
-                light.CosHalfFovInner - light.CosHalfFovOuter;
-            if (denominator == 0f)
-            {
-                throw new InvalidOperationException(
-                    $"Event20 spot light {sceneLightIndex} has equal inner and outer cone cosines; row 0x04 cannot contain finite factors.");
-            }
-            rows.Add(Row(
+            rows.Add(ProduceSpotFactorsRow(
+                frame,
                 sceneLightIndex,
-                0x04,
-                1f / denominator,
-                -light.CosHalfFovOuter / denominator,
-                light.Exponent,
-                0f));
+                spotShadowEntry));
+            if (spotShadowEntry is not null)
+            {
+                rows.Add(ProduceLightFalloffPlacementRow(
+                    frame,
+                    sceneLightIndex,
+                    spotShadowEntry));
+            }
         }
 
         return Array.AsReadOnly(rows.ToArray());
@@ -135,10 +137,7 @@ internal static class
             throw new InvalidOperationException(
                 $"Event20 scene light {sceneLightIndex} is directional and does not own a dynamic eye-relative position row.");
         }
-        ValidateUnshadowedNonDirectionalLight(
-            frame,
-            sceneLightIndex,
-            light);
+        ValidateNonDirectionalLight(sceneLightIndex, light);
         return Row(
             sceneLightIndex,
             0x00,
@@ -148,17 +147,95 @@ internal static class
             1f / light.Radius);
     }
 
-    private static void ValidateUnshadowedNonDirectionalLight(
+    internal static DirectCodeConstantRow ProduceSpotFactorsRow(
         MapRenderWorldEvent20SceneLightFrameInput frame,
+        int sceneLightIndex,
+        MapRenderSpotShadowAtlasEntry? spotShadowEntry)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        MapRenderWorldEvent20SceneLight light =
+            GetSpotLight(frame, sceneLightIndex);
+        ValidateSpotShadowEntry(
+            sceneLightIndex,
+            light,
+            spotShadowEntry);
+
+        float denominator =
+            light.CosHalfFovInner - light.CosHalfFovOuter;
+        if (denominator == 0f || !float.IsFinite(denominator))
+        {
+            throw new InvalidOperationException(
+                $"Event20 spot light {sceneLightIndex} has invalid inner and outer cone cosines; row 0x04 cannot contain finite factors.");
+        }
+        return Row(
+            sceneLightIndex,
+            FrameDirectCodeConstants.LightSpotFactorsRowIndex,
+            1f / denominator,
+            -light.CosHalfFovOuter / denominator,
+            light.Exponent,
+            spotShadowEntry?.Fade ?? 0f);
+    }
+
+    internal static DirectCodeConstantRow
+        ProduceLightFalloffPlacementRow(
+            MapRenderWorldEvent20SceneLightFrameInput frame,
+            int sceneLightIndex,
+            MapRenderSpotShadowAtlasEntry? spotShadowEntry)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        MapRenderWorldEvent20SceneLight light =
+            GetSpotLight(frame, sceneLightIndex);
+        ValidateSpotShadowEntry(
+            sceneLightIndex,
+            light,
+            spotShadowEntry);
+        if (spotShadowEntry is null)
+        {
+            return FrameDirectCodeConstants
+                .ProduceLightFalloffPlacementInitializationRow();
+        }
+
+        if (light.Definition is not { } definition ||
+            light.AttenuationImageWidth is not { } imageWidth)
+        {
+            throw new InvalidOperationException(
+                $"Event20 allocated spot light {sceneLightIndex} has no canonical non-empty LightDef image.");
+        }
+        return Row(
+            sceneLightIndex,
+            FrameDirectCodeConstants.LightFalloffPlacementRowIndex,
+            imageWidth / 512f,
+            0f,
+            definition.LmapLookupStart / 512f,
+            0f);
+    }
+
+    private static MapRenderWorldEvent20SceneLight GetSpotLight(
+        MapRenderWorldEvent20SceneLightFrameInput frame,
+        int sceneLightIndex)
+    {
+        if (sceneLightIndex == 0 ||
+            (uint)sceneLightIndex >= (uint)frame.SceneLightCount)
+        {
+            throw new InvalidOperationException(
+                $"Event20 spot rows selected scene light {sceneLightIndex}, but the adapted runtime table contains {frame.SceneLightCount} rows and row zero is the no-write sentinel.");
+        }
+
+        MapRenderWorldEvent20SceneLight light =
+            frame.GetSceneLight(sceneLightIndex);
+        if (light.Type != GfxLightType.Spot)
+        {
+            throw new InvalidOperationException(
+                $"Event20 scene light {sceneLightIndex} is not a spot light and cannot own spot-shadow rows.");
+        }
+        ValidateNonDirectionalLight(sceneLightIndex, light);
+        return light;
+    }
+
+    private static void ValidateNonDirectionalLight(
         int sceneLightIndex,
         MapRenderWorldEvent20SceneLight light)
     {
-        if (frame.DynamicInput.ShadowAllocation.IsShadowMapAllocated(
-                sceneLightIndex))
-        {
-            throw new InvalidOperationException(
-                $"Event20 scene light {sceneLightIndex} selected the PS3 allocated non-sun 0x003A15F0 branch, whose shadow inputs are not operationally mapped.");
-        }
         if (light.Definition is null)
         {
             throw new InvalidOperationException(
@@ -168,6 +245,21 @@ internal static class
         {
             throw new InvalidOperationException(
                 $"Event20 scene light {sceneLightIndex} has zero radius; row 0x00 cannot contain a finite reciprocal.");
+        }
+    }
+
+    private static void ValidateSpotShadowEntry(
+        int sceneLightIndex,
+        MapRenderWorldEvent20SceneLight light,
+        MapRenderSpotShadowAtlasEntry? spotShadowEntry)
+    {
+        if (spotShadowEntry is null)
+            return;
+        if (light.Type != GfxLightType.Spot ||
+            spotShadowEntry.SceneLightIndex != sceneLightIndex)
+        {
+            throw new InvalidOperationException(
+                $"Event20 scene light {sceneLightIndex} cannot consume spot-shadow entry {spotShadowEntry.SceneLightIndex}.");
         }
     }
 

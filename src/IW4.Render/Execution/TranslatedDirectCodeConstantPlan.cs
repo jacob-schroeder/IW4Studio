@@ -36,8 +36,8 @@ public sealed class TranslatedProgramDirectCodeConstantPlan
             throw new ArgumentException("Dynamic direct-code rows without placeholder values must have a supported runtime owner.", nameof(dynamicSourceRows));
         if (sceneLightIndex is < 1 or > byte.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(sceneLightIndex));
-        if (dynamicRows.Contains(FrameDirectCodeConstants.DirectionalLightDirectionRowIndex) && !sceneLightIndex.HasValue)
-            throw new ArgumentException("A dynamic scene-light position row requires exact invocation light identity.", nameof(sceneLightIndex));
+        if (dynamicRows.Any(TranslatedProgramDirectCodeConstantRows.IsDynamicSceneLightSourceRow) && !sceneLightIndex.HasValue)
+            throw new ArgumentException("A dynamic scene-light row requires exact invocation light identity.", nameof(sceneLightIndex));
         ProducerIdentity = producerIdentity;
         Rows = Array.AsReadOnly(copied);
         DynamicSourceRows = Array.AsReadOnly(dynamicRows);

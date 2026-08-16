@@ -6,6 +6,7 @@ using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Lighting;
 using IW4.Render.Scheduling.Lighting;
+using IW4.Render.Scheduling.Shadows;
 using IW4.Render.SceneBuilding;
 using IW4.Render.World;
 using IW4.Render.Shaders;
@@ -1021,6 +1022,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 hash.Add(requirement);
             }
         }
+        if (UsesPerSceneLightRuntimeResource(mesh))
+            hash.Add(mesh.SceneLightIndex);
         hash.Add(mesh.EditorDepthPrepass?.Program);
         hash.Add(mesh.EditorDepthPrepass?.State);
         hash.Add(mesh.DepthPrepassRsxProgram.Handle);
@@ -1075,6 +1078,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             first.State != next.State ||
             first.RsxProgram.Handle != next.RsxProgram.Handle ||
             first.FragmentProgramControl != next.FragmentProgramControl ||
+            (UsesPerSceneLightRuntimeResource(first) &&
+             first.SceneLightIndex != next.SceneLightIndex) ||
             !RuntimeSamplerRequirementsMatch(first, next) ||
             first.EditorDepthPrepass?.Program !=
                 next.EditorDepthPrepass?.Program ||
@@ -1163,6 +1168,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
         return true;
     }
+
+    private static bool UsesPerSceneLightRuntimeResource(
+        GlTexturedMesh mesh) =>
+        mesh.ShaderExecution?.RuntimeSamplerRequirements.Any(
+            requirement =>
+                (requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.LightAttenuation &&
+                 requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .ImmutableSceneTextureRequired) ||
+                (requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.SpotShadowAtlas &&
+                 requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .SameRevisionAtlasRequired)) == true;
 
     private static bool CompositionPlansMatch(
         MapRenderEditorVegetationAnimationPlan? first,
@@ -1688,6 +1708,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         int? instanceIndex,
         DerivedMatrixState frameMatrices)
     {
+        if (UsesSpotShadowAtlas(mesh))
+        {
+            MapRenderSpotShadowAtlasEntry entry =
+                ResolveCurrentSpotShadowEntry(mesh.SceneLightIndex);
+            frameMatrices = DerivedMatrixResolver.WithShadowLookupSource(
+                frameMatrices,
+                entry.ShadowLookupMatrix);
+        }
+
         if (mesh.InstanceCount == 0)
         {
             if (instanceIndex.HasValue)
@@ -1750,6 +1779,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ResolveSceneLightPositionCodeConstant(
                 index,
                 eyeOffset),
+        FrameDirectCodeConstants.LightSpotFactorsRowIndex
+            when sceneLightIndex is int index =>
+            ResolveSceneLightShadowCodeConstant(
+                sourceRow,
+                index,
+                spotFactors: true),
+        FrameDirectCodeConstants.LightFalloffPlacementRowIndex
+            when sceneLightIndex is int index =>
+            ResolveSceneLightShadowCodeConstant(
+                sourceRow,
+                index,
+                spotFactors: false),
         FrameDirectCodeConstants.SunShadowSwitchPartitionRowIndex =>
             ResolveSunShadowProjectionCodeConstant(
                 sourceRow,
@@ -1773,9 +1814,48 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             Vector3 eyeOffset)
     {
         MapRenderWorldEvent20SceneLightFrameInput frame =
+            RequireCurrentSceneLightFrame(
+                FrameDirectCodeConstants
+                    .DirectionalLightDirectionRowIndex);
+
+        return MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
+            .ProducePositionRow(frame, sceneLightIndex, eyeOffset)
+            .Value;
+    }
+
+    private ShaderConstantValue ResolveSceneLightShadowCodeConstant(
+        ushort sourceRow,
+        int sceneLightIndex,
+        bool spotFactors)
+    {
+        MapRenderWorldEvent20SceneLightFrameInput frame =
+            RequireCurrentSceneLightFrame(sourceRow);
+        MapRenderSpotShadowAtlasEntry? entry = null;
+        _currentSpotShadowReadyState?.TryGetEntry(
+            sceneLightIndex,
+            out entry);
+        return spotFactors
+            ? MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
+                .ProduceSpotFactorsRow(
+                    frame,
+                    sceneLightIndex,
+                    entry)
+                .Value
+            : MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
+                .ProduceLightFalloffPlacementRow(
+                    frame,
+                    sceneLightIndex,
+                    entry)
+                .Value;
+    }
+
+    private MapRenderWorldEvent20SceneLightFrameInput
+        RequireCurrentSceneLightFrame(ushort sourceRow)
+    {
+        MapRenderWorldEvent20SceneLightFrameInput frame =
             _editorPreviewSceneLightFrame ??
             throw new InvalidOperationException(
-                "A translated Event20 local-light draw has no immutable scene-light frame: " +
+                $"A translated Event20 draw reached row 0x{sourceRow:X2} without an immutable scene-light frame: " +
                 (_editorPreviewSceneLightFrameFailure?.ToString() ??
                  "source unavailable"));
         if (_previewWorldSource is not { } source ||
@@ -1783,12 +1863,31 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 frame.AssetPoolRevision))
         {
             throw new InvalidOperationException(
-                $"A translated Event20 local-light draw retained stale canonical light assets from revision {frame.AssetPoolRevision}.");
+                $"A translated Event20 draw reached row 0x{sourceRow:X2} with stale canonical light assets from revision {frame.AssetPoolRevision}.");
         }
+        return frame;
+    }
 
-        return MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
-            .ProducePositionRow(frame, sceneLightIndex, eyeOffset)
-            .Value;
+    private static bool UsesSpotShadowAtlas(GlTexturedMesh mesh) =>
+        mesh.ShaderExecution?.RuntimeSamplerRequirements.Any(
+            requirement => requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.SpotShadowAtlas &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .SameRevisionAtlasRequired) == true;
+
+    private MapRenderSpotShadowAtlasEntry ResolveCurrentSpotShadowEntry(
+        int sceneLightIndex)
+    {
+        if (_currentSpotShadowReadyState is not { } ready ||
+            !ready.TryGetEntry(sceneLightIndex, out
+                MapRenderSpotShadowAtlasEntry? entry) ||
+            entry is null)
+        {
+            throw new InvalidOperationException(
+                $"A translated spot-shadow draw for scene light {sceneLightIndex} has no same-revision lookup entry.");
+        }
+        return entry;
     }
 
     private bool TryBindRuntimeSamplers(GlTexturedMesh mesh)
@@ -1808,6 +1907,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             ShaderRuntimeSamplerRequirement requirement =
                 requirements[requirementIndex];
+            if (requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.LightAttenuation &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .ImmutableSceneTextureRequired)
+            {
+                if (!TryGetSceneLightAttenuationTextureHandle(
+                        mesh.SceneLightIndex,
+                        out _))
+                {
+                    return false;
+                }
+                continue;
+            }
+
             if (requirement.ResourceKind ==
                     ShaderRuntimeSamplerResourceKind
                         .ModelLightingAtlas &&
@@ -1830,6 +1944,42 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 if (_currentProcessedFloatZFrame is not { } floatZFrame ||
                     LastFramePlan is not { } framePlan ||
                     floatZFrame.FrameRevision != framePlan.FrameRevision)
+                {
+                    return false;
+                }
+                continue;
+            }
+
+            if (requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.SpotShadowAtlas &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .SameRevisionAtlasRequired)
+            {
+                if (_currentSpotShadowReadyState is not { } spotReady ||
+                    _currentSpotShadowBackendReadyFrame is not
+                        { } spotBackendReady ||
+                    _spotShadowAtlas is null ||
+                    _currentWorldReceiverTechniqueSelector is not
+                        { } receiverSelector ||
+                    !ReferenceEquals(
+                        receiverSelector.Visibility,
+                        spotReady.Frame) ||
+                    !ReferenceEquals(
+                        receiverSelector.Techniques.SceneLights
+                            .SpotShadowAtlasReady,
+                        spotReady) ||
+                    spotReady.Revision !=
+                        spotBackendReady.FrameRevision ||
+                    !spotReady.TryGetEntry(
+                        mesh.SceneLightIndex,
+                        out MapRenderSpotShadowAtlasEntry? spotEntry) ||
+                    spotEntry is null ||
+                    !spotBackendReady.TryGetEntry(
+                        mesh.SceneLightIndex,
+                        out MapRenderOpenGlSpotShadowReadyEntry?
+                            backendEntry) ||
+                    backendEntry.TileIndex != spotEntry.AtlasSlot)
                 {
                     return false;
                 }
@@ -1890,6 +2040,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             ShaderRuntimeSamplerRequirement requirement =
                 requirements[requirementIndex];
             if (requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.LightAttenuation &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .ImmutableSceneTextureRequired)
+            {
+                if (!TryGetSceneLightAttenuationTextureHandle(
+                        mesh.SceneLightIndex,
+                        out uint attenuationTexture))
+                {
+                    throw new InvalidOperationException(
+                        "A source-13 attenuation draw reached execution without the canonical scene-light image.");
+                }
+                _state.ActiveTexture(requirement.Destination);
+                _state.BindSampler(requirement.Destination, 0);
+                _state.BindTexture(
+                    TextureTarget.Texture2D,
+                    attenuationTexture);
+                continue;
+            }
+
+            if (requirement.ResourceKind ==
                     ShaderRuntimeSamplerResourceKind
                         .ModelLightingAtlas &&
                 requirement.Status ==
@@ -1937,6 +2108,45 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _state.BindTexture(
                     TextureTarget.Texture2D,
                     floatZPublication.TextureHandle);
+                continue;
+            }
+
+            if (requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.SpotShadowAtlas &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .SameRevisionAtlasRequired)
+            {
+                MapRenderSpotShadowAtlasReadyState spotReady =
+                    _currentSpotShadowReadyState ??
+                    throw new InvalidOperationException(
+                        "A spot-shadow sampler draw reached execution without the current renderer publication.");
+                MapRenderOpenGlSpotShadowAtlasReadyFrame backendReady =
+                    _currentSpotShadowBackendReadyFrame ??
+                    throw new InvalidOperationException(
+                        "A spot-shadow sampler draw reached execution without the current OpenGL publication.");
+                MapRenderOpenGlSpotShadowAtlasBackend spotAtlas =
+                    _spotShadowAtlas ??
+                    throw new InvalidOperationException(
+                        "A spot-shadow sampler draw reached execution without an OpenGL spot atlas.");
+                if (spotReady.Revision != backendReady.FrameRevision ||
+                    !spotReady.TryGetEntry(
+                        mesh.SceneLightIndex,
+                        out MapRenderSpotShadowAtlasEntry? spotEntry) ||
+                    spotEntry is null ||
+                    !backendReady.TryGetEntry(
+                        mesh.SceneLightIndex,
+                        out MapRenderOpenGlSpotShadowReadyEntry?
+                            backendEntry) ||
+                    backendEntry.TileIndex != spotEntry.AtlasSlot)
+                {
+                    throw new InvalidOperationException(
+                        $"A spot-shadow sampler draw for scene light {mesh.SceneLightIndex} reached execution without matching same-revision entries.");
+                }
+                spotAtlas.BindReadyReceiver(
+                    backendReady,
+                    mesh.SceneLightIndex,
+                    requirement.Destination);
                 continue;
             }
 

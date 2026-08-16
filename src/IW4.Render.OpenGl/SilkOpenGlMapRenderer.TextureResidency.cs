@@ -47,6 +47,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         ArgumentNullException.ThrowIfNull(scene);
         foreach (MapRenderSky sky in scene.Skies)
             AccountTexturePayload(sky.Texture);
+        foreach (Texture? texture in scene.SceneLightAttenuationTextures)
+            AccountTexturePayload(texture);
         AccountWorldBatches(scene.TexturedBatches);
         AccountStaticBatches(scene.InstancedTexturedBatches);
         AccountStaticBatches(scene.StaticModelLodTexturedBatches);

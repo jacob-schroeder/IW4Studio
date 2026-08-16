@@ -90,6 +90,12 @@ internal readonly record struct GlTexturedMesh(
     public int DepthMultiDrawBatchGroupId { get; init; } = -1;
 
     /// <summary>
+    /// Canonical ComWorld primary-light identity retained for per-light
+    /// immutable runtime resources such as source-13 attenuation images.
+    /// </summary>
+    public int SceneLightIndex { get; init; } = -1;
+
+    /// <summary>
     /// Static instance buffer width. Per-instance lighting consumers use 16
     /// floats with attribute-12 payload first, followed by three placement
     /// rows. Other generic preview buffers retain the compact 12-float layout.

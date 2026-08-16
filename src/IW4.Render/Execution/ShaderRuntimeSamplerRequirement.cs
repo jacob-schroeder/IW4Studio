@@ -11,7 +11,9 @@ public enum ShaderRuntimeSamplerResourceKind
     Unknown = 0,
     SunShadowAtlas = 1,
     ModelLightingAtlas = 2,
-    ProcessedFloatZ = 3
+    ProcessedFloatZ = 3,
+    LightAttenuation = 4,
+    SpotShadowAtlas = 5
 }
 
 /// <summary>The publication rule attached to one runtime sampler.</summary>
@@ -20,7 +22,8 @@ public enum ShaderRuntimeSamplerRequirementStatus
     Unknown = 0,
     SameRevisionAtlasRequired = 1,
     ImmutableSceneAtlasRequired = 2,
-    SameRevisionTextureRequired = 3
+    SameRevisionTextureRequired = 3,
+    ImmutableSceneTextureRequired = 4
 }
 
 /// <summary>

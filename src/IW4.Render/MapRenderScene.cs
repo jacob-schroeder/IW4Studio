@@ -11,6 +11,7 @@ using IW4.Render.Lighting;
 using IW4.Render.Picking;
 using IW4.Render.Execution.Fog;
 using IW4.Render.SceneBuilding;
+using IW4.Render.Textures;
 
 namespace IW4.Render;
 
@@ -93,6 +94,14 @@ public sealed record MapRenderScene(
     /// </summary>
     public MapRenderStaticModelLightingAtlas? StaticModelLightingAtlas
         { get; init; }
+
+    /// <summary>
+    /// Canonical LightDef attenuation images keyed by ComWorld primary-light
+    /// index. A null entry deliberately leaves source-13 authored programs
+    /// unavailable for that light rather than substituting another texture.
+    /// </summary>
+    public IReadOnlyList<Texture?> SceneLightAttenuationTextures
+        { get; init; } = [];
 
     /// <summary>
     /// Exact authored receiver submissions keyed independently by PS3 selector

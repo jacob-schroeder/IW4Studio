@@ -70,7 +70,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (_sunShadowDpvsWorker is not { } worker ||
             _previewWorldSource is not { } source ||
             _sunShadowVisibilityProvider is null ||
-            _sunShadowAtlas is null ||
             _selectedDirectionalSunPrimaryLightIndex is null)
         {
             return requestedCamera;

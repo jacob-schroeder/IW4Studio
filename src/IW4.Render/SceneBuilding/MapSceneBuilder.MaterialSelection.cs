@@ -123,10 +123,10 @@ public sealed partial class MapSceneBuilder
 
     /// <summary>
     /// Tests scene-build readiness for one exact receiver sidecar. An
-    /// unshadowed invocation has no frame atlas and therefore requires all
-    /// runtime samplers immediately. A shadow-allocated invocation retains a
-    /// structurally complete translated program while its same-revision atlas
-    /// sampler remains deliberately deferred to draw-time authorization.
+    /// unshadowed invocation has no frame atlas, but immutable scene samplers
+    /// are still renderer-owned and can only be validated after their backend
+    /// resources are materialized. Same-revision samplers remain confined to
+    /// shadow-allocated variants and are authorized at draw time.
     /// </summary>
     internal static bool ReceiverVariantProgramReadyForBuild(
         ShaderExecutionContract execution,
@@ -136,7 +136,14 @@ public sealed partial class MapSceneBuilder
         return allocation switch
         {
             MapRenderTechniqueVariantAllocation.Unshadowed =>
-                execution.ProgramExecutionReady,
+                execution.ProgramExecutionReady ||
+                execution.RendererProgramReady &&
+                execution.RuntimeSamplerRequirements.All(requirement =>
+                    requirement.Status is
+                        ShaderRuntimeSamplerRequirementStatus
+                            .ImmutableSceneAtlasRequired or
+                        ShaderRuntimeSamplerRequirementStatus
+                            .ImmutableSceneTextureRequired),
             MapRenderTechniqueVariantAllocation.ShadowMapAllocated =>
                 execution.RendererProgramReady,
             _ => throw new ArgumentOutOfRangeException(nameof(allocation))

@@ -5,8 +5,8 @@ using IW4.Assets.Assets.LightDef;
 namespace IW4.Render.Scheduling.Lighting;
 
 /// <summary>
-/// Immutable managed projection of one PS3 runtime GfxLight row. Dynamic
-/// spotShadowIndex is deliberately absent from the current all-clear branch.
+/// Immutable managed projection of one PS3 runtime GfxLight row. Per-frame
+/// spot-shadow allocation and lookup state are published separately.
 /// </summary>
 public sealed class MapRenderWorldEvent20SceneLight
 {
@@ -21,8 +21,13 @@ public sealed class MapRenderWorldEvent20SceneLight
         float cosHalfFovOuter,
         float cosHalfFovInner,
         string? definitionName,
-        LightDefAsset? definition)
+        LightDefAsset? definition,
+        int? attenuationImageWidth)
     {
+        if (attenuationImageWidth is <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(attenuationImageWidth));
+
         Type = type;
         CanUseShadowMap = canUseShadowMap;
         Exponent = exponent;
@@ -34,6 +39,7 @@ public sealed class MapRenderWorldEvent20SceneLight
         CosHalfFovInner = cosHalfFovInner;
         DefinitionName = definitionName;
         Definition = definition;
+        AttenuationImageWidth = attenuationImageWidth;
     }
 
     public GfxLightType Type { get; }
@@ -57,4 +63,11 @@ public sealed class MapRenderWorldEvent20SceneLight
     public string? DefinitionName { get; }
 
     public LightDefAsset? Definition { get; }
+
+    /// <summary>
+    /// Width of the exact canonical LightDef texture projected for source 13
+    /// in this scene revision. Keeping it with the adapted light prevents
+    /// allocated row 0x05 from consulting a different loader-time image.
+    /// </summary>
+    public int? AttenuationImageWidth { get; }
 }

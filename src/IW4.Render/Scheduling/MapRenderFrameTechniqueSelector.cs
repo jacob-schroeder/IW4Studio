@@ -29,6 +29,12 @@ public sealed class MapRenderFrameTechniqueSelector
             throw new ArgumentException(
                 "Shadow-allocated technique state must reference the exact three-view frame whose atlas completed.");
         }
+        if (techniques.SceneLights.SpotShadowAtlasReady is { } spotReady &&
+            !ReferenceEquals(spotReady.Frame, visibility))
+        {
+            throw new ArgumentException(
+                "Spot-shadow-allocated technique state must reference the exact three-view frame whose atlas completed.");
+        }
     }
 
     public MapRenderWorldDpvsThreeViewFrame Visibility { get; }

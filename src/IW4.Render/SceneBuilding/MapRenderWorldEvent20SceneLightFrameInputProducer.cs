@@ -2,6 +2,7 @@ using System.Numerics;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Assets.LightDef;
 using IW4.Render.Scheduling.Lighting;
+using IW4.Render.Textures;
 
 namespace IW4.Render.SceneBuilding;
 
@@ -14,10 +15,12 @@ internal static class MapRenderWorldEvent20SceneLightFrameInputProducer
     internal static MapRenderWorldEvent20SceneLightFrameInputBuildResult Build(
         MapRenderWorldSceneSource source,
         MapRenderNormalCameraSceneLightDynamicInput dynamicInput,
-        Vector3 eyeOffset)
+        Vector3 eyeOffset,
+        IReadOnlyList<Texture?> sceneLightAttenuationTextures)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(dynamicInput);
+        ArgumentNullException.ThrowIfNull(sceneLightAttenuationTextures);
         if (!IsFinite(eyeOffset))
         {
             return Failed(
@@ -45,6 +48,13 @@ internal static class MapRenderWorldEvent20SceneLightFrameInputProducer
                 MapRenderWorldEvent20SceneLightFrameInputFailureKind
                     .ShadowAllocationSceneLightCountMismatch,
                 $"lights={expectedCount};shadowAllocation={dynamicInput.ShadowAllocation.SceneLightCount}");
+        }
+        if (sceneLightAttenuationTextures.Count != expectedCount)
+        {
+            return Failed(
+                MapRenderWorldEvent20SceneLightFrameInputFailureKind
+                    .SceneLightCountMismatch,
+                $"selector={expectedCount};attenuationTextures={sceneLightAttenuationTextures.Count}");
         }
 
         long poolRevision = source.AssetPoolRevisionAtConstruction;
@@ -115,7 +125,8 @@ internal static class MapRenderWorldEvent20SceneLightFrameInputProducer
                 sourceLight.CosHalfFovOuter,
                 sourceLight.CosHalfFovInner,
                 defName,
-                definition);
+                definition,
+                sceneLightAttenuationTextures[index]?.Width);
         }
 
         if (!source.AssetLookup.HasCanonicalAssetPoolRevision(poolRevision))

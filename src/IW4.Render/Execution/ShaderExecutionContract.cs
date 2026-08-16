@@ -66,9 +66,11 @@ public sealed record ShaderExecutionContract(
             runtimeSamplers.Any(binding =>
                 binding.Destination == requirement.Destination &&
                 binding.ResourceKind == requirement.ResourceKind &&
-                (requirement.Status ==
+                (requirement.Status is
                     ShaderRuntimeSamplerRequirementStatus
-                        .ImmutableSceneAtlasRequired ||
+                        .ImmutableSceneAtlasRequired or
+                    ShaderRuntimeSamplerRequirementStatus
+                        .ImmutableSceneTextureRequired ||
                  (RequiresSameRevision(requirement.Status) &&
                   binding.Revision == revision)) &&
                 binding.Status ==

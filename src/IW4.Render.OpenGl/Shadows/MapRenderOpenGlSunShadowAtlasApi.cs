@@ -9,7 +9,8 @@ public sealed record MapRenderOpenGlSunShadowAtlasCapabilities
         bool supportsDepthComponent24Texture,
         bool supportsFramebufferObjects,
         bool supportsSamplerObjects,
-        int maximumTextureSize)
+        int maximumTextureSize,
+        bool supportsDepth24Stencil8Texture = false)
     {
         if (maximumTextureSize < 0)
             throw new ArgumentOutOfRangeException(nameof(maximumTextureSize));
@@ -17,6 +18,7 @@ public sealed record MapRenderOpenGlSunShadowAtlasCapabilities
         SupportsDepthComponent24Texture = supportsDepthComponent24Texture;
         SupportsFramebufferObjects = supportsFramebufferObjects;
         SupportsSamplerObjects = supportsSamplerObjects;
+        SupportsDepth24Stencil8Texture = supportsDepth24Stencil8Texture;
         MaximumTextureSize = maximumTextureSize;
     }
 
@@ -26,10 +28,18 @@ public sealed record MapRenderOpenGlSunShadowAtlasCapabilities
 
     public bool SupportsSamplerObjects { get; }
 
+    public bool SupportsDepth24Stencil8Texture { get; }
+
     public int MaximumTextureSize { get; }
 
     public bool SupportsComparisonDepthAtlas =>
         SupportsDepthComponent24Texture &&
+        SupportsFramebufferObjects &&
+        SupportsSamplerObjects &&
+        MaximumTextureSize > 0;
+
+    public bool SupportsComparisonDepthStencilAtlas =>
+        SupportsDepth24Stencil8Texture &&
         SupportsFramebufferObjects &&
         SupportsSamplerObjects &&
         MaximumTextureSize > 0;
@@ -66,6 +76,8 @@ internal interface IMapRenderOpenGlSunShadowAtlasApi
 
     void AllocateDepthComponent24LevelZero(int width, int height);
 
+    void AllocateDepth24Stencil8LevelZero(int width, int height);
+
     void SetTextureMipLevelRange(int baseLevel, int maximumLevel);
 
     uint CreateFramebuffer();
@@ -75,6 +87,8 @@ internal interface IMapRenderOpenGlSunShadowAtlasApi
     void BindReadFramebufferForAllocation(uint framebufferHandle);
 
     void AttachDepthTexture2D(uint textureHandle);
+
+    void AttachDepthStencilTexture2D(uint textureHandle);
 
     void SelectDrawNone();
 
@@ -96,9 +110,15 @@ internal interface IMapRenderOpenGlSunShadowAtlasApi
 
     void DepthMask(bool enabled);
 
+    void StencilMask(uint mask);
+
     void ClearDepth(double depth);
 
+    void ClearStencil(int stencil);
+
     void ClearDepthBuffer();
+
+    void ClearDepthStencilBuffer();
 
     void BindReadyReceiver(
         int textureUnit,
@@ -143,7 +163,8 @@ internal sealed unsafe class SilkMapRenderOpenGlSunShadowAtlasApi :
                 _gl.IsExtensionPresent("GL_ARB_framebuffer_object"),
             supportsSamplerObjects: version33 ||
                 _gl.IsExtensionPresent("GL_ARB_sampler_objects"),
-            maximumTextureSize: GetInteger(GLEnum.MaxTextureSize));
+            maximumTextureSize: GetInteger(GLEnum.MaxTextureSize),
+            supportsDepth24Stencil8Texture: version30);
     }
 
     public string ContextIdentity { get; }
@@ -176,6 +197,18 @@ internal sealed unsafe class SilkMapRenderOpenGlSunShadowAtlasApi :
             PixelType.UnsignedInt,
             null);
 
+    public void AllocateDepth24Stencil8LevelZero(int width, int height) =>
+        _gl.TexImage2D(
+            TextureTarget.Texture2D,
+            0,
+            InternalFormat.Depth24Stencil8,
+            checked((uint)width),
+            checked((uint)height),
+            0,
+            PixelFormat.DepthStencil,
+            PixelType.UnsignedInt248,
+            null);
+
     public void SetTextureMipLevelRange(int baseLevel, int maximumLevel)
     {
         _gl.TexParameter(
@@ -204,6 +237,14 @@ internal sealed unsafe class SilkMapRenderOpenGlSunShadowAtlasApi :
         _gl.FramebufferTexture2D(
             FramebufferTarget.DrawFramebuffer,
             FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D,
+            textureHandle,
+            0);
+
+    public void AttachDepthStencilTexture2D(uint textureHandle) =>
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.DrawFramebuffer,
+            FramebufferAttachment.DepthStencilAttachment,
             TextureTarget.Texture2D,
             textureHandle,
             0);
@@ -300,10 +341,25 @@ internal sealed unsafe class SilkMapRenderOpenGlSunShadowAtlasApi :
             _gl.DepthMask(enabled);
     }
 
+    public void StencilMask(uint mask)
+    {
+        if (_state is not null)
+            _state.StencilMask(mask);
+        else
+            _gl.StencilMask(mask);
+    }
+
     public void ClearDepth(double depth) => _gl.ClearDepth(depth);
+
+    public void ClearStencil(int stencil) => _gl.ClearStencil(stencil);
 
     public void ClearDepthBuffer() =>
         _gl.Clear(ClearBufferMask.DepthBufferBit);
+
+    public void ClearDepthStencilBuffer() =>
+        _gl.Clear(
+            ClearBufferMask.DepthBufferBit |
+            ClearBufferMask.StencilBufferBit);
 
     public void BindReadyReceiver(
         int textureUnit,

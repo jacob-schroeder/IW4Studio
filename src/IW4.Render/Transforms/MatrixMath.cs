@@ -106,6 +106,38 @@ internal static class RenderViewerMatrixMath
     }
 
     /// <summary>
+    /// Creates the finite PS3 perspective projection used by local spot-shadow
+    /// views. Unlike the normal-camera infinite projection, this native path
+    /// uses an exact scalar of one and does not apply <see cref="ClipScale"/>.
+    /// </summary>
+    public static Matrix4x4 CreateFiniteProjection(
+        float tanHalfFovX,
+        float tanHalfFovY,
+        float zNear,
+        float zFar)
+    {
+        if (!(tanHalfFovX > 0f) ||
+            !(tanHalfFovY > 0f) ||
+            !(zNear > 0f) ||
+            !(zFar > zNear) ||
+            !float.IsFinite(tanHalfFovX) ||
+            !float.IsFinite(tanHalfFovY) ||
+            !float.IsFinite(zNear) ||
+            !float.IsFinite(zFar))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(tanHalfFovX),
+                "PS3 finite-projection parameters must be finite with positive tangents and 0 < zNear < zFar.");
+        }
+
+        return new Matrix4x4(
+            1f / tanHalfFovX, 0f, 0f, 0f,
+            0f, 1f / tanHalfFovY, 0f, 0f,
+            0f, 0f, zFar / (zFar - zNear), 1f,
+            0f, 0f, zNear * zFar / (zNear - zFar), 0f);
+    }
+
+    /// <summary>
     /// Multiplies the row-major matrices with View first and Projection
     /// second.
     /// </summary>

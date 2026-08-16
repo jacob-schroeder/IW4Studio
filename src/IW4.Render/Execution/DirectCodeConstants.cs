@@ -24,6 +24,10 @@ internal static class FrameDirectCodeConstants
         (ushort)MaterialConstantSource.LightDiffuse;
     internal const ushort DirectionalLightSpecularRowIndex =
         (ushort)MaterialConstantSource.LightSpecular;
+    internal const ushort LightSpotFactorsRowIndex =
+        (ushort)MaterialConstantSource.LightSpotFactors;
+    internal const ushort LightFalloffPlacementRowIndex =
+        (ushort)MaterialConstantSource.LightFalloffPlacement;
     // Registered default: r_diffuseColorScale=1.0.
     internal const float DefaultDiffuseColorScale = 1.0f;
     // Registered default: r_specularColorScale=2.5.
@@ -133,6 +137,10 @@ internal static class FrameDirectCodeConstants
 
     internal static IReadOnlyList<DirectCodeConstantRow>
         ProduceSourceInitializationRows() => SourceInitializationRows;
+
+    internal static DirectCodeConstantRow
+        ProduceLightFalloffPlacementInitializationRow() =>
+        SourceInitializationRows[0];
 
     internal static ClipSpaceLookupCodeConstants
         ProduceClipSpaceLookup(

@@ -1,5 +1,6 @@
 using IW4.Render.Techniques;
 using System.Numerics;
+using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
 using IW4.Render.OpenGl.Programs;
@@ -330,6 +331,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 TranslatedProgramVertexConstantBindingKind
                     .DynamicSceneLightPosition or
                 TranslatedProgramVertexConstantBindingKind
+                    .DynamicSceneLightShadow or
+                TranslatedProgramVertexConstantBindingKind
                     .DynamicSunShadowProjection or
                 TranslatedProgramVertexConstantBindingKind
                     .DynamicClipSpaceLookup or
@@ -346,9 +349,11 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                     CodeMatrixTransform.None,
                     -1,
                     constant.DynamicCodeConstantSourceRow,
-                    constant.Kind ==
+                    constant.Kind is
                         TranslatedProgramVertexConstantBindingKind
-                            .DynamicSceneLightPosition
+                            .DynamicSceneLightPosition or
+                        TranslatedProgramVertexConstantBindingKind
+                            .DynamicSceneLightShadow
                         ? directCodePlan.SceneLightIndex
                         : null));
                 continue;
@@ -399,9 +404,9 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                     CodeMatrixTransform.None,
                     -1,
                     patchPlan.CodeIndex,
-                    patchPlan.CodeIndex ==
-                        FrameDirectCodeConstants
-                            .DirectionalLightDirectionRowIndex
+                    TranslatedProgramDirectCodeConstantPlanner
+                        .IsDynamicSceneLightSourceRow(
+                            patchPlan.CodeIndex)
                         ? directCodePlan.SceneLightIndex
                         : null));
                 continue;

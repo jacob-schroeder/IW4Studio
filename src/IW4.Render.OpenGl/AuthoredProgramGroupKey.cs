@@ -7,4 +7,5 @@ internal readonly record struct AuthoredProgramGroupKey(
     string MaterialName,
     string TechniqueSetName,
     int TechniqueSlot,
-    string TechniqueName);
+    string TechniqueName,
+    byte SceneLightIndex);

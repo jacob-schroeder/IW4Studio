@@ -35,7 +35,8 @@ public enum TranslatedProgramVertexConstantBindingKind
     DynamicClipSpaceLookup,
     DynamicZNear,
     PerInstanceStaticModelBaseLightingCoords,
-    PerInstanceStaticModelLightProbeAmbient
+    PerInstanceStaticModelLightProbeAmbient,
+    DynamicSceneLightShadow
 }
 
 /// <summary>
@@ -159,6 +160,26 @@ public sealed class
                 {
                     throw new ArgumentException(
                         $"Dynamic scene-light position vertex constant c{binding.Destination} has an invalid source shape.",
+                        parameterName);
+                }
+                break;
+
+            case TranslatedProgramVertexConstantBindingKind
+                .DynamicSceneLightShadow:
+                if (binding.StaticValue.HasValue ||
+                    binding.CodeMatrixSemantic.HasValue ||
+                    binding.CodeMatrixTransform !=
+                    CodeMatrixTransform.None ||
+                    binding.CodeMatrixRow != -1 ||
+                    binding.DynamicCodeConstantSourceRow is not
+                        { } sceneLightRow ||
+                    sceneLightRow is not
+                        FrameDirectCodeConstants.LightSpotFactorsRowIndex and
+                        not FrameDirectCodeConstants
+                            .LightFalloffPlacementRowIndex)
+                {
+                    throw new ArgumentException(
+                        $"Dynamic scene-light shadow constant c{binding.Destination} has an invalid source shape.",
                         parameterName);
                 }
                 break;
@@ -525,6 +546,15 @@ public static class
             {
                 kind = TranslatedProgramVertexConstantBindingKind
                     .DynamicSceneLightPosition;
+            }
+            else if (sourceRow is
+                     FrameDirectCodeConstants.LightSpotFactorsRowIndex or
+                     FrameDirectCodeConstants
+                         .LightFalloffPlacementRowIndex &&
+                     directCodePlan.SceneLightIndex.HasValue)
+            {
+                kind = TranslatedProgramVertexConstantBindingKind
+                    .DynamicSceneLightShadow;
             }
             else if (TranslatedProgramDirectCodeConstantRows
                          .IsSunShadowProjectionSourceRow(sourceRow))

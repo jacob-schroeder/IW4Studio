@@ -110,14 +110,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private bool PreflightAuthoredProgram(MapRenderTexturedBatch batch)
     {
-        // Runtime samplers (currently raw code sampler 6) are frame-owned.
-        // They must not prevent structural compilation of the exact authored
-        // program, but draw submission still validates them against the
-        // current immutable shadow publication.
+        // Same-revision runtime samplers remain frame-owned. Immutable
+        // source-13 scene-light images are preflighted below so an unavailable
+        // canonical LightDef never replaces this group’s generic fallback.
         if (!batch.ShaderExecution.RendererProgramReady ||
             !batch.ShaderExecution.VertexInputPayloadReady ||
             batch.RsxVertexInputs.Length !=
             (batch.Vertices.Length / MapRenderScene.TexturedVertexFloatCount) * 16 * 4)
+        {
+            return false;
+        }
+        if (!HasRequiredImmutableSceneSamplers(
+                batch.ShaderExecution,
+                batch.SceneLightIndex))
         {
             return false;
         }
@@ -159,6 +164,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         {
             return false;
         }
+        if (!HasRequiredImmutableSceneSamplers(
+                batch.ShaderExecution,
+                batch.SceneLightIndex))
+        {
+            return false;
+        }
 
         if (!TryCreateEditorDirectCodeConstantPlan(
                 batch.ShaderExecution,
@@ -178,6 +189,58 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             batch.State,
             compositionVertexConstantPlan: null,
             out _).Handle != 0;
+    }
+
+    private bool HasRequiredImmutableSceneSamplers(
+        ShaderExecutionContract execution,
+        int sceneLightIndex)
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        foreach (ShaderRuntimeSamplerRequirement requirement in
+                 execution.RuntimeSamplerRequirements)
+        {
+            if (requirement.ResourceKind !=
+                ShaderRuntimeSamplerResourceKind.LightAttenuation)
+            {
+                continue;
+            }
+            if (requirement.Status !=
+                    ShaderRuntimeSamplerRequirementStatus
+                        .ImmutableSceneTextureRequired ||
+                !TryGetSceneLightAttenuationTextureHandle(
+                    sceneLightIndex,
+                    out _))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool TryGetSceneLightAttenuationTextureHandle(
+        int sceneLightIndex,
+        out uint textureHandle)
+    {
+        if (_editorPreviewSceneLightFrame is { } lightFrame &&
+            _previewWorldSource is { } source &&
+            source.AssetLookup.HasCanonicalAssetPoolRevision(
+                lightFrame.AssetPoolRevision) &&
+            (uint)sceneLightIndex < (uint)lightFrame.SceneLightCount &&
+            (uint)sceneLightIndex <
+                (uint)_sceneLightAttenuationTextureHandles.Length &&
+            lightFrame.GetSceneLight(sceneLightIndex).Type is
+                IW4.Assets.Assets.ComWorld.GfxLightType.Spot or
+                IW4.Assets.Assets.ComWorld.GfxLightType.Omni &&
+            _sceneLightAttenuationTextureHandles[sceneLightIndex] != 0)
+        {
+            textureHandle =
+                _sceneLightAttenuationTextureHandles[sceneLightIndex];
+            return true;
+        }
+
+        textureHandle = 0;
+        return false;
     }
 
     private bool TryCreateEditorDirectCodeConstantPlan(
@@ -257,7 +320,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             batch.Pass.MaterialName,
             batch.Pass.TechniquePass.TechniqueSetName,
             batch.Pass.TechniquePass.TechniqueSlot,
-            batch.Pass.TechniquePass.TechniqueName);
+            batch.Pass.TechniquePass.TechniqueName,
+            batch.SceneLightIndex);
 
     private static AuthoredProgramGroupKey AuthoredProgramGroup(
         MapRenderInstancedTexturedBatch batch) =>
@@ -265,7 +329,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             batch.Pass.MaterialName,
             batch.Pass.TechniquePass.TechniqueSetName,
             batch.Pass.TechniquePass.TechniqueSlot,
-            batch.Pass.TechniquePass.TechniqueName);
+            batch.Pass.TechniquePass.TechniqueName,
+            batch.SceneLightIndex);
 
     private GlRsxProgram GetOrCreateRsxProgram(
         ShaderExecutionContract execution,

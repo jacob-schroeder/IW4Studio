@@ -19,6 +19,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _sunShadowDpvsWorker = null;
         LastEditorPreviewPresentationResult = null;
         LastFramePlan = null;
+        ClearCurrentSpotShadowFrame();
         _currentSunShadowReceiverFrame = null;
         _currentProcessedFloatZFrame = null;
         _currentSunShadowPublication = null;
@@ -38,6 +39,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         SunShadowPipelineStatus = "SUN_SHADOW_PIPELINE_NOT_INITIALIZED";
         _sunShadowAtlas?.Dispose();
         _sunShadowAtlas = null;
+        _spotShadowAtlas?.Dispose();
+        _spotShadowAtlas = null;
         foreach (MapRenderOpenGlSunShadowWorldCasterRuntime runtime in
                  _sunShadowWorldCasterRuntimes)
         {
@@ -99,8 +102,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _baseWorldReceiverVisibilityWords = [];
         _baseWorldReceiverVisibilityActive = false;
         _cachedUnshadowedReceiverSelectorState = null;
-        _cachedAllocatedReceiverSelectorState = null;
-        _cachedAllocatedReceiverSunIndex = -1;
         _currentWorldReceiverTechniqueSelector = null;
         _sceneTechniqueVariants = null;
         _sceneLightSelectorAsset = null;
@@ -173,6 +174,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _staticModelLightingWorkingSet = null;
         _staticModelLightingAtlas = null;
         _staticModelLightingPhysicalRgbaBytes = null;
+        _sceneLightAttenuationTextureHandles = [];
         _visibleStaticObjects = [];
         _selectedStaticLodByObject = [];
         _visibleStaticObjectWorklist = [];

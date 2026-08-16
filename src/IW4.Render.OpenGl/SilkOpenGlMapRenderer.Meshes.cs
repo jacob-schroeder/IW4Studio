@@ -664,6 +664,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     depthStaticModelProgramUniforms,
                 DepthPrepassRsxConstantBindings =
                     depthPrepassRsxConstantBindings,
+                SceneLightIndex = batch.SceneLightIndex,
                 StaticModelLodIndex = batch.LodIndex,
                 StaticInstanceFloatStride =
                     MapRenderStaticInstanceBufferPacker.FloatStride(
@@ -1773,6 +1774,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             DepthPrepassRsxProgram = depthPrepassRsxProgram,
             DepthPrepassRsxConstantBindings =
                 depthPrepassRsxConstantBindings,
+            SceneLightIndex = batch.SceneLightIndex,
             OwnsGeometry = false
         };
         return MapRenderOpenGlWorldResourceShell.RequireGeometryFree(

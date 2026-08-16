@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.TechniqueSet;
+using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Execution;
 using IW4.Render.Lighting;
 using IW4.Render.Execution.Fog;
@@ -175,6 +176,8 @@ public static class
         bool useNonDirectionalSceneLight = selectedSceneLight is not null &&
             selectedSceneLight.Type !=
                 MapRenderEditorPreviewLightingPlanner.DirectionalLightType;
+        bool useSpotSceneLight = selectedSceneLight?.Type ==
+            GfxLightType.Spot;
 
         bool requiresDirectionalSun = requiresSceneLight &&
             selectedSceneLight is null &&
@@ -351,6 +354,23 @@ public static class
                 FrameDirectCodeConstants
                     .DirectionalLightDirectionRowIndex);
         }
+        if (useSpotSceneLight)
+        {
+            if (requiredRows.Contains(
+                    FrameDirectCodeConstants.LightSpotFactorsRowIndex))
+            {
+                dynamicRows.Add(
+                    FrameDirectCodeConstants.LightSpotFactorsRowIndex);
+            }
+            if (requiredRows.Contains(
+                    FrameDirectCodeConstants
+                        .LightFalloffPlacementRowIndex))
+            {
+                dynamicRows.Add(
+                    FrameDirectCodeConstants
+                        .LightFalloffPlacementRowIndex);
+            }
+        }
 
         return new(
             new TranslatedProgramDirectCodeConstantPlan(
@@ -400,14 +420,19 @@ public static class
     public static bool IsZNearSourceRow(ushort sourceRow) =>
         sourceRow == FrameDirectCodeConstants.ZNearRowIndex;
 
+    public static bool IsDynamicSceneLightSourceRow(ushort sourceRow) =>
+        sourceRow ==
+            FrameDirectCodeConstants.DirectionalLightDirectionRowIndex ||
+        sourceRow is FrameDirectCodeConstants.LightSpotFactorsRowIndex or
+            FrameDirectCodeConstants.LightFalloffPlacementRowIndex;
+
     public static bool IsPerInstanceStaticModelSourceRow(
         ushort sourceRow) =>
         IsStaticModelBaseLightingCoordsSourceRow(sourceRow) ||
         IsStaticModelLightProbeAmbientSourceRow(sourceRow);
 
     public static bool IsRuntimeOwnedSourceRow(ushort sourceRow) =>
-        sourceRow ==
-            FrameDirectCodeConstants.DirectionalLightDirectionRowIndex ||
+        IsDynamicSceneLightSourceRow(sourceRow) ||
         IsSunShadowProjectionSourceRow(sourceRow) ||
         IsPerInstanceStaticModelSourceRow(sourceRow) ||
         IsClipSpaceLookupSourceRow(sourceRow) ||
