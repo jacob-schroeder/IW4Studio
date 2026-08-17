@@ -36,6 +36,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
     private readonly Dictionary<string, string> _failureDiagnostics =
         new(StringComparer.Ordinal);
     private readonly HashSet<RenderState> _validatedStates = [];
+    private int? _cachedGameTimeBits;
+    private ShaderConstantValue _cachedGameTimeValue;
     private long _semanticRequestCount;
     private long _uniqueLinkCount;
     private long _linkReuseCount;
@@ -508,8 +510,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             {
                 ShaderConstantValue? dynamicValue =
                     sourceRow == FrameDirectCodeConstants.GameTimeRowIndex
-                        ? FrameDirectCodeConstants.ProduceGameTime(
-                            animationTimeSeconds).Value
+                        ? ResolveGameTimeValue(animationTimeSeconds)
                         : resolveDynamicCodeConstant(
                             sourceRow,
                             binding.SceneLightIndex);
@@ -564,7 +565,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
     internal bool TryApplyRenderState(
         RenderState state,
         MapRenderOpenGlStencilTargetContract? stencilTargetContract,
-        out string? blocker)
+        out string? blocker,
+        bool forceDepthWrite = false)
     {
         if (!TryValidateState(state, out blocker))
             return false;
@@ -590,7 +592,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         {
             _state.SetEnabled(EnableCap.DepthTest, false);
         }
-        _state.DepthMask(state.DepthWriteEnabled);
+        _state.DepthMask(forceDepthWrite || state.DepthWriteEnabled);
         if (activeStencilTarget is { } stencilTarget)
         {
             ApplyStencilFace(
@@ -691,9 +693,26 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         _failureDiagnostics.Clear();
         _validatedStates.Clear();
         _uniformLocations.Clear();
+        _cachedGameTimeBits = null;
+        _cachedGameTimeValue = default;
         _semanticRequestCount = 0;
         _uniqueLinkCount = 0;
         _linkReuseCount = 0;
+    }
+
+    private ShaderConstantValue ResolveGameTimeValue(
+        float animationTimeSeconds)
+    {
+        int bits = BitConverter.SingleToInt32Bits(animationTimeSeconds);
+        if (_cachedGameTimeBits == bits)
+            return _cachedGameTimeValue;
+
+        ShaderConstantValue value =
+            FrameDirectCodeConstants.ProduceGameTimeValue(
+                animationTimeSeconds);
+        _cachedGameTimeBits = bits;
+        _cachedGameTimeValue = value;
+        return value;
     }
 
     private static int[] ResolveSamplerDestinations(

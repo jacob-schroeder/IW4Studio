@@ -78,6 +78,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         foreach (GlTexturedMesh mesh in _textured)
             DeleteTexturedMesh(mesh);
         _textured = [];
+        InvalidateWorldReceiverVariantSelectionReuse();
         foreach (WorldReceiverVariantRuntime channel in
                  _worldReceiverVariants)
         {
@@ -159,6 +160,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _receiverAwareEditorDepthPrepassDrawGroups = [];
         _texturedDrawGroupVisibilityScratch = [];
         _texturedDrawGroupVisibilityByIdentity.Clear();
+        _appleDepthFusionOwnerGroups.Clear();
+        _appleDepthFusionOwnerGroupScratch.Clear();
+        _appleDepthFusionOwnerColorGroups = null;
+        _appleDepthFusionOwnerDepthGroups = null;
+        _appleDepthFusionColorOwnerIndexByDepthGroup.Clear();
+        _appleDepthFusionOpaqueColorHeadBySourceOrdinal.Clear();
+        _appleDepthFusionOpaqueColorNextByIndex = [];
         foreach (StaticInstanceBufferRuntime runtime in
                  _staticInstanceBuffers.Values)
         {
@@ -213,6 +221,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _textureHandles.Clear();
         _visibleTextureHandles.Clear();
         _criticalTextureHandles.Clear();
+        _textureResidencyMutationGeneration = 0;
+        _textureResidencyManifest = [];
+        _textureResidencyManifestCriticalHandles = [];
+        _textureResidencyManifestScratch.TrimExcess();
         _textureAdmissionScratch.Clear();
         _textureEvictionScratch.Clear();
         _textureDecodedFallbackBytesObserved = 0;
@@ -221,6 +233,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _texturePayloadsAccounted.Clear();
         _observedDecodedTexturePayloads = new();
         _observedAuthoredTexturePayloads = new();
+        if (_genericInactiveTexture != 0)
+        {
+            _state.ForgetTextureBinding(_genericInactiveTexture);
+            _gl.DeleteTexture(_genericInactiveTexture);
+            _genericInactiveTexture = 0;
+        }
         if (_staticModelLightingAtlasTexture != 0)
         {
             _gl.DeleteTexture(_staticModelLightingAtlasTexture);
@@ -327,7 +345,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void ApplyRenderState(
         RenderState state,
-        MapRenderOpenGlStencilTargetContract? stencilTargetContract = null)
+        MapRenderOpenGlStencilTargetContract? stencilTargetContract = null,
+        bool forceDepthWrite = false)
     {
         if (!state.HasState)
         {
@@ -337,7 +356,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (!_authoredMaterials.TryApplyRenderState(
                 state,
                 stencilTargetContract,
-                out string? blocker))
+                out string? blocker,
+                forceDepthWrite))
         {
             throw new InvalidOperationException(
                 blocker ?? "Authored OpenGL state is not executable.");

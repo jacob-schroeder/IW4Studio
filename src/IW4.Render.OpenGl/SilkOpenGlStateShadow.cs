@@ -14,6 +14,7 @@ internal sealed unsafe class SilkOpenGlStateShadow
     private readonly Dictionary<EnableCap, bool> _enabledCaps = [];
     private readonly Dictionary<TextureBindingKey, uint> _textureBindings = [];
     private readonly Dictionary<uint, uint> _samplerBindings = [];
+    private readonly Dictionary<uint, uint> _uniformBufferBindings = [];
     private readonly Dictionary<UniformKey, int> _uniformInts = [];
     private readonly Dictionary<UniformKey, int> _uniformFloats = [];
     private readonly Dictionary<UniformKey, Vector3Bits> _uniformVector3 = [];
@@ -138,6 +139,37 @@ internal sealed unsafe class SilkOpenGlStateShadow
         _arrayBuffer = buffer;
         SubmittedCalls++;
         BufferChanges++;
+    }
+
+    public void BindUniformBufferBase(uint bindingPoint, uint buffer)
+    {
+        if (_uniformBufferBindings.TryGetValue(
+                bindingPoint,
+                out uint current) &&
+            current == buffer)
+        {
+            ElidedCalls++;
+            return;
+        }
+
+        _gl.BindBufferBase(
+            BufferTargetARB.UniformBuffer,
+            bindingPoint,
+            buffer);
+        _uniformBufferBindings[bindingPoint] = buffer;
+        SubmittedCalls++;
+        BufferChanges++;
+    }
+
+    public void ForgetUniformBufferBinding(uint buffer)
+    {
+        foreach (uint bindingPoint in _uniformBufferBindings
+                     .Where(pair => pair.Value == buffer)
+                     .Select(pair => pair.Key)
+                     .ToArray())
+        {
+            _uniformBufferBindings.Remove(bindingPoint);
+        }
     }
 
     public void ForgetArrayBufferBinding(uint buffer)
@@ -726,6 +758,7 @@ internal sealed unsafe class SilkOpenGlStateShadow
         _enabledCaps.Clear();
         _textureBindings.Clear();
         _samplerBindings.Clear();
+        _uniformBufferBindings.Clear();
         _depthMask = null;
         _depthFunction = null;
         _frontFace = null;

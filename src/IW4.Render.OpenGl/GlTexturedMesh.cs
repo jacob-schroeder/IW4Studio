@@ -82,6 +82,16 @@ internal readonly record struct GlTexturedMesh(
     public GlRsxProgram DepthPrepassRsxProgram { get; init; }
 
     /// <summary>
+    /// The color and standard-depth translated vertex programs were proven at
+    /// resource creation to produce the same clip-position expression from
+    /// the exact bound inputs and constants. This is intentionally a single
+    /// fail-closed fact: frame execution still has to prove visibility,
+    /// geometry, raster state, and runtime-resource equivalence before it
+    /// can fuse either owner into the color replay.
+    /// </summary>
+    internal bool HasCertifiedTranslatedDepthFusion { get; init; }
+
+    /// <summary>
     /// Map-only static-model bridge locations for the composed color program.
     /// </summary>
     public MapRenderOpenGlStaticModelProgramUniforms?

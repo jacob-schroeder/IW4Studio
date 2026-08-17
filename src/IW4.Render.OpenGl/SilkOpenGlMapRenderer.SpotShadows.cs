@@ -34,6 +34,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private MapRenderWorldDpvsVisibilityBuildResult?
         _spotShadowAtlasContentVisibility;
     private SpotShadowPlan[] _spotShadowAtlasContentPlans = [];
+    private MapRenderSpotShadowAtlasEntry[]
+        _spotShadowAtlasContentEntries = [];
+    private MapRenderOpenGlSpotShadowEntryDescriptor[]
+        _spotShadowAtlasContentDescriptors = [];
     private readonly HashSet<uint> _spotShadowAtlasContentTextureHandles = [];
     private readonly HashSet<uint> _spotShadowFrameTextureHandles = [];
 
@@ -135,9 +139,32 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
 
         IReadOnlyList<SpotShadowPlan> plans;
+        MapRenderSpotShadowAtlasEntry[] entries;
+        MapRenderOpenGlSpotShadowEntryDescriptor[]? descriptors;
         try
         {
-            plans = CreateSpotShadowPlans(frame);
+            if (TryGetCachedSpotShadowPlanning(
+                    atlas,
+                    frame,
+                    out SpotShadowPlan[] cachedPlans,
+                    out MapRenderSpotShadowAtlasEntry[] cachedEntries,
+                    out MapRenderOpenGlSpotShadowEntryDescriptor[]
+                        cachedDescriptors))
+            {
+                plans = cachedPlans;
+                entries = cachedEntries;
+                descriptors = cachedDescriptors;
+            }
+            else
+            {
+                plans = CreateSpotShadowPlans(frame);
+                entries = plans.Count == 0
+                    ? []
+                    : new MapRenderSpotShadowAtlasEntry[plans.Count];
+                for (int index = 0; index < plans.Count; index++)
+                    entries[index] = plans[index].Entry;
+                descriptors = null;
+            }
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
@@ -151,6 +178,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 sunReceiverSelectionPrepared);
             return;
         }
+
         if (plans.Count == 0)
         {
             InvalidateSpotShadowAtlasContentCache();
@@ -161,9 +189,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return;
         }
 
-        MapRenderSpotShadowAtlasEntry[] entries = plans
-            .Select(plan => plan.Entry)
-            .ToArray();
         bool spotCasterWriteEntered = false;
         try
         {
@@ -171,8 +196,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 CanReuseSpotShadowAtlasContents(atlas, plans);
             if (!reuseAtlasContents)
             {
-                foreach (SpotShadowPlan plan in plans)
+                for (int index = 0; index < plans.Count; index++)
                 {
+                    SpotShadowPlan plan = plans[index];
                     EnsureSpotCasterCoverage(
                         plan,
                         frame.Projection.CameraOrigin);
@@ -190,19 +216,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             var publication = new MapRenderSpotShadowFramePublication(
                 frame,
                 entries);
-            MapRenderOpenGlSpotShadowEntryDescriptor[] descriptors = entries
-                .Select(entry =>
-                    new MapRenderOpenGlSpotShadowEntryDescriptor(
-                        entry.SceneLightIndex,
-                        entry.AtlasSlot,
-                        entry.ShadowLookupMatrix,
-                        entry.Fade))
-                .ToArray();
+            if (descriptors is null)
+            {
+                descriptors = new MapRenderOpenGlSpotShadowEntryDescriptor[
+                    entries.Length];
+                for (int index = 0; index < entries.Length; index++)
+                {
+                    MapRenderSpotShadowAtlasEntry entry = entries[index];
+                    descriptors[index] =
+                        new MapRenderOpenGlSpotShadowEntryDescriptor(
+                            entry.SceneLightIndex,
+                            entry.AtlasSlot,
+                            entry.ShadowLookupMatrix,
+                            entry.Fade);
+                }
+            }
             if (reuseAtlasContents)
             {
                 atlas.BeginReusedFrame(frame.Revision, descriptors);
-                foreach (SpotShadowPlan plan in plans)
+                for (int index = 0; index < plans.Count; index++)
                 {
+                    SpotShadowPlan plan = plans[index];
                     if (!publication.RecordEntryDrawCompleted(
                             frame.Revision,
                             plan.Entry.SceneLightIndex))
@@ -228,12 +262,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     reusedReadyState,
                     reusedBackendReady);
                 // No target was modified, so the destructive-write preflight
-                // ordering is unnecessary. Resolve the exact receiver closure
-                // once against the current-revision ready publications.
-                PrepareWorldReceiverVariantSelection(
-                    frame,
-                    sunAtlasReady,
-                    spotAtlasReady: reusedReadyState);
+                // ordering is unnecessary. Retain the exact receiver closure
+                // only when its complete immutable and published input state
+                // still matches; otherwise preserve the full fail-closed walk.
+                if (!TryReuseWorldReceiverVariantSelection(
+                        frame,
+                        sunAtlasReady,
+                        reusedReadyState))
+                {
+                    PrepareWorldReceiverVariantSelection(
+                        frame,
+                        sunAtlasReady,
+                        spotAtlasReady: reusedReadyState);
+                }
                 _currentSpotShadowReadyState = reusedReadyState;
                 _currentSpotShadowBackendReadyFrame =
                     reusedBackendReady;
@@ -243,8 +284,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             InvalidateSpotShadowAtlasContentCache();
             _spotShadowFrameTextureHandles.Clear();
             atlas.BeginFrame(frame.Revision, descriptors);
-            foreach (SpotShadowPlan plan in plans)
+            for (int index = 0; index < plans.Count; index++)
             {
+                SpotShadowPlan plan = plans[index];
                 MapRenderSpotShadowAtlasEntry entry = plan.Entry;
                 // BeginTile can touch framebuffer, viewport, scissor, and
                 // depth/stencil state before a later operation fails.
@@ -297,7 +339,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 readyState);
             _currentSpotShadowReadyState = readyState;
             _currentSpotShadowBackendReadyFrame = backendReady;
-            RememberSpotShadowAtlasContents(atlas, plans);
+            RememberSpotShadowAtlasContents(
+                atlas,
+                plans,
+                entries,
+                descriptors);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
@@ -557,8 +603,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             throw new InvalidOperationException(
                 "Spot-shadow renderer and backend publications disagree on revision or entry count.");
         }
-        foreach (MapRenderSpotShadowAtlasEntry entry in readyState.Entries)
+        IReadOnlyList<MapRenderSpotShadowAtlasEntry> entries =
+            readyState.Entries;
+        for (int index = 0; index < entries.Count; index++)
         {
+            MapRenderSpotShadowAtlasEntry entry = entries[index];
             if (!backendReady.TryGetEntry(
                     entry.SceneLightIndex,
                     out MapRenderOpenGlSpotShadowReadyEntry?
@@ -647,6 +696,78 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return true;
     }
 
+    private bool TryGetCachedSpotShadowPlanning(
+        MapRenderOpenGlSpotShadowAtlasBackend atlas,
+        MapRenderWorldDpvsThreeViewFrame frame,
+        out SpotShadowPlan[] plans,
+        out MapRenderSpotShadowAtlasEntry[] entries,
+        out MapRenderOpenGlSpotShadowEntryDescriptor[] descriptors)
+    {
+        plans = _spotShadowAtlasContentPlans;
+        entries = _spotShadowAtlasContentEntries;
+        descriptors = _spotShadowAtlasContentDescriptors;
+        // The visibility cache retains object identity only for an exact
+        // camera/source/projection key hit. The frame references below prove
+        // this current-revision wrapper was built from that retained payload.
+        if (_previewWorldSource is not { } source ||
+            _editorPreviewSceneLightFrame is not { } sceneLights ||
+            _sceneTechniqueVariants is null ||
+            !source.AssetLookup.HasCanonicalAssetPoolRevision(
+                sceneLights.AssetPoolRevision) ||
+            frame.Camera.SurfaceCount !=
+                _spotShadowMembershipSurfaceCount ||
+            frame.Camera.StaticModelCount !=
+                _spotShadowMembershipStaticModelCount ||
+            !ReferenceEquals(atlas, _spotShadowAtlasContentBackend) ||
+            _spotShadowAtlasContentVisibility is not { } visibility ||
+            !ReferenceEquals(
+                _currentSunShadowVisibility,
+                visibility) ||
+            !ReferenceEquals(
+                frame.Projection,
+                visibility.SunShadowProjection) ||
+            plans.Length == 0 ||
+            entries.Length != plans.Length ||
+            descriptors.Length != plans.Length)
+        {
+            return false;
+        }
+
+        bool hasExactCameraView = false;
+        for (int index = 0;
+             index < visibility.CompletedViews.Count;
+             index++)
+        {
+            MapRenderWorldDpvsViewVisibility view =
+                visibility.CompletedViews[index];
+            if (view.ViewIndex != MapRenderWorldDpvsViewIndex.Camera)
+                continue;
+            hasExactCameraView = ReferenceEquals(frame.Camera, view);
+            break;
+        }
+        if (!hasExactCameraView)
+            return false;
+
+        for (int index = 0; index < plans.Length; index++)
+        {
+            MapRenderSpotShadowAtlasEntry entry = entries[index];
+            MapRenderOpenGlSpotShadowEntryDescriptor descriptor =
+                descriptors[index];
+            if (!ReferenceEquals(
+                    plans[index].Entry,
+                    entry) ||
+                descriptor.SceneLightIndex != entry.SceneLightIndex ||
+                descriptor.TileIndex != entry.AtlasSlot ||
+                descriptor.LookupMatrix != entry.ShadowLookupMatrix ||
+                descriptor.Fade != entry.Fade)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private void RecordSpotShadowTextureUsage(SpotShadowPlan plan)
     {
         foreach (int surfaceIndex in plan.WorldSurfaceIndices)
@@ -675,11 +796,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void RememberSpotShadowAtlasContents(
         MapRenderOpenGlSpotShadowAtlasBackend atlas,
-        IReadOnlyList<SpotShadowPlan> plans)
+        IReadOnlyList<SpotShadowPlan> plans,
+        MapRenderSpotShadowAtlasEntry[] entries,
+        MapRenderOpenGlSpotShadowEntryDescriptor[] descriptors)
     {
         _spotShadowAtlasContentBackend = atlas;
         _spotShadowAtlasContentVisibility = _currentSunShadowVisibility;
-        _spotShadowAtlasContentPlans = plans.ToArray();
+        _spotShadowAtlasContentPlans = plans is SpotShadowPlan[] planSnapshot
+            ? planSnapshot
+            : plans.ToArray();
+        _spotShadowAtlasContentEntries = entries;
+        _spotShadowAtlasContentDescriptors = descriptors;
         _spotShadowAtlasContentTextureHandles.Clear();
         foreach (uint handle in _spotShadowFrameTextureHandles)
             _spotShadowAtlasContentTextureHandles.Add(handle);
@@ -687,9 +814,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void InvalidateSpotShadowAtlasContentCache()
     {
+        InvalidateWorldReceiverVariantSelectionReuse();
         _spotShadowAtlasContentBackend = null;
         _spotShadowAtlasContentVisibility = null;
         _spotShadowAtlasContentPlans = [];
+        _spotShadowAtlasContentEntries = [];
+        _spotShadowAtlasContentDescriptors = [];
         _spotShadowAtlasContentTextureHandles.Clear();
         _spotShadowFrameTextureHandles.Clear();
     }

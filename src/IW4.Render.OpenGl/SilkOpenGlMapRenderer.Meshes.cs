@@ -15,6 +15,7 @@ using IW4.Render.OpenGl.World;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Scheduling.StaticModels;
+using IW4.Render.Shaders;
 using IW4.Render.Textures;
 using IW4.Render.Techniques;
 
@@ -390,7 +391,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 : GetOrCreateRsxProgram(
                     batch.ShaderExecution,
                     batch.State,
-                    vertexConstantPlan,
+                    vertexConstantPlan!,
+                    usesStaticModelInstancing: true,
                     out compiledStaticModelProgramUniforms);
         int vertexCount = batch.Vertices.Length /
             MapRenderScene.TexturedVertexFloatCount;
@@ -572,14 +574,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     rsxProgram,
                     directCodePlan!,
                     vertexConstantPlan!,
-                    MapRenderOpenGlStaticModelInstancedVertexComposer
-                        .ResolveExternallyBoundVertexConstantDestinations(
-                            vertexConstantPlan!))
+                    ResolveAuthoredExternallyBoundVertexConstants(
+                        vertexConstantPlan!,
+                        usesStaticModelInstancing: true))
                     : [];
             GlRsxProgram depthPrepassRsxProgram = default;
             MapRenderOpenGlStaticModelProgramUniforms?
                 depthStaticModelProgramUniforms = null;
             GlRsxConstantBinding[] depthPrepassRsxConstantBindings = [];
+            ShaderExecutionContract? depthPrepassExecution = null;
+            TranslatedProgramVertexConstantBindingPlan?
+                depthPrepassVertexConstantPlan = null;
             if (executeTranslatedAuthored &&
                 batch.EditorDepthPrepass is { } depthPrepass &&
                 batch.DepthPrepassShaderExecution is
@@ -598,19 +603,23 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 depthPrepassRsxProgram = GetOrCreateRsxProgram(
                     depthExecution,
                     depthPrepass.State,
-                    depthVertexConstantPlan,
+                    depthVertexConstantPlan!,
+                    usesStaticModelInstancing: true,
                     out depthStaticModelProgramUniforms);
                 if (depthPrepassRsxProgram.Handle != 0)
                 {
+                    depthPrepassExecution = depthExecution;
+                    depthPrepassVertexConstantPlan =
+                        depthVertexConstantPlan;
                     depthPrepassRsxConstantBindings =
                         CreateRsxConstantBindings(
                             depthExecution,
                             depthPrepassRsxProgram,
                             depthDirectCodePlan!,
                             depthVertexConstantPlan!,
-                            MapRenderOpenGlStaticModelInstancedVertexComposer
-                                .ResolveExternallyBoundVertexConstantDestinations(
-                                    depthVertexConstantPlan!));
+                            ResolveAuthoredExternallyBoundVertexConstants(
+                                depthVertexConstantPlan!,
+                                usesStaticModelInstancing: true));
                 }
             }
 
@@ -628,6 +637,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 batch.EditorVegetationAnimation?.IsEnabled == true
                     ? batch.EditorVegetationAnimation
                     : null;
+            bool hasCertifiedTranslatedDepthFusion =
+                executeTranslatedAuthored &&
+                depthPrepassRsxProgram.Handle != 0 &&
+                TranslatedDepthFusionCertification.TryCertify(
+                    batch.ShaderExecution,
+                    vertexConstantPlan!,
+                    depthPrepassExecution,
+                    depthPrepassVertexConstantPlan);
             return new GlTexturedMesh(
             vao,
             geometry.VertexBuffer,
@@ -664,6 +681,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         MapRenderScene.MaxColorLayerCount),
                 EditorDepthPrepass = batch.EditorDepthPrepass,
                 DepthPrepassRsxProgram = depthPrepassRsxProgram,
+                HasCertifiedTranslatedDepthFusion =
+                    hasCertifiedTranslatedDepthFusion,
                 StaticModelProgramUniforms = compiledStaticModelProgramUniforms,
                 DepthStaticModelProgramUniforms =
                     depthStaticModelProgramUniforms,
@@ -1184,33 +1203,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         MapRenderOpenGlStaticModelProgramUniforms firstValue = first.Value;
         MapRenderOpenGlStaticModelProgramUniforms nextValue = next.Value;
-        return firstValue.ViewRowLocations is not null &&
-               nextValue.ViewRowLocations is not null &&
-               firstValue.ViewRowLocations.AsSpan().SequenceEqual(
-                   nextValue.ViewRowLocations) &&
-               firstValue.ViewProjectionRowLocations is not null &&
-               nextValue.ViewProjectionRowLocations is not null &&
-               firstValue.ViewProjectionRowLocations.AsSpan().SequenceEqual(
-                   nextValue.ViewProjectionRowLocations) &&
-               firstValue.EyeOffsetLocation == nextValue.EyeOffsetLocation &&
-               firstValue.Vegetation == nextValue.Vegetation;
+        return firstValue.Vegetation == nextValue.Vegetation;
     }
 
     private static bool TryAddStaticProgramUniformHash(
         ref HashCode hash,
         MapRenderOpenGlStaticModelProgramUniforms uniforms)
     {
-        if (uniforms.ViewRowLocations is null ||
-            uniforms.ViewProjectionRowLocations is null ||
-            !uniforms.HasFrameRows ||
-            !uniforms.Vegetation.IsReady)
+        if (!uniforms.Vegetation.IsReady)
         {
             return false;
         }
 
-        AddSequenceHash(ref hash, uniforms.ViewRowLocations);
-        AddSequenceHash(ref hash, uniforms.ViewProjectionRowLocations);
-        hash.Add(uniforms.EyeOffsetLocation);
         hash.Add(uniforms.Vegetation);
         return true;
     }
@@ -1232,15 +1236,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         hash.Add(plan.SpatialFrequency);
     }
 
-    private static void AddSequenceHash<T>(
-        ref HashCode hash,
-        IReadOnlyList<T> values)
-    {
-        hash.Add(values.Count);
-        for (int index = 0; index < values.Count; index++)
-            hash.Add(values[index]);
-    }
-
     private readonly record struct StaticColorSortRepresentative(
         int Id,
         uint[] ProgramHandles,
@@ -1253,14 +1248,26 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     /// owner is identical.
     /// </summary>
     internal static long? ResolveWorldDepthMultiDrawSortKey(
-        IReadOnlyList<GlTexturedDrawCommand> commands)
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand> group)
     {
-        ArgumentNullException.ThrowIfNull(commands);
-        if (commands.Count != 1)
+        ArgumentNullException.ThrowIfNull(group);
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
+        if (commands.Length != 1)
             return null;
 
-        GlTexturedMesh mesh = commands[0].Mesh;
-        return mesh.InstanceCount == 0 &&
+        return ResolveWorldDepthMultiDrawSortKey(in commands[0]);
+    }
+
+    private static long? ResolveWorldDepthMultiDrawSortKey(
+        in GlTexturedDrawCommand command)
+    {
+        GlTexturedMesh mesh = command.Mesh;
+        return command.InstanceIndex is null &&
+               mesh.InstanceCount == 0 &&
+               mesh.IndexCount != 0 &&
+               mesh.VertexArray != 0 &&
+               mesh.ElementBuffer != 0 &&
                mesh.DepthMultiDrawBatchGroupId >= 0
             ? CreateProgramMajorMultiDrawSortKey(
                 mesh.DepthPrepassRsxProgram.Handle,
@@ -1296,8 +1303,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     /// <summary>
     /// Builds the immutable standard-depth queue once per loaded scene. The
     /// depth owner writes no color and has no translucent ordering dependency,
-    /// so compatible single-pass world groups can be made contiguous without
-    /// changing the authored color queue or splitting multipass groups.
+    /// so compatible world commands can be made contiguous through depth-only
+    /// singleton groups without changing the authored color queue.
     /// </summary>
     internal static MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]
         BuildDepthPrepassDrawGroupOrder(
@@ -1305,28 +1312,123 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups)
     {
         ArgumentNullException.ThrowIfNull(groups);
-        return groups
-            .Select((group, inputOrdinal) => new
+
+        var selected = new List<(
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> Group,
+            int InputOrdinal,
+            MapRenderEditorDepthPrepassPlan Plan)>();
+        for (int inputOrdinal = 0;
+             inputOrdinal < groups.Count;
+             inputOrdinal++)
+        {
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> group =
+                groups[inputOrdinal];
+            IReadOnlyList<GlTexturedDrawCommand> commands =
+                SelectStandardDepthPrepassCommands(
+                    group,
+                    out MapRenderEditorDepthPrepassPlan? plan);
+            if (plan is not null && commands.Count != 0)
+                selected.Add((group, inputOrdinal, plan));
+        }
+
+        // Inherit deliberately consumes the polygon-offset state left by the
+        // previous draw. Any sorting or pass splitting could therefore change
+        // depth coverage. Preserve the filtered source queue exactly whenever
+        // one standard-depth group carries that state action.
+        if (selected.Any(entry =>
+                entry.Plan.State.PolygonOffsetMode ==
+                    RenderPolygonOffsetMode.Inherit))
+        {
+            return selected
+                .Select(entry => entry.Group)
+                .ToArray();
+        }
+
+        var depthEntries = new List<(
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> Group,
+            int InputOrdinal,
+            int CommandOrdinal,
+            long? Key)>();
+        foreach ((
+                     MapRenderEditorDrawGroup<GlTexturedDrawCommand> group,
+                     int inputOrdinal,
+                     _) in selected)
+        {
+            ReadOnlySpan<GlTexturedDrawCommand> commands =
+                group.AuthoredPassSpan;
+            bool canSplitWorldCommands = commands.Length > 1;
+            for (int commandOrdinal = 0;
+                 canSplitWorldCommands && commandOrdinal < commands.Length;
+                 commandOrdinal++)
             {
-                Group = group,
-                InputOrdinal = inputOrdinal,
-                Key = ResolveWorldDepthMultiDrawSortKey(
-                    group.AuthoredPasses)
-            })
-            .Where(entry =>
+                ref readonly GlTexturedDrawCommand command =
+                    ref commands[commandOrdinal];
+                canSplitWorldCommands =
+                    ResolveWorldDepthMultiDrawSortKey(in command).HasValue;
+            }
+
+            if (!canSplitWorldCommands)
             {
-                IReadOnlyList<GlTexturedDrawCommand> commands =
-                    SelectStandardDepthPrepassCommands(
-                        entry.Group,
-                        out MapRenderEditorDepthPrepassPlan? plan);
-                return plan is not null && commands.Count != 0;
-            })
+                depthEntries.Add((
+                    group,
+                    inputOrdinal,
+                    CommandOrdinal: -1,
+                    ResolveWorldDepthMultiDrawSortKey(group)));
+                continue;
+            }
+
+            for (int commandOrdinal = 0;
+                 commandOrdinal < commands.Length;
+                 commandOrdinal++)
+            {
+                ref readonly GlTexturedDrawCommand command =
+                    ref commands[commandOrdinal];
+                long key = ResolveWorldDepthMultiDrawSortKey(in command) ??
+                    throw new InvalidOperationException(
+                        "A validated world depth command lost its immutable compatibility key.");
+                depthEntries.Add((
+                    CreateDepthPrepassSingletonGroup(
+                        group,
+                        in command,
+                        key),
+                    inputOrdinal,
+                    commandOrdinal,
+                    key));
+            }
+        }
+
+        return depthEntries
             .OrderBy(entry => entry.Key.HasValue ? 1 : 0)
             .ThenBy(entry => entry.Key ?? 0)
             .ThenBy(entry => entry.Group.SourceOrdinal)
             .ThenBy(entry => entry.InputOrdinal)
+            .ThenBy(entry => entry.CommandOrdinal)
             .Select(entry => entry.Group)
             .ToArray();
+    }
+
+    private static MapRenderEditorDrawGroup<GlTexturedDrawCommand>
+        CreateDepthPrepassSingletonGroup(
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> source,
+            in GlTexturedDrawCommand command,
+            long sortKey)
+    {
+        GlTexturedDrawCommand[] commands = [command];
+        return source.SortCenter is { } sortCenter
+            ? MapRenderEditorDrawGroup<GlTexturedDrawCommand>.FromCenter(
+                source.SourceOrdinal,
+                source.Classification,
+                commands,
+                sortCenter,
+                sortKey)
+            : MapRenderEditorDrawGroup<GlTexturedDrawCommand>.FromExplicitDepth(
+                source.SourceOrdinal,
+                source.Classification,
+                commands,
+                source.ExplicitDepth ??
+                    throw new InvalidOperationException(
+                        "A depth draw group has no sort center or explicit depth."),
+                sortKey);
     }
 
     private static MapRenderEditorDrawGroup<GlTexturedDrawCommand> CreateEditorDrawGroup(
@@ -2021,12 +2123,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             !CanUploadTexture(batch.Texture))
             return default;
 
-        GlRsxProgram compiledRsxProgram =
-            GetOrCreateRsxProgram(
-                batch.ShaderExecution,
-                batch.State,
-                compositionVertexConstantPlan: null,
-                out _);
         bool directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
             batch.ShaderExecution,
             batch.SceneLightIndex,
@@ -2039,6 +2135,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 batch.ShaderExecution,
                 directCodePlan!,
                 out vertexConstantPlan);
+        GlRsxProgram compiledRsxProgram = !vertexConstantPlanReady
+            ? default
+            : GetOrCreateRsxProgram(
+                batch.ShaderExecution,
+                batch.State,
+                vertexConstantPlan!,
+                usesStaticModelInstancing: false,
+                out _);
         bool useRsxVertexInputs =
                                   authorizedAuthoredProgramGroups.Contains(AuthoredProgramGroup(batch)) &&
                                   batch.ShaderExecution.RendererProgramReady &&
@@ -2118,9 +2222,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 batch.ShaderExecution,
                 rsxProgram,
                 directCodePlan!,
-                vertexConstantPlan!);
+                vertexConstantPlan!,
+                ResolveAuthoredExternallyBoundVertexConstants(
+                    vertexConstantPlan!,
+                    usesStaticModelInstancing: false));
         GlRsxProgram depthPrepassRsxProgram = default;
         GlRsxConstantBinding[] depthPrepassRsxConstantBindings = [];
+        ShaderExecutionContract? depthPrepassExecution = null;
+        TranslatedProgramVertexConstantBindingPlan?
+            depthPrepassVertexConstantPlan = null;
         if (executeTranslatedAuthored &&
             batch.EditorDepthPrepass is { } depthPrepass &&
             batch.DepthPrepassShaderExecution is
@@ -2139,15 +2249,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             depthPrepassRsxProgram = GetOrCreateRsxProgram(
                 depthExecution,
                 depthPrepass.State,
-                compositionVertexConstantPlan: null,
+                depthVertexConstantPlan!,
+                usesStaticModelInstancing: false,
                 out _);
             if (depthPrepassRsxProgram.Handle != 0)
             {
+                depthPrepassExecution = depthExecution;
+                depthPrepassVertexConstantPlan = depthVertexConstantPlan;
                 depthPrepassRsxConstantBindings = CreateRsxConstantBindings(
                     depthExecution,
                     depthPrepassRsxProgram,
                     depthDirectCodePlan!,
-                    depthVertexConstantPlan!);
+                    depthVertexConstantPlan!,
+                    ResolveAuthoredExternallyBoundVertexConstants(
+                        depthVertexConstantPlan!,
+                        usesStaticModelInstancing: false));
             }
         }
 
@@ -2156,6 +2272,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             .Take(MapRenderScene.MaxColorLayerCount - 1)
             .Select(layer => layer.BlendWeightComponent)
             .ToArray();
+        bool hasCertifiedTranslatedDepthFusion =
+            executeTranslatedAuthored &&
+            depthPrepassRsxProgram.Handle != 0 &&
+            TranslatedDepthFusionCertification.TryCertify(
+                batch.ShaderExecution,
+                vertexConstantPlan!,
+                depthPrepassExecution,
+                depthPrepassVertexConstantPlan);
         var resource = new GlTexturedMesh(
             0,
             0,
@@ -2191,6 +2315,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     MapRenderScene.MaxColorLayerCount),
             EditorDepthPrepass = batch.EditorDepthPrepass,
             DepthPrepassRsxProgram = depthPrepassRsxProgram,
+            HasCertifiedTranslatedDepthFusion =
+                hasCertifiedTranslatedDepthFusion,
             DepthPrepassRsxConstantBindings =
                 depthPrepassRsxConstantBindings,
             SceneLightIndex = batch.SceneLightIndex,
@@ -2198,6 +2324,574 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         };
         return MapRenderOpenGlWorldResourceShell.RequireGeometryFree(
             resource);
+    }
+
+    /// <summary>
+    /// Structural, not algebraic, equivalence for translated clip position.
+    /// The two shaders can use different temporary registers and constant
+    /// destinations, but every backwards-sliced operation, source modifier,
+    /// bound input route, and constant value/source must still be identical.
+    /// Any construct the OpenGL lowering could evaluate conditionally or by
+    /// indexed indirection is deliberately outside this certificate.
+    /// </summary>
+    private static class TranslatedDepthFusionCertification
+    {
+        internal static bool TryCertify(
+            ShaderExecutionContract colorExecution,
+            TranslatedProgramVertexConstantBindingPlan colorConstants,
+            ShaderExecutionContract? depthExecution,
+            TranslatedProgramVertexConstantBindingPlan? depthConstants)
+        {
+            if (depthExecution is null ||
+                depthConstants is null ||
+                !colorExecution.RendererProgramReady ||
+                !depthExecution.RendererProgramReady ||
+                colorExecution.VertexProgramIr is not { } colorProgram ||
+                depthExecution.VertexProgramIr is not { } depthProgram)
+            {
+                return false;
+            }
+
+            return TryBuildPositionExpression(
+                       colorProgram,
+                       colorExecution.VertexInputs,
+                       colorConstants,
+                       out string colorPosition) &&
+                   TryBuildPositionExpression(
+                       depthProgram,
+                       depthExecution.VertexInputs,
+                       depthConstants,
+                       out string depthPosition) &&
+                   string.Equals(
+                       colorPosition,
+                       depthPosition,
+                       StringComparison.Ordinal);
+        }
+
+        private static bool TryBuildPositionExpression(
+            RsxVertexProgramIr program,
+            IReadOnlyList<ShaderVertexInputBinding> inputBindings,
+            TranslatedProgramVertexConstantBindingPlan constantPlan,
+            out string position)
+        {
+            position = string.Empty;
+            if (!program.HasValidUpload || program.Instructions.IsEmpty)
+                return false;
+
+            string?[] inputRoutes = new string?[16];
+            for (int bindingIndex = 0;
+                 bindingIndex < inputBindings.Count;
+                 bindingIndex++)
+            {
+                ShaderVertexInputBinding binding = inputBindings[bindingIndex];
+                int destination = (byte)binding.Destination;
+                if ((uint)destination >= (uint)inputRoutes.Length ||
+                    binding.RouteIndex < 0 ||
+                    binding.IsDisabledDefaultAttribute ||
+                    binding.ComponentCount is < 1 or > 4 ||
+                    inputRoutes[destination] is not null)
+                {
+                    return false;
+                }
+
+                inputRoutes[destination] = CreateInputRouteIdentity(binding);
+            }
+
+            var constants = new Dictionary<ushort, string>();
+            foreach (TranslatedProgramVertexConstantBinding binding in
+                     constantPlan.Bindings)
+            {
+                if (!constants.TryAdd(
+                        binding.Destination,
+                        CreateConstantIdentity(binding)))
+                {
+                    return false;
+                }
+            }
+
+            string?[][] temporary = CreateRegisterBank();
+            string?[][] output = CreateRegisterBank();
+            foreach (RsxVertexInstruction instruction in program.Instructions)
+            {
+                if (instruction.HasControlFlow ||
+                    instruction.CondTestEnabled ||
+                    instruction.CondUpdateEnabled ||
+                    instruction.IndexConst)
+                {
+                    return false;
+                }
+
+                // Both slot values are read before either slot writes, just
+                // as the translated lowerer materializes them before its
+                // vector/scalar assignment sequence.
+                bool vectorSupported = IsSupportedVectorSlot(in instruction);
+                bool scalarSupported = IsSupportedScalarSlot(in instruction);
+                string?[]? vectorValue = vectorSupported
+                    ? TryBuildSlotValue(
+                        in instruction,
+                        scalar: false,
+                        temporary,
+                        inputRoutes,
+                        constants)
+                    : null;
+                string?[]? scalarValue = scalarSupported
+                    ? TryBuildSlotValue(
+                        in instruction,
+                        scalar: true,
+                        temporary,
+                        inputRoutes,
+                        constants)
+                    : null;
+                if (vectorSupported)
+                {
+                    ApplySlotWrite(
+                        in instruction,
+                        scalar: false,
+                        vectorValue,
+                        temporary,
+                        output);
+                }
+                else
+                {
+                    InvalidateSlotWrite(
+                        in instruction,
+                        scalar: false,
+                        temporary,
+                        output);
+                }
+
+                if (scalarSupported)
+                {
+                    ApplySlotWrite(
+                        in instruction,
+                        scalar: true,
+                        scalarValue,
+                        temporary,
+                        output);
+                }
+                else
+                {
+                    InvalidateSlotWrite(
+                        in instruction,
+                        scalar: true,
+                        temporary,
+                        output);
+                }
+            }
+
+            string?[] clip = output[(byte)RsxVertexResult.Position];
+            if (clip.Any(component => component is null))
+                return false;
+
+            position = string.Concat(
+                "P(", clip[0], '|', clip[1], '|', clip[2], '|', clip[3], ')');
+            return true;
+        }
+
+        private static bool IsSupportedVectorSlot(
+            in RsxVertexInstruction instruction)
+        {
+            if (instruction.VectorWriteMask == RsxVertexWriteMask.None)
+                return instruction.VectorOpcode == RsxVertexVectorOpcode.Nop;
+
+            return instruction.VectorOpcode is
+                RsxVertexVectorOpcode.Move or
+                RsxVertexVectorOpcode.Multiply or
+                RsxVertexVectorOpcode.Add or
+                RsxVertexVectorOpcode.MultiplyAdd or
+                RsxVertexVectorOpcode.Dot3 or
+                RsxVertexVectorOpcode.DotHomogeneous or
+                RsxVertexVectorOpcode.Dot4 or
+                RsxVertexVectorOpcode.Distance or
+                RsxVertexVectorOpcode.Minimum or
+                RsxVertexVectorOpcode.Maximum or
+                RsxVertexVectorOpcode.SetLessThan or
+                RsxVertexVectorOpcode.SetGreaterThanOrEqual or
+                RsxVertexVectorOpcode.Fraction or
+                RsxVertexVectorOpcode.Floor or
+                RsxVertexVectorOpcode.SetEqual or
+                RsxVertexVectorOpcode.SetFalse or
+                RsxVertexVectorOpcode.SetGreaterThan or
+                RsxVertexVectorOpcode.SetLessThanOrEqual or
+                RsxVertexVectorOpcode.SetNotEqual or
+                RsxVertexVectorOpcode.SetTrue or
+                RsxVertexVectorOpcode.SetSign;
+        }
+
+        private static bool IsSupportedScalarSlot(
+            in RsxVertexInstruction instruction)
+        {
+            if (instruction.ScalarWriteMask == RsxVertexWriteMask.None)
+                return instruction.ScalarOpcode == RsxVertexScalarOpcode.Nop;
+
+            return instruction.ScalarOpcode is
+                RsxVertexScalarOpcode.Move or
+                RsxVertexScalarOpcode.Reciprocal or
+                RsxVertexScalarOpcode.ReciprocalClamped or
+                RsxVertexScalarOpcode.ReciprocalSquareRoot or
+                RsxVertexScalarOpcode.LogarithmBase2 or
+                RsxVertexScalarOpcode.ExponentBase2 or
+                RsxVertexScalarOpcode.Sine or
+                RsxVertexScalarOpcode.Cosine;
+        }
+
+        private static string?[]? TryBuildSlotValue(
+            in RsxVertexInstruction instruction,
+            bool scalar,
+            string?[][] temporary,
+            string?[] inputRoutes,
+            IReadOnlyDictionary<ushort, string> constants)
+        {
+            RsxVertexWriteMask mask = scalar
+                ? instruction.ScalarWriteMask
+                : instruction.VectorWriteMask;
+            if (mask == RsxVertexWriteMask.None)
+                return null;
+
+            if (scalar)
+            {
+            string?[]? source = TryResolveSource(
+                    in instruction,
+                    instruction.Source2,
+                    sourceIndex: 2,
+                    temporary,
+                    inputRoutes,
+                    constants);
+                if (source is null)
+                    return null;
+                return CreateScalarValue(
+                    instruction.ScalarOpcode,
+                    instruction.Saturate,
+                    source);
+            }
+
+            RsxSourceSlotMask sources =
+                RsxVertexInstruction.VectorSourceMask(
+                    instruction.VectorOpcode);
+            string?[]? source0 =
+                (sources & RsxSourceSlotMask.Source0) != 0
+                    ? TryResolveSource(
+                        in instruction, instruction.Source0, 0,
+                        temporary, inputRoutes, constants)
+                    : null;
+            string?[]? source1 =
+                (sources & RsxSourceSlotMask.Source1) != 0
+                    ? TryResolveSource(
+                        in instruction, instruction.Source1, 1,
+                        temporary, inputRoutes, constants)
+                    : null;
+            string?[]? source2 =
+                (sources & RsxSourceSlotMask.Source2) != 0
+                    ? TryResolveSource(
+                        in instruction, instruction.Source2, 2,
+                        temporary, inputRoutes, constants)
+                    : null;
+            return CreateVectorValue(
+                instruction.VectorOpcode,
+                instruction.Saturate,
+                source0,
+                source1,
+                source2);
+        }
+
+        private static string?[]? TryResolveSource(
+            in RsxVertexInstruction instruction,
+            uint source,
+            int sourceIndex,
+            string?[][] temporary,
+            string?[] inputRoutes,
+            IReadOnlyDictionary<ushort, string> constants)
+        {
+            string?[]? baseValue = RsxVertexInstruction.SourceRegisterKind(
+                source) switch
+            {
+                RsxVertexRegisterType.Temporary =>
+                    temporary[(source >> 2) & 0x3f],
+                RsxVertexRegisterType.Input => ResolveInput(
+                    inputRoutes,
+                    (byte)instruction.InputAttribute),
+                RsxVertexRegisterType.Constant => ResolveConstant(
+                    constants,
+                    checked((ushort)instruction.ConstSource)),
+                _ => null
+            };
+            if (baseValue is null)
+                return null;
+
+            var resolved = new string?[4];
+            bool absolute = sourceIndex switch
+            {
+                0 => instruction.Source0Abs,
+                1 => instruction.Source1Abs,
+                _ => instruction.Source2Abs
+            };
+            bool negate = (source & 0x10000u) != 0;
+            for (int component = 0; component < 4; component++)
+            {
+                int swizzle = (int)((source >> (14 - component * 2)) & 3);
+                string? value = baseValue[swizzle];
+                if (value is null)
+                    continue;
+                if (absolute)
+                    value = "abs(" + value + ')';
+                if (negate)
+                    value = "neg(" + value + ')';
+                resolved[component] = value;
+            }
+            return resolved;
+        }
+
+        private static string?[]? ResolveInput(
+            string?[] inputRoutes,
+            int attribute)
+        {
+            if ((uint)attribute >= (uint)inputRoutes.Length ||
+                inputRoutes[attribute] is not { } route)
+            {
+                return null;
+            }
+
+            return
+            [
+                route + ".x", route + ".y", route + ".z", route + ".w"
+            ];
+        }
+
+        private static string?[]? ResolveConstant(
+            IReadOnlyDictionary<ushort, string> constants,
+            ushort destination)
+        {
+            if (!constants.TryGetValue(destination, out string? constant))
+                return null;
+            return
+            [
+                constant + ".x", constant + ".y", constant + ".z",
+                constant + ".w"
+            ];
+        }
+
+        private static string?[]? CreateScalarValue(
+            RsxVertexScalarOpcode opcode,
+            bool saturate,
+            string?[]? source)
+        {
+            if (source is null)
+                return null;
+            var value = new string?[4];
+            for (int component = 0; component < 4; component++)
+            {
+                string? operand = opcode ==
+                    RsxVertexScalarOpcode.ReciprocalSquareRoot
+                    ? source[0]
+                    : source[component];
+                if (operand is not null)
+                {
+                    value[component] = ApplySaturate(
+                        "S" + (byte)opcode + '(' + operand + ')',
+                        saturate);
+                }
+            }
+            return value;
+        }
+
+        private static string?[]? CreateVectorValue(
+            RsxVertexVectorOpcode opcode,
+            bool saturate,
+            string?[]? source0,
+            string?[]? source1,
+            string?[]? source2)
+        {
+            var value = new string?[4];
+            for (int component = 0; component < 4; component++)
+            {
+                string? expression = opcode switch
+                {
+                    RsxVertexVectorOpcode.Move or
+                    RsxVertexVectorOpcode.Fraction or
+                    RsxVertexVectorOpcode.Floor or
+                    RsxVertexVectorOpcode.SetSign =>
+                        CreateOperation(
+                            "V" + (byte)opcode,
+                            Component(source0, component)),
+                    RsxVertexVectorOpcode.Multiply or
+                    RsxVertexVectorOpcode.Minimum or
+                    RsxVertexVectorOpcode.Maximum or
+                    RsxVertexVectorOpcode.SetLessThan or
+                    RsxVertexVectorOpcode.SetGreaterThanOrEqual or
+                    RsxVertexVectorOpcode.SetEqual or
+                    RsxVertexVectorOpcode.SetGreaterThan or
+                    RsxVertexVectorOpcode.SetLessThanOrEqual or
+                    RsxVertexVectorOpcode.SetNotEqual =>
+                        CreateOperation(
+                            "V" + (byte)opcode,
+                            Component(source0, component),
+                            Component(source1, component)),
+                    RsxVertexVectorOpcode.Add =>
+                        CreateOperation(
+                            "V" + (byte)opcode,
+                            Component(source0, component),
+                            Component(source2, component)),
+                    RsxVertexVectorOpcode.MultiplyAdd =>
+                        CreateOperation(
+                            "V" + (byte)opcode,
+                            Component(source0, component),
+                            Component(source1, component),
+                            Component(source2, component)),
+                    RsxVertexVectorOpcode.Dot3 => CreateDotExpression(
+                        opcode, source0, source1, 3),
+                    RsxVertexVectorOpcode.DotHomogeneous =>
+                        CreateDotHomogeneousExpression(source0, source1),
+                    RsxVertexVectorOpcode.Dot4 => CreateDotExpression(
+                        opcode, source0, source1, 4),
+                    RsxVertexVectorOpcode.Distance => component switch
+                    {
+                        0 => "literal:1",
+                        1 => CreateOperation(
+                            "V8", Component(source0, 1),
+                            Component(source1, 1)),
+                        2 => CreateOperation("V8", Component(source0, 2)),
+                        _ => CreateOperation("V8", Component(source1, 3))
+                    },
+                    RsxVertexVectorOpcode.SetFalse => "literal:0",
+                    RsxVertexVectorOpcode.SetTrue => "literal:1",
+                    _ => string.Empty
+                };
+                if (expression is not null)
+                    value[component] = ApplySaturate(expression, saturate);
+            }
+            return value;
+        }
+
+        private static string? CreateDotExpression(
+            RsxVertexVectorOpcode opcode,
+            string?[]? source0,
+            string?[]? source1,
+            int componentCount)
+        {
+            var operands = new string?[componentCount * 2];
+            for (int component = 0; component < componentCount; component++)
+            {
+                operands[component * 2] = Component(source0, component);
+                operands[component * 2 + 1] = Component(source1, component);
+            }
+            return CreateOperation("V" + (byte)opcode, operands);
+        }
+
+        private static string? CreateDotHomogeneousExpression(
+            string?[]? source0,
+            string?[]? source1) => CreateOperation(
+            "V6", Component(source0, 0), Component(source1, 0),
+            Component(source0, 1), Component(source1, 1),
+            Component(source0, 2), Component(source1, 2), "literal:1",
+            Component(source1, 3));
+
+        private static string? Component(string?[]? source, int component) =>
+            source is not null ? source[component] : null;
+
+        private static string? CreateOperation(
+            string operation,
+            params string?[] operands)
+        {
+            if (operands.Any(operand => operand is null))
+                return null;
+
+            return string.Concat(
+                operation,
+                '(',
+                string.Join(',', operands!),
+                ')');
+        }
+
+        private static string ApplySaturate(string value, bool saturate) =>
+            saturate ? "sat(" + value + ')' : value;
+
+        private static void ApplySlotWrite(
+            in RsxVertexInstruction instruction,
+            bool scalar,
+            string?[]? value,
+            string?[][] temporary,
+            string?[][] output)
+        {
+            RsxVertexWriteMask writeMask = scalar
+                ? instruction.ScalarWriteMask
+                : instruction.VectorWriteMask;
+            if (writeMask == RsxVertexWriteMask.None)
+                return;
+            bool writesResult = scalar
+                ? instruction.ScaResult
+                : instruction.VecResult;
+            if (writesResult && instruction.Result != RsxVertexResult.None)
+            {
+                CopyMasked(
+                    output[(byte)instruction.Result], value, writeMask);
+            }
+
+            int temporaryDestination = scalar
+                ? instruction.ScaDestTemp
+                : instruction.VecDestTemp;
+            if (temporaryDestination != 0x3f)
+                CopyMasked(
+                    temporary[temporaryDestination], value, writeMask);
+        }
+
+        private static void InvalidateSlotWrite(
+            in RsxVertexInstruction instruction,
+            bool scalar,
+            string?[][] temporary,
+            string?[][] output) => ApplySlotWrite(
+            in instruction,
+            scalar,
+            value: null,
+            temporary,
+            output);
+
+        private static void CopyMasked(
+            string?[] destination,
+            string?[]? source,
+            RsxVertexWriteMask writeMask)
+        {
+            for (int component = 0; component < 4; component++)
+            {
+                if ((writeMask & (RsxVertexWriteMask)(0x8 >> component)) !=
+                    RsxVertexWriteMask.None)
+                {
+                    destination[component] = source?[component];
+                }
+            }
+        }
+
+        private static string?[][] CreateRegisterBank()
+        {
+            var bank = new string?[64][];
+            for (int index = 0; index < bank.Length; index++)
+                bank[index] = new string?[4];
+            return bank;
+        }
+
+        private static string CreateInputRouteIdentity(
+            ShaderVertexInputBinding binding) => string.Concat(
+            "I(", (byte)binding.Source, ';', (byte)binding.Destination, ';',
+            binding.StreamIndex, ';',
+            binding.Stride, ';', binding.Offset, ';', binding.ComponentCount,
+            ';', (byte)binding.RsxType, ')');
+
+        private static string CreateConstantIdentity(
+            TranslatedProgramVertexConstantBinding binding)
+        {
+            string staticValue = binding.StaticValue is { } value
+                ? string.Concat(
+                    BitConverter.SingleToInt32Bits(value.X), ',',
+                    BitConverter.SingleToInt32Bits(value.Y), ',',
+                    BitConverter.SingleToInt32Bits(value.Z), ',',
+                    BitConverter.SingleToInt32Bits(value.W))
+                : "none";
+            return string.Concat(
+                "C(", (byte)binding.Kind, ';', staticValue, ';',
+                binding.CodeMatrixSemantic?.ToString() ?? "none", ';',
+                (byte)binding.CodeMatrixTransform, ';',
+                binding.CodeMatrixRow, ';', binding.DynamicCodeConstantSourceRow
+                ?.ToString() ?? "none", ')');
+        }
     }
 
     private sealed class StaticInstanceBufferRuntime

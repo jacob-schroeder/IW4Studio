@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Silk.NET.OpenGL;
 using IW4.Render.Diagnostics;
 using IW4.Render.EditorPreview;
@@ -10,6 +11,7 @@ using IW4.Render.Scheduling.Shadows;
 using IW4.Render.SceneBuilding;
 using IW4.Render.World;
 using IW4.Render.Shaders;
+using IW4.Render.Techniques;
 using IW4.Render.OpenGl.Diagnostics;
 using IW4.Render.OpenGl.FloatZ;
 using IW4.Render.OpenGl.Presentation;
@@ -103,8 +105,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     out MapRenderEditorDepthPrepassPlan? plan);
             if (commands.Count == 0 || plan is null)
                 continue;
-            ReadOnlySpan<GlTexturedDrawCommand> commandSpan =
-                group.AuthoredPassSpan;
 
             if (commands.Count == 1 &&
                 TryGetDepthMultiDrawWorldMesh(
@@ -122,7 +122,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     destinationIndex: 0,
                     mergeAdjacentRanges: false);
                 long depthSortKey =
-                    ResolveWorldDepthMultiDrawSortKey(commands) ??
+                    ResolveWorldDepthMultiDrawSortKey(group) ??
                     throw new InvalidOperationException(
                         "A depth multi-draw candidate has no immutable compatibility key.");
                 int groupedDrawCount = 1;
@@ -137,7 +137,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             out MapRenderEditorDepthPrepassPlan? nextPlan);
                     if (nextPlan is null ||
                         nextCommands.Count != 1 ||
-                        ResolveWorldDepthMultiDrawSortKey(nextCommands) !=
+                        ResolveWorldDepthMultiDrawSortKey(nextGroup) !=
                             depthSortKey)
                     {
                         break;
@@ -193,6 +193,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // here as disjoint ranges of the same material/technique. Replay
             // every command so each range establishes depth. True multipass
             // duplicates are harmless under the authored LEQUAL state.
+            ReadOnlySpan<GlTexturedDrawCommand> commandSpan =
+                group.AuthoredPassSpan;
             for (int commandIndex = 0;
                  commandIndex < commandSpan.Length;
                  commandIndex++)
@@ -208,6 +210,372 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     editorTimeSeconds);
             }
         }
+    }
+
+    /// <summary>
+    /// The standard color and depth owners can share depth coverage on Apple
+    /// Silicon only when the subsequent opaque color replay is guaranteed to
+    /// establish precisely the same final depth buffer.
+    ///
+    /// This is deliberately a frame-wide all-or-nothing proof. Mixed depth
+    /// ownership would make an omitted command interact with an earlier
+    /// retained prepass draw, so any unknown command leaves the complete
+    /// existing prepass intact.
+    /// </summary>
+    private bool CanElideAppleSiliconDepthPrepass(
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            colorGroups,
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            depthGroups,
+        bool requiresVisibleProcessedFloatZ)
+    {
+        ArgumentNullException.ThrowIfNull(colorGroups);
+        ArgumentNullException.ThrowIfNull(depthGroups);
+        _appleDepthFusionOwnerGroups.Clear();
+        _appleDepthFusionOwnerGroupScratch.Clear();
+
+        if (!OperatingSystem.IsMacOS() ||
+            RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
+            requiresVisibleProcessedFloatZ)
+        {
+            return false;
+        }
+
+        EnsureAppleDepthFusionOwnerMap(colorGroups, depthGroups);
+        bool foundVisibleStandardDepthCommand = false;
+        for (int depthGroupIndex = 0;
+             depthGroupIndex < depthGroups.Count;
+             depthGroupIndex++)
+        {
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> depthGroup =
+                depthGroups[depthGroupIndex];
+            if (!IsTexturedDrawGroupVisibleForFrame(depthGroup))
+                continue;
+
+            IReadOnlyList<GlTexturedDrawCommand> depthCommands =
+                SelectStandardDepthPrepassCommands(
+                    depthGroup,
+                    out MapRenderEditorDepthPrepassPlan? plan);
+            if (plan is null ||
+                depthCommands.Count == 0 ||
+                !TryGetCachedDepthColorOwner(
+                    depthGroup,
+                    colorGroups,
+                    out int colorOwnerIndex))
+            {
+                return false;
+            }
+
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> colorOwner =
+                colorGroups[colorOwnerIndex];
+
+            ReadOnlySpan<GlTexturedDrawCommand> commandSpan =
+                depthGroup.AuthoredPassSpan;
+            for (int commandIndex = 0;
+                 commandIndex < commandSpan.Length;
+                 commandIndex++)
+            {
+                ref readonly GlTexturedDrawCommand command =
+                    ref commandSpan[commandIndex];
+                if (!IsDepthFusionCommandEquivalent(in command, plan))
+                    return false;
+
+                foundVisibleStandardDepthCommand = true;
+            }
+
+            _appleDepthFusionOwnerGroupScratch.Add(colorOwner);
+        }
+
+        if (!foundVisibleStandardDepthCommand ||
+            !PublishAppleDepthFusionOwners() ||
+            !AreVisibleOpaqueColorCommandsDepthEquivalent(colorGroups))
+        {
+            _appleDepthFusionOwnerGroups.Clear();
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool AreVisibleOpaqueColorCommandsDepthEquivalent(
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            colorGroups)
+    {
+        for (int groupIndex = 0;
+             groupIndex < colorGroups.Count;
+             groupIndex++)
+        {
+            if (!_texturedDrawGroupVisibilityScratch[groupIndex] ||
+                colorGroups[groupIndex].Bucket !=
+                    MapRenderEditorDrawBucket.Opaque)
+            {
+                continue;
+            }
+            if (!_texturedDrawGroupColorReadinessScratch[groupIndex])
+                return false;
+
+            ReadOnlySpan<GlTexturedDrawCommand> commands =
+                colorGroups[groupIndex].AuthoredPassSpan;
+            for (int commandIndex = 0;
+                 commandIndex < commands.Length;
+                 commandIndex++)
+            {
+                ref readonly GlTexturedDrawCommand command =
+                    ref commands[commandIndex];
+                bool replacesStandardDepthOwner =
+                    _appleDepthFusionOwnerGroups.Contains(
+                        colorGroups[groupIndex]);
+                RenderState effectiveState = command.Mesh.State.HasState
+                    ? command.Mesh.State
+                    : RenderState.Default;
+                if (!HasOpaqueColorDepthEquivalentState(in command) ||
+                    (!replacesStandardDepthOwner &&
+                     !effectiveState.DepthWriteEnabled))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool PublishAppleDepthFusionOwners()
+    {
+        foreach (MapRenderEditorDrawGroup<GlTexturedDrawCommand> owner in
+                 _appleDepthFusionOwnerGroupScratch)
+            _appleDepthFusionOwnerGroups.Add(owner);
+
+        return _appleDepthFusionOwnerGroups.Count != 0;
+    }
+
+    private void EnsureAppleDepthFusionOwnerMap(
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            colorGroups,
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            depthGroups)
+    {
+        if (ReferenceEquals(_appleDepthFusionOwnerColorGroups, colorGroups) &&
+            ReferenceEquals(_appleDepthFusionOwnerDepthGroups, depthGroups))
+        {
+            return;
+        }
+
+        _appleDepthFusionOwnerColorGroups = colorGroups;
+        _appleDepthFusionOwnerDepthGroups = depthGroups;
+        _appleDepthFusionColorOwnerIndexByDepthGroup.Clear();
+        _appleDepthFusionColorOwnerIndexByDepthGroup.EnsureCapacity(
+            depthGroups.Count);
+        if (_appleDepthFusionOpaqueColorNextByIndex.Length <
+            colorGroups.Count)
+        {
+            Array.Resize(
+                ref _appleDepthFusionOpaqueColorNextByIndex,
+                colorGroups.Count);
+        }
+
+        _appleDepthFusionOpaqueColorHeadBySourceOrdinal.Clear();
+        _appleDepthFusionOpaqueColorHeadBySourceOrdinal.EnsureCapacity(
+            colorGroups.Count);
+        for (int colorGroupIndex = 0;
+             colorGroupIndex < colorGroups.Count;
+             colorGroupIndex++)
+        {
+            _appleDepthFusionOpaqueColorNextByIndex[colorGroupIndex] = -1;
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> candidate =
+                colorGroups[colorGroupIndex];
+            if (candidate.Bucket != MapRenderEditorDrawBucket.Opaque)
+                continue;
+
+            if (_appleDepthFusionOpaqueColorHeadBySourceOrdinal.TryGetValue(
+                    candidate.SourceOrdinal,
+                    out int headIndex))
+            {
+                _appleDepthFusionOpaqueColorNextByIndex[colorGroupIndex] =
+                    headIndex;
+            }
+
+            _appleDepthFusionOpaqueColorHeadBySourceOrdinal[
+                candidate.SourceOrdinal] = colorGroupIndex;
+        }
+
+        for (int depthGroupIndex = 0;
+             depthGroupIndex < depthGroups.Count;
+             depthGroupIndex++)
+        {
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> depthGroup =
+                depthGroups[depthGroupIndex];
+            int colorOwnerIndex = -1;
+            if (_appleDepthFusionOpaqueColorHeadBySourceOrdinal.TryGetValue(
+                    depthGroup.SourceOrdinal,
+                    out int colorGroupIndex))
+            {
+                for (; colorGroupIndex >= 0;
+                     colorGroupIndex =
+                         _appleDepthFusionOpaqueColorNextByIndex[
+                             colorGroupIndex])
+                {
+                    MapRenderEditorDrawGroup<GlTexturedDrawCommand>
+                        candidate = colorGroups[colorGroupIndex];
+                    if (!HasUniqueDepthColorGeometryMatch(
+                            depthGroup,
+                            candidate))
+                    {
+                        continue;
+                    }
+
+                    if (colorOwnerIndex >= 0)
+                    {
+                        colorOwnerIndex = -1;
+                        break;
+                    }
+
+                    colorOwnerIndex = colorGroupIndex;
+                }
+            }
+
+            _appleDepthFusionColorOwnerIndexByDepthGroup[depthGroup] =
+                colorOwnerIndex;
+        }
+    }
+
+    private bool TryGetCachedDepthColorOwner(
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand> depthGroup,
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            colorGroups,
+        out int colorOwnerIndex)
+    {
+        if (!_appleDepthFusionColorOwnerIndexByDepthGroup.TryGetValue(
+                depthGroup,
+                out colorOwnerIndex) ||
+            colorOwnerIndex < 0 ||
+            colorOwnerIndex >= colorGroups.Count)
+        {
+            colorOwnerIndex = -1;
+            return false;
+        }
+
+        if (!_texturedDrawGroupVisibilityScratch[colorOwnerIndex] ||
+            !_texturedDrawGroupColorReadinessScratch[colorOwnerIndex])
+            return false;
+
+        return true;
+    }
+
+    private static bool HasUniqueDepthColorGeometryMatch(
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand> depthGroup,
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand> colorOwner)
+    {
+        ReadOnlySpan<GlTexturedDrawCommand> depthCommands =
+            depthGroup.AuthoredPassSpan;
+        ReadOnlySpan<GlTexturedDrawCommand> colorCommands =
+            colorOwner.AuthoredPassSpan;
+        for (int depthCommandIndex = 0;
+             depthCommandIndex < depthCommands.Length;
+             depthCommandIndex++)
+        {
+            int matches = 0;
+            ref readonly GlTexturedDrawCommand depthCommand =
+                ref depthCommands[depthCommandIndex];
+            for (int colorCommandIndex = 0;
+                 colorCommandIndex < colorCommands.Length;
+                 colorCommandIndex++)
+            {
+                if (!depthCommand.Equals(colorCommands[colorCommandIndex]))
+                    continue;
+
+                if (++matches != 1)
+                    return false;
+            }
+
+            if (matches != 1)
+                return false;
+        }
+
+        return depthCommands.Length != 0;
+    }
+
+    private bool IsDepthFusionCommandEquivalent(
+        in GlTexturedDrawCommand command,
+        MapRenderEditorDepthPrepassPlan plan)
+    {
+        GlTexturedMesh mesh = command.Mesh;
+        if (command.InstanceIndex.HasValue ||
+            mesh.IndexCount == 0 ||
+            mesh.VertexArray == 0 ||
+            !HasOpaqueColorDepthEquivalentState(in command) ||
+            !HasMatchingStandardDepthRasterState(mesh.State, plan.State))
+        {
+            return false;
+        }
+
+        if (mesh.RsxProgram.Handle != 0 &&
+            (!mesh.HasCertifiedTranslatedDepthFusion ||
+             mesh.DepthPrepassRsxProgram.Handle == 0 ||
+             !TryBindRuntimeSamplers(in mesh)))
+        {
+            return false;
+        }
+
+        if (mesh.InstanceCount == 0)
+            return true;
+
+        // Whole-batch static draws use the same active instance-buffer layout
+        // in both generic programs. Isolated and receiver-compacted paths can
+        // rewrite attribute bases, so they stay on the explicit depth owner.
+        return _staticInstanceBuffers.TryGetValue(
+                   mesh.InstanceBuffer,
+                   out StaticInstanceBufferRuntime? runtime) &&
+            runtime.HasWholeBatchDraw &&
+            !runtime.HasIsolatedDraw &&
+            !runtime.HasCompactedReceiverSourceLayout &&
+            !runtime.HasCommittedReceiverDrawCompaction &&
+            !runtime.HasLivePlacementChangePending;
+    }
+
+    private static bool HasOpaqueColorDepthEquivalentState(
+        in GlTexturedDrawCommand command)
+    {
+        GlTexturedMesh mesh = command.Mesh;
+        RenderState state = mesh.State.HasState
+            ? mesh.State
+            : RenderState.Default;
+        return state.ColorMask == RsxColorMask.Rgba &&
+            !state.AlphaTestEnabled &&
+            !state.BlendEnabled &&
+            !state.StencilEnabled &&
+            state.DepthTestEnabled &&
+            state.DepthFunc == RsxCompareFunction.LessThanOrEqual &&
+            state.PolygonMode == RsxPolygonMode.Fill &&
+            state.PolygonOffsetMode == RenderPolygonOffsetMode.Disabled &&
+            mesh.ShaderExecution?.FragmentDepthExportEnabled != true &&
+            mesh.ShaderExecution?.FragmentProgramIr?.ProgramControl.UsesKill
+                != true;
+    }
+
+    private static bool HasMatchingStandardDepthRasterState(
+        RenderState colorState,
+        RenderState depthState)
+    {
+        RenderState effectiveColorState = colorState.HasState
+            ? colorState
+            : RenderState.Default;
+        RenderState effectiveDepthState = depthState.HasState
+            ? depthState
+            : RenderState.Default;
+        CullMode? colorCull = Cull.Resolve(effectiveColorState);
+        CullMode? depthCull = Cull.Resolve(effectiveDepthState);
+        return effectiveDepthState.ColorMask == RsxColorMask.None &&
+            !effectiveDepthState.AlphaTestEnabled &&
+            !effectiveDepthState.BlendEnabled &&
+            !effectiveDepthState.StencilEnabled &&
+            effectiveDepthState.DepthTestEnabled &&
+            effectiveDepthState.DepthWriteEnabled &&
+            effectiveDepthState.DepthFunc ==
+                RsxCompareFunction.LessThanOrEqual &&
+            effectiveDepthState.PolygonMode == RsxPolygonMode.Fill &&
+            effectiveDepthState.PolygonOffsetMode ==
+                RenderPolygonOffsetMode.Disabled &&
+            colorCull is CullMode.Front or CullMode.Back &&
+            colorCull == depthCull;
     }
 
     private void PrepareTexturedDrawGroupVisibility(
@@ -431,9 +799,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     in rsxMatrices);
             ApplyRenderState(plan.State, stencilTargetContract);
             _state.UseProgram(mesh.DepthPrepassRsxProgram.Handle);
-            ApplyStaticModelInstancingFrame(
-                mesh.DepthStaticModelProgramUniforms,
-                rsxMatrices);
             ApplyTranslatedStaticComposition(
                 mesh.DepthStaticModelProgramUniforms,
                 mesh,
@@ -468,27 +833,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         // decoded native transform_only program itself has no wind inputs.
         MapRenderEditorVegetationAnimationPlan? vegetation =
             mesh.VegetationAnimation;
-        _state.Uniform1(
-            _depthPrepassVegetationWindEnabledLocation,
-            vegetation?.IsEnabled == true ? 1 : 0);
+        _state.Uniform4(
+            _depthPrepassVegetationParametersLocation,
+            vegetation?.IsEnabled == true ? 1f : 0f,
+            vegetation?.Amplitude ?? 0f,
+            vegetation?.AngularFrequency ?? 0f,
+            vegetation?.SpatialFrequency ?? 0f);
         _state.Uniform1(
             _depthPrepassVegetationTimeLocation,
             editorTimeSeconds);
-        _state.Uniform1(
-            _depthPrepassVegetationAmplitudeLocation,
-            vegetation?.Amplitude ?? 0f);
-        _state.Uniform1(
-            _depthPrepassVegetationAngularFrequencyLocation,
-            vegetation?.AngularFrequency ?? 0f);
-        _state.Uniform1(
-            _depthPrepassVegetationSpatialFrequencyLocation,
-            vegetation?.SpatialFrequency ?? 0f);
-        _state.Uniform1(
-            _depthPrepassVegetationLocalMinimumHeightLocation,
-            mesh.LocalMinimumHeight);
-        _state.Uniform1(
-            _depthPrepassVegetationLocalHeightRangeLocation,
-            mesh.LocalHeightRange);
+        _state.Uniform4(
+            _depthPrepassVegetationBoundsLocation,
+            mesh.LocalMinimumHeight,
+            mesh.LocalHeightRange,
+            0f,
+            0f);
         _state.BindVertexArray(mesh.VertexArray);
         if (mesh.InstanceCount == 0)
         {
@@ -554,6 +913,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         int activePhaseIndex = -1;
         MapRenderCpuPhase activeCpuPhase = default;
         bool hasActiveCpuPhase = false;
+        long? activeStaticExecutionBundleKey = null;
         try
         {
             for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
@@ -563,6 +923,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 if (!_texturedDrawGroupVisibilityScratch[groupIndex] ||
                     !_texturedDrawGroupColorReadinessScratch[groupIndex])
                 {
+                    activeStaticExecutionBundleKey = null;
                     continue;
                 }
                 MapRenderGpuPhase gpuPhase =
@@ -570,6 +931,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 int gpuPhaseIndex = (int)gpuPhase;
                 if (gpuPhaseIndex != activePhaseIndex)
                 {
+                    activeStaticExecutionBundleKey = null;
                     gpuTimingScope.Dispose();
                     drawWorkScope.Dispose();
                     gpuTimingScope = default;
@@ -604,6 +966,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         cameraPosition,
                         editorTimeSeconds))
                 {
+                    activeStaticExecutionBundleKey = null;
                     continue;
                 }
                 if (!TryGetMultiDrawWorldMesh(
@@ -613,6 +976,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 {
                     ReadOnlySpan<GlTexturedDrawCommand> authoredPasses =
                         group.AuthoredPassSpan;
+                    bool isStaticExecutionBundleCandidate =
+                        TryGetStaticExecutionBundleKey(
+                            group,
+                            out long staticExecutionBundleKey);
+                    long drawCallsBeforeGroup = _frameDrawCalls;
                     for (int commandIndex = 0;
                          commandIndex < authoredPasses.Length;
                          commandIndex++)
@@ -625,10 +993,33 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             viewProjection,
                             in rsxMatrices,
                             cameraPosition,
-                            editorTimeSeconds);
+                            editorTimeSeconds,
+                            forceDepthWrite:
+                                _appleDepthFusionOwnerGroups.Contains(group));
+                    }
+                    if (isStaticExecutionBundleCandidate &&
+                        _frameDrawCalls > drawCallsBeforeGroup)
+                    {
+                        if (activeStaticExecutionBundleKey ==
+                            staticExecutionBundleKey)
+                        {
+                            _frameStaticExecutionBundleReuses++;
+                        }
+                        else
+                        {
+                            _frameStaticExecutionBundleBinds++;
+                        }
+                        activeStaticExecutionBundleKey =
+                            staticExecutionBundleKey;
+                    }
+                    else
+                    {
+                        activeStaticExecutionBundleKey = null;
                     }
                     continue;
                 }
+
+                activeStaticExecutionBundleKey = null;
 
                 GlTexturedMesh firstVisibleMesh =
                     SelectFirstWorldMultiDrawMesh(
@@ -643,6 +1034,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     throw new InvalidOperationException(
                         "A color multi-draw candidate has no immutable compatibility key.");
                 int consumedGroupCount = 1;
+                bool aggregateEstablishesFusedDepth =
+                    _appleDepthFusionOwnerGroups.Contains(group);
                 while (groupIndex + consumedGroupCount < groups.Count)
                 {
                     int nextGroupIndex = groupIndex + consumedGroupCount;
@@ -685,6 +1078,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             nextSurfaceBatch,
                             multiDrawCount,
                             mergeAdjacentRanges: true));
+                    aggregateEstablishesFusedDepth |=
+                        _appleDepthFusionOwnerGroups.Contains(nextGroup);
                     consumedGroupCount++;
                 }
 
@@ -707,7 +1102,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     cameraPosition,
                     editorTimeSeconds,
                     instanceIndex: null,
-                    multiDrawCount: multiDrawCount);
+                    multiDrawCount: multiDrawCount,
+                    forceDepthWrite: aggregateEstablishesFusedDepth);
                 groupIndex += consumedGroupCount - 1;
             }
         }
@@ -717,6 +1113,40 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             gpuTimingScope.Dispose();
             drawWorkScope.Dispose();
         }
+    }
+
+    private bool TryGetStaticExecutionBundleKey(
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand> group,
+        out long key)
+    {
+        key = 0;
+        ReadOnlySpan<GlTexturedDrawCommand> commands =
+            group.AuthoredPassSpan;
+        if (group.Bucket == MapRenderEditorDrawBucket.Translucent ||
+            commands.Length != 1 ||
+            group.CameraIndependentSortKey is not long candidateKey)
+        {
+            return false;
+        }
+
+        ref readonly GlTexturedDrawCommand command = ref commands[0];
+        GlTexturedMesh mesh = command.Mesh;
+        if (command.InstanceIndex.HasValue ||
+            mesh.InstanceCount == 0 ||
+            mesh.IndexCount == 0 ||
+            mesh.VertexArray == 0 ||
+            mesh.InstanceBuffer == 0 ||
+            !_staticInstanceBuffers.TryGetValue(
+                mesh.InstanceBuffer,
+                out StaticInstanceBufferRuntime? runtime) ||
+            runtime.HasIsolatedDraw ||
+            runtime.HasCommittedReceiverDrawCompaction)
+        {
+            return false;
+        }
+
+        key = candidateKey;
+        return true;
     }
 
     private bool TryBuildProcessedFloatZ(
@@ -807,10 +1237,31 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return false;
     }
 
+    private bool RequiresAnyVisibleProcessedFloatZ(
+        IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+            groups)
+    {
+        for (int groupIndex = 0;
+             groupIndex < groups.Count;
+             groupIndex++)
+        {
+            if (_texturedDrawGroupVisibilityScratch[groupIndex] &&
+                RequiresProcessedFloatZ(groups[groupIndex]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void PrepareTexturedDrawGroupColorExecution(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups)
     {
         ArgumentNullException.ThrowIfNull(groups);
+        if (CanReuseTexturedDrawGroupColorExecution(groups))
+            return;
+
         if (_texturedDrawGroupColorReadinessScratch.Length < groups.Count)
         {
             Array.Resize(
@@ -842,6 +1293,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _texturedDrawGroupGpuPhaseScratch[groupIndex] =
                 ResolveTexturedGpuPhase(group);
         }
+
+        CommitTexturedDrawGroupColorExecution(groups);
     }
 
     private static MapRenderGpuPhase ResolveTexturedGpuPhase(
@@ -1425,7 +1878,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         Matrix4x4 viewProjection,
         in DerivedMatrixState rsxMatrices,
         Vector3 cameraPosition,
-        float editorTimeSeconds)
+        float editorTimeSeconds,
+        bool forceDepthWrite = false)
     {
         GlTexturedMesh mesh = command.Mesh;
         if (mesh.InstanceCount == 0 &&
@@ -1463,7 +1917,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 cameraPosition,
                 editorTimeSeconds,
                 instanceIndex: null,
-                multiDrawCount);
+                multiDrawCount,
+                forceDepthWrite);
             return;
         }
         if (mesh.InstanceCount == 0 &&
@@ -1501,7 +1956,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             in rsxMatrices,
             cameraPosition,
             editorTimeSeconds,
-            command.InstanceIndex);
+            command.InstanceIndex,
+            forceDepthWrite: forceDepthWrite);
     }
 
     private bool TryGetWorldSurfaceBatchRuntime(
@@ -1554,7 +2010,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         Vector3 cameraPosition,
         float editorTimeSeconds,
         int? instanceIndex,
-        int multiDrawCount = 0)
+        int multiDrawCount = 0,
+        bool forceDepthWrite = false)
     {
         if (mesh.IndexCount == 0)
             return;
@@ -1568,7 +2025,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // frame rather than rendering a semantically different shader.
             return;
         }
-        ApplyRenderState(mesh.State, stencilTargetContract);
+        ApplyRenderState(
+            mesh.State,
+            stencilTargetContract,
+            forceDepthWrite);
         if (executeTranslatedAuthored)
         {
             DerivedMatrixState drawMatrices =
@@ -1577,9 +2037,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     instanceIndex,
                     in rsxMatrices);
             _state.UseProgram(mesh.RsxProgram.Handle);
-            ApplyStaticModelInstancingFrame(
-                mesh.StaticModelProgramUniforms,
-                rsxMatrices);
             ApplyTranslatedStaticComposition(
                 mesh.StaticModelProgramUniforms,
                 mesh,
@@ -1770,27 +2227,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             genericFog.SunFogAngularScale);
         MapRenderEditorVegetationAnimationPlan? vegetation =
             mesh.VegetationAnimation;
-        _state.Uniform1(
-            _texturedVegetationWindEnabledLocation,
-            vegetation?.IsEnabled == true ? 1 : 0);
+        _state.Uniform4(
+            _texturedVegetationParametersLocation,
+            vegetation?.IsEnabled == true ? 1f : 0f,
+            vegetation?.Amplitude ?? 0f,
+            vegetation?.AngularFrequency ?? 0f,
+            vegetation?.SpatialFrequency ?? 0f);
         _state.Uniform1(
             _texturedVegetationTimeLocation,
             editorTimeSeconds);
-        _state.Uniform1(
-            _texturedVegetationAmplitudeLocation,
-            vegetation?.Amplitude ?? 0f);
-        _state.Uniform1(
-            _texturedVegetationAngularFrequencyLocation,
-            vegetation?.AngularFrequency ?? 0f);
-        _state.Uniform1(
-            _texturedVegetationSpatialFrequencyLocation,
-            vegetation?.SpatialFrequency ?? 0f);
-        _state.Uniform1(
-            _texturedVegetationLocalMinimumHeightLocation,
-            mesh.LocalMinimumHeight);
-        _state.Uniform1(
-            _texturedVegetationLocalHeightRangeLocation,
-            mesh.LocalHeightRange);
+        _state.Uniform4(
+            _texturedVegetationBoundsLocation,
+            mesh.LocalMinimumHeight,
+            mesh.LocalHeightRange,
+            0f,
+            0f);
         int normalTextureUnitStart = MapRenderScene.MaxColorLayerCount + 1;
         for (int index = 0; index < _texturedNormalSamplerLocations.Length; index++)
         {
@@ -1824,7 +2275,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _state.BindSampler(checked((uint)layerIndex), 0);
             uint texture = layerIndex < mesh.ColorTextures.Length
                 ? mesh.ColorTextures[layerIndex]
-                : mesh.ColorTextures[0];
+                : _genericInactiveTexture;
             _state.EnsureTextureBinding(
                 layerIndex,
                 TextureTarget.Texture2D,
@@ -1837,7 +2288,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _state.EnsureTextureBinding(
             MapRenderScene.MaxColorLayerCount,
             TextureTarget.Texture2D,
-            mesh.LightmapTexture == 0 ? mesh.ColorTextures[0] : mesh.LightmapTexture);
+            mesh.LightmapTexture == 0
+                ? _genericInactiveTexture
+                : mesh.LightmapTexture);
         for (int index = 0; index < _texturedNormalSamplerLocations.Length; index++)
         {
             int textureUnit = normalTextureUnitStart + index;
@@ -1845,7 +2298,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             uint texture = index < mesh.NormalTextures.Length &&
                 mesh.NormalTextures[index] != 0
                     ? mesh.NormalTextures[index]
-                    : mesh.ColorTextures[0];
+                    : _genericInactiveTexture;
             _state.EnsureTextureBinding(
                 textureUnit,
                 TextureTarget.Texture2D,
@@ -1858,7 +2311,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             uint texture = index < mesh.SpecularTextures.Length &&
                 mesh.SpecularTextures[index] != 0
                     ? mesh.SpecularTextures[index]
-                    : mesh.ColorTextures[0];
+                    : _genericInactiveTexture;
             _state.EnsureTextureBinding(
                 textureUnit,
                 TextureTarget.Texture2D,
@@ -2039,8 +2492,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     .DirectionalLightDirectionRowIndex);
 
         return MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
-            .ProducePositionRow(frame, sceneLightIndex, eyeOffset)
-            .Value;
+            .ProducePositionValue(frame, sceneLightIndex, eyeOffset);
     }
 
     private ShaderConstantValue ResolveSceneLightShadowCodeConstant(
@@ -2056,17 +2508,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             out entry);
         return spotFactors
             ? MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
-                .ProduceSpotFactorsRow(
+                .ProduceSpotFactorsValue(
                     frame,
                     sceneLightIndex,
                     entry)
-                .Value
             : MapRenderWorldEvent20SceneLightDirectCodeConstantProducer
-                .ProduceLightFalloffPlacementRow(
+                .ProduceLightFalloffPlacementValue(
                     frame,
                     sceneLightIndex,
-                    entry)
-                .Value;
+                    entry);
     }
 
     private MapRenderWorldEvent20SceneLightFrameInput

@@ -20,24 +20,10 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
     public const uint FirstPlacementAttribute = 13;
     public const int PlacementAttributeCount = 3;
 
-    public const string ViewRowsUniform = "rsxStaticViewRows";
-    public const string ViewProjectionRowsUniform =
-        "rsxStaticViewProjectionRows";
-    public const string EyeOffsetUniform = "rsxStaticEyeOffset";
-    public const string CompositionWindEnabledUniform =
-        "rsxStaticCompositionWindEnabled";
-    public const string CompositionTimeUniform =
-        "rsxStaticCompositionTime";
-    public const string CompositionAmplitudeUniform =
-        "rsxStaticCompositionAmplitude";
-    public const string CompositionAngularFrequencyUniform =
-        "rsxStaticCompositionAngularFrequency";
-    public const string CompositionSpatialFrequencyUniform =
-        "rsxStaticCompositionSpatialFrequency";
-    public const string CompositionLocalMinimumHeightUniform =
-        "rsxStaticCompositionLocalMinimumHeight";
-    public const string CompositionLocalHeightRangeUniform =
-        "rsxStaticCompositionLocalHeightRange";
+    public const string CompositionParametersUniform =
+        "rsxStaticCompositionParameters";
+    public const string CompositionBoundsUniform =
+        "rsxStaticCompositionBounds";
 
     private const string MainMarker = "void main() {";
 
@@ -227,44 +213,38 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
         CodeMatrixSemantic.WorldViewProjection0;
 
     private const string StaticPlacementBridge = """
-        uniform vec4 rsxStaticViewRows[4];
-        uniform vec4 rsxStaticViewProjectionRows[4];
-        uniform vec3 rsxStaticEyeOffset;
-        uniform int rsxStaticCompositionWindEnabled;
-        uniform float rsxStaticCompositionTime;
-        uniform float rsxStaticCompositionAmplitude;
-        uniform float rsxStaticCompositionAngularFrequency;
-        uniform float rsxStaticCompositionSpatialFrequency;
-        uniform float rsxStaticCompositionLocalMinimumHeight;
-        uniform float rsxStaticCompositionLocalHeightRange;
+        // x=enabled (exact 0/1), y=amplitude, z=angular frequency,
+        // w=spatial frequency. Bounds carry local minimum/range in xy.
+        uniform vec4 rsxStaticCompositionParameters;
+        uniform vec4 rsxStaticCompositionBounds;
 
         // Bounded EditorPreview deformation shared with the generic static
         // model shader. No authored RSX wind constant is claimed here.
         float rsxStaticCompositionSway()
         {
-          if (rsxStaticCompositionWindEnabled == 0 ||
-              rsxStaticCompositionLocalHeightRange <= 0.0001)
+          if (rsxStaticCompositionParameters.x == 0.0 ||
+              rsxStaticCompositionBounds.y <= 0.0001)
           {
             return 0.0;
           }
           vec4 localPosition = vec4(aRsxInput0.xyz, 1.0);
           float heightWeight = clamp(
-              (aRsxInput0.z - rsxStaticCompositionLocalMinimumHeight) /
-                  rsxStaticCompositionLocalHeightRange,
+              (aRsxInput0.z - rsxStaticCompositionBounds.x) /
+                  rsxStaticCompositionBounds.y,
               0.0,
               1.0);
           heightWeight *= heightWeight;
           float renderX = dot(aRsxInput13, localPosition);
           float renderZ = dot(aRsxInput15, localPosition);
           float phase =
-              rsxStaticCompositionTime *
-                  rsxStaticCompositionAngularFrequency +
-              renderX * rsxStaticCompositionSpatialFrequency +
-              renderZ * rsxStaticCompositionSpatialFrequency * 1.37;
+              rsxMapFrameVegetationTime.x *
+                  rsxStaticCompositionParameters.z +
+              renderX * rsxStaticCompositionParameters.w +
+              renderZ * rsxStaticCompositionParameters.w * 1.37;
           float wave = (
               sin(phase) +
               0.35 * sin(phase * 0.61 + 1.7)) / 1.35;
-          return rsxStaticCompositionAmplitude * heightWeight * wave;
+          return rsxStaticCompositionParameters.y * heightWeight * wave;
         }
 
         vec4 rsxStaticWorldRow(int row)
@@ -277,9 +257,9 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
           if (row == 2) return vec4(host0.z, -host2.z, host1.z, 0.0);
           float vegetationSway = rsxStaticCompositionSway();
           return vec4(
-              host0.w - rsxStaticEyeOffset.x + vegetationSway,
-              -host2.w - rsxStaticEyeOffset.y - vegetationSway * 0.35,
-              host1.w - rsxStaticEyeOffset.z,
+              host0.w - rsxMapFrameEyeOffset.x + vegetationSway,
+              -host2.w - rsxMapFrameEyeOffset.y - vegetationSway * 0.35,
+              host1.w - rsxMapFrameEyeOffset.z,
               1.0);
         }
 
@@ -287,15 +267,15 @@ internal static class MapRenderOpenGlStaticModelInstancedVertexComposer
         {
           if (viewProjection)
           {
-            return lhs.x * rsxStaticViewProjectionRows[0] +
-                   lhs.y * rsxStaticViewProjectionRows[1] +
-                   lhs.z * rsxStaticViewProjectionRows[2] +
-                   lhs.w * rsxStaticViewProjectionRows[3];
+            return lhs.x * rsxMapFrameMatrixRows[32] +
+                   lhs.y * rsxMapFrameMatrixRows[33] +
+                   lhs.z * rsxMapFrameMatrixRows[34] +
+                   lhs.w * rsxMapFrameMatrixRows[35];
           }
-          return lhs.x * rsxStaticViewRows[0] +
-                 lhs.y * rsxStaticViewRows[1] +
-                 lhs.z * rsxStaticViewRows[2] +
-                 lhs.w * rsxStaticViewRows[3];
+          return lhs.x * rsxMapFrameMatrixRows[0] +
+                 lhs.y * rsxMapFrameMatrixRows[1] +
+                 lhs.z * rsxMapFrameMatrixRows[2] +
+                 lhs.w * rsxMapFrameMatrixRows[3];
         }
 
         vec4 rsxStaticBaseRow(int semantic, int row)

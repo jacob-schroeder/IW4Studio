@@ -221,7 +221,7 @@ internal sealed unsafe class
         }
 
         ShaderConstantValue zNearRow =
-            FrameDirectCodeConstants.ProduceZNear(zNear).Value;
+            FrameDirectCodeConstants.ProduceZNearValue(zNear);
         if (!_processedFloatZProgram
                 .TryGetCodePixelConstantUniformLocation(
                     FrameDirectCodeConstants.ZNearRowIndex,

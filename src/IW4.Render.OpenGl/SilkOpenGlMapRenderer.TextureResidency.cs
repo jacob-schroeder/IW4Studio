@@ -29,6 +29,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         UploadTextureStorage(entry);
         entry.MarkResident(_activeRenderFrameIndex);
+        AdvanceTextureResidencyMutationGeneration();
         _frameTextureUploadCount++;
         _frameTextureUploadBytes = checked(
             _frameTextureUploadBytes +
@@ -198,45 +199,52 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         _visibleTextureHandles.Clear();
         _textureAdmissionScratch.Clear();
-
-        foreach (uint handle in _criticalTextureHandles)
-            RequireTextureForCurrentFrame(handle);
-        foreach (GlSkyMesh sky in _skies)
-            RequireTextureForCurrentFrame(sky.Texture);
-
-        // A translated authored pass has no semantically valid placeholder
-        // texture. Admit its complete static sampler set before the general
-        // visible set while retaining the same frame upload budget.
-        RequireTranslatedAuthoredMaterialSamplersFirst(groups);
-        RequireGroupTextures(groups);
-        RequireGroupTextures(depthGroups);
-
-        void RequireGroupTextures(
-            IReadOnlyList<
-                MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
-                requiredGroups)
+        if (CanReuseTextureResidencyManifest(groups, depthGroups))
         {
-            for (int groupIndex = 0;
-                 groupIndex < requiredGroups.Count;
-                 groupIndex++)
+            for (int index = 0;
+                 index < _textureResidencyManifestCount;
+                 index++)
             {
-                MapRenderEditorDrawGroup<GlTexturedDrawCommand> group =
-                    requiredGroups[groupIndex];
-                if (!IsTexturedDrawGroupVisibleForFrame(group))
-                    continue;
+                RequireTextureForCurrentFrame(
+                    _textureResidencyManifest[index],
+                    manifest: null);
+            }
+        }
+        else
+        {
+            _textureResidencyManifestScratch.Clear();
+            foreach (uint handle in _criticalTextureHandles)
+            {
+                RequireTextureForCurrentFrame(
+                    handle,
+                    _textureResidencyManifestScratch);
+            }
+            for (int skyIndex = 0; skyIndex < _skies.Length; skyIndex++)
+            {
+                RequireTextureForCurrentFrame(
+                    _skies[skyIndex].Texture,
+                    _textureResidencyManifestScratch);
+            }
 
-                ReadOnlySpan<GlTexturedDrawCommand> commands =
-                    group.AuthoredPassSpan;
-                for (int commandIndex = 0;
-                     commandIndex < commands.Length;
-                     commandIndex++)
-                {
-                    ref readonly GlTexturedDrawCommand command =
-                        ref commands[commandIndex];
-                    GlTexturedMesh mesh = command.Mesh;
-                    RequireMeshTexturesForCurrentFrame(
-                        in mesh);
-                }
+            // A translated authored pass has no semantically valid placeholder
+            // texture. Admit its complete static sampler set before the general
+            // visible set while retaining the same frame upload budget.
+            RequireTranslatedAuthoredMaterialSamplersFirst(
+                groups,
+                _textureResidencyManifestScratch);
+            RequireGroupTextures(
+                groups,
+                _textureResidencyManifestScratch);
+            RequireGroupTextures(
+                depthGroups,
+                _textureResidencyManifestScratch);
+            if (CanCacheTextureResidencyManifest(groups))
+            {
+                CommitTextureResidencyManifest(groups, depthGroups);
+            }
+            else
+            {
+                InvalidateTextureResidencyManifest();
             }
         }
 
@@ -324,6 +332,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
             UploadTextureStorage(entry);
             entry.MarkResident(_activeRenderFrameIndex);
+            AdvanceTextureResidencyMutationGeneration();
             residentBytes = checked(
                 residentBytes + entry.EstimatedResidentBytes);
             _frameTextureUploadCount++;
@@ -351,9 +360,189 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private void RequireTranslatedAuthoredMaterialSamplersFirst(
+    private bool CanReuseTextureResidencyManifest(
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> depthGroups)
+    {
+        if (!_hasTextureResidencyManifest ||
+            !CanCacheTextureResidencyManifest(groups) ||
+            !ReferenceEquals(
+                _textureResidencyManifestDrawGroups,
+                groups) ||
+            !ReferenceEquals(
+                _textureResidencyManifestDepthGroups,
+                depthGroups) ||
+            !ReferenceEquals(
+                _textureResidencyManifestSkies,
+                _skies) ||
+            !ReferenceEquals(
+                _textureResidencyManifestSceneSnapshot,
+                _renderSceneSnapshot) ||
+            _textureResidencyManifestQueueRevision !=
+                _preparedTexturedDrawQueueRevision ||
+            _textureResidencyManifestVisibilityRevision !=
+                _previewVisibilityPublicationRevision ||
+            _textureResidencyManifestSceneGeneration !=
+                _previewSceneGeneration ||
+            _textureResidencyManifestResourceCount !=
+                _textureHandles.Count ||
+            _textureResidencyManifestCriticalHandleCount !=
+                _criticalTextureHandles.Count)
+        {
+            return false;
+        }
+
+        for (int index = 0;
+             index < _textureResidencyManifestCriticalHandleCount;
+             index++)
+        {
+            if (!_criticalTextureHandles.Contains(
+                    _textureResidencyManifestCriticalHandles[index]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private bool CanCacheTextureResidencyManifest(
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups) =>
+        _hasPreviewVisibilityPublication &&
+        _hasPreparedTexturedDrawQueue &&
+        _preparedTexturedDrawQueueRevision != 0 &&
+        _preparedTexturedDrawVisibilityRevision ==
+            _previewVisibilityPublicationRevision &&
+        ReferenceEquals(_preparedTexturedDrawGroups, groups) &&
+        _renderSceneSnapshot is not null;
+
+    private void CommitTextureResidencyManifest(
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> depthGroups)
+    {
+        _textureResidencyManifestCount =
+            _textureResidencyManifestScratch.Count;
+        if (_textureResidencyManifest.Length <
+            _textureResidencyManifestCount)
+        {
+            Array.Resize(
+                ref _textureResidencyManifest,
+                _textureResidencyManifestCount);
+        }
+        _textureResidencyManifestScratch.CopyTo(
+            _textureResidencyManifest);
+        _textureResidencyManifestCriticalHandleCount =
+            _criticalTextureHandles.Count;
+        if (_textureResidencyManifestCriticalHandles.Length <
+            _textureResidencyManifestCriticalHandleCount)
+        {
+            Array.Resize(
+                ref _textureResidencyManifestCriticalHandles,
+                _textureResidencyManifestCriticalHandleCount);
+        }
+        int criticalIndex = 0;
+        foreach (uint handle in _criticalTextureHandles)
+        {
+            _textureResidencyManifestCriticalHandles[criticalIndex++] =
+                handle;
+        }
+        _textureResidencyManifestDrawGroups = groups;
+        _textureResidencyManifestDepthGroups = depthGroups;
+        _textureResidencyManifestSkies = _skies;
+        _textureResidencyManifestSceneSnapshot = _renderSceneSnapshot;
+        _textureResidencyManifestQueueRevision =
+            _preparedTexturedDrawQueueRevision;
+        _textureResidencyManifestVisibilityRevision =
+            _previewVisibilityPublicationRevision;
+        _textureResidencyManifestSceneGeneration =
+            _previewSceneGeneration;
+        _textureResidencyManifestResourceCount = _textureHandles.Count;
+        _hasTextureResidencyManifest = true;
+    }
+
+    private void InvalidateTextureResidencyManifest()
+    {
+        _hasTextureResidencyManifest = false;
+        _textureResidencyManifestCount = 0;
+        _textureResidencyManifestCriticalHandleCount = 0;
+        _textureResidencyManifestDrawGroups = null;
+        _textureResidencyManifestDepthGroups = null;
+        _textureResidencyManifestSkies = null;
+        _textureResidencyManifestSceneSnapshot = null;
+        _textureResidencyManifestQueueRevision = 0;
+        _textureResidencyManifestVisibilityRevision = 0;
+        _textureResidencyManifestSceneGeneration = 0;
+        _textureResidencyManifestResourceCount = 0;
+        _textureResidencyManifestScratch.Clear();
+    }
+
+    private bool CanReuseTexturedDrawGroupColorExecution(
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups) =>
+        _hasTexturedDrawGroupColorExecutionCache &&
+        _hasPreparedTexturedDrawQueue &&
+        ReferenceEquals(
+            _texturedDrawGroupColorExecutionGroups,
+            groups) &&
+        ReferenceEquals(_preparedTexturedDrawGroups, groups) &&
+        _texturedDrawGroupColorExecutionQueueRevision ==
+            _preparedTexturedDrawQueueRevision &&
+        _texturedDrawGroupColorExecutionResidencyGeneration ==
+            _textureResidencyMutationGeneration &&
+        _texturedDrawGroupColorReadinessScratch.Length >= groups.Count &&
+        _texturedDrawGroupGpuPhaseScratch.Length >= groups.Count;
+
+    private void CommitTexturedDrawGroupColorExecution(
         IReadOnlyList<
             MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups)
+    {
+        if (!_hasPreparedTexturedDrawQueue ||
+            !ReferenceEquals(_preparedTexturedDrawGroups, groups))
+        {
+            InvalidateTexturedDrawGroupColorExecutionCache();
+            return;
+        }
+
+        _texturedDrawGroupColorExecutionGroups = groups;
+        _texturedDrawGroupColorExecutionQueueRevision =
+            _preparedTexturedDrawQueueRevision;
+        _texturedDrawGroupColorExecutionResidencyGeneration =
+            _textureResidencyMutationGeneration;
+        _hasTexturedDrawGroupColorExecutionCache = true;
+    }
+
+    private void InvalidateTexturedDrawGroupColorExecutionCache()
+    {
+        _hasTexturedDrawGroupColorExecutionCache = false;
+        _texturedDrawGroupColorExecutionGroups = null;
+        _texturedDrawGroupColorExecutionQueueRevision = 0;
+        _texturedDrawGroupColorExecutionResidencyGeneration = 0;
+    }
+
+    private void InvalidateTextureResidencyCaches()
+    {
+        InvalidateTextureResidencyManifest();
+        InvalidateTexturedDrawGroupColorExecutionCache();
+    }
+
+    private void AdvanceTextureResidencyMutationGeneration()
+    {
+        unchecked
+        {
+            _textureResidencyMutationGeneration++;
+            if (_textureResidencyMutationGeneration == 0)
+                _textureResidencyMutationGeneration = 1;
+        }
+    }
+
+    private void RequireTranslatedAuthoredMaterialSamplersFirst(
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
+        List<uint> manifest)
     {
         for (int groupIndex = 0;
              groupIndex < groups.Count;
@@ -380,8 +569,36 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 foreach (GlRsxSamplerBinding binding in
                          mesh.RsxSamplerBindings)
                 {
-                    RequireTextureForCurrentFrame(binding.Texture);
+                    RequireTextureForCurrentFrame(
+                        binding.Texture,
+                        manifest);
                 }
+            }
+        }
+    }
+
+    private void RequireGroupTextures(
+        IReadOnlyList<
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups,
+        List<uint> manifest)
+    {
+        for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+        {
+            MapRenderEditorDrawGroup<GlTexturedDrawCommand> group =
+                groups[groupIndex];
+            if (!IsTexturedDrawGroupVisibleForFrame(group))
+                continue;
+
+            ReadOnlySpan<GlTexturedDrawCommand> commands =
+                group.AuthoredPassSpan;
+            for (int commandIndex = 0;
+                 commandIndex < commands.Length;
+                 commandIndex++)
+            {
+                ref readonly GlTexturedDrawCommand command =
+                    ref commands[commandIndex];
+                GlTexturedMesh mesh = command.Mesh;
+                RequireMeshTexturesForCurrentFrame(in mesh, manifest);
             }
         }
     }
@@ -458,24 +675,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private void RequireMeshTexturesForCurrentFrame(
-        in GlTexturedMesh mesh)
+        in GlTexturedMesh mesh,
+        List<uint> manifest)
     {
         foreach (uint texture in mesh.ColorTextures)
-            RequireTextureForCurrentFrame(texture);
-        RequireTextureForCurrentFrame(mesh.LightmapTexture);
+            RequireTextureForCurrentFrame(texture, manifest);
+        RequireTextureForCurrentFrame(mesh.LightmapTexture, manifest);
         foreach (uint texture in mesh.NormalTextures)
-            RequireTextureForCurrentFrame(texture);
+            RequireTextureForCurrentFrame(texture, manifest);
         foreach (uint texture in mesh.SpecularTextures)
-            RequireTextureForCurrentFrame(texture);
+            RequireTextureForCurrentFrame(texture, manifest);
         foreach (GlRsxSamplerBinding binding in mesh.RsxSamplerBindings)
-            RequireTextureForCurrentFrame(binding.Texture);
+            RequireTextureForCurrentFrame(binding.Texture, manifest);
     }
 
-    private void RequireTextureForCurrentFrame(uint handle)
+    private void RequireTextureForCurrentFrame(
+        uint handle,
+        List<uint>? manifest)
     {
-        if (handle == 0 ||
-            !_visibleTextureHandles.Add(handle) ||
-            !_textureHandles.TryGetEntry(
+        if (handle == 0 || !_visibleTextureHandles.Add(handle))
+            return;
+
+        manifest?.Add(handle);
+        if (!_textureHandles.TryGetEntry(
                 handle,
                 out MapRenderOpenGlTextureResidencyEntry entry))
         {
@@ -518,6 +740,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             RestoreTextureAfterMutation(entry, restore);
         }
         entry.MarkEvicted();
+        AdvanceTextureResidencyMutationGeneration();
         ReleaseRendererOwnedDecodedFallback(entry);
         _frameTextureEvictionCount++;
         _frameTextureEvictionBytes = checked(

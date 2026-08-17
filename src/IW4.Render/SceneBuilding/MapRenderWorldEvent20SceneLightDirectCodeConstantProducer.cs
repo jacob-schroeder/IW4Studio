@@ -118,6 +118,15 @@ internal static class
     internal static DirectCodeConstantRow ProducePositionRow(
         MapRenderWorldEvent20SceneLightFrameInput frame,
         int sceneLightIndex,
+        Vector3 eyeOffset) =>
+        new(0x00, ProducePositionValue(
+            frame,
+            sceneLightIndex,
+            eyeOffset));
+
+    internal static ShaderConstantValue ProducePositionValue(
+        MapRenderWorldEvent20SceneLightFrameInput frame,
+        int sceneLightIndex,
         Vector3 eyeOffset)
     {
         ArgumentNullException.ThrowIfNull(frame);
@@ -138,7 +147,7 @@ internal static class
                 $"Event20 scene light {sceneLightIndex} is directional and does not own a dynamic eye-relative position row.");
         }
         ValidateNonDirectionalLight(sceneLightIndex, light);
-        return Row(
+        return Value(
             sceneLightIndex,
             0x00,
             light.Origin.X - eyeOffset.X,
@@ -148,6 +157,17 @@ internal static class
     }
 
     internal static DirectCodeConstantRow ProduceSpotFactorsRow(
+        MapRenderWorldEvent20SceneLightFrameInput frame,
+        int sceneLightIndex,
+        MapRenderSpotShadowAtlasEntry? spotShadowEntry) =>
+        new(
+            FrameDirectCodeConstants.LightSpotFactorsRowIndex,
+            ProduceSpotFactorsValue(
+                frame,
+                sceneLightIndex,
+                spotShadowEntry));
+
+    internal static ShaderConstantValue ProduceSpotFactorsValue(
         MapRenderWorldEvent20SceneLightFrameInput frame,
         int sceneLightIndex,
         MapRenderSpotShadowAtlasEntry? spotShadowEntry)
@@ -167,7 +187,7 @@ internal static class
             throw new InvalidOperationException(
                 $"Event20 spot light {sceneLightIndex} has invalid inner and outer cone cosines; row 0x04 cannot contain finite factors.");
         }
-        return Row(
+        return Value(
             sceneLightIndex,
             FrameDirectCodeConstants.LightSpotFactorsRowIndex,
             1f / denominator,
@@ -178,6 +198,18 @@ internal static class
 
     internal static DirectCodeConstantRow
         ProduceLightFalloffPlacementRow(
+            MapRenderWorldEvent20SceneLightFrameInput frame,
+            int sceneLightIndex,
+            MapRenderSpotShadowAtlasEntry? spotShadowEntry) =>
+        new(
+            FrameDirectCodeConstants.LightFalloffPlacementRowIndex,
+            ProduceLightFalloffPlacementValue(
+                frame,
+                sceneLightIndex,
+                spotShadowEntry));
+
+    internal static ShaderConstantValue
+        ProduceLightFalloffPlacementValue(
             MapRenderWorldEvent20SceneLightFrameInput frame,
             int sceneLightIndex,
             MapRenderSpotShadowAtlasEntry? spotShadowEntry)
@@ -192,7 +224,8 @@ internal static class
         if (spotShadowEntry is null)
         {
             return FrameDirectCodeConstants
-                .ProduceLightFalloffPlacementInitializationRow();
+                .ProduceLightFalloffPlacementInitializationRow()
+                .Value;
         }
 
         if (light.Definition is not { } definition ||
@@ -201,7 +234,7 @@ internal static class
             throw new InvalidOperationException(
                 $"Event20 allocated spot light {sceneLightIndex} has no canonical non-empty LightDef image.");
         }
-        return Row(
+        return Value(
             sceneLightIndex,
             FrameDirectCodeConstants.LightFalloffPlacementRowIndex,
             imageWidth / 512f,
@@ -281,6 +314,17 @@ internal static class
         float x,
         float y,
         float z,
+        float w) =>
+        new(
+            index,
+            Value(sceneLightIndex, index, x, y, z, w));
+
+    private static ShaderConstantValue Value(
+        int sceneLightIndex,
+        int index,
+        float x,
+        float y,
+        float z,
         float w)
     {
         if (!float.IsFinite(x) ||
@@ -292,7 +336,7 @@ internal static class
                 $"Event20 scene light {sceneLightIndex} produced a non-finite direct constant for row 0x{index:X2}.");
         }
 
-        return new(index, new ShaderConstantValue(x, y, z, w));
+        return new ShaderConstantValue(x, y, z, w);
     }
 
     private static bool IsFinite(Vector3 value) =>

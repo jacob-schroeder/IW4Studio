@@ -53,6 +53,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private readonly GL _gl;
     private readonly SilkOpenGlTextureParameters _textureParameters;
     private readonly SilkOpenGlStateShadow _state;
+    private readonly MapRenderOpenGlFrameVertexConstantBuffer
+        _frameVertexConstants;
     private readonly MapRenderFrameTelemetry _frameTelemetry = new();
     private readonly MapRenderOpenGlShaderCompilationCounter
         _shaderCompilationCounter = new();
@@ -129,13 +131,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private uint _depthPrepassProgram;
     private int _depthPrepassViewProjectionLocation;
     private int _depthPrepassUseInstancingLocation;
-    private int _depthPrepassVegetationWindEnabledLocation;
+    private int _depthPrepassVegetationParametersLocation;
     private int _depthPrepassVegetationTimeLocation;
-    private int _depthPrepassVegetationAmplitudeLocation;
-    private int _depthPrepassVegetationAngularFrequencyLocation;
-    private int _depthPrepassVegetationSpatialFrequencyLocation;
-    private int _depthPrepassVegetationLocalMinimumHeightLocation;
-    private int _depthPrepassVegetationLocalHeightRangeLocation;
+    private int _depthPrepassVegetationBoundsLocation;
     private uint _texturedProgram;
     private int _texturedViewProjectionLocation;
     private int _texturedUseInstancingLocation;
@@ -176,13 +174,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private int _texturedSunFogDistanceScaleLocation;
     private int _texturedSunFogEndCosineLocation;
     private int _texturedSunFogAngularScaleLocation;
-    private int _texturedVegetationWindEnabledLocation;
+    private int _texturedVegetationParametersLocation;
     private int _texturedVegetationTimeLocation;
-    private int _texturedVegetationAmplitudeLocation;
-    private int _texturedVegetationAngularFrequencyLocation;
-    private int _texturedVegetationSpatialFrequencyLocation;
-    private int _texturedVegetationLocalMinimumHeightLocation;
-    private int _texturedVegetationLocalHeightRangeLocation;
+    private int _texturedVegetationBoundsLocation;
     private int[] _texturedNormalSamplerLocations = [];
     private int[] _texturedHasNormalLocations = [];
     private int[] _texturedSpecularSamplerLocations = [];
@@ -254,6 +248,33 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private bool[] _texturedDrawGroupVisibilityScratch = [];
     private bool[] _texturedDrawGroupColorReadinessScratch = [];
     private MapRenderGpuPhase[] _texturedDrawGroupGpuPhaseScratch = [];
+    // Populated only by the frame-wide Apple Silicon depth-fusion proof.
+    // Group identity, rather than SourceOrdinal, is required because
+    // receiver-aware queue composition can reuse ordinals across channels.
+    private readonly HashSet<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+        _appleDepthFusionOwnerGroups =
+            new(ReferenceEqualityComparer.Instance);
+    private readonly List<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>
+        _appleDepthFusionOwnerGroupScratch = [];
+    // The immutable sorted color queue and selected depth queue retain their
+    // identities while visibility changes. Geometry ownership is independent
+    // of those per-frame inputs, so cache the exact opaque color index for
+    // each depth group. A negative index records an ambiguous or absent match
+    // and remains a fail-closed result when that depth group is visible.
+    private IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
+        _appleDepthFusionOwnerColorGroups;
+    private IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
+        _appleDepthFusionOwnerDepthGroups;
+    private readonly Dictionary<
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>,
+        int> _appleDepthFusionColorOwnerIndexByDepthGroup =
+            new(ReferenceEqualityComparer.Instance);
+    // SourceOrdinal is only a reusable candidate-chain key. Every candidate
+    // remains subject to the exact command-geometry proof before it becomes
+    // a depth owner.
+    private readonly Dictionary<long, int>
+        _appleDepthFusionOpaqueColorHeadBySourceOrdinal = [];
+    private int[] _appleDepthFusionOpaqueColorNextByIndex = [];
     private readonly Dictionary<
         MapRenderEditorDrawGroup<GlTexturedDrawCommand>,
         bool> _texturedDrawGroupVisibilityByIdentity =
@@ -297,8 +318,34 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
         _preparedTexturedDrawGroups;
     private ulong _preparedTexturedDrawVisibilityRevision;
+    private ulong _preparedTexturedDrawQueueRevision;
     private readonly HashSet<uint> _visibleTextureHandles = [];
     private readonly HashSet<uint> _criticalTextureHandles = [];
+    private readonly List<uint> _textureResidencyManifestScratch = [];
+    private uint[] _textureResidencyManifest = [];
+    private int _textureResidencyManifestCount;
+    private uint[] _textureResidencyManifestCriticalHandles = [];
+    private int _textureResidencyManifestCriticalHandleCount;
+    private IReadOnlyList<
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
+        _textureResidencyManifestDrawGroups;
+    private IReadOnlyList<
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
+        _textureResidencyManifestDepthGroups;
+    private GlSkyMesh[]? _textureResidencyManifestSkies;
+    private RenderSceneSnapshot? _textureResidencyManifestSceneSnapshot;
+    private ulong _textureResidencyManifestQueueRevision;
+    private ulong _textureResidencyManifestVisibilityRevision;
+    private long _textureResidencyManifestSceneGeneration;
+    private int _textureResidencyManifestResourceCount;
+    private bool _hasTextureResidencyManifest;
+    private ulong _textureResidencyMutationGeneration;
+    private IReadOnlyList<
+        MapRenderEditorDrawGroup<GlTexturedDrawCommand>>?
+        _texturedDrawGroupColorExecutionGroups;
+    private ulong _texturedDrawGroupColorExecutionQueueRevision;
+    private ulong _texturedDrawGroupColorExecutionResidencyGeneration;
+    private bool _hasTexturedDrawGroupColorExecutionCache;
     private readonly List<MapRenderOpenGlTextureResidencyEntry>
         _textureAdmissionScratch = [];
     private readonly List<MapRenderOpenGlTextureResidencyEntry>
@@ -342,6 +389,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private int[] _staticModelLightingObjectIndices = [];
     private int[] _conservativeUnscheduledStaticObjectIndices = [];
     private byte[]? _staticModelLightingPhysicalRgbaBytes;
+    private uint _genericInactiveTexture;
     private uint _staticModelLightingAtlasTexture;
     private uint[] _sceneLightAttenuationTextureHandles = [];
     private readonly Dictionary<uint, StaticInstanceBufferRuntime>
@@ -405,6 +453,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private long _frameDrawCalls;
     private long _frameLogicalDrawCommands;
     private long _frameMultiDrawApiCalls;
+    private long _frameStaticExecutionBundleBinds;
+    private long _frameStaticExecutionBundleReuses;
     private long _activeRenderFrameIndex = -1;
     private bool _frameDepthPassRecorded;
     private MapRenderGpuPhase? _activeGpuDrawPhase;
@@ -698,6 +748,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         try
         {
             _state = new SilkOpenGlStateShadow(gl);
+            _frameVertexConstants =
+                new MapRenderOpenGlFrameVertexConstantBuffer(gl, _state);
             _authoredMaterials =
                 new SilkOpenGlAuthoredMaterialExecutor(
                     gl,
@@ -850,6 +902,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             scene.StaticModelLightingAtlas,
             EnumerateStaticModelShaderExecutions(scene));
         DeleteLoadedResources();
+        _genericInactiveTexture = CreateGenericInactiveTexture();
         AccountSceneTexturePayloads(scene);
         _progressiveStaticMaterializationEnabled =
             initialView.HasValue &&
@@ -918,27 +971,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _depthPrepassUseInstancingLocation = _gl.GetUniformLocation(
             _depthPrepassProgram,
             "uUseInstancing");
-        _depthPrepassVegetationWindEnabledLocation = _gl.GetUniformLocation(
+        _depthPrepassVegetationParametersLocation = _gl.GetUniformLocation(
             _depthPrepassProgram,
-            "uVegetationWindEnabled");
+            "uVegetationParameters");
         _depthPrepassVegetationTimeLocation = _gl.GetUniformLocation(
             _depthPrepassProgram,
             "uVegetationTime");
-        _depthPrepassVegetationAmplitudeLocation = _gl.GetUniformLocation(
+        _depthPrepassVegetationBoundsLocation = _gl.GetUniformLocation(
             _depthPrepassProgram,
-            "uVegetationAmplitude");
-        _depthPrepassVegetationAngularFrequencyLocation = _gl.GetUniformLocation(
-            _depthPrepassProgram,
-            "uVegetationAngularFrequency");
-        _depthPrepassVegetationSpatialFrequencyLocation = _gl.GetUniformLocation(
-            _depthPrepassProgram,
-            "uVegetationSpatialFrequency");
-        _depthPrepassVegetationLocalMinimumHeightLocation = _gl.GetUniformLocation(
-            _depthPrepassProgram,
-            "uVegetationLocalMinimumHeight");
-        _depthPrepassVegetationLocalHeightRangeLocation = _gl.GetUniformLocation(
-            _depthPrepassProgram,
-            "uVegetationLocalHeightRange");
+            "uVegetationBounds");
         _texturedProgram = CreateProgram(TexturedVertexShaderSource, TexturedFragmentShaderSource);
         _texturedViewProjectionLocation = _gl.GetUniformLocation(_texturedProgram, "uViewProjection");
         _texturedUseInstancingLocation = _gl.GetUniformLocation(_texturedProgram, "uUseInstancing");
@@ -1026,13 +1067,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _texturedSunFogAngularScaleLocation = _gl.GetUniformLocation(
             _texturedProgram,
             "uSunFogAngularScale");
-        _texturedVegetationWindEnabledLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationWindEnabled");
+        _texturedVegetationParametersLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationParameters");
         _texturedVegetationTimeLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationTime");
-        _texturedVegetationAmplitudeLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationAmplitude");
-        _texturedVegetationAngularFrequencyLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationAngularFrequency");
-        _texturedVegetationSpatialFrequencyLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationSpatialFrequency");
-        _texturedVegetationLocalMinimumHeightLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationLocalMinimumHeight");
-        _texturedVegetationLocalHeightRangeLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationLocalHeightRange");
+        _texturedVegetationBoundsLocation = _gl.GetUniformLocation(_texturedProgram, "uVegetationBounds");
         _texturedNormalSamplerLocations = Enumerable.Range(0, 4)
             .Select(index => _gl.GetUniformLocation(_texturedProgram, $"uNormalTexture{index}"))
             .ToArray();
@@ -1425,6 +1462,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _frameDrawCalls = 0;
         _frameLogicalDrawCommands = 0;
         _frameMultiDrawApiCalls = 0;
+        _frameStaticExecutionBundleBinds = 0;
+        _frameStaticExecutionBundleReuses = 0;
         _frameDepthPassRecorded = false;
         _frameTextureUploadBytes = 0;
         _frameTextureUploadCount = 0;
@@ -1482,8 +1521,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                     MapRenderFrameCounter.MultiDrawApiCalls,
                     _frameMultiDrawApiCalls);
                 _frameTelemetry.SetCounter(
+                    MapRenderFrameCounter.StaticExecutionBundleBinds,
+                    _frameStaticExecutionBundleBinds);
+                _frameTelemetry.SetCounter(
+                    MapRenderFrameCounter.StaticExecutionBundleReuses,
+                    _frameStaticExecutionBundleReuses);
+                _frameTelemetry.SetCounter(
                     MapRenderFrameCounter.OpenGlCalls,
                     checked(_state.SubmittedCalls + _frameDrawCalls));
+                _frameTelemetry.SetCounter(
+                    MapRenderFrameCounter.StateShadowElidedCalls,
+                    _state.ElidedCalls);
                 _frameTelemetry.SetCounter(
                     MapRenderFrameCounter.ProgramChanges,
                     _state.ProgramChanges);
@@ -1679,7 +1727,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _frameClipSpaceLookupScaleCodeConstant = clipSpaceLookup.Scale;
         _frameClipSpaceLookupOffsetCodeConstant = clipSpaceLookup.Offset;
         _frameZNearCodeConstant =
-            FrameDirectCodeConstants.ProduceZNear(camera.NearPlane).Value;
+            FrameDirectCodeConstants.ProduceZNearValue(camera.NearPlane);
 
         // Clear obeys the current color/depth write masks. The target-2
         // lifecycle performs the clear when a canonical world source is
@@ -1723,6 +1771,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             viewProjection =
                 OpenGlRsxClipSpaceLowering
                     .CreateDirectEditorPreviewHostViewProjection(rsxMatrices);
+            _frameVertexConstants.Upload(
+                _activeRenderFrameIndex,
+                in rsxMatrices,
+                editorTimeSeconds,
+                _frameClipSpaceLookupScaleCodeConstant,
+                _frameClipSpaceLookupOffsetCodeConstant,
+                _frameZNearCodeConstant);
             // A successful target-2 entry/clear is the exact scene color
             // render-pass execution point for this backend.
             _frameTelemetry.AddCounter(
@@ -1834,14 +1889,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             PrepareTextureResidencyForVisibleDraws(
                 drawGroups,
                 depthGroups);
-            DrawVisibleDepthPrepassGroups(
-                depthGroups,
-                editorPresentationFrame?.SceneTarget.StencilTargetContract,
-                viewProjection,
-                rsxMatrices,
-                editorTimeSeconds);
             PrepareTexturedDrawGroupColorExecution(drawGroups);
-            if (RequiresVisibleProcessedFloatZ(drawGroups))
+            bool requiresVisibleProcessedFloatZ =
+                RequiresVisibleProcessedFloatZ(drawGroups);
+            bool hasVisibleProcessedFloatZ =
+                RequiresAnyVisibleProcessedFloatZ(drawGroups);
+            if (!CanElideAppleSiliconDepthPrepass(
+                    drawGroups,
+                    depthGroups,
+                    hasVisibleProcessedFloatZ))
+            {
+                DrawVisibleDepthPrepassGroups(
+                    depthGroups,
+                    editorPresentationFrame?.SceneTarget.StencilTargetContract,
+                    viewProjection,
+                    rsxMatrices,
+                    editorTimeSeconds);
+            }
+            if (requiresVisibleProcessedFloatZ)
             {
                 TryBuildProcessedFloatZ(
                     editorPresentationFrame,
@@ -2026,6 +2091,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         {
             try
             {
+                _frameVertexConstants.Dispose();
                 _gpuTimers.Dispose();
             }
             finally
@@ -2078,6 +2144,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _editorPreviewPresentationSession = null;
         _sunShadowAtlas = null;
         _spotShadowAtlas = null;
+        _genericInactiveTexture = 0;
+        _frameVertexConstants.AbandonContext();
         TryRelease(_gpuTimers.AbandonContext, ref failures);
         TryRelease(_sharedProgramUsage.Dispose, ref failures);
         if (_ownsSharedProgramCache)

@@ -25,7 +25,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
 {
     private static readonly long TelemetryRefreshTicks =
         Math.Max(1, Stopwatch.Frequency);
-    private const double HostRenderAverageWeight = 1.0 / 32.0;
+    private const double FrameTimingAverageWeight = 1.0 / 32.0;
 
     private readonly MapRenderScene _scene;
     private readonly RenderSceneSnapshot _sceneSnapshot;
@@ -50,6 +50,9 @@ internal sealed class SilkMapRenderWindow : IDisposable
     private double _hostRenderMilliseconds;
     private double _hostRenderAverageMilliseconds;
     private bool _hasHostRenderSample;
+    private double _swapMilliseconds;
+    private double _swapAverageMilliseconds;
+    private bool _hasSwapSample;
     private int _startupRenderedFrameCount;
     private int _startupSettledFrameCount;
     private bool _startupWorkingSetReclaimed;
@@ -345,6 +348,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
         // editor viewport unsynchronized; its telemetry and interaction then
         // reflect actual renderer throughput instead of double-buffer pacing.
         options.VSync = false;
+        options.ShouldSwapAutomatically = false;
 
         _shareGroupLease = SilkMapRenderOpenGlShareGroup.Acquire();
         options.SharedContext = _shareGroupLease.SharedContext;
@@ -402,7 +406,29 @@ internal sealed class SilkMapRenderWindow : IDisposable
 
             long renderStartTimestamp = Stopwatch.GetTimestamp();
             window.DoRender();
+            long swapStartTimestamp = Stopwatch.GetTimestamp();
+            if (window.GLContext is not { } context)
+            {
+                throw new InvalidOperationException(
+                    "The initialized Live Preview window has no OpenGL context.");
+            }
+            context.SwapBuffers();
             long renderEndTimestamp = Stopwatch.GetTimestamp();
+            _swapMilliseconds =
+                (renderEndTimestamp - swapStartTimestamp) * 1000.0 /
+                Stopwatch.Frequency;
+            if (_hasSwapSample)
+            {
+                _swapAverageMilliseconds +=
+                    (_swapMilliseconds - _swapAverageMilliseconds) *
+                    FrameTimingAverageWeight;
+            }
+            else
+            {
+                _swapAverageMilliseconds = _swapMilliseconds;
+                _hasSwapSample = true;
+            }
+
             _hostRenderMilliseconds =
                 (renderEndTimestamp - renderStartTimestamp) * 1000.0 /
                 Stopwatch.Frequency;
@@ -411,7 +437,7 @@ internal sealed class SilkMapRenderWindow : IDisposable
                 _hostRenderAverageMilliseconds +=
                     (_hostRenderMilliseconds -
                      _hostRenderAverageMilliseconds) *
-                    HostRenderAverageWeight;
+                    FrameTimingAverageWeight;
             }
             else
             {
@@ -706,6 +732,8 @@ internal sealed class SilkMapRenderWindow : IDisposable
                 telemetrySnapshot,
                 _hostRenderMilliseconds,
                 _hostRenderAverageMilliseconds,
+                _swapMilliseconds,
+                _swapAverageMilliseconds,
                 Math.Max(1, framebufferSize.X),
                 Math.Max(1, framebufferSize.Y),
                 renderScaling);

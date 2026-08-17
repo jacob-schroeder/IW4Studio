@@ -149,7 +149,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return GetOrCreateRsxProgram(
             batch.ShaderExecution,
             batch.State,
-            compositionVertexConstantPlan: null,
+            vertexPlan!,
+            usesStaticModelInstancing: false,
             out _).Handle != 0;
     }
 
@@ -179,7 +180,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             !TryCreateEditorVertexConstantBindingPlan(
                 batch.ShaderExecution,
                 directCodePlan!,
-                out _))
+                out TranslatedProgramVertexConstantBindingPlan?
+                    vertexPlan))
         {
             return false;
         }
@@ -187,7 +189,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return GetOrCreateRsxProgram(
             batch.ShaderExecution,
             batch.State,
-            compositionVertexConstantPlan: null,
+            vertexPlan!,
+            usesStaticModelInstancing: true,
             out _).Handle != 0;
     }
 
@@ -315,6 +318,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             blocker ?? "Authored RSX constant binding failed.");
     }
 
+    private static IReadOnlySet<int> ResolveAuthoredExternallyBoundVertexConstants(
+        TranslatedProgramVertexConstantBindingPlan plan,
+        bool usesStaticModelInstancing)
+    {
+        var result = new HashSet<int>(
+            MapRenderOpenGlFrameVertexConstantComposer
+                .ResolveExternallyBoundDestinations(
+                    plan,
+                    usesStaticModelInstancing));
+        if (usesStaticModelInstancing)
+        {
+            result.UnionWith(
+                MapRenderOpenGlStaticModelInstancedVertexComposer
+                    .ResolveExternallyBoundVertexConstantDestinations(plan));
+        }
+        return result;
+    }
+
     private static AuthoredProgramGroupKey AuthoredProgramGroup(MapRenderTexturedBatch batch) =>
         new(
             batch.Pass.MaterialName,
@@ -335,8 +356,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private GlRsxProgram GetOrCreateRsxProgram(
         ShaderExecutionContract execution,
         RenderState state,
-        TranslatedProgramVertexConstantBindingPlan?
-            compositionVertexConstantPlan,
+        TranslatedProgramVertexConstantBindingPlan vertexConstantPlan,
+        bool usesStaticModelInstancing,
         out MapRenderOpenGlStaticModelProgramUniforms?
             staticModelUniforms)
     {
@@ -363,14 +384,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return default;
         }
 
+        if (!MapRenderOpenGlFrameVertexConstantComposer.TryCompose(
+                vertexGlsl,
+                vertexConstantPlan,
+                usesStaticModelInstancing,
+                out vertexGlsl,
+                out string frameConstantIdentity,
+                out string frameConstantBlocker))
+        {
+            _authoredMaterials.RecordPreparationFailure(
+                $"{execution.ProgramCacheKey}|mapFrameVertexConstants",
+                frameConstantBlocker);
+            return default;
+        }
+
+        bool usesFrameConstants = frameConstantIdentity != "none";
         bool compositionReady = false;
         string compositionIdentity = string.Empty;
-        if (compositionVertexConstantPlan is not null)
+        if (usesStaticModelInstancing)
         {
             if (!MapRenderOpenGlStaticModelInstancedVertexComposer.TryCompose(
                     vertexGlsl,
                     execution.VertexInputs,
-                    compositionVertexConstantPlan,
+                    vertexConstantPlan,
                     out vertexGlsl,
                     out compositionIdentity,
                     out string compositionBlocker))
@@ -386,6 +422,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         string fixedFunctionIdentity =
             $"{execution.ProgramCacheKey}|alphaTest={alphaTestMode}" +
             $"|rsxShaderPacker={shaderPackerMode}" +
+            (usesFrameConstants
+                ? $"|mapFrameVertexConstants={frameConstantIdentity}"
+                : string.Empty) +
             (compositionReady
                 ? $"|staticModelInstancing={compositionIdentity}"
                 : string.Empty);
@@ -431,12 +470,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlRsxProgram program = _authoredMaterials.GetOrCreateComposedProgram(
             vertexGlsl,
             finalPixelSource,
-            compositionReady,
+            usesFrameConstants || compositionReady,
             samplerDestinations,
             diagnosticIdentity,
-            compositionReady
-                ? ValidateAndCaptureStaticModelProgramUniforms
-                : null,
+            (handle, programKey) =>
+                ValidateAndCaptureMapProgramUniforms(
+                    handle,
+                    programKey,
+                    usesFrameConstants,
+                    compositionReady),
             out OpenGlProgramKey programKey,
             out _);
         if (program.Handle != 0 && compositionReady)
@@ -457,6 +499,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return program;
     }
 
+    private string? ValidateAndCaptureMapProgramUniforms(
+        uint handle,
+        OpenGlProgramKey programKey,
+        bool usesFrameConstants,
+        bool usesStaticModelInstancing)
+    {
+        if (usesFrameConstants &&
+            _frameVertexConstants.ValidateAndBindProgram(handle) is
+                { } frameBlocker)
+        {
+            return frameBlocker;
+        }
+
+        return usesStaticModelInstancing
+            ? ValidateAndCaptureStaticModelProgramUniforms(handle, programKey)
+            : null;
+    }
+
     private string? ValidateAndCaptureStaticModelProgramUniforms(
         uint handle,
         OpenGlProgramKey programKey)
@@ -465,56 +525,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _authoredMaterials.GetUniformLocation(
                 handle,
                 MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionWindEnabledUniform),
+                    .CompositionParametersUniform),
             _authoredMaterials.GetUniformLocation(
                 handle,
                 MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionTimeUniform),
-            _authoredMaterials.GetUniformLocation(
-                handle,
-                MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionAmplitudeUniform),
-            _authoredMaterials.GetUniformLocation(
-                handle,
-                MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionAngularFrequencyUniform),
-            _authoredMaterials.GetUniformLocation(
-                handle,
-                MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionSpatialFrequencyUniform),
-            _authoredMaterials.GetUniformLocation(
-                handle,
-                MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionLocalMinimumHeightUniform),
-            _authoredMaterials.GetUniformLocation(
-                handle,
-                MapRenderOpenGlStaticModelInstancedVertexComposer
-                    .CompositionLocalHeightRangeUniform));
+                    .CompositionBoundsUniform));
         if (!vegetation.IsReady)
         {
             return "Translated static-model program lost its Live Preview vegetation uniform bridge.";
         }
 
-        int[] viewRows = Enumerable.Range(0, 4)
-            .Select(row => _authoredMaterials.GetUniformLocation(
-                handle,
-                $"{MapRenderOpenGlStaticModelInstancedVertexComposer.ViewRowsUniform}[{row}]"))
-            .ToArray();
-        int[] viewProjectionRows = Enumerable.Range(0, 4)
-            .Select(row => _authoredMaterials.GetUniformLocation(
-                handle,
-                $"{MapRenderOpenGlStaticModelInstancedVertexComposer.ViewProjectionRowsUniform}[{row}]"))
-            .ToArray();
-        int eyeOffset = _authoredMaterials.GetUniformLocation(
-            handle,
-            MapRenderOpenGlStaticModelInstancedVertexComposer
-                .EyeOffsetUniform);
         _staticModelProgramUniforms.TryAdd(
             programKey,
             new MapRenderOpenGlStaticModelProgramUniforms(
-                viewRows,
-                viewProjectionRows,
-                eyeOffset,
                 vegetation));
         return null;
     }
@@ -1128,6 +1151,51 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
+    private uint CreateGenericInactiveTexture()
+    {
+        uint handle = _gl.GenTexture();
+        try
+        {
+            _gl.BindTexture(TextureTarget.Texture2D, handle);
+            _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            InitializeTextureFallbackStorageBound(
+                TextureTarget.Texture2D,
+                faceCount: 1);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMinFilter,
+                (int)TextureMinFilter.Nearest);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMagFilter,
+                (int)TextureMagFilter.Nearest);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureWrapS,
+                (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureWrapT,
+                (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureBaseLevel,
+                0);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMaxLevel,
+                0);
+            _gl.BindTexture(TextureTarget.Texture2D, 0);
+            return handle;
+        }
+        catch
+        {
+            _gl.BindTexture(TextureTarget.Texture2D, 0);
+            _gl.DeleteTexture(handle);
+            throw;
+        }
+    }
+
     private static InternalFormat ToGlCompressedInternalFormat(
         AuthoredBlockCompression compression,
         bool useSrgbReads) =>
@@ -1414,13 +1482,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         uniform mat4 uViewProjection;
         uniform int uUseInstancing;
-        uniform int uVegetationWindEnabled;
+        // x=enabled (exact 0/1), y=amplitude, z=angular frequency,
+        // w=spatial frequency. Bounds carry local minimum/range in xy.
+        uniform vec4 uVegetationParameters;
         uniform float uVegetationTime;
-        uniform float uVegetationAmplitude;
-        uniform float uVegetationAngularFrequency;
-        uniform float uVegetationSpatialFrequency;
-        uniform float uVegetationLocalMinimumHeight;
-        uniform float uVegetationLocalHeightRange;
+        uniform vec4 uVegetationBounds;
 
         void main()
         {
@@ -1439,24 +1505,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
 
             if (uUseInstancing != 0 &&
-                uVegetationWindEnabled != 0 &&
-                uVegetationLocalHeightRange > 0.0001)
+                uVegetationParameters.x != 0.0 &&
+                uVegetationBounds.y > 0.0001)
             {
                 float heightWeight = clamp(
-                    (aPosition.z - uVegetationLocalMinimumHeight) /
-                    uVegetationLocalHeightRange,
+                    (aPosition.z - uVegetationBounds.x) /
+                    uVegetationBounds.y,
                     0.0,
                     1.0);
                 heightWeight *= heightWeight;
                 float phase =
-                    uVegetationTime * uVegetationAngularFrequency +
-                    renderPosition.x * uVegetationSpatialFrequency +
-                    renderPosition.z * uVegetationSpatialFrequency * 1.37;
+                    uVegetationTime * uVegetationParameters.z +
+                    renderPosition.x * uVegetationParameters.w +
+                    renderPosition.z * uVegetationParameters.w * 1.37;
                 float wave = (
                     sin(phase) +
                     0.35 * sin(phase * 0.61 + 1.7)) / 1.35;
                 float sway =
-                    uVegetationAmplitude * heightWeight * wave;
+                    uVegetationParameters.y * heightWeight * wave;
                 renderPosition.x += sway;
                 renderPosition.z += sway * 0.35;
             }
@@ -1525,13 +1591,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         uniform mat4 uViewProjection;
         uniform int uUseInstancing;
-        uniform int uVegetationWindEnabled;
+        // x=enabled (exact 0/1), y=amplitude, z=angular frequency,
+        // w=spatial frequency. Bounds carry local minimum/range in xy.
+        uniform vec4 uVegetationParameters;
         uniform float uVegetationTime;
-        uniform float uVegetationAmplitude;
-        uniform float uVegetationAngularFrequency;
-        uniform float uVegetationSpatialFrequency;
-        uniform float uVegetationLocalMinimumHeight;
-        uniform float uVegetationLocalHeightRange;
+        uniform vec4 uVegetationBounds;
 
         out vec2 vTexCoord0;
         out vec2 vTexCoord1;
@@ -1570,24 +1634,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     dot(aInstanceRow1.xyz, aNormal),
                     dot(aInstanceRow2.xyz, aNormal));
             if (uUseInstancing != 0 &&
-                uVegetationWindEnabled != 0 &&
-                uVegetationLocalHeightRange > 0.0001)
+                uVegetationParameters.x != 0.0 &&
+                uVegetationBounds.y > 0.0001)
             {
                 float heightWeight = clamp(
-                    (aPosition.z - uVegetationLocalMinimumHeight) /
-                    uVegetationLocalHeightRange,
+                    (aPosition.z - uVegetationBounds.x) /
+                    uVegetationBounds.y,
                     0.0,
                     1.0);
                 heightWeight *= heightWeight;
                 float phase =
-                    uVegetationTime * uVegetationAngularFrequency +
-                    renderPosition.x * uVegetationSpatialFrequency +
-                    renderPosition.z * uVegetationSpatialFrequency * 1.37;
+                    uVegetationTime * uVegetationParameters.z +
+                    renderPosition.x * uVegetationParameters.w +
+                    renderPosition.z * uVegetationParameters.w * 1.37;
                 float wave = (
                     sin(phase) +
                     0.35 * sin(phase * 0.61 + 1.7)) / 1.35;
                 float sway =
-                    uVegetationAmplitude * heightWeight * wave;
+                    uVegetationParameters.y * heightWeight * wave;
                 renderPosition.x += sway;
                 renderPosition.z += sway * 0.35;
             }

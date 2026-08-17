@@ -193,21 +193,27 @@ internal static class FrameDirectCodeConstants
     }
 
     internal static DirectCodeConstantRow ProduceZNear(
+        float zNear) =>
+        new(ZNearRowIndex, ProduceZNearValue(zNear));
+
+    internal static ShaderConstantValue ProduceZNearValue(
         float zNear)
     {
         if (!(zNear > 0.0f) || !float.IsFinite(zNear))
             throw new ArgumentOutOfRangeException(nameof(zNear));
 
-        return Row(
-            ZNearRowIndex,
-            new ShaderConstantValue(
-                zNear * ZNearScale,
-                0.0f,
-                0.0f,
-                0.0f));
+        return new ShaderConstantValue(
+            zNear * ZNearScale,
+            0.0f,
+            0.0f,
+            0.0f);
     }
 
     internal static DirectCodeConstantRow ProduceGameTime(
+        float gameTime) =>
+        new(GameTimeRowIndex, ProduceGameTimeValue(gameTime));
+
+    internal static ShaderConstantValue ProduceGameTimeValue(
         float gameTime)
     {
         if (!float.IsFinite(gameTime))
@@ -216,13 +222,11 @@ internal static class FrameDirectCodeConstants
         float whole = MathF.Floor(gameTime);
         float fraction = gameTime - whole;
         float angle = fraction * TwoPi;
-        return new(
-            GameTimeRowIndex,
-            new ShaderConstantValue(
-                MathF.Sin(angle),
-                MathF.Cos(angle),
-                fraction,
-                gameTime % GameTimeWrapSeconds));
+        return new ShaderConstantValue(
+            MathF.Sin(angle),
+            MathF.Cos(angle),
+            fraction,
+            gameTime % GameTimeWrapSeconds);
     }
 
     internal static IReadOnlyList<DirectCodeConstantRow>

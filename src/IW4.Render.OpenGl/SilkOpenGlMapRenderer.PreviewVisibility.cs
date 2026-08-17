@@ -544,11 +544,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _preparedTexturedDrawGroups = drawGroups;
         _preparedTexturedDrawVisibilityRevision =
             _previewVisibilityPublicationRevision;
+        unchecked
+        {
+            _preparedTexturedDrawQueueRevision++;
+            if (_preparedTexturedDrawQueueRevision == 0)
+                _preparedTexturedDrawQueueRevision = 1;
+        }
         _hasPreparedTexturedDrawQueue = true;
     }
 
     private void InvalidatePreparedTexturedDrawQueue()
     {
+        InvalidateTextureResidencyCaches();
         _hasPreparedTexturedDrawQueue = false;
         _preparedTexturedDrawFrameGroups = null;
         _preparedTexturedDrawGroups = null;
@@ -584,6 +591,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _previewVisibilityWorldRunCount = 0;
         _previewVisibilityWorldIndexCount = 0;
         _previewVisibilityPublicationRevision = 0;
+        _preparedTexturedDrawQueueRevision = 0;
     }
 
     private MapRenderWorldDpvsViewVisibility? TryResolvePreviewDpvs(
@@ -1355,29 +1363,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private void ApplyStaticModelInstancingFrame(
-        MapRenderOpenGlStaticModelProgramUniforms? programUniforms,
-        DerivedMatrixState matrices)
-    {
-        if (programUniforms is not { } uniforms)
-            return;
-        if (!uniforms.HasFrameRows)
-        {
-            throw new InvalidOperationException(
-                "A translated static-model program lost its frame-row uniform layout.");
-        }
-
-        ApplyMatrixRows(uniforms.ViewRowLocations, matrices.View);
-        ApplyMatrixRows(
-            uniforms.ViewProjectionRowLocations,
-            matrices.ViewProjection);
-        _state.Uniform3(
-            uniforms.EyeOffsetLocation,
-            matrices.EyeOffset.X,
-            matrices.EyeOffset.Y,
-            matrices.EyeOffset.Z);
-    }
-
     private void ApplyTranslatedStaticComposition(
         MapRenderOpenGlStaticModelProgramUniforms? programUniforms,
         GlTexturedMesh mesh,
@@ -1397,55 +1382,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         // shared by vegetation and non-vegetation static-model batches.
         MapRenderEditorVegetationAnimationPlan? vegetation =
             mesh.VegetationAnimation;
-        _state.Uniform1(
-            uniforms.Vegetation.WindEnabled,
-            vegetation?.IsEnabled == true ? 1 : 0);
-        _state.Uniform1(uniforms.Vegetation.Time, editorTimeSeconds);
-        _state.Uniform1(
-            uniforms.Vegetation.Amplitude,
-            vegetation?.Amplitude ?? 0f);
-        _state.Uniform1(
-            uniforms.Vegetation.AngularFrequency,
-            vegetation?.AngularFrequency ?? 0f);
-        _state.Uniform1(
-            uniforms.Vegetation.SpatialFrequency,
+        _state.Uniform4(
+            uniforms.Vegetation.Parameters,
+            vegetation?.IsEnabled == true ? 1f : 0f,
+            vegetation?.Amplitude ?? 0f,
+            vegetation?.AngularFrequency ?? 0f,
             vegetation?.SpatialFrequency ?? 0f);
-        _state.Uniform1(
-            uniforms.Vegetation.LocalMinimumHeight,
-            mesh.LocalMinimumHeight);
-        _state.Uniform1(
-            uniforms.Vegetation.LocalHeightRange,
-            mesh.LocalHeightRange);
-    }
-
-    private void ApplyMatrixRows(
-        IReadOnlyList<int> locations,
-        Matrix4x4 matrix)
-    {
         _state.Uniform4(
-            locations[0],
-            matrix.M11,
-            matrix.M12,
-            matrix.M13,
-            matrix.M14);
-        _state.Uniform4(
-            locations[1],
-            matrix.M21,
-            matrix.M22,
-            matrix.M23,
-            matrix.M24);
-        _state.Uniform4(
-            locations[2],
-            matrix.M31,
-            matrix.M32,
-            matrix.M33,
-            matrix.M34);
-        _state.Uniform4(
-            locations[3],
-            matrix.M41,
-            matrix.M42,
-            matrix.M43,
-            matrix.M44);
+            uniforms.Vegetation.Bounds,
+            mesh.LocalMinimumHeight,
+            mesh.LocalHeightRange,
+            0f,
+            0f);
     }
 
     private readonly record struct DpvsWorkKey(

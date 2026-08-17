@@ -2,6 +2,7 @@ using System.Numerics;
 
 using IW4.Render.EditorPreview;
 using IW4.Render.Geometry;
+using IW4.Render.Lighting;
 using IW4.Render.Scheduling;
 using IW4.Render.Scheduling.Dpvs;
 using IW4.Render.Scheduling.Shadows;
@@ -16,6 +17,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 {
     private StaticReceiverIdentityObjectGroup[]
         _staticReceiverSelectionGroups = [];
+    private MapRenderFrameTechniqueSelector?
+        _receiverSelectionReuseSelector;
+    private MapRenderSceneTechniqueVariantCatalog?
+        _receiverSelectionReuseTechniqueCatalog;
+    private MapRenderSceneLightSelectorAssetState?
+        _receiverSelectionReuseSceneLightSelectorAsset;
+    private WorldReceiverVariantRuntime[]?
+        _receiverSelectionReuseWorldVariants;
+    private StaticReceiverVariantRuntime[]?
+        _receiverSelectionReuseStaticVariants;
+    private StaticReceiverIdentityObjectGroup[]?
+        _receiverSelectionReuseStaticSelectionGroups;
+    private MapRenderStaticModelReceiverIdentity[]?
+        _receiverSelectionReuseStaticExpectedIdentities;
+    private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]?
+        _receiverSelectionReuseDrawGroups;
+    private MapRenderEditorDrawGroup<GlTexturedDrawCommand>[]?
+        _receiverSelectionReuseDepthGroups;
+    private uint _receiverSelectionReuseGeneration;
+    private bool _receiverSelectionReuseProgressiveStatics;
+    private long _receiverSelectionReuseResolvedBatchCount;
+    private long _receiverSelectionReuseMaterializedBatchCount;
+    private long _receiverSelectionReuseMaterializationWaveCount;
 
     private static readonly MapRenderWorldSurfacePageMembership[]
         ReceiverWorldPages =
@@ -790,6 +814,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 nameof(spotAtlasReady));
         }
 
+        InvalidateWorldReceiverVariantSelectionReuse();
         bool hasSunAllocation =
             sunAtlasReady is not null || sunShadowPreflight;
         bool hasSpotAllocation =
@@ -1047,6 +1072,268 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             throw new InvalidOperationException(
                 $"The same-revision atlas has {missingAtlasWorld} world and {missingAtlasStatic} static-model atlas-consuming receiver surface(s) without a complete exact authored program group.");
         }
+
+        CommitWorldReceiverVariantSelectionReuse(selector);
+    }
+
+    private bool TryReuseWorldReceiverVariantSelection(
+        MapRenderWorldDpvsThreeViewFrame frame,
+        MapRenderSunShadowAtlasReadyState? sunAtlasReady,
+        MapRenderSpotShadowAtlasReadyState spotAtlasReady)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        ArgumentNullException.ThrowIfNull(spotAtlasReady);
+        if (!ReferenceEquals(spotAtlasReady.Frame, frame) ||
+            sunAtlasReady is not null &&
+            !ReferenceEquals(sunAtlasReady.Frame, frame) ||
+            _receiverSelectionReuseSelector is not { } priorSelector ||
+            !ReferenceEquals(
+                _currentWorldReceiverTechniqueSelector,
+                priorSelector) ||
+            priorSelector.Techniques.SceneLights
+                .IsShadowAllocationPreflight ||
+            priorSelector.Techniques.SceneLights
+                .SpotShadowAtlasReady is null ||
+            (priorSelector.Techniques.SceneLights
+                .SunShadowAtlasReady is null) !=
+            (sunAtlasReady is null) ||
+            !ReferenceEquals(
+                priorSelector.Visibility.Camera,
+                frame.Camera) ||
+            !ReferenceEquals(
+                priorSelector.Visibility.SunShadowPartition0,
+                frame.SunShadowPartition0) ||
+            !ReferenceEquals(
+                priorSelector.Visibility.SunShadowPartition1,
+                frame.SunShadowPartition1) ||
+            !ReferenceEquals(
+                priorSelector.Visibility.Projection,
+                frame.Projection) ||
+            _sceneTechniqueVariants is not { } techniqueCatalog ||
+            _sceneLightSelectorAsset is not { } sceneLights ||
+            !ReferenceEquals(
+                _receiverSelectionReuseTechniqueCatalog,
+                techniqueCatalog) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseSceneLightSelectorAsset,
+                sceneLights) ||
+            !ReferenceEquals(
+                priorSelector.Techniques.DrawMethod,
+                techniqueCatalog.DrawMethod) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseWorldVariants,
+                _worldReceiverVariants) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseStaticVariants,
+                _staticReceiverVariants) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseStaticSelectionGroups,
+                _staticReceiverSelectionGroups) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseStaticExpectedIdentities,
+                _staticReceiverExpectedIdentities) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseDrawGroups,
+                _receiverAwareEditorTexturedDrawGroups) ||
+            !ReferenceEquals(
+                _receiverSelectionReuseDepthGroups,
+                _receiverAwareEditorDepthPrepassDrawGroups) ||
+            _receiverSelectionReuseGeneration == 0 ||
+            _receiverSelectionReuseGeneration !=
+                _receiverSelectionGeneration ||
+            _receiverSelectionReuseProgressiveStatics !=
+                _progressiveStaticMaterializationEnabled ||
+            _receiverSelectionReuseResolvedBatchCount !=
+                StaticResourceResolvedBatchCount ||
+            _receiverSelectionReuseMaterializedBatchCount !=
+                StaticResourceMaterializedBatchCount ||
+            _receiverSelectionReuseMaterializationWaveCount !=
+                StaticResourceMaterializationWaveCount ||
+            _staticInstanceCompactionFullInvalidationPending ||
+            !HasExactReceiverSelectionReusePublication(frame) ||
+            !HasExactReceiverShadowAllocationMembership(
+                priorSelector.Techniques.SceneLights.Selectors,
+                sceneLights,
+                sunAtlasReady,
+                spotAtlasReady))
+        {
+            return false;
+        }
+
+        // Selection words, channel counts, static occurrence sets, and their
+        // generation remain untouched. Only readiness authority is rebound to
+        // the current-revision atlas publications and frame wrapper.
+        var selectorFrame = new MapRenderSceneLightSelectorFrameState(
+            frame.Revision,
+            priorSelector.Techniques.SceneLights.Selectors,
+            sunAtlasReady,
+            spotAtlasReady);
+        var selector = new MapRenderFrameTechniqueSelector(
+            frame,
+            new MapRenderTechniqueSelectionContext(
+                techniqueCatalog.DrawMethod,
+                selectorFrame,
+                priorSelector.Techniques
+                    .FlaggedTechniqueOverrideEnabled));
+        _currentWorldReceiverTechniqueSelector = selector;
+        CommitWorldReceiverVariantSelectionReuse(selector);
+        return true;
+    }
+
+    private bool HasExactReceiverSelectionReusePublication(
+        MapRenderWorldDpvsThreeViewFrame frame)
+    {
+        if (!_hasPreviewVisibilityPublication ||
+            _previewVisibilityPublicationRevision == 0 ||
+            _activeSunShadowDpvsPacket is not { } packet ||
+            packet.Ticket != _previewVisibilityPacketTicket ||
+            packet.Key != _previewVisibilityPacketKey ||
+            _previewVisibilitySceneGeneration !=
+                _previewSceneGeneration ||
+            _previewVisibilityCamera != packet.Key.Camera ||
+            !ReferenceEquals(
+                _previewVisibilityFrustum,
+                _currentPreviewFrustum) ||
+            !ReferenceEquals(
+                _previewVisibilityDpvs,
+                frame.Camera) ||
+            !ReferenceEquals(_currentPreviewDpvs, frame.Camera) ||
+            !ReferenceEquals(
+                _previewVisibilityTexturedMeshes,
+                _textured) ||
+            !ReferenceEquals(
+                _previewVisibilityWorldSurfaceBatches,
+                _worldSurfaceBatches) ||
+            !ReferenceEquals(
+                _previewVisibilityWorldReceiverVariants,
+                _worldReceiverVariants) ||
+            !ReferenceEquals(
+                _previewVisibilityFrameGroups,
+                _receiverAwareEditorTexturedDrawGroups) ||
+            _previewVisibilityVisibleScheduledStaticObjectCount !=
+                _visibleScheduledStaticObjectCount ||
+            _previewVisibilityUsesDynamicStaticLods !=
+                _usesDynamicStaticLods ||
+            _preparedStaticSelectionKey != packet.Key ||
+            !ReferenceEquals(
+                _preparedStaticSelectionVisibility,
+                frame.Camera) ||
+            _preparedStaticLightingKey != packet.Key ||
+            !ReferenceEquals(
+                _preparedStaticLightingVisibility,
+                frame.Camera) ||
+            _preparedStaticLightingVisibleCount !=
+                _previewVisibilityVisibleStaticObjectCount ||
+            !_hasPreparedTexturedDrawQueue ||
+            _preparedTexturedDrawQueueRevision == 0 ||
+            _preparedTexturedDrawVisibilityRevision !=
+                _previewVisibilityPublicationRevision ||
+            !ReferenceEquals(
+                _preparedTexturedDrawFrameGroups,
+                _receiverAwareEditorTexturedDrawGroups) ||
+            _preparedTexturedDrawGroups is null)
+        {
+            return false;
+        }
+
+        MapRenderStaticModelLightingWorkingSet? workingSet =
+            _staticModelLightingWorkingSet;
+        if (!ReferenceEquals(
+                _previewVisibilityStaticLightingWorkingSet,
+                workingSet) ||
+            _previewVisibilityStaticLightingAssignmentGeneration !=
+                (workingSet?.AssignmentGeneration ?? 0) ||
+            workingSet is not null &&
+            !workingSet.DirtyAssignments.IsEmpty)
+        {
+            return false;
+        }
+
+        return HasExactPreviousStaticVisibilitySelection() &&
+               HasExactPreviousWorldReceiverSelection();
+    }
+
+    private bool HasExactReceiverShadowAllocationMembership(
+        MapRenderSceneLightSelectorState priorSelectors,
+        MapRenderSceneLightSelectorAssetState sceneLights,
+        MapRenderSunShadowAtlasReadyState? sunAtlasReady,
+        MapRenderSpotShadowAtlasReadyState spotAtlasReady)
+    {
+        if (priorSelectors.SceneLightCount != sceneLights.SceneLightCount ||
+            !priorSelectors.AlternateVariantGateEnabled ||
+            sunAtlasReady is not null &&
+            _selectedDirectionalSunPrimaryLightIndex is null)
+        {
+            return false;
+        }
+
+        for (int lightIndex = 0;
+             lightIndex < sceneLights.SceneLightCount;
+             lightIndex++)
+        {
+            bool currentAllocated =
+                sunAtlasReady is not null &&
+                _selectedDirectionalSunPrimaryLightIndex == lightIndex ||
+                spotAtlasReady.TryGetEntry(lightIndex, out _);
+            if (priorSelectors.IsAlternateVariantAllocated(lightIndex) !=
+                currentAllocated)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void CommitWorldReceiverVariantSelectionReuse(
+        MapRenderFrameTechniqueSelector selector)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        if (selector.Techniques.SceneLights.IsShadowAllocationPreflight)
+            return;
+
+        _receiverSelectionReuseSelector = selector;
+        _receiverSelectionReuseTechniqueCatalog =
+            _sceneTechniqueVariants;
+        _receiverSelectionReuseSceneLightSelectorAsset =
+            _sceneLightSelectorAsset;
+        _receiverSelectionReuseWorldVariants = _worldReceiverVariants;
+        _receiverSelectionReuseStaticVariants = _staticReceiverVariants;
+        _receiverSelectionReuseStaticSelectionGroups =
+            _staticReceiverSelectionGroups;
+        _receiverSelectionReuseStaticExpectedIdentities =
+            _staticReceiverExpectedIdentities;
+        _receiverSelectionReuseDrawGroups =
+            _receiverAwareEditorTexturedDrawGroups;
+        _receiverSelectionReuseDepthGroups =
+            _receiverAwareEditorDepthPrepassDrawGroups;
+        _receiverSelectionReuseGeneration =
+            _receiverSelectionGeneration;
+        _receiverSelectionReuseProgressiveStatics =
+            _progressiveStaticMaterializationEnabled;
+        _receiverSelectionReuseResolvedBatchCount =
+            StaticResourceResolvedBatchCount;
+        _receiverSelectionReuseMaterializedBatchCount =
+            StaticResourceMaterializedBatchCount;
+        _receiverSelectionReuseMaterializationWaveCount =
+            StaticResourceMaterializationWaveCount;
+    }
+
+    private void InvalidateWorldReceiverVariantSelectionReuse()
+    {
+        _receiverSelectionReuseSelector = null;
+        _receiverSelectionReuseTechniqueCatalog = null;
+        _receiverSelectionReuseSceneLightSelectorAsset = null;
+        _receiverSelectionReuseWorldVariants = null;
+        _receiverSelectionReuseStaticVariants = null;
+        _receiverSelectionReuseStaticSelectionGroups = null;
+        _receiverSelectionReuseStaticExpectedIdentities = null;
+        _receiverSelectionReuseDrawGroups = null;
+        _receiverSelectionReuseDepthGroups = null;
+        _receiverSelectionReuseGeneration = 0;
+        _receiverSelectionReuseProgressiveStatics = false;
+        _receiverSelectionReuseResolvedBatchCount = 0;
+        _receiverSelectionReuseMaterializedBatchCount = 0;
+        _receiverSelectionReuseMaterializationWaveCount = 0;
     }
 
     private void AuthorizePreflightedWorldReceiverVariantSelection(
@@ -1116,12 +1403,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             throw new InvalidOperationException(
                 "Completed shadow-atlas membership does not match the exact receiver preflight.");
         }
-        _currentWorldReceiverTechniqueSelector =
-            new MapRenderFrameTechniqueSelector(
-                frame,
-                new MapRenderTechniqueSelectionContext(
-                    techniqueCatalog.DrawMethod,
-                    selectorFrame));
+        var selector = new MapRenderFrameTechniqueSelector(
+            frame,
+            new MapRenderTechniqueSelectionContext(
+                techniqueCatalog.DrawMethod,
+                selectorFrame));
+        _currentWorldReceiverTechniqueSelector = selector;
+        CommitWorldReceiverVariantSelectionReuse(selector);
     }
 
     private MapRenderSceneLightSelectorFrameState
@@ -1303,6 +1591,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void ResetWorldReceiverVariantSelection()
     {
+        InvalidateWorldReceiverVariantSelectionReuse();
         _currentWorldReceiverTechniqueSelector = null;
         _baseWorldReceiverVisibilityActive = false;
         AdvanceReceiverSelectionGeneration();

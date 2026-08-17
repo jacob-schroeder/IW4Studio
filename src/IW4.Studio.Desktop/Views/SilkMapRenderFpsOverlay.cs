@@ -72,6 +72,8 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
         MapRenderFrameTelemetrySnapshot telemetry,
         double hostRenderMilliseconds,
         double hostRenderAverageMilliseconds,
+        double swapMilliseconds,
+        double swapAverageMilliseconds,
         int framebufferWidth,
         int framebufferHeight,
         float renderScaling)
@@ -91,7 +93,9 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
             string text = BuildText(
                 telemetry,
                 hostRenderMilliseconds,
-                hostRenderAverageMilliseconds);
+                hostRenderAverageMilliseconds,
+                swapMilliseconds,
+                swapAverageMilliseconds);
             if (scaleChanged ||
                 !string.Equals(text, _displayedText, StringComparison.Ordinal))
             {
@@ -159,7 +163,9 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
     private static string BuildText(
         MapRenderFrameTelemetrySnapshot telemetry,
         double hostRenderMilliseconds,
-        double hostRenderAverageMilliseconds)
+        double hostRenderAverageMilliseconds,
+        double swapMilliseconds,
+        double swapAverageMilliseconds)
     {
         var text = new StringBuilder(768);
         text.Append("FPS ");
@@ -170,6 +176,10 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
         AppendOneDecimal(text, hostRenderMilliseconds);
         text.Append(" / AVG ");
         AppendOneDecimal(text, hostRenderAverageMilliseconds);
+        text.Append(" MS  SWAP ");
+        AppendOneDecimal(text, swapMilliseconds);
+        text.Append(" / AVG ");
+        AppendOneDecimal(text, swapAverageMilliseconds);
         text.AppendLine(" MS");
 
         text.Append("CPU ");
@@ -218,10 +228,16 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
             Counter(telemetry, MapRenderFrameCounter.Triangles));
         text.AppendLine();
 
-        text.Append("GL ");
+        text.Append("GL TRACKED ");
         AppendCompactCount(
             text,
             Counter(telemetry, MapRenderFrameCounter.OpenGlCalls));
+        text.Append("  ELIDED ");
+        AppendCompactCount(
+            text,
+            Counter(
+                telemetry,
+                MapRenderFrameCounter.StateShadowElidedCalls));
         text.Append("  PROG ");
         AppendCompactCount(
             text,
@@ -242,6 +258,20 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
         AppendCompactCount(
             text,
             Counter(telemetry, MapRenderFrameCounter.UniformUpdates));
+        text.AppendLine();
+
+        text.Append("STATIC BUNDLE  BIND ");
+        AppendCompactCount(
+            text,
+            Counter(
+                telemetry,
+                MapRenderFrameCounter.StaticExecutionBundleBinds));
+        text.Append("  REUSE ");
+        AppendCompactCount(
+            text,
+            Counter(
+                telemetry,
+                MapRenderFrameCounter.StaticExecutionBundleReuses));
         text.AppendLine();
 
         text.Append("ALLOC RENDER ");
