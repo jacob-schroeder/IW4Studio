@@ -83,9 +83,12 @@ public sealed unsafe partial class MetalMapRenderer
         _normalCameraSceneLightFrame;
     private MapRenderWorldSceneSource? _normalCameraWorldSource;
     private MapRenderActiveFogState? _normalCameraActiveFog;
+    private MapRenderActiveFogState? _normalCameraGenericActiveFog;
     private MetalResourceCache? _normalCameraLightAttenuationResources;
     private MetalNormalCameraLightAttenuationBinding?[]
         _normalCameraLightAttenuationBindings = [];
+    private MetalNormalCameraAdmissionTelemetry
+        _normalCameraAdmissionTelemetry;
 
     partial void CreateNormalCameraResources(
         MapRenderScene scene,
@@ -117,24 +120,36 @@ public sealed unsafe partial class MetalMapRenderer
                     previewAtmosphere,
                     previewLighting)
                 : null);
+        _normalCameraGenericActiveFog = scene.EditorPreviewActiveFog;
         _normalCameraAnimationStartTimestamp = Stopwatch.GetTimestamp();
         _normalCameraPreparedFrameIndex = -1;
         _normalCameraFrameStateRevision = -1;
 
         var prepared = new List<MetalPreparedNormalCameraPass>(
             snapshot.NormalCameraDraws.PreparedPasses.Length);
-        var failedPasses = new HashSet<
-            RenderNormalCameraPreparedPassSnapshot>(
-                ReferenceEqualityComparer.Instance);
+        var failedPasses = new Dictionary<
+            RenderNormalCameraPreparedPassSnapshot,
+            string>(ReferenceEqualityComparer.Instance);
         var authorizedPasses = new HashSet<
             RenderNormalCameraPreparedPassSnapshot>(
                 ReferenceEqualityComparer.Instance);
+        int snapshotBaseGroups = 0;
+        int snapshotReceiverGroups = 0;
+        int authorizedBaseGroups = 0;
+        int authorizedReceiverGroups = 0;
+        int blockedGroups = 0;
         foreach (MapRenderEditorDrawGroup<
                      RenderNormalCameraDrawSubmissionSnapshot> group in
                  snapshot.NormalCameraDraws.DrawGroups)
         {
             ReadOnlySpan<RenderNormalCameraDrawSubmissionSnapshot>
                 authoredPasses = group.AuthoredPassSpan;
+            bool receiverGroup = IsReceiverPass(
+                authoredPasses[0].PreparedPass);
+            if (receiverGroup)
+                snapshotReceiverGroups++;
+            else
+                snapshotBaseGroups++;
             bool groupReady = true;
             for (int passIndex = 0;
                  passIndex < authoredPasses.Length;
@@ -142,13 +157,18 @@ public sealed unsafe partial class MetalMapRenderer
             {
                 RenderNormalCameraPreparedPassSnapshot source =
                     authoredPasses[passIndex].PreparedPass;
+                if (IsReceiverPass(source) != receiverGroup)
+                {
+                    throw new InvalidDataException(
+                        "A normal-camera authored group mixed base and receiver passes.");
+                }
                 if (_normalCameraPasses.TryGetValue(
                         source,
                         out _))
                 {
                     continue;
                 }
-                if (failedPasses.Contains(source))
+                if (failedPasses.ContainsKey(source))
                 {
                     groupReady = false;
                     continue;
@@ -157,9 +177,9 @@ public sealed unsafe partial class MetalMapRenderer
                         scene,
                         source,
                         out MetalPreparedNormalCameraPass? runtime,
-                        out _))
+                        out string blocker))
                 {
-                    failedPasses.Add(source);
+                    failedPasses.Add(source, blocker);
                     groupReady = false;
                     continue;
                 }
@@ -167,9 +187,16 @@ public sealed unsafe partial class MetalMapRenderer
                 prepared.Add(runtime!);
             }
             if (!groupReady)
+            {
+                blockedGroups++;
                 continue;
+            }
 
             _normalCameraAuthorizedGroups.Add(group);
+            if (receiverGroup)
+                authorizedReceiverGroups++;
+            else
+                authorizedBaseGroups++;
             for (int passIndex = 0;
                  passIndex < authoredPasses.Length;
                  passIndex++)
@@ -189,6 +216,17 @@ public sealed unsafe partial class MetalMapRenderer
         prepared.RemoveAll(runtime =>
             !authorizedPasses.Contains(runtime.Source));
 
+        _normalCameraAdmissionTelemetry =
+            CreateNormalCameraAdmissionTelemetry(
+                snapshot.NormalCameraDraws.PreparedPasses,
+                authorizedPasses,
+                failedPasses,
+                snapshotBaseGroups,
+                snapshotReceiverGroups,
+                authorizedBaseGroups,
+                authorizedReceiverGroups,
+                blockedGroups);
+
         _normalCameraPreparedPasses = prepared.ToArray();
         _hasNormalCameraGenericMaterials =
             _normalCameraPreparedPasses.Any(pass =>
@@ -202,6 +240,7 @@ public sealed unsafe partial class MetalMapRenderer
 
     partial void DeleteNormalCameraResources()
     {
+        DeleteNormalCameraFloatZResources();
         for (int index = 0;
              index < _normalCameraFrameBuffers.Length;
              index++)
@@ -232,9 +271,11 @@ public sealed unsafe partial class MetalMapRenderer
         _normalCameraSceneLightFrame = null;
         _normalCameraWorldSource = null;
         _normalCameraActiveFog = null;
+        _normalCameraGenericActiveFog = null;
         _normalCameraLightAttenuationResources?.Dispose();
         _normalCameraLightAttenuationResources = null;
         _normalCameraLightAttenuationBindings = [];
+        _normalCameraAdmissionTelemetry = default;
         _hasNormalCameraGenericMaterials = false;
         _normalCameraGenericFrameState = default;
     }
@@ -403,7 +444,6 @@ public sealed unsafe partial class MetalMapRenderer
         MTLRenderCommandEncoder encoder,
         RenderCamera camera)
     {
-        PublishNormalCameraInventoryCounters();
         if (_normalCameraPreparedPasses.Length == 0 ||
             (_normalCameraPreparedPasses.Any(pass =>
                  pass.RequiresImmutableBuffer) &&
@@ -661,6 +701,77 @@ public sealed unsafe partial class MetalMapRenderer
 
     private void PublishNormalCameraInventoryCounters()
     {
+        MetalNormalCameraAdmissionTelemetry admission =
+            _normalCameraAdmissionTelemetry;
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraSnapshotBaseGroups,
+            admission.SnapshotBaseGroups);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraSnapshotReceiverGroups,
+            admission.SnapshotReceiverGroups);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraSnapshotBasePasses,
+            admission.SnapshotBasePasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraSnapshotReceiverPasses,
+            admission.SnapshotReceiverPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraAuthorizedBaseGroups,
+            admission.AuthorizedBaseGroups);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraAuthorizedReceiverGroups,
+            admission.AuthorizedReceiverGroups);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraAuthorizedBasePasses,
+            admission.AuthorizedBasePasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraAuthorizedReceiverPasses,
+            admission.AuthorizedReceiverPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedGroups,
+            admission.BlockedGroups);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedPasses,
+            admission.BlockedPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedGenericPasses,
+            admission.BlockedGenericPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedRuntimeSamplerPasses,
+            admission.BlockedRuntimeSamplerPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedUnresolvedSamplerPasses,
+            admission.BlockedUnresolvedSamplerPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedSunShadowPasses,
+            admission.BlockedSunShadowPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedSpotShadowPasses,
+            admission.BlockedSpotShadowPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedModelLightingPasses,
+            admission.BlockedModelLightingPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedProcessedFloatZPasses,
+            admission.BlockedProcessedFloatZPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedLightAttenuationPasses,
+            admission.BlockedLightAttenuationPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedShaderPasses,
+            admission.BlockedShaderPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedConstantPasses,
+            admission.BlockedConstantPasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedRenderStatePasses,
+            admission.BlockedRenderStatePasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedResourcePasses,
+            admission.BlockedResourcePasses);
+        _telemetry.SetCounter(
+            MapRenderFrameCounter.NormalCameraBlockedOtherPasses,
+            admission.BlockedOtherPasses);
         _telemetry.SetCounter(
             MapRenderFrameCounter.WorldCandidates,
             _normalCameraWorldCandidateCount);
@@ -673,6 +784,195 @@ public sealed unsafe partial class MetalMapRenderer
         _telemetry.SetCounter(
             MapRenderFrameCounter.TextureResidentBytes,
             _resources.UploadedTextureByteCount);
+    }
+
+    private static MetalNormalCameraAdmissionTelemetry
+        CreateNormalCameraAdmissionTelemetry(
+            ImmutableArray<RenderNormalCameraPreparedPassSnapshot>
+                snapshotPasses,
+            IReadOnlySet<RenderNormalCameraPreparedPassSnapshot>
+                authorizedPasses,
+            IReadOnlyDictionary<RenderNormalCameraPreparedPassSnapshot, string>
+                failedPasses,
+            int snapshotBaseGroups,
+            int snapshotReceiverGroups,
+            int authorizedBaseGroups,
+            int authorizedReceiverGroups,
+            int blockedGroups)
+    {
+        int snapshotBasePasses = 0;
+        int snapshotReceiverPasses = 0;
+        for (int index = 0; index < snapshotPasses.Length; index++)
+        {
+            if (IsReceiverPass(snapshotPasses[index]))
+                snapshotReceiverPasses++;
+            else
+                snapshotBasePasses++;
+        }
+
+        int authorizedBasePasses = 0;
+        int authorizedReceiverPasses = 0;
+        foreach (RenderNormalCameraPreparedPassSnapshot pass in
+                 authorizedPasses)
+        {
+            if (IsReceiverPass(pass))
+                authorizedReceiverPasses++;
+            else
+                authorizedBasePasses++;
+        }
+
+        int blockedGenericPasses = 0;
+        int blockedRuntimeSamplerPasses = 0;
+        int blockedUnresolvedSamplerPasses = 0;
+        int blockedSunShadowPasses = 0;
+        int blockedSpotShadowPasses = 0;
+        int blockedModelLightingPasses = 0;
+        int blockedProcessedFloatZPasses = 0;
+        int blockedLightAttenuationPasses = 0;
+        int blockedShaderPasses = 0;
+        int blockedConstantPasses = 0;
+        int blockedRenderStatePasses = 0;
+        int blockedResourcePasses = 0;
+        // A complete authored group is rejected atomically. Passes which
+        // prepared successfully but share a rejected group are blocked too,
+        // even though they have no independent backend failure string.
+        int blockedPasses = checked(
+            snapshotPasses.Length - authorizedPasses.Count);
+        int blockedOtherPasses = checked(
+            blockedPasses - failedPasses.Count);
+        foreach ((RenderNormalCameraPreparedPassSnapshot pass,
+                  string blocker) in failedPasses)
+        {
+            if (HasGenericMaterialMarker(pass.ShaderProvenance))
+            {
+                blockedGenericPasses++;
+                continue;
+            }
+            if (blocker.StartsWith("runtime", StringComparison.Ordinal))
+            {
+                blockedRuntimeSamplerPasses++;
+                if (blocker.Contains(
+                        "UNRESOLVED_CODE_SAMPLER",
+                        StringComparison.Ordinal))
+                {
+                    blockedUnresolvedSamplerPasses++;
+                }
+                else if (blocker.Contains(
+                             "SPOT_SHADOW",
+                             StringComparison.Ordinal))
+                {
+                    blockedSpotShadowPasses++;
+                }
+                else if (blocker.Contains(
+                             "SUN_SHADOW",
+                             StringComparison.Ordinal))
+                {
+                    blockedSunShadowPasses++;
+                }
+                else if (blocker.Contains(
+                             "MODEL_LIGHTING",
+                             StringComparison.Ordinal))
+                {
+                    blockedModelLightingPasses++;
+                }
+                else if (blocker.Contains(
+                             "PROCESSED_FLOATZ",
+                             StringComparison.Ordinal))
+                {
+                    blockedProcessedFloatZPasses++;
+                }
+                else if (blocker.Contains(
+                             "LIGHT_ATTENUATION",
+                             StringComparison.Ordinal))
+                {
+                    blockedLightAttenuationPasses++;
+                }
+                continue;
+            }
+            if (StartsWithAny(
+                    blocker,
+                    "shaderProgram=",
+                    "vertexMsl=",
+                    "fragmentMsl=",
+                    "fragmentAttachments=",
+                    "metalPipeline="))
+            {
+                blockedShaderPasses++;
+            }
+            else if (StartsWithAny(
+                         blocker,
+                         "directConstants=",
+                         "vertexConstants=",
+                         "vertexConstantC",
+                         "codePixelRow"))
+            {
+                blockedConstantPasses++;
+            }
+            else if (blocker.StartsWith(
+                         "renderState=",
+                         StringComparison.Ordinal))
+            {
+                blockedRenderStatePasses++;
+            }
+            else if (StartsWithAny(
+                         blocker,
+                         "rsxVertexInputs=",
+                         "samplerDestination",
+                         "staticComposition=",
+                         "staticInstances=",
+                         "staticLightingPayload=",
+                         "staticInstanceLayout=",
+                         "staticInstanceStride="))
+            {
+                blockedResourcePasses++;
+            }
+            else
+            {
+                blockedOtherPasses++;
+            }
+        }
+
+        return new MetalNormalCameraAdmissionTelemetry(
+            snapshotBaseGroups,
+            snapshotReceiverGroups,
+            snapshotBasePasses,
+            snapshotReceiverPasses,
+            authorizedBaseGroups,
+            authorizedReceiverGroups,
+            authorizedBasePasses,
+            authorizedReceiverPasses,
+            blockedGroups,
+            blockedPasses,
+            blockedGenericPasses,
+            blockedRuntimeSamplerPasses,
+            blockedUnresolvedSamplerPasses,
+            blockedSunShadowPasses,
+            blockedSpotShadowPasses,
+            blockedModelLightingPasses,
+            blockedProcessedFloatZPasses,
+            blockedLightAttenuationPasses,
+            blockedShaderPasses,
+            blockedConstantPasses,
+            blockedRenderStatePasses,
+            blockedResourcePasses,
+            blockedOtherPasses);
+    }
+
+    private static bool IsReceiverPass(
+        RenderNormalCameraPreparedPassSnapshot pass) =>
+        pass.WorldReceiverVariant.HasValue ||
+        pass.StaticReceiverVariant.HasValue;
+
+    private static bool StartsWithAny(
+        string value,
+        params ReadOnlySpan<string> prefixes)
+    {
+        for (int index = 0; index < prefixes.Length; index++)
+        {
+            if (value.StartsWith(prefixes[index], StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     private bool TryPrepareNormalCameraPass(
@@ -959,8 +1259,22 @@ public sealed unsafe partial class MetalMapRenderer
                     "Texture2D",
                     StringComparison.Ordinal) &&
                 samplerFeatures == RsxFragmentSamplerFeatures.None;
+            bool exactProcessedFloatZ =
+                hasAbi &&
+                requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.ProcessedFloatZ &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus
+                        .SameRevisionTextureRequired &&
+                requirement.CodeSamplerArgument ==
+                    MaterialTextureSource.ProcessedFloatZ &&
+                string.Equals(
+                    abi.TextureTarget,
+                    "Texture2D",
+                    StringComparison.Ordinal) &&
+                samplerFeatures == RsxFragmentSamplerFeatures.None;
             if ((!exactSun && !exactSpot && !exactModelLighting &&
-                 !exactLightAttenuation) ||
+                 !exactLightAttenuation && !exactProcessedFloatZ) ||
                 abi.RuntimeResourceKind != requirement.ResourceKind ||
                 abi.RuntimeRequirementStatus != requirement.Status ||
                 !string.Equals(
@@ -978,6 +1292,8 @@ public sealed unsafe partial class MetalMapRenderer
                             "EXACT_SPOT_SHADOW_PUBLICATION_REQUIRED",
                         ShaderRuntimeSamplerResourceKind.ModelLightingAtlas =>
                             "EXACT_MODEL_LIGHTING_PUBLICATION_REQUIRED",
+                        ShaderRuntimeSamplerResourceKind.ProcessedFloatZ =>
+                            "EXACT_PROCESSED_FLOATZ_PUBLICATION_REQUIRED",
                         ShaderRuntimeSamplerResourceKind.LightAttenuation =>
                             "EXACT_LIGHT_ATTENUATION_TEXTURE_REQUIRED",
                         _ => "EXACT_SUN_SHADOW_PUBLICATION_REQUIRED"
@@ -1671,6 +1987,13 @@ public sealed unsafe partial class MetalMapRenderer
         {
             uniformUpdates++;
         }
+        if (_depthStencilFormat.EmulatesDepth24 &&
+            bindings.SetFragmentBytes(
+                _renderStates.CurrentDepthBias,
+                MetalRsxShaderAbi.FragmentDepthBiasBufferIndex))
+        {
+            uniformUpdates++;
+        }
         if (uniformUpdates != 0)
         {
             _telemetry.AddCounter(
@@ -1740,6 +2063,17 @@ public sealed unsafe partial class MetalMapRenderer
                         binding.Destination);
                     bindings.SetFragmentSampler(
                         modelLightingSampler,
+                        binding.Destination);
+                    break;
+                case ShaderRuntimeSamplerResourceKind.ProcessedFloatZ:
+                    RequireCurrentProcessedFloatZBinding(
+                        out MTLTexture processedFloatZTexture,
+                        out MTLSamplerState processedFloatZSampler);
+                    bindings.SetFragmentTexture(
+                        processedFloatZTexture,
+                        binding.Destination);
+                    bindings.SetFragmentSampler(
+                        processedFloatZSampler,
                         binding.Destination);
                     break;
                 case ShaderRuntimeSamplerResourceKind.LightAttenuation:
@@ -2183,7 +2517,7 @@ public sealed unsafe partial class MetalMapRenderer
         internal const int VertexBufferSlotCount =
             MetalRsxShaderAbi.StaticCompositionBufferIndex + 1;
         internal const int FragmentBufferSlotCount =
-            MetalRsxShaderAbi.FragmentStaticConstantBufferIndex + 1;
+            MetalRsxShaderAbi.FragmentDepthBiasBufferIndex + 1;
         internal const int FragmentTextureSlotCount =
             MetalRsxShaderAbi.TextureDestinationCount;
 
@@ -2197,6 +2531,9 @@ public sealed unsafe partial class MetalMapRenderer
         private int _inlineVertexBytesSlot;
         private Vector4 _inlineVertexBytes0;
         private Vector4 _inlineVertexBytes1;
+        private bool _hasInlineFragmentBytes;
+        private int _inlineFragmentBytesSlot;
+        private Vector2 _inlineFragmentBytes;
 
         internal MetalNormalCameraEncoderBindingShadow(
             MTLRenderCommandEncoder encoder,
@@ -2232,6 +2569,9 @@ public sealed unsafe partial class MetalMapRenderer
             _inlineVertexBytesSlot = -1;
             _inlineVertexBytes0 = default;
             _inlineVertexBytes1 = default;
+            _hasInlineFragmentBytes = false;
+            _inlineFragmentBytesSlot = -1;
+            _inlineFragmentBytes = default;
             _vertexBuffers.Clear();
             _fragmentBuffers.Clear();
             _fragmentTextures.Clear();
@@ -2257,6 +2597,29 @@ public sealed unsafe partial class MetalMapRenderer
                 slot,
                 _fragmentBuffers,
                 fragmentStage: true);
+
+        internal bool SetFragmentBytes(Vector2 value, ulong slot)
+        {
+            int index = RequireSlot(slot, _fragmentBuffers.Length);
+            if (_hasInlineFragmentBytes &&
+                _inlineFragmentBytesSlot == index &&
+                _inlineFragmentBytes == value)
+            {
+                RecordElision();
+                return false;
+            }
+
+            _encoder.SetFragmentBytes(
+                (nint)(&value),
+                checked((ulong)sizeof(Vector2)),
+                slot);
+            _fragmentBuffers[index] = default;
+            _hasInlineFragmentBytes = true;
+            _inlineFragmentBytesSlot = index;
+            _inlineFragmentBytes = value;
+            _telemetry.AddCounter(MapRenderFrameCounter.BufferChanges);
+            return true;
+        }
 
         internal bool SetVertexBytes(
             Vector4 value0,
@@ -2363,6 +2726,13 @@ public sealed unsafe partial class MetalMapRenderer
             {
                 _hasInlineVertexBytes = false;
                 _inlineVertexBytesSlot = -1;
+            }
+            if (fragmentStage &&
+                _hasInlineFragmentBytes &&
+                _inlineFragmentBytesSlot == index)
+            {
+                _hasInlineFragmentBytes = false;
+                _inlineFragmentBytesSlot = -1;
             }
             _telemetry.AddCounter(MapRenderFrameCounter.BufferChanges);
             return true;
@@ -2518,6 +2888,31 @@ public sealed unsafe partial class MetalMapRenderer
     private readonly record struct MetalNormalCameraLightAttenuationBinding(
         MTLTexture Texture,
         MTLSamplerState Sampler);
+
+    private readonly record struct MetalNormalCameraAdmissionTelemetry(
+        int SnapshotBaseGroups,
+        int SnapshotReceiverGroups,
+        int SnapshotBasePasses,
+        int SnapshotReceiverPasses,
+        int AuthorizedBaseGroups,
+        int AuthorizedReceiverGroups,
+        int AuthorizedBasePasses,
+        int AuthorizedReceiverPasses,
+        int BlockedGroups,
+        int BlockedPasses,
+        int BlockedGenericPasses,
+        int BlockedRuntimeSamplerPasses,
+        int BlockedUnresolvedSamplerPasses,
+        int BlockedSunShadowPasses,
+        int BlockedSpotShadowPasses,
+        int BlockedModelLightingPasses,
+        int BlockedProcessedFloatZPasses,
+        int BlockedLightAttenuationPasses,
+        int BlockedShaderPasses,
+        int BlockedConstantPasses,
+        int BlockedRenderStatePasses,
+        int BlockedResourcePasses,
+        int BlockedOtherPasses);
 }
 
 internal readonly record struct MetalNormalCameraFrameState(

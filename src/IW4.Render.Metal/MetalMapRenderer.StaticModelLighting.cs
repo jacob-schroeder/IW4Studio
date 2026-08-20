@@ -54,15 +54,21 @@ public sealed unsafe partial class MetalMapRenderer
         foreach (MetalPreparedNormalCameraPass pass in
                  _normalCameraPreparedPasses)
         {
-            bool consumesAtlas = pass.RuntimeSamplerBindings.Any(binding =>
-                binding.ResourceKind ==
-                    ShaderRuntimeSamplerResourceKind.ModelLightingAtlas);
+            bool consumesAtlas = pass.GenericMaterial
+                ?.UsesStaticModelLighting == true ||
+                pass.RuntimeSamplerBindings.Any(binding =>
+                    binding.ResourceKind ==
+                        ShaderRuntimeSamplerResourceKind.ModelLightingAtlas);
             bool consumesBaseCoordinates = pass.LightingPayload ==
                 MapRenderStaticInstanceLightingPayload.BaseLightingCoords;
             bool exactContract =
-                MapRenderStaticModelLightingContract.TryCreate(
-                    pass.Source.ShaderProvenance,
-                    out _);
+                pass.GenericMaterial is { } generic
+                    ? generic.UsesStaticModelLighting &&
+                      pass.Source.GenericMaterialFallback
+                          .UsesStaticModelLighting
+                    : MapRenderStaticModelLightingContract.TryCreate(
+                        pass.Source.ShaderProvenance,
+                        out _);
             if (consumesAtlas != consumesBaseCoordinates ||
                 consumesAtlas != exactContract)
             {
@@ -226,6 +232,11 @@ public sealed unsafe partial class MetalMapRenderer
             _staticModelLightingResources;
         if (workingSet is null || resources is null)
             return;
+        if (_staticModelLightingAdmissionFrameStateRevision ==
+            _normalCameraFrameStateRevision)
+        {
+            return;
+        }
         if (_staticModelLightingAdmittedByObject.Length !=
             _normalCameraStaticVisible.Length)
         {
@@ -277,6 +288,12 @@ public sealed unsafe partial class MetalMapRenderer
             _normalCameraStaticVisibleObjectCount -
                 workingSet.AllocationMissCount);
         RecordStaticModelLightingTelemetry(workingSet);
+
+        // Visibility may have populated the base/receiver route cache before
+        // the atlas working set admitted its exact object subset. Rebuild the
+        // shared depth/color route once from this finalized admission rather
+        // than retaining the stale all-rejected selection.
+        InvalidateNormalCameraReceiverSelection();
     }
 
     private bool IsStaticModelLightingObjectAdmitted(int objectIndex)

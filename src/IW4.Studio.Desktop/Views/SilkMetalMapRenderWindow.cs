@@ -147,6 +147,23 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
         long triangles = LatestCounter(
             snapshot,
             MapRenderFrameCounter.Triangles);
+        long snapshotPasses = checked(
+            LatestCounter(
+                snapshot,
+                MapRenderFrameCounter.NormalCameraSnapshotBasePasses) +
+            LatestCounter(
+                snapshot,
+                MapRenderFrameCounter.NormalCameraSnapshotReceiverPasses));
+        long authorizedPasses = checked(
+            LatestCounter(
+                snapshot,
+                MapRenderFrameCounter.NormalCameraAuthorizedBasePasses) +
+            LatestCounter(
+                snapshot,
+                MapRenderFrameCounter.NormalCameraAuthorizedReceiverPasses));
+        long blockedPasses = LatestCounter(
+            snapshot,
+            MapRenderFrameCounter.NormalCameraBlockedPasses);
         double drawableWait = LatestCpuPhase(
             snapshot,
             MapRenderCpuPhase.SwapOrPresent);
@@ -160,7 +177,7 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
             CultureInfo.InvariantCulture,
             "Live Preview - {0} - Metal | {1:0.0} FPS | ENCODE {2:0.00} ms | " +
             "WAIT {3:0.00} ms | SCENE GPU {4:0.00} ms | CMD {5:0.00} ms | " +
-            "{6:N0} draws | {7:N0} tris",
+            "{6:N0} draws | {7:N0} tris | ADMIT {8:N0}/{9:N0} | BLOCKED {10:N0}",
             _scene.Name,
             snapshot.PresentedFramesPerSecond,
             encodeMilliseconds,
@@ -168,7 +185,10 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
             sceneGpuMilliseconds,
             snapshot.GpuFrameMilliseconds.Latest,
             draws,
-            triangles);
+            triangles,
+            authorizedPasses,
+            snapshotPasses,
+            blockedPasses);
     }
 
     private static long LatestCounter(

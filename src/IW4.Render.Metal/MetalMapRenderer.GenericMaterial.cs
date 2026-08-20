@@ -50,13 +50,13 @@ public sealed unsafe partial class MetalMapRenderer
             new Vector4(cameraPosition, animationTimeSeconds),
             MapRenderGenericFogPlanner.Resolve(
                 EditorPreviewFogRenderingEnabled,
-                _normalCameraActiveFog,
-                atmosphere: null,
+                _normalCameraGenericActiveFog,
+                _editorPreviewAtmosphere,
                 shaderConsumesLinearFogColor: false),
             MapRenderGenericFogPlanner.Resolve(
                 EditorPreviewFogRenderingEnabled,
-                _normalCameraActiveFog,
-                atmosphere: null,
+                _normalCameraGenericActiveFog,
+                _editorPreviewAtmosphere,
                 shaderConsumesLinearFogColor: true));
     }
 
@@ -255,6 +255,7 @@ public sealed unsafe partial class MetalMapRenderer
                 normalTextureMask,
                 specularTextureMask,
                 hasLightmap,
+                pass.GenericMaterialFallback.UsesStaticModelLighting,
                 out MetalGenericMaterialPipeline? pipeline,
                 out blocker) ||
             pipeline is null)
@@ -268,19 +269,47 @@ public sealed unsafe partial class MetalMapRenderer
             return false;
         }
 
+        bool usesStaticModelLighting =
+            pass.GenericMaterialFallback.UsesStaticModelLighting;
+        MapRenderStaticInstanceLightingPayload lightingPayload =
+            pass.GenericMaterialFallback.StaticInstanceLightingPayload;
+        if (usesStaticModelLighting !=
+            (lightingPayload ==
+                MapRenderStaticInstanceLightingPayload.BaseLightingCoords))
+        {
+            blocker = "genericStaticLighting=PAYLOAD_CONTRACT_MISMATCH";
+            return false;
+        }
+
         MapRenderEditorPreviewLightingPlan lighting =
             scene.EditorPreviewLighting ??
             MapRenderEditorPreviewLightingPlanner.Create(comWorld: null);
         bool receivesLighting =
+            usesStaticModelLighting ||
             pass.SourcePass.TechniqueSlot !=
                 EditorPreviewTechniquePolicy
                     .PreferredEmissiveTechniqueSlot;
-        bool hasDirectionalSun =
+        bool genericStaticLightingMatchesDirectionalSun =
+            usesStaticModelLighting &&
+            lighting.DirectionalSunPrimaryLightIndex ==
+                pass.SceneLightIndex;
+        bool hasDirectionalSunDiffuse =
             receivesLighting &&
-            lighting.HasDirectionalSun;
+            lighting.HasDirectionalSun &&
+            (!usesStaticModelLighting ||
+             (genericStaticLightingMatchesDirectionalSun &&
+              pass.GenericMaterialFallback
+                  .StaticModelLightingAddsDirectionalDiffuse));
+        bool hasDirectionalSunSpecular =
+            receivesLighting &&
+            lighting.HasDirectionalSun &&
+            (!usesStaticModelLighting ||
+             (genericStaticLightingMatchesDirectionalSun &&
+              pass.GenericMaterialFallback
+                  .StaticModelLightingAddsDirectionalSpecular));
         Vector3 sunDiffuse = Vector3.Zero;
         Vector3 sunSpecular = Vector3.Zero;
-        if (hasDirectionalSun)
+        if (hasDirectionalSunDiffuse || hasDirectionalSunSpecular)
         {
             DirectionalSunLinearColors colors =
                 MapRenderEditorDirectCodeConstantProducers
@@ -319,8 +348,11 @@ public sealed unsafe partial class MetalMapRenderer
             specularTextureMask,
             hasLightmap,
             receivesLighting,
+            pass.GenericMaterialFallback.ColorInputLinearizationMask,
+            usesStaticModelLighting,
             lighting.AmbientColor,
-            hasDirectionalSun,
+            hasDirectionalSunDiffuse,
+            hasDirectionalSunSpecular,
             lighting.DirectionalSunDirection,
             sunDiffuse,
             sunSpecular,
@@ -352,7 +384,7 @@ public sealed unsafe partial class MetalMapRenderer
             generic,
             geometry,
             instances,
-            lightingPayload: MapRenderStaticInstanceLightingPayload.None,
+            lightingPayload,
             needsOwnedInstanceData: false);
         blocker = string.Empty;
         return true;
@@ -592,11 +624,11 @@ public sealed unsafe partial class MetalMapRenderer
             pass.Source.LocalBounds.Max.Z - pass.Source.LocalBounds.Min.Z,
             0f,
             0f);
-        // The canonical generic marker retains only its raw slot-zero sample;
-        // no authored fragment dataflow survives into this snapshot.
+        // The neutral generic-material contract retains the selected source
+        // pass's color-input transfer and static-lighting requirements.
         rows[7] = new Vector4(
             generic.ColorLayerCount,
-            0f,
+            generic.ColorInputLinearizationMask,
             generic.HasLightmap ? 1f : 0f,
             generic.LightingEnabled ? 1f : 0f);
         rows[8] = generic.BlendWeightComponents;
@@ -611,18 +643,14 @@ public sealed unsafe partial class MetalMapRenderer
         rows[10] = new Vector4(
             generic.AmbientColor,
             0f);
-        bool hasDirectionalDiffuse =
-            generic.HasDirectionalSun && !generic.HasLightmap;
-        bool hasDirectionalSpecular =
-            generic.HasDirectionalSun &&
-            generic.SpecularTextureMask != 0;
         rows[11] = new Vector4(
             generic.DirectionalSunDirection,
-            hasDirectionalDiffuse ? 1f : 0f);
+            generic.HasDirectionalSunDiffuse ? 1f : 0f);
         rows[12] = new Vector4(
             generic.DirectionalSunDiffuse,
-            hasDirectionalSpecular ? 1f : 0f);
+            generic.HasDirectionalSunSpecular ? 1f : 0f);
         rows[13] = new Vector4(generic.DirectionalSunSpecular, 0f);
+        rows[20] = MapRenderStaticModelLightingAtlas.SamplerTransform;
     }
 
     private void WriteGenericMaterialConstants(
@@ -703,14 +731,36 @@ public sealed unsafe partial class MetalMapRenderer
             frameBuffer,
             checked((ulong)pass.CodePixelConstantsOffset),
             MetalGenericMaterialShaderAbi.FragmentConstantBufferIndex);
-        if (vertexConstantsChanged || fragmentConstantsChanged)
+        bool depthBiasChanged = _depthStencilFormat.EmulatesDepth24 &&
+            bindings.SetFragmentBytes(
+                _renderStates.CurrentDepthBias,
+                MetalGenericMaterialShaderAbi.DepthBiasBufferIndex);
+        if (vertexConstantsChanged || fragmentConstantsChanged ||
+            depthBiasChanged)
+        {
             _telemetry.AddCounter(MapRenderFrameCounter.UniformUpdates);
+        }
 
         if (generic.Pipeline.UsesStaticModelInstancing)
         {
+            MTLBuffer instanceBuffer;
+            ulong instanceOffset;
+            if (pass.LightingPayload ==
+                MapRenderStaticInstanceLightingPayload.BaseLightingCoords)
+            {
+                RequireStaticModelLightingInstanceBinding(
+                    pass,
+                    out instanceBuffer,
+                    out instanceOffset);
+            }
+            else
+            {
+                instanceBuffer = pass.Instances!.Buffer;
+                instanceOffset = pass.Instances.Offset;
+            }
             bindings.SetVertexBuffer(
-                pass.Instances!.Buffer,
-                pass.Instances.Offset,
+                instanceBuffer,
+                instanceOffset,
                 MetalGenericMaterialShaderAbi.StaticInstanceBufferIndex);
         }
         for (int bindingIndex = 0;
@@ -725,6 +775,18 @@ public sealed unsafe partial class MetalMapRenderer
             bindings.SetFragmentSampler(
                 binding.Sampler,
                 binding.Destination);
+        }
+        if (generic.UsesStaticModelLighting)
+        {
+            RequireStaticModelLightingSamplerBinding(
+                out MTLTexture modelLightingTexture,
+                out MTLSamplerState modelLightingSampler);
+            bindings.SetFragmentTexture(
+                modelLightingTexture,
+                MetalGenericMaterialShaderAbi.StaticModelLightingTexture);
+            bindings.SetFragmentSampler(
+                modelLightingSampler,
+                MetalGenericMaterialShaderAbi.StaticModelLightingTexture);
         }
     }
 
@@ -763,8 +825,11 @@ public sealed unsafe partial class MetalMapRenderer
             int specularTextureMask,
             bool hasLightmap,
             bool lightingEnabled,
+            int colorInputLinearizationMask,
+            bool usesStaticModelLighting,
             Vector3 ambientColor,
-            bool hasDirectionalSun,
+            bool hasDirectionalSunDiffuse,
+            bool hasDirectionalSunSpecular,
             Vector3 directionalSunDirection,
             Vector3 directionalSunDiffuse,
             Vector3 directionalSunSpecular,
@@ -780,8 +845,11 @@ public sealed unsafe partial class MetalMapRenderer
             SpecularTextureMask = specularTextureMask;
             HasLightmap = hasLightmap;
             LightingEnabled = lightingEnabled;
+            ColorInputLinearizationMask = colorInputLinearizationMask;
+            UsesStaticModelLighting = usesStaticModelLighting;
             AmbientColor = ambientColor;
-            HasDirectionalSun = hasDirectionalSun;
+            HasDirectionalSunDiffuse = hasDirectionalSunDiffuse;
+            HasDirectionalSunSpecular = hasDirectionalSunSpecular;
             DirectionalSunDirection = directionalSunDirection;
             DirectionalSunDiffuse = directionalSunDiffuse;
             DirectionalSunSpecular = directionalSunSpecular;
@@ -798,8 +866,11 @@ public sealed unsafe partial class MetalMapRenderer
         internal int SpecularTextureMask { get; }
         internal bool HasLightmap { get; }
         internal bool LightingEnabled { get; }
+        internal int ColorInputLinearizationMask { get; }
+        internal bool UsesStaticModelLighting { get; }
         internal Vector3 AmbientColor { get; }
-        internal bool HasDirectionalSun { get; }
+        internal bool HasDirectionalSunDiffuse { get; }
+        internal bool HasDirectionalSunSpecular { get; }
         internal Vector3 DirectionalSunDirection { get; }
         internal Vector3 DirectionalSunDiffuse { get; }
         internal Vector3 DirectionalSunSpecular { get; }

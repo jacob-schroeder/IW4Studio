@@ -24,6 +24,7 @@ internal sealed class MetalProgramPipelineCache : IDisposable
 {
     private readonly MTLDevice _device;
     private readonly MTLPixelFormat _depthStencilFormat;
+    private readonly bool _emulateDepth24;
     private readonly Dictionary<PipelineKey, MetalProgramPipeline>
         _pipelines = [];
     private readonly Dictionary<PipelineKey, string> _failures = [];
@@ -38,6 +39,7 @@ internal sealed class MetalProgramPipelineCache : IDisposable
         ArgumentNullException.ThrowIfNull(depthStencilFormat);
         _device = device;
         _depthStencilFormat = depthStencilFormat.PixelFormat;
+        _emulateDepth24 = depthStencilFormat.EmulatesDepth24;
     }
 
     internal bool TryGetOrCreate(
@@ -69,7 +71,8 @@ internal sealed class MetalProgramPipelineCache : IDisposable
                     fragmentIr,
                     pass.SourceState,
                     suppressShaderPackerForDiagnosticOutput: false,
-                    MetalFrameTargets.SceneTargetOutputs)
+                    MetalFrameTargets.SceneTargetOutputs,
+                    emulateDepth24: _emulateDepth24)
                 : new RsxFragmentMslLoweringResult(
                     null,
                     false,

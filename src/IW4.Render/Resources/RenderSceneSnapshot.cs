@@ -863,6 +863,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         byte sceneLightIndex,
         int unresolvedCodeSamplerCount,
         RenderWorldShaderProvenanceSnapshot shaderProvenance,
+        MapRenderGenericMaterialFallbackContract genericMaterialFallback,
         MapRenderEditorDepthPrepassPlan? depthPrepass,
         RenderWorldShaderProvenanceSnapshot? depthPrepassShaderProvenance,
         MapRenderEditorVegetationAnimationPlan? vegetationAnimation,
@@ -902,6 +903,25 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
             throw new ArgumentOutOfRangeException(nameof(sourceOrdinal));
         if (unresolvedCodeSamplerCount < 0)
             throw new ArgumentOutOfRangeException(nameof(unresolvedCodeSamplerCount));
+        if (genericMaterialFallback.ColorInputLinearizationMask < 0 ||
+            !Enum.IsDefined(
+                genericMaterialFallback.StaticInstanceLightingPayload) ||
+            genericMaterialFallback.UsesStaticModelLighting !=
+                (genericMaterialFallback.StaticInstanceLightingPayload ==
+                    MapRenderStaticInstanceLightingPayload
+                        .BaseLightingCoords) ||
+            (!genericMaterialFallback.UsesStaticModelLighting &&
+             (genericMaterialFallback
+                  .StaticModelLightingAddsDirectionalDiffuse ||
+              genericMaterialFallback
+                  .StaticModelLightingAddsDirectionalSpecular)) ||
+            (sourceKind == RenderNormalCameraDrawSourceKind.World &&
+             genericMaterialFallback.UsesStaticModelLighting))
+        {
+            throw new ArgumentException(
+                "Generic-material fallback facts are inconsistent with the prepared pass source.",
+                nameof(genericMaterialFallback));
+        }
         ArgumentNullException.ThrowIfNull(sourcePass);
         ArgumentNullException.ThrowIfNull(uvRoute);
         ArgumentNullException.ThrowIfNull(shaderProvenance);
@@ -1087,6 +1107,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         SceneLightIndex = sceneLightIndex;
         UnresolvedCodeSamplerCount = unresolvedCodeSamplerCount;
         ShaderProvenance = shaderProvenance;
+        GenericMaterialFallback = genericMaterialFallback;
         DepthPrepass = depthPrepass is null ? null : depthPrepass with { };
         DepthPrepassShaderProvenance = depthPrepassShaderProvenance;
         VegetationAnimation = vegetationAnimation;
@@ -1138,6 +1159,8 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
     public byte SceneLightIndex { get; }
     public int UnresolvedCodeSamplerCount { get; }
     public RenderWorldShaderProvenanceSnapshot ShaderProvenance { get; }
+    internal MapRenderGenericMaterialFallbackContract GenericMaterialFallback
+        { get; }
     public MapRenderEditorDepthPrepassPlan? DepthPrepass { get; }
     public RenderWorldShaderProvenanceSnapshot? DepthPrepassShaderProvenance
         { get; }
@@ -1211,7 +1234,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
 
     internal void AppendContent(RenderContentDigestWriter writer)
     {
-        writer.WriteString("render-normal-camera-prepared-pass/v3");
+        writer.WriteString("render-normal-camera-prepared-pass/v4");
         writer.WriteInt32((int)SourceKind);
         writer.WriteBoolean(WorldReceiverVariant.HasValue);
         if (WorldReceiverVariant is { } worldReceiver)
@@ -1235,6 +1258,14 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         writer.WriteByte(SceneLightIndex);
         writer.WriteInt32(UnresolvedCodeSamplerCount);
         ShaderProvenance.AppendContent(writer);
+        writer.WriteInt32(GenericMaterialFallback.ColorInputLinearizationMask);
+        writer.WriteInt32((int)GenericMaterialFallback
+            .StaticInstanceLightingPayload);
+        writer.WriteBoolean(GenericMaterialFallback.UsesStaticModelLighting);
+        writer.WriteBoolean(GenericMaterialFallback
+            .StaticModelLightingAddsDirectionalDiffuse);
+        writer.WriteBoolean(GenericMaterialFallback
+            .StaticModelLightingAddsDirectionalSpecular);
         writer.WriteBoolean(DepthPrepass is not null);
         if (DepthPrepass is { } depth)
         {

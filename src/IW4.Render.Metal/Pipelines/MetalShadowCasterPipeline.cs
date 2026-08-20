@@ -43,6 +43,18 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
             float2 texCoord;
         };
 
+        struct Iw4ShadowDepth24Out
+        {
+            float depth [[depth(any)]];
+        };
+
+        inline float iw4QuantizeDepth24(float depth)
+        {
+            constexpr float maxDepth24 = 16777215.0;
+            return floor(clamp(depth, 0.0, 1.0) * maxDepth24 + 0.5) /
+                maxDepth24;
+        }
+
         inline float3 iw4ReadOpaquePosition(
             device const float* vertices,
             uint vertexId)
@@ -161,6 +173,46 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
             if (alpha < iw4CutoutAlphaReference)
                 discard_fragment();
         }
+
+        fragment Iw4ShadowDepth24Out iw4ShadowOpaqueDepth24Fragment(
+            Iw4ShadowVertexOut input [[stage_in]],
+            constant float2& depthBias [[buffer(0)]])
+        {
+            float rasterDepth = input.position.z;
+            float slope = max(
+                abs(dfdx(rasterDepth)),
+                abs(dfdy(rasterDepth)));
+            Iw4ShadowDepth24Out result;
+            result.depth = iw4QuantizeDepth24(clamp(
+                rasterDepth + depthBias.x + depthBias.y * slope,
+                0.0,
+                1.0));
+            return result;
+        }
+
+        fragment Iw4ShadowDepth24Out iw4ShadowCutoutDepth24Fragment(
+            Iw4ShadowCutoutVertexOut input [[stage_in]],
+            texture2d<float> colorTexture [[texture(0)]],
+            sampler colorSampler [[sampler(0)]],
+            constant float2& depthBias [[buffer(0)]])
+        {
+            float rasterDepth = input.position.z;
+            float slope = max(
+                abs(dfdx(rasterDepth)),
+                abs(dfdy(rasterDepth)));
+            float alpha = colorTexture.sample(
+                colorSampler,
+                input.texCoord).a * input.color.a;
+            if (alpha < iw4CutoutAlphaReference)
+                discard_fragment();
+
+            Iw4ShadowDepth24Out result;
+            result.depth = iw4QuantizeDepth24(clamp(
+                rasterDepth + depthBias.x + depthBias.y * slope,
+                0.0,
+                1.0));
+            return result;
+        }
         """;
 
     private MTLRenderPipelineState _opaqueWorld;
@@ -183,6 +235,7 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
         MTLFunction opaqueStaticVertex = default;
         MTLFunction cutoutWorldVertex = default;
         MTLFunction cutoutStaticVertex = default;
+        MTLFunction opaqueFragment = default;
         MTLFunction cutoutFragment = default;
         try
         {
@@ -202,12 +255,24 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
                 "iw4ShadowCutoutWorldVertex");
             cutoutStaticVertex = library.NewFunction(
                 "iw4ShadowCutoutStaticVertex");
-            cutoutFragment = library.NewFunction(
-                "iw4ShadowCutoutFragment");
+            if (depthStencilFormat.EmulatesDepth24)
+            {
+                opaqueFragment = library.NewFunction(
+                    "iw4ShadowOpaqueDepth24Fragment");
+                cutoutFragment = library.NewFunction(
+                    "iw4ShadowCutoutDepth24Fragment");
+            }
+            else
+            {
+                cutoutFragment = library.NewFunction(
+                    "iw4ShadowCutoutFragment");
+            }
             if (opaqueWorldVertex.NativePtr == 0 ||
                 opaqueStaticVertex.NativePtr == 0 ||
                 cutoutWorldVertex.NativePtr == 0 ||
                 cutoutStaticVertex.NativePtr == 0 ||
+                (depthStencilFormat.EmulatesDepth24 &&
+                 opaqueFragment.NativePtr == 0) ||
                 cutoutFragment.NativePtr == 0)
             {
                 throw new InvalidOperationException(
@@ -217,13 +282,13 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
             _opaqueWorld = CreatePipeline(
                 device,
                 opaqueWorldVertex,
-                fragment: default,
+                opaqueFragment,
                 depthStencilFormat.PixelFormat,
                 "opaque world");
             _opaqueStatic = CreatePipeline(
                 device,
                 opaqueStaticVertex,
-                fragment: default,
+                opaqueFragment,
                 depthStencilFormat.PixelFormat,
                 "opaque static-model");
             _cutoutWorld = CreatePipeline(
@@ -247,6 +312,7 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
         finally
         {
             Dispose(ref cutoutFragment);
+            Dispose(ref opaqueFragment);
             Dispose(ref cutoutStaticVertex);
             Dispose(ref cutoutWorldVertex);
             Dispose(ref opaqueStaticVertex);
@@ -347,4 +413,9 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
         state.Dispose();
         state = default;
     }
+}
+
+internal static class MetalShadowCasterShaderAbi
+{
+    internal const ulong DepthBiasBufferIndex = 0;
 }

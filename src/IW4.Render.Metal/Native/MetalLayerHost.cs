@@ -81,7 +81,11 @@ public sealed class MetalLayerHost : IDisposable
                 // values explicitly. A linear drawable avoids applying a
                 // second hardware sRGB encode during presentation.
                 PixelFormat = MTLPixelFormat.BGRA8Unorm,
-                FramebufferOnly = true,
+                // Presentation copies the retained canonical host target into
+                // the drawable before present. Drawable blit access therefore
+                // requires a non-framebuffer-only layer; CPU readback remains
+                // confined to explicitly requested capture staging buffers.
+                FramebufferOnly = false,
                 MaximumDrawableCount = 3,
                 DisplaySyncEnabled = false,
                 AllowsNextDrawableTimeout = true

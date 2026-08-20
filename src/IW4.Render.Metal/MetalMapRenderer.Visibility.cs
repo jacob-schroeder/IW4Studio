@@ -296,6 +296,22 @@ public sealed unsafe partial class MetalMapRenderer
         }
     }
 
+    // Shadow encoding prepares an unshadowed route while it validates the
+    // normal-camera DPVS/LOD closure, then replaces it with a same-revision
+    // ready selector after the atlas completes. Depth and color both enter
+    // through IsNormalCameraGroupSelected, so invalidate their shared route
+    // cache as one operation rather than allowing one phase to observe the
+    // preflight/base owner and the other the ready receiver owner.
+    private void InvalidateNormalCameraReceiverSelection()
+    {
+        _normalCameraGroupSelectionFrameIndex = -1;
+        foreach (MetalNormalCameraVisibilityGroupPlan plan in
+                 _normalCameraVisibilityGroups.Values)
+        {
+            plan.InvalidatePreparedRuns();
+        }
+    }
+
     private void PrepareNormalCameraVisibility(RenderCamera camera)
     {
         if (_normalCameraVisibilityPreparedFrameIndex == _frameIndex)
@@ -732,7 +748,7 @@ public sealed unsafe partial class MetalMapRenderer
         {
             MapRenderStaticModelReceiverIdentity identity =
                 _normalCameraStaticRouteIdentities[identityOrdinal];
-            if (!IsNormalCameraStaticIdentitySelected(identity))
+            if (!IsNormalCameraStaticIdentityVisible(identity))
             {
                 _normalCameraStaticRouteOwners[identityOrdinal] = -1;
                 continue;
@@ -829,7 +845,7 @@ public sealed unsafe partial class MetalMapRenderer
             MapRenderStaticModelReceiverIdentity identity =
                 _normalCameraStaticRouteIdentities[identityOrdinal];
             if (hasCurrentStaticSelection &&
-                    !IsNormalCameraStaticIdentitySelected(identity) ||
+                    !IsNormalCameraStaticIdentityVisible(identity) ||
                 (uint)identity.ObjectIndex >=
                     (uint)techniques.StaticModelDrawInstances.Count ||
                 techniques.StaticModelDrawInstances[
@@ -983,6 +999,18 @@ public sealed unsafe partial class MetalMapRenderer
             farPlane.RendererFallback);
         _publishedShadowCameraVisibility = cameraVisibility;
         _publishedShadowVisibilityFrameIndex = _frameIndex;
+
+        // Render normally enters shadow encoding before the scene encoder,
+        // but keep that ordering an invariant rather than an assumption. A
+        // newly published three-view camera result supersedes any same-frame
+        // camera-only traversal and its base/receiver ownership map.
+        if (_normalCameraVisibilityPreparedFrameIndex == _frameIndex)
+        {
+            _normalCameraVisibilityPreparedFrameIndex = -1;
+            _normalCameraCurrentDpvsVisibility = null;
+            _normalCameraStaticSelectionValid = false;
+        }
+        InvalidateNormalCameraReceiverSelection();
     }
 
     private int PrepareNormalCameraVisibleRuns(

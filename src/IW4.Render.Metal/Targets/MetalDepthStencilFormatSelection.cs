@@ -20,6 +20,14 @@ internal sealed class MetalDepthStencilFormatSelection
 
     internal MTLPixelFormat PixelFormat { get; }
 
+    /// <summary>
+    /// True when the device lacks the fixed-point D24S8 attachment required
+    /// by the PS3 scene contract and fragment depth must be snapped to that
+    /// exact 24-bit grid before D32S8 comparison/storage.
+    /// </summary>
+    internal bool EmulatesDepth24 =>
+        PixelFormat == MTLPixelFormat.Depth32FloatStencil8;
+
     internal static MetalDepthStencilFormatSelection Select(
         MTLDevice device)
     {

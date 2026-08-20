@@ -66,15 +66,6 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     public long StaticGeometryImmutableBufferUploadBytes =>
         _staticGeometryUploads.ImmutableBufferUploadBytes;
 
-    private static int ResolveTranslatedColorInputLinearizationMask(
-        ShaderExecutionContract execution,
-        IReadOnlyList<MaterialColorLayer> colorLayers,
-        int maximumLayerCount) =>
-        MapRenderTranslatedColorInputContract.ResolveLinearizationMask(
-            execution,
-            colorLayers,
-            maximumLayerCount);
-
     private GlMesh CreateMesh(
         float[] vertices,
         uint[] indices,
@@ -420,23 +411,26 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             MapRenderEditorShaderExecutionChoice.TranslatedAuthored;
         if (!executeTranslatedAuthored && !allowGenericFallback)
             return default;
-        MapRenderStaticModelLightingContract genericStaticLightingContract =
-            default;
+        MapRenderGenericMaterialFallbackContract genericMaterialFallback =
+            MapRenderGenericMaterialFallbackContract.Create(
+                RenderNormalCameraDrawSourceKind.StaticModel,
+                batch.ShaderExecution,
+                batch.ColorLayers);
         bool usesGenericStaticModelLighting =
             !executeTranslatedAuthored &&
-            MapRenderStaticModelLightingContract.TryCreate(
-                batch.ShaderExecution,
-                out genericStaticLightingContract);
+            genericMaterialFallback.UsesStaticModelLighting;
         bool genericStaticModelLightingMatchesDirectionalSun =
             usesGenericStaticModelLighting &&
             _editorPreviewLighting?.DirectionalSunPrimaryLightIndex ==
                 batch.SceneLightIndex;
         bool genericStaticModelLightingAddsDirectionalDiffuse =
             genericStaticModelLightingMatchesDirectionalSun &&
-            genericStaticLightingContract.AddsDirectionalDiffuse;
+            genericMaterialFallback
+                .StaticModelLightingAddsDirectionalDiffuse;
         bool genericStaticModelLightingAddsDirectionalSpecular =
             genericStaticModelLightingMatchesDirectionalSun &&
-            genericStaticLightingContract.AddsDirectionalSpecular;
+            genericMaterialFallback
+                .StaticModelLightingAddsDirectionalSpecular;
         // Attribute 12 is one native per-instance payload lane. Generic atlas
         // lighting consumes row 0x39; translated lprobe programs consume row
         // 0x3A. Preserve the semantic kind because both share a 16-float
@@ -675,10 +669,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     batch.ShaderExecution.FragmentProgramControl,
                 ColorInputLinearizationMask = executeTranslatedAuthored
                     ? 0
-                    : ResolveTranslatedColorInputLinearizationMask(
-                        batch.ShaderExecution,
-                        batch.ColorLayers,
-                        MapRenderScene.MaxColorLayerCount),
+                    : genericMaterialFallback.ColorInputLinearizationMask,
                 EditorDepthPrepass = batch.EditorDepthPrepass,
                 DepthPrepassRsxProgram = depthPrepassRsxProgram,
                 HasCertifiedTranslatedDepthFusion =
@@ -2172,6 +2163,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // absent for that surface.
             return default;
         }
+        MapRenderGenericMaterialFallbackContract genericMaterialFallback =
+            MapRenderGenericMaterialFallbackContract.Create(
+                RenderNormalCameraDrawSourceKind.World,
+                batch.ShaderExecution,
+                batch.ColorLayers);
 
         uint[] colorTextures = batch.ColorLayers
             .Take(MapRenderScene.MaxColorLayerCount)
@@ -2309,10 +2305,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 batch.ShaderExecution.FragmentProgramControl,
             ColorInputLinearizationMask = executeTranslatedAuthored
                 ? 0
-                : ResolveTranslatedColorInputLinearizationMask(
-                    batch.ShaderExecution,
-                    batch.ColorLayers,
-                    MapRenderScene.MaxColorLayerCount),
+                : genericMaterialFallback.ColorInputLinearizationMask,
             EditorDepthPrepass = batch.EditorDepthPrepass,
             DepthPrepassRsxProgram = depthPrepassRsxProgram,
             HasCertifiedTranslatedDepthFusion =

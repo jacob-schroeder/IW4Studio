@@ -2797,6 +2797,10 @@ public static class RenderSceneSnapshotBuilder
             new RenderWorldShaderProvenanceSnapshot(
                 shader,
                 shaderExecutionStatus),
+            MapRenderGenericMaterialFallbackContract.Create(
+                sourceKind,
+                shader,
+                colorLayers),
             depthPrepass,
             depthShaderProvenance,
             vegetationAnimation,
@@ -3065,38 +3069,43 @@ public static class RenderSceneSnapshotBuilder
                 "<invalid>",
                 int.MinValue,
                 "<invalid>",
-                checked(int.MinValue + collectionOrdinal));
+                byte.MaxValue,
+                $"<invalid:{checked(int.MinValue + collectionOrdinal)}>");
         }
         return new NormalCameraWorldGroupKey(
             pass.MaterialName ?? "<null>",
             pass.TechniquePass.TechniqueSetName ?? "<null>",
             pass.TechniquePass.TechniqueSlot,
             pass.TechniquePass.TechniqueName ?? "<null>",
-            ResolveNormalCameraWorldSurfaceIndex(batch!));
+            batch!.SceneLightIndex,
+            CreateNormalCameraWorldSurfaceIdentity(
+                batch!,
+                collectionOrdinal));
     }
 
     /// <summary>
-    /// Exact backend-neutral world ownership used by the characterized
-    /// normal-camera queue. A batch is owned only when every GfxSurface pick
-    /// range names the same surface; absent or conflicting ownership is -1.
+    /// Exact backend-neutral world ownership used to pair the authored passes
+    /// of one normal-camera group. World batching can split one material and
+    /// light into multiple resource batches, so a single-surface sentinel
+    /// would merge unrelated submissions and invalidate receiver routing.
     /// </summary>
-    private static int ResolveNormalCameraWorldSurfaceIndex(
-        MapRenderTexturedBatch batch)
+    private static string CreateNormalCameraWorldSurfaceIdentity(
+        MapRenderTexturedBatch batch,
+        int collectionOrdinal)
     {
-        int surfaceIndex = -1;
-        foreach (MapRenderPickRange range in batch.PickRanges)
-        {
-            if (range.Kind != MapRenderPickKind.GfxSurface)
-                continue;
-            if (surfaceIndex < 0)
-            {
-                surfaceIndex = range.SurfaceIndex;
-                continue;
-            }
-            if (range.SurfaceIndex != surfaceIndex)
-                return -1;
-        }
-        return surfaceIndex;
+        MapRenderPickRange[] surfaceRanges = batch.PickRanges
+            .Where(range => range.Kind == MapRenderPickKind.GfxSurface)
+            .ToArray();
+        return surfaceRanges.Length == 0
+            ? $"<invalid:{collectionOrdinal}>"
+            : string.Join(
+                ',',
+                surfaceRanges.Select(range => string.Concat(
+                    range.SurfaceIndex.ToString(
+                        CultureInfo.InvariantCulture),
+                    ":",
+                    range.IndexCount.ToString(
+                        CultureInfo.InvariantCulture))));
     }
 
     private static void CommitNormalCameraCandidate(
@@ -3610,7 +3619,8 @@ public static class RenderSceneSnapshotBuilder
         string TechniqueSetName,
         int TechniqueSlot,
         string TechniqueName,
-        int SurfaceIndex);
+        byte SceneLightIndex,
+        string SurfaceIdentity);
 
     private sealed record DecodedTextureSubresource(
         int Width,

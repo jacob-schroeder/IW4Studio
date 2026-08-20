@@ -16,15 +16,46 @@ namespace IW4.Render.Metal.Pipelines;
 
 /// <summary>
 /// Device-local pipelines for the standard opaque IW4 depth owner. The
-/// authored null pixel program is represented by a vertex-only Metal
-/// pipeline, so the tile never executes a synthetic fragment function and no
-/// scene-color attachment is declared by the pipeline.
+/// authored null pixel program is represented by a vertex-only Metal pipeline
+/// when native D24 is available. Devices exposing only D32S8 execute the
+/// smallest possible depth-only fragment to snap the candidate to the PS3
+/// 24-bit fixed-point grid; no scene-color attachment is declared either way.
 /// </summary>
 [SupportedOSPlatform("macos")]
 internal sealed class MetalDepthPrepassPipelineCache : IDisposable
 {
+    private const string Depth24FragmentSource = """
+
+        struct Iw4Depth24FragmentOut
+        {
+            float depth [[depth(any)]];
+        };
+
+        fragment Iw4Depth24FragmentOut iw4Depth24Fragment(
+            float4 position [[position]],
+            constant float2& depthBias [[buffer(0)]],
+            uint sampleId [[sample_id]])
+        {
+            (void)sampleId;
+            constexpr float maximum = 16777215.0f;
+            float rasterDepth = position.z;
+            float slope = max(
+                abs(dfdx(rasterDepth)),
+                abs(dfdy(rasterDepth)));
+            float biasedDepth = clamp(
+                rasterDepth + depthBias.x + depthBias.y * slope,
+                0.0f,
+                1.0f);
+            Iw4Depth24FragmentOut result;
+            result.depth = floor(
+                biasedDepth * maximum + 0.5f) / maximum;
+            return result;
+        }
+        """;
+
     private readonly MTLDevice _device;
     private readonly MTLPixelFormat _depthStencilFormat;
+    private readonly bool _emulateDepth24;
     private readonly Dictionary<PipelineKey, MetalDepthPrepassPipeline>
         _pipelines = [];
     private readonly Dictionary<PipelineKey, string> _failures = [];
@@ -39,6 +70,7 @@ internal sealed class MetalDepthPrepassPipelineCache : IDisposable
         ArgumentNullException.ThrowIfNull(depthStencilFormat);
         _device = device;
         _depthStencilFormat = depthStencilFormat.PixelFormat;
+        _emulateDepth24 = depthStencilFormat.EmulatesDepth24;
     }
 
     internal bool TryGetOrCreate(
@@ -112,8 +144,11 @@ internal sealed class MetalDepthPrepassPipelineCache : IDisposable
                 out pipeline,
                 out blocker);
         }
+        // The canonical RSX null fragment still carries four register-export
+        // descriptors. They are inert here: the exact depth plan above proves
+        // ColorMask=None, native D24 uses a vertex-only pipeline, and D32 uses
+        // our depth-only emulation fragment instead of the authored fragment.
         if (shader.FragmentDepthExportEnabled ||
-            !shader.FragmentColorExports.IsEmpty ||
             !shader.ProgramSamplerDestinations.IsEmpty)
         {
             return Fail(
@@ -177,11 +212,14 @@ internal sealed class MetalDepthPrepassPipelineCache : IDisposable
         using var options = new MTLCompileOptions();
         MTLLibrary library = default;
         MTLFunction vertexFunction = default;
+        MTLFunction fragmentFunction = default;
         try
         {
             NSError libraryError = default;
             library = _device.NewLibrary(
-                vertexSource,
+                _emulateDepth24
+                    ? vertexSource + Depth24FragmentSource
+                    : vertexSource,
                 options,
                 ref libraryError);
             if (library.NativePtr == 0 || libraryError.NativePtr != 0)
@@ -197,10 +235,21 @@ internal sealed class MetalDepthPrepassPipelineCache : IDisposable
                 throw new InvalidOperationException(
                     "the direct RSX depth vertex entry point is missing");
             }
+            if (_emulateDepth24)
+            {
+                fragmentFunction = library.NewFunction(
+                    "iw4Depth24Fragment");
+                if (fragmentFunction.NativePtr == 0)
+                {
+                    throw new InvalidOperationException(
+                        "the D24 emulation fragment entry point is missing");
+                }
+            }
 
             var descriptor = new MTLRenderPipelineDescriptor
             {
                 VertexFunction = vertexFunction,
+                FragmentFunction = fragmentFunction,
                 RasterSampleCount = MetalFrameTargets.SceneSampleCount,
                 InputPrimitiveTopology = ToTopologyClass(topology),
                 DepthAttachmentPixelFormat =
@@ -229,6 +278,8 @@ internal sealed class MetalDepthPrepassPipelineCache : IDisposable
         }
         finally
         {
+            if (fragmentFunction.NativePtr != 0)
+                fragmentFunction.Dispose();
             if (vertexFunction.NativePtr != 0)
                 vertexFunction.Dispose();
             if (library.NativePtr != 0)
@@ -313,4 +364,9 @@ internal sealed class MetalDepthPrepassPipeline : IDisposable
         _state.Dispose();
         _state = default;
     }
+}
+
+internal static class MetalDepthPrepassShaderAbi
+{
+    internal const ulong DepthBiasBufferIndex = 0;
 }

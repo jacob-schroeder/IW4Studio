@@ -29,6 +29,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
     private const ulong NormalTextureMaskFunctionConstant = 1;
     private const ulong SpecularTextureMaskFunctionConstant = 2;
     private const ulong HasLightmapFunctionConstant = 3;
+    private const ulong HasStaticModelLightingFunctionConstant = 4;
 
     private const string Source = """
         #include <metal_stdlib>
@@ -39,6 +40,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
         constant int IW4_NORMAL_TEXTURE_MASK [[function_constant(1)]];
         constant int IW4_SPECULAR_TEXTURE_MASK [[function_constant(2)]];
         constant int IW4_HAS_LIGHTMAP [[function_constant(3)]];
+        constant int IW4_HAS_STATIC_MODEL_LIGHTING [[function_constant(4)]];
 
         struct GenericMaterialConstants
         {
@@ -46,7 +48,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             float4 cameraAndTime;
             float4 vegetationParameters;
             float4 vegetationBounds;
-            // x=color layer count mirror, y=reserved,
+            // x=color layer count mirror, y=color-input linearization mask,
             // z=has lightmap mirror, w=lighting enabled.
             float4 materialFlags0;
             // Blend-weight components for color/normal/specular layers 1..4.
@@ -73,6 +75,8 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             float4 fogMinimumAndSun;
             float4 sunFogColor;
             float4 sunFogDirection;
+            // xyz=static model-lighting sampler transform.
+            float4 staticModelLightingSamplerTransform;
         };
 
         struct GenericMaterialStageOut
@@ -87,6 +91,13 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             float2 lightmapUv;
             float3 renderPosition;
             float3 renderNormal;
+            float4 staticModelBaseLightingCoords;
+        };
+
+        struct GenericMaterialFragmentOut
+        {
+            float4 color [[color(0)]];
+            float depth [[depth(any)]];
         };
 
         static GenericMaterialStageOut composeVertex(
@@ -94,6 +105,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             uint vertexId,
             constant GenericMaterialConstants& constants,
             bool instanced,
+            float4 staticModelBaseLightingCoords,
             float4 instanceRow0,
             float4 instanceRow1,
             float4 instanceRow2)
@@ -166,6 +178,8 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             result.renderNormal = dot(renderNormal, renderNormal) > 0.000001f
                 ? normalize(renderNormal)
                 : float3(0.0f);
+            result.staticModelBaseLightingCoords =
+                staticModelBaseLightingCoords;
             return result;
         }
 
@@ -181,6 +195,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
                 false,
                 float4(0.0f),
                 float4(0.0f),
+                float4(0.0f),
                 float4(0.0f));
         }
 
@@ -191,15 +206,21 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             constant GenericMaterialConstants& constants [[buffer(1)]],
             device const float4* instances [[buffer(2)]])
         {
-            uint instanceOffset = instanceId * 3;
+            uint instanceOffset = instanceId *
+                (IW4_HAS_STATIC_MODEL_LIGHTING != 0 ? 4 : 3);
+            uint placementOffset = instanceOffset +
+                (IW4_HAS_STATIC_MODEL_LIGHTING != 0 ? 1 : 0);
             return composeVertex(
                 vertices,
                 vertexId,
                 constants,
                 true,
-                instances[instanceOffset + 0],
-                instances[instanceOffset + 1],
-                instances[instanceOffset + 2]);
+                IW4_HAS_STATIC_MODEL_LIGHTING != 0
+                    ? instances[instanceOffset]
+                    : float4(0.0f),
+                instances[placementOffset + 0],
+                instances[placementOffset + 1],
+                instances[placementOffset + 2]);
         }
 
         static float selectBlendComponent(float4 weights, int component)
@@ -227,6 +248,16 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             if (component < 0)
                 return 1.0f;
             return clamp(selectBlendComponent(weights, component), 0.0f, 1.0f);
+        }
+
+        static float4 linearizeColorInput(
+            float4 encoded,
+            int mask,
+            int layerBit)
+        {
+            if ((mask & layerBit) != 0)
+                encoded.rgb *= encoded.rgb;
+            return encoded;
         }
 
         static float3 surfaceNormal(
@@ -278,7 +309,27 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             return normalize(tangentFrame * decodeEditorNormal(encoded));
         }
 
-        fragment float4 iw4_generic_material_fragment(
+        static float4 sampleStaticModelLighting(
+            GenericMaterialStageOut stage,
+            float3 renderNormal,
+            constant GenericMaterialConstants& constants,
+            texture3d<float> staticModelLighting,
+            sampler staticModelLightingSampler)
+        {
+            float3 gameNormal = normalize(float3(
+                renderNormal.x,
+                -renderNormal.z,
+                renderNormal.y));
+            float3 coordinates =
+                stage.staticModelBaseLightingCoords.xyz +
+                gameNormal *
+                    constants.staticModelLightingSamplerTransform.xyz;
+            return staticModelLighting.sample(
+                staticModelLightingSampler,
+                coordinates);
+        }
+
+        IW4_GENERIC_FRAGMENT_RETURN_TYPE iw4_generic_material_fragment(
             GenericMaterialStageOut stage [[stage_in]],
             bool frontFacing [[front_facing]],
             constant GenericMaterialConstants& constants [[buffer(0)]],
@@ -295,6 +346,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             texture2d<float> specular0 [[texture(10)]],
             texture2d<float> specular1 [[texture(11)]],
             texture2d<float> specular2 [[texture(12)]],
+            texture3d<float> staticModelLighting [[texture(13)]],
             sampler colorSampler0 [[sampler(0)]],
             sampler colorSampler1 [[sampler(1)]],
             sampler colorSampler2 [[sampler(2)]],
@@ -307,8 +359,11 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             sampler normalSampler3 [[sampler(9)]],
             sampler specularSampler0 [[sampler(10)]],
             sampler specularSampler1 [[sampler(11)]],
-            sampler specularSampler2 [[sampler(12)]])
+            sampler specularSampler2 [[sampler(12)]],
+            sampler staticModelLightingSampler [[sampler(13)]]
+            IW4_GENERIC_DEPTH_BIAS_PARAMETER)
         {
+            IW4_GENERIC_DEPTH_BIAS_PRELUDE
             int colorLayerCount = IW4_COLOR_LAYER_COUNT;
             int normalMask = IW4_NORMAL_TEXTURE_MASK;
             int specularMask = IW4_SPECULAR_TEXTURE_MASK;
@@ -316,11 +371,19 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             int blendComponent2 = int(round(constants.blendWeightComponents.y));
             int blendComponent3 = int(round(constants.blendWeightComponents.z));
             int blendComponent4 = int(round(constants.blendWeightComponents.w));
+            int colorInputLinearizationMask =
+                int(round(constants.materialFlags0.y));
 
-            float4 color = color0.sample(colorSampler0, stage.uv0);
+            float4 color = linearizeColorInput(
+                color0.sample(colorSampler0, stage.uv0),
+                colorInputLinearizationMask,
+                1);
             if (colorLayerCount > 1)
             {
-                float4 layer = color1.sample(colorSampler1, stage.uv1);
+                float4 layer = linearizeColorInput(
+                    color1.sample(colorSampler1, stage.uv1),
+                    colorInputLinearizationMask,
+                    2);
                 float weight = layerWeight(
                     stage.blendWeights,
                     blendComponent1,
@@ -331,7 +394,10 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             }
             if (colorLayerCount > 2)
             {
-                float4 layer = color2.sample(colorSampler2, stage.uv2);
+                float4 layer = linearizeColorInput(
+                    color2.sample(colorSampler2, stage.uv2),
+                    colorInputLinearizationMask,
+                    4);
                 float weight = layerWeight(
                     stage.blendWeights,
                     blendComponent2,
@@ -342,7 +408,10 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             }
             if (colorLayerCount > 3)
             {
-                float4 layer = color3.sample(colorSampler3, stage.uv3);
+                float4 layer = linearizeColorInput(
+                    color3.sample(colorSampler3, stage.uv3),
+                    colorInputLinearizationMask,
+                    8);
                 float weight = layerWeight(
                     stage.blendWeights,
                     blendComponent3,
@@ -353,7 +422,10 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             }
             if (colorLayerCount > 4)
             {
-                float4 layer = color4.sample(colorSampler4, stage.uv4);
+                float4 layer = linearizeColorInput(
+                    color4.sample(colorSampler4, stage.uv4),
+                    colorInputLinearizationMask,
+                    16);
                 float weight = layerWeight(
                     stage.blendWeights,
                     blendComponent4,
@@ -380,9 +452,9 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
                 constants.sunDiffuseAndSpecular.w != 0.0f;
             float3 normal = float3(0.0f, 0.0f, 1.0f);
             if (lightingEnabled &&
-                ((IW4_HAS_LIGHTMAP == 0 && hasDirectionalDiffuse) ||
-                 (IW4_SPECULAR_TEXTURE_MASK != 0 &&
-                    hasDirectionalSpecular)))
+                (hasDirectionalDiffuse ||
+                 hasDirectionalSpecular ||
+                 IW4_HAS_STATIC_MODEL_LIGHTING != 0))
             {
                 float3 geometric = surfaceNormal(stage, frontFacing);
                 normal = geometric;
@@ -432,6 +504,20 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
                 }
             }
 
+            float primaryLightVisibility = 1.0f;
+            float4 encodedStaticModelLighting = float4(0.0f);
+            if (lightingEnabled &&
+                IW4_HAS_STATIC_MODEL_LIGHTING != 0)
+            {
+                encodedStaticModelLighting = sampleStaticModelLighting(
+                    stage,
+                    normal,
+                    constants,
+                    staticModelLighting,
+                    staticModelLightingSampler);
+                primaryLightVisibility = encodedStaticModelLighting.a;
+            }
+
             if (IW4_HAS_LIGHTMAP != 0)
             {
                 color.rgb *= lightmap.sample(
@@ -440,14 +526,32 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             }
             else if (lightingEnabled)
             {
-                float3 irradiance = constants.ambientAndProbe.rgb;
-                if (hasDirectionalDiffuse)
+                float3 irradiance;
+                if (IW4_HAS_STATIC_MODEL_LIGHTING != 0)
                 {
-                    float nDotL = max(dot(
-                        normalize(normal),
-                        -constants.sunDirectionAndDiffuse.xyz), 0.0f);
-                    irradiance += constants.sunDiffuseAndSpecular.rgb *
-                        nDotL;
+                    float3 expandedLighting =
+                        encodedStaticModelLighting.rgb * 2.0f;
+                    irradiance = expandedLighting * expandedLighting;
+                    if (hasDirectionalDiffuse)
+                    {
+                        float nDotL = max(dot(
+                            normalize(normal),
+                            -constants.sunDirectionAndDiffuse.xyz), 0.0f);
+                        irradiance += constants.sunDiffuseAndSpecular.rgb *
+                            nDotL * primaryLightVisibility;
+                    }
+                }
+                else
+                {
+                    irradiance = constants.ambientAndProbe.rgb;
+                    if (hasDirectionalDiffuse)
+                    {
+                        float nDotL = max(dot(
+                            normalize(normal),
+                            -constants.sunDirectionAndDiffuse.xyz), 0.0f);
+                        irradiance += constants.sunDiffuseAndSpecular.rgb *
+                            nDotL;
+                    }
                 }
                 color.rgb *= irradiance;
             }
@@ -482,7 +586,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
                     max(dot(normal, halfVector), 0.0f),
                     32.0f);
                 color.rgb += constants.sunSpecular.rgb * specular *
-                    highlight;
+                    highlight * primaryLightVisibility;
             }
 
             if (constants.fogFlags.x != 0.0f)
@@ -568,12 +672,13 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             }
             if ((outputFlags & 2) != 0)
                 color.rgb *= color.a;
-            return color;
+            IW4_GENERIC_FRAGMENT_RETURN(color, stage.position.z)
         }
         """;
 
     private readonly MTLDevice _device;
     private readonly MTLPixelFormat _depthStencilFormat;
+    private readonly bool _emulatesDepth24;
     private readonly Dictionary<PipelineKey, MetalGenericMaterialPipeline>
         _pipelines = [];
     private readonly Dictionary<PipelineKey, string> _failures = [];
@@ -590,6 +695,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
         ArgumentNullException.ThrowIfNull(depthStencilFormat);
         _device = device;
         _depthStencilFormat = depthStencilFormat.PixelFormat;
+        _emulatesDepth24 = depthStencilFormat.EmulatesDepth24;
     }
 
     internal bool TryGetOrCreate(
@@ -598,6 +704,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
         int normalTextureMask,
         int specularTextureMask,
         bool hasLightmap,
+        bool usesStaticModelLighting,
         out MetalGenericMaterialPipeline? pipeline,
         out string blocker)
     {
@@ -612,6 +719,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             normalTextureMask,
             specularTextureMask,
             hasLightmap,
+            usesStaticModelLighting,
             pass.Geometry.Topology,
             pass.SourceState.ColorMask,
             pass.SourceState.BlendEnabled,
@@ -641,18 +749,6 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
         MTLFunction fragmentFunction = default;
         try
         {
-            vertexFunction = _library.NewFunction(
-                usesStaticModelInstancing
-                    ? StaticVertexEntryPoint
-                    : WorldVertexEntryPoint);
-            if (vertexFunction.NativePtr == 0)
-            {
-                return Fail(
-                    key,
-                    "metalPipeline=GENERIC_VERTEX_ENTRY_POINT_MISSING",
-                    out pipeline,
-                    out blocker);
-            }
             using (var constants = new MTLFunctionConstantValues())
             {
                 SetIntFunctionConstant(
@@ -671,6 +767,27 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
                     constants,
                     key.HasLightmap ? 1 : 0,
                     HasLightmapFunctionConstant);
+                SetIntFunctionConstant(
+                    constants,
+                    key.UsesStaticModelLighting ? 1 : 0,
+                    HasStaticModelLightingFunctionConstant);
+                NSError vertexFunctionError = default;
+                vertexFunction = _library.NewFunction(
+                    usesStaticModelInstancing
+                        ? StaticVertexEntryPoint
+                        : WorldVertexEntryPoint,
+                    constants,
+                    ref vertexFunctionError);
+                if (vertexFunction.NativePtr == 0 ||
+                    vertexFunctionError.NativePtr != 0)
+                {
+                    return Fail(
+                        key,
+                        "metalPipeline=GENERIC_VERTEX_SPECIALIZATION_" +
+                        Describe(vertexFunctionError),
+                        out pipeline,
+                        out blocker);
+                }
                 NSError functionError = default;
                 fragmentFunction = _library.NewFunction(
                     FragmentEntryPoint,
@@ -780,7 +897,38 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
 
         using var options = new MTLCompileOptions();
         NSError error = default;
-        _library = _device.NewLibrary(Source, options, ref error);
+        string source = Source.Replace(
+            "IW4_GENERIC_FRAGMENT_RETURN_TYPE",
+            _emulatesDepth24
+                ? "fragment GenericMaterialFragmentOut"
+                : "fragment float4",
+            StringComparison.Ordinal).Replace(
+            "IW4_GENERIC_DEPTH_BIAS_PARAMETER",
+            _emulatesDepth24
+                ? $",\n            constant float2& depthBias [[buffer({MetalGenericMaterialShaderAbi.DepthBiasBufferIndex})]],\n            uint sampleId [[sample_id]]"
+                : string.Empty,
+            StringComparison.Ordinal).Replace(
+            "IW4_GENERIC_DEPTH_BIAS_PRELUDE",
+            _emulatesDepth24
+                ? "(void)sampleId;\n            float rasterDepth = stage.position.z;\n            float polygonOffsetSlope = max(abs(dfdx(rasterDepth)), abs(dfdy(rasterDepth)));"
+                : string.Empty,
+            StringComparison.Ordinal).Replace(
+            "IW4_GENERIC_FRAGMENT_RETURN(color, stage.position.z)",
+            _emulatesDepth24
+                ? """
+                    constexpr float maximumDepth24 = 16777215.0f;
+                    float biasedDepth = clamp(
+                        stage.position.z + depthBias.x +
+                            depthBias.y * polygonOffsetSlope,
+                        0.0f,
+                        1.0f);
+                    float depth = floor(biasedDepth *
+                        maximumDepth24 + 0.5f) / maximumDepth24;
+                    return { color, depth };
+                    """
+                : "return color;",
+            StringComparison.Ordinal);
+        _library = _device.NewLibrary(source, options, ref error);
         if (_library.NativePtr == 0 || error.NativePtr != 0)
         {
             if (_library.NativePtr != 0)
@@ -841,6 +989,7 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
         int NormalTextureMask,
         int SpecularTextureMask,
         bool HasLightmap,
+        bool UsesStaticModelLighting,
         RenderPrimitiveTopology Topology,
         RsxColorMask ColorMask,
         bool BlendEnabled,
@@ -893,15 +1042,16 @@ internal static class MetalGenericMaterialShaderAbi
     internal const ulong VertexConstantBufferIndex = 1;
     internal const ulong StaticInstanceBufferIndex = 2;
     internal const ulong FragmentConstantBufferIndex = 0;
+    internal const ulong DepthBiasBufferIndex = 1;
 
     internal const int ColorTextureStart = 0;
     internal const int LightmapTexture = 5;
     internal const int NormalTextureStart = 6;
     internal const int SpecularTextureStart = 10;
+    internal const int StaticModelLightingTexture = 13;
     internal const int TextureBindingCount = 13;
 
-    internal const int ConstantFloat4Count = 20;
+    internal const int ConstantFloat4Count = 21;
     internal const int ConstantByteCount =
         ConstantFloat4Count * sizeof(float) * 4;
-    internal const int StaticInstanceFloat4Stride = 3;
 }

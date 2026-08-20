@@ -16,13 +16,15 @@ internal static class RsxFragmentMslLowerer
         => LowerCore(
             program,
             fixedFunction: null,
-            initialBlockers: null);
+            initialBlockers: null,
+            emulateDepth24: false);
 
     internal static RsxFragmentMslLoweringResult Lower(
         RsxFragmentProgramIr program,
         RenderState renderState,
         bool suppressShaderPackerForDiagnosticOutput,
-        FragmentTargetOutputAvailability? targetOutputs = null)
+        FragmentTargetOutputAvailability? targetOutputs = null,
+        bool emulateDepth24 = false)
     {
         ArgumentNullException.ThrowIfNull(program);
 
@@ -36,6 +38,8 @@ internal static class RsxFragmentMslLowerer
             program,
             fixedFunction,
             blockers,
+            emulateDepth24 && EffectiveDepthComparisonOrWriteEnabled(
+                renderState),
             targetOutputs);
     }
 
@@ -43,6 +47,7 @@ internal static class RsxFragmentMslLowerer
         RsxFragmentProgramIr program,
         FixedFunctionPlan? fixedFunction,
         SortedSet<string>? initialBlockers,
+        bool emulateDepth24,
         FragmentTargetOutputAvailability? targetOutputs = null)
     {
         ArgumentNullException.ThrowIfNull(program);
@@ -105,7 +110,8 @@ internal static class RsxFragmentMslLowerer
                 : null,
             blockers,
             fixedFunction,
-            colorAttachments);
+            colorAttachments,
+            emulateDepth24);
         return CreateResult(msl, blockers) with
         {
             AlphaTestMode = fixedFunction?.AlphaTestMode ??
@@ -180,7 +186,8 @@ internal static class RsxFragmentMslLowerer
             fragmentProgramControl,
             blockers,
             fixedFunction: null,
-            colorAttachments: [0, 1, 2, 3]);
+            colorAttachments: [0, 1, 2, 3],
+            emulateDepth24: false);
 
     private static string BuildMsl(
         IReadOnlyList<RsxFragmentInstruction> instructions,
@@ -188,7 +195,8 @@ internal static class RsxFragmentMslLowerer
         RsxFragmentProgramControlFlags? fragmentProgramControl,
         ISet<string> blockers,
         FixedFunctionPlan? fixedFunction,
-        IReadOnlyList<int> colorAttachments)
+        IReadOnlyList<int> colorAttachments,
+        bool emulateDepth24)
     {
         ArgumentNullException.ThrowIfNull(instructions);
         ArgumentNullException.ThrowIfNull(samplerProfile);
@@ -202,12 +210,24 @@ internal static class RsxFragmentMslLowerer
             HasAnyControlFlag(
                 depthControl,
                 RsxFragmentProgramControlFlags.DepthExportMask);
+        bool emitsDepth = exportsDepth || emulateDepth24;
 
         var builder = new StringBuilder();
         MetalRsxShaderAbi.AppendPreamble(builder);
-        AppendFragmentOutput(builder, exportsDepth, colorAttachments);
+        AppendFragmentOutput(builder, emitsDepth, colorAttachments);
         AppendFragmentHelpers(builder);
-        AppendFragmentFunctionSignature(builder, samplerProfile);
+        AppendFragmentFunctionSignature(
+            builder,
+            samplerProfile,
+            emulateDepth24);
+        if (emulateDepth24)
+        {
+            builder.AppendLine("  (void)rsxSampleId;");
+            builder.AppendLine(
+                "  float rsxRasterDepth = rsxIn.position.z;");
+            builder.AppendLine(
+                "  float rsxPolygonOffsetSlope = max(abs(dfdx(rsxRasterDepth)), abs(dfdy(rsxRasterDepth)));");
+        }
         AppendRegisterBankDeclaration(
             builder,
             "R",
@@ -330,8 +350,23 @@ internal static class RsxFragmentMslLowerer
             builder.AppendLine(
                 $"  rsxOut.color{colorTarget} = rsxColorExport{colorTarget};");
         }
-        if (exportsDepth)
-            builder.AppendLine("  rsxOut.depth = R[1].z;");
+        if (emitsDepth)
+        {
+            string candidate = exportsDepth
+                ? "R[1].z"
+                : "rsxIn.position.z";
+            if (emulateDepth24)
+            {
+                builder.AppendLine(
+                    $"  float rsxBiasedDepth = clamp({candidate} + rsxDepthBias.x + rsxDepthBias.y * rsxPolygonOffsetSlope, 0.0f, 1.0f);");
+                builder.AppendLine(
+                    "  rsxOut.depth = rsxQuantizeDepth24(rsxBiasedDepth);");
+            }
+            else
+            {
+                builder.AppendLine($"  rsxOut.depth = {candidate};");
+            }
+        }
         builder.AppendLine("  return rsxOut;");
         builder.AppendLine("}");
         return builder.ToString();
@@ -509,6 +544,8 @@ internal static class RsxFragmentMslLowerer
         builder.AppendLine(
             "float4 rsxFragmentBool4(bool4 value) { return select(float4(0.0f), float4(1.0f), value); }");
         builder.AppendLine(
+            "float rsxQuantizeDepth24(float value) { constexpr float maximum = 16777215.0f; return floor(clamp(value, 0.0f, 1.0f) * maximum + 0.5f) / maximum; }");
+        builder.AppendLine(
             "bool rsxFragmentCcTestFL(float value) { return false; }");
         builder.AppendLine(
             "bool rsxFragmentCcTestLT(float value) { return !isnan(value) && value < 0.0f; }");
@@ -528,7 +565,8 @@ internal static class RsxFragmentMslLowerer
 
     private static void AppendFragmentFunctionSignature(
         StringBuilder builder,
-        RsxFragmentSamplerFeatureProfile samplerProfile)
+        RsxFragmentSamplerFeatureProfile samplerProfile,
+        bool emulateDepth24)
     {
         builder.AppendLine("fragment RsxFragmentStageOut rsxFragmentMain(");
         builder.AppendLine("    RsxVertexStageOut rsxIn [[stage_in]],");
@@ -547,7 +585,11 @@ internal static class RsxFragmentMslLowerer
         builder.AppendLine(
             $"    constant float4* rsxCodePixelConst [[buffer({MetalRsxShaderAbi.FragmentCodeConstantBufferIndex})]],");
         builder.AppendLine(
-            $"    constant float4* rsxStaticPixelConst [[buffer({MetalRsxShaderAbi.FragmentStaticConstantBufferIndex})]])");
+            $"    constant float4* rsxStaticPixelConst [[buffer({MetalRsxShaderAbi.FragmentStaticConstantBufferIndex})]]" +
+            (emulateDepth24
+                ? $",\n    constant float2& rsxDepthBias [[buffer({MetalRsxShaderAbi.FragmentDepthBiasBufferIndex})]],\n    uint rsxSampleId [[sample_id]]"
+                : string.Empty) +
+            ")");
         builder.AppendLine("{");
     }
 
@@ -1181,6 +1223,15 @@ internal static class RsxFragmentMslLowerer
         RsxFragmentSamplerFeatures features,
         RsxFragmentSamplerFeatures feature) =>
         (features & feature) != 0;
+
+    private static bool EffectiveDepthComparisonOrWriteEnabled(
+        RenderState state)
+    {
+        RenderState effective = state.HasState
+            ? state
+            : RenderState.Default;
+        return effective.DepthTestEnabled || effective.DepthWriteEnabled;
+    }
 
     private readonly record struct FragmentControlFlowPlan(
         int InstructionIndex,

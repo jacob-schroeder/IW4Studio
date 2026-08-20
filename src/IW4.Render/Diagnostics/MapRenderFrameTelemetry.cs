@@ -252,7 +252,76 @@ public enum MapRenderFrameCounter
     PostPasses,
 
     /// <summary>Logical fullscreen post-processing draw commands.</summary>
-    PostLogicalDrawCommands
+    PostLogicalDrawCommands,
+
+    /// <summary>Backend-neutral base normal-camera groups in the scene snapshot.</summary>
+    NormalCameraSnapshotBaseGroups,
+
+    /// <summary>Alternative receiver normal-camera groups in the scene snapshot.</summary>
+    NormalCameraSnapshotReceiverGroups,
+
+    /// <summary>Unique backend-neutral base passes in the scene snapshot.</summary>
+    NormalCameraSnapshotBasePasses,
+
+    /// <summary>Unique alternative receiver passes in the scene snapshot.</summary>
+    NormalCameraSnapshotReceiverPasses,
+
+    /// <summary>Base groups atomically authorized by the active backend.</summary>
+    NormalCameraAuthorizedBaseGroups,
+
+    /// <summary>Receiver groups atomically authorized by the active backend.</summary>
+    NormalCameraAuthorizedReceiverGroups,
+
+    /// <summary>Unique base passes retained by authorized groups.</summary>
+    NormalCameraAuthorizedBasePasses,
+
+    /// <summary>Unique receiver passes retained by authorized groups.</summary>
+    NormalCameraAuthorizedReceiverPasses,
+
+    /// <summary>Authored groups rejected atomically because at least one pass failed admission.</summary>
+    NormalCameraBlockedGroups,
+
+    /// <summary>Unique prepared passes rejected by backend admission.</summary>
+    NormalCameraBlockedPasses,
+
+    /// <summary>Rejected passes blocked by the generic-material contract.</summary>
+    NormalCameraBlockedGenericPasses,
+
+    /// <summary>Rejected passes blocked by a runtime sampler publication contract.</summary>
+    NormalCameraBlockedRuntimeSamplerPasses,
+
+    /// <summary>Rejected passes with unresolved authored code-sampler destinations.</summary>
+    NormalCameraBlockedUnresolvedSamplerPasses,
+
+    /// <summary>Rejected passes requiring an unavailable sun-shadow publication.</summary>
+    NormalCameraBlockedSunShadowPasses,
+
+    /// <summary>Rejected passes requiring an unavailable spot-shadow publication.</summary>
+    NormalCameraBlockedSpotShadowPasses,
+
+    /// <summary>Rejected passes requiring an unavailable model-lighting publication.</summary>
+    NormalCameraBlockedModelLightingPasses,
+
+    /// <summary>Rejected passes requiring an unavailable ProcessedFloatZ publication.</summary>
+    NormalCameraBlockedProcessedFloatZPasses,
+
+    /// <summary>Rejected passes requiring an unavailable light-attenuation resource.</summary>
+    NormalCameraBlockedLightAttenuationPasses,
+
+    /// <summary>Rejected passes blocked by shader IR, lowering, or pipeline creation.</summary>
+    NormalCameraBlockedShaderPasses,
+
+    /// <summary>Rejected passes blocked by direct or vertex constant execution.</summary>
+    NormalCameraBlockedConstantPasses,
+
+    /// <summary>Rejected passes blocked by authored render-state execution.</summary>
+    NormalCameraBlockedRenderStatePasses,
+
+    /// <summary>Rejected passes blocked by geometry, instance, or texture resources.</summary>
+    NormalCameraBlockedResourcePasses,
+
+    /// <summary>Rejected passes not covered by a more specific admission category.</summary>
+    NormalCameraBlockedOtherPasses
 }
 
 /// <summary>

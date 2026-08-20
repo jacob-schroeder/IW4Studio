@@ -58,6 +58,11 @@ public sealed unsafe partial class MetalMapRenderer
     private MapRenderWorldDpvsVisibilityBuildResult?
         _pendingShadowVisibility;
     private MapRenderSunShadowAtlasReadyState? _pendingShadowReadyState;
+    // The selector used to close exact receiver coverage before an atlas
+    // write. It is deliberately pending-only: a preflight has no readiness
+    // token and must never become draw authority by itself.
+    private MapRenderFrameTechniqueSelector?
+        _pendingShadowReceiverPreflightSelector;
     private MetalSunShadowReceiverFrame? _pendingSunShadowReceiverFrame;
     private MapRenderWorldDpvsVisibilityBuildResult?
         _committedShadowVisibility;
@@ -224,8 +229,6 @@ public sealed unsafe partial class MetalMapRenderer
             return;
         }
 
-        using MapRenderCpuPhaseScope cpuPhase =
-            _telemetry.BeginCpuPhase(MapRenderCpuPhase.SunShadow);
         try
         {
             var extent = new MapRenderNormalCameraFramebufferExtent(
@@ -250,6 +253,18 @@ public sealed unsafe partial class MetalMapRenderer
                 extent,
                 farPlane,
                 visibility);
+            // The receiver preflight must use the same normal-camera DPVS
+            // and static-LOD selection that depth and color will consume.
+            // Otherwise an unselected LOD can reject an otherwise complete
+            // atlas, or a later selector can route a different owner.
+            PrepareNormalCameraVisibility(camera);
+            PrepareStaticModelLighting();
+
+            // Visibility and working-set admission own independent,
+            // non-overlapping CPU telemetry phases. Begin SunShadow only
+            // after both close so runtime telemetry cannot throw on nesting.
+            using MapRenderCpuPhaseScope cpuPhase =
+                _telemetry.BeginCpuPhase(MapRenderCpuPhase.SunShadow);
 
             long revision = _nextShadowFrameRevision;
             _nextShadowFrameRevision = checked(revision + 1);
@@ -298,6 +313,8 @@ public sealed unsafe partial class MetalMapRenderer
                 {
                     return;
                 }
+                _pendingShadowReceiverPreflightSelector =
+                    preflightSelector;
 
                 _pendingShadowAtlasWrite = true;
                 EncodeSunShadowAtlas(
@@ -341,17 +358,41 @@ public sealed unsafe partial class MetalMapRenderer
                 _pendingSpotShadowReadyState = null;
                 _pendingSpotShadowPlans = [];
             }
+            if (_pendingShadowReceiverPreflightSelector is null)
+            {
+                MapRenderFrameTechniqueSelector? exactPreflight =
+                    TryCreateShadowReceiverPreflightSelector(
+                        readyState.Frame,
+                        spotReady?.Entries);
+                if (exactPreflight is null ||
+                    !CanAuthorizeNormalCameraShadowReceiverSelector(
+                        exactPreflight))
+                {
+                    return;
+                }
+                _pendingShadowReceiverPreflightSelector = exactPreflight;
+            }
             _pendingSunShadowReceiverFrame =
                 TryCreateSunShadowReceiverFrame(readyState, spotReady);
-            if (spotReady is not null &&
-                _pendingSunShadowReceiverFrame is null)
+            if (_pendingSunShadowReceiverFrame is null)
             {
                 _pendingSpotShadowVisibility = null;
                 _pendingSpotShadowReadyState = null;
                 _pendingSpotShadowPlans = [];
+                MapRenderFrameTechniqueSelector? sunOnlyPreflight =
+                    TryCreateShadowReceiverPreflightSelector(
+                        readyState.Frame);
+                _pendingShadowReceiverPreflightSelector =
+                    sunOnlyPreflight is not null &&
+                    CanAuthorizeNormalCameraShadowReceiverSelector(
+                        sunOnlyPreflight)
+                        ? sunOnlyPreflight
+                        : null;
                 _pendingSunShadowReceiverFrame =
                     TryCreateSunShadowReceiverFrame(readyState);
             }
+            if (_pendingSunShadowReceiverFrame is not null)
+                InvalidateNormalCameraReceiverSelection();
         }
         catch (Exception exception) when (
             exception is ArgumentException or
@@ -512,6 +553,22 @@ public sealed unsafe partial class MetalMapRenderer
                 throw new InvalidOperationException(
                     "An unchanged Metal spot-shadow atlas could not be republished.");
             }
+            // Reuse still changes the normal-camera +3 membership. Rebuild
+            // and retain the exact preflight selector so the subsequent
+            // ready selector proves the reused spot entries own the same
+            // receiver routes as a freshly encoded atlas.
+            MapRenderFrameTechniqueSelector? reusedPreflightSelector =
+                TryCreateShadowReceiverPreflightSelector(
+                    sunReady.Frame,
+                    reusedReady.Entries);
+            if (reusedPreflightSelector is null ||
+                !CanAuthorizeNormalCameraShadowReceiverSelector(
+                    reusedPreflightSelector))
+            {
+                return null;
+            }
+            _pendingShadowReceiverPreflightSelector =
+                reusedPreflightSelector;
             _pendingSpotShadowVisibility = visibility;
             _pendingSpotShadowReadyState = reusedReady;
             _pendingSpotShadowPlans = _committedSpotShadowPlans;
@@ -552,6 +609,7 @@ public sealed unsafe partial class MetalMapRenderer
         {
             return null;
         }
+        _pendingShadowReceiverPreflightSelector = preflightSelector;
 
         _pendingSpotShadowAtlasWrite = true;
         EncodeSpotShadowAtlasPass(
@@ -870,11 +928,22 @@ public sealed unsafe partial class MetalMapRenderer
             _renderStates.ApplyRasterState(
                 encoder,
                 material.State);
-            encoder.SetDepthBias(
-                MetalRenderStateCache.ConvertPs3PolygonOffsetUnits(
-                    polygonOffsetUnits),
+            _renderStates.ApplyDepthBiasOverride(
+                encoder,
                 polygonOffsetFactor,
-                0f);
+                polygonOffsetUnits);
+            if (_depthStencilFormat.EmulatesDepth24)
+            {
+                Vector2 depthBias = _renderStates.CurrentDepthBias;
+                encoder.SetFragmentBytes(
+                    (nint)(&depthBias),
+                    checked((ulong)sizeof(Vector2)),
+                    MetalShadowCasterShaderAbi.DepthBiasBufferIndex);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.BufferChanges);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.UniformUpdates);
+            }
             currentState = material.State;
             _telemetry.AddCounter(
                 MapRenderFrameCounter.RenderStateChanges);
@@ -965,6 +1034,7 @@ public sealed unsafe partial class MetalMapRenderer
         _pendingShadowFrame = null;
         _pendingShadowVisibility = null;
         _pendingShadowReadyState = null;
+        _pendingShadowReceiverPreflightSelector = null;
         _pendingSpotShadowAtlasWrite = false;
         _pendingSpotShadowVisibility = null;
         _pendingSpotShadowReadyState = null;
@@ -1014,6 +1084,11 @@ public sealed unsafe partial class MetalMapRenderer
                 new MapRenderTechniqueSelectionContext(
                     techniques.DrawMethod,
                     selectorFrame));
+            if (!HasMatchingShadowReceiverPreflight(selector) ||
+                !CanAuthorizeNormalCameraShadowReceiverSelector(selector))
+            {
+                return null;
+            }
             return new MetalSunShadowReceiverFrame(
                 readyState,
                 spotReadyState,
@@ -1033,6 +1108,39 @@ public sealed unsafe partial class MetalMapRenderer
             // it unless the immutable selector inputs close exactly.
             return null;
         }
+    }
+
+    private bool HasMatchingShadowReceiverPreflight(
+        MapRenderFrameTechniqueSelector readySelector)
+    {
+        ArgumentNullException.ThrowIfNull(readySelector);
+        if (_pendingShadowReceiverPreflightSelector is not { } preflight)
+            return false;
+        if (!ReferenceEquals(preflight.Visibility, readySelector.Visibility) ||
+            !preflight.Techniques.SceneLights.IsShadowAllocationPreflight)
+        {
+            return false;
+        }
+
+        MapRenderSceneLightSelectorState expected =
+            preflight.Techniques.SceneLights.Selectors;
+        MapRenderSceneLightSelectorState actual =
+            readySelector.Techniques.SceneLights.Selectors;
+        if (expected.SceneLightCount != actual.SceneLightCount)
+            return false;
+        for (int lightIndex = 0;
+             lightIndex < expected.SceneLightCount;
+             lightIndex++)
+        {
+            if (expected.IsAlternateVariantAllocated(lightIndex) !=
+                    actual.IsAlternateVariantAllocated(lightIndex) ||
+                expected.GetEffectiveVariant(lightIndex) !=
+                    actual.GetEffectiveVariant(lightIndex))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private MapRenderFrameTechniqueSelector?

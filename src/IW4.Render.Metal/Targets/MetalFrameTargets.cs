@@ -94,14 +94,69 @@ internal sealed class MetalFrameTargets : IDisposable
             width,
             height,
             SceneSampleCount,
-            MTLTextureUsage.RenderTarget);
+            MTLTextureUsage.RenderTarget | MTLTextureUsage.ShaderRead);
     }
 
     internal MTLRenderPassDescriptor CreateScenePass(
         double clearRed,
         double clearGreen,
         double clearBlue,
-        double clearAlpha)
+        double clearAlpha,
+        bool preserveForFloatZ = false)
+    {
+        ThrowIfDisposed();
+        if (!IsReady)
+            throw new InvalidOperationException("Metal frame targets are unavailable.");
+
+        var descriptor = new MTLRenderPassDescriptor
+        {
+            RenderTargetWidth = checked((ulong)_width),
+            RenderTargetHeight = checked((ulong)_height),
+            DefaultRasterSampleCount = SceneSampleCount
+        };
+        MTLRenderPassColorAttachmentDescriptor color =
+            descriptor.ColorAttachments.Object(0);
+        color.Texture = _multisampleColor;
+        color.ResolveTexture = preserveForFloatZ
+            ? default
+            : _resolvedColor;
+        color.LoadAction = MTLLoadAction.Clear;
+        color.StoreAction = preserveForFloatZ
+            ? MTLStoreAction.Store
+            : MTLStoreAction.MultisampleResolve;
+        color.ClearColor = new MTLClearColor
+        {
+            red = clearRed,
+            green = clearGreen,
+            blue = clearBlue,
+            alpha = clearAlpha
+        };
+
+        MTLRenderPassDepthAttachmentDescriptor depth = descriptor.DepthAttachment;
+        depth.Texture = _depthStencil;
+        depth.LoadAction = MTLLoadAction.Clear;
+        depth.StoreAction = preserveForFloatZ
+            ? MTLStoreAction.Store
+            : MTLStoreAction.DontCare;
+        depth.ClearDepth = 1.0;
+
+        MTLRenderPassStencilAttachmentDescriptor stencil =
+            descriptor.StencilAttachment;
+        stencil.Texture = _depthStencil;
+        stencil.LoadAction = MTLLoadAction.Clear;
+        stencil.StoreAction = preserveForFloatZ
+            ? MTLStoreAction.Store
+            : MTLStoreAction.DontCare;
+        stencil.ClearStencil = 0;
+        return descriptor;
+    }
+
+    /// <summary>
+    /// Reopens target 2 after the demand-gated FloatZ lifecycle. The first
+    /// encoder stored multisample color and D24-compatible depth; this pass
+    /// preserves both while resolving the final Surface-A output exactly once.
+    /// </summary>
+    internal MTLRenderPassDescriptor CreateSceneResumePass()
     {
         ThrowIfDisposed();
         if (!IsReady)
@@ -117,30 +172,25 @@ internal sealed class MetalFrameTargets : IDisposable
             descriptor.ColorAttachments.Object(0);
         color.Texture = _multisampleColor;
         color.ResolveTexture = _resolvedColor;
-        color.LoadAction = MTLLoadAction.Clear;
+        color.LoadAction = MTLLoadAction.Load;
         color.StoreAction = MTLStoreAction.MultisampleResolve;
-        color.ClearColor = new MTLClearColor
-        {
-            red = clearRed,
-            green = clearGreen,
-            blue = clearBlue,
-            alpha = clearAlpha
-        };
 
         MTLRenderPassDepthAttachmentDescriptor depth = descriptor.DepthAttachment;
         depth.Texture = _depthStencil;
-        depth.LoadAction = MTLLoadAction.Clear;
+        depth.LoadAction = MTLLoadAction.Load;
         depth.StoreAction = MTLStoreAction.DontCare;
-        depth.ClearDepth = 1.0;
 
         MTLRenderPassStencilAttachmentDescriptor stencil =
             descriptor.StencilAttachment;
         stencil.Texture = _depthStencil;
-        stencil.LoadAction = MTLLoadAction.Clear;
+        stencil.LoadAction = MTLLoadAction.Load;
         stencil.StoreAction = MTLStoreAction.DontCare;
-        stencil.ClearStencil = 0;
         return descriptor;
     }
+
+    internal MTLTexture SceneDepthStencil => IsReady
+        ? _depthStencil
+        : throw new InvalidOperationException("Metal frame targets are unavailable.");
 
     internal static MTLRenderPassDescriptor CreatePresentationPass(
         MTLTexture drawableTexture)

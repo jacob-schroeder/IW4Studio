@@ -16,6 +16,7 @@ internal static class MetalRsxShaderAbi
     internal const int StaticCompositionBufferIndex = 4;
     internal const int FragmentCodeConstantBufferIndex = 0;
     internal const int FragmentStaticConstantBufferIndex = 1;
+    internal const int FragmentDepthBiasBufferIndex = 2;
     internal const int TextureDestinationCount = 16;
     internal const int StaticPlacementFloat4Stride = 3;
     internal const int StaticLightingPlacementFloat4Stride = 4;

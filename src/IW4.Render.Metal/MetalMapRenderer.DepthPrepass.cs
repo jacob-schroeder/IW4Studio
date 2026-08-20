@@ -643,6 +643,13 @@ public sealed unsafe partial class MetalMapRenderer
             MetalRsxShaderAbi.VertexConstantBufferIndex)
                 ? 1
                 : 0;
+        if (_depthStencilFormat.EmulatesDepth24 &&
+            bindings.SetFragmentBytes(
+                _renderStates.CurrentDepthBias,
+                MetalDepthPrepassShaderAbi.DepthBiasBufferIndex))
+        {
+            uniformUpdates++;
+        }
 
         if (!draw.Pipeline.UsesStaticModelInstancing)
         {

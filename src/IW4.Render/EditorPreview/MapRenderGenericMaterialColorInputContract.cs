@@ -1,22 +1,53 @@
 using System.Collections.Immutable;
 
+using IW4.Render.Execution;
+using IW4.Render.Materials;
 using IW4.Render.Shaders;
 
-namespace IW4.Render.OpenGl.Programs;
+namespace IW4.Render.EditorPreview;
 
 /// <summary>
-/// Classifies the narrow instruction/dataflow surface for which the OpenGL
-/// generic-preview fallback must linearize a sampled color input. This is a
-/// backend compatibility policy, not a backend-neutral RSX semantic.
+/// Carries the color-input transfer behavior visible in the immutable RSX
+/// fragment IR into the backend-neutral generic EditorPreview fallback.
+/// Unknown or ambiguous dataflow deliberately remains unmodified.
 /// </summary>
-internal static class MapRenderColorInputIrCompatibilityClassifier
+internal static class MapRenderGenericMaterialColorInputContract
 {
+    internal static int ResolveLinearizationMask(
+        ShaderExecutionContract execution,
+        IReadOnlyList<MaterialColorLayer> colorLayers,
+        int maximumLayerCount)
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        ArgumentNullException.ThrowIfNull(colorLayers);
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumLayerCount);
+
+        if (!execution.ProgramIrReady || execution.FragmentProgramIr is null)
+            return 0;
+
+        int mask = 0;
+        int layerCount = Math.Min(
+            Math.Min(colorLayers.Count, maximumLayerCount),
+            sizeof(int) * 8 - 1);
+        for (int layerIndex = 0; layerIndex < layerCount; layerIndex++)
+        {
+            if (RequiresLinearization(
+                    execution.FragmentProgramIr,
+                    colorLayers[layerIndex].Identity.SamplerDest))
+            {
+                mask |= 1 << layerIndex;
+            }
+        }
+
+        return mask;
+    }
+
     private const RsxFragmentWriteMask RgbComponentMask =
         RsxFragmentWriteMask.X |
         RsxFragmentWriteMask.Y |
         RsxFragmentWriteMask.Z;
 
-    internal static bool RequiresLinearization(
+    private static bool RequiresLinearization(
         RsxFragmentProgramIr program,
         int samplerDestination)
     {
@@ -83,9 +114,6 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
             RsxFragmentSamplerFeatures.Shadow);
         return instruction.OpcodeType switch
         {
-            // These are the only lowerer spellings matched by the independent
-            // legacy `texture(?:Lod)?` assignment regex. Projective samples
-            // and scalar-wrapped shadow samples intentionally remain hidden.
             RsxFragmentOpcode.Texture => !shadow || cube,
             RsxFragmentOpcode.TextureLod or
                 RsxFragmentOpcode.TextureBias => !shadow,
@@ -95,10 +123,10 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
 
     private static bool
         TargetHasRepeatedMultiplicativeRgbTextBeforeOverwrite(
-        ImmutableArray<RsxFragmentInstruction> instructions,
-        int sampleOrdinal,
-        FragmentRegister target,
-        RsxFragmentSamplerFeatureProfile samplerProfile)
+            ImmutableArray<RsxFragmentInstruction> instructions,
+            int sampleOrdinal,
+            FragmentRegister target,
+            RsxFragmentSamplerFeatureProfile samplerProfile)
     {
         int accumulatedUses = 0;
         for (int ordinal = sampleOrdinal + 1;
@@ -221,9 +249,6 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
                 occurrences = SourceOccurrencePattern.Source01;
                 break;
             case RsxFragmentOpcode.MultiplyAdd:
-                // Intentional legacy text quirk: the regex sees the MAD
-                // asterisk and then counts every register token on the line,
-                // including the additive source2 operand.
                 occurrences = SourceOccurrencePattern.Source012;
                 containsAsterisk = true;
                 break;
@@ -248,9 +273,6 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
                 occurrences = SourceOccurrencePattern.Source01;
                 break;
             case RsxFragmentOpcode.Normalize:
-                // The lowerer spells source0 twice in normalize(vec.xyz),
-                // vec.w. The legacy regex counts both only when an outer scale
-                // contributes an actual '*' character to the assignment.
                 occurrences = SourceOccurrencePattern.Source00;
                 break;
             default:
@@ -258,8 +280,6 @@ internal static class MapRenderColorInputIrCompatibilityClassifier
                 return false;
         }
 
-        // Dot products deliberately do not set ContainsAsterisk: the retained
-        // classifier inspects generated text, where `dot(...)` has no '*'.
         facts = new FragmentExpressionFacts(
             occurrences,
             containsAsterisk);

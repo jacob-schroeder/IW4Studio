@@ -41,6 +41,21 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
             float3 color;
         };
 
+        struct Iw4AuxiliaryFragmentOut
+        {
+            float4 color [[color(0)]];
+            float depth [[depth(any)]];
+        };
+
+        inline float iw4AuxiliaryDepth24(float value)
+        {
+            if (!IW4_EMULATE_DEPTH24)
+                return value;
+            constexpr float maximum = 16777215.0f;
+            return floor(
+                clamp(value, 0.0f, 1.0f) * maximum + 0.5f) / maximum;
+        }
+
         inline float3 iw4ReadPosition(
             device const float* vertices,
             uint vertexId)
@@ -83,14 +98,19 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
             return result;
         }
 
-        fragment float4 iw4SkyFragment(
+        fragment Iw4AuxiliaryFragmentOut iw4SkyFragment(
             Iw4SkyVertexOut input [[stage_in]],
             texturecube<float> skyTexture [[texture(0)]],
-            sampler skySampler [[sampler(0)]])
+            sampler skySampler [[sampler(0)]]
+            IW4_AUXILIARY_SAMPLE_PARAMETER)
         {
-            return skyTexture.sample(
+            IW4_AUXILIARY_SAMPLE_PRELUDE
+            Iw4AuxiliaryFragmentOut result;
+            result.color = skyTexture.sample(
                 skySampler,
                 normalize(input.cubeDirection));
+            result.depth = iw4AuxiliaryDepth24(input.position.z);
+            return result;
         }
 
         vertex Iw4ColorVertexOut iw4DiagnosticVertex(
@@ -129,10 +149,15 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
             return result;
         }
 
-        fragment float4 iw4ColorFragment(
-            Iw4ColorVertexOut input [[stage_in]])
+        fragment Iw4AuxiliaryFragmentOut iw4ColorFragment(
+            Iw4ColorVertexOut input [[stage_in]]
+            IW4_AUXILIARY_SAMPLE_PARAMETER)
         {
-            return float4(input.color, 1.0);
+            IW4_AUXILIARY_SAMPLE_PRELUDE
+            Iw4AuxiliaryFragmentOut result;
+            result.color = float4(input.color, 1.0);
+            result.depth = iw4AuxiliaryDepth24(input.position.z);
+            return result;
         }
         """;
 
@@ -160,7 +185,20 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
         MTLFunction colorFragment = default;
         try
         {
-            library = device.NewLibrary(Source, options, ref libraryError);
+            bool emulatesDepth24 = depthStencilFormat.EmulatesDepth24;
+            string source = Source.Replace(
+                "IW4_EMULATE_DEPTH24",
+                emulatesDepth24 ? "true" : "false",
+                StringComparison.Ordinal).Replace(
+                "IW4_AUXILIARY_SAMPLE_PARAMETER",
+                emulatesDepth24
+                    ? ",\n            uint sampleId [[sample_id]]"
+                    : string.Empty,
+                StringComparison.Ordinal).Replace(
+                "IW4_AUXILIARY_SAMPLE_PRELUDE",
+                emulatesDepth24 ? "(void)sampleId;" : string.Empty,
+                StringComparison.Ordinal);
+            library = device.NewLibrary(source, options, ref libraryError);
             if (library.NativePtr == 0 || libraryError.NativePtr != 0)
             {
                 throw new InvalidOperationException(

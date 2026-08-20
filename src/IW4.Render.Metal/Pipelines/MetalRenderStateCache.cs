@@ -1,6 +1,8 @@
+using System.Numerics;
 using System.Runtime.Versioning;
 
 using IW4.Render.Execution;
+using IW4.Render.Metal.Targets;
 using IW4.Render.Techniques;
 
 using SharpMetal.Metal;
@@ -17,18 +19,30 @@ internal sealed class MetalRenderStateCache : IDisposable
 {
     private const float Ps3Depth24Maximum = 16_777_215f;
     private readonly MTLDevice _device;
+    private readonly bool _emulatesDepth24;
     private readonly Dictionary<RenderState, MTLDepthStencilState> _states = [];
     private bool _disposed;
     private bool _hasInheritedDepthBias;
     private float _inheritedDepthBias;
     private float _inheritedSlopeScale;
+    private bool _hasCurrentDepthBias;
+    private Vector2 _currentDepthBias;
 
-    internal MetalRenderStateCache(MTLDevice device)
+    internal MetalRenderStateCache(
+        MTLDevice device,
+        MetalDepthStencilFormatSelection depthStencilFormat)
     {
         if (device.NativePtr == 0)
             throw new ArgumentException("A Metal device is required.", nameof(device));
+        ArgumentNullException.ThrowIfNull(depthStencilFormat);
         _device = device;
+        _emulatesDepth24 = depthStencilFormat.EmulatesDepth24;
     }
+
+    internal Vector2 CurrentDepthBias => _hasCurrentDepthBias
+        ? _currentDepthBias
+        : throw new InvalidOperationException(
+            "Metal polygon offset has not been initialized for this encoder.");
 
     internal MTLDepthStencilState GetOrCreate(RenderState authoredState)
     {
@@ -113,17 +127,12 @@ internal sealed class MetalRenderStateCache : IDisposable
                 _hasInheritedDepthBias = true;
                 _inheritedDepthBias = 0f;
                 _inheritedSlopeScale = 0f;
-                encoder.SetDepthBias(0f, 0f, 0f);
                 break;
             case RenderPolygonOffsetMode.Explicit:
                 _hasInheritedDepthBias = true;
                 _inheritedDepthBias = ConvertPs3PolygonOffsetUnits(
                     state.PolygonOffsetUnits);
                 _inheritedSlopeScale = state.PolygonOffsetFactor;
-                encoder.SetDepthBias(
-                    _inheritedDepthBias,
-                    _inheritedSlopeScale,
-                    0f);
                 break;
             case RenderPolygonOffsetMode.Inherit:
                 if (!_hasInheritedDepthBias)
@@ -131,15 +140,38 @@ internal sealed class MetalRenderStateCache : IDisposable
                     throw new InvalidOperationException(
                         "An inherited polygon offset has no prior Metal state.");
                 }
-                encoder.SetDepthBias(
-                    _inheritedDepthBias,
-                    _inheritedSlopeScale,
-                    0f);
                 break;
             default:
                 throw new InvalidOperationException(
                     "The authored polygon-offset mode is not executable.");
         }
+
+        ApplyResolvedDepthBias(
+            encoder,
+            _inheritedDepthBias,
+            _inheritedSlopeScale);
+    }
+
+    internal void ApplyDepthBiasOverride(
+        MTLRenderCommandEncoder encoder,
+        float polygonOffsetFactor,
+        float polygonOffsetUnits)
+    {
+        ThrowIfDisposed();
+        if (encoder.NativePtr == 0)
+            throw new ArgumentException("A Metal render encoder is required.", nameof(encoder));
+        if (!float.IsFinite(polygonOffsetFactor) ||
+            !float.IsFinite(polygonOffsetUnits))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(polygonOffsetFactor),
+                "Metal polygon-offset overrides must be finite.");
+        }
+
+        ApplyResolvedDepthBias(
+            encoder,
+            ConvertPs3PolygonOffsetUnits(polygonOffsetUnits),
+            polygonOffsetFactor);
     }
 
     internal void ResetEncoderInheritance()
@@ -147,6 +179,8 @@ internal sealed class MetalRenderStateCache : IDisposable
         _hasInheritedDepthBias = false;
         _inheritedDepthBias = 0f;
         _inheritedSlopeScale = 0f;
+        _hasCurrentDepthBias = false;
+        _currentDepthBias = default;
     }
 
     internal static float ConvertPs3PolygonOffsetUnits(float units) =>
@@ -154,6 +188,25 @@ internal sealed class MetalRenderStateCache : IDisposable
 
     internal static RenderState Effective(RenderState state) =>
         state.HasState ? state : RenderState.Default with { HasState = true };
+
+    private void ApplyResolvedDepthBias(
+        MTLRenderCommandEncoder encoder,
+        float constantDepthBias,
+        float slopeScale)
+    {
+        _hasCurrentDepthBias = true;
+        _currentDepthBias = new Vector2(constantDepthBias, slopeScale);
+        if (_emulatesDepth24)
+        {
+            // D32 applies hardware bias after a fragment depth export. Keep it
+            // disabled so the emulation shader can add the RSX bias before the
+            // result is snapped to the fixed-point D24 grid.
+            encoder.SetDepthBias(0f, 0f, 0f);
+            return;
+        }
+
+        encoder.SetDepthBias(constantDepthBias, slopeScale, 0f);
+    }
 
     internal static void ConfigureColorAttachment(
         MTLRenderPipelineColorAttachmentDescriptor attachment,
