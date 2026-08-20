@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.Versioning;
+using System.Text;
 
 using IW4.Render.Diagnostics;
 using IW4.Render.EditorPreview;
@@ -18,6 +19,8 @@ using SharpMetal.Foundation;
 using SharpMetal.Metal;
 using SharpMetal.QuartzCore;
 
+using static IW4.Render.Diagnostics.MapRenderTelemetryOverlayText;
+
 namespace IW4.Render.Metal;
 
 /// <summary>
@@ -30,6 +33,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
 {
     private static readonly Vector3 NeutralClearColor =
         new(0.42f, 0.49f, 0.52f);
+    private static readonly long TelemetryOverlayRefreshTicks =
+        Math.Max(1, Stopwatch.Frequency);
 
     private readonly MetalLayerHost _surface;
     private readonly MetalDepthStencilFormatSelection _depthStencilFormat;
@@ -39,6 +44,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     private readonly MetalResourceCache _auxiliaryResources;
     private readonly MetalCommandBufferRing _commandBuffers;
     private readonly MetalGpuPassTimer _gpuPassTimer;
+    private readonly MetalMapRenderTelemetryOverlay _telemetryOverlay;
     private readonly MapRenderFrameTelemetry _telemetry = new();
     private RenderSceneSnapshot? _sceneSnapshot;
     private RenderNormalCameraDrawFrameOrderWorkspace? _drawOrder;
@@ -48,6 +54,11 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     private long _frameIndex;
     private long _lastCompletedCpuFrameIndex = -1;
     private long _lastPresentedCpuFrameIndex = -1;
+    private MapRenderFrameTelemetrySnapshot? _displayedTelemetry;
+    private long _displayedTelemetrySnapshotRevision = -1;
+    private long _displayedTelemetryGeometryRevision = -1;
+    private int _displayedTelemetryGlyphPixelSize = -1;
+    private long _nextDisplayedTelemetryTimestamp;
     private bool _loaded;
     private bool _disposed;
 
@@ -76,6 +87,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             surface.CommandQueue);
         _commandBuffers = new MetalCommandBufferRing(surface.CommandQueue);
         _gpuPassTimer = new MetalGpuPassTimer(surface.Device);
+        _telemetryOverlay = new MetalMapRenderTelemetryOverlay(surface.Device);
         _captureReadbacks = new MetalCaptureReadbackRing(
             surface.Device,
             surface.CommandQueue);
@@ -173,6 +185,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         InvalidateCaptureFrame();
         LastFramePlan = null;
         LastEditorPreviewPresentationResult = null;
+        RefreshDisplayedTelemetry();
         using var pool = new NSAutoreleasePool();
         long telemetryFrameIndex = _telemetry.BeginCpuFrame();
         MTLCommandBuffer commandBuffer = default;
@@ -391,20 +404,35 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                             pass,
                             commandSlot,
                             MapRenderGpuPhase.Presentation));
+                long overlayTriangleCount = _telemetryOverlay.Encode(
+                    commandBuffer,
+                    hostOutput,
+                    commandSlot,
+                    pass => _gpuPassTimer.AttachPass(
+                        pass,
+                        commandSlot,
+                        MapRenderGpuPhase.Presentation));
                 int postDrawCount = presentation.FullscreenDrawCount;
-                long postTriangleCount = checked(postDrawCount * 2L);
+                long presentationDrawCount = checked(
+                    postDrawCount +
+                    MetalMapRenderTelemetryOverlay.DrawCallCount);
+                long presentationTriangleCount = checked(
+                    postDrawCount * 2L + overlayTriangleCount);
+                long presentationPassCount = checked(
+                    postDrawCount +
+                    MetalMapRenderTelemetryOverlay.PassCount);
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.DrawCalls,
-                    postDrawCount);
+                    presentationDrawCount);
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.LogicalDrawCommands,
-                    postDrawCount);
+                    presentationDrawCount);
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.Triangles,
-                    postTriangleCount);
+                    presentationTriangleCount);
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.Passes,
-                    postDrawCount);
+                    presentationPassCount);
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.PostPasses,
                     postDrawCount);
@@ -413,16 +441,24 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                     postDrawCount);
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.ProgramChanges,
-                    postDrawCount);
+                    checked(
+                        postDrawCount +
+                        MetalMapRenderTelemetryOverlay.ProgramChangeCount));
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.RenderStateChanges,
-                    postDrawCount);
+                    checked(
+                        postDrawCount +
+                        MetalMapRenderTelemetryOverlay.RenderStateChangeCount));
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.BufferChanges,
-                    checked(postDrawCount * 5L));
+                    checked(
+                        postDrawCount * 5L +
+                        MetalMapRenderTelemetryOverlay.BufferChangeCount));
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.UniformUpdates,
-                    checked(postDrawCount * 3L));
+                    checked(
+                        postDrawCount * 3L +
+                        MetalMapRenderTelemetryOverlay.UniformUpdateCount));
                 _telemetry.AddCounter(
                     MapRenderFrameCounter.TextureChanges,
                     postDrawCount);
@@ -431,8 +467,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                     postDrawCount);
                 _telemetry.AddGpuPhaseWork(
                     MapRenderGpuPhase.Presentation,
-                    postDrawCount,
-                    postTriangleCount);
+                    presentationDrawCount,
+                    presentationTriangleCount);
                 // Retain the canonical postprocessed pixels independently of
                 // the disposable drawable. The ordered GPU copy feeds the
                 // drawable with those exact bytes before this same command
@@ -517,7 +553,14 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         }
         finally
         {
-            DisposeCaptureResources();
+            try
+            {
+                DisposeCaptureResources();
+            }
+            finally
+            {
+                _telemetryOverlay.Dispose();
+            }
         }
         _gpuPassTimer.Dispose();
         DeleteSceneResources();
@@ -606,7 +649,144 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         _frameIndex = 0;
         _lastCompletedCpuFrameIndex = -1;
         _lastPresentedCpuFrameIndex = -1;
+        _displayedTelemetry = null;
+        _displayedTelemetrySnapshotRevision = -1;
+        _displayedTelemetryGeometryRevision = -1;
+        _displayedTelemetryGlyphPixelSize = -1;
+        _nextDisplayedTelemetryTimestamp = 0;
         _loaded = true;
+    }
+
+    private void RefreshDisplayedTelemetry()
+    {
+        long timestamp = Stopwatch.GetTimestamp();
+        if (_displayedTelemetry is null ||
+            timestamp >= _nextDisplayedTelemetryTimestamp)
+        {
+            DrainGpuTelemetry(Math.Max(0, _lastCompletedCpuFrameIndex + 1));
+            _displayedTelemetry = _telemetry.CreateSnapshot();
+            _displayedTelemetrySnapshotRevision = checked(
+                _displayedTelemetrySnapshotRevision + 1);
+            _nextDisplayedTelemetryTimestamp = checked(
+                timestamp + TelemetryOverlayRefreshTicks);
+        }
+
+        float renderScaling = Math.Max(
+            _surfaceExtents.HostFramebuffer.Width /
+            (float)_surfaceExtents.SceneTarget.Width,
+            _surfaceExtents.HostFramebuffer.Height /
+            (float)_surfaceExtents.SceneTarget.Height);
+        int glyphPixelSize =
+            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(renderScaling);
+        if (_displayedTelemetryGeometryRevision ==
+                _displayedTelemetrySnapshotRevision &&
+            _displayedTelemetryGlyphPixelSize == glyphPixelSize)
+        {
+            return;
+        }
+
+        _telemetryOverlay.UpdateCpuGeometry(
+            BuildTelemetryOverlayText(_displayedTelemetry),
+            renderScaling);
+        _displayedTelemetryGeometryRevision =
+            _displayedTelemetrySnapshotRevision;
+        _displayedTelemetryGlyphPixelSize = glyphPixelSize;
+    }
+
+    private static string BuildTelemetryOverlayText(
+        MapRenderFrameTelemetrySnapshot telemetry)
+    {
+        var text = new StringBuilder(768);
+        double drawableWait = LatestCpuPhase(
+            telemetry,
+            MapRenderCpuPhase.SwapOrPresent);
+        double encodeMilliseconds = Math.Max(
+            0.0,
+            telemetry.CpuFrameMilliseconds.Latest - drawableWait);
+        text.Append("FPS ");
+        AppendOneDecimal(text, telemetry.PresentedFramesPerSecond);
+        text.Append("  PRESENT ");
+        AppendOneDecimal(text, telemetry.PresentedFrameMilliseconds.Latest);
+        text.Append(" MS  ENCODE ");
+        AppendOneDecimal(text, encodeMilliseconds);
+        text.Append(" MS  WAIT ");
+        AppendOneDecimal(text, drawableWait);
+        text.AppendLine(" MS");
+
+        AppendCpuAndGpuTiming(text, telemetry);
+
+        text.Append("DRAW ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.DrawCalls));
+        text.Append("  LOGICAL ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.LogicalDrawCommands));
+        text.Append("  TRI ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.Triangles));
+        text.Append("  PASS ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.Passes));
+        text.AppendLine();
+
+        text.Append("NORMAL SNAP ");
+        AppendCompactCount(
+            text,
+            checked(
+                Counter(
+                    telemetry,
+                    MapRenderFrameCounter.NormalCameraSnapshotBasePasses) +
+                Counter(
+                    telemetry,
+                    MapRenderFrameCounter.NormalCameraSnapshotReceiverPasses)));
+        text.Append("  AUTH ");
+        AppendCompactCount(
+            text,
+            checked(
+                Counter(
+                    telemetry,
+                    MapRenderFrameCounter.NormalCameraAuthorizedBasePasses) +
+                Counter(
+                    telemetry,
+                    MapRenderFrameCounter.NormalCameraAuthorizedReceiverPasses)));
+        text.Append("  BLOCK ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.NormalCameraBlockedPasses));
+        text.AppendLine();
+
+        text.Append("METAL PROG ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.ProgramChanges));
+        text.Append("  BUF ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.BufferChanges));
+        text.Append("  TEX ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.TextureChanges));
+        text.Append("  SAMP ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.SamplerChanges));
+        text.Append("  STATE ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.RenderStateChanges));
+        text.Append("  UNIFORM ");
+        AppendCompactCount(
+            text,
+            Counter(telemetry, MapRenderFrameCounter.UniformUpdates));
+        text.AppendLine();
+
+        AppendResourceTelemetry(text, telemetry);
+        return text.ToString();
     }
 
     private void DrainGpuTelemetry(long currentCpuFrameIndex)

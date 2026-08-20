@@ -1,9 +1,6 @@
 using System.Runtime.Versioning;
-using System.Diagnostics;
-using System.Globalization;
 using Avalonia.Threading;
 using IW4.Render;
-using IW4.Render.Diagnostics;
 using IW4.Render.Metal;
 using IW4.Render.Metal.Native;
 using IW4.Render.Resources;
@@ -36,7 +33,6 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
     private bool _startupWorkingSetReclaimed;
     private bool _disposed;
     private bool _closeRequested;
-    private long _nextTelemetryTimestamp;
 
     internal SilkMetalMapRenderWindow(
         MapRenderScene scene,
@@ -117,7 +113,6 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
 
             window.DoRender();
             _renderer?.RecordPresentedFrame();
-            PublishTelemetry(window);
             ReclaimSettledStartupWorkingSet();
         }
         catch (Exception exception)
@@ -129,106 +124,6 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
 
     private bool ShouldStop(IWindow window) =>
         _closeRequested || window.IsClosing;
-
-    private void PublishTelemetry(IWindow window)
-    {
-        if (_renderer is not { } renderer)
-            return;
-
-        long now = Stopwatch.GetTimestamp();
-        if (now < _nextTelemetryTimestamp)
-            return;
-        _nextTelemetryTimestamp = checked(now + Stopwatch.Frequency);
-
-        MapRenderFrameTelemetrySnapshot snapshot = renderer.FrameTelemetry;
-        long draws = LatestCounter(
-            snapshot,
-            MapRenderFrameCounter.DrawCalls);
-        long triangles = LatestCounter(
-            snapshot,
-            MapRenderFrameCounter.Triangles);
-        long snapshotPasses = checked(
-            LatestCounter(
-                snapshot,
-                MapRenderFrameCounter.NormalCameraSnapshotBasePasses) +
-            LatestCounter(
-                snapshot,
-                MapRenderFrameCounter.NormalCameraSnapshotReceiverPasses));
-        long authorizedPasses = checked(
-            LatestCounter(
-                snapshot,
-                MapRenderFrameCounter.NormalCameraAuthorizedBasePasses) +
-            LatestCounter(
-                snapshot,
-                MapRenderFrameCounter.NormalCameraAuthorizedReceiverPasses));
-        long blockedPasses = LatestCounter(
-            snapshot,
-            MapRenderFrameCounter.NormalCameraBlockedPasses);
-        double drawableWait = LatestCpuPhase(
-            snapshot,
-            MapRenderCpuPhase.SwapOrPresent);
-        double encodeMilliseconds = Math.Max(
-            0.0,
-            snapshot.CpuFrameMilliseconds.Latest - drawableWait);
-        double sceneGpuMilliseconds = LatestGpuPhase(
-            snapshot,
-            MapRenderGpuPhase.SceneTarget);
-        window.Title = string.Format(
-            CultureInfo.InvariantCulture,
-            "Live Preview - {0} - Metal | {1:0.0} FPS | ENCODE {2:0.00} ms | " +
-            "WAIT {3:0.00} ms | SCENE GPU {4:0.00} ms | CMD {5:0.00} ms | " +
-            "{6:N0} draws | {7:N0} tris | ADMIT {8:N0}/{9:N0} | BLOCKED {10:N0}",
-            _scene.Name,
-            snapshot.PresentedFramesPerSecond,
-            encodeMilliseconds,
-            drawableWait,
-            sceneGpuMilliseconds,
-            snapshot.GpuFrameMilliseconds.Latest,
-            draws,
-            triangles,
-            authorizedPasses,
-            snapshotPasses,
-            blockedPasses);
-    }
-
-    private static long LatestCounter(
-        MapRenderFrameTelemetrySnapshot snapshot,
-        MapRenderFrameCounter counter)
-    {
-        foreach (MapRenderFrameCounterTelemetrySnapshot value in
-                 snapshot.Counters)
-        {
-            if (value.Counter == counter)
-                return value.Latest;
-        }
-        return 0;
-    }
-
-    private static double LatestCpuPhase(
-        MapRenderFrameTelemetrySnapshot snapshot,
-        MapRenderCpuPhase phase)
-    {
-        foreach (MapRenderCpuPhaseTelemetrySnapshot value in
-                 snapshot.CpuPhases)
-        {
-            if (value.Phase == phase)
-                return value.Milliseconds.Latest;
-        }
-        return 0.0;
-    }
-
-    private static double LatestGpuPhase(
-        MapRenderFrameTelemetrySnapshot snapshot,
-        MapRenderGpuPhase phase)
-    {
-        foreach (MapRenderGpuPhaseTelemetrySnapshot value in
-                 snapshot.GpuPhases)
-        {
-            if (value.Phase == phase)
-                return value.Milliseconds.Latest;
-        }
-        return 0.0;
-    }
 
     private void ReclaimSettledStartupWorkingSet()
     {
