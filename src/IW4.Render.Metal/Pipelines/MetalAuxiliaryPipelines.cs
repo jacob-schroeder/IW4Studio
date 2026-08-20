@@ -165,6 +165,7 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
     private MTLRenderPipelineState _diagnostic;
     private MTLRenderPipelineState _instancedDiagnostic;
     private MTLRenderPipelineState _wireframe;
+    private MTLRenderPipelineState _selectionOutline;
     private bool _disposed;
 
     internal MetalAuxiliaryPipelines(
@@ -175,7 +176,10 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
             throw new ArgumentException("A Metal device is required.", nameof(device));
         ArgumentNullException.ThrowIfNull(depthStencilFormat);
 
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         NSError libraryError = default;
         MTLLibrary library = default;
         MTLFunction skyVertex = default;
@@ -253,6 +257,14 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
                 WireframeRenderState,
                 depthStencilFormat.PixelFormat,
                 "wireframe");
+            _selectionOutline = CreatePipeline(
+                device,
+                colorVertex,
+                colorFragment,
+                MTLPrimitiveTopologyClass.Line,
+                SelectionOutlineRenderState,
+                depthStencilFormat.PixelFormat,
+                "editor selection outline");
         }
         catch
         {
@@ -285,6 +297,9 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
 
     internal MTLRenderPipelineState Wireframe => Require(_wireframe);
 
+    internal MTLRenderPipelineState SelectionOutline =>
+        Require(_selectionOutline);
+
     internal static RenderState SkyRenderState { get; } =
         RenderState.Default with
         {
@@ -303,11 +318,26 @@ internal sealed class MetalAuxiliaryPipelines : IDisposable
             DepthWriteEnabled = false
         };
 
+    internal static RenderState SelectionOutlineRenderState { get; } =
+        RenderState.Default with
+        {
+            HasState = true,
+            DepthTestEnabled = true,
+            DepthWriteEnabled = false,
+            DepthFunc = RsxCompareFunction.LessThanOrEqual,
+            CullEnabled = false,
+            Stencil = StencilState.Disabled,
+            BlendEnabled = false,
+            PolygonOffsetMode = RenderPolygonOffsetMode.Disabled,
+            ColorMask = RsxColorMask.Rgba
+        };
+
     public void Dispose()
     {
         if (_disposed)
             return;
         _disposed = true;
+        Dispose(ref _selectionOutline);
         Dispose(ref _wireframe);
         Dispose(ref _instancedDiagnostic);
         Dispose(ref _diagnostic);

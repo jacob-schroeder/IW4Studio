@@ -229,7 +229,10 @@ internal sealed class MetalShadowCasterPipeline : IDisposable
             throw new ArgumentException("A Metal device is required.", nameof(device));
         ArgumentNullException.ThrowIfNull(depthStencilFormat);
 
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         MTLLibrary library = default;
         MTLFunction opaqueWorldVertex = default;
         MTLFunction opaqueStaticVertex = default;

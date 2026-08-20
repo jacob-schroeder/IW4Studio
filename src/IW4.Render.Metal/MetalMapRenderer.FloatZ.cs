@@ -38,7 +38,8 @@ public sealed partial class MetalMapRenderer
             MapRenderEditorDrawGroup<RenderNormalCameraDrawSubmissionSnapshot>
                 group = groups[groupIndex];
             if (!_normalCameraAuthorizedGroups.Contains(group) ||
-                !IsNormalCameraGroupSelected(group))
+                !IsNormalCameraGroupSelected(group) ||
+                !IsNormalCameraGroupTextureReady(group))
             {
                 continue;
             }
@@ -88,7 +89,8 @@ public sealed partial class MetalMapRenderer
             _targets.SceneDepthStencil,
             _frameIndex,
             camera.NearPlane,
-            _renderStates);
+            _renderStates,
+            _gpuPassTimer);
         // Raw target-2 view, target 5, then target 8.
         _telemetry.AddCounter(MapRenderFrameCounter.DrawCalls, 3);
         _telemetry.AddCounter(MapRenderFrameCounter.LogicalDrawCommands, 3);

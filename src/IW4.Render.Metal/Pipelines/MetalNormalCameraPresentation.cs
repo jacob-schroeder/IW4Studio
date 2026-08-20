@@ -1,120 +1,97 @@
 using System.Numerics;
 using System.Runtime.Versioning;
 
-using IW4.Render.Metal.Shaders;
+using IW4.Assets.Assets.TechniqueSet;
+using IW4.Render.EditorPreview;
+using IW4.Render.Metal.Targets;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.Lifecycle;
 using IW4.Render.Shaders;
-using IW4.Render.Techniques;
 
-using SharpMetal.Foundation;
 using SharpMetal.Metal;
 
 namespace IW4.Render.Metal.Pipelines;
 
+internal readonly record struct
+    MetalNormalCameraPresentationExecutionResult(
+        bool ExecutedFilmColorManipulation,
+        bool ExecutedGlow,
+        int GlowGaussianPassCount,
+        int FullscreenDrawCount);
+
 /// <summary>
-/// Scene-revision-owned execution of IW4's canonical <c>postfx</c> material
-/// into the native Metal drawable. The Scene target is resolved by hardware;
-/// this class owns only the exact indexed fullscreen draw and its program ABI.
+/// Scene-revision-owned execution of IW4's selected normal-camera post
+/// material and optional native glow chain. Hardware resolves target 2 before
+/// this executor consumes target 4; all remaining passes preserve the exact
+/// authored programs, constants, state words, target order, and blend.
 /// </summary>
 [SupportedOSPlatform("macos")]
-internal sealed unsafe class MetalNormalCameraPresentation : IDisposable
+internal sealed class MetalNormalCameraPresentation : IDisposable
 {
-    internal const MTLPixelFormat DrawableFormat = MTLPixelFormat.BGRA8Unorm;
+    internal const MTLPixelFormat HostOutputFormat =
+        MTLPixelFormat.BGRA8Unorm;
 
-    private const int VectorByteCount = sizeof(float) * 4;
-    private const int VertexCount = 4;
-    private const int VertexInputVectorCount =
-        VertexCount * MetalRsxShaderAbi.VertexInputFloat4Count;
-    private const int IndexCount = 6;
-    private const int BufferAlignment = 256;
-
-    private static readonly ushort[] Indices = [3, 0, 2, 2, 0, 1];
+    private const MTLPixelFormat GlowTargetFormat =
+        MTLPixelFormat.RGBA8Unorm;
 
     private readonly MTLDevice _device;
-    private readonly EmbeddedVertexConstant[] _embeddedVertexConstants;
-    private readonly StaticFragmentConstantPatch[] _staticFragmentPatches;
-    private readonly int _indexOffset;
-    private readonly int _vertexConstantOffset;
-    private readonly int _codePixelConstantOffset;
-    private readonly int _staticPixelConstantOffset;
-    private readonly int _staticPixelRowCount;
-    private readonly int _slabByteCount;
-    private MTLRenderPipelineState _pipeline;
+    private readonly MapRenderEditorPreviewEffectivePostState? _effectivePost;
+    private readonly bool _usesFilmColorManipulation;
+    private readonly bool _usesGlow;
+    private readonly bool _usesGlowSetupColor2;
+    private MetalFullscreenProgram? _postFxProgram;
+    private MetalFullscreenProgram? _glowSetupProgram;
+    private MetalFullscreenProgram? _glowApplyProgram;
+    private MetalFullscreenProgram[] _glowFilterPrograms = [];
+    private MapRenderEditorPreviewGlowFilterPass[] _glowFilterPasses = [];
     private MTLSamplerState _sampler;
-    private MTLBuffer _slab;
+    private MetalFullscreenDraw? _postFxDraw;
+    private MetalFullscreenDraw? _glowSetupDraw;
+    private MetalFullscreenDraw? _glowApplyDraw;
+    private MetalFullscreenDraw[] _glowFilterDraws = [];
+    private MTLTexture _glowTarget9;
+    private MTLTexture _glowTarget10;
+    private MTLTexture _glowTarget11;
+    private int _sceneWidth;
+    private int _sceneHeight;
     private int _hostWidth;
     private int _hostHeight;
+    private int _glowTargetWidth;
+    private int _glowTargetHeight;
+    private int _glowFilterPassCount;
     private bool _disposed;
 
     internal MetalNormalCameraPresentation(
         MTLDevice device,
         MapRenderWorldSceneSource source,
+        MapRenderEditorPreviewEffectivePostState? effectivePost,
+        int sceneWidth,
+        int sceneHeight,
         int hostWidth,
         int hostHeight)
     {
         if (device.NativePtr == 0)
             throw new ArgumentException("A Metal device is required.", nameof(device));
         ArgumentNullException.ThrowIfNull(source);
-        if (hostWidth <= 0)
-            throw new ArgumentOutOfRangeException(nameof(hostWidth));
-        if (hostHeight <= 0)
-            throw new ArgumentOutOfRangeException(nameof(hostHeight));
+        ValidateEffectivePost(source, effectivePost);
 
         _device = device;
-        MapRenderNormalCameraMaterialAssetContract contract =
-            MapRenderEditorPreviewNormalCameraRecipe.Current.PostFx;
-        MapRenderNormalCameraMaterialProgramResolution resolution =
-            MapRenderNormalCameraMaterialProgramResolver.ResolveExact(
-                source.AssetLookup,
-                source.AssetPoolRevisionAtConstruction,
-                contract,
-                expectedVertexInputDestinations: [0, 8],
-                expectedCodePixelSourceRows: [],
-                expectedVertexConstantDestinations: [0, 1, 2, 3]);
-        RenderState = resolution.RenderState;
-        _embeddedVertexConstants = resolution.Translation
-            .EmbeddedVertexConstants.ToArray();
-        _staticFragmentPatches = resolution.Translation.FragmentProgramIr
-            .StaticConstantPatches.ToArray();
-        _staticPixelRowCount = Math.Max(
-            1,
-            _staticFragmentPatches.Length == 0
-                ? 0
-                : checked(_staticFragmentPatches.Max(patch =>
-                    patch.ArgumentOrdinal) + 1));
-
-        _indexOffset = VertexInputVectorCount * VectorByteCount;
-        _vertexConstantOffset = Align(
-            checked(_indexOffset + IndexCount * sizeof(ushort)));
-        _codePixelConstantOffset = Align(checked(
-            _vertexConstantOffset +
-            RsxVertexConstantLayout.Count * VectorByteCount));
-        _staticPixelConstantOffset = Align(checked(
-            _codePixelConstantOffset +
-            CodeConstantLayout.Float4Count * VectorByteCount));
-        _slabByteCount = checked(
-            _staticPixelConstantOffset +
-            _staticPixelRowCount * VectorByteCount);
+        _effectivePost = effectivePost;
+        _usesFilmColorManipulation =
+            effectivePost?.SelectsPostFxColor2 == true;
+        _usesGlow = effectivePost?.UsesGlow == true;
+        _usesGlowSetupColor2 =
+            effectivePost?.UsesGlowSetupColor2 == true;
 
         try
         {
-            RsxVertexMslLoweringResult vertex =
-                RsxVertexMslLowerer.Lower(
-                    resolution.Translation.VertexProgramIr);
-            RsxFragmentMslLoweringResult fragment =
-                RsxFragmentMslLowerer.Lower(
-                    resolution.Translation.FragmentProgramIr,
-                    RenderState,
-                    suppressShaderPackerForDiagnosticOutput: false);
-            RequireExactLowering(vertex, fragment, contract.MaterialName);
-            _pipeline = CompilePipeline(
-                device,
-                vertex.Msl!,
-                fragment.Msl!,
-                RenderState);
+            CreatePrograms(source);
             _sampler = CreateSampler(device);
-            Resize(hostWidth, hostHeight);
+            Resize(
+                sceneWidth,
+                sceneHeight,
+                hostWidth,
+                hostHeight);
         }
         catch
         {
@@ -123,67 +100,255 @@ internal sealed unsafe class MetalNormalCameraPresentation : IDisposable
         }
     }
 
-    internal RenderState RenderState { get; }
+    internal bool UsesFilmColorManipulation =>
+        _usesFilmColorManipulation;
 
-    internal void Resize(int hostWidth, int hostHeight)
+    internal bool UsesGlow => _usesGlow;
+
+    internal void PrepareRenderStates(
+        MetalRenderStateCache renderStates)
+    {
+        ArgumentNullException.ThrowIfNull(renderStates);
+        _ = renderStates.GetOrCreate(PostFxProgram.RenderState);
+        if (!_usesGlow)
+            return;
+        _ = renderStates.GetOrCreate(GlowSetupProgram.RenderState);
+        _ = renderStates.GetOrCreate(GlowApplyProgram.RenderState);
+        foreach (MetalFullscreenProgram program in _glowFilterPrograms)
+            _ = renderStates.GetOrCreate(program.RenderState);
+    }
+
+    internal void Resize(
+        int sceneWidth,
+        int sceneHeight,
+        int hostWidth,
+        int hostHeight)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (sceneWidth <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sceneWidth));
+        if (sceneHeight <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sceneHeight));
         if (hostWidth <= 0)
             throw new ArgumentOutOfRangeException(nameof(hostWidth));
         if (hostHeight <= 0)
             throw new ArgumentOutOfRangeException(nameof(hostHeight));
-        if (_hostWidth == hostWidth && _hostHeight == hostHeight)
+        if (_sceneWidth == sceneWidth &&
+            _sceneHeight == sceneHeight &&
+            _hostWidth == hostWidth &&
+            _hostHeight == hostHeight)
+        {
             return;
+        }
 
-        MTLBuffer replacement = CreateSlab(hostWidth, hostHeight);
-        MTLBuffer previous = _slab;
-        _slab = replacement;
+        MetalFullscreenDraw? postFxDraw = null;
+        MetalFullscreenDraw? glowSetupDraw = null;
+        MetalFullscreenDraw? glowApplyDraw = null;
+        MetalFullscreenDraw[] glowFilterDraws = [];
+        MTLTexture glowTarget9 = default;
+        MTLTexture glowTarget10 = default;
+        MTLTexture glowTarget11 = default;
+        int quarterWidth = 0;
+        int quarterHeight = 0;
+        int filterPassCount = 0;
+        try
+        {
+            postFxDraw = PostFxProgram.CreateDraw(hostWidth, hostHeight);
+            InitializeFilmConstants(postFxDraw);
+            if (_usesGlow)
+            {
+                quarterWidth = sceneWidth >> 2;
+                quarterHeight = sceneHeight >> 2;
+                if (quarterWidth <= 0 || quarterHeight <= 0)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(sceneWidth),
+                        "Native glow targets require a scene extent of at least 4x4.");
+                }
+
+                filterPassCount =
+                    MapRenderEditorPreviewGlowFilterPlanner.Generate(
+                        RequireEffectivePost().Glow.Values.Radius,
+                        sceneWidth,
+                        sceneHeight,
+                        _glowFilterPasses);
+                glowTarget9 = CreateGlowTarget(
+                    quarterWidth,
+                    quarterHeight,
+                    targetId: 9);
+                glowTarget10 = CreateGlowTarget(
+                    quarterWidth,
+                    quarterHeight,
+                    targetId: 10);
+                glowTarget11 = CreateGlowTarget(
+                    quarterWidth,
+                    quarterHeight,
+                    targetId: 11);
+
+                glowSetupDraw = GlowSetupProgram.CreateDraw(
+                    quarterWidth,
+                    quarterHeight);
+                glowApplyDraw = GlowApplyProgram.CreateDraw(
+                    hostWidth,
+                    hostHeight);
+                InitializeGlowConstants(
+                    glowSetupDraw,
+                    glowApplyDraw);
+
+                glowFilterDraws = new MetalFullscreenDraw[
+                    filterPassCount];
+                for (int passIndex = 0;
+                     passIndex < filterPassCount;
+                     passIndex++)
+                {
+                    ref MapRenderEditorPreviewGlowFilterPass pass =
+                        ref _glowFilterPasses[passIndex];
+                    if ((uint)(pass.TapHalfCount - 1) >=
+                        (uint)_glowFilterPrograms.Length)
+                    {
+                        throw new InvalidOperationException(
+                            $"Native glow produced unsupported symmetric tap count {pass.TapHalfCount}.");
+                    }
+                    MetalFullscreenDraw draw =
+                        _glowFilterPrograms[pass.TapHalfCount - 1]
+                            .CreateDraw(
+                                quarterWidth,
+                                quarterHeight);
+                    for (int tapIndex = 0;
+                         tapIndex < pass.TapHalfCount;
+                         tapIndex++)
+                    {
+                        Vector4 tap = pass.GetTap(tapIndex);
+                        draw.SetVertexConstant(12 + tapIndex, tap);
+                        draw.SetCodePixelConstant(
+                            checked((ushort)(
+                                (int)MaterialConstantSource.FilterTap0 +
+                                tapIndex)),
+                            tap);
+                    }
+                    glowFilterDraws[passIndex] = draw;
+                }
+            }
+        }
+        catch
+        {
+            postFxDraw?.Dispose();
+            glowSetupDraw?.Dispose();
+            glowApplyDraw?.Dispose();
+            DisposeDraws(glowFilterDraws);
+            Dispose(ref glowTarget11);
+            Dispose(ref glowTarget10);
+            Dispose(ref glowTarget9);
+            throw;
+        }
+
+        DeleteDrawsAndTargets();
+        _postFxDraw = postFxDraw;
+        _glowSetupDraw = glowSetupDraw;
+        _glowApplyDraw = glowApplyDraw;
+        _glowFilterDraws = glowFilterDraws;
+        _glowTarget9 = glowTarget9;
+        _glowTarget10 = glowTarget10;
+        _glowTarget11 = glowTarget11;
+        _sceneWidth = sceneWidth;
+        _sceneHeight = sceneHeight;
         _hostWidth = hostWidth;
         _hostHeight = hostHeight;
-        if (previous.NativePtr != 0)
-            previous.Dispose();
+        _glowTargetWidth = quarterWidth;
+        _glowTargetHeight = quarterHeight;
+        _glowFilterPassCount = filterPassCount;
     }
 
-    internal void Encode(
-        MTLRenderCommandEncoder encoder,
+    internal MetalNormalCameraPresentationExecutionResult Encode(
+        MTLCommandBuffer commandBuffer,
         MTLTexture resolvedSceneColor,
-        MetalRenderStateCache renderStates)
+        MTLTexture hostOutput,
+        MetalRenderStateCache renderStates,
+        Action<MTLRenderPassDescriptor>? attachPass = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (encoder.NativePtr == 0)
-            throw new ArgumentException("A Metal render encoder is required.", nameof(encoder));
-        if (resolvedSceneColor.NativePtr == 0)
-            throw new ArgumentException("A resolved Scene texture is required.", nameof(resolvedSceneColor));
+        ValidateFrameTargets(
+            commandBuffer,
+            resolvedSceneColor,
+            hostOutput);
         ArgumentNullException.ThrowIfNull(renderStates);
-        if (_slab.NativePtr == 0)
-            throw new InvalidOperationException("Metal fullscreen resources are unavailable.");
+        if (_usesGlow &&
+            (!IsGlowTargetReady(_glowTarget9) ||
+             !IsGlowTargetReady(_glowTarget10) ||
+             !IsGlowTargetReady(_glowTarget11) ||
+             _glowFilterDraws.Length != _glowFilterPassCount))
+        {
+            throw new InvalidOperationException(
+                "The native glow target chain does not match this presentation revision.");
+        }
 
-        encoder.SetRenderPipelineState(_pipeline);
-        renderStates.ApplyRasterState(encoder, RenderState);
-        encoder.SetVertexBuffer(
-            _slab,
-            offset: 0,
-            MetalRsxShaderAbi.VertexInputBufferIndex);
-        encoder.SetVertexBuffer(
-            _slab,
-            checked((ulong)_vertexConstantOffset),
-            MetalRsxShaderAbi.VertexConstantBufferIndex);
-        encoder.SetFragmentBuffer(
-            _slab,
-            checked((ulong)_codePixelConstantOffset),
-            MetalRsxShaderAbi.FragmentCodeConstantBufferIndex);
-        encoder.SetFragmentBuffer(
-            _slab,
-            checked((ulong)_staticPixelConstantOffset),
-            MetalRsxShaderAbi.FragmentStaticConstantBufferIndex);
-        encoder.SetFragmentTexture(resolvedSceneColor, 0);
-        encoder.SetFragmentSamplerState(_sampler, 0);
-        encoder.DrawIndexedPrimitives(
-            MTLPrimitiveType.Triangle,
-            IndexCount,
-            MTLIndexType.UInt16,
-            _slab,
-            checked((ulong)_indexOffset));
+        EncodePass(
+            commandBuffer,
+            hostOutput,
+            resolvedSceneColor,
+            _postFxDraw ?? throw new InvalidOperationException(
+                "The selected postfx draw is unavailable."),
+            preserveDestination: false,
+            renderStates,
+            attachPass);
+
+        if (_usesGlow)
+        {
+            bool hasGaussianPasses = _glowFilterPassCount > 0;
+            MTLTexture setupDestination = hasGaussianPasses
+                ? _glowTarget9
+                : _glowTarget11;
+            EncodePass(
+                commandBuffer,
+                setupDestination,
+                resolvedSceneColor,
+                _glowSetupDraw ?? throw new InvalidOperationException(
+                    "The glow setup draw is unavailable."),
+                preserveDestination: false,
+                renderStates,
+                attachPass);
+
+            MTLTexture input = setupDestination;
+            for (int passIndex = 0;
+                 passIndex < _glowFilterPassCount;
+                 passIndex++)
+            {
+                bool isFinalPass =
+                    passIndex == _glowFilterPassCount - 1;
+                MTLTexture output = isFinalPass
+                    ? _glowTarget11
+                    : (passIndex & 1) == 0
+                        ? _glowTarget10
+                        : _glowTarget9;
+                EncodePass(
+                    commandBuffer,
+                    output,
+                    input,
+                    _glowFilterDraws[passIndex],
+                    preserveDestination: false,
+                    renderStates,
+                    attachPass);
+                input = output;
+            }
+
+            EncodePass(
+                commandBuffer,
+                hostOutput,
+                _glowTarget11,
+                _glowApplyDraw ?? throw new InvalidOperationException(
+                    "The glow apply draw is unavailable."),
+                preserveDestination: true,
+                renderStates,
+                attachPass);
+        }
+
+        return new MetalNormalCameraPresentationExecutionResult(
+            ExecutedFilmColorManipulation:
+                _usesFilmColorManipulation,
+            ExecutedGlow: _usesGlow,
+            GlowGaussianPassCount: _glowFilterPassCount,
+            FullscreenDrawCount: 1 +
+                (_usesGlow ? 2 + _glowFilterPassCount : 0));
     }
 
     public void Dispose()
@@ -191,235 +356,385 @@ internal sealed unsafe class MetalNormalCameraPresentation : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        if (_slab.NativePtr != 0)
+        DeleteDrawsAndTargets();
+        Dispose(ref _sampler);
+        foreach (MetalFullscreenProgram? program in _glowFilterPrograms)
+            program?.Dispose();
+        _glowFilterPrograms = [];
+        _glowApplyProgram?.Dispose();
+        _glowApplyProgram = null;
+        _glowSetupProgram?.Dispose();
+        _glowSetupProgram = null;
+        _postFxProgram?.Dispose();
+        _postFxProgram = null;
+    }
+
+    private void CreatePrograms(MapRenderWorldSceneSource source)
+    {
+        MapRenderEditorPreviewNormalCameraRecipe recipe =
+            MapRenderEditorPreviewNormalCameraRecipe.Current;
+        MapRenderNormalCameraMaterialAssetContract activePostFx =
+            _usesFilmColorManipulation
+                ? recipe.PostFxColor2
+                : recipe.PostFx;
+        _postFxProgram = ResolveProgram(
+            _device,
+            source,
+            activePostFx,
+            _usesFilmColorManipulation
+                ?
+                [
+                    (ushort)MaterialConstantSource.ColorTintBase,
+                    (ushort)MaterialConstantSource.ColorTintDelta,
+                    (ushort)MaterialConstantSource.ColorTintQuadraticDelta,
+                    (ushort)MaterialConstantSource.ColorBias
+                ]
+                : [],
+            [0, 1, 2, 3],
+            HostOutputFormat);
+        if (!_usesGlow)
+            return;
+
+        MapRenderNormalCameraMaterialAssetContract setup =
+            _usesGlowSetupColor2
+                ? recipe.GlowConsistentSetupColor2
+                : recipe.GlowConsistentSetup;
+        _glowSetupProgram = ResolveProgram(
+            _device,
+            source,
+            setup,
+            _usesGlowSetupColor2
+                ?
+                [
+                    (ushort)MaterialConstantSource.GlowSetup,
+                    (ushort)MaterialConstantSource.ColorTintBase,
+                    (ushort)MaterialConstantSource.ColorTintDelta,
+                    (ushort)MaterialConstantSource.ColorTintQuadraticDelta,
+                    (ushort)MaterialConstantSource.ColorBias
+                ]
+                :
+                [
+                    (ushort)MaterialConstantSource.GlowSetup,
+                    (ushort)MaterialConstantSource.ColorTintBase,
+                    (ushort)MaterialConstantSource.ColorTintDelta,
+                    (ushort)MaterialConstantSource.ColorBias
+                ],
+            [0, 1, 2, 3, 16, 467],
+            GlowTargetFormat);
+        _glowApplyProgram = ResolveProgram(
+            _device,
+            source,
+            recipe.GlowApplyBloom,
+            [(ushort)MaterialConstantSource.GlowApply],
+            [0, 1, 2, 3],
+            HostOutputFormat);
+
+        _glowFilterPrograms = new MetalFullscreenProgram[
+            MapRenderEditorPreviewGlowFilterPlanner.MaximumTapHalfCount];
+        for (int index = 0;
+             index < _glowFilterPrograms.Length;
+             index++)
         {
-            _slab.Dispose();
-            _slab = default;
+            int tapHalfCount = index + 1;
+            _glowFilterPrograms[index] = ResolveProgram(
+                _device,
+                source,
+                recipe.GlowSymmetricFilters[index],
+                Enumerable.Range(
+                        (int)MaterialConstantSource.FilterTap0,
+                        tapHalfCount)
+                    .Select(value => checked((ushort)value))
+                    .ToArray(),
+                Enumerable.Range(12, tapHalfCount)
+                    .Prepend(0)
+                    .Prepend(3)
+                    .Prepend(2)
+                    .Prepend(1)
+                    .Order()
+                    .ToArray(),
+                GlowTargetFormat);
         }
-        if (_sampler.NativePtr != 0)
+        _glowFilterPasses = new MapRenderEditorPreviewGlowFilterPass[
+            MapRenderEditorPreviewGlowFilterPlanner
+                .MaximumGaussianPassCount];
+    }
+
+    private void InitializeFilmConstants(MetalFullscreenDraw draw)
+    {
+        if (!_usesFilmColorManipulation)
+            return;
+        MapRenderEditorPreviewEffectivePostState post =
+            RequireEffectivePost();
+        IReadOnlyList<MapRenderEditorPreviewFilmCodeConstantRow> rows =
+            MapRenderEditorPreviewFilmCodeConstantProducer.Produce(
+                post.Film.Values,
+                post.Film.Mixer);
+        foreach (MapRenderEditorPreviewFilmCodeConstantRow row in rows)
+            draw.SetCodePixelConstant(row.SourceRowIndex, row.Value);
+    }
+
+    private void InitializeGlowConstants(
+        MetalFullscreenDraw setup,
+        MetalFullscreenDraw apply)
+    {
+        MapRenderEditorPreviewEffectivePostState post =
+            RequireEffectivePost();
+        setup.SetVertexConstant(16, Vector4.Zero);
+        setup.SetVertexConstant(467, new Vector4(0.5f, 0f, 0f, 0f));
+
+        IReadOnlyList<MapRenderEditorPreviewGlowCodeConstantRow> glowRows =
+            MapRenderEditorPreviewGlowCodeConstantProducer.Produce(
+                post.Glow.Values);
+        setup.SetCodePixelConstant(
+            glowRows[0].SourceRowIndex,
+            glowRows[0].Value);
+        apply.SetCodePixelConstant(
+            glowRows[1].SourceRowIndex,
+            glowRows[1].Value);
+
+        IReadOnlyList<MapRenderEditorPreviewFilmCodeConstantRow> filmRows =
+            MapRenderEditorPreviewFilmCodeConstantProducer.Produce(
+                post.Film.Values,
+                post.Film.Mixer);
+        foreach (MapRenderEditorPreviewFilmCodeConstantRow row in filmRows)
         {
-            _sampler.Dispose();
-            _sampler = default;
-        }
-        if (_pipeline.NativePtr != 0)
-        {
-            _pipeline.Dispose();
-            _pipeline = default;
+            if (GlowSetupProgram.UsesCodePixelConstant(
+                    row.SourceRowIndex))
+            {
+                setup.SetCodePixelConstant(
+                    row.SourceRowIndex,
+                    row.Value);
+            }
+            else if (row.SourceRowIndex !=
+                     MapRenderEditorPreviewFilmCodeConstantProducer
+                         .ColorTintQuadraticRowIndex)
+            {
+                throw new InvalidOperationException(
+                    $"Glow setup has no active direct row 0x{row.SourceRowIndex:X2} constant.");
+            }
         }
     }
 
-    private MTLBuffer CreateSlab(int hostWidth, int hostHeight)
+    private void EncodePass(
+        MTLCommandBuffer commandBuffer,
+        MTLTexture target,
+        MTLTexture source,
+        MetalFullscreenDraw draw,
+        bool preserveDestination,
+        MetalRenderStateCache renderStates,
+        Action<MTLRenderPassDescriptor>? attachPass)
     {
-        MTLBuffer buffer = _device.NewBuffer(
-            checked((ulong)_slabByteCount),
-            MTLResourceOptions.ResourceStorageModeShared |
-            MTLResourceOptions.ResourceCPUCacheModeWriteCombined);
-        if (buffer.NativePtr == 0 || buffer.Contents == 0)
+        using MTLRenderPassDescriptor pass = CreateColorPass(
+            target,
+            preserveDestination);
+        attachPass?.Invoke(pass);
+        MTLRenderCommandEncoder encoder =
+            commandBuffer.RenderCommandEncoder(pass);
+        if (encoder.NativePtr == 0)
         {
-            if (buffer.NativePtr != 0)
-                buffer.Dispose();
             throw new InvalidOperationException(
-                $"Metal failed to allocate the {_slabByteCount}-byte fullscreen slab.");
+                $"Metal could not begin the {draw.MaterialName} pass.");
         }
-
         try
         {
-            new Span<byte>((void*)buffer.Contents, _slabByteCount).Clear();
-
-            Span<Vector4> inputs = new(
-                (void*)buffer.Contents,
-                VertexInputVectorCount);
-            inputs.Fill(new Vector4(0f, 0f, 0f, 1f));
-            SetVertex(inputs, 0, 0f, 0f, 0f, 0f);
-            SetVertex(inputs, 1, hostWidth, 0f, 1f, 0f);
-            SetVertex(inputs, 2, hostWidth, hostHeight, 1f, 1f);
-            SetVertex(inputs, 3, 0f, hostHeight, 0f, 1f);
-
-            Span<ushort> indices = new(
-                (void*)(buffer.Contents + _indexOffset),
-                IndexCount);
-            Indices.CopyTo(indices);
-
-            Span<Vector4> vertexConstants = new(
-                (void*)(buffer.Contents + _vertexConstantOffset),
-                RsxVertexConstantLayout.Count);
-            foreach (EmbeddedVertexConstant embedded in
-                     _embeddedVertexConstants)
-            {
-                if (!embedded.IsOperationallyResolved ||
-                    embedded.Destination >= RsxVertexConstantLayout.Count)
-                {
-                    throw new InvalidOperationException(
-                        $"Canonical postfx embedded vertex constant c{embedded.Destination} is unresolved.");
-                }
-                vertexConstants[embedded.Destination] = ToVector4(
-                    embedded.Value);
-            }
-            vertexConstants[0] = new Vector4(
-                2f / hostWidth,
-                0f,
-                0f,
-                0f);
-            vertexConstants[1] = new Vector4(
-                0f,
-                -2f / hostHeight,
-                0f,
-                0f);
-            vertexConstants[2] = new Vector4(0f, 0f, 1f, 0f);
-            vertexConstants[3] = new Vector4(-1f, 1f, 0f, 1f);
-
-            Span<Vector4> staticPixelConstants = new(
-                (void*)(buffer.Contents + _staticPixelConstantOffset),
-                _staticPixelRowCount);
-            foreach (StaticFragmentConstantPatch patch in
-                     _staticFragmentPatches)
-            {
-                if ((uint)patch.ArgumentOrdinal >=
-                    (uint)staticPixelConstants.Length)
-                {
-                    throw new InvalidOperationException(
-                        "Canonical postfx static fragment constant is outside its exact argument slab.");
-                }
-                staticPixelConstants[patch.ArgumentOrdinal] = ToVector4(
-                    patch.Value);
-            }
-            return buffer;
-        }
-        catch
-        {
-            buffer.Dispose();
-            throw;
-        }
-    }
-
-    private static void SetVertex(
-        Span<Vector4> inputs,
-        int vertexIndex,
-        float x,
-        float y,
-        float u,
-        float v)
-    {
-        int baseIndex = checked(
-            vertexIndex * MetalRsxShaderAbi.VertexInputFloat4Count);
-        inputs[baseIndex] = new Vector4(x, y, 0f, 1f);
-        inputs[baseIndex + 8] = new Vector4(u, v, 0f, 1f);
-    }
-
-    private static void RequireExactLowering(
-        RsxVertexMslLoweringResult vertex,
-        RsxFragmentMslLoweringResult fragment,
-        string materialName)
-    {
-        if (!vertex.IsReady || vertex.Msl is null)
-        {
-            throw new InvalidOperationException(
-                $"Canonical fullscreen material '{materialName}' Metal vertex lowering failed: {string.Join('|', vertex.Blockers)}");
-        }
-        if (!fragment.IsReady || fragment.Msl is null)
-        {
-            throw new InvalidOperationException(
-                $"Canonical fullscreen material '{materialName}' Metal fragment lowering failed: {string.Join('|', fragment.Blockers)}");
-        }
-        if (!fragment.SampledDestinations.SequenceEqual([0]) ||
-            !fragment.ColorAttachmentIndices.SequenceEqual([0]) ||
-            fragment.ExportsDepth)
-        {
-            throw new InvalidOperationException(
-                $"Canonical fullscreen material '{materialName}' is outside the exact Metal presentation attachment ABI.");
-        }
-    }
-
-    private static MTLRenderPipelineState CompilePipeline(
-        MTLDevice device,
-        string vertexSource,
-        string fragmentSource,
-        RenderState renderState)
-    {
-        using var options = new MTLCompileOptions();
-        MTLLibrary vertexLibrary = default;
-        MTLLibrary fragmentLibrary = default;
-        MTLFunction vertexFunction = default;
-        MTLFunction fragmentFunction = default;
-        try
-        {
-            NSError vertexError = default;
-            vertexLibrary = device.NewLibrary(
-                vertexSource,
-                options,
-                ref vertexError);
-            if (vertexLibrary.NativePtr == 0 || vertexError.NativePtr != 0)
-            {
-                throw new InvalidOperationException(
-                    $"Canonical postfx Metal vertex compilation failed: {Describe(vertexError)}");
-            }
-
-            NSError fragmentError = default;
-            fragmentLibrary = device.NewLibrary(
-                fragmentSource,
-                options,
-                ref fragmentError);
-            if (fragmentLibrary.NativePtr == 0 || fragmentError.NativePtr != 0)
-            {
-                throw new InvalidOperationException(
-                    $"Canonical postfx Metal fragment compilation failed: {Describe(fragmentError)}");
-            }
-
-            vertexFunction = vertexLibrary.NewFunction(
-                MetalRsxShaderAbi.VertexEntryPoint);
-            fragmentFunction = fragmentLibrary.NewFunction(
-                MetalRsxShaderAbi.FragmentEntryPoint);
-            if (vertexFunction.NativePtr == 0 || fragmentFunction.NativePtr == 0)
-            {
-                throw new InvalidOperationException(
-                    "Canonical postfx Metal entry points are missing.");
-            }
-
-            var descriptor = new MTLRenderPipelineDescriptor
-            {
-                VertexFunction = vertexFunction,
-                FragmentFunction = fragmentFunction,
-                RasterSampleCount = 1,
-                InputPrimitiveTopology = MTLPrimitiveTopologyClass.Triangle
-            };
-            try
-            {
-                MetalRenderStateCache.ConfigureColorAttachment(
-                    descriptor.ColorAttachments.Object(0),
-                    renderState,
-                    DrawableFormat);
-                NSError pipelineError = default;
-                MTLRenderPipelineState pipeline = device.NewRenderPipelineState(
-                    descriptor,
-                    ref pipelineError);
-                if (pipeline.NativePtr == 0 || pipelineError.NativePtr != 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Canonical postfx Metal pipeline creation failed: {Describe(pipelineError)}");
-                }
-                return pipeline;
-            }
-            finally
-            {
-                descriptor.Dispose();
-            }
+            SetViewport(encoder, target.Width, target.Height);
+            renderStates.ResetEncoderInheritance();
+            draw.Encode(
+                encoder,
+                source,
+                _sampler,
+                renderStates);
         }
         finally
         {
-            if (fragmentFunction.NativePtr != 0)
-                fragmentFunction.Dispose();
-            if (vertexFunction.NativePtr != 0)
-                vertexFunction.Dispose();
-            if (fragmentLibrary.NativePtr != 0)
-                fragmentLibrary.Dispose();
-            if (vertexLibrary.NativePtr != 0)
-                vertexLibrary.Dispose();
+            encoder.EndEncoding();
         }
+    }
+
+    private void ValidateFrameTargets(
+        MTLCommandBuffer commandBuffer,
+        MTLTexture resolvedSceneColor,
+        MTLTexture hostOutput)
+    {
+        if (commandBuffer.NativePtr == 0)
+        {
+            throw new ArgumentException(
+                "A Metal command buffer is required.",
+                nameof(commandBuffer));
+        }
+        if (resolvedSceneColor.NativePtr == 0 ||
+            resolvedSceneColor.PixelFormat !=
+                MetalFrameTargets.SceneColorFormat ||
+            resolvedSceneColor.Width != checked((ulong)_sceneWidth) ||
+            resolvedSceneColor.Height != checked((ulong)_sceneHeight))
+        {
+            throw new ArgumentException(
+                "The resolved target-4 texture does not match this presentation revision.",
+                nameof(resolvedSceneColor));
+        }
+        if (hostOutput.NativePtr == 0 ||
+            hostOutput.PixelFormat != HostOutputFormat ||
+            hostOutput.Width != checked((ulong)_hostWidth) ||
+            hostOutput.Height != checked((ulong)_hostHeight))
+        {
+            throw new ArgumentException(
+                "The retained host target does not match this presentation revision.",
+                nameof(hostOutput));
+        }
+    }
+
+    private MTLTexture CreateGlowTarget(
+        int width,
+        int height,
+        int targetId)
+    {
+        using var descriptor = new MTLTextureDescriptor
+        {
+            TextureType = MTLTextureType.Type2D,
+            PixelFormat = GlowTargetFormat,
+            Width = checked((ulong)width),
+            Height = checked((ulong)height),
+            Depth = 1,
+            ArrayLength = 1,
+            MipmapLevelCount = 1,
+            SampleCount = 1,
+            StorageMode = MTLStorageMode.Private,
+            Usage = MTLTextureUsage.RenderTarget |
+                MTLTextureUsage.ShaderRead
+        };
+        MTLTexture texture = _device.NewTexture(descriptor);
+        if (texture.NativePtr == 0)
+        {
+            throw new InvalidOperationException(
+                $"Metal failed to allocate glow target {targetId} at {width}x{height}.");
+        }
+        return texture;
+    }
+
+    private bool IsGlowTargetReady(MTLTexture texture) =>
+        texture.NativePtr != 0 &&
+        texture.PixelFormat == GlowTargetFormat &&
+        texture.Width == checked((ulong)_glowTargetWidth) &&
+        texture.Height == checked((ulong)_glowTargetHeight);
+
+    private static MTLRenderPassDescriptor CreateColorPass(
+        MTLTexture target,
+        bool preserveDestination)
+    {
+        var descriptor = new MTLRenderPassDescriptor
+        {
+            RenderTargetWidth = target.Width,
+            RenderTargetHeight = target.Height,
+            DefaultRasterSampleCount = 1
+        };
+        MTLRenderPassColorAttachmentDescriptor color =
+            descriptor.ColorAttachments.Object(0);
+        color.Texture = target;
+        color.LoadAction = preserveDestination
+            ? MTLLoadAction.Load
+            : MTLLoadAction.DontCare;
+        color.StoreAction = MTLStoreAction.Store;
+        return descriptor;
+    }
+
+    private static void SetViewport(
+        MTLRenderCommandEncoder encoder,
+        ulong width,
+        ulong height)
+    {
+        encoder.SetViewport(new MTLViewport
+        {
+            originX = 0,
+            originY = 0,
+            width = width,
+            height = height,
+            znear = 0,
+            zfar = 1
+        });
+        encoder.SetScissorRect(new MTLScissorRect
+        {
+            x = 0,
+            y = 0,
+            width = width,
+            height = height
+        });
+    }
+
+    private void DeleteDrawsAndTargets()
+    {
+        _postFxDraw?.Dispose();
+        _postFxDraw = null;
+        _glowSetupDraw?.Dispose();
+        _glowSetupDraw = null;
+        _glowApplyDraw?.Dispose();
+        _glowApplyDraw = null;
+        DisposeDraws(_glowFilterDraws);
+        _glowFilterDraws = [];
+        Dispose(ref _glowTarget11);
+        Dispose(ref _glowTarget10);
+        Dispose(ref _glowTarget9);
+        _sceneWidth = 0;
+        _sceneHeight = 0;
+        _hostWidth = 0;
+        _hostHeight = 0;
+        _glowTargetWidth = 0;
+        _glowTargetHeight = 0;
+        _glowFilterPassCount = 0;
+    }
+
+    private static void DisposeDraws(
+        IEnumerable<MetalFullscreenDraw> draws)
+    {
+        foreach (MetalFullscreenDraw? draw in draws)
+            draw?.Dispose();
+    }
+
+    private static void ValidateEffectivePost(
+        MapRenderWorldSceneSource source,
+        MapRenderEditorPreviewEffectivePostState? effectivePost)
+    {
+        if (effectivePost is not { } post)
+            return;
+        if (post.SourceSnapshot is not { } snapshot ||
+            post.Revision.AssetPoolRevision !=
+                source.AssetPoolRevisionAtConstruction ||
+            post.Revision.RuntimeRevision != snapshot.Revision)
+        {
+            throw new ArgumentException(
+                "Fullscreen effective post state must belong to the canonical scene asset revision and its exact atomic runtime snapshot.",
+                nameof(effectivePost));
+        }
+    }
+
+    private static MetalFullscreenProgram ResolveProgram(
+        MTLDevice device,
+        MapRenderWorldSceneSource source,
+        MapRenderNormalCameraMaterialAssetContract contract,
+        IReadOnlyList<ushort> expectedCodePixelSourceRows,
+        IReadOnlyList<int> expectedVertexConstantDestinations,
+        MTLPixelFormat targetFormat)
+    {
+        MapRenderNormalCameraMaterialProgramResolution resolution =
+            MapRenderNormalCameraMaterialProgramResolver.ResolveExact(
+                source.AssetLookup,
+                source.AssetPoolRevisionAtConstruction,
+                contract,
+                expectedVertexInputDestinations: [0, 8],
+                expectedCodePixelSourceRows:
+                    expectedCodePixelSourceRows,
+                expectedVertexConstantDestinations:
+                    expectedVertexConstantDestinations);
+        return new MetalFullscreenProgram(
+            device,
+            contract.MaterialName,
+            resolution,
+            expectedCodePixelSourceRows,
+            targetFormat);
     }
 
     private static MTLSamplerState CreateSampler(MTLDevice device)
     {
-        var descriptor = new MTLSamplerDescriptor
+        using var descriptor = new MTLSamplerDescriptor
         {
             MinFilter = MTLSamplerMinMagFilter.Linear,
             MagFilter = MTLSamplerMinMagFilter.Linear,
@@ -432,30 +747,44 @@ internal sealed unsafe class MetalNormalCameraPresentation : IDisposable
             LodMinClamp = 0f,
             LodMaxClamp = 0f
         };
-        try
+        MTLSamplerState sampler = device.NewSamplerState(descriptor);
+        if (sampler.NativePtr == 0)
         {
-            MTLSamplerState sampler = device.NewSamplerState(descriptor);
-            if (sampler.NativePtr == 0)
-            {
-                throw new InvalidOperationException(
-                    "Metal failed to create the canonical postfx sampler.");
-            }
-            return sampler;
+            throw new InvalidOperationException(
+                "Metal failed to create the normal-camera post sampler.");
         }
-        finally
-        {
-            descriptor.Dispose();
-        }
+        return sampler;
     }
 
-    private static int Align(int value) => checked(
-        (value + BufferAlignment - 1) & ~(BufferAlignment - 1));
+    private MetalFullscreenProgram PostFxProgram =>
+        _postFxProgram ?? throw new InvalidOperationException(
+            "The selected postfx program is unavailable.");
 
-    private static Vector4 ToVector4(ShaderConstantValue value) =>
-        new(value.X, value.Y, value.Z, value.W);
+    private MetalFullscreenProgram GlowSetupProgram =>
+        _glowSetupProgram ?? throw new InvalidOperationException(
+            "The glow setup program is unavailable.");
 
-    private static string Describe(NSError error) =>
-        error.NativePtr == 0
-            ? "no NSError was returned"
-            : error.LocalizedDescription.ToString() ?? "unknown Metal error";
+    private MetalFullscreenProgram GlowApplyProgram =>
+        _glowApplyProgram ?? throw new InvalidOperationException(
+            "The glow apply program is unavailable.");
+
+    private MapRenderEditorPreviewEffectivePostState RequireEffectivePost() =>
+        _effectivePost ?? throw new InvalidOperationException(
+            "Renderer-effective post state is unavailable.");
+
+    private static void Dispose(ref MTLTexture texture)
+    {
+        if (texture.NativePtr == 0)
+            return;
+        texture.Dispose();
+        texture = default;
+    }
+
+    private static void Dispose(ref MTLSamplerState sampler)
+    {
+        if (sampler.NativePtr == 0)
+            return;
+        sampler.Dispose();
+        sampler = default;
+    }
 }

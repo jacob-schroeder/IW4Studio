@@ -895,7 +895,10 @@ internal sealed class MetalGenericMaterialPipelineCache : IDisposable
             return false;
         }
 
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         NSError error = default;
         string source = Source.Replace(
             "IW4_GENERIC_FRAGMENT_RETURN_TYPE",

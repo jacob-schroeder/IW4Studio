@@ -45,12 +45,19 @@ internal sealed class MetalProgramPipelineCache : IDisposable
     internal bool TryGetOrCreate(
         RenderNormalCameraPreparedPassSnapshot pass,
         TranslatedProgramVertexConstantBindingPlan vertexConstantPlan,
+        bool useVertexPlacementDiagnostic,
+        int? fragmentOutputDiagnostic,
         out MetalProgramPipeline? pipeline,
         out string blocker)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(vertexConstantPlan);
+        if (fragmentOutputDiagnostic is < 0 or > 3)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(fragmentOutputDiagnostic));
+        }
 
         RenderWorldShaderProvenanceSnapshot shader = pass.ShaderProvenance;
         bool usesStaticModelInstancing =
@@ -70,9 +77,14 @@ internal sealed class MetalProgramPipelineCache : IDisposable
                 ? RsxFragmentMslLowerer.Lower(
                     fragmentIr,
                     pass.SourceState,
-                    suppressShaderPackerForDiagnosticOutput: false,
+                    suppressShaderPackerForDiagnosticOutput:
+                        useVertexPlacementDiagnostic,
                     MetalFrameTargets.SceneTargetOutputs,
-                    emulateDepth24: _emulateDepth24)
+                    emulateDepth24: _emulateDepth24,
+                    useVertexPlacementDiagnostic:
+                        useVertexPlacementDiagnostic,
+                    fragmentOutputDiagnostic:
+                        fragmentOutputDiagnostic)
                 : new RsxFragmentMslLoweringResult(
                     null,
                     false,
@@ -93,6 +105,8 @@ internal sealed class MetalProgramPipelineCache : IDisposable
             fragment.ShaderPackerMode,
             attachmentIdentity,
             fragment.ExportsDepth,
+            useVertexPlacementDiagnostic,
+            fragmentOutputDiagnostic,
             pass.Geometry.Topology);
         if (_pipelines.TryGetValue(key, out MetalProgramPipeline? cached))
         {
@@ -192,7 +206,10 @@ internal sealed class MetalProgramPipelineCache : IDisposable
         RenderPrimitiveTopology topology,
         ImmutableArray<int> colorAttachments)
     {
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         MTLLibrary vertexLibrary = default;
         MTLLibrary fragmentLibrary = default;
         MTLFunction vertexFunction = default;
@@ -315,6 +332,8 @@ internal sealed class MetalProgramPipelineCache : IDisposable
         MetalRsxShaderPackerMode ShaderPackerMode,
         string ColorAttachments,
         bool ExportsDepth,
+        bool UseVertexPlacementDiagnostic,
+        int? FragmentOutputDiagnostic,
         RenderPrimitiveTopology Topology);
 }
 

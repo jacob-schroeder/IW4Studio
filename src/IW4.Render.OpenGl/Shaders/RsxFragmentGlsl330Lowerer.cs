@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Text;
 using IW4.Render.Shaders;
 
@@ -94,6 +93,8 @@ internal static class RsxFragmentGlsl330Lowerer
             fragmentProgramControl);
         var builder = new StringBuilder();
         builder.AppendLine("#version 330 core");
+        builder.AppendLine(
+            "layout(origin_upper_left) in vec4 gl_FragCoord;");
         if (instructions.Any(instruction =>
                 instruction.DirectCodeConstantIndex.HasValue))
         {
@@ -109,6 +110,11 @@ internal static class RsxFragmentGlsl330Lowerer
                      .Distinct()
                      .Order())
         {
+            if (argumentOrdinal < 0)
+            {
+                blockers.Add("fragmentStaticPixelConstantIndex=invalid");
+                continue;
+            }
             builder.AppendLine(
                 $"uniform vec4 {OpenGlStaticPixelConstantUniformLayout.ElementName(argumentOrdinal)};");
         }
@@ -138,6 +144,63 @@ internal static class RsxFragmentGlsl330Lowerer
         builder.AppendLine("vec4 rsxNormalize(vec3 v) { return length(v) > 0.0 ? normalize(v).xyzz : v.xyzz; }");
         builder.AppendLine("vec4 rsxDivideBySqrt(vec4 a, float b) { vec4 q = a / sqrt(abs(b)); return vec4(abs(a.x) > 0.0 ? q.x : a.x, abs(a.y) > 0.0 ? q.y : a.y, abs(a.z) > 0.0 ? q.z : a.z, abs(a.w) > 0.0 ? q.w : a.w); }");
         builder.AppendLine("vec4 rsxBool4(bvec4 v) { return vec4(v.x ? 1.0 : 0.0, v.y ? 1.0 : 0.0, v.z ? 1.0 : 0.0, v.w ? 1.0 : 0.0); }");
+        builder.AppendLine("uint rsxFloatToHalfBits(float value) {");
+        builder.AppendLine("  uint bits = floatBitsToUint(value);");
+        builder.AppendLine("  uint sign = (bits >> 16u) & 0x8000u;");
+        builder.AppendLine("  uint exponent = (bits >> 23u) & 0xffu;");
+        builder.AppendLine("  uint mantissa = bits & 0x7fffffu;");
+        builder.AppendLine("  if (exponent == 0xffu) {");
+        builder.AppendLine("    if (mantissa == 0u) return sign | 0x7c00u;");
+        builder.AppendLine("    uint payload = mantissa >> 13u;");
+        builder.AppendLine("    return sign | 0x7c00u | payload | (payload == 0u ? 1u : 0u);");
+        builder.AppendLine("  }");
+        builder.AppendLine("  int unbiased = int(exponent) - 127;");
+        builder.AppendLine("  if (unbiased > 15) return sign | 0x7c00u;");
+        builder.AppendLine("  if (unbiased >= -14) {");
+        builder.AppendLine("    uint halfExponent = uint(unbiased + 15) << 10u;");
+        builder.AppendLine("    uint halfMantissa = mantissa >> 13u;");
+        builder.AppendLine("    uint remainder = mantissa & 0x1fffu;");
+        builder.AppendLine("    if (remainder > 0x1000u || (remainder == 0x1000u && (halfMantissa & 1u) != 0u)) {");
+        builder.AppendLine("      halfMantissa += 1u;");
+        builder.AppendLine("      if (halfMantissa == 0x400u) {");
+        builder.AppendLine("        halfMantissa = 0u;");
+        builder.AppendLine("        halfExponent += 0x400u;");
+        builder.AppendLine("      }");
+        builder.AppendLine("    }");
+        builder.AppendLine("    return sign | halfExponent | halfMantissa;");
+        builder.AppendLine("  }");
+        builder.AppendLine("  if (unbiased < -25) return sign;");
+        builder.AppendLine("  uint significand = mantissa | 0x800000u;");
+        builder.AppendLine("  uint shift = uint(-unbiased - 1);");
+        builder.AppendLine("  uint halfMantissa = significand >> shift;");
+        builder.AppendLine("  uint remainderMask = (1u << shift) - 1u;");
+        builder.AppendLine("  uint remainder = significand & remainderMask;");
+        builder.AppendLine("  uint halfway = 1u << (shift - 1u);");
+        builder.AppendLine("  if (remainder > halfway || (remainder == halfway && (halfMantissa & 1u) != 0u)) halfMantissa += 1u;");
+        builder.AppendLine("  return sign | halfMantissa;");
+        builder.AppendLine("}");
+        builder.AppendLine("float rsxHalfBitsToFloat(uint bits) {");
+        builder.AppendLine("  uint sign = (bits & 0x8000u) << 16u;");
+        builder.AppendLine("  uint exponent = (bits >> 10u) & 0x1fu;");
+        builder.AppendLine("  uint mantissa = bits & 0x3ffu;");
+        builder.AppendLine("  if (exponent == 0u) {");
+        builder.AppendLine("    if (mantissa == 0u) return uintBitsToFloat(sign);");
+        builder.AppendLine("    int shift = 0;");
+        builder.AppendLine("    while ((mantissa & 0x400u) == 0u) {");
+        builder.AppendLine("      mantissa <<= 1u;");
+        builder.AppendLine("      shift += 1;");
+        builder.AppendLine("    }");
+        builder.AppendLine("    mantissa &= 0x3ffu;");
+        builder.AppendLine("    uint floatExponent = uint(127 - 14 - shift) << 23u;");
+        builder.AppendLine("    return uintBitsToFloat(sign | floatExponent | (mantissa << 13u));");
+        builder.AppendLine("  }");
+        builder.AppendLine("  if (exponent == 0x1fu) return uintBitsToFloat(sign | 0x7f800000u | (mantissa << 13u));");
+        builder.AppendLine("  uint floatExponent = uint(int(exponent) - 15 + 127) << 23u;");
+        builder.AppendLine("  return uintBitsToFloat(sign | floatExponent | (mantissa << 13u));");
+        builder.AppendLine("}");
+        builder.AppendLine("float rsxHalf(float value) { return rsxHalfBitsToFloat(rsxFloatToHalfBits(value)); }");
+        builder.AppendLine("vec4 rsxHalf(vec4 value) { return vec4(rsxHalf(value.x), rsxHalf(value.y), rsxHalf(value.z), rsxHalf(value.w)); }");
+        builder.AppendLine("vec4 rsxPrecisionClamp(vec4 value, float minimum, float maximum) { return clamp(vec4(isnan(value.x) ? 0.0 : value.x, isnan(value.y) ? 0.0 : value.y, isnan(value.z) ? 0.0 : value.z, isnan(value.w) ? 0.0 : value.w), vec4(minimum), vec4(maximum)); }");
         builder.AppendLine("bool rsxCcTestFL(float v) { return false; }");
         builder.AppendLine("bool rsxCcTestLT(float v) { return !isnan(v) && v < 0.0; }");
         builder.AppendLine("bool rsxCcTestEQ(float v) { return !isnan(v) && v == 0.0; }");
@@ -193,14 +256,21 @@ internal static class RsxFragmentGlsl330Lowerer
             }
             if (instruction.OpcodeType == RsxFragmentOpcode.Kill)
             {
-                blockers.Add("fragmentConditionalKill=unlowered");
                 builder.AppendLine(
-                    "  // condition-based KIL/discard is outside the supported subset");
+                    $"  if ({FragmentFlowConditionExpression(instruction)}) discard;");
                 continue;
             }
 
             if (instruction.Scale == RsxFragmentResultScale.Reserved4)
                 blockers.Add("fragmentScale4=unmapped");
+            if (instruction.ExpandedTexture && instruction.IsTexture)
+                blockers.Add("fragmentTextureExpand=unlowered");
+            if (instruction.UsesIndexedInput &&
+                HasInputSource(instruction))
+            {
+                blockers.Add("fragmentIndexedInput=unlowered");
+            }
+            AddFragmentPrecisionBlockers(instruction, blockers);
             if (HasSourceType3(instruction))
                 blockers.Add("fragmentSourceRegisterType3=unmapped");
             if (instruction.OpcodeType == RsxFragmentOpcode.Nop ||
@@ -219,11 +289,9 @@ internal static class RsxFragmentGlsl330Lowerer
                     $"  // unmapped RSX fragment opcode 0x{instruction.Opcode:X2}; no value invented");
                 continue;
             }
-            if (instruction.Saturate)
-                expression = $"clamp({expression}, vec4(0.0), vec4(1.0))";
-            string? scale = FragmentScale(instruction.Scale);
-            if (scale is not null && scale != "1.0")
-                expression = $"({expression} * {scale})";
+            expression = ApplyFragmentResultModifiers(
+                instruction,
+                expression);
 
             AppendFragmentInstructionWrites(
                 builder,
@@ -586,9 +654,28 @@ internal static class RsxFragmentGlsl330Lowerer
         RsxFragmentSamplerFeatureProfile samplerProfile,
         ISet<string> blockers)
     {
-        string s0 = FragmentSource(instruction, instruction.Src0, 0);
-        string s1 = FragmentSource(instruction, instruction.Src1, 1);
-        string s2 = FragmentSource(instruction, instruction.Src2, 2);
+        int operandCount = instruction.OperandCount;
+        string s0 = operandCount > 0
+            ? FragmentSource(
+                instruction,
+                instruction.Src0,
+                0,
+                blockers)
+            : "vec4(0.0)";
+        string s1 = operandCount > 1
+            ? FragmentSource(
+                instruction,
+                instruction.Src1,
+                1,
+                blockers)
+            : "vec4(0.0)";
+        string s2 = operandCount > 2
+            ? FragmentSource(
+                instruction,
+                instruction.Src2,
+                2,
+                blockers)
+            : "vec4(0.0)";
         string scalar0 = $"({s0}).x";
         string scalar1 = $"({s1}).x";
         RsxFragmentSamplerFeatures features =
@@ -688,56 +775,122 @@ internal static class RsxFragmentGlsl330Lowerer
     private static string FragmentSource(
         RsxFragmentInstruction instruction,
         uint source,
-        int sourceIndex)
+        int sourceIndex,
+        ISet<string> blockers)
     {
         var operand = new RsxFragmentOperand(sourceIndex, source);
-        string value = operand.RegisterKind switch
+        string value;
+        switch (operand.RegisterKind)
         {
-            RsxFragmentRegisterType.Temporary =>
-                $"{(operand.Fp16 ? "H" : "R")}[{operand.RegisterIndex}]",
-            RsxFragmentRegisterType.Input =>
-                FragmentInput(instruction.SourceAttribute),
-            RsxFragmentRegisterType.InlineConstant =>
-                instruction.StaticPixelConstantArgumentOrdinal is
-                    { } staticArgumentOrdinal
-                ? OpenGlStaticPixelConstantUniformLayout.ElementName(
-                    staticArgumentOrdinal)
-                : instruction.DirectCodeConstantIndex is { } codeIndex
-                ? OpenGlCodePixelConstantUniformLayout.ElementName(
-                    codeIndex)
-                : instruction.Constant is { } constant
-                    ? FormatInlineConstant(constant)
-                    : "vec4(0.0)",
-            _ => "vec4(0.0)"
-        };
+            case RsxFragmentRegisterType.Temporary:
+                value =
+                    $"{(operand.Fp16 ? "H" : "R")}[{operand.RegisterIndex}]";
+                break;
+            case RsxFragmentRegisterType.Input:
+                value = FragmentInput(instruction, blockers);
+                break;
+            case RsxFragmentRegisterType.InlineConstant:
+                value = FragmentConstant(instruction, blockers);
+                break;
+            default:
+                value = "vec4(0.0)";
+                break;
+        }
         value += $".{FragmentSwizzle(operand)}";
         if (operand.Absolute)
             value = $"abs({value})";
+        if (operand.RegisterKind != RsxFragmentRegisterType.Input ||
+            instruction.SourceAttribute is not
+                (RsxFragmentInputAttribute.Color0 or
+                 RsxFragmentInputAttribute.Color1 or
+                 RsxFragmentInputAttribute.SignedSideArea))
+        {
+            value = ApplyFragmentSourcePrecision(
+                instruction.SourcePrecision(sourceIndex),
+                operand,
+                value);
+        }
         if (operand.Negate)
             value = $"(-{value})";
         return value;
     }
 
-    private static string FragmentInput(
-        RsxFragmentInputAttribute input) => input switch
+    private static string FragmentConstant(
+        RsxFragmentInstruction instruction,
+        ISet<string> blockers)
     {
-        RsxFragmentInputAttribute.WindowPosition =>
-            "vec4(gl_FragCoord.xyz, 1.0)",
-        RsxFragmentInputAttribute.Color0 => "rsxColor0",
-        RsxFragmentInputAttribute.Color1 => "rsxColor1",
-        RsxFragmentInputAttribute.Fog => "vec4(0.0)",
-        >= RsxFragmentInputAttribute.TextureCoordinate0 and
-            <= RsxFragmentInputAttribute.TextureCoordinate7 =>
-            $"rsxTexcoord{(byte)input - (byte)RsxFragmentInputAttribute.TextureCoordinate0}",
-        RsxFragmentInputAttribute.SignedSideArea =>
-            "vec4(gl_FrontFacing ? 1.0 : -1.0)",
-        _ => "vec4(0.0)"
-    };
+        if (instruction.StaticPixelConstantArgumentOrdinal is
+            { } staticArgumentOrdinal)
+        {
+            if (staticArgumentOrdinal < 0)
+            {
+                blockers.Add("fragmentStaticPixelConstantIndex=invalid");
+                return "vec4(0.0)";
+            }
+            return OpenGlStaticPixelConstantUniformLayout.ElementName(
+                staticArgumentOrdinal);
+        }
+        if (instruction.DirectCodeConstantIndex is { } codeIndex)
+        {
+            if (codeIndex >= OpenGlCodePixelConstantUniformLayout.Count)
+            {
+                blockers.Add(
+                    $"fragmentCodePixelConstant{codeIndex}=unmapped");
+                return "vec4(0.0)";
+            }
+            return OpenGlCodePixelConstantUniformLayout.ElementName(codeIndex);
+        }
+        return instruction.Constant is { } constant
+            ? FormatInlineConstant(constant)
+            : "vec4(0.0)";
+    }
+
+    private static string FragmentInput(
+        RsxFragmentInstruction instruction,
+        ISet<string> blockers)
+    {
+        RsxFragmentInputAttribute input = instruction.SourceAttribute;
+        switch (input)
+        {
+            case RsxFragmentInputAttribute.WindowPosition:
+                return "gl_FragCoord";
+            case RsxFragmentInputAttribute.Color0:
+                return "clamp(rsxColor0, vec4(0.0), vec4(1.0))";
+            case RsxFragmentInputAttribute.Color1:
+                return "clamp(rsxColor1, vec4(0.0), vec4(1.0))";
+            case >= RsxFragmentInputAttribute.TextureCoordinate0 and
+                <= RsxFragmentInputAttribute.TextureCoordinate7:
+            {
+                string value =
+                    $"rsxTexcoord{(byte)input - (byte)RsxFragmentInputAttribute.TextureCoordinate0}";
+                return instruction.PerspectiveCorrection
+                    ? $"({value} * gl_FragCoord.w)"
+                    : value;
+            }
+            case RsxFragmentInputAttribute.SignedSideArea:
+                return "vec4(gl_FrontFacing ? 1.0 : -1.0)";
+            case RsxFragmentInputAttribute.Fog:
+                blockers.Add("fragmentFogInput=unlowered");
+                break;
+            case RsxFragmentInputAttribute.TextureCoordinate8:
+            case RsxFragmentInputAttribute.TextureCoordinate9:
+                blockers.Add(
+                    $"fragmentTexcoord{(byte)input - (byte)RsxFragmentInputAttribute.TextureCoordinate0}Input=unlowered");
+                break;
+            default:
+                blockers.Add(
+                    $"fragmentInput{(byte)input}=unmapped");
+                break;
+        }
+        return "vec4(0.0)";
+    }
 
     private static string FormatInlineConstant(
-        RsxFragmentInlineConstant constant) => string.Create(
-        CultureInfo.InvariantCulture,
-        $"vec4({constant.X:R}, {constant.Y:R}, {constant.Z:R}, {constant.W:R})");
+        RsxFragmentInlineConstant constant) =>
+        $"vec4(uintBitsToFloat(0x{constant.XBits:X8}u), " +
+        $"uintBitsToFloat(0x{constant.YBits:X8}u), " +
+        $"uintBitsToFloat(0x{constant.ZBits:X8}u), " +
+        $"uintBitsToFloat(0x{constant.WBits:X8}u))";
 
     private static bool HasSourceType3(RsxFragmentInstruction instruction)
     {
@@ -751,6 +904,20 @@ internal static class RsxFragmentGlsl330Lowerer
                (count > 2 &&
                 instruction.Source2Operand.RegisterKind ==
                     RsxFragmentRegisterType.Unknown3);
+    }
+
+    private static bool HasInputSource(RsxFragmentInstruction instruction)
+    {
+        int count = instruction.OperandCount;
+        return (count > 0 &&
+                instruction.Source0Operand.RegisterKind ==
+                    RsxFragmentRegisterType.Input) ||
+               (count > 1 &&
+                instruction.Source1Operand.RegisterKind ==
+                    RsxFragmentRegisterType.Input) ||
+               (count > 2 &&
+                instruction.Source2Operand.RegisterKind ==
+                    RsxFragmentRegisterType.Input);
     }
 
     private static bool IsFenceNoOp(RsxFragmentInstruction instruction) =>
@@ -768,6 +935,110 @@ internal static class RsxFragmentGlsl330Lowerer
         instruction.Scale == RsxFragmentResultScale.None &&
         !instruction.CondWriteEnabled &&
         instruction.ConditionTest == RsxConditionTest.True;
+
+    private static void AddFragmentPrecisionBlockers(
+        RsxFragmentInstruction instruction,
+        ISet<string> blockers)
+    {
+        for (int sourceIndex = 0;
+             sourceIndex < instruction.OperandCount;
+             sourceIndex++)
+        {
+            RsxFragmentPrecision precision =
+                instruction.SourcePrecision(sourceIndex);
+            if (precision is RsxFragmentPrecision.Reserved6 or
+                RsxFragmentPrecision.Reserved7)
+            {
+                blockers.Add(
+                    $"fragmentSource{sourceIndex}Precision={(byte)precision}_unmapped");
+            }
+        }
+    }
+
+    private static string ApplyFragmentSourcePrecision(
+        RsxFragmentPrecision precision,
+        RsxFragmentOperand operand,
+        string expression) => precision switch
+    {
+        RsxFragmentPrecision.Real or
+        RsxFragmentPrecision.Unknown5 or
+        RsxFragmentPrecision.Reserved6 or
+        RsxFragmentPrecision.Reserved7 => expression,
+        RsxFragmentPrecision.Half
+            when operand.RegisterKind == RsxFragmentRegisterType.Temporary &&
+                 operand.Fp16 => expression,
+        RsxFragmentPrecision.Half =>
+            $"rsxHalf({expression})",
+        RsxFragmentPrecision.Fixed12 =>
+            $"rsxPrecisionClamp({expression}, -2.0, 2.0)",
+        RsxFragmentPrecision.Fixed9 =>
+            $"rsxPrecisionClamp({expression}, -1.0, 1.0)",
+        RsxFragmentPrecision.Saturate =>
+            $"rsxPrecisionClamp({expression}, 0.0, 1.0)",
+        _ => throw new ArgumentOutOfRangeException(nameof(precision))
+    };
+
+    private static string ApplyFragmentResultModifiers(
+        RsxFragmentInstruction instruction,
+        string expression)
+    {
+        string? scale = FragmentScale(instruction.Scale);
+        if (scale is not null && scale != "1.0")
+            expression = $"({expression} * {scale})";
+
+        if (instruction.NoDest)
+            return expression;
+
+        if (instruction.DestFp16)
+            expression = $"rsxHalf({expression})";
+
+        if (instruction.Saturate)
+        {
+            return
+                $"rsxPrecisionClamp({expression}, 0.0, 1.0)";
+        }
+        if (DestinationPrecisionIsIgnored(instruction))
+            return expression;
+
+        return instruction.DestinationPrecision switch
+        {
+            RsxFragmentPrecision.Fixed12 =>
+                $"rsxPrecisionClamp({expression}, -2.0, 2.0)",
+            RsxFragmentPrecision.Fixed9 =>
+                $"rsxPrecisionClamp({expression}, -1.0, 1.0)",
+            _ => expression
+        };
+    }
+
+    private static bool DestinationPrecisionIsIgnored(
+        RsxFragmentInstruction instruction)
+    {
+        if (instruction.DestinationPrecision is
+            RsxFragmentPrecision.Real or
+            RsxFragmentPrecision.Half)
+        {
+            return true;
+        }
+        if (instruction.OpcodeType is
+            RsxFragmentOpcode.Normalize or
+            RsxFragmentOpcode.Maximum or
+            RsxFragmentOpcode.Minimum or
+            RsxFragmentOpcode.Cosine or
+            RsxFragmentOpcode.Sine or
+            RsxFragmentOpcode.Reflection or
+            RsxFragmentOpcode.Fraction or
+            RsxFragmentOpcode.Lighting or
+            RsxFragmentOpcode.LightingFinal or
+            RsxFragmentOpcode.LogarithmBase2)
+        {
+            return true;
+        }
+        return instruction.OpcodeType == RsxFragmentOpcode.Move &&
+               instruction.DestFp16 &&
+               instruction.Source0Operand.RegisterKind ==
+                   RsxFragmentRegisterType.Temporary &&
+               instruction.Source0Operand.Fp16;
+    }
 
     private static string? FragmentScale(
         RsxFragmentResultScale scale) => scale switch

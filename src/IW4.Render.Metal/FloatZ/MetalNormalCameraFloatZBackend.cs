@@ -2,10 +2,12 @@ using System.Numerics;
 using System.Runtime.Versioning;
 
 using IW4.Assets.Assets.TechniqueSet;
+using IW4.Render.Diagnostics;
 using IW4.Render.Execution;
 using IW4.Render.EditorPreview;
 using IW4.Render.Metal.Pipelines;
 using IW4.Render.Metal.Shaders;
+using IW4.Render.Metal.Telemetry;
 using IW4.Render.Scheduling.Lifecycle;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Shaders;
@@ -228,7 +230,8 @@ internal sealed unsafe class MetalNormalCameraFloatZBackend : IDisposable
         MTLTexture sceneDepthStencil,
         long frameRevision,
         float zNear,
-        MetalRenderStateCache renderStates)
+        MetalRenderStateCache renderStates,
+        MetalGpuPassTimer gpuTimer)
     {
         ThrowIfDisposed();
         if (commandBuffer.NativePtr == 0)
@@ -236,16 +239,19 @@ internal sealed unsafe class MetalNormalCameraFloatZBackend : IDisposable
         if (sceneDepthStencil.NativePtr == 0)
             throw new ArgumentException("Target-2 depth is required.", nameof(sceneDepthStencil));
         ArgumentNullException.ThrowIfNull(renderStates);
+        ArgumentNullException.ThrowIfNull(gpuTimer);
         if (!IsSizedFor(checked((int)sceneDepthStencil.Width), checked((int)sceneDepthStencil.Height)))
             throw new InvalidOperationException("FloatZ targets do not match target 2.");
 
-        EncodeRawDepthView(commandBuffer, sceneDepthStencil);
+        EncodeRawDepthView(commandBuffer, sceneDepthStencil, gpuTimer);
         EncodeAuthoredPass(commandBuffer, _floatZ, _floatZPipeline, _floatZSlab,
-            _floatZStaticPixelRowCount, zNear: null, _rawDepthView, renderStates);
+            _floatZStaticPixelRowCount, zNear: null, _rawDepthView,
+            renderStates, gpuTimer);
         int processedSlabIndex = checked((int)(frameRevision % _processedSlabs.Length));
         EncodeAuthoredPass(commandBuffer, _processedFloatZ, _processedPipeline,
             _processedSlabs[processedSlabIndex], _processedStaticPixelRowCount,
-            FrameDirectCodeConstants.ProduceZNearValue(zNear), _floatZ, renderStates);
+            FrameDirectCodeConstants.ProduceZNearValue(zNear), _floatZ,
+            renderStates, gpuTimer);
         return new MetalProcessedFloatZFrame(
             frameRevision, _processedFloatZ, _pointClampSampler);
     }
@@ -262,9 +268,13 @@ internal sealed unsafe class MetalNormalCameraFloatZBackend : IDisposable
         Dispose(ref _rawDepthPipeline);
     }
 
-    private void EncodeRawDepthView(MTLCommandBuffer commandBuffer, MTLTexture depth)
+    private void EncodeRawDepthView(
+        MTLCommandBuffer commandBuffer,
+        MTLTexture depth,
+        MetalGpuPassTimer gpuTimer)
     {
         using var pass = CreateColorPass(_rawDepthView);
+        gpuTimer.AttachPass(pass, MapRenderGpuPhase.ProcessedFloatZ);
         MTLRenderCommandEncoder encoder = commandBuffer.RenderCommandEncoder(pass);
         if (encoder.NativePtr == 0)
             throw new InvalidOperationException("Metal could not begin the raw target-2 depth view.");
@@ -289,9 +299,11 @@ internal sealed unsafe class MetalNormalCameraFloatZBackend : IDisposable
         int staticPixelRowCount,
         ShaderConstantValue? zNear,
         MTLTexture source,
-        MetalRenderStateCache renderStates)
+        MetalRenderStateCache renderStates,
+        MetalGpuPassTimer gpuTimer)
     {
         using var pass = CreateColorPass(target);
+        gpuTimer.AttachPass(pass, MapRenderGpuPhase.ProcessedFloatZ);
         MTLRenderCommandEncoder encoder = commandBuffer.RenderCommandEncoder(pass);
         if (encoder.NativePtr == 0)
             throw new InvalidOperationException("Metal could not begin an authored FloatZ target.");
@@ -443,7 +455,10 @@ internal sealed unsafe class MetalNormalCameraFloatZBackend : IDisposable
 
     private static MTLRenderPipelineState CompileRawDepthPipeline(MTLDevice device)
     {
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         NSError error = default;
         using MTLLibrary library = device.NewLibrary(RawDepthMsl, options, ref error);
         if (library.NativePtr == 0 || error.NativePtr != 0)
@@ -480,7 +495,10 @@ internal sealed unsafe class MetalNormalCameraFloatZBackend : IDisposable
             resolution.Translation.FragmentProgramIr, resolution.RenderState,
             suppressShaderPackerForDiagnosticOutput: false);
         RequireExactLowering(vertex, fragment, materialName);
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         NSError vertexError = default;
         using MTLLibrary vertexLibrary = device.NewLibrary(vertex.Msl!, options, ref vertexError);
         if (vertexLibrary.NativePtr == 0 || vertexError.NativePtr != 0)

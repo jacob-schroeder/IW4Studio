@@ -109,7 +109,9 @@ public sealed unsafe partial class MetalMapRenderer
                  snapshot.NormalCameraDraws.DrawGroups)
         {
             MetalNormalCameraVisibilityGroupPlan plan =
-                CreateVisibilityGroupPlan(group);
+                CreateVisibilityGroupPlan(
+                    group,
+                    _loadedIsolatedWorldSurfaceIndex);
             _normalCameraVisibilityGroups.Add(group, plan);
             bool authorized = _normalCameraAuthorizedGroups.Contains(group);
             plan.IsAuthorized = authorized;
@@ -166,14 +168,22 @@ public sealed unsafe partial class MetalMapRenderer
                 plan.IsAuthorized && !plan.HasReceiverVariant)
             .ToArray();
         _normalCameraWorldCandidateCount =
-            _normalCameraBaseGroupPlans
-                .Where(plan =>
+            _loadedIsolatedWorldSurfaceIndex is int isolatedSurfaceIndex
+                ? allPlans.Any(plan =>
+                    plan.IsAuthorized &&
                     plan.SourceKind ==
-                        RenderNormalCameraDrawSourceKind.World)
-                .Sum(plan =>
-                    plan.CanFilterWorld
-                        ? (long)plan.WorldSurfaceSpanCount
-                        : 1L);
+                        RenderNormalCameraDrawSourceKind.World &&
+                    plan.ContainsWorldSurface(isolatedSurfaceIndex))
+                    ? 1
+                    : 0
+                : _normalCameraBaseGroupPlans
+                    .Where(plan =>
+                        plan.SourceKind ==
+                            RenderNormalCameraDrawSourceKind.World)
+                    .Sum(plan =>
+                        plan.CanFilterWorld
+                            ? (long)plan.WorldSurfaceSpanCount
+                            : 1L);
         _normalCameraReceiverGroupPlans = allPlans
             .Where(plan =>
                 plan.HasReceiverVariant)
@@ -237,6 +247,15 @@ public sealed unsafe partial class MetalMapRenderer
         }
         _normalCameraStaticVisibleObjectCount =
             _normalCameraStaticCandidateCount;
+        if (_loadedIsolatedWorldSurfaceIndex.HasValue)
+        {
+            // Isolation is a world-only editor view. Keep immutable static
+            // resources available to shadow execution, but publish the exact
+            // normal-camera candidate set consumed by depth and color.
+            _normalCameraStaticCandidateCount = 0;
+            _normalCameraStaticAlwaysVisibleCount = 0;
+            _normalCameraStaticVisibleObjectCount = 0;
+        }
         Array.Copy(
             _normalCameraStaticFallbackLod,
             _normalCameraStaticSelectedLod,
@@ -312,13 +331,16 @@ public sealed unsafe partial class MetalMapRenderer
         }
     }
 
-    private void PrepareNormalCameraVisibility(RenderCamera camera)
+    private void PrepareNormalCameraVisibility(
+        RenderCamera camera,
+        bool recordTelemetry = true)
     {
         if (_normalCameraVisibilityPreparedFrameIndex == _frameIndex)
             return;
 
-        using MapRenderCpuPhaseScope cpuPhase =
-            _telemetry.BeginCpuPhase(MapRenderCpuPhase.Visibility);
+        using MapRenderCpuPhaseScope cpuPhase = recordTelemetry
+            ? _telemetry.BeginCpuPhase(MapRenderCpuPhase.Visibility)
+            : default;
         _normalCameraVisibilityPreparedFrameIndex = _frameIndex;
         var extent = new MapRenderNormalCameraFramebufferExtent(
             _surfaceExtents.SceneTarget.Width,
@@ -346,6 +368,18 @@ public sealed unsafe partial class MetalMapRenderer
                     extent,
                     farPlane,
                     key);
+
+            if (_loadedIsolatedWorldSurfaceIndex.HasValue)
+            {
+                _normalCameraStaticVisible.AsSpan().Fill(false);
+                _normalCameraStaticVisibleObjectCount = 0;
+                _normalCameraStaticSelectionValid = true;
+                _hasNormalCameraStaticSelectionCache = false;
+                _normalCameraStaticSelectionKey = default;
+                _normalCameraStaticSelectionDpvs = null;
+                PrepareNormalCameraGroupSelection();
+                return;
+            }
 
             if (_hasNormalCameraStaticSelectionCache &&
                 _normalCameraStaticSelectionKey == key &&
@@ -460,7 +494,18 @@ public sealed unsafe partial class MetalMapRenderer
         ArgumentNullException.ThrowIfNull(group);
         if (_normalCameraGroupSelectionFrameIndex != _frameIndex)
             PrepareNormalCameraGroupSelection();
-        return _normalCameraSelectedGroups.Contains(group);
+        if (_loadedIsolatedWorldSurfaceIndex.HasValue &&
+            (!_normalCameraVisibilityGroups.TryGetValue(
+                 group,
+                 out MetalNormalCameraVisibilityGroupPlan? isolatedPlan) ||
+             isolatedPlan.SourceKind !=
+                 RenderNormalCameraDrawSourceKind.World ||
+             !isolatedPlan.CanFilterWorld))
+        {
+            return false;
+        }
+        return _normalCameraSelectedGroups.Contains(group) &&
+            IsProgressiveStaticGroupPublished(group);
     }
 
     private bool CanAuthorizeNormalCameraShadowReceiverSelector(
@@ -697,7 +742,11 @@ public sealed unsafe partial class MetalMapRenderer
         {
             if (!IsMsbFirstBitSet(cameraSurfaceWords, surfaceIndex))
             {
-                _normalCameraWorldRouteOwners[surfaceIndex] = -1;
+                // An explicitly isolated surface is an editor selection, not
+                // a camera-visibility query. Retain its base route when DPVS
+                // excludes it so the requested exact span cannot disappear.
+                if (_loadedIsolatedWorldSurfaceIndex != surfaceIndex)
+                    _normalCameraWorldRouteOwners[surfaceIndex] = -1;
                 continue;
             }
 
@@ -867,7 +916,7 @@ public sealed unsafe partial class MetalMapRenderer
                     selection.Page,
                     MapRenderTechniqueVariantAllocation.ShadowMapAllocated),
                 selection.TechniqueSlot);
-            if (!TryResolveNormalCameraStaticReceiverCandidate(
+            if (!TryResolveAuthorizedNormalCameraStaticReceiverCandidate(
                     key,
                     out _))
             {
@@ -886,7 +935,8 @@ public sealed unsafe partial class MetalMapRenderer
                 out MetalNormalCameraReceiverCandidate candidate) &&
             !candidate.IsAmbiguous &&
             candidate.Plan is { IsAuthorized: true } authorized &&
-            authorized.RouteOrdinal > 0)
+            authorized.RouteOrdinal > 0 &&
+            IsProgressiveStaticGroupPublished(authorized.Group))
         {
             plan = authorized;
             return true;
@@ -896,6 +946,23 @@ public sealed unsafe partial class MetalMapRenderer
     }
 
     private bool TryResolveNormalCameraStaticReceiverCandidate(
+        MetalNormalCameraStaticReceiverCandidateKey key,
+        out MetalNormalCameraVisibilityGroupPlan? plan)
+    {
+        if (TryResolveAuthorizedNormalCameraStaticReceiverCandidate(
+                key,
+                out MetalNormalCameraVisibilityGroupPlan? authorized) &&
+            authorized is not null &&
+            IsProgressiveStaticGroupPublished(authorized.Group))
+        {
+            plan = authorized;
+            return true;
+        }
+        plan = null;
+        return false;
+    }
+
+    private bool TryResolveAuthorizedNormalCameraStaticReceiverCandidate(
         MetalNormalCameraStaticReceiverCandidateKey key,
         out MetalNormalCameraVisibilityGroupPlan? plan)
     {
@@ -1039,7 +1106,10 @@ public sealed unsafe partial class MetalMapRenderer
 
         if (plan.CanFilterWorld)
         {
-            if (_normalCameraCurrentDpvsVisibility is null &&
+            bool isolatesWorldSurface =
+                _loadedIsolatedWorldSurfaceIndex.HasValue;
+            if (!isolatesWorldSurface &&
+                _normalCameraCurrentDpvsVisibility is null &&
                 _normalCameraVisibilityFrustumValid &&
                 !MapRenderCameraFrustum.Intersects(
                     plan.WorldBounds,
@@ -1050,7 +1120,9 @@ public sealed unsafe partial class MetalMapRenderer
             else
             {
                 MapRenderWorldDpvsViewVisibility? dpvs =
-                    _normalCameraCurrentDpvsVisibility;
+                    isolatesWorldSurface
+                        ? null
+                        : _normalCameraCurrentDpvsVisibility;
                 ReadOnlySpan<uint> surfaceWords = dpvs is null
                     ? default
                     : dpvs.SurfaceBitSpan;
@@ -1058,7 +1130,8 @@ public sealed unsafe partial class MetalMapRenderer
                     _frameIndex,
                     surfaceWords,
                     dpvs is not null,
-                    _normalCameraWorldRouteOwners);
+                    _normalCameraWorldRouteOwners,
+                    _loadedIsolatedWorldSurfaceIndex);
             }
             visibleInstanceCount = plan.VisibleInstanceCount;
             return plan.VisibleRunCount;
@@ -1332,7 +1405,8 @@ public sealed unsafe partial class MetalMapRenderer
     private static MetalNormalCameraVisibilityGroupPlan
         CreateVisibilityGroupPlan(
             MapRenderEditorDrawGroup<
-                RenderNormalCameraDrawSubmissionSnapshot> group)
+                RenderNormalCameraDrawSubmissionSnapshot> group,
+            int? isolatedWorldSurfaceIndex)
     {
         ReadOnlySpan<RenderNormalCameraDrawSubmissionSnapshot>
             authoredPasses = group.AuthoredPassSpan;
@@ -1365,9 +1439,16 @@ public sealed unsafe partial class MetalMapRenderer
                         firstDraw.Range.InstanceCount);
                 }
 
-                if (!MapRenderWorldSurfaceSpanCatalog.TryCreate(
-                        pass,
-                        out MapRenderWorldSurfaceSpan[] passSpans))
+                bool hasPassSpans = isolatedWorldSurfaceIndex is int
+                    isolatedSurfaceIndex
+                        ? TryCreateIsolatedWorldSurfaceSpans(
+                            pass,
+                            isolatedSurfaceIndex,
+                            out MapRenderWorldSurfaceSpan[] passSpans)
+                        : MapRenderWorldSurfaceSpanCatalog.TryCreate(
+                            pass,
+                            out passSpans);
+                if (!hasPassSpans)
                 {
                     return MetalNormalCameraVisibilityGroupPlan.FailOpen(
                         group,
@@ -1378,7 +1459,7 @@ public sealed unsafe partial class MetalMapRenderer
                     .Include(pass.LocalBounds.Min)
                     .Include(pass.LocalBounds.Max);
             }
-            return bounds.IsValid
+            return bounds.IsValid || isolatedWorldSurfaceIndex.HasValue
                 ? MetalNormalCameraVisibilityGroupPlan.World(
                     group,
                     worldPassSpans,
@@ -1435,6 +1516,57 @@ public sealed unsafe partial class MetalMapRenderer
             lodIndex.Value,
             firstInstance,
             instanceCount);
+    }
+
+    private static bool TryCreateIsolatedWorldSurfaceSpans(
+        RenderNormalCameraPreparedPassSnapshot pass,
+        int isolatedSurfaceIndex,
+        out MapRenderWorldSurfaceSpan[] spans)
+    {
+        spans = [];
+        if (isolatedSurfaceIndex < 0 ||
+            pass.SourceKind != RenderNormalCameraDrawSourceKind.World)
+        {
+            return false;
+        }
+
+        var matches = new List<MapRenderWorldSurfaceSpan>();
+        foreach (RenderMaterialPickRangeSnapshot range in pass.PickRanges)
+        {
+            if (range.Kind != MapRenderPickKind.GfxSurface ||
+                range.SurfaceIndex != isolatedSurfaceIndex)
+            {
+                continue;
+            }
+
+            int endIndex;
+            try
+            {
+                endIndex = checked(range.FirstIndex + range.IndexCount);
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+            if (range.FirstIndex < 0 ||
+                range.IndexCount <= 0 ||
+                range.IndexCount % 3 != 0 ||
+                endIndex > pass.Geometry.IndexCount)
+            {
+                return false;
+            }
+
+            matches.Add(new MapRenderWorldSurfaceSpan(
+                isolatedSurfaceIndex,
+                range.FirstIndex,
+                range.IndexCount,
+                RenderBounds.Empty));
+        }
+
+        if (matches.Count == 0)
+            return false;
+        spans = matches.ToArray();
+        return true;
     }
 
     private static bool HasMatchingWorldCardinality(
@@ -1677,6 +1809,17 @@ public sealed unsafe partial class MetalMapRenderer
         internal int WorldSurfaceSpanCount =>
             WorldPassSpans.Sum(spans => spans.Length);
 
+        internal bool ContainsWorldSurface(int surfaceIndex)
+        {
+            foreach (MapRenderWorldSurfaceSpan[] passSpans in WorldPassSpans)
+            foreach (MapRenderWorldSurfaceSpan span in passSpans)
+            {
+                if (span.SurfaceIndex == surfaceIndex)
+                    return true;
+            }
+            return false;
+        }
+
         internal bool PreservesOriginalRange { get; private set; } = true;
 
         internal void InvalidatePreparedRuns() => PreparedFrameIndex = -1;
@@ -1731,7 +1874,8 @@ public sealed unsafe partial class MetalMapRenderer
             long frameIndex,
             ReadOnlySpan<uint> surfaceWords,
             bool hasDpvsVisibility,
-            ReadOnlySpan<int> routeOwners)
+            ReadOnlySpan<int> routeOwners,
+            int? isolatedSurfaceIndex)
         {
             PreparedFrameIndex = frameIndex;
             VisibleRunCount = 0;
@@ -1745,7 +1889,9 @@ public sealed unsafe partial class MetalMapRenderer
                 foreach (MapRenderWorldSurfaceSpan span in
                          WorldPassSpans[passIndex])
                 {
-                    if (IsWorldSurfaceRouteSelected(
+                    if ((!isolatedSurfaceIndex.HasValue ||
+                         span.SurfaceIndex == isolatedSurfaceIndex.Value) &&
+                        IsWorldSurfaceRouteSelected(
                             span.SurfaceIndex,
                             routeOwners) &&
                         IsWorldSurfaceDpvsVisible(

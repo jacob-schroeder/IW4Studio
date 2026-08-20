@@ -17,7 +17,7 @@ public sealed class RsxFragmentProgramIr
     /// instruction decoding semantics change.
     /// </summary>
     public const string CurrentDecoderVersion =
-        "rsx-fragment-semantic-ir/2";
+        "rsx-fragment-semantic-ir/3";
 
     /// <summary>
     /// Version of the backend-neutral static specialization and dynamic
@@ -600,6 +600,9 @@ public readonly record struct RsxFragmentInstruction(
     public RsxFragmentInputAttribute SourceAttribute =>
         (RsxFragmentInputAttribute)((Dst >> 13) & 0x0f);
     public int TextureUnit => (int)((Dst >> 17) & 0x0f);
+    public bool ExpandedTexture => ((Dst >> 21) & 1) != 0;
+    public RsxFragmentPrecision DestinationPrecision =>
+        (RsxFragmentPrecision)((Dst >> 22) & 3);
     public bool NoDest => ((Dst >> 30) & 1) != 0;
     public bool Saturate => ((Dst >> 31) & 1) != 0;
     public RsxConditionTest ConditionTest =>
@@ -618,8 +621,15 @@ public readonly record struct RsxFragmentInstruction(
         RsxShaderInstructionSet.IsFragmentControlFlow(OpcodeType);
     public RsxFragmentResultScale Scale =>
         (RsxFragmentResultScale)((Src1 >> 28) & 7);
+    public bool UsesIndexedInput => ((Src2 >> 30) & 1) != 0;
+    public bool PerspectiveCorrection => ((Src2 >> 31) & 1) != 0;
     public bool IsTexture =>
         !IsControlFlow && RsxShaderInstructionSet.IsFragmentTexture(OpcodeType);
+
+    public RsxFragmentPrecision SourcePrecision(int sourceIndex) =>
+        sourceIndex is >= 0 and <= 2
+            ? (RsxFragmentPrecision)((Src1 >> (19 + sourceIndex * 3)) & 7)
+            : throw new ArgumentOutOfRangeException(nameof(sourceIndex));
 
     public RsxSwizzleComponent ConditionSwizzle(int component) =>
         component switch

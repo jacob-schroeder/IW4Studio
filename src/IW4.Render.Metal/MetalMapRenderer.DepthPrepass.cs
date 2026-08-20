@@ -148,6 +148,9 @@ public sealed unsafe partial class MetalMapRenderer
 
         using MapRenderCpuPhaseScope cpuPhase =
             _telemetry.BeginCpuPhase(MapRenderCpuPhase.DepthPrepass);
+        using var gpuPhase = _gpuPassTimer.BeginPhase(
+            encoder,
+            MapRenderGpuPhase.DepthPrepass);
         MetalNormalCameraFrameState frameState =
             PrepareNormalCameraFrameState(camera);
         MTLBuffer depthConstants = PrepareDepthConstants(
@@ -190,7 +193,8 @@ public sealed unsafe partial class MetalMapRenderer
         {
             MetalDepthPrepassGroup group =
                 _orderedDepthPrepassGroups[groupIndex];
-            if (!IsNormalCameraGroupSelected(group.Source))
+            if (!IsNormalCameraGroupSelected(group.Source) ||
+                !IsNormalCameraGroupTextureReady(group.Source))
                 continue;
             int visibleRunCount =
                 PrepareNormalCameraVisibleRuns(

@@ -12,7 +12,6 @@ namespace IW4.Render.OpenGl;
 
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
-    private const float InitialStaticTranslationPrefetchDistance = 768f;
     private const int
         ProgressiveStaticAdmissionMaximumGroupsPerFrame = 4;
     private const double ProgressiveStaticAdmissionBudgetMilliseconds = 2d;
@@ -470,8 +469,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (_baseStaticGroupPlan is null)
             return;
 
-        MapRenderOpenGlProgressiveStaticPrefetchPlan prefetch =
-            MapRenderOpenGlProgressiveStaticPrefetchPlan.CreateYawRing(
+        MapRenderProgressiveStaticPrefetchPlan prefetch =
+            MapRenderProgressiveStaticPrefetchPlan.CreateNeighborhood(
                 initialView.Camera,
                 initialView.AspectRatio);
         var baseGroups = new MapRenderOpenGlStaticResourceGroupUnion(
@@ -496,79 +495,35 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         try
         {
-            Vector3 horizontalForward = new(
-                initialView.Camera.Forward.X,
-                0f,
-                initialView.Camera.Forward.Z);
-            horizontalForward =
-                horizontalForward.LengthSquared() > 0.000001f
-                    ? Vector3.Normalize(horizontalForward)
-                    : -Vector3.UnitZ;
-            Vector3 horizontalRight = Vector3.Normalize(
-                Vector3.Cross(horizontalForward, Vector3.UnitY));
-            Span<Vector3> prefetchOffsets =
-            [
-                Vector3.Zero,
-                horizontalForward *
-                    (InitialStaticTranslationPrefetchDistance * 0.5f),
-                -horizontalForward *
-                    (InitialStaticTranslationPrefetchDistance * 0.5f),
-                horizontalForward *
-                    InitialStaticTranslationPrefetchDistance,
-                -horizontalForward *
-                    InitialStaticTranslationPrefetchDistance,
-                horizontalRight *
-                    (InitialStaticTranslationPrefetchDistance * 0.5f),
-                -horizontalRight *
-                    (InitialStaticTranslationPrefetchDistance * 0.5f),
-                horizontalRight *
-                    InitialStaticTranslationPrefetchDistance,
-                -horizontalRight *
-                    InitialStaticTranslationPrefetchDistance
-            ];
-            foreach (Vector3 offset in prefetchOffsets)
+            foreach (RenderCamera camera in prefetch.Cameras)
             {
-                MapRenderOpenGlProgressiveStaticPrefetchPlan positionRing =
-                    offset == Vector3.Zero
-                        ? prefetch
-                        : MapRenderOpenGlProgressiveStaticPrefetchPlan
-                            .CreateYawRing(
-                                initialView.Camera with
-                                {
-                                    Position =
-                                        initialView.Camera.Position + offset
-                                },
-                                initialView.AspectRatio);
-                foreach (RenderCamera camera in positionRing.YawRing)
+                SelectProgressiveStaticObjects(
+                    camera,
+                    prefetch.AspectRatio);
+                baseGroups.Add(
+                    _baseStaticGroupPlan.SelectRequiredGroups(
+                        _visibleStaticObjects,
+                        _selectedStaticLodByObject));
+                if (_exactNormalCameraStaticRuntime is
+                        { } prefetchExactNormalChannel &&
+                    exactNormalGroups is not null)
                 {
-                    SelectProgressiveStaticObjects(
-                        camera,
-                        prefetch.AspectRatio);
-                    baseGroups.Add(
-                        _baseStaticGroupPlan.SelectRequiredGroups(
-                            _visibleStaticObjects,
-                            _selectedStaticLodByObject));
-                    if (_exactNormalCameraStaticRuntime is
-                            { } prefetchExactNormalChannel &&
-                        exactNormalGroups is not null)
-                    {
-                        exactNormalGroups.Add(
-                            prefetchExactNormalChannel.ResourcePlan
-                                .SelectRequiredGroups(
-                                    _visibleStaticObjects,
-                                    _selectedStaticLodByObject));
-                    }
-                    for (int channelIndex = 0;
-                         channelIndex < _staticReceiverVariants.Length;
-                         channelIndex++)
-                    {
-                        StaticReceiverVariantRuntime channel =
-                            _staticReceiverVariants[channelIndex];
-                        receiverGroups[channelIndex].Add(
-                            channel.ResourcePlan.SelectRequiredGroups(
+                    exactNormalGroups.Add(
+                        prefetchExactNormalChannel.ResourcePlan
+                            .SelectRequiredGroups(
                                 _visibleStaticObjects,
                                 _selectedStaticLodByObject));
-                    }
+                }
+                for (int channelIndex = 0;
+                     channelIndex < _staticReceiverVariants.Length;
+                     channelIndex++)
+                {
+                    StaticReceiverVariantRuntime channel =
+                        _staticReceiverVariants[channelIndex];
+                    receiverGroups[channelIndex].Add(
+                        channel.ResourcePlan.SelectRequiredGroups(
+                            _visibleStaticObjects,
+                            _selectedStaticLodByObject));
                 }
             }
 
@@ -598,7 +553,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 StaticResourceMaterializationWaveCount++;
             Console.WriteLine(
                 $"Renderer initial static neighborhood prefetch: " +
-                $"views={prefetch.YawRing.Length * prefetchOffsets.Length}, " +
+                $"views={prefetch.CameraCount}, " +
                 $"resolved={resolution.Resolved}, " +
                 $"added={resolution.Materialized}, " +
                 $"rejected={resolution.Rejected}, " +

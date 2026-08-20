@@ -417,6 +417,7 @@ public sealed unsafe partial class MetalMapRenderer
     {
         MetalShadowAtlases atlases = _shadowAtlases!;
         using MTLRenderPassDescriptor pass = atlases.CreateSunPass();
+        _gpuPassTimer.AttachPass(pass, MapRenderGpuPhase.SunShadow);
         MTLRenderCommandEncoder encoder =
             commandBuffer.RenderCommandEncoder(pass);
         if (encoder.NativePtr == 0)
@@ -637,6 +638,7 @@ public sealed unsafe partial class MetalMapRenderer
     {
         MetalShadowAtlases atlases = _shadowAtlases!;
         using MTLRenderPassDescriptor pass = atlases.CreateSpotPass();
+        _gpuPassTimer.AttachPass(pass, MapRenderGpuPhase.SunShadow);
         MTLRenderCommandEncoder encoder =
             commandBuffer.RenderCommandEncoder(pass);
         if (encoder.NativePtr == 0)

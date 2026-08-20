@@ -11,6 +11,7 @@ using IW4.Render.Metal.Targets;
 using IW4.Render.Metal.Telemetry;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.Clear;
+using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.SceneBuilding;
 
 using SharpMetal.Foundation;
@@ -68,7 +69,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             _depthStencilFormat);
         _resources = new MetalResourceCache(
             surface.Device,
-            surface.CommandQueue);
+            surface.CommandQueue,
+            deferTextureResidencyByDefault: true);
         _auxiliaryResources = new MetalResourceCache(
             surface.Device,
             surface.CommandQueue);
@@ -95,9 +97,10 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     public bool ShowDiagnosticGeometry { get; set; }
 
     /// <summary>
-    /// Shows the collision-wireframe overlay. Metal exposes fixed one-pixel
-    /// native lines, so the legacy OpenGL 1.25-pixel hint is bounded to one
-    /// pixel until the overlay is lowered to expanded line geometry.
+    /// Shows the collision-wireframe overlay. Metal's native one-pixel lines
+    /// match Apple's OpenGL 4.1 aliased-line capability clamp of 1..1; the
+    /// shared 1.25-pixel semantic request therefore resolves to one physical
+    /// pixel on both macOS backends.
     /// </summary>
     public bool ShowWireframe { get; set; }
 
@@ -110,7 +113,11 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     public void Load(
         MapRenderScene scene,
         RenderSceneSnapshot? sceneSnapshot) =>
-        LoadCore(scene, sceneSnapshot);
+        LoadCore(
+            scene,
+            sceneSnapshot,
+            initialCamera: null,
+            initialAspectRatio: 0f);
 
     public void Load(
         MapRenderScene scene,
@@ -121,7 +128,11 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         if (!(initialAspectRatio > 0f) || !float.IsFinite(initialAspectRatio))
             throw new ArgumentOutOfRangeException(nameof(initialAspectRatio));
         _ = initialCamera.Forward;
-        LoadCore(scene, sceneSnapshot);
+        LoadCore(
+            scene,
+            sceneSnapshot,
+            initialCamera,
+            initialAspectRatio);
     }
 
     public void Resize(int width, int height) =>
@@ -144,6 +155,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             extents.HostFramebuffer.Width,
             extents.HostFramebuffer.Height);
         _presentation?.Resize(
+            extents.SceneTarget.Width,
+            extents.SceneTarget.Height,
             extents.HostFramebuffer.Width,
             extents.HostFramebuffer.Height);
     }
@@ -158,6 +171,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             return;
 
         InvalidateCaptureFrame();
+        LastFramePlan = null;
+        LastEditorPreviewPresentationResult = null;
         using var pool = new NSAutoreleasePool();
         long telemetryFrameIndex = _telemetry.BeginCpuFrame();
         MTLCommandBuffer commandBuffer = default;
@@ -197,6 +212,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             ResetNormalCameraVisibilityFrameState();
             ResetStaticModelLightingFrameState();
             ResetProcessedFloatZFrame();
+            ResetNormalCameraTextureResidencyFrameState();
 
             EncodeShadowPasses(commandBuffer, camera);
             PrepareNormalCameraFrame(camera);
@@ -205,19 +221,41 @@ public sealed partial class MetalMapRenderer : IMapRenderer
 
             MapRenderNormalCameraClearColorResult clearColor =
                 CreateClearColor(camera);
+            MetalNormalCameraFrameState plannedFrameState =
+                PrepareNormalCameraFrameState(camera);
+            LastFramePlan = RenderFramePlanner.CreateNormalCameraFrame(
+                _frameIndex,
+                _surfaceExtents,
+                clearColor,
+                _sceneSnapshot,
+                camera,
+                CreateFramePreviewSettings(
+                    plannedFrameState.AnimationTimeSeconds));
             if (!clearColor.RequestsColorClear)
             {
                 throw new InvalidOperationException(
                     "The Metal normal-camera target requires its exact color clear.");
             }
 
+            MetalSceneRenderPassTimingSplit? sceneTimingSplit =
+                _gpuPassTimer.RequiresSceneRenderPassIsolation()
+                    ? new MetalSceneRenderPassTimingSplit(
+                        commandBuffer,
+                        _targets,
+                        _renderStates,
+                        _gpuPassTimer,
+                        commandSlot,
+                        _surfaceExtents)
+                    : null;
             using MTLRenderPassDescriptor scenePass =
                 _targets.CreateScenePass(
                     clearColor.Red,
                     clearColor.Green,
                     clearColor.Blue,
                     clearColor.Alpha,
-                    preserveForFloatZ: requiresVisibleProcessedFloatZ);
+                    preserveForFloatZ:
+                        requiresVisibleProcessedFloatZ ||
+                        sceneTimingSplit is not null);
             _gpuPassTimer.AttachPass(
                 scenePass,
                 commandSlot,
@@ -249,23 +287,38 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             }
             try
             {
-                EncodeNormalCameraPreludeAndDepth(sceneEncoder, camera);
+                EncodeNormalCameraPreludeAndDepth(
+                    ref sceneEncoder,
+                    camera,
+                    sceneTimingSplit);
                 if (!requiresVisibleProcessedFloatZ)
-                    EncodeNormalCameraColorAndOverlays(sceneEncoder, camera);
+                {
+                    EncodeNormalCameraColorAndOverlays(
+                        ref sceneEncoder,
+                        camera,
+                        sceneTimingSplit);
+                    sceneTimingSplit?.Finish(ref sceneEncoder);
+                }
             }
             finally
             {
-                sceneEncoder.EndEncoding();
+                if (sceneEncoder.NativePtr != 0)
+                    sceneEncoder.EndEncoding();
             }
 
             if (requiresVisibleProcessedFloatZ)
             {
                 EncodeProcessedFloatZ(commandBuffer, camera);
                 using MTLRenderPassDescriptor resumedScenePass =
-                    _targets.CreateSceneResumePass();
-                // SceneTarget already owns this frame's sparse stage-boundary
-                // sample on the first scene encoder. Attaching the same phase
-                // twice is invalid; FloatZ phase work is tracked separately.
+                    _targets.CreateSceneResumePass(
+                        resolveAtEnd: sceneTimingSplit is null);
+                // SceneTarget may span both sides of the demand-gated FloatZ
+                // encoder break. The sparse timer sums both disjoint target-2
+                // intervals into one phase sample.
+                _gpuPassTimer.AttachPass(
+                    resumedScenePass,
+                    commandSlot,
+                    MapRenderGpuPhase.SceneTarget);
                 MTLRenderCommandEncoder resumedSceneEncoder =
                     commandBuffer.RenderCommandEncoder(resumedScenePass);
                 if (resumedSceneEncoder.NativePtr == 0)
@@ -292,13 +345,17 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                         height = checked((ulong)_surfaceExtents.SceneTarget.Height)
                     });
                     _renderStates.ResetEncoderInheritance();
+                    sceneTimingSplit?.ResumeAfterExternalEncoderBreak();
                     EncodeNormalCameraColorAndOverlays(
-                        resumedSceneEncoder,
-                        camera);
+                        ref resumedSceneEncoder,
+                        camera,
+                        sceneTimingSplit);
+                    sceneTimingSplit?.Finish(ref resumedSceneEncoder);
                 }
                 finally
                 {
-                    resumedSceneEncoder.EndEncoding();
+                    if (resumedSceneEncoder.NativePtr != 0)
+                        resumedSceneEncoder.EndEncoding();
                 }
             }
 
@@ -324,75 +381,58 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             {
                 MTLTexture drawableTexture = ownedDrawable.Texture;
                 MTLTexture hostOutput = CaptureHostOutput;
-                using MTLRenderPassDescriptor presentationPass =
-                    MetalFrameTargets.CreatePresentationPass(hostOutput);
-                _gpuPassTimer.AttachPass(
-                    presentationPass,
-                    commandSlot,
-                    MapRenderGpuPhase.Presentation);
-                MTLRenderCommandEncoder presentationEncoder =
-                    commandBuffer.RenderCommandEncoder(presentationPass);
-                if (presentationEncoder.NativePtr == 0)
-                    throw new InvalidOperationException("Metal could not begin presentation.");
-                try
-                {
-                    presentationEncoder.SetViewport(new MTLViewport
-                    {
-                        originX = 0,
-                        originY = 0,
-                        width = hostOutput.Width,
-                        height = hostOutput.Height,
-                        znear = 0,
-                        zfar = 1
-                    });
-                    presentationEncoder.SetScissorRect(new MTLScissorRect
-                    {
-                        x = 0,
-                        y = 0,
-                        width = hostOutput.Width,
-                        height = hostOutput.Height
-                    });
-                    _renderStates.ResetEncoderInheritance();
-                    _presentation.Encode(
-                        presentationEncoder,
+                MetalNormalCameraPresentationExecutionResult
+                    presentation = _presentation.Encode(
+                        commandBuffer,
                         _targets.ResolvedColor,
-                        _renderStates);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.DrawCalls);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.LogicalDrawCommands);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.Triangles,
-                        2);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.Passes);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.PostPasses);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.PostLogicalDrawCommands);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.ProgramChanges);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.RenderStateChanges);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.BufferChanges,
-                        5);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.UniformUpdates,
-                        3);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.TextureChanges);
-                    _telemetry.AddCounter(
-                        MapRenderFrameCounter.SamplerChanges);
-                    _telemetry.AddGpuPhaseWork(
-                        MapRenderGpuPhase.Presentation,
-                        drawCalls: 1,
-                        triangles: 2);
-                }
-                finally
-                {
-                    presentationEncoder.EndEncoding();
-                }
+                        hostOutput,
+                        _renderStates,
+                        pass => _gpuPassTimer.AttachPass(
+                            pass,
+                            commandSlot,
+                            MapRenderGpuPhase.Presentation));
+                int postDrawCount = presentation.FullscreenDrawCount;
+                long postTriangleCount = checked(postDrawCount * 2L);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.DrawCalls,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.LogicalDrawCommands,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.Triangles,
+                    postTriangleCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.Passes,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.PostPasses,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.PostLogicalDrawCommands,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.ProgramChanges,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.RenderStateChanges,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.BufferChanges,
+                    checked(postDrawCount * 5L));
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.UniformUpdates,
+                    checked(postDrawCount * 3L));
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.TextureChanges,
+                    postDrawCount);
+                _telemetry.AddCounter(
+                    MapRenderFrameCounter.SamplerChanges,
+                    postDrawCount);
+                _telemetry.AddGpuPhaseWork(
+                    MapRenderGpuPhase.Presentation,
+                    postDrawCount,
+                    postTriangleCount);
                 // Retain the canonical postprocessed pixels independently of
                 // the disposable drawable. The ordered GPU copy feeds the
                 // drawable with those exact bytes before this same command
@@ -406,6 +446,22 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                 submitted = true;
                 CommitShadowPasses();
                 PublishCaptureFrame(telemetryFrameIndex, commandBuffer);
+                LastEditorPreviewPresentationResult = new(
+                    LastFramePlan ?? throw new InvalidOperationException(
+                        "Metal presentation completed without its frame plan."),
+                    UsesFilmColorManipulation:
+                        _presentation.UsesFilmColorManipulation,
+                    UsesGlow: _presentation.UsesGlow,
+                    ResolvedStoredSamplePair: true,
+                    ExecutedFilmColorManipulation:
+                        presentation.ExecutedFilmColorManipulation,
+                    ExecutedTranslatedPostFx: true,
+                    ExecutedGlow: presentation.ExecutedGlow,
+                    GlowGaussianPassCount:
+                        presentation.GlowGaussianPassCount,
+                    FullscreenDrawCount:
+                        presentation.FullscreenDrawCount,
+                    WroteCurrentHostBackBuffer: true);
                 _frameIndex++;
             }
         }
@@ -440,8 +496,11 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     public bool IsStartupWorkingSetSettled(RenderCamera requestedCamera)
     {
         ThrowIfDisposed();
-        _ = requestedCamera;
-        return _loaded && _lastCompletedCpuFrameIndex >= 0;
+        return _loaded &&
+            _lastCompletedCpuFrameIndex >= 0 &&
+            _lastPresentedCpuFrameIndex == _lastCompletedCpuFrameIndex &&
+            IsNormalCameraTextureWorkingSetSettled(requestedCamera) &&
+            IsProgressiveStaticWorkingSetSettled(requestedCamera);
     }
 
     public void Dispose()
@@ -470,10 +529,13 @@ public sealed partial class MetalMapRenderer : IMapRenderer
 
     private void LoadCore(
         MapRenderScene scene,
-        RenderSceneSnapshot? sceneSnapshot)
+        RenderSceneSnapshot? sceneSnapshot,
+        RenderCamera? initialCamera,
+        float initialAspectRatio)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(scene);
+        bool isolateWorldSurface = IsolatedWorldSurfaceIndex.HasValue;
         if (sceneSnapshot is not null &&
             !string.Equals(sceneSnapshot.Name, scene.Name, StringComparison.Ordinal))
         {
@@ -481,15 +543,25 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                 "The prebuilt render snapshot belongs to another map scene.",
                 nameof(sceneSnapshot));
         }
+        if (isolateWorldSurface && sceneSnapshot is not null)
+        {
+            throw new ArgumentException(
+                "An isolated world-surface render requires a snapshot without diagnostic geometry.",
+                nameof(sceneSnapshot));
+        }
 
         InvalidateCaptureFrame();
         SynchronizeGpu();
         WaitForCaptureReadbacks();
         DeleteSceneResources();
+        _loadedIsolatedWorldSurfaceIndex = IsolatedWorldSurfaceIndex;
         // Callers may omit the complete normal-camera inventory. Materialize
         // the full neutral snapshot only when the supplied snapshot lacks the
         // production draw contract.
-        sceneSnapshot ??= RenderSceneSnapshotBuilder.Create(scene);
+        sceneSnapshot ??= RenderSceneSnapshotBuilder.Create(
+            scene,
+            revision: 0,
+            includeDiagnosticGeometry: !isolateWorldSurface);
         if (sceneSnapshot.NormalCameraDraws.PreparedPasses.IsEmpty &&
             (scene.TexturedBatches.Count != 0 ||
              scene.StaticModelLodTexturedBatches.Count != 0 ||
@@ -497,14 +569,40 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         {
             sceneSnapshot = RenderSceneSnapshotBuilder.Create(
                 scene,
-                sceneSnapshot.Revision);
+                sceneSnapshot.Revision,
+                includeDiagnosticGeometry: !isolateWorldSurface);
         }
 
         _sceneSnapshot = sceneSnapshot;
         _drawOrder = sceneSnapshot.NormalCameraDraws.CreateFrameOrderWorkspace();
         _editorPreviewAtmosphere = scene.EditorPreviewAtmosphere ??
             MapRenderEditorPreviewAtmospherePlanner.Create(scene.Bounds);
-        CreateSceneResources(scene, sceneSnapshot);
+        // Match OpenGL's two load contracts. Without an initial view every
+        // authorized resource is eager; with one, only its bounded working
+        // set is resident. Isolation remains a world-only deferred view.
+        bool usesProgressiveResourceResidency =
+            initialCamera.HasValue && !isolateWorldSurface;
+        bool usesVisibilityDrivenResourceResidency =
+            usesProgressiveResourceResidency || isolateWorldSurface;
+        if (usesVisibilityDrivenResourceResidency)
+            ConfigureProgressiveStaticResourceOwnership(sceneSnapshot);
+        ConfigureNormalCameraTextureResidency(
+            usesVisibilityDrivenResourceResidency);
+        CreateSceneResources(
+            scene,
+            sceneSnapshot,
+            deferNormalCameraTextureResidency:
+                usesVisibilityDrivenResourceResidency);
+        InitializeProgressiveStaticAdmission(
+            sceneSnapshot,
+            usesProgressiveResourceResidency);
+        if (usesProgressiveResourceResidency &&
+            initialCamera is { } progressiveInitialCamera)
+        {
+            PrefetchInitialProgressiveStaticNeighborhood(
+                progressiveInitialCamera,
+                initialAspectRatio);
+        }
         _frameIndex = 0;
         _lastCompletedCpuFrameIndex = -1;
         _lastPresentedCpuFrameIndex = -1;
@@ -555,11 +653,14 @@ public sealed partial class MetalMapRenderer : IMapRenderer
 
     private void CreateSceneResources(
         MapRenderScene scene,
-        RenderSceneSnapshot snapshot)
+        RenderSceneSnapshot snapshot,
+        bool deferNormalCameraTextureResidency)
     {
         try
         {
-            _resources.Load(snapshot.NormalCameraDraws.Resources);
+            _resources.Load(
+                snapshot.NormalCameraDraws.Resources,
+                deferNormalCameraTextureResidency);
             _auxiliaryResources.Load(snapshot.Resources);
             CreateShadowResources(scene);
             CreateNormalCameraPresentation(scene);
@@ -595,9 +696,16 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         DeleteShadowResources();
         _auxiliaryResources.Clear();
         _resources.Clear();
+        ResetProgressiveStaticAdmission();
+        ResetNormalCameraTextureResidency();
+        ConfigureNormalCameraTextureResidency(
+            visibilityDriven: false);
         _sceneSnapshot = null;
         _drawOrder = null;
         _editorPreviewAtmosphere = null;
+        _loadedIsolatedWorldSurfaceIndex = null;
+        LastFramePlan = null;
+        LastEditorPreviewPresentationResult = null;
         _loaded = false;
     }
 
@@ -609,11 +717,14 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         var replacement = new MetalNormalCameraPresentation(
             _surface.Device,
             source,
+            scene.EditorPreviewEffectivePost,
+            _surfaceExtents.SceneTarget.Width,
+            _surfaceExtents.SceneTarget.Height,
             _surfaceExtents.HostFramebuffer.Width,
             _surfaceExtents.HostFramebuffer.Height);
         try
         {
-            _ = _renderStates.GetOrCreate(replacement.RenderState);
+            replacement.PrepareRenderStates(_renderStates);
         }
         catch
         {
@@ -654,25 +765,45 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         {
             PrepareNormalCameraVisibility(camera);
             PrepareStaticModelLighting();
+            using (_telemetry.BeginCpuPhase(
+                       MapRenderCpuPhase.StaticResourceAdmission))
+            {
+                PrepareProgressiveStaticAdmission(camera);
+            }
         }
+        else
+        {
+            SetProgressiveStaticAdmissionInactive(camera);
+        }
+        PrepareNormalCameraTextureResidency(camera);
     }
 
     private void EncodeNormalCameraPreludeAndDepth(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera)
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit)
     {
-        EncodeNormalCameraAuxiliaryPrelude(encoder, camera);
-        if (ShowTexturedGeometry)
+        EncodeNormalCameraAuxiliaryPrelude(
+            ref encoder,
+            camera,
+            timingSplit);
+        if (ShowTexturedGeometry && _orderedDepthPrepassGroups.Length != 0)
+        {
+            timingSplit?.Transition(
+                ref encoder,
+                MapRenderGpuPhase.DepthPrepass);
             EncodeNormalCameraDepthPrepass(encoder, camera);
+        }
     }
 
     private void EncodeNormalCameraColorAndOverlays(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera)
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit)
     {
         if (ShowTexturedGeometry)
-            EncodeNormalCameraDraws(encoder, camera);
-        EncodeNormalCameraOverlays(encoder, camera);
+            EncodeNormalCameraDraws(ref encoder, camera, timingSplit);
+        EncodeNormalCameraOverlays(ref encoder, camera, timingSplit);
     }
 
     partial void CreateNormalCameraResources(
@@ -682,8 +813,9 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     partial void DeleteNormalCameraResources();
 
     partial void EncodeNormalCameraDraws(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera);
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit);
 
     partial void CreateDepthPrepassResources(
         MapRenderScene scene,
@@ -702,12 +834,127 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     partial void DeleteAuxiliarySceneResources();
 
     partial void EncodeNormalCameraAuxiliaryPrelude(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera);
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit);
 
     partial void EncodeNormalCameraOverlays(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera);
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit);
+
+    /// <summary>
+    /// Sparse stage-boundary timing fallback for Apple devices that do not
+    /// expose draw-boundary counters. It preserves target 2 between encoders
+    /// and resolves it only after the normal-camera stream is complete.
+    /// </summary>
+    private sealed class MetalSceneRenderPassTimingSplit
+    {
+        private readonly MTLCommandBuffer _commandBuffer;
+        private readonly MetalFrameTargets _targets;
+        private readonly MetalRenderStateCache _renderStates;
+        private readonly MetalGpuPassTimer _timer;
+        private readonly int _commandSlot;
+        private readonly MapRenderSurfaceExtents _extents;
+        private bool _isolating;
+
+        internal MetalSceneRenderPassTimingSplit(
+            MTLCommandBuffer commandBuffer,
+            MetalFrameTargets targets,
+            MetalRenderStateCache renderStates,
+            MetalGpuPassTimer timer,
+            int commandSlot,
+            MapRenderSurfaceExtents extents)
+        {
+            _commandBuffer = commandBuffer;
+            _targets = targets;
+            _renderStates = renderStates;
+            _timer = timer;
+            _commandSlot = commandSlot;
+            _extents = extents;
+        }
+
+        /// <summary>
+        /// Reopens target 2 only when crossing into or out of the one phase
+        /// selected for this sparse frame. Repeated non-contiguous runs of a
+        /// selected draw phase are independently isolated and summed by the
+        /// timer, so authored draw order remains unchanged.
+        /// </summary>
+        internal bool Transition(
+            ref MTLRenderCommandEncoder encoder,
+            MapRenderGpuPhase phase)
+        {
+            bool shouldIsolate =
+                _timer.RequiresSceneRenderPassIsolation(phase);
+            if (shouldIsolate == _isolating)
+                return false;
+
+            encoder.EndEncoding();
+            encoder = default;
+            using MTLRenderPassDescriptor pass =
+                _targets.CreateSceneResumePass(resolveAtEnd: false);
+            if (shouldIsolate)
+                _timer.AttachPass(pass, _commandSlot, phase);
+            encoder = BeginEncoder(pass);
+            _isolating = shouldIsolate;
+            return true;
+        }
+
+        /// <summary>
+        /// Performs the one final multisample resolve for an isolated frame.
+        /// The empty terminal encoder is intentionally sparse-only and keeps
+        /// every measured encoder store/load exact without resolving early.
+        /// </summary>
+        internal void Finish(ref MTLRenderCommandEncoder encoder)
+        {
+            encoder.EndEncoding();
+            encoder = default;
+            using MTLRenderPassDescriptor pass =
+                _targets.CreateSceneResumePass(resolveAtEnd: true);
+            MTLRenderCommandEncoder resolveEncoder = BeginEncoder(pass);
+            resolveEncoder.EndEncoding();
+            encoder = default;
+            _isolating = false;
+        }
+
+        /// <summary>
+        /// FloatZ owns its own natural command-encoder break. Its resumed
+        /// target-2 encoder is not a timed scene-phase pass, even when the
+        /// pre-FloatZ encoder happened to be isolated.
+        /// </summary>
+        internal void ResumeAfterExternalEncoderBreak() =>
+            _isolating = false;
+
+        private MTLRenderCommandEncoder BeginEncoder(
+            MTLRenderPassDescriptor pass)
+        {
+            MTLRenderCommandEncoder encoder =
+                _commandBuffer.RenderCommandEncoder(pass);
+            if (encoder.NativePtr == 0)
+            {
+                throw new InvalidOperationException(
+                    "Metal could not resume the sparse scene timing pass.");
+            }
+            encoder.SetViewport(new MTLViewport
+            {
+                originX = 0,
+                originY = 0,
+                width = _extents.SceneTarget.Width,
+                height = _extents.SceneTarget.Height,
+                znear = 0,
+                zfar = 1
+            });
+            encoder.SetScissorRect(new MTLScissorRect
+            {
+                x = 0,
+                y = 0,
+                width = checked((ulong)_extents.SceneTarget.Width),
+                height = checked((ulong)_extents.SceneTarget.Height)
+            });
+            _renderStates.ResetEncoderInheritance();
+            return encoder;
+        }
+    }
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(_disposed, this);

@@ -152,11 +152,13 @@ internal sealed class MetalFrameTargets : IDisposable
     }
 
     /// <summary>
-    /// Reopens target 2 after the demand-gated FloatZ lifecycle. The first
-    /// encoder stored multisample color and D24-compatible depth; this pass
-    /// preserves both while resolving the final Surface-A output exactly once.
+    /// Reopens target 2 after the demand-gated FloatZ lifecycle or a sparse
+    /// stage-timing split. The preceding encoder stored multisample color and
+    /// D24-compatible depth; this pass preserves both and optionally performs
+    /// the one final Surface-A resolve.
     /// </summary>
-    internal MTLRenderPassDescriptor CreateSceneResumePass()
+    internal MTLRenderPassDescriptor CreateSceneResumePass(
+        bool resolveAtEnd = true)
     {
         ThrowIfDisposed();
         if (!IsReady)
@@ -171,45 +173,34 @@ internal sealed class MetalFrameTargets : IDisposable
         MTLRenderPassColorAttachmentDescriptor color =
             descriptor.ColorAttachments.Object(0);
         color.Texture = _multisampleColor;
-        color.ResolveTexture = _resolvedColor;
+        color.ResolveTexture = resolveAtEnd
+            ? _resolvedColor
+            : default;
         color.LoadAction = MTLLoadAction.Load;
-        color.StoreAction = MTLStoreAction.MultisampleResolve;
+        color.StoreAction = resolveAtEnd
+            ? MTLStoreAction.MultisampleResolve
+            : MTLStoreAction.Store;
 
         MTLRenderPassDepthAttachmentDescriptor depth = descriptor.DepthAttachment;
         depth.Texture = _depthStencil;
         depth.LoadAction = MTLLoadAction.Load;
-        depth.StoreAction = MTLStoreAction.DontCare;
+        depth.StoreAction = resolveAtEnd
+            ? MTLStoreAction.DontCare
+            : MTLStoreAction.Store;
 
         MTLRenderPassStencilAttachmentDescriptor stencil =
             descriptor.StencilAttachment;
         stencil.Texture = _depthStencil;
         stencil.LoadAction = MTLLoadAction.Load;
-        stencil.StoreAction = MTLStoreAction.DontCare;
+        stencil.StoreAction = resolveAtEnd
+            ? MTLStoreAction.DontCare
+            : MTLStoreAction.Store;
         return descriptor;
     }
 
     internal MTLTexture SceneDepthStencil => IsReady
         ? _depthStencil
         : throw new InvalidOperationException("Metal frame targets are unavailable.");
-
-    internal static MTLRenderPassDescriptor CreatePresentationPass(
-        MTLTexture drawableTexture)
-    {
-        if (drawableTexture.NativePtr == 0)
-            throw new ArgumentException("A drawable texture is required.", nameof(drawableTexture));
-        var descriptor = new MTLRenderPassDescriptor
-        {
-            RenderTargetWidth = drawableTexture.Width,
-            RenderTargetHeight = drawableTexture.Height,
-            DefaultRasterSampleCount = 1
-        };
-        MTLRenderPassColorAttachmentDescriptor color =
-            descriptor.ColorAttachments.Object(0);
-        color.Texture = drawableTexture;
-        color.LoadAction = MTLLoadAction.DontCare;
-        color.StoreAction = MTLStoreAction.Store;
-        return descriptor;
-    }
 
     public void Dispose()
     {

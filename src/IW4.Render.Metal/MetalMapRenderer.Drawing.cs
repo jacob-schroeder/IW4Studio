@@ -13,6 +13,7 @@ using IW4.Render.Lighting;
 using IW4.Render.Metal.Pipelines;
 using IW4.Render.Metal.Resources;
 using IW4.Render.Metal.Shaders;
+using IW4.Render.Metal.Telemetry;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling;
 using IW4.Render.Scheduling.FramePlans;
@@ -441,8 +442,9 @@ public sealed unsafe partial class MetalMapRenderer
     }
 
     partial void EncodeNormalCameraDraws(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera)
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit)
     {
         if (_normalCameraPreparedPasses.Length == 0 ||
             (_normalCameraPreparedPasses.Any(pass =>
@@ -482,6 +484,8 @@ public sealed unsafe partial class MetalMapRenderer
         long issuedDrawCalls = 0;
         MapRenderCpuPhaseScope cpuTimingScope = default;
         MapRenderCpuPhase? activeCpuPhase = null;
+        MetalGpuPassTimer.MetalGpuPhaseScope gpuTimingScope = default;
+        MapRenderGpuPhase? activeGpuPhase = null;
 
         // Establish the native initial polygon-offset value so an authored
         // first-row Inherit action observes the same disabled baseline as the
@@ -521,6 +525,8 @@ public sealed unsafe partial class MetalMapRenderer
                     continue;
                 }
                 if (!IsNormalCameraGroupSelected(group))
+                    continue;
+                if (!IsNormalCameraGroupTextureReady(group))
                     continue;
                 int visibleRunCount =
                     PrepareNormalCameraVisibleRuns(
@@ -594,6 +600,38 @@ public sealed unsafe partial class MetalMapRenderer
                 }
                 MapRenderGpuPhase gpuPhase =
                     ResolveNormalCameraGpuPhase(group, sourceKind);
+                if (activeGpuPhase != gpuPhase)
+                {
+                    gpuTimingScope.Dispose();
+                    if (timingSplit?.Transition(
+                            ref encoder,
+                            gpuPhase) == true)
+                    {
+                        // Metal state and bindings are encoder-local. The
+                        // sparse stage-boundary fallback has just reopened
+                        // target 2, so replay the exact inherited baseline
+                        // before the next authored row.
+                        currentPipeline = 0;
+                        currentState = MetalRenderStateCache.Effective(
+                            RenderState.Default);
+                        _renderStates.ApplyRasterState(
+                            encoder,
+                            RenderState.Default);
+                        _telemetry.AddCounter(
+                            MapRenderFrameCounter.RenderStateChanges);
+                        bindingShadow = new MetalNormalCameraEncoderBindingShadow(
+                            encoder,
+                            _telemetry,
+                            vertexBufferBindings,
+                            fragmentBufferBindings,
+                            fragmentTextureBindings,
+                            fragmentSamplerBindings);
+                    }
+                    gpuTimingScope = _gpuPassTimer.BeginPhase(
+                        encoder,
+                        gpuPhase);
+                    activeGpuPhase = gpuPhase;
+                }
                 for (int passIndex = 0;
                      passIndex < authoredPasses.Length;
                      passIndex++)
@@ -680,6 +718,7 @@ public sealed unsafe partial class MetalMapRenderer
         }
         finally
         {
+            gpuTimingScope.Dispose();
             cpuTimingScope.Dispose();
         }
 
@@ -1087,6 +1126,8 @@ public sealed unsafe partial class MetalMapRenderer
             !_normalCameraPipelines.TryGetOrCreate(
                 pass,
                 vertexResult.Plan,
+                UseRsxVertexPlacementDiagnostic,
+                RsxFragmentOutputDiagnostic,
                 out MetalProgramPipeline? pipeline,
                 out blocker))
         {
@@ -1411,8 +1452,8 @@ public sealed unsafe partial class MetalMapRenderer
                 _resources.RequireTexture(textureIdentity);
             result.Add(new MetalNormalCameraTextureBinding(
                 checked((ulong)destination),
-                textureResource.ResolveSampledTexture(
-                    samplerResource.UsesSrgbReads),
+                textureResource,
+                samplerResource.UsesSrgbReads,
                 samplerResource.State));
         }
 
@@ -2008,7 +2049,8 @@ public sealed unsafe partial class MetalMapRenderer
             MetalNormalCameraTextureBinding binding =
                 pass.TextureBindings[bindingIndex];
             bindings.SetFragmentTexture(
-                binding.Texture,
+                binding.Resource.ResolveSampledTexture(
+                    binding.UsesSrgbReads),
                 binding.Destination);
             bindings.SetFragmentSampler(
                 binding.Sampler,
@@ -2272,11 +2314,14 @@ public sealed unsafe partial class MetalMapRenderer
 
     private float ResolveAnimationTimeSeconds()
     {
-        if (_normalCameraAnimationStartTimestamp == 0)
-            return 0f;
-        return (float)Stopwatch.GetElapsedTime(
-            _normalCameraAnimationStartTimestamp,
-            Stopwatch.GetTimestamp()).TotalSeconds;
+        double elapsedTimeSeconds = _normalCameraAnimationStartTimestamp == 0
+            ? 0d
+            : Stopwatch.GetElapsedTime(
+                _normalCameraAnimationStartTimestamp,
+                Stopwatch.GetTimestamp()).TotalSeconds;
+        return ResolvePreviewAnimationTimeSeconds(
+            _previewAnimationTimeSecondsOverride,
+            elapsedTimeSeconds);
     }
 
     /// <summary>
@@ -2874,7 +2919,8 @@ public sealed unsafe partial class MetalMapRenderer
 
     private readonly record struct MetalNormalCameraTextureBinding(
         ulong Destination,
-        MTLTexture Texture,
+        MetalTextureResource Resource,
+        bool UsesSrgbReads,
         MTLSamplerState Sampler);
 
     private readonly record struct MetalNormalCameraRuntimeSamplerBinding(

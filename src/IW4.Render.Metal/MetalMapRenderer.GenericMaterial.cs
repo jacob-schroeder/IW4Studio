@@ -523,7 +523,8 @@ public sealed unsafe partial class MetalMapRenderer
             _resources.RequireSampler(samplerIdentity);
         return new MetalGenericMaterialTextureBinding(
             checked((ulong)destination),
-            texture.ResolveSampledTexture(sampler.UsesSrgbReads),
+            texture,
+            sampler.UsesSrgbReads,
             sampler.State);
     }
 
@@ -542,7 +543,8 @@ public sealed unsafe partial class MetalMapRenderer
             if (generic.Textures.Length !=
                     MetalGenericMaterialShaderAbi.TextureBindingCount ||
                 generic.Textures[0].Destination != 0 ||
-                generic.Textures[0].Texture.NativePtr == 0 ||
+                generic.Textures[0].Resource.ResolveSampledTexture(
+                    generic.Textures[0].UsesSrgbReads).NativePtr == 0 ||
                 generic.Textures[0].Sampler.NativePtr == 0)
             {
                 throw new InvalidOperationException(
@@ -770,7 +772,8 @@ public sealed unsafe partial class MetalMapRenderer
             MetalGenericMaterialTextureBinding binding =
                 generic.Textures[bindingIndex];
             bindings.SetFragmentTexture(
-                binding.Texture,
+                binding.Resource.ResolveSampledTexture(
+                    binding.UsesSrgbReads),
                 binding.Destination);
             bindings.SetFragmentSampler(
                 binding.Sampler,
@@ -881,7 +884,8 @@ public sealed unsafe partial class MetalMapRenderer
 
     private readonly record struct MetalGenericMaterialTextureBinding(
         ulong Destination,
-        MTLTexture Texture,
+        MetalTextureResource Resource,
+        bool UsesSrgbReads,
         MTLSamplerState Sampler);
 
     private readonly record struct MetalGenericMaterialFrameState(

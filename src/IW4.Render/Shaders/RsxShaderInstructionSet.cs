@@ -186,6 +186,23 @@ public enum RsxFragmentResultScale : byte
     DivideBy8 = 7
 }
 
+/// <summary>
+/// RSX fragment source/destination precision modifier. Destination words
+/// encode the first four values; source word 1 uses the complete three-bit
+/// domain.
+/// </summary>
+public enum RsxFragmentPrecision : byte
+{
+    Real = 0,
+    Half = 1,
+    Fixed12 = 2,
+    Fixed9 = 3,
+    Saturate = 4,
+    Unknown5 = 5,
+    Reserved6 = 6,
+    Reserved7 = 7
+}
+
 /// <summary>RSX rasterizer input selected by a fragment instruction.</summary>
 public enum RsxFragmentInputAttribute : byte
 {

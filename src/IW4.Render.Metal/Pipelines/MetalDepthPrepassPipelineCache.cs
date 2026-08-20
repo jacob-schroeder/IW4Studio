@@ -209,7 +209,10 @@ internal sealed class MetalDepthPrepassPipelineCache : IDisposable
         string vertexSource,
         RenderPrimitiveTopology topology)
     {
-        using var options = new MTLCompileOptions();
+        using var options = new MTLCompileOptions
+        {
+            FastMathEnabled = false
+        };
         MTLLibrary library = default;
         MTLFunction vertexFunction = default;
         MTLFunction fragmentFunction = default;

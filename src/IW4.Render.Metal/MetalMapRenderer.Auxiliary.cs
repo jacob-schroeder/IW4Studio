@@ -30,13 +30,6 @@ public sealed partial class MetalMapRenderer
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        bool hasAuxiliaryDraws =
-            !snapshot.Skies.IsEmpty ||
-            !snapshot.Diagnostics.IsEmpty ||
-            snapshot.Wireframe is not null;
-        if (!hasAuxiliaryDraws)
-            return;
-
         var skies = new MetalSkyDraw[snapshot.Skies.Length];
         var diagnostics = new MetalDiagnosticDraw[
             snapshot.Diagnostics.Length];
@@ -140,6 +133,7 @@ public sealed partial class MetalMapRenderer
 
     partial void DeleteAuxiliarySceneResources()
     {
+        ResetEditorSelectionOutline();
         _metalSkyDraws = [];
         _metalDiagnosticDraws = [];
         _metalWireframe = null;
@@ -148,64 +142,86 @@ public sealed partial class MetalMapRenderer
     }
 
     partial void EncodeNormalCameraAuxiliaryPrelude(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera)
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit)
     {
         if (_auxiliaryPipelines is null)
             return;
 
         Matrix4x4 worldViewProjection =
             CreateAuxiliaryWorldViewProjection(camera);
-        using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.Sky))
-            EncodeSkies(encoder, in worldViewProjection);
-        if (ShowDiagnosticGeometry)
+        if (ShowSky &&
+            _loadedIsolatedWorldSurfaceIndex is null &&
+            _metalSkyDraws.Length != 0)
         {
+            timingSplit?.Transition(ref encoder, MapRenderGpuPhase.Sky);
+            using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.Sky))
+                EncodeSkies(encoder, in worldViewProjection);
+        }
+        if (ShowDiagnosticGeometry &&
+            _loadedIsolatedWorldSurfaceIndex is null &&
+            _metalDiagnosticDraws.Length != 0)
+        {
+            timingSplit?.Transition(
+                ref encoder,
+                MapRenderGpuPhase.Diagnostics);
             using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.EditorOverlay))
                 EncodeDiagnostics(encoder, in worldViewProjection);
         }
     }
 
     partial void EncodeNormalCameraOverlays(
-        MTLRenderCommandEncoder encoder,
-        RenderCamera camera)
+        ref MTLRenderCommandEncoder encoder,
+        RenderCamera camera,
+        MetalSceneRenderPassTimingSplit? timingSplit)
     {
-        if (!ShowWireframe ||
-            _auxiliaryPipelines is null ||
-            _metalWireframe is null)
-        {
-            return;
-        }
-
         Matrix4x4 worldViewProjection =
             CreateAuxiliaryWorldViewProjection(camera);
-        MetalGeometryResource geometry = _metalWireframe;
-        using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.EditorOverlay))
+        if (ShowWireframe &&
+            _loadedIsolatedWorldSurfaceIndex is null &&
+            _auxiliaryPipelines is not null &&
+            _metalWireframe is { } geometry)
         {
-            encoder.SetRenderPipelineState(_auxiliaryPipelines.Wireframe);
-            _renderStates.ApplyRasterState(
-                encoder,
-                MetalAuxiliaryPipelines.WireframeRenderState);
-            SetWorldViewProjection(encoder, in worldViewProjection);
-            encoder.SetVertexBuffer(geometry.Buffer, geometry.VertexOffset, 0);
-            encoder.DrawIndexedPrimitives(
-                geometry.PrimitiveType,
-                checked((ulong)geometry.IndexCount),
-                geometry.IndexType,
-                geometry.Buffer,
-                geometry.IndexOffset);
+            timingSplit?.Transition(
+                ref encoder,
+                MapRenderGpuPhase.Wireframe);
+            using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.EditorOverlay))
+            using (_gpuPassTimer.BeginPhase(
+                       encoder,
+                       MapRenderGpuPhase.Wireframe))
+            {
+                encoder.SetRenderPipelineState(_auxiliaryPipelines.Wireframe);
+                _renderStates.ApplyRasterState(
+                    encoder,
+                    MetalAuxiliaryPipelines.WireframeRenderState);
+                SetWorldViewProjection(encoder, in worldViewProjection);
+                encoder.SetVertexBuffer(geometry.Buffer, geometry.VertexOffset, 0);
+                encoder.DrawIndexedPrimitives(
+                    geometry.PrimitiveType,
+                    checked((ulong)geometry.IndexCount),
+                    geometry.IndexType,
+                    geometry.Buffer,
+                    geometry.IndexOffset);
+            }
+
+            _telemetry.AddCounter(MapRenderFrameCounter.DrawCalls);
+            _telemetry.AddCounter(MapRenderFrameCounter.LogicalDrawCommands);
+            _telemetry.AddCounter(MapRenderFrameCounter.ProgramChanges);
+            _telemetry.AddCounter(MapRenderFrameCounter.BufferChanges);
+            _telemetry.AddCounter(MapRenderFrameCounter.RenderStateChanges);
+            _telemetry.AddCounter(MapRenderFrameCounter.UniformUpdates);
+            _telemetry.AddCounter(MapRenderFrameCounter.Passes);
+            _telemetry.AddGpuPhaseWork(
+                MapRenderGpuPhase.Wireframe,
+                drawCalls: 1,
+                triangles: 0);
         }
 
-        _telemetry.AddCounter(MapRenderFrameCounter.DrawCalls);
-        _telemetry.AddCounter(MapRenderFrameCounter.LogicalDrawCommands);
-        _telemetry.AddCounter(MapRenderFrameCounter.ProgramChanges);
-        _telemetry.AddCounter(MapRenderFrameCounter.BufferChanges);
-        _telemetry.AddCounter(MapRenderFrameCounter.RenderStateChanges);
-        _telemetry.AddCounter(MapRenderFrameCounter.UniformUpdates);
-        _telemetry.AddCounter(MapRenderFrameCounter.Passes);
-        _telemetry.AddGpuPhaseWork(
-            MapRenderGpuPhase.Wireframe,
-            drawCalls: 1,
-            triangles: 0);
+        EncodeEditorSelectionOutline(
+            ref encoder,
+            timingSplit,
+            in worldViewProjection);
     }
 
     private void EncodeSkies(
@@ -215,6 +231,10 @@ public sealed partial class MetalMapRenderer
         if (_metalSkyDraws.Length == 0)
             return;
 
+        using var gpuTiming =
+            _gpuPassTimer.BeginPhase(
+                encoder,
+                MapRenderGpuPhase.Sky);
         MetalAuxiliaryPipelines pipelines = _auxiliaryPipelines!;
         encoder.SetRenderPipelineState(pipelines.Sky);
         _renderStates.ApplyRasterState(
@@ -268,6 +288,10 @@ public sealed partial class MetalMapRenderer
         if (_metalDiagnosticDraws.Length == 0)
             return;
 
+        using var gpuTiming =
+            _gpuPassTimer.BeginPhase(
+                encoder,
+                MapRenderGpuPhase.Diagnostics);
         MetalAuxiliaryPipelines pipelines = _auxiliaryPipelines!;
         _renderStates.ApplyRasterState(
             encoder,
