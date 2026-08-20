@@ -696,13 +696,14 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     private static string BuildTelemetryOverlayText(
         MapRenderFrameTelemetrySnapshot telemetry)
     {
-        var text = new StringBuilder(768);
+        var text = new StringBuilder(769);
         double drawableWait = LatestCpuPhase(
             telemetry,
             MapRenderCpuPhase.SwapOrPresent);
         double encodeMilliseconds = Math.Max(
             0.0,
             telemetry.CpuFrameMilliseconds.Latest - drawableWait);
+        text.AppendLine("METAL");
         text.Append("FPS ");
         AppendOneDecimal(text, telemetry.PresentedFramesPerSecond);
         text.Append("  PRESENT ");

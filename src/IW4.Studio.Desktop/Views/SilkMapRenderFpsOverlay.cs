@@ -160,7 +160,8 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
         double swapMilliseconds,
         double swapAverageMilliseconds)
     {
-        var text = new StringBuilder(768);
+        var text = new StringBuilder(769);
+        text.AppendLine("OPENGL");
         text.Append("FPS ");
         AppendOneDecimal(text, telemetry.PresentedFramesPerSecond);
         text.Append("  PRESENT ");
