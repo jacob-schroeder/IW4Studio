@@ -443,8 +443,7 @@ public sealed unsafe partial class MetalMapRenderer
 
     partial void EncodeNormalCameraDraws(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit)
+        RenderCamera camera)
     {
         if (_normalCameraPreparedPasses.Length == 0 ||
             (_normalCameraPreparedPasses.Any(pass =>
@@ -536,6 +535,8 @@ public sealed unsafe partial class MetalMapRenderer
                         out int visibleInstanceCount);
                 if (visibleRunCount == 0)
                     continue;
+                bool forceDepthWrite =
+                    _normalCameraDepthFusionOwnerGroups.Contains(group);
 
                 ReadOnlySpan<RenderNormalCameraDrawSubmissionSnapshot>
                     authoredPasses = group.AuthoredPassSpan;
@@ -603,30 +604,6 @@ public sealed unsafe partial class MetalMapRenderer
                 if (activeGpuPhase != gpuPhase)
                 {
                     gpuTimingScope.Dispose();
-                    if (timingSplit?.Transition(
-                            ref encoder,
-                            gpuPhase) == true)
-                    {
-                        // Metal state and bindings are encoder-local. The
-                        // sparse stage-boundary fallback has just reopened
-                        // target 2, so replay the exact inherited baseline
-                        // before the next authored row.
-                        currentPipeline = 0;
-                        currentState = MetalRenderStateCache.Effective(
-                            RenderState.Default);
-                        _renderStates.ApplyRasterState(
-                            encoder,
-                            RenderState.Default);
-                        _telemetry.AddCounter(
-                            MapRenderFrameCounter.RenderStateChanges);
-                        bindingShadow = new MetalNormalCameraEncoderBindingShadow(
-                            encoder,
-                            _telemetry,
-                            vertexBufferBindings,
-                            fragmentBufferBindings,
-                            fragmentTextureBindings,
-                            fragmentSamplerBindings);
-                    }
                     gpuTimingScope = _gpuPassTimer.BeginPhase(
                         encoder,
                         gpuPhase);
@@ -658,14 +635,19 @@ public sealed unsafe partial class MetalMapRenderer
                         _telemetry.AddCounter(
                             MapRenderFrameCounter.StateShadowElidedCalls);
                     }
+                    RenderState drawState = forceDepthWrite
+                        ? runtime.Source.SourceState with
+                        {
+                            DepthWriteEnabled = true
+                        }
+                        : runtime.Source.SourceState;
                     RenderState effectiveState =
-                        MetalRenderStateCache.Effective(
-                            runtime.Source.SourceState);
+                        MetalRenderStateCache.Effective(drawState);
                     if (currentState != effectiveState)
                     {
                         _renderStates.ApplyRasterState(
                             encoder,
-                            runtime.Source.SourceState);
+                            drawState);
                         currentState = effectiveState;
                         _telemetry.AddCounter(
                             MapRenderFrameCounter.RenderStateChanges);

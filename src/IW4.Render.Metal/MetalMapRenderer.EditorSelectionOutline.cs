@@ -40,7 +40,6 @@ public sealed partial class MetalMapRenderer
 
     private unsafe void EncodeEditorSelectionOutline(
         ref MTLRenderCommandEncoder encoder,
-        MetalSceneRenderPassTimingSplit? timingSplit,
         in Matrix4x4 worldViewProjection)
     {
         if (_editorSelectionOutline is not { } outline)
@@ -48,10 +47,6 @@ public sealed partial class MetalMapRenderer
         MetalAuxiliaryPipelines pipelines = _auxiliaryPipelines ??
             throw new InvalidOperationException(
                 "The Metal editor selection pipeline is unavailable.");
-
-        timingSplit?.Transition(
-            ref encoder,
-            MapRenderGpuPhase.EditorOverlay);
 
         Span<Vector3> corners = stackalloc Vector3[
             MapRenderEditorSelectionOutlineGeometry.CornerCount];

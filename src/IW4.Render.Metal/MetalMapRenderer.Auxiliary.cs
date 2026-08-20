@@ -143,8 +143,7 @@ public sealed partial class MetalMapRenderer
 
     partial void EncodeNormalCameraAuxiliaryPrelude(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit)
+        RenderCamera camera)
     {
         if (_auxiliaryPipelines is null)
             return;
@@ -155,7 +154,6 @@ public sealed partial class MetalMapRenderer
             _loadedIsolatedWorldSurfaceIndex is null &&
             _metalSkyDraws.Length != 0)
         {
-            timingSplit?.Transition(ref encoder, MapRenderGpuPhase.Sky);
             using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.Sky))
                 EncodeSkies(encoder, in worldViewProjection);
         }
@@ -163,9 +161,6 @@ public sealed partial class MetalMapRenderer
             _loadedIsolatedWorldSurfaceIndex is null &&
             _metalDiagnosticDraws.Length != 0)
         {
-            timingSplit?.Transition(
-                ref encoder,
-                MapRenderGpuPhase.Diagnostics);
             using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.EditorOverlay))
                 EncodeDiagnostics(encoder, in worldViewProjection);
         }
@@ -173,8 +168,7 @@ public sealed partial class MetalMapRenderer
 
     partial void EncodeNormalCameraOverlays(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit)
+        RenderCamera camera)
     {
         Matrix4x4 worldViewProjection =
             CreateAuxiliaryWorldViewProjection(camera);
@@ -183,9 +177,6 @@ public sealed partial class MetalMapRenderer
             _auxiliaryPipelines is not null &&
             _metalWireframe is { } geometry)
         {
-            timingSplit?.Transition(
-                ref encoder,
-                MapRenderGpuPhase.Wireframe);
             using (_telemetry.BeginCpuPhase(MapRenderCpuPhase.EditorOverlay))
             using (_gpuPassTimer.BeginPhase(
                        encoder,
@@ -220,7 +211,6 @@ public sealed partial class MetalMapRenderer
 
         EncodeEditorSelectionOutline(
             ref encoder,
-            timingSplit,
             in worldViewProjection);
     }
 

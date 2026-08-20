@@ -9,12 +9,23 @@ namespace IW4.Render.Metal.Telemetry;
 
 /// <summary>
 /// Sparsely samples native Metal render-stage and draw-boundary timestamps.
-/// One GPU phase is sampled every other submitted frame, so ordinary frames
-/// remain counter-free and a sampled frame attributes only one phase.
+/// Draw-boundary devices sample every GPU phase in turn. Stage-boundary-only
+/// devices sample only phases that already own a render pass, avoiding target
+/// store/load breaks whose cost would contaminate normal rendering.
 /// </summary>
 [SupportedOSPlatform("macos")]
 internal sealed unsafe class MetalGpuPassTimer : IDisposable
 {
+    private static readonly MapRenderGpuPhase[] DrawBoundaryPhases =
+        Enum.GetValues<MapRenderGpuPhase>();
+    private static readonly MapRenderGpuPhase[] StageBoundaryPhases =
+    [
+        MapRenderGpuPhase.SunShadow,
+        MapRenderGpuPhase.SceneTarget,
+        MapRenderGpuPhase.ProcessedFloatZ,
+        MapRenderGpuPhase.Presentation
+    ];
+
     private const int FramesPerPhaseSample = 2;
     private const ulong SampleCount = 128;
     private const int MaximumRangesPerFrame = 64;
@@ -36,6 +47,7 @@ internal sealed unsafe class MetalGpuPassTimer : IDisposable
             MetalCommandBufferRing.SlotCount * MaximumRangesPerFrame];
     private readonly long[] _activeTokens =
         new long[MetalCommandBufferRing.SlotCount];
+    private readonly MapRenderGpuPhase[] _samplingPhases;
     private readonly int _samplingCycleFrameCount;
     private readonly bool _supportsStageBoundary;
     private readonly bool _supportsDrawBoundary;
@@ -50,13 +62,15 @@ internal sealed unsafe class MetalGpuPassTimer : IDisposable
             throw new ArgumentException("A Metal device is required.", nameof(device));
 
         Array.Fill(_frameIndices, -1);
-        _samplingCycleFrameCount = checked(
-            Enum.GetValues<MapRenderGpuPhase>().Length *
-            FramesPerPhaseSample);
         _supportsStageBoundary = device.SupportsCounterSampling(
             MTLCounterSamplingPoint.AtStageBoundary);
         _supportsDrawBoundary = device.SupportsCounterSampling(
             MTLCounterSamplingPoint.AtDrawBoundary);
+        _samplingPhases = _supportsDrawBoundary
+            ? DrawBoundaryPhases
+            : StageBoundaryPhases;
+        _samplingCycleFrameCount = checked(
+            _samplingPhases.Length * FramesPerPhaseSample);
         if (!_supportsStageBoundary && !_supportsDrawBoundary)
             return;
 
@@ -112,8 +126,7 @@ internal sealed unsafe class MetalGpuPassTimer : IDisposable
             (int)(frameIndex % _samplingCycleFrameCount));
         _scheduledPhases[slotIndex] =
             cycleFrame % FramesPerPhaseSample == 0
-                ? (MapRenderGpuPhase?)(cycleFrame /
-                    FramesPerPhaseSample)
+                ? _samplingPhases[cycleFrame / FramesPerPhaseSample]
                 : null;
     }
 
@@ -152,42 +165,6 @@ internal sealed unsafe class MetalGpuPassTimer : IDisposable
                 firstSampleIndex + 2,
                 firstSampleIndex + 3));
     }
-
-    /// <summary>
-    /// Indicates that the currently scheduled phase has to be isolated in a
-    /// dedicated render pass. Apple GPUs may expose stage-boundary timestamp
-    /// sampling without draw-boundary sampling; a timestamp attachment then
-    /// covers an entire encoder. The caller preserves the target with
-    /// store/load and attaches counters only to the isolated encoder.
-    /// </summary>
-    internal bool RequiresSceneRenderPassIsolation(MapRenderGpuPhase phase) =>
-        _enabled &&
-        _supportsStageBoundary &&
-        !_supportsDrawBoundary &&
-        _currentSlotIndex >= 0 &&
-        _scheduledPhases[_currentSlotIndex] == phase;
-
-    /// <summary>
-    /// Indicates that this frame may need a sparse target-2 encoder split for
-    /// one internal scene phase. It deliberately excludes phases which own a
-    /// natural encoder (shadows, FloatZ, and presentation) and the aggregate
-    /// SceneTarget interval.
-    /// </summary>
-    internal bool RequiresSceneRenderPassIsolation() =>
-        _enabled &&
-        _supportsStageBoundary &&
-        !_supportsDrawBoundary &&
-        _currentSlotIndex >= 0 &&
-        _scheduledPhases[_currentSlotIndex] is MapRenderGpuPhase.Sky or
-            MapRenderGpuPhase.Diagnostics or
-            MapRenderGpuPhase.DepthPrepass or
-            MapRenderGpuPhase.WorldOpaque or
-            MapRenderGpuPhase.WorldCutout or
-            MapRenderGpuPhase.StaticOpaque or
-            MapRenderGpuPhase.StaticCutout or
-            MapRenderGpuPhase.Translucent or
-            MapRenderGpuPhase.Wireframe or
-            MapRenderGpuPhase.EditorOverlay;
 
     internal void AttachPass(
         MTLRenderPassDescriptor descriptor,

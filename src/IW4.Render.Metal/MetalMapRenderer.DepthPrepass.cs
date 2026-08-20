@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 using IW4.Render.Diagnostics;
@@ -27,6 +28,10 @@ public sealed unsafe partial class MetalMapRenderer
 
     private readonly MTLBuffer[] _depthPrepassConstantBuffers =
         new MTLBuffer[FrameBufferCount];
+    private readonly HashSet<MapRenderEditorDrawGroup<
+        RenderNormalCameraDrawSubmissionSnapshot>>
+        _normalCameraDepthFusionOwnerGroups = new(
+            ReferenceEqualityComparer.Instance);
     private MetalDepthPrepassPipelineCache? _depthPrepassPipelines;
     private MetalDepthPrepassGroup[] _orderedDepthPrepassGroups = [];
     private MetalDepthVertexConstantSlot[] _depthPrepassConstantSlots = [];
@@ -129,8 +134,219 @@ public sealed unsafe partial class MetalMapRenderer
         _depthPrepassPipelines?.Dispose();
         _depthPrepassPipelines = null;
         _orderedDepthPrepassGroups = [];
+        _normalCameraDepthFusionOwnerGroups.Clear();
         _depthPrepassConstantSlots = [];
         _depthPrepassConstantBufferByteCount = 0;
+    }
+
+    /// <summary>
+    /// The explicit prepass is omitted only when every visible standard depth
+    /// owner can be replaced by its reference-identical opaque color group and
+    /// every other visible opaque draw preserves its own depth ownership.
+    /// One unresolved group keeps the complete prepass intact.
+    /// </summary>
+    private bool CanElideNormalCameraDepthPrepass(
+        RenderCamera camera,
+        bool requiresVisibleProcessedFloatZ)
+    {
+        _normalCameraDepthFusionOwnerGroups.Clear();
+        if (RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ||
+            requiresVisibleProcessedFloatZ ||
+            !ShowTexturedGeometry ||
+            _drawOrder is null ||
+            _orderedDepthPrepassGroups.Length == 0)
+        {
+            return false;
+        }
+
+        IReadOnlyList<MapRenderEditorDrawGroup<
+            RenderNormalCameraDrawSubmissionSnapshot>> colorGroups =
+            _drawOrder.Order(camera.Position, camera.Forward);
+        bool foundVisibleStandardDepthOwner = false;
+        for (int groupIndex = 0;
+             groupIndex < _orderedDepthPrepassGroups.Length;
+             groupIndex++)
+        {
+            MetalDepthPrepassGroup depthGroup =
+                _orderedDepthPrepassGroups[groupIndex];
+            MapRenderEditorDrawGroup<
+                RenderNormalCameraDrawSubmissionSnapshot> source =
+                    depthGroup.Source;
+            if (!_normalCameraAuthorizedGroups.Contains(source) ||
+                !IsNormalCameraGroupSelected(source) ||
+                !IsNormalCameraGroupTextureReady(source))
+            {
+                continue;
+            }
+
+            int visibleRunCount = PrepareNormalCameraVisibleRuns(
+                source,
+                out MetalNormalCameraVisibilityGroupPlan? visibilityPlan,
+                out _);
+            if (visibleRunCount == 0)
+                continue;
+
+            bool foundVisibleDepthDraw = false;
+            for (int drawIndex = 0;
+                 drawIndex < depthGroup.Draws.Length;
+                 drawIndex++)
+            {
+                MetalPreparedDepthDraw draw = depthGroup.Draws[drawIndex];
+                if (ResolveVisibleRunCount(
+                        visibilityPlan,
+                        drawIndex,
+                        visibleRunCount) == 0)
+                {
+                    continue;
+                }
+                if (!IsNormalCameraDepthFusionDrawEquivalent(
+                        draw,
+                        depthGroup.Plan))
+                {
+                    return RejectNormalCameraDepthPrepassElision();
+                }
+                foundVisibleDepthDraw = true;
+            }
+            if (!foundVisibleDepthDraw ||
+                !_normalCameraDepthFusionOwnerGroups.Add(source))
+            {
+                return RejectNormalCameraDepthPrepassElision();
+            }
+            foundVisibleStandardDepthOwner = true;
+        }
+
+        if (!foundVisibleStandardDepthOwner)
+            return RejectNormalCameraDepthPrepassElision();
+
+        for (int groupIndex = 0;
+             groupIndex < colorGroups.Count;
+             groupIndex++)
+        {
+            MapRenderEditorDrawGroup<
+                RenderNormalCameraDrawSubmissionSnapshot> group =
+                    colorGroups[groupIndex];
+            if (!_normalCameraAuthorizedGroups.Contains(group) ||
+                !IsNormalCameraGroupSelected(group) ||
+                !IsNormalCameraGroupTextureReady(group))
+            {
+                continue;
+            }
+
+            int visibleRunCount = PrepareNormalCameraVisibleRuns(
+                group,
+                out MetalNormalCameraVisibilityGroupPlan? visibilityPlan,
+                out _);
+            if (visibleRunCount == 0 ||
+                group.Bucket != MapRenderEditorDrawBucket.Opaque)
+            {
+                continue;
+            }
+
+            bool replacesStandardDepthOwner =
+                _normalCameraDepthFusionOwnerGroups.Contains(group);
+            ReadOnlySpan<RenderNormalCameraDrawSubmissionSnapshot> draws =
+                group.AuthoredPassSpan;
+            for (int drawIndex = 0;
+                 drawIndex < draws.Length;
+                 drawIndex++)
+            {
+                if (ResolveVisibleRunCount(
+                        visibilityPlan,
+                        drawIndex,
+                        visibleRunCount) == 0)
+                {
+                    continue;
+                }
+                RenderNormalCameraPreparedPassSnapshot source =
+                    draws[drawIndex].PreparedPass;
+                MetalPreparedNormalCameraPass runtime =
+                    _normalCameraPasses[source];
+                RenderState effectiveState =
+                    MetalRenderStateCache.Effective(source.SourceState);
+                if (runtime.GenericMaterial is not null ||
+                    !NormalCameraDepthPrepassElisionCertification
+                        .HasOpaqueColorDepthEquivalentState(
+                            source.SourceState,
+                            source.ShaderProvenance
+                                .FragmentDepthExportEnabled,
+                            source.ShaderProvenance.FragmentProgramIr?
+                                .ProgramControl.UsesKill == true) ||
+                    (!replacesStandardDepthOwner &&
+                     !effectiveState.DepthWriteEnabled))
+                {
+                    return RejectNormalCameraDepthPrepassElision();
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsNormalCameraDepthFusionDrawEquivalent(
+        MetalPreparedDepthDraw depth,
+        MapRenderEditorDepthPrepassPlan plan)
+    {
+        RenderNormalCameraDrawSubmissionSnapshot submission =
+            depth.Submission;
+        RenderNormalCameraPreparedPassSnapshot source =
+            submission.PreparedPass;
+        if (submission.StaticInstanceIndex.HasValue ||
+            !depth.HasCertifiedTranslatedDepthFusion ||
+            !_normalCameraPasses.TryGetValue(
+                source,
+                out MetalPreparedNormalCameraPass? color) ||
+            color.GenericMaterial is not null ||
+            !ReferenceEquals(depth.Geometry, color.Geometry) ||
+            submission.Range.FirstIndex != 0 ||
+            submission.Range.IndexCount != depth.Geometry.IndexCount ||
+            submission.Range.BaseVertex != 0 ||
+            depth.RsxVertexInputs.NativePtr !=
+                _normalCameraImmutableBuffer.NativePtr ||
+            depth.RsxVertexInputOffset !=
+                checked((ulong)color.RsxVertexInputOffset) ||
+            !NormalCameraDepthPrepassElisionCertification
+                .HasOpaqueColorDepthEquivalentState(
+                    source.SourceState,
+                    source.ShaderProvenance.FragmentDepthExportEnabled,
+                    source.ShaderProvenance.FragmentProgramIr?.ProgramControl
+                        .UsesKill == true) ||
+            !NormalCameraDepthPrepassElisionCertification
+                .HasMatchingStandardDepthRasterState(
+                    source.SourceState,
+                    plan.State))
+        {
+            return false;
+        }
+
+        bool isStatic = source.SourceKind ==
+            RenderNormalCameraDrawSourceKind.StaticModel;
+        if (!isStatic)
+        {
+            return !depth.Pipeline.UsesStaticModelInstancing &&
+                !color.UsesStaticModelInstancing &&
+                depth.Instances is null &&
+                color.Instances is null &&
+                submission.Range.FirstInstance == 0 &&
+                submission.Range.InstanceCount == 1;
+        }
+
+        return depth.Pipeline.UsesStaticModelInstancing &&
+            color.UsesStaticModelInstancing &&
+            !color.NeedsOwnedInstanceData &&
+            depth.Instances is { } depthInstances &&
+            ReferenceEquals(depthInstances, color.Instances) &&
+            submission.Range.FirstInstance == 0 &&
+            submission.Range.InstanceCount == depthInstances.InstanceCount &&
+            depth.Pipeline.StaticInstanceFloat4Stride ==
+                color.Pipeline.StaticInstanceFloat4Stride &&
+            depth.Pipeline.StaticPlacementFloat4Offset ==
+                color.Pipeline.StaticPlacementFloat4Offset;
+    }
+
+    private bool RejectNormalCameraDepthPrepassElision()
+    {
+        _normalCameraDepthFusionOwnerGroups.Clear();
+        return false;
     }
 
     partial void EncodeNormalCameraDepthPrepass(
@@ -402,6 +618,22 @@ public sealed unsafe partial class MetalMapRenderer
             }
         }
 
+        bool hasCertifiedTranslatedDepthFusion =
+            _normalCameraPasses.TryGetValue(
+                pass,
+                out MetalPreparedNormalCameraPass? colorRuntime) &&
+            colorRuntime.GenericMaterial is null &&
+            NormalCameraDepthPrepassElisionCertification
+                .HasEquivalentTranslatedClipPosition(
+                    pass.ShaderProvenance.RendererProgramReady,
+                    pass.ShaderProvenance.VertexProgramIr,
+                    pass.ShaderProvenance.VertexInputs,
+                    colorRuntime.VertexConstantPlan,
+                    shader.RendererProgramReady,
+                    shader.VertexProgramIr,
+                    shader.VertexInputs,
+                    constantResult.Plan);
+
         runtime = new MetalPreparedDepthDraw(
             submission,
             pipeline,
@@ -409,7 +641,8 @@ public sealed unsafe partial class MetalMapRenderer
             geometry,
             instances,
             rsxVertexInputs,
-            rsxVertexInputOffset);
+            rsxVertexInputOffset,
+            hasCertifiedTranslatedDepthFusion);
         return true;
     }
 
@@ -762,7 +995,8 @@ public sealed unsafe partial class MetalMapRenderer
             MetalGeometryResource geometry,
             MetalInstanceResource? instances,
             MTLBuffer rsxVertexInputs,
-            ulong rsxVertexInputOffset)
+            ulong rsxVertexInputOffset,
+            bool hasCertifiedTranslatedDepthFusion)
         {
             Submission = submission;
             Pipeline = pipeline;
@@ -771,6 +1005,8 @@ public sealed unsafe partial class MetalMapRenderer
             Instances = instances;
             RsxVertexInputs = rsxVertexInputs;
             RsxVertexInputOffset = rsxVertexInputOffset;
+            HasCertifiedTranslatedDepthFusion =
+                hasCertifiedTranslatedDepthFusion;
         }
 
         internal RenderNormalCameraDrawSubmissionSnapshot Submission
@@ -782,6 +1018,7 @@ public sealed unsafe partial class MetalMapRenderer
         internal MetalInstanceResource? Instances { get; }
         internal MTLBuffer RsxVertexInputs { get; }
         internal ulong RsxVertexInputOffset { get; }
+        internal bool HasCertifiedTranslatedDepthFusion { get; }
         internal int VertexConstantsOffset { get; set; }
     }
 

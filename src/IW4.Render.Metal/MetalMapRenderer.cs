@@ -233,6 +233,10 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             PrepareNormalCameraFrame(camera);
             bool requiresVisibleProcessedFloatZ =
                 RequiresVisibleProcessedFloatZ(camera);
+            bool elideNormalCameraDepthPrepass =
+                CanElideNormalCameraDepthPrepass(
+                    camera,
+                    requiresVisibleProcessedFloatZ);
 
             MapRenderNormalCameraClearColorResult clearColor =
                 CreateClearColor(camera);
@@ -252,25 +256,13 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                     "The Metal normal-camera target requires its exact color clear.");
             }
 
-            MetalSceneRenderPassTimingSplit? sceneTimingSplit =
-                _gpuPassTimer.RequiresSceneRenderPassIsolation()
-                    ? new MetalSceneRenderPassTimingSplit(
-                        commandBuffer,
-                        _targets,
-                        _renderStates,
-                        _gpuPassTimer,
-                        commandSlot,
-                        _surfaceExtents)
-                    : null;
             using MTLRenderPassDescriptor scenePass =
                 _targets.CreateScenePass(
                     clearColor.Red,
                     clearColor.Green,
                     clearColor.Blue,
                     clearColor.Alpha,
-                    preserveForFloatZ:
-                        requiresVisibleProcessedFloatZ ||
-                        sceneTimingSplit is not null);
+                    preserveForFloatZ: requiresVisibleProcessedFloatZ);
             _gpuPassTimer.AttachPass(
                 scenePass,
                 commandSlot,
@@ -305,14 +297,12 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                 EncodeNormalCameraPreludeAndDepth(
                     ref sceneEncoder,
                     camera,
-                    sceneTimingSplit);
+                    elideNormalCameraDepthPrepass);
                 if (!requiresVisibleProcessedFloatZ)
                 {
                     EncodeNormalCameraColorAndOverlays(
                         ref sceneEncoder,
-                        camera,
-                        sceneTimingSplit);
-                    sceneTimingSplit?.Finish(ref sceneEncoder);
+                        camera);
                 }
             }
             finally
@@ -325,10 +315,9 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             {
                 EncodeProcessedFloatZ(commandBuffer, camera);
                 using MTLRenderPassDescriptor resumedScenePass =
-                    _targets.CreateSceneResumePass(
-                        resolveAtEnd: sceneTimingSplit is null);
+                    _targets.CreateSceneResumePass();
                 // SceneTarget may span both sides of the demand-gated FloatZ
-                // encoder break. The sparse timer sums both disjoint target-2
+                // encoder break. The timer sums both natural render-pass
                 // intervals into one phase sample.
                 _gpuPassTimer.AttachPass(
                     resumedScenePass,
@@ -360,12 +349,9 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                         height = checked((ulong)_surfaceExtents.SceneTarget.Height)
                     });
                     _renderStates.ResetEncoderInheritance();
-                    sceneTimingSplit?.ResumeAfterExternalEncoderBreak();
                     EncodeNormalCameraColorAndOverlays(
                         ref resumedSceneEncoder,
-                        camera,
-                        sceneTimingSplit);
-                    sceneTimingSplit?.Finish(ref resumedSceneEncoder);
+                        camera);
                 }
                 finally
                 {
@@ -962,29 +948,26 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     private void EncodeNormalCameraPreludeAndDepth(
         ref MTLRenderCommandEncoder encoder,
         RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit)
+        bool elideNormalCameraDepthPrepass)
     {
         EncodeNormalCameraAuxiliaryPrelude(
             ref encoder,
-            camera,
-            timingSplit);
-        if (ShowTexturedGeometry && _orderedDepthPrepassGroups.Length != 0)
+            camera);
+        if (ShowTexturedGeometry &&
+            !elideNormalCameraDepthPrepass &&
+            _orderedDepthPrepassGroups.Length != 0)
         {
-            timingSplit?.Transition(
-                ref encoder,
-                MapRenderGpuPhase.DepthPrepass);
             EncodeNormalCameraDepthPrepass(encoder, camera);
         }
     }
 
     private void EncodeNormalCameraColorAndOverlays(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit)
+        RenderCamera camera)
     {
         if (ShowTexturedGeometry)
-            EncodeNormalCameraDraws(ref encoder, camera, timingSplit);
-        EncodeNormalCameraOverlays(ref encoder, camera, timingSplit);
+            EncodeNormalCameraDraws(ref encoder, camera);
+        EncodeNormalCameraOverlays(ref encoder, camera);
     }
 
     partial void CreateNormalCameraResources(
@@ -995,8 +978,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
 
     partial void EncodeNormalCameraDraws(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit);
+        RenderCamera camera);
 
     partial void CreateDepthPrepassResources(
         MapRenderScene scene,
@@ -1016,126 +998,11 @@ public sealed partial class MetalMapRenderer : IMapRenderer
 
     partial void EncodeNormalCameraAuxiliaryPrelude(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit);
+        RenderCamera camera);
 
     partial void EncodeNormalCameraOverlays(
         ref MTLRenderCommandEncoder encoder,
-        RenderCamera camera,
-        MetalSceneRenderPassTimingSplit? timingSplit);
-
-    /// <summary>
-    /// Sparse stage-boundary timing fallback for Apple devices that do not
-    /// expose draw-boundary counters. It preserves target 2 between encoders
-    /// and resolves it only after the normal-camera stream is complete.
-    /// </summary>
-    private sealed class MetalSceneRenderPassTimingSplit
-    {
-        private readonly MTLCommandBuffer _commandBuffer;
-        private readonly MetalFrameTargets _targets;
-        private readonly MetalRenderStateCache _renderStates;
-        private readonly MetalGpuPassTimer _timer;
-        private readonly int _commandSlot;
-        private readonly MapRenderSurfaceExtents _extents;
-        private bool _isolating;
-
-        internal MetalSceneRenderPassTimingSplit(
-            MTLCommandBuffer commandBuffer,
-            MetalFrameTargets targets,
-            MetalRenderStateCache renderStates,
-            MetalGpuPassTimer timer,
-            int commandSlot,
-            MapRenderSurfaceExtents extents)
-        {
-            _commandBuffer = commandBuffer;
-            _targets = targets;
-            _renderStates = renderStates;
-            _timer = timer;
-            _commandSlot = commandSlot;
-            _extents = extents;
-        }
-
-        /// <summary>
-        /// Reopens target 2 only when crossing into or out of the one phase
-        /// selected for this sparse frame. Repeated non-contiguous runs of a
-        /// selected draw phase are independently isolated and summed by the
-        /// timer, so authored draw order remains unchanged.
-        /// </summary>
-        internal bool Transition(
-            ref MTLRenderCommandEncoder encoder,
-            MapRenderGpuPhase phase)
-        {
-            bool shouldIsolate =
-                _timer.RequiresSceneRenderPassIsolation(phase);
-            if (shouldIsolate == _isolating)
-                return false;
-
-            encoder.EndEncoding();
-            encoder = default;
-            using MTLRenderPassDescriptor pass =
-                _targets.CreateSceneResumePass(resolveAtEnd: false);
-            if (shouldIsolate)
-                _timer.AttachPass(pass, _commandSlot, phase);
-            encoder = BeginEncoder(pass);
-            _isolating = shouldIsolate;
-            return true;
-        }
-
-        /// <summary>
-        /// Performs the one final multisample resolve for an isolated frame.
-        /// The empty terminal encoder is intentionally sparse-only and keeps
-        /// every measured encoder store/load exact without resolving early.
-        /// </summary>
-        internal void Finish(ref MTLRenderCommandEncoder encoder)
-        {
-            encoder.EndEncoding();
-            encoder = default;
-            using MTLRenderPassDescriptor pass =
-                _targets.CreateSceneResumePass(resolveAtEnd: true);
-            MTLRenderCommandEncoder resolveEncoder = BeginEncoder(pass);
-            resolveEncoder.EndEncoding();
-            encoder = default;
-            _isolating = false;
-        }
-
-        /// <summary>
-        /// FloatZ owns its own natural command-encoder break. Its resumed
-        /// target-2 encoder is not a timed scene-phase pass, even when the
-        /// pre-FloatZ encoder happened to be isolated.
-        /// </summary>
-        internal void ResumeAfterExternalEncoderBreak() =>
-            _isolating = false;
-
-        private MTLRenderCommandEncoder BeginEncoder(
-            MTLRenderPassDescriptor pass)
-        {
-            MTLRenderCommandEncoder encoder =
-                _commandBuffer.RenderCommandEncoder(pass);
-            if (encoder.NativePtr == 0)
-            {
-                throw new InvalidOperationException(
-                    "Metal could not resume the sparse scene timing pass.");
-            }
-            encoder.SetViewport(new MTLViewport
-            {
-                originX = 0,
-                originY = 0,
-                width = _extents.SceneTarget.Width,
-                height = _extents.SceneTarget.Height,
-                znear = 0,
-                zfar = 1
-            });
-            encoder.SetScissorRect(new MTLScissorRect
-            {
-                x = 0,
-                y = 0,
-                width = checked((ulong)_extents.SceneTarget.Width),
-                height = checked((ulong)_extents.SceneTarget.Height)
-            });
-            _renderStates.ResetEncoderInheritance();
-            return encoder;
-        }
-    }
+        RenderCamera camera);
 
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(_disposed, this);

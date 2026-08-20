@@ -535,48 +535,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         in GlTexturedDrawCommand command)
     {
         GlTexturedMesh mesh = command.Mesh;
-        RenderState state = mesh.State.HasState
-            ? mesh.State
-            : RenderState.Default;
-        return state.ColorMask == RsxColorMask.Rgba &&
-            !state.AlphaTestEnabled &&
-            !state.BlendEnabled &&
-            !state.StencilEnabled &&
-            state.DepthTestEnabled &&
-            state.DepthFunc == RsxCompareFunction.LessThanOrEqual &&
-            state.PolygonMode == RsxPolygonMode.Fill &&
-            state.PolygonOffsetMode == RenderPolygonOffsetMode.Disabled &&
-            mesh.ShaderExecution?.FragmentDepthExportEnabled != true &&
-            mesh.ShaderExecution?.FragmentProgramIr?.ProgramControl.UsesKill
-                != true;
+        return NormalCameraDepthPrepassElisionCertification
+            .HasOpaqueColorDepthEquivalentState(
+                mesh.State,
+                mesh.ShaderExecution?.FragmentDepthExportEnabled == true,
+                mesh.ShaderExecution?.FragmentProgramIr?.ProgramControl
+                    .UsesKill == true);
     }
 
     private static bool HasMatchingStandardDepthRasterState(
         RenderState colorState,
-        RenderState depthState)
-    {
-        RenderState effectiveColorState = colorState.HasState
-            ? colorState
-            : RenderState.Default;
-        RenderState effectiveDepthState = depthState.HasState
-            ? depthState
-            : RenderState.Default;
-        CullMode? colorCull = Cull.Resolve(effectiveColorState);
-        CullMode? depthCull = Cull.Resolve(effectiveDepthState);
-        return effectiveDepthState.ColorMask == RsxColorMask.None &&
-            !effectiveDepthState.AlphaTestEnabled &&
-            !effectiveDepthState.BlendEnabled &&
-            !effectiveDepthState.StencilEnabled &&
-            effectiveDepthState.DepthTestEnabled &&
-            effectiveDepthState.DepthWriteEnabled &&
-            effectiveDepthState.DepthFunc ==
-                RsxCompareFunction.LessThanOrEqual &&
-            effectiveDepthState.PolygonMode == RsxPolygonMode.Fill &&
-            effectiveDepthState.PolygonOffsetMode ==
-                RenderPolygonOffsetMode.Disabled &&
-            colorCull is CullMode.Front or CullMode.Back &&
-            colorCull == depthCull;
-    }
+        RenderState depthState) =>
+        NormalCameraDepthPrepassElisionCertification
+            .HasMatchingStandardDepthRasterState(colorState, depthState);
 
     private void PrepareTexturedDrawGroupVisibility(
         IReadOnlyList<MapRenderEditorDrawGroup<GlTexturedDrawCommand>> groups)

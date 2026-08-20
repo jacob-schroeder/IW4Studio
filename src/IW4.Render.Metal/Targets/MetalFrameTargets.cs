@@ -152,13 +152,11 @@ internal sealed class MetalFrameTargets : IDisposable
     }
 
     /// <summary>
-    /// Reopens target 2 after the demand-gated FloatZ lifecycle or a sparse
-    /// stage-timing split. The preceding encoder stored multisample color and
-    /// D24-compatible depth; this pass preserves both and optionally performs
-    /// the one final Surface-A resolve.
+    /// Reopens target 2 after the demand-gated FloatZ lifecycle. The preceding
+    /// encoder stored multisample color and D24-compatible depth; this pass
+    /// preserves both and performs the one final Surface-A resolve.
     /// </summary>
-    internal MTLRenderPassDescriptor CreateSceneResumePass(
-        bool resolveAtEnd = true)
+    internal MTLRenderPassDescriptor CreateSceneResumePass()
     {
         ThrowIfDisposed();
         if (!IsReady)
@@ -173,28 +171,20 @@ internal sealed class MetalFrameTargets : IDisposable
         MTLRenderPassColorAttachmentDescriptor color =
             descriptor.ColorAttachments.Object(0);
         color.Texture = _multisampleColor;
-        color.ResolveTexture = resolveAtEnd
-            ? _resolvedColor
-            : default;
+        color.ResolveTexture = _resolvedColor;
         color.LoadAction = MTLLoadAction.Load;
-        color.StoreAction = resolveAtEnd
-            ? MTLStoreAction.MultisampleResolve
-            : MTLStoreAction.Store;
+        color.StoreAction = MTLStoreAction.MultisampleResolve;
 
         MTLRenderPassDepthAttachmentDescriptor depth = descriptor.DepthAttachment;
         depth.Texture = _depthStencil;
         depth.LoadAction = MTLLoadAction.Load;
-        depth.StoreAction = resolveAtEnd
-            ? MTLStoreAction.DontCare
-            : MTLStoreAction.Store;
+        depth.StoreAction = MTLStoreAction.DontCare;
 
         MTLRenderPassStencilAttachmentDescriptor stencil =
             descriptor.StencilAttachment;
         stencil.Texture = _depthStencil;
         stencil.LoadAction = MTLLoadAction.Load;
-        stencil.StoreAction = resolveAtEnd
-            ? MTLStoreAction.DontCare
-            : MTLStoreAction.Store;
+        stencil.StoreAction = MTLStoreAction.DontCare;
         return descriptor;
     }
 
