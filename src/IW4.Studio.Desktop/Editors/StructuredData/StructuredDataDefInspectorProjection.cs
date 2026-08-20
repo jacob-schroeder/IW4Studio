@@ -152,7 +152,7 @@ internal static class StructuredDataDefInspectorProjection
         StructuredDataDefEditorViewModel viewModel,
         int definitionIndex,
         StructuredDataDefinitionDraft definition) => new(
-            "Root type",
+            "Root",
             "STRUCTURED DATA TYPE",
             [
                 new InspectorSectionViewModel(
@@ -176,7 +176,10 @@ internal static class StructuredDataDefInspectorProjection
         string path =
             $"StructuredDataDefSet.Defs[{selection.DefinitionIndex}].Enums[{selection.Index}]";
         return new InspectorSelectionViewModel(
-            $"Enum {selection.Index}",
+            StructuredDataDefEditorViewModel.ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataEnum,
+                selection.Index),
             "ENUM",
             [
                 new InspectorSectionViewModel(
@@ -193,7 +196,11 @@ internal static class StructuredDataDefInspectorProjection
                             "Serialized capacity cannot be lower than the number of entries.")
                     ])
             ],
-            "Entries retain their serialized order and stable numeric indices.");
+            StructuredDataDefEditorViewModel.FormatReferenceDescription(
+                definition,
+                StructuredDataTypeCategory.DataEnum,
+                selection.Index,
+                $"Enum #{selection.Index}"));
     }
 
     private static InspectorSelectionViewModel EnumEntry(
@@ -253,10 +260,16 @@ internal static class StructuredDataDefInspectorProjection
         if (selection.Index < 0 || selection.Index >= definition.Structs.Count)
             return Unavailable("The selected struct is no longer available.");
         StructuredDataStructDraft value = definition.Structs[selection.Index];
+        bool isRoot = StructuredDataDefEditorViewModel.IsRootStruct(
+            definition,
+            selection.Index);
         string path =
             $"StructuredDataDefSet.Defs[{selection.DefinitionIndex}].Structs[{selection.Index}]";
         return new InspectorSelectionViewModel(
-            $"Struct {selection.Index}",
+            StructuredDataDefEditorViewModel.ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataStruct,
+                selection.Index),
             "STRUCT",
             [
                 new InspectorSectionViewModel(
@@ -269,11 +282,15 @@ internal static class StructuredDataDefInspectorProjection
                             value.Properties.Count),
                         Integer(
                             viewModel,
-                            "Size",
+                            "Stored size",
                             $"{path}.Size",
                             value.Size,
                             value.SetSize,
-                            "Serialized struct size; negative values are invalid."),
+                            isRoot
+                                ? "Stored struct-size field. Root data size is " +
+                                  $"{definition.Size:N0} bytes on the definition; " +
+                                  "negative values are invalid."
+                                : "Stored struct-size field; negative values are invalid."),
                         HexUInt32(
                             viewModel,
                             "Bit offset",
@@ -283,7 +300,11 @@ internal static class StructuredDataDefInspectorProjection
                             "Stored bit offset for this struct.")
                     ])
             ],
-            "Structs have no intrinsic serialized names; navigation labels remain index-based.");
+            StructuredDataDefEditorViewModel.FormatReferenceDescription(
+                definition,
+                StructuredDataTypeCategory.DataStruct,
+                selection.Index,
+                $"Struct #{selection.Index}"));
     }
 
     private static InspectorSelectionViewModel StructProperty(
@@ -323,7 +344,7 @@ internal static class StructuredDataDefInspectorProjection
                             $"{path}.Offset",
                             value.Offset,
                             value.SetOffset,
-                            "Stored property offset."),
+                            "Byte offset of this field within its structure."),
                         ReadOnly(
                             "String storage",
                             $"{path}.NamePointer",
@@ -351,7 +372,10 @@ internal static class StructuredDataDefInspectorProjection
         string path =
             $"StructuredDataDefSet.Defs[{selection.DefinitionIndex}].IndexedArrays[{selection.Index}]";
         return new InspectorSelectionViewModel(
-            $"Indexed array {selection.Index}",
+            StructuredDataDefEditorViewModel.ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataIndexedArray,
+                selection.Index),
             "INDEXED ARRAY",
             [
                 new InspectorSectionViewModel(
@@ -367,11 +391,15 @@ internal static class StructuredDataDefInspectorProjection
                             "Number of elements; negative values are invalid."),
                         HexUInt32(
                             viewModel,
-                            "Element size",
+                            "Raw element size",
                             $"{path}.ElementSize",
                             value.ElementSize,
                             value.SetElementSize,
-                            "Stored size of each element.")
+                            StructuredDataDefEditorViewModel.IsBitPackedBoolean(
+                                value.ElementType,
+                                value.ElementSize)
+                                ? "Stored one-bit width for this bit-packed boolean array."
+                                : "Raw serialized element-size field; interpretation depends on the element type.")
                     ]),
                 new InspectorSectionViewModel(
                     "Element type",
@@ -380,7 +408,12 @@ internal static class StructuredDataDefInspectorProjection
                         definition,
                         value.ElementType,
                         $"{path}.ElementType"))
-            ]);
+            ],
+            StructuredDataDefEditorViewModel.FormatReferenceDescription(
+                definition,
+                StructuredDataTypeCategory.DataIndexedArray,
+                selection.Index,
+                $"Indexed array #{selection.Index}"));
     }
 
     private static InspectorSelectionViewModel EnumedArray(
@@ -398,7 +431,10 @@ internal static class StructuredDataDefInspectorProjection
         string path =
             $"StructuredDataDefSet.Defs[{selection.DefinitionIndex}].EnumedArrays[{selection.Index}]";
         return new InspectorSelectionViewModel(
-            $"Enumed array {selection.Index}",
+            StructuredDataDefEditorViewModel.ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataEnumArray,
+                selection.Index),
             "ENUMED ARRAY",
             [
                 new InspectorSectionViewModel(
@@ -411,16 +447,25 @@ internal static class StructuredDataDefInspectorProjection
                             $"{path}.EnumIndex",
                             value.EnumIndex,
                             definition.Enums.Count,
-                            index => $"Enum {index}",
+                            index =>
+                                StructuredDataDefEditorViewModel.FormatReferenceLabel(
+                                    definition,
+                                    StructuredDataTypeCategory.DataEnum,
+                                    index,
+                                    "Enum"),
                             value.SetEnumIndex,
                             "Enum table that supplies the array keys."),
                         HexUInt32(
                             viewModel,
-                            "Element size",
+                            "Raw element size",
                             $"{path}.ElementSize",
                             value.ElementSize,
                             value.SetElementSize,
-                            "Stored size of each element.")
+                            StructuredDataDefEditorViewModel.IsBitPackedBoolean(
+                                value.ElementType,
+                                value.ElementSize)
+                                ? "Stored one-bit width for this bit-packed boolean array."
+                                : "Raw serialized element-size field; interpretation depends on the element type.")
                     ]),
                 new InspectorSectionViewModel(
                     "Element type",
@@ -429,7 +474,12 @@ internal static class StructuredDataDefInspectorProjection
                         definition,
                         value.ElementType,
                         $"{path}.ElementType"))
-            ]);
+            ],
+            StructuredDataDefEditorViewModel.FormatReferenceDescription(
+                definition,
+                StructuredDataTypeCategory.DataEnumArray,
+                selection.Index,
+                $"Enumed array #{selection.Index}"));
     }
 
     private static IReadOnlyList<InspectorPropertyRowViewModel> TypeRows(
@@ -481,7 +531,12 @@ internal static class StructuredDataDefInspectorProjection
                 $"{path}.UnionValue",
                 value.UnionValue,
                 referenceCount,
-                index => $"{noun} {index}",
+                index =>
+                    StructuredDataDefEditorViewModel.FormatReferenceLabel(
+                        definition,
+                        value.Type,
+                        index,
+                        noun),
                 value.SetUnionValue,
                 "Stable index into the selected definition table."));
         }

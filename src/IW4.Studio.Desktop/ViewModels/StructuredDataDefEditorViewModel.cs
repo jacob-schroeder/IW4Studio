@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 using IW4.Assets.Assets.StructuredData;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
@@ -13,20 +14,17 @@ public sealed class StructuredDataNavigationNodeViewModel
     internal StructuredDataNavigationNodeViewModel(
         StructuredDataSelection selection,
         string title,
-        string detail,
         IEnumerable<StructuredDataNavigationNodeViewModel>? children = null,
         bool isExpanded = false)
     {
         Selection = selection;
         Title = title;
-        Detail = detail;
         Children = Array.AsReadOnly(children?.ToArray() ?? []);
         IsExpanded = isExpanded;
     }
 
     internal StructuredDataSelection Selection { get; }
     public string Title { get; }
-    public string Detail { get; }
     public IReadOnlyList<StructuredDataNavigationNodeViewModel> Children { get; }
     public bool IsExpanded { get; set; }
 }
@@ -35,26 +33,20 @@ public sealed class StructuredDataMemberRowViewModel
 {
     internal StructuredDataMemberRowViewModel(
         StructuredDataSelection selection,
-        string indexText,
         string primaryText,
-        string secondaryText,
-        string tertiaryText,
-        string kindText)
+        string schemaTypeText,
+        string schemaCardinalityText)
     {
         Selection = selection;
-        IndexText = indexText;
         PrimaryText = primaryText;
-        SecondaryText = secondaryText;
-        TertiaryText = tertiaryText;
-        KindText = kindText;
+        SchemaTypeText = schemaTypeText;
+        SchemaCardinalityText = schemaCardinalityText;
     }
 
     internal StructuredDataSelection Selection { get; }
-    public string IndexText { get; }
     public string PrimaryText { get; }
-    public string SecondaryText { get; }
-    public string TertiaryText { get; }
-    public string KindText { get; }
+    public string SchemaTypeText { get; }
+    public string SchemaCardinalityText { get; }
 }
 
 internal enum StructuredDataSelectionKind
@@ -97,13 +89,11 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     private StructuredDataDraft _workingDraft;
     private IReadOnlyList<StructuredDataNavigationNodeViewModel> _navigationRoots = [];
     private StructuredDataNavigationNodeViewModel? _selectedNavigationNode;
-    private IReadOnlyList<StructuredDataMemberRowViewModel> _allRows = [];
     private IReadOnlyList<StructuredDataMemberRowViewModel> _visibleRows = [];
     private StructuredDataMemberRowViewModel? _selectedMember;
     private InspectorSelectionViewModel? _inspectorSelection;
     private IReadOnlyList<AssetValidationIssue> _candidateDiagnostics = [];
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
-    private string _searchText = string.Empty;
     private bool _isReplacingProjection;
     private bool _isCommittingRows;
 
@@ -131,6 +121,7 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     public string Name => _workingDraft.Name
         ?? _session.Entry.OriginalName
         ?? "Unnamed StructuredDataDef";
+    public string DisplayName => FormatDisplayName(Name);
     public string AccessText => Mode switch
     {
         WorkspaceAssetAccess.Editable => "EDITABLE TARGET DEFINITION",
@@ -141,22 +132,6 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     public string SummaryText =>
         $"{_workingDraft.Definitions.Count:N0} {Pluralize(_workingDraft.Definitions.Count, "definition", "definitions")} · " +
         $"{TotalNodeCount():N0} schema nodes";
-    public string StatusMessage => HasCandidateChanges
-        ? "Review the stored format checksum before applying; IW4 Studio does not recalculate it."
-        : "Indexed references, stored checksums, and serialized padding are preserved.";
-
-    public string SearchText
-    {
-        get => _searchText;
-        set
-        {
-            value ??= string.Empty;
-            if (!SetProperty(ref _searchText, value))
-                return;
-
-            FilterRows();
-        }
-    }
 
     public IReadOnlyList<StructuredDataNavigationNodeViewModel> NavigationRoots
     {
@@ -224,16 +199,38 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     public string SelectionTitle => SelectedMember?.PrimaryText
         ?? SelectedNavigationNode?.Title
         ?? "Schema";
-    public string SelectionSubtitle => SelectedMember is { } member
-        ? $"{member.KindText} · {member.SecondaryText}"
-        : SelectedNavigationNode?.Detail
-          ?? "Choose a definition or schema table.";
+    public string SelectionBreadcrumb => FormatSelectionBreadcrumb();
+    public string SelectionKindText => FormatSelectionKind(
+        SelectedMember?.Selection.Kind ??
+        SelectedNavigationNode?.Selection.Kind);
+    public string SchemaFirstColumnTitle =>
+        SelectedNavigationNode?.Selection.Kind switch
+        {
+            StructuredDataSelectionKind.Enum => "VALUE",
+            StructuredDataSelectionKind.Struct => "FIELD",
+            _ => "NAME"
+        };
+    public string SchemaSecondColumnTitle =>
+        SelectedNavigationNode?.Selection.Kind switch
+        {
+            StructuredDataSelectionKind.Enum => "INDEX",
+            StructuredDataSelectionKind.Struct => "TYPE",
+            _ => "KIND"
+        };
+    public string SchemaThirdColumnTitle =>
+        SelectedNavigationNode?.Selection.Kind switch
+        {
+            StructuredDataSelectionKind.Enum => string.Empty,
+            StructuredDataSelectionKind.Struct => "CARDINALITY",
+            _ => "CONTENTS"
+        };
+    public string SchemaHelpText => IsEditable
+        ? "Fields point to types; cardinality shows fixed counts or enum keys. Friendly names are inferred. Select a row to edit in Properties."
+        : "Fields point to types; cardinality shows fixed counts or enum keys. Friendly names are inferred. Select a row to inspect in Properties.";
     public bool HasVisibleRows => VisibleRows.Count != 0;
     public string EmptySelectionMessage => SelectedNavigationNode is null
         ? "This definition set contains no schema definitions."
-        : string.IsNullOrWhiteSpace(SearchText)
-            ? "This schema node has no child rows. Its scalar values are available in Properties."
-            : "No rows match the current filter.";
+        : "This item has no members. Its stored values are available in Properties.";
 
     public InspectorSelectionViewModel? InspectorSelection
     {
@@ -397,6 +394,8 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     {
         if (_isCommittingRows)
             return true;
+        if (HasStagedErrors)
+            return false;
 
         _isCommittingRows = true;
         try
@@ -483,7 +482,7 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             NavigationRoots = BuildNavigationRoots(expandedSelections);
             _selectedNavigationNode = navigationSelection is { } requested
                 ? FindNavigationNode(requested)
-                : NavigationRoots.FirstOrDefault();
+                : FindInitialNavigationNode();
             OnPropertyChanged(nameof(SelectedNavigationNode));
             RebuildRows();
             _selectedMember = memberSelection is { } selected
@@ -505,151 +504,141 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     private IReadOnlyList<StructuredDataNavigationNodeViewModel> BuildNavigationRoots(
         IReadOnlySet<StructuredDataSelection>? expandedSelections = null)
     {
-        var result = new StructuredDataNavigationNodeViewModel[
-            _workingDraft.Definitions.Count];
+        var result = new List<StructuredDataNavigationNodeViewModel>();
         for (int definitionIndex = 0;
              definitionIndex < _workingDraft.Definitions.Count;
              definitionIndex++)
         {
             StructuredDataDefinitionDraft definition =
                 _workingDraft.Definitions[definitionIndex];
-            var enumChildren = definition.Enums.Select((value, index) =>
+            int rootStructIndex = definition.RootType.UnionValue;
+            bool hasNavigableRootStruct = IsRootStruct(
+                definition,
+                rootStructIndex);
+            var enumChildren = definition.Enums.Select((_, index) =>
                 new StructuredDataNavigationNodeViewModel(
                     new StructuredDataSelection(
                         StructuredDataSelectionKind.Enum,
                         definitionIndex,
                         index),
-                    $"Enum {index}",
-                    $"{value.Entries.Count:N0} entries · capacity {value.ReservedEntryCount:N0}"));
-            var structChildren = definition.Structs.Select((value, index) =>
-                new StructuredDataNavigationNodeViewModel(
+                    ReferenceDisplayName(
+                        definition,
+                        StructuredDataTypeCategory.DataEnum,
+                        index)));
+            var structChildren = Enumerable.Range(0, definition.Structs.Count)
+                .Where(index => !hasNavigableRootStruct || index != rootStructIndex)
+                .Select(index => new StructuredDataNavigationNodeViewModel(
                     new StructuredDataSelection(
                         StructuredDataSelectionKind.Struct,
                         definitionIndex,
                         index),
-                    $"Struct {index}",
-                    $"{value.Properties.Count:N0} properties · {ReferenceDetail(definition, StructuredDataTypeCategory.DataStruct, index)}"));
-            var indexedChildren = definition.IndexedArrays.Select((value, index) =>
+                    ReferenceDisplayName(
+                        definition,
+                        StructuredDataTypeCategory.DataStruct,
+                        index)));
+            var indexedChildren = definition.IndexedArrays.Select((_, index) =>
                 new StructuredDataNavigationNodeViewModel(
                     new StructuredDataSelection(
                         StructuredDataSelectionKind.IndexedArray,
                         definitionIndex,
                         index),
-                    $"Indexed array {index}",
-                    $"{value.ArraySize:N0} elements · {FormatType(definition, value.ElementType)}"));
-            var enumedChildren = definition.EnumedArrays.Select((value, index) =>
+                    ReferenceDisplayName(
+                        definition,
+                        StructuredDataTypeCategory.DataIndexedArray,
+                        index)));
+            var enumedChildren = definition.EnumedArrays.Select((_, index) =>
                 new StructuredDataNavigationNodeViewModel(
                     new StructuredDataSelection(
                         StructuredDataSelectionKind.EnumedArray,
                         definitionIndex,
                         index),
-                    $"Enumed array {index}",
-                    $"Enum {value.EnumIndex} · {FormatType(definition, value.ElementType)}"));
+                    ReferenceDisplayName(
+                        definition,
+                        StructuredDataTypeCategory.DataEnumArray,
+                        index)));
 
-            result[definitionIndex] = new StructuredDataNavigationNodeViewModel(
+            var definitionChildren = new List<StructuredDataNavigationNodeViewModel>();
+            definitionChildren.Add(new StructuredDataNavigationNodeViewModel(
+                new StructuredDataSelection(
+                    StructuredDataSelectionKind.RootType,
+                    definitionIndex),
+                "Root"));
+
+            definitionChildren.AddRange(
+            [
+                new StructuredDataNavigationNodeViewModel(
+                    new StructuredDataSelection(
+                        StructuredDataSelectionKind.Structs,
+                        definitionIndex),
+                    "Structs",
+                    structChildren,
+                    isExpanded: expandedSelections is null ||
+                        expandedSelections.Contains(
+                            new StructuredDataSelection(
+                                StructuredDataSelectionKind.Structs,
+                                definitionIndex))),
+                new StructuredDataNavigationNodeViewModel(
+                    new StructuredDataSelection(
+                        StructuredDataSelectionKind.Enums,
+                        definitionIndex),
+                    "Enums",
+                    enumChildren,
+                    isExpanded: expandedSelections is null ||
+                        expandedSelections.Contains(
+                            new StructuredDataSelection(
+                                StructuredDataSelectionKind.Enums,
+                                definitionIndex))),
+                new StructuredDataNavigationNodeViewModel(
+                    new StructuredDataSelection(
+                        StructuredDataSelectionKind.IndexedArrays,
+                        definitionIndex),
+                    "Fixed arrays",
+                    indexedChildren,
+                    isExpanded: expandedSelections is null ||
+                        expandedSelections.Contains(
+                            new StructuredDataSelection(
+                                StructuredDataSelectionKind.IndexedArrays,
+                                definitionIndex))),
+                new StructuredDataNavigationNodeViewModel(
+                    new StructuredDataSelection(
+                        StructuredDataSelectionKind.EnumedArrays,
+                        definitionIndex),
+                    "Keyed arrays",
+                    enumedChildren,
+                    isExpanded: expandedSelections is null ||
+                        expandedSelections.Contains(
+                            new StructuredDataSelection(
+                                StructuredDataSelectionKind.EnumedArrays,
+                                definitionIndex)))
+            ]);
+
+            if (_workingDraft.Definitions.Count == 1)
+                return Array.AsReadOnly(definitionChildren.ToArray());
+
+            result.Add(new StructuredDataNavigationNodeViewModel(
                 new StructuredDataSelection(
                     StructuredDataSelectionKind.Definition,
                     definitionIndex),
                 $"Definition {definitionIndex}",
-                $"Version {definition.Version} · {definition.Size:N0} bytes",
-                [
-                    new StructuredDataNavigationNodeViewModel(
-                        new StructuredDataSelection(
-                            StructuredDataSelectionKind.RootType,
-                            definitionIndex),
-                        "Root type",
-                        FormatType(definition, definition.RootType)),
-                    new StructuredDataNavigationNodeViewModel(
-                        new StructuredDataSelection(
-                            StructuredDataSelectionKind.Structs,
-                            definitionIndex),
-                        "Structs",
-                        $"{definition.Structs.Count:N0}",
-                        structChildren,
-                        isExpanded: expandedSelections?.Contains(
-                            new StructuredDataSelection(
-                                StructuredDataSelectionKind.Structs,
-                                definitionIndex)) == true),
-                    new StructuredDataNavigationNodeViewModel(
-                        new StructuredDataSelection(
-                            StructuredDataSelectionKind.Enums,
-                            definitionIndex),
-                        "Enums",
-                        $"{definition.Enums.Count:N0}",
-                        enumChildren,
-                        isExpanded: expandedSelections?.Contains(
-                            new StructuredDataSelection(
-                                StructuredDataSelectionKind.Enums,
-                                definitionIndex)) == true),
-                    new StructuredDataNavigationNodeViewModel(
-                        new StructuredDataSelection(
-                            StructuredDataSelectionKind.IndexedArrays,
-                            definitionIndex),
-                        "Indexed arrays",
-                        $"{definition.IndexedArrays.Count:N0}",
-                        indexedChildren,
-                        isExpanded: expandedSelections?.Contains(
-                            new StructuredDataSelection(
-                                StructuredDataSelectionKind.IndexedArrays,
-                                definitionIndex)) == true),
-                    new StructuredDataNavigationNodeViewModel(
-                        new StructuredDataSelection(
-                            StructuredDataSelectionKind.EnumedArrays,
-                            definitionIndex),
-                        "Enumed arrays",
-                        $"{definition.EnumedArrays.Count:N0}",
-                        enumedChildren,
-                        isExpanded: expandedSelections?.Contains(
-                            new StructuredDataSelection(
-                                StructuredDataSelectionKind.EnumedArrays,
-                                definitionIndex)) == true)
-                ],
+                definitionChildren,
                 isExpanded: expandedSelections is null
                     ? definitionIndex == 0
                     : expandedSelections.Contains(
                         new StructuredDataSelection(
                             StructuredDataSelectionKind.Definition,
-                            definitionIndex)));
+                            definitionIndex))));
         }
 
-        return Array.AsReadOnly(result);
+        return Array.AsReadOnly(result.ToArray());
     }
 
     private void RebuildRows()
     {
-        _allRows = SelectedNavigationNode is { } selected
+        VisibleRows = SelectedNavigationNode is { } selected
             ? BuildRows(selected.Selection)
             : [];
-        FilterRows();
-    }
-
-    private void FilterRows()
-    {
-        StructuredDataSelection? selected = SelectedMember?.Selection;
-        string filter = SearchText.Trim();
-        VisibleRows = string.IsNullOrEmpty(filter)
-            ? _allRows
-            : Array.AsReadOnly(_allRows.Where(row =>
-                    Contains(row.IndexText, filter) ||
-                    Contains(row.PrimaryText, filter) ||
-                    Contains(row.SecondaryText, filter) ||
-                    Contains(row.TertiaryText, filter) ||
-                    Contains(row.KindText, filter))
-                .ToArray());
-        if (selected is { } selection)
-        {
-            _selectedMember = VisibleRows.FirstOrDefault(
-                    row => row.Selection == selection)
-                ?? _selectedMember;
-        }
-        else
-        {
-            _selectedMember = null;
-        }
-        OnPropertyChanged(nameof(SelectedMember));
         OnPropertyChanged(nameof(HasVisibleRows));
         OnPropertyChanged(nameof(EmptySelectionMessage));
-        NotifySelectionState();
     }
 
     private IReadOnlyList<StructuredDataMemberRowViewModel> BuildRows(
@@ -668,41 +657,52 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             StructuredDataSelectionKind.Definition => BuildDefinitionRows(
                 definition,
                 selection.DefinitionIndex),
-            StructuredDataSelectionKind.RootType =>
-            [
-                TypeRow(
-                    selection,
-                    "ROOT",
-                    "Root type",
-                    definition,
-                    definition.RootType,
-                    $"{definition.Size:N0} bytes")
-            ],
+            StructuredDataSelectionKind.RootType => IsRootStruct(
+                definition,
+                definition.RootType.UnionValue)
+                    ? BuildStructRows(
+                        definition,
+                        new StructuredDataSelection(
+                            StructuredDataSelectionKind.Struct,
+                            selection.DefinitionIndex,
+                            definition.RootType.UnionValue))
+                    :
+                    [
+                        TypeRow(
+                            selection,
+                            "Root",
+                            definition,
+                            definition.RootType)
+                    ],
             StructuredDataSelectionKind.Enums => definition.Enums.Select(
                 (value, index) => new StructuredDataMemberRowViewModel(
                     new StructuredDataSelection(
                         StructuredDataSelectionKind.Enum,
                         selection.DefinitionIndex,
                         index),
-                    $"#{index}",
-                    $"Enum {index}",
-                    $"{value.Entries.Count:N0} entries",
-                    $"Capacity {value.ReservedEntryCount:N0}",
-                    "ENUM")),
+                    ReferenceDisplayName(
+                        definition,
+                        StructuredDataTypeCategory.DataEnum,
+                        index),
+                    "Enum",
+                    FormatEnumCardinality(value))),
             StructuredDataSelectionKind.Enum => BuildEnumRows(
                 definition,
                 selection),
-            StructuredDataSelectionKind.Structs => definition.Structs.Select(
-                (value, index) => new StructuredDataMemberRowViewModel(
+            StructuredDataSelectionKind.Structs => Enumerable
+                .Range(0, definition.Structs.Count)
+                .Where(index => !IsRootStruct(definition, index))
+                .Select(index => new StructuredDataMemberRowViewModel(
                     new StructuredDataSelection(
                         StructuredDataSelectionKind.Struct,
                         selection.DefinitionIndex,
                         index),
-                    $"#{index}",
-                    $"Struct {index}",
-                    $"{value.Properties.Count:N0} properties",
-                    $"{value.Size:N0} bytes · bit {value.BitOffset:N0}",
-                    "STRUCT")),
+                    ReferenceDisplayName(
+                        definition,
+                        StructuredDataTypeCategory.DataStruct,
+                        index),
+                    "Struct",
+                    $"{definition.Structs[index].Properties.Count:N0} fields")),
             StructuredDataSelectionKind.Struct => BuildStructRows(
                 definition,
                 selection),
@@ -713,11 +713,12 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
                             StructuredDataSelectionKind.IndexedArray,
                             selection.DefinitionIndex,
                             index),
-                        $"#{index}",
-                        $"Indexed array {index}",
-                        FormatType(definition, value.ElementType),
-                        $"{value.ArraySize:N0} × {value.ElementSize:N0} bytes",
-                        "INDEXED ARRAY")),
+                        ReferenceDisplayName(
+                            definition,
+                            StructuredDataTypeCategory.DataIndexedArray,
+                            index),
+                        FormatSemanticType(definition, value.ElementType),
+                        FormatIndexedArrayCardinality(definition, value))),
             StructuredDataSelectionKind.IndexedArray =>
             [
                 BuildIndexedArrayRow(definition, selection)
@@ -729,11 +730,12 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
                             StructuredDataSelectionKind.EnumedArray,
                             selection.DefinitionIndex,
                             index),
-                        $"#{index}",
-                        $"Enumed array {index}",
-                        $"Enum {value.EnumIndex} → {FormatType(definition, value.ElementType)}",
-                        $"{value.ElementSize:N0} bytes per element",
-                        "ENUMED ARRAY")),
+                        ReferenceDisplayName(
+                            definition,
+                            StructuredDataTypeCategory.DataEnumArray,
+                            index),
+                        FormatSemanticType(definition, value.ElementType),
+                        FormatEnumedArrayCardinality(definition, value))),
             StructuredDataSelectionKind.EnumedArray =>
             [
                 BuildEnumedArrayRow(definition, selection)
@@ -748,20 +750,21 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         StructuredDataDefinitionDraft definition,
         int definitionIndex)
     {
+        bool hasRootStruct = IsRootStruct(
+            definition,
+            definition.RootType.UnionValue);
         yield return TypeRow(
             new StructuredDataSelection(
                 StructuredDataSelectionKind.RootType,
                 definitionIndex),
-            "ROOT",
-            "Root type",
+            "Root",
             definition,
-            definition.RootType,
-            $"{definition.Size:N0} bytes");
+            definition.RootType);
         yield return GroupRow(
             StructuredDataSelectionKind.Structs,
             definitionIndex,
             "Structs",
-            definition.Structs.Count);
+            definition.Structs.Count - (hasRootStruct ? 1 : 0));
         yield return GroupRow(
             StructuredDataSelectionKind.Enums,
             definitionIndex,
@@ -770,12 +773,12 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         yield return GroupRow(
             StructuredDataSelectionKind.IndexedArrays,
             definitionIndex,
-            "Indexed arrays",
+            "Fixed arrays",
             definition.IndexedArrays.Count);
         yield return GroupRow(
             StructuredDataSelectionKind.EnumedArrays,
             definitionIndex,
-            "Enumed arrays",
+            "Keyed arrays",
             definition.EnumedArrays.Count);
     }
 
@@ -795,13 +798,16 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
                     selection.DefinitionIndex,
                     selection.Index,
                     index),
-                entry.Index.ToString(),
                 entry.String ?? "NULL",
-                $"Entry {index}",
-                entry.Padding == 0 ? "No padding" : $"Padding 0x{entry.Padding:X4}",
-                "ENUM VALUE");
+                $"#{entry.Index}",
+                string.Empty);
         }
     }
+
+    private static string FormatEnumCardinality(StructuredDataEnumDraft value) =>
+        value.ReservedEntryCount > value.Entries.Count
+            ? $"{value.Entries.Count:N0} values · capacity {value.ReservedEntryCount:N0}"
+            : $"{value.Entries.Count:N0} values";
 
     private static IEnumerable<StructuredDataMemberRowViewModel> BuildStructRows(
         StructuredDataDefinitionDraft definition,
@@ -819,11 +825,9 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
                     selection.DefinitionIndex,
                     selection.Index,
                     index),
-                $"0x{property.Offset:X8}",
                 property.Name ?? "NULL",
-                FormatType(definition, property.Type),
-                $"Property {index}",
-                "PROPERTY");
+                FormatSemanticType(definition, property.Type),
+                FormatSemanticCardinality(definition, property.Type));
         }
     }
 
@@ -835,11 +839,12 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             definition.IndexedArrays[selection.Index];
         return new StructuredDataMemberRowViewModel(
             selection,
-            $"#{selection.Index}",
-            $"Indexed array {selection.Index}",
-            FormatType(definition, value.ElementType),
-            $"{value.ArraySize:N0} × {value.ElementSize:N0} bytes",
-            "INDEXED ARRAY");
+            ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataIndexedArray,
+                selection.Index),
+            FormatSemanticType(definition, value.ElementType),
+            FormatIndexedArrayCardinality(definition, value));
     }
 
     private static StructuredDataMemberRowViewModel BuildEnumedArrayRow(
@@ -850,26 +855,29 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             definition.EnumedArrays[selection.Index];
         return new StructuredDataMemberRowViewModel(
             selection,
-            $"#{selection.Index}",
-            $"Enumed array {selection.Index}",
-            $"Enum {value.EnumIndex} → {FormatType(definition, value.ElementType)}",
-            $"{value.ElementSize:N0} bytes per element",
-            "ENUMED ARRAY");
+            ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataEnumArray,
+                selection.Index),
+            FormatSemanticType(definition, value.ElementType),
+            FormatEnumedArrayCardinality(definition, value));
     }
+
+    internal static bool IsBitPackedBoolean(
+        StructuredDataTypeDraft elementType,
+        uint elementSize) =>
+        elementType.Type == StructuredDataTypeCategory.DataBool &&
+        elementSize == 1;
 
     private static StructuredDataMemberRowViewModel TypeRow(
         StructuredDataSelection selection,
-        string index,
         string name,
         StructuredDataDefinitionDraft definition,
-        StructuredDataTypeDraft type,
-        string layout) => new(
+        StructuredDataTypeDraft type) => new(
             selection,
-            index,
             name,
-            FormatType(definition, type),
-            layout,
-            "TYPE");
+            FormatSemanticType(definition, type),
+            FormatSemanticCardinality(definition, type));
 
     private static StructuredDataMemberRowViewModel GroupRow(
         StructuredDataSelectionKind kind,
@@ -877,11 +885,397 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         string title,
         int count) => new(
             new StructuredDataSelection(kind, definitionIndex),
-            "—",
             title,
-            $"{count:N0} {Pluralize(count, "item", "items")}",
-            "Indexed table",
-            "TABLE");
+            "Schema group",
+            $"{count:N0} {Pluralize(count, "item", "items")}");
+
+    internal static string FormatSemanticType(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeDraft value) =>
+        FormatSemanticType(definition, value, 0);
+
+    private static string FormatSemanticType(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeDraft value,
+        int depth)
+    {
+        if (depth >= 8)
+            return FormatType(definition, value);
+
+        return value.Type switch
+        {
+            StructuredDataTypeCategory.DataInt or
+            StructuredDataTypeCategory.DataByte or
+            StructuredDataTypeCategory.DataBool or
+            StructuredDataTypeCategory.DataString or
+            StructuredDataTypeCategory.DataFloat or
+            StructuredDataTypeCategory.DataShort =>
+                FormatSemanticScalar(value),
+            StructuredDataTypeCategory.DataEnum =>
+                ReferenceDisplayName(
+                    definition,
+                    StructuredDataTypeCategory.DataEnum,
+                    value.UnionValue),
+            StructuredDataTypeCategory.DataStruct =>
+                ReferenceDisplayName(
+                    definition,
+                    StructuredDataTypeCategory.DataStruct,
+                    value.UnionValue),
+            StructuredDataTypeCategory.DataIndexedArray
+                when IsValidIndex(value.UnionValue, definition.IndexedArrays.Count) =>
+                FormatSemanticType(
+                    definition,
+                    definition.IndexedArrays[value.UnionValue].ElementType,
+                    depth + 1),
+            StructuredDataTypeCategory.DataEnumArray
+                when IsValidIndex(value.UnionValue, definition.EnumedArrays.Count) =>
+                FormatSemanticType(
+                    definition,
+                    definition.EnumedArrays[value.UnionValue].ElementType,
+                    depth + 1),
+            _ => FormatType(definition, value)
+        };
+    }
+
+    private static string FormatSemanticCardinality(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeDraft value) =>
+        FormatSemanticCardinality(definition, value, 0);
+
+    private static string FormatSemanticCardinality(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeDraft value,
+        int depth)
+    {
+        if (depth >= 8)
+            return "Nested reference";
+
+        if (value.Type == StructuredDataTypeCategory.DataIndexedArray)
+        {
+            if (!IsValidIndex(value.UnionValue, definition.IndexedArrays.Count))
+                return $"Unresolved fixed array #{value.UnionValue}";
+            StructuredDataIndexedArrayDraft array =
+                definition.IndexedArrays[value.UnionValue];
+            string cardinality = $"Fixed [{array.ArraySize:N0}]";
+            if (IsBitPackedBoolean(array.ElementType, array.ElementSize))
+                cardinality += " · bit-packed";
+            return JoinCardinality(
+                cardinality,
+                FormatSemanticCardinality(
+                    definition,
+                    array.ElementType,
+                    depth + 1));
+        }
+
+        if (value.Type == StructuredDataTypeCategory.DataEnumArray)
+        {
+            if (!IsValidIndex(value.UnionValue, definition.EnumedArrays.Count))
+                return $"Unresolved keyed array #{value.UnionValue}";
+            StructuredDataEnumedArrayDraft array =
+                definition.EnumedArrays[value.UnionValue];
+            string cardinality = $"Keyed by {ReferenceDisplayName(
+                definition,
+                StructuredDataTypeCategory.DataEnum,
+                array.EnumIndex)}";
+            if (IsBitPackedBoolean(array.ElementType, array.ElementSize))
+                cardinality += " · bit-packed";
+            return JoinCardinality(
+                cardinality,
+                FormatSemanticCardinality(
+                    definition,
+                    array.ElementType,
+                    depth + 1));
+        }
+
+        return "Single";
+    }
+
+    private static string FormatIndexedArrayCardinality(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataIndexedArrayDraft value)
+    {
+        string cardinality = $"Fixed [{value.ArraySize:N0}]";
+        if (IsBitPackedBoolean(value.ElementType, value.ElementSize))
+            cardinality += " · bit-packed";
+        return JoinCardinality(
+            cardinality,
+            FormatSemanticCardinality(definition, value.ElementType));
+    }
+
+    private static string FormatEnumedArrayCardinality(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataEnumedArrayDraft value)
+    {
+        string cardinality = $"Keyed by {ReferenceDisplayName(
+            definition,
+            StructuredDataTypeCategory.DataEnum,
+            value.EnumIndex)}";
+        if (IsBitPackedBoolean(value.ElementType, value.ElementSize))
+            cardinality += " · bit-packed";
+        return JoinCardinality(
+            cardinality,
+            FormatSemanticCardinality(definition, value.ElementType));
+    }
+
+    private static string JoinCardinality(string current, string nested) =>
+        string.Equals(nested, "Single", StringComparison.Ordinal)
+            ? current
+            : $"{current} · {nested}";
+
+    internal static string ReferenceDisplayName(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category,
+        int index)
+    {
+        string fallback = ReferenceFallbackName(category, index);
+        if (!IsValidReference(definition, category, index))
+            return fallback;
+
+        string candidate = ReferenceDisplayCandidate(
+            definition,
+            category,
+            index);
+        int count = ReferenceTableCount(definition, category);
+        bool isAmbiguous = Enumerable.Range(0, count).Count(otherIndex =>
+            string.Equals(
+                ReferenceDisplayCandidate(definition, category, otherIndex),
+                candidate,
+                StringComparison.Ordinal)) > 1;
+        return isAmbiguous ? $"{candidate} · #{index}" : candidate;
+    }
+
+    private static string ReferenceDisplayCandidate(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category,
+        int index)
+    {
+        if (category == StructuredDataTypeCategory.DataStruct &&
+            IsRootStruct(definition, index))
+        {
+            return "Root";
+        }
+
+        return BestReferenceAlias(definition, category, index) ??
+            ReferenceFallbackName(category, index);
+    }
+
+    private static string? BestReferenceAlias(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category,
+        int index) => definition.Structs
+        .SelectMany(value => value.Properties)
+        .Where(property => !string.IsNullOrWhiteSpace(property.Name))
+        .Select(property => (
+            property.Name,
+            ArrayDepth: ReferenceArrayDepth(
+                definition,
+                property.Type,
+                category,
+                index,
+                0)))
+        .Where(candidate => candidate.ArrayDepth.HasValue)
+        .Select(candidate => ToTypeIdentifier(
+            candidate.Name!,
+            candidate.ArrayDepth.GetValueOrDefault() > 0))
+        .Where(value => value.Length != 0)
+        .Distinct(StringComparer.Ordinal)
+        .OrderBy(value => value.Length)
+        .ThenBy(value => value, StringComparer.Ordinal)
+        .FirstOrDefault();
+
+    private static int? ReferenceArrayDepth(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeDraft value,
+        StructuredDataTypeCategory category,
+        int index,
+        int depth)
+    {
+        if (value.Type == category && value.UnionValue == index)
+            return depth;
+        if (depth >= 8)
+            return null;
+        if (value.Type == StructuredDataTypeCategory.DataIndexedArray &&
+            IsValidIndex(value.UnionValue, definition.IndexedArrays.Count))
+        {
+            return ReferenceArrayDepth(
+                definition,
+                definition.IndexedArrays[value.UnionValue].ElementType,
+                category,
+                index,
+                depth + 1);
+        }
+        if (value.Type == StructuredDataTypeCategory.DataEnumArray &&
+            IsValidIndex(value.UnionValue, definition.EnumedArrays.Count))
+        {
+            StructuredDataEnumedArrayDraft array =
+                definition.EnumedArrays[value.UnionValue];
+            if (category == StructuredDataTypeCategory.DataEnum &&
+                array.EnumIndex == index)
+            {
+                return depth + 1;
+            }
+
+            return ReferenceArrayDepth(
+                definition,
+                array.ElementType,
+                category,
+                index,
+                depth + 1);
+        }
+        return null;
+    }
+
+    private static string ReferenceFallbackName(
+        StructuredDataTypeCategory category,
+        int index) => category switch
+    {
+        StructuredDataTypeCategory.DataEnum => $"Enum {index}",
+        StructuredDataTypeCategory.DataStruct => $"Struct {index}",
+        StructuredDataTypeCategory.DataIndexedArray => $"Fixed array {index}",
+        StructuredDataTypeCategory.DataEnumArray => $"Keyed array {index}",
+        _ => $"{category} {index}"
+    };
+
+    private static string ScalarTypeName(
+        StructuredDataTypeCategory category) => category switch
+    {
+        StructuredDataTypeCategory.DataInt => "int",
+        StructuredDataTypeCategory.DataByte => "byte",
+        StructuredDataTypeCategory.DataBool => "bool",
+        StructuredDataTypeCategory.DataString => "string",
+        StructuredDataTypeCategory.DataFloat => "float",
+        StructuredDataTypeCategory.DataShort => "short",
+        _ => category.ToString()
+    };
+
+    private static string FormatSemanticScalar(StructuredDataTypeDraft value)
+    {
+        string scalar = ScalarTypeName(value.Type);
+        return value.Type == StructuredDataTypeCategory.DataString &&
+            value.UnionValue > 0
+                ? $"{scalar} ({value.UnionValue:N0})"
+                : scalar;
+    }
+
+    private static string ToTypeIdentifier(string value, bool singularize)
+    {
+        var result = new StringBuilder(value.Length);
+        bool capitalize = true;
+        foreach (char character in value)
+        {
+            if (!char.IsAsciiLetterOrDigit(character))
+            {
+                capitalize = true;
+                continue;
+            }
+            result.Append(capitalize
+                ? char.ToUpperInvariant(character)
+                : character);
+            capitalize = false;
+        }
+
+        string identifier = result.ToString();
+        if (identifier.Length != 0 && !char.IsAsciiLetter(identifier[0]))
+            identifier = $"Value{identifier}";
+        if (!singularize)
+            return identifier;
+        if (string.Equals(identifier, "Lives", StringComparison.OrdinalIgnoreCase))
+            return "Life";
+        if (identifier.EndsWith("us", StringComparison.OrdinalIgnoreCase) ||
+            identifier.EndsWith("is", StringComparison.OrdinalIgnoreCase) ||
+            identifier.EndsWith("pos", StringComparison.OrdinalIgnoreCase) ||
+            identifier.EndsWith("series", StringComparison.OrdinalIgnoreCase))
+        {
+            return identifier;
+        }
+        if (identifier.EndsWith("ies", StringComparison.OrdinalIgnoreCase) &&
+            identifier.Length > 3)
+        {
+            return identifier[..^3] + "y";
+        }
+        if (identifier.EndsWith("classes", StringComparison.OrdinalIgnoreCase))
+            return identifier[..^2];
+        if ((identifier.EndsWith("ches", StringComparison.OrdinalIgnoreCase) ||
+             identifier.EndsWith("shes", StringComparison.OrdinalIgnoreCase) ||
+             identifier.EndsWith("xes", StringComparison.OrdinalIgnoreCase) ||
+             identifier.EndsWith("zes", StringComparison.OrdinalIgnoreCase) ||
+             identifier.EndsWith("ses", StringComparison.OrdinalIgnoreCase)) &&
+            identifier.Length > 2)
+        {
+            return identifier[..^2];
+        }
+        if (identifier.EndsWith('s') &&
+            !identifier.EndsWith("ss", StringComparison.OrdinalIgnoreCase) &&
+            identifier.Length > 1)
+        {
+            return identifier[..^1];
+        }
+        return identifier;
+    }
+
+    private static bool IsValidReference(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category,
+        int index) => IsValidIndex(index, ReferenceTableCount(definition, category));
+
+    private static int ReferenceTableCount(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category) => category switch
+    {
+        StructuredDataTypeCategory.DataEnum => definition.Enums.Count,
+        StructuredDataTypeCategory.DataStruct => definition.Structs.Count,
+        StructuredDataTypeCategory.DataIndexedArray => definition.IndexedArrays.Count,
+        StructuredDataTypeCategory.DataEnumArray => definition.EnumedArrays.Count,
+        _ => 0
+    };
+
+    private static bool IsValidIndex(int index, int count) =>
+        index >= 0 && index < count;
+
+    internal static bool IsRootStruct(
+        StructuredDataDefinitionDraft definition,
+        int index) =>
+        IsValidIndex(index, definition.Structs.Count) &&
+        definition.RootType.Type == StructuredDataTypeCategory.DataStruct &&
+        definition.RootType.UnionValue == index;
+
+    internal static string FormatReferenceLabel(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category,
+        int index,
+        string noun)
+    {
+        string identity = $"{noun} #{index}";
+        if (!IsValidReference(definition, category, index))
+            return identity;
+        if (category == StructuredDataTypeCategory.DataStruct &&
+            IsRootStruct(definition, index))
+        {
+            return $"{identity} · Root";
+        }
+
+        string? alias = BestReferenceAlias(definition, category, index);
+        return alias is null
+            ? identity
+            : $"{identity} · inferred as {alias}";
+    }
+
+    internal static string FormatReferenceDescription(
+        StructuredDataDefinitionDraft definition,
+        StructuredDataTypeCategory category,
+        int index,
+        string identity)
+    {
+        if (category == StructuredDataTypeCategory.DataStruct &&
+            IsRootStruct(definition, index))
+        {
+            return $"Root schema type. Serialized identity remains {identity}.";
+        }
+
+        return BestReferenceAlias(definition, category, index) is null
+            ? $"No friendly name is inferred. Serialized identity remains {identity}."
+            : $"Display name is inferred from schema usage. Serialized identity remains {identity}.";
+    }
 
     internal static string FormatType(
         StructuredDataDefinitionDraft definition,
@@ -901,51 +1295,111 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             StructuredDataTypeCategory.DataShort => "short",
             _ => value.Type.ToString()
         };
-        return value.Type switch
-        {
-            StructuredDataTypeCategory.DataEnum =>
-                $"{category} #{value.UnionValue}",
-            StructuredDataTypeCategory.DataStruct =>
-                $"{category} #{value.UnionValue}" +
-                FormatAliasSuffix(
-                    ReferenceAlias(
-                        definition,
-                        StructuredDataTypeCategory.DataStruct,
-                        value.UnionValue)),
-            StructuredDataTypeCategory.DataIndexedArray =>
-                $"{category} #{value.UnionValue}",
-            StructuredDataTypeCategory.DataEnumArray =>
-                $"{category} #{value.UnionValue}",
-            _ => value.UnionValue == 0
+        return IsIndexedReference(value.Type)
+            ? FormatReferenceLabel(
+                definition,
+                value.Type,
+                value.UnionValue,
+                category)
+            : value.UnionValue == 0
                 ? category
-                : $"{category} · raw {value.UnionValue}"
+                : $"{category} · raw {value.UnionValue}";
+    }
+
+    private static string FormatDisplayName(string value)
+    {
+        int separatorIndex = Math.Max(
+            value.LastIndexOf('/'),
+            value.LastIndexOf('\\'));
+        string fileName = separatorIndex >= 0
+            ? value[(separatorIndex + 1)..]
+            : value;
+        int extensionIndex = fileName.LastIndexOf('.');
+        string stem = extensionIndex > 0
+            ? fileName[..extensionIndex]
+            : fileName;
+
+        return stem.ToLowerInvariant() switch
+        {
+            "defaultstructureddata" => "Default Structured Data",
+            "playerdata" => "Player Data",
+            "prestigedata" => "Prestige Data",
+            "clientmatchdata" => "Client Match Data",
+            "matchdata" => "Match Data",
+            "playerconstantdata" => "Player Constant Data",
+            "playerprogressdata" => "Player Progress Data",
+            _ => FormatFallbackDisplayName(stem)
         };
     }
 
-    private static string ReferenceDetail(
-        StructuredDataDefinitionDraft definition,
-        StructuredDataTypeCategory category,
-        int index)
+    private static string FormatFallbackDisplayName(string value)
     {
-        string? alias = ReferenceAlias(definition, category, index);
-        return alias is null ? "No named usage" : $"used as {alias}";
+        string words = MaterialTechsetViewerViewModel.FormatIdentifier(
+            value.Replace('_', ' ').Replace('-', ' '));
+        return words.Length == 0
+            ? "Structured Data"
+            : char.ToUpperInvariant(words[0]) + words[1..];
     }
 
-    private static string? ReferenceAlias(
-        StructuredDataDefinitionDraft definition,
-        StructuredDataTypeCategory category,
-        int index) => definition.Structs
-        .SelectMany(value => value.Properties)
-        .Where(property =>
-            property.Type.Type == category &&
-            property.Type.UnionValue == index &&
-            !string.IsNullOrWhiteSpace(property.Name))
-        .Select(property => property.Name)
-        .Distinct(StringComparer.Ordinal)
-        .FirstOrDefault();
+    private string FormatSelectionBreadcrumb()
+    {
+        if (SelectedNavigationNode is not { } node)
+            return "Schema";
 
-    private static string FormatAliasSuffix(string? alias) =>
-        alias is null ? string.Empty : $" · {alias}";
+        StructuredDataSelection selection = node.Selection;
+        string path = selection.Kind switch
+        {
+            StructuredDataSelectionKind.Definition =>
+                $"Definition {selection.DefinitionIndex}",
+            StructuredDataSelectionKind.RootType => "Root",
+            StructuredDataSelectionKind.Structs => "Structs",
+            StructuredDataSelectionKind.Struct => $"Structs / {node.Title}",
+            StructuredDataSelectionKind.Enums => "Enums",
+            StructuredDataSelectionKind.Enum => $"Enums / {node.Title}",
+            StructuredDataSelectionKind.IndexedArrays => "Fixed arrays",
+            StructuredDataSelectionKind.IndexedArray =>
+                $"Fixed arrays / {node.Title}",
+            StructuredDataSelectionKind.EnumedArrays => "Keyed arrays",
+            StructuredDataSelectionKind.EnumedArray =>
+                $"Keyed arrays / {node.Title}",
+            _ => node.Title
+        };
+
+        if (_workingDraft.Definitions.Count > 1 &&
+            selection.Kind != StructuredDataSelectionKind.Definition)
+        {
+            path = $"Definition {selection.DefinitionIndex} / {path}";
+        }
+
+        if (SelectedMember is { } member &&
+            !string.Equals(
+                member.PrimaryText,
+                node.Title,
+                StringComparison.Ordinal))
+        {
+            path += $" / {member.PrimaryText}";
+        }
+
+        return path;
+    }
+
+    private static string FormatSelectionKind(
+        StructuredDataSelectionKind? kind) => kind switch
+    {
+        StructuredDataSelectionKind.Definition => "DEFINITION",
+        StructuredDataSelectionKind.RootType => "ROOT",
+        StructuredDataSelectionKind.Enums or
+        StructuredDataSelectionKind.Structs or
+        StructuredDataSelectionKind.IndexedArrays or
+        StructuredDataSelectionKind.EnumedArrays => "GROUP",
+        StructuredDataSelectionKind.Enum => "ENUM",
+        StructuredDataSelectionKind.EnumEntry => "ENUM VALUE",
+        StructuredDataSelectionKind.Struct => "STRUCT",
+        StructuredDataSelectionKind.StructProperty => "FIELD",
+        StructuredDataSelectionKind.IndexedArray => "FIXED ARRAY",
+        StructuredDataSelectionKind.EnumedArray => "KEYED ARRAY",
+        _ => "SCHEMA"
+    };
 
     private int TotalNodeCount() => _workingDraft.Definitions.Sum(definition =>
         1 +
@@ -1013,6 +1467,18 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         return null;
     }
 
+    private StructuredDataNavigationNodeViewModel? FindInitialNavigationNode()
+    {
+        StructuredDataNavigationNodeViewModel? root = FindNavigationNode(
+            new StructuredDataSelection(
+                StructuredDataSelectionKind.RootType,
+                0));
+        if (root is not null)
+            return root;
+
+        return NavigationRoots.FirstOrDefault();
+    }
+
     private static StructuredDataNavigationNodeViewModel? FindNavigationNode(
         StructuredDataNavigationNodeViewModel root,
         StructuredDataSelection selection)
@@ -1032,7 +1498,11 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     private void NotifySelectionState()
     {
         OnPropertyChanged(nameof(SelectionTitle));
-        OnPropertyChanged(nameof(SelectionSubtitle));
+        OnPropertyChanged(nameof(SelectionBreadcrumb));
+        OnPropertyChanged(nameof(SelectionKindText));
+        OnPropertyChanged(nameof(SchemaFirstColumnTitle));
+        OnPropertyChanged(nameof(SchemaSecondColumnTitle));
+        OnPropertyChanged(nameof(SchemaThirdColumnTitle));
         OnPropertyChanged(nameof(EditorProperties));
     }
 
@@ -1040,8 +1510,8 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
     {
         RebuildDiagnostics();
         OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(DisplayName));
         OnPropertyChanged(nameof(SummaryText));
-        OnPropertyChanged(nameof(StatusMessage));
         OnPropertyChanged(nameof(HasErrors));
         OnPropertyChanged(nameof(HasWarnings));
         OnPropertyChanged(nameof(HasOnlyWarnings));
@@ -1055,9 +1525,6 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
 
     private void RevealProperties() =>
         PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
-
-    private static bool Contains(string value, string filter) =>
-        value.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     private static string Pluralize(int count, string singular, string plural) =>
         count == 1 ? singular : plural;
