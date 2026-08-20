@@ -95,6 +95,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new MenuFileAdapter());
         registry.Register(new XModelAdapter());
         registry.Register(new WeaponAdapter());
+        registry.Register(new StructuredDataAdapter());
         return registry;
     }
     public void Register(IAssetAuthoringAdapter adapter)

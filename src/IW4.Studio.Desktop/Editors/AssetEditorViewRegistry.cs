@@ -8,6 +8,7 @@ using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.MaterialTechset;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.StringTable;
+using IW4.Studio.Desktop.Editors.StructuredData;
 using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.Editors.Weapon;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
@@ -76,6 +77,7 @@ public sealed class AssetEditorViewRegistry
             gscSourceNavigator,
             gscUsagesPresenter));
         registry.Register(new StringTableViewFactory());
+        registry.Register(new StructuredDataDefViewFactory());
         registry.Register(new LocalizeViewFactory());
         registry.Register(new MaterialTechsetViewFactory());
         registry.Register(new XModelViewFactory(assetReferencePicker));

@@ -1,0 +1,367 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.StructuredData.StructuredDataDefEditorView"
+             x:DataType="viewModels:StructuredDataDefEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1120"
+             d:DesignHeight="720">
+  <UserControl.Styles>
+    <Style Selector="TreeView.structuredDataNavigation TreeViewItem">
+      <Setter Property="IsExpanded" Value="{ReflectionBinding IsExpanded, Mode=TwoWay}" />
+    </Style>
+
+    <Style Selector="ListBox.structuredDataRows">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.structuredDataRows > ListBoxItem">
+      <Setter Property="MinHeight" Value="48" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="ListBox.structuredDataRows > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.structuredDataRows > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    </Style>
+    <Style Selector="ListBox.structuredDataRows > ListBoxItem:focus-visible">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,10,*">
+    <Border Grid.Row="0"
+            Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock Text="{Binding SummaryText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Ellipse Width="5"
+                     Height="5"
+                     VerticalAlignment="Center"
+                     Fill="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Text="{Binding StatusMessage}"
+                       MaxWidth="520"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding StatusMessage}" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Spacing="7">
+          <Border Padding="8,4"
+                  CornerRadius="7"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="{Binding AccessText}"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.4"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+          <Button Classes="ghost"
+                  MinHeight="31"
+                  Padding="8,5"
+                  IsEnabled="{Binding CanRevert}"
+                  ToolTip.Tip="Revert changes"
+                  AutomationProperties.Name="Revert changes"
+                  Click="RevertDraftButton_Click">
+            <materialIcons:MaterialIcon Kind="Undo"
+                                        Width="16"
+                                        Height="16" />
+          </Button>
+          <Button Classes="primary"
+                  MinHeight="31"
+                  Padding="12,5"
+                  IsEnabled="{Binding CanApply}"
+                  ToolTip.Tip="Apply changes"
+                  Click="ApplyDraftButton_Click">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check"
+                                          Width="16"
+                                          Height="16" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            MinHeight="440"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="*,Auto">
+        <Grid ColumnDefinitions="260,1,*">
+          <Border Padding="12"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}">
+            <Grid RowDefinitions="Auto,8,Auto,10,*">
+              <TextBlock Text="STRUCTURE"
+                         Margin="4,1,0,0"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+
+              <TextBox Grid.Row="2"
+                       MinHeight="32"
+                       Padding="10,6"
+                       Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       PlaceholderText="Filter selected members"
+                       FontSize="10" />
+
+              <TreeView Grid.Row="4"
+                        Classes="studioNavigatorTree structuredDataNavigation"
+                        ItemsSource="{Binding NavigationRoots}"
+                        SelectedItem="{Binding SelectedNavigationNode, Mode=TwoWay}"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <TreeView.ItemTemplate>
+                  <TreeDataTemplate x:DataType="viewModels:StructuredDataNavigationNodeViewModel"
+                                    ItemsSource="{Binding Children}">
+                    <Grid MinHeight="30"
+                          Margin="3,1,12,1"
+                          ColumnDefinitions="*,Auto"
+                          ColumnSpacing="8">
+                      <StackPanel VerticalAlignment="Center"
+                                  Spacing="1">
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource StudioTextBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Detail}"
+                                   FontSize="8"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                      <materialIcons:MaterialIcon Grid.Column="1"
+                                                  Kind="ChevronRight"
+                                                  Width="12"
+                                                  Height="12"
+                                                  VerticalAlignment="Center"
+                                                  Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Grid>
+                  </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+            </Grid>
+          </Border>
+
+          <Border Grid.Column="1"
+                  Background="{DynamicResource StudioBorderBrush}" />
+
+          <Grid Grid.Column="2"
+                RowDefinitions="Auto,1,*">
+            <Border Padding="18,13"
+                    Background="{DynamicResource StudioSurfaceBrush}">
+              <StackPanel Spacing="3">
+                <TextBlock Text="{Binding SelectionTitle}"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource StudioTextBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding SelectionSubtitle}"
+                           FontSize="10"
+                           Foreground="{DynamicResource StudioTextMutedBrush}"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </Border>
+
+            <Border Grid.Row="1"
+                    Background="{DynamicResource StudioBorderBrush}" />
+
+            <Grid Grid.Row="2"
+                  RowDefinitions="34,*"
+                  Background="{DynamicResource StudioInputBrush}">
+              <Border Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="0,0,0,1">
+                <Grid Margin="12,0"
+                      ColumnDefinitions="64,2*,1.5*,128"
+                      ColumnSpacing="12">
+                  <TextBlock Text="INDEX"
+                             VerticalAlignment="Center"
+                             FontSize="8"
+                             FontWeight="Bold"
+                             LetterSpacing="0.7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <TextBlock Grid.Column="1"
+                             Text="NAME OR VALUE"
+                             VerticalAlignment="Center"
+                             FontSize="8"
+                             FontWeight="Bold"
+                             LetterSpacing="0.7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <TextBlock Grid.Column="2"
+                             Text="TYPE OR TARGET"
+                             VerticalAlignment="Center"
+                             FontSize="8"
+                             FontWeight="Bold"
+                             LetterSpacing="0.7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  <TextBlock Grid.Column="3"
+                             Text="LAYOUT"
+                             VerticalAlignment="Center"
+                             FontSize="8"
+                             FontWeight="Bold"
+                             LetterSpacing="0.7"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Grid>
+              </Border>
+
+              <Grid Grid.Row="1">
+                <ListBox Classes="structuredDataRows"
+                         ItemsSource="{Binding VisibleRows}"
+                         SelectedItem="{Binding SelectedMember, Mode=TwoWay}"
+                         IsVisible="{Binding HasVisibleRows}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="viewModels:StructuredDataMemberRowViewModel">
+                      <Grid MinHeight="48"
+                            Margin="12,0"
+                            ColumnDefinitions="64,2*,1.5*,128"
+                            ColumnSpacing="12">
+                        <TextBlock Text="{Binding IndexText}"
+                                   VerticalAlignment="Center"
+                                   FontFamily="JetBrains Mono, Menlo, Consolas"
+                                   FontSize="9"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding PrimaryText}"
+                                   VerticalAlignment="Center"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource StudioTextBrush}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding PrimaryText}" />
+                        <StackPanel Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Spacing="1">
+                          <TextBlock Text="{Binding KindText}"
+                                     FontSize="9"
+                                     FontWeight="SemiBold"
+                                     Foreground="{DynamicResource StudioTextMutedBrush}"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding SecondaryText}"
+                                     FontSize="8"
+                                     Foreground="{DynamicResource StudioTextSubtleBrush}"
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTip.Tip="{Binding SecondaryText}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="3"
+                                   Text="{Binding TertiaryText}"
+                                   VerticalAlignment="Center"
+                                   FontFamily="JetBrains Mono, Menlo, Consolas"
+                                   FontSize="9"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding TertiaryText}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel IsVisible="{Binding !HasVisibleRows}"
+                            Margin="32"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8">
+                  <Border Width="44"
+                          Height="44"
+                          CornerRadius="8"
+                          Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                          BorderBrush="{DynamicResource StudioBorderBrush}"
+                          BorderThickness="1">
+                    <materialIcons:MaterialIcon Kind="CodeBracesBox"
+                                                Width="20"
+                                                Height="20"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                  </Border>
+                  <TextBlock Text="{Binding EmptySelectionMessage}"
+                             MaxWidth="440"
+                             TextAlignment="Center"
+                             TextWrapping="Wrap"
+                             FontSize="11"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </StackPanel>
+              </Grid>
+            </Grid>
+          </Grid>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Padding="12,8"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,1,0,0">
+          <Grid ColumnDefinitions="Auto,8,*">
+            <materialIcons:MaterialIcon Kind="AlertCircleOutline"
+                                        Width="14"
+                                        Height="14"
+                                        VerticalAlignment="Center"
+                                        IsVisible="{Binding HasErrors}"
+                                        Foreground="{DynamicResource StudioErrorBrush}" />
+            <materialIcons:MaterialIcon Kind="CheckCircleOutline"
+                                        Width="14"
+                                        Height="14"
+                                        VerticalAlignment="Center"
+                                        IsVisible="{Binding HasNoDiagnostics}"
+                                        Foreground="{DynamicResource StudioAccentBrush}" />
+            <materialIcons:MaterialIcon Kind="AlertOutline"
+                                        Width="14"
+                                        Height="14"
+                                        VerticalAlignment="Center"
+                                        IsVisible="{Binding HasOnlyWarnings}"
+                                        Foreground="{DynamicResource StudioWarningBrush}" />
+            <TextBlock Grid.Column="2"
+                       Text="{Binding ValidationSummary}"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextMutedBrush}"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding ValidationSummary}" />
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

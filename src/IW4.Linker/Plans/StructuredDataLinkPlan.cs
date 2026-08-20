@@ -546,8 +546,9 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
     {
         if (value is null)
             throw new InvalidDataException($"{fieldPath} cannot be null.");
-        if (!Enum.IsDefined(value.Type))
-            throw new InvalidDataException($"{fieldPath} has undefined category {value.Type}.");
+        if (!Enum.IsDefined(value.Type) ||
+            value.Type == StructuredDataTypeCategory.DataCount)
+            throw new InvalidDataException($"{fieldPath} has invalid category {value.Type}.");
         if (definition is null)
             return;
 
