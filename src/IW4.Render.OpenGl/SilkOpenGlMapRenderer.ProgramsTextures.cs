@@ -767,7 +767,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 return true;
             }
 
-            // InteractiveOpenGl scenes intentionally omit redundant RGBA for
+            // InteractiveNative scenes intentionally omit redundant RGBA for
             // complete proven BC chains. Preserve that immutable source and
             // defer compatibility decoding until this texture is first
             // admitted to the renderer's working set.

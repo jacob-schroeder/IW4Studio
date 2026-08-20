@@ -7,7 +7,9 @@ using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Materials;
+using IW4.Render.Scheduling;
 using IW4.Render.Scheduling.FramePlans;
+using IW4.Render.SceneBuilding;
 using IW4.Render.Textures;
 
 namespace IW4.Render.Resources;
@@ -453,10 +455,10 @@ public sealed class RenderSceneSnapshot
 
     private void AppendContent(RenderContentDigestWriter writer)
     {
-        writer.WriteString("render-scene-snapshot/v10");
+        writer.WriteString("render-scene-snapshot/v12");
         writer.WriteString(Name);
         writer.WriteInt64(Revision);
-        Resources.AppendContent(writer);
+        writer.WriteString(Resources.ContentDigest);
         writer.WriteInt32(Skies.Length);
         foreach (RenderSkySubmissionSnapshot sky in Skies)
             sky.AppendContent(writer);
@@ -468,7 +470,7 @@ public sealed class RenderSceneSnapshot
         MaterialDrawPacketAdmission.AppendContent(writer);
         WorldSurfaceAdmission.AppendContent(writer);
         LoadedCameraColorWorldDrawPacketAdmission.AppendContent(writer);
-        NormalCameraDraws.AppendContent(writer);
+        writer.WriteString(NormalCameraDraws.ContentDigest);
     }
 
     private static void ValidateWireframeGeometry(
@@ -572,7 +574,9 @@ public sealed class RenderNormalCameraDrawOmissionSnapshot
         RenderNormalCameraDrawSourceKind sourceKind,
         int? sourceOrdinal,
         int? collectionOrdinal,
-        IEnumerable<RenderNormalCameraDrawOmissionCode> codes)
+        IEnumerable<RenderNormalCameraDrawOmissionCode> codes,
+        MapRenderWorldReceiverVariantKey? worldReceiverVariant = null,
+        MapRenderStaticModelReceiverVariantKey? staticReceiverVariant = null)
     {
         if (!Enum.IsDefined(sourceKind))
             throw new ArgumentOutOfRangeException(nameof(sourceKind));
@@ -584,6 +588,16 @@ public sealed class RenderNormalCameraDrawOmissionSnapshot
         {
             throw new ArgumentException(
                 "Source and collection ordinals must either both exist or both be absent.");
+        }
+        if (worldReceiverVariant.HasValue &&
+            staticReceiverVariant.HasValue ||
+            worldReceiverVariant.HasValue &&
+            sourceKind != RenderNormalCameraDrawSourceKind.World ||
+            staticReceiverVariant.HasValue &&
+            sourceKind != RenderNormalCameraDrawSourceKind.StaticModel)
+        {
+            throw new ArgumentException(
+                "Receiver-variant omission metadata must be mutually exclusive and match the source kind.");
         }
 
         ImmutableArray<RenderNormalCameraDrawOmissionCode> frozenCodes =
@@ -606,6 +620,8 @@ public sealed class RenderNormalCameraDrawOmissionSnapshot
         }
 
         SourceKind = sourceKind;
+        WorldReceiverVariant = worldReceiverVariant;
+        StaticReceiverVariant = staticReceiverVariant;
         SourceOrdinal = sourceOrdinal;
         CollectionOrdinal = collectionOrdinal;
         Codes = frozenCodes;
@@ -614,6 +630,11 @@ public sealed class RenderNormalCameraDrawOmissionSnapshot
     }
 
     public RenderNormalCameraDrawSourceKind SourceKind { get; }
+
+    public MapRenderWorldReceiverVariantKey? WorldReceiverVariant { get; }
+
+    public MapRenderStaticModelReceiverVariantKey? StaticReceiverVariant
+        { get; }
 
     public int? SourceOrdinal { get; }
 
@@ -627,8 +648,20 @@ public sealed class RenderNormalCameraDrawOmissionSnapshot
 
     internal void AppendContent(RenderContentDigestWriter writer)
     {
-        writer.WriteString("render-normal-camera-draw-omission/v1");
+        writer.WriteString("render-normal-camera-draw-omission/v2");
         writer.WriteInt32((int)SourceKind);
+        writer.WriteBoolean(WorldReceiverVariant.HasValue);
+        if (WorldReceiverVariant is { } worldReceiver)
+        {
+            writer.WriteInt32((int)worldReceiver.Page);
+            writer.WriteInt32((int)worldReceiver.Allocation);
+        }
+        writer.WriteBoolean(StaticReceiverVariant.HasValue);
+        if (StaticReceiverVariant is { } staticReceiver)
+        {
+            writer.WriteInt32((int)staticReceiver.Page);
+            writer.WriteInt32((int)staticReceiver.Allocation);
+        }
         writer.WriteNullableInt32(SourceOrdinal);
         writer.WriteNullableInt32(CollectionOrdinal);
         writer.WriteInt32(Codes.Length);
@@ -818,6 +851,8 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
 {
     internal RenderNormalCameraPreparedPassSnapshot(
         RenderNormalCameraDrawSourceKind sourceKind,
+        MapRenderWorldReceiverVariantKey? worldReceiverVariant,
+        MapRenderStaticModelReceiverVariantKey? staticReceiverVariant,
         int sourceOrdinal,
         int collectionOrdinal,
         int? editorDrawGroupId,
@@ -834,7 +869,8 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         IEnumerable<RenderNormalCameraColorLayerSnapshot> colorLayers,
         IEnumerable<RenderNormalCameraMaterialSamplerSnapshot> materialSamplers,
         IEnumerable<RenderMaterialPickRangeSnapshot> pickRanges,
-        IEnumerable<MapRenderStaticModelInstance> staticInstances,
+        ImmutableArray<MapRenderStaticModelInstance> staticInstances,
+        string staticInstancesContentDigest,
         GfxCameraRegionType? staticCameraRegion,
         IEnumerable<RenderNormalCameraTextureResourceSnapshot> textureResources,
         RenderSemanticIdentity baseTextureIdentity,
@@ -846,11 +882,22 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         RenderGeometryDescriptor geometry,
         RenderInstanceLayoutDescriptor? instanceLayout,
         RenderInstanceDescriptor? instances,
-        IEnumerable<float> rsxVertexInputs,
+        ImmutableArray<float> rsxVertexInputs,
+        string rsxVertexInputsContentDigest,
         RenderBounds localBounds)
     {
         if (!Enum.IsDefined(sourceKind))
             throw new ArgumentOutOfRangeException(nameof(sourceKind));
+        if (worldReceiverVariant.HasValue &&
+            staticReceiverVariant.HasValue ||
+            worldReceiverVariant.HasValue &&
+            sourceKind != RenderNormalCameraDrawSourceKind.World ||
+            staticReceiverVariant.HasValue &&
+            sourceKind != RenderNormalCameraDrawSourceKind.StaticModel)
+        {
+            throw new ArgumentException(
+                "Receiver-variant metadata must be mutually exclusive and match the prepared source kind.");
+        }
         if (sourceOrdinal < 0 || collectionOrdinal < 0)
             throw new ArgumentOutOfRangeException(nameof(sourceOrdinal));
         if (unresolvedCodeSamplerCount < 0)
@@ -860,6 +907,18 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         ArgumentNullException.ThrowIfNull(shaderProvenance);
         ArgumentNullException.ThrowIfNull(vertexLayout);
         ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            staticInstancesContentDigest);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            rsxVertexInputsContentDigest);
+        if (staticInstances.IsDefault)
+            throw new ArgumentException(
+                "Static instance storage is uninitialized.",
+                nameof(staticInstances));
+        if (rsxVertexInputs.IsDefault)
+            throw new ArgumentException(
+                "RSX vertex input storage is uninitialized.",
+                nameof(rsxVertexInputs));
         RenderVertexLayoutDescriptor.RequireIdentity(
             drawIdentity,
             RenderSemanticResourceKind.Draw);
@@ -879,24 +938,17 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
                 nameof(materialSamplers));
         ImmutableArray<RenderMaterialPickRangeSnapshot> frozenRanges =
             RenderSnapshotCollections.Freeze(pickRanges, nameof(pickRanges));
-        ImmutableArray<MapRenderStaticModelInstance> frozenInstances =
-            RenderSnapshotCollections.Freeze(
-                staticInstances,
-                nameof(staticInstances));
         ImmutableArray<RenderNormalCameraTextureResourceSnapshot>
             frozenTextures = RenderSnapshotCollections.Freeze(
                 textureResources,
                 nameof(textureResources));
-        ImmutableArray<float> frozenRsxInputs = RenderSnapshotCollections.Freeze(
-            rsxVertexInputs,
-            nameof(rsxVertexInputs));
         if (frozenLayers.Any(value => value is null) ||
             frozenSamplers.Any(value => value is null) ||
             frozenRanges.Any(value => value is null) ||
             frozenTextures.IsEmpty ||
             frozenTextures.Any(value => value is null) ||
-            (frozenRsxInputs.Length != 0 &&
-             frozenRsxInputs.Length != checked(
+            (rsxVertexInputs.Length != 0 &&
+             rsxVertexInputs.Length != checked(
                  geometry.VertexCount *
                  RenderWorldDrawPacketSnapshot.RsxVertexInputFloatStride)))
         {
@@ -972,22 +1024,43 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         if (sourceKind == RenderNormalCameraDrawSourceKind.World)
         {
             if (editorDrawGroupId.HasValue || lodIndex.HasValue ||
-                hasInstanceResources || !frozenInstances.IsEmpty ||
+                hasInstanceResources || !staticInstances.IsEmpty ||
                 staticCameraRegion.HasValue || vegetationAnimation is not null)
             {
                 throw new ArgumentException(
                     "World pass contains static-model-only provenance.");
             }
+            if (worldReceiverVariant.HasValue &&
+                (frozenRanges.IsEmpty || frozenRanges.Any(range =>
+                    range.Kind != MapRenderPickKind.GfxSurface ||
+                    range.SurfaceIndex < 0 ||
+                    range.ObjectIndex < 0)))
+            {
+                throw new ArgumentException(
+                    "A world receiver variant requires exact GfxSurface ownership.",
+                    nameof(worldReceiverVariant));
+            }
         }
         else
         {
             if (!editorDrawGroupId.HasValue || !lodIndex.HasValue ||
-                !hasInstanceResources || frozenInstances.IsEmpty ||
-                instances!.InstanceCount != frozenInstances.Length ||
+                !hasInstanceResources || staticInstances.IsEmpty ||
+                instances!.InstanceCount != staticInstances.Length ||
                 instances.Layout != instanceLayout!.Identity)
             {
                 throw new ArgumentException(
                     "Static pass requires exact group, LOD, placement, and instance-resource ownership.");
+            }
+            if (staticReceiverVariant is { } receiver &&
+                staticInstances.Any(instance =>
+                    !MapRenderStaticModelReceiverRouting
+                        .CanPrepareAuthoredRegion(
+                            receiver.Page,
+                            instance.CameraRegion)))
+            {
+                throw new ArgumentException(
+                    "A static receiver variant contains an identity outside its exact camera-region page.",
+                    nameof(staticReceiverVariant));
             }
         }
         if (geometry.VertexLayout != vertexLayout.Identity ||
@@ -1002,6 +1075,8 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         }
 
         SourceKind = sourceKind;
+        WorldReceiverVariant = worldReceiverVariant;
+        StaticReceiverVariant = staticReceiverVariant;
         SourceOrdinal = sourceOrdinal;
         CollectionOrdinal = collectionOrdinal;
         EditorDrawGroupId = editorDrawGroupId;
@@ -1018,7 +1093,8 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         ColorLayers = frozenLayers;
         MaterialSamplers = frozenSamplers;
         PickRanges = frozenRanges;
-        StaticInstances = frozenInstances;
+        StaticInstances = staticInstances;
+        StaticInstancesContentDigest = staticInstancesContentDigest;
         StaticCameraRegion = staticCameraRegion;
         TextureResources = frozenTextures;
         BaseTextureIdentity = baseTextureIdentity;
@@ -1030,12 +1106,18 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         Geometry = geometry;
         InstanceLayout = instanceLayout;
         Instances = instances;
-        RsxVertexInputs = frozenRsxInputs;
+        RsxVertexInputs = rsxVertexInputs;
+        RsxVertexInputsContentDigest = rsxVertexInputsContentDigest;
         LocalBounds = localBounds;
         ContentDigest = RenderContentDigest.Compute(AppendContent);
     }
 
     public RenderNormalCameraDrawSourceKind SourceKind { get; }
+
+    public MapRenderWorldReceiverVariantKey? WorldReceiverVariant { get; }
+
+    public MapRenderStaticModelReceiverVariantKey? StaticReceiverVariant
+        { get; }
 
     /// <summary>
     /// Stable authored draw-group owner shared by every pass row in that
@@ -1066,6 +1148,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         MaterialSamplers { get; }
     public ImmutableArray<RenderMaterialPickRangeSnapshot> PickRanges { get; }
     public ImmutableArray<MapRenderStaticModelInstance> StaticInstances { get; }
+    internal string StaticInstancesContentDigest { get; }
     public GfxCameraRegionType? StaticCameraRegion { get; }
     public ImmutableArray<RenderNormalCameraTextureResourceSnapshot>
         TextureResources { get; }
@@ -1079,6 +1162,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
     public RenderInstanceLayoutDescriptor? InstanceLayout { get; }
     public RenderInstanceDescriptor? Instances { get; }
     public ImmutableArray<float> RsxVertexInputs { get; }
+    internal string RsxVertexInputsContentDigest { get; }
     public RenderBounds LocalBounds { get; }
     public string ContentDigest { get; }
 
@@ -1127,8 +1211,20 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
 
     internal void AppendContent(RenderContentDigestWriter writer)
     {
-        writer.WriteString("render-normal-camera-prepared-pass/v1");
+        writer.WriteString("render-normal-camera-prepared-pass/v3");
         writer.WriteInt32((int)SourceKind);
+        writer.WriteBoolean(WorldReceiverVariant.HasValue);
+        if (WorldReceiverVariant is { } worldReceiver)
+        {
+            writer.WriteInt32((int)worldReceiver.Page);
+            writer.WriteInt32((int)worldReceiver.Allocation);
+        }
+        writer.WriteBoolean(StaticReceiverVariant.HasValue);
+        if (StaticReceiverVariant is { } staticReceiver)
+        {
+            writer.WriteInt32((int)staticReceiver.Page);
+            writer.WriteInt32((int)staticReceiver.Allocation);
+        }
         writer.WriteInt32(SourceOrdinal);
         writer.WriteInt32(CollectionOrdinal);
         writer.WriteNullableInt32(EditorDrawGroupId);
@@ -1178,8 +1274,7 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
         foreach (RenderMaterialPickRangeSnapshot range in PickRanges)
             range.AppendContent(writer);
         writer.WriteInt32(StaticInstances.Length);
-        foreach (MapRenderStaticModelInstance instance in StaticInstances)
-            AppendInstance(writer, instance);
+        writer.WriteString(StaticInstancesContentDigest);
         writer.WriteBoolean(StaticCameraRegion.HasValue);
         if (StaticCameraRegion is { } cameraRegion)
             writer.WriteByte((byte)cameraRegion);
@@ -1215,9 +1310,42 @@ public sealed class RenderNormalCameraPreparedPassSnapshot
             writer.WriteString(Instances.ContentDigest);
         }
         writer.WriteInt32(RsxVertexInputs.Length);
-        foreach (float value in RsxVertexInputs)
-            writer.WriteSingle(value);
+        writer.WriteString(RsxVertexInputsContentDigest);
         AppendBounds(writer, LocalBounds);
+    }
+
+    internal static string ComputeStaticInstancesContentDigest(
+        ImmutableArray<MapRenderStaticModelInstance> instances)
+    {
+        if (instances.IsDefault)
+        {
+            throw new ArgumentException(
+                "Static instance storage is uninitialized.",
+                nameof(instances));
+        }
+        return RenderContentDigest.Compute(writer =>
+        {
+            writer.WriteString("render-normal-camera-static-instances/v1");
+            writer.WriteInt32(instances.Length);
+            foreach (MapRenderStaticModelInstance instance in instances)
+                AppendInstance(writer, instance);
+        });
+    }
+
+    internal static string ComputeRsxVertexInputsContentDigest(
+        ImmutableArray<float> values)
+    {
+        if (values.IsDefault)
+        {
+            throw new ArgumentException(
+                "RSX vertex input storage is uninitialized.",
+                nameof(values));
+        }
+        return RenderContentDigest.Compute(writer =>
+        {
+            writer.WriteString("render-normal-camera-rsx-vertex-inputs/v1");
+            writer.WriteSingles(values);
+        });
     }
 
     private static void RequireTexturePair(
@@ -1666,17 +1794,17 @@ public sealed class RenderNormalCameraDrawSnapshot
 
     internal void AppendContent(RenderContentDigestWriter writer)
     {
-        writer.WriteString("render-normal-camera-draw-snapshot/v1");
+        writer.WriteString("render-normal-camera-draw-snapshot/v3");
         writer.WriteInt32((int)Coverage);
-        Resources.AppendContent(writer);
+        writer.WriteString(Resources.ContentDigest);
         writer.WriteInt32(WorldSourceCount);
         writer.WriteInt32(StaticSourceCount);
         writer.WriteInt32(PreparedPasses.Length);
         foreach (RenderNormalCameraPreparedPassSnapshot pass in PreparedPasses)
-            pass.AppendContent(writer);
+            writer.WriteString(pass.ContentDigest);
         writer.WriteInt32(Omissions.Length);
         foreach (RenderNormalCameraDrawOmissionSnapshot omission in Omissions)
-            omission.AppendContent(writer);
+            writer.WriteString(omission.ContentDigest);
         writer.WriteInt32(DrawGroups.Length);
         foreach (MapRenderEditorDrawGroup<
                      RenderNormalCameraDrawSubmissionSnapshot> group in

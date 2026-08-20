@@ -8,7 +8,7 @@ namespace IW4.Studio.Desktop.Views;
 
 /// <summary>
 /// Builds a render scene from the immutable loaded workspace, then hands it
-/// to the Silk.NET-backed OpenGL surface owned by this window.
+/// to the platform's native Silk.NET-backed rendering surface.
 /// </summary>
 public sealed partial class MapRenderWindow : Window
 {
@@ -16,7 +16,7 @@ public sealed partial class MapRenderWindow : Window
     private FastFileRenderViewService? _renderViewService;
     private readonly CancellationTokenSource _buildWaitCancellation = new();
     private bool _ownsRenderViewService;
-    private SilkMapRenderWindow? _nativeRenderWindow;
+    private INativeMapRenderWindow? _nativeRenderWindow;
     private bool _closed;
     private bool _buildStarted;
     private bool _nativeRendererFailed;
@@ -142,11 +142,20 @@ public sealed partial class MapRenderWindow : Window
             "Creating the native Silk.NET render window…");
         try
         {
-            var nativeRenderWindow = new SilkMapRenderWindow(
-                scene,
-                sceneSnapshot,
-                mapEntityString,
-                text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
+            Func<string, Task> copyTextAsync = text =>
+                Clipboard?.SetTextAsync(text) ?? Task.CompletedTask;
+            INativeMapRenderWindow nativeRenderWindow =
+                OperatingSystem.IsMacOS()
+                    ? new SilkMetalMapRenderWindow(
+                        scene,
+                        sceneSnapshot,
+                        mapEntityString,
+                        copyTextAsync)
+                    : new SilkMapRenderWindow(
+                        scene,
+                        sceneSnapshot,
+                        mapEntityString,
+                        copyTextAsync);
             nativeRenderWindow.Failed += NativeRenderWindow_Failed;
             nativeRenderWindow.Stopped += NativeRenderWindow_Stopped;
             nativeRenderWindow.Show();
@@ -155,6 +164,7 @@ public sealed partial class MapRenderWindow : Window
         }
         catch (Exception exception)
         {
+            _nativeRendererFailed = true;
             ShowStatus("Could not start Live Preview", exception.Message);
         }
     }

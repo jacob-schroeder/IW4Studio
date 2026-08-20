@@ -1,15 +1,14 @@
 using System.Numerics;
-using IW4.Assets.Assets.ComWorld;
-using IW4.Assets.Assets.GfxMap;
 using IW4.Render.Diagnostics;
 using IW4.Render.Geometry.Shadows;
 using IW4.Render.OpenGl.Shadows;
 using IW4.Render.Scheduling;
 using IW4.Render.Scheduling.Dpvs;
-using IW4.Render.Scheduling.Lighting;
 using IW4.Render.Scheduling.Shadows;
 using IW4.Render.SceneBuilding;
 using Silk.NET.OpenGL;
+using SpotShadowPlan =
+    IW4.Render.Scheduling.Shadows.MapRenderSpotShadowPlan;
 
 namespace IW4.Render.OpenGl;
 
@@ -22,13 +21,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _currentSpotShadowReadyState;
     private MapRenderOpenGlSpotShadowAtlasReadyFrame?
         _currentSpotShadowBackendReadyFrame;
-    private SpotShadowCasterMembership?[]
-        _spotShadowCasterMembershipByLight = [];
-    private int _spotShadowMembershipSurfaceCount = -1;
-    private int _spotShadowMembershipStaticModelCount = -1;
-    private readonly HashSet<int> _spotShadowVisibleLightIndices = [];
-    private readonly List<SpotShadowCandidate> _spotShadowCandidates = [];
-    private readonly List<SpotShadowPlan> _spotShadowPlans = [];
+    private MapRenderSpotShadowPlanner? _spotShadowPlanner;
     private MapRenderOpenGlSpotShadowAtlasBackend?
         _spotShadowAtlasContentBackend;
     private MapRenderWorldDpvsVisibilityBuildResult?
@@ -50,54 +43,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
         if (_previewWorldSource is not { } source ||
             _editorPreviewSceneLightFrame is not { } sceneLights ||
-            _sunShadowStaticCasterIndex is null)
+            _sunShadowStaticCasterIndex is null ||
+            _sceneTechniqueVariants is not { } techniqueCatalog)
         {
             return;
         }
 
-        IReadOnlyList<GfxShadowGeometry> shadowGeometry =
-            source.World.ShadowGeom;
-        if (source.World.SurfaceCount < 0 ||
-            source.World.Dpvs.SModelCount > int.MaxValue)
-        {
-            return;
-        }
-
-        _spotShadowMembershipSurfaceCount = source.World.SurfaceCount;
-        _spotShadowMembershipStaticModelCount =
-            (int)source.World.Dpvs.SModelCount;
-        _spotShadowCasterMembershipByLight = new SpotShadowCasterMembership?[
-            shadowGeometry.Count];
-        for (int sceneLightIndex = 0;
-             sceneLightIndex < shadowGeometry.Count;
-             sceneLightIndex++)
-        {
-            _spotShadowCasterMembershipByLight[sceneLightIndex] =
-                TryCreateSpotCasterMembership(
-                    source.World,
-                    sceneLightIndex,
-                    _spotShadowMembershipSurfaceCount,
-                    _spotShadowMembershipStaticModelCount);
-        }
-
-        bool hasEligibleSpot = false;
-        int firstNonSunPrimaryLightIndex = checked(
-            source.World.SunPrimaryLightIndex + 1);
-        for (int sceneLightIndex = firstNonSunPrimaryLightIndex;
-             sceneLightIndex < sceneLights.SceneLightCount &&
-             sceneLightIndex < shadowGeometry.Count;
-             sceneLightIndex++)
-        {
-            MapRenderWorldEvent20SceneLight light =
-                sceneLights.GetSceneLight(sceneLightIndex);
-            if (light.Type == GfxLightType.Spot &&
-                light.CanUseShadowMap)
-            {
-                hasEligibleSpot = true;
-                break;
-            }
-        }
-        if (!hasEligibleSpot)
+        _spotShadowPlanner = MapRenderSpotShadowPlanner.TryCreate(
+            source,
+            sceneLights,
+            techniqueCatalog);
+        if (_spotShadowPlanner is null)
             return;
 
         try
@@ -376,172 +332,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     private IReadOnlyList<SpotShadowPlan> CreateSpotShadowPlans(
-        MapRenderWorldDpvsThreeViewFrame frame)
-    {
-        if (_previewWorldSource is not { } source ||
-            _editorPreviewSceneLightFrame is not { } sceneLights ||
-            _sceneTechniqueVariants is not { } techniqueCatalog ||
-            !source.AssetLookup.HasCanonicalAssetPoolRevision(
-                sceneLights.AssetPoolRevision))
-        {
-            return [];
-        }
-
-        if (frame.Camera.SurfaceCount != _spotShadowMembershipSurfaceCount ||
-            frame.Camera.StaticModelCount !=
-                _spotShadowMembershipStaticModelCount)
-        {
-            return [];
-        }
-
-        _spotShadowVisibleLightIndices.Clear();
-        ReadOnlySpan<uint> visibleSurfaceWords = frame.Camera.SurfaceBitSpan;
-        for (int wordIndex = 0;
-             wordIndex < visibleSurfaceWords.Length;
-             wordIndex++)
-        {
-            uint pending = visibleSurfaceWords[wordIndex];
-            while (pending != 0)
-            {
-                int bitInWord = BitOperations.LeadingZeroCount(pending);
-                int surfaceIndex = checked(wordIndex * 32 + bitInWord);
-                pending &= ~(0x8000_0000u >> bitInWord);
-                if (surfaceIndex >= frame.Camera.SurfaceCount)
-                    break;
-
-                if ((uint)surfaceIndex <
-                        (uint)techniqueCatalog.WorldSurfaces.Count &&
-                    techniqueCatalog.WorldSurfaces[surfaceIndex] is
-                        { } variants)
-                {
-                    _spotShadowVisibleLightIndices.Add(
-                        variants.PrimaryLightIndex);
-                }
-            }
-        }
-        _spotShadowCandidates.Clear();
-        foreach (int sceneLightIndex in _spotShadowVisibleLightIndices)
-        {
-            if (sceneLightIndex <= source.World.SunPrimaryLightIndex ||
-                sceneLightIndex >= sceneLights.SceneLightCount ||
-                (uint)sceneLightIndex >=
-                    (uint)_spotShadowCasterMembershipByLight.Length ||
-                _spotShadowCasterMembershipByLight[sceneLightIndex] is not
-                    { } membership)
-            {
-                continue;
-            }
-
-            MapRenderWorldEvent20SceneLight light =
-                sceneLights.GetSceneLight(sceneLightIndex);
-            if (light.Type != GfxLightType.Spot ||
-                !light.CanUseShadowMap ||
-                !MapRenderSpotShadowProjectionCalculator
-                    .TryCreateAtlasEntry(
-                        light,
-                        sceneLightIndex,
-                        atlasSlot: 0,
-                        fade: 1f,
-                        out _))
-            {
-                continue;
-            }
-
-            Vector3 eyeReference =
-                frame.Projection.CameraOrigin +
-                64f * frame.Projection.CameraForward;
-            Vector3 focusDelta =
-                light.Origin - eyeReference +
-                (-light.Radius * 0.125f) * light.Direction;
-            float luminance = Vector3.Dot(
-                light.Color,
-                new Vector3(0.2989f, 0.587f, 0.114f));
-            float score =
-                light.Radius * luminance / (focusDelta.Length() + 1f);
-            if (!float.IsFinite(score))
-                continue;
-
-            _spotShadowCandidates.Add(new SpotShadowCandidate(
-                sceneLightIndex,
-                light,
-                score,
-                membership));
-        }
-
-        _spotShadowCandidates.Sort(CompareSpotShadowCandidates);
-        _spotShadowPlans.Clear();
-        foreach (SpotShadowCandidate candidate in _spotShadowCandidates)
-        {
-            int atlasSlot = _spotShadowPlans.Count;
-            if (!MapRenderSpotShadowProjectionCalculator
-                    .TryCreateAtlasEntry(
-                        candidate.Light,
-                        candidate.SceneLightIndex,
-                        atlasSlot,
-                        fade: 1f,
-                        out MapRenderSpotShadowAtlasEntry? entry) ||
-                entry is null)
-            {
-                continue;
-            }
-            _spotShadowPlans.Add(new SpotShadowPlan(
-                entry,
-                candidate.Membership.WorldSurfaceIndices,
-                candidate.Membership.StaticDrawInstances));
-            if (_spotShadowPlans.Count ==
-                MapRenderSpotShadowAtlasLayout.MaximumEntryCount)
-            {
-                break;
-            }
-        }
-        return _spotShadowPlans;
-    }
-
-    private static SpotShadowCasterMembership? TryCreateSpotCasterMembership(
-        GfxWorldAsset world,
-        int sceneLightIndex,
-        int surfaceCount,
-        int staticModelCount)
-    {
-        if ((uint)sceneLightIndex >= (uint)world.ShadowGeom.Count)
-            return null;
-
-        if (world.ShadowGeom[sceneLightIndex] is not
-                { } geometry)
-        {
-            return null;
-        }
-        if (geometry.SurfaceCount != geometry.SortedSurfIndex.Count ||
-            geometry.SModelCount != geometry.SModelIndex.Count)
-        {
-            return null;
-        }
-
-        var surfaces = new int[geometry.SortedSurfIndex.Count];
-        for (int index = 0; index < surfaces.Length; index++)
-        {
-            int surfaceIndex = geometry.SortedSurfIndex[index];
-            if ((uint)surfaceIndex >= (uint)surfaceCount)
-                return null;
-            surfaces[index] = surfaceIndex;
-        }
-        var statics = new MapRenderSunShadowStaticCasterIdentity[
-            geometry.SModelIndex.Count];
-        for (int index = 0; index < statics.Length; index++)
-        {
-            int objectIndex = geometry.SModelIndex[index];
-            if ((uint)objectIndex >= (uint)staticModelCount)
-                return null;
-            statics[index] = new MapRenderSunShadowStaticCasterIdentity(
-                objectIndex,
-                objectIndex,
-                objectIndex);
-        }
-
-        return new SpotShadowCasterMembership(
-            surfaces,
-            statics);
-    }
+        MapRenderWorldDpvsThreeViewFrame frame) =>
+        _spotShadowPlanner?.CreateFramePlans(frame) ?? [];
 
     private void EnsureSpotCasterCoverage(
         SpotShadowPlan plan,
@@ -642,12 +434,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void ClearSpotShadowCasterMembership()
     {
         InvalidateSpotShadowAtlasContentCache();
-        _spotShadowCasterMembershipByLight = [];
-        _spotShadowMembershipSurfaceCount = -1;
-        _spotShadowMembershipStaticModelCount = -1;
-        _spotShadowVisibleLightIndices.Clear();
-        _spotShadowCandidates.Clear();
-        _spotShadowPlans.Clear();
+        _spotShadowPlanner = null;
     }
 
     private bool CanReuseSpotShadowAtlasContents(
@@ -709,15 +496,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         // The visibility cache retains object identity only for an exact
         // camera/source/projection key hit. The frame references below prove
         // this current-revision wrapper was built from that retained payload.
-        if (_previewWorldSource is not { } source ||
-            _editorPreviewSceneLightFrame is not { } sceneLights ||
-            _sceneTechniqueVariants is null ||
-            !source.AssetLookup.HasCanonicalAssetPoolRevision(
-                sceneLights.AssetPoolRevision) ||
-            frame.Camera.SurfaceCount !=
-                _spotShadowMembershipSurfaceCount ||
-            frame.Camera.StaticModelCount !=
-                _spotShadowMembershipStaticModelCount ||
+        if (_spotShadowPlanner is not { } planner ||
+            !planner.MatchesFrameCardinality(frame) ||
             !ReferenceEquals(atlas, _spotShadowAtlasContentBackend) ||
             _spotShadowAtlasContentVisibility is not { } visibility ||
             !ReferenceEquals(
@@ -824,28 +604,4 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _spotShadowFrameTextureHandles.Clear();
     }
 
-    private static int CompareSpotShadowCandidates(
-        SpotShadowCandidate left,
-        SpotShadowCandidate right)
-    {
-        int score = right.Score.CompareTo(left.Score);
-        return score != 0
-            ? score
-            : left.SceneLightIndex.CompareTo(right.SceneLightIndex);
-    }
-
-    private readonly record struct SpotShadowCasterMembership(
-        int[] WorldSurfaceIndices,
-        MapRenderSunShadowStaticCasterIdentity[] StaticDrawInstances);
-
-    private readonly record struct SpotShadowCandidate(
-        int SceneLightIndex,
-        MapRenderWorldEvent20SceneLight Light,
-        float Score,
-        SpotShadowCasterMembership Membership);
-
-    private readonly record struct SpotShadowPlan(
-        MapRenderSpotShadowAtlasEntry Entry,
-        int[] WorldSurfaceIndices,
-        MapRenderSunShadowStaticCasterIdentity[] StaticDrawInstances);
 }

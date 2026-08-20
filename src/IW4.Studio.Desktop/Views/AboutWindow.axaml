@@ -1,7 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+        xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
         x:Class="IW4.Studio.Desktop.Views.AboutWindow"
+        x:DataType="viewModels:AboutViewModel"
         Title="About IW4 Studio"
         Width="520"
         Height="590"
@@ -14,33 +16,34 @@
           Padding="42,30,42,28">
     <Grid RowDefinitions="Auto,22,Auto,8,Auto,*,Auto,24,Auto,20"
           HorizontalAlignment="Stretch">
-      <svg:Svg Grid.Row="0"
-               Width="190"
-               Height="190"
-               HorizontalAlignment="Center"
-               VerticalAlignment="Center"
-               Stretch="Uniform"
-               Path="/Resources/logo_alt.svg" />
+          
+        <Image 
+            Width="190"
+            Height="190"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Source="/Resources/logo.png"
+            Stretch="Uniform" />
 
-      <TextBlock Grid.Row="2"
-                 Text="IW4 Studio"
-                 HorizontalAlignment="Center"
-                 FontSize="30"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource StudioTextBrush}" />
-      <TextBlock Grid.Row="4"
-                 Text="v1.0.1"
-                 HorizontalAlignment="Center"
-                 FontSize="15"
-                 Foreground="{DynamicResource StudioTextMutedBrush}" />
-
-      <StackPanel Grid.Row="6" Spacing="14">
-        <TextBlock Text="A fastfile workspace for exploring IW4 assets."
+      <StackPanel Grid.Row="4" Spacing="14">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Repository:" />
+            
+            <Button Content="{Binding RepositoryUrl}"
+                    Classes="hyperlink"
+                    Click="OnRepoUrlClick" />
+        </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="Author:" />
+              <TextBlock Text="{Binding Author}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="Version:" />
+              <TextBlock Text="{Binding Version}" />
+          </StackPanel>
+        <TextBlock Text="IW4 Studio is a multi-platform workspace editor to modify, load and save all fastfiles for Call of Duty: Modern Warfare 2 (2009) on the Playstation 3 platform."
                    TextWrapping="Wrap"
-                   FontSize="15"
-                   Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="Built with IW4.Studio and Avalonia."
-                   TextWrapping="Wrap"
+                   FontWeight="Light"
                    FontSize="15"
                    Foreground="{DynamicResource StudioTextBrush}" />
       </StackPanel>
@@ -51,11 +54,6 @@
               HorizontalAlignment="Center"
               Content="Close"
               Click="CloseButton_Click" />
-      <TextBlock Grid.Row="9"
-                 Text="© 2026 IW4 Studio"
-                 HorizontalAlignment="Center"
-                 FontSize="13"
-                 Foreground="{DynamicResource StudioTextMutedBrush}" />
     </Grid>
   </Border>
 </Window>

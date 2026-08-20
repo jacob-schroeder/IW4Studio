@@ -198,30 +198,30 @@ public sealed class RenderResourceSnapshot
 
     internal void AppendContent(RenderContentDigestWriter writer)
     {
-        writer.WriteString("render-resources/v4");
+        writer.WriteString("render-resources/v5");
         writer.WriteInt32(VertexLayouts.Length);
         foreach (RenderVertexLayoutDescriptor descriptor in VertexLayouts)
-            descriptor.AppendContent(writer);
+            writer.WriteString(descriptor.ContentDigest);
 
         writer.WriteInt32(InstanceLayouts.Length);
         foreach (RenderInstanceLayoutDescriptor descriptor in InstanceLayouts)
-            descriptor.AppendContent(writer);
+            writer.WriteString(descriptor.ContentDigest);
 
         writer.WriteInt32(Geometries.Length);
         foreach (RenderGeometryDescriptor descriptor in Geometries)
-            descriptor.AppendContent(writer);
+            writer.WriteString(descriptor.ContentDigest);
 
         writer.WriteInt32(Instances.Length);
         foreach (RenderInstanceDescriptor descriptor in Instances)
-            descriptor.AppendContent(writer);
+            writer.WriteString(descriptor.ContentDigest);
 
         writer.WriteInt32(Textures.Length);
         foreach (RenderTextureDescriptor descriptor in Textures)
-            descriptor.AppendContent(writer);
+            writer.WriteString(descriptor.ContentDigest);
 
         writer.WriteInt32(Samplers.Length);
         foreach (RenderSamplerDescriptor descriptor in Samplers)
-            descriptor.AppendContent(writer);
+            writer.WriteString(descriptor.ContentDigest);
     }
 
     private static ImmutableArray<T> FreezeAndValidate<T>(

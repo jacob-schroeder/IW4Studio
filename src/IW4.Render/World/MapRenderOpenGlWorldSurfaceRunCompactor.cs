@@ -6,7 +6,7 @@ namespace IW4.Render.World;
 /// Immutable index ownership and conservative cull bounds for one authored
 /// world surface inside an editor-preview material batch.
 /// </summary>
-internal readonly record struct MapRenderOpenGlWorldSurfaceSpan(
+internal readonly record struct MapRenderWorldSurfaceSpan(
     int SurfaceIndex,
     int FirstIndex,
     int IndexCount,
@@ -19,7 +19,7 @@ internal readonly record struct MapRenderOpenGlWorldSurfaceSpan(
 /// One contiguous visible interval in a shared world element buffer. Adjacent
 /// visible surface spans collapse into one interval without copying geometry.
 /// </summary>
-internal readonly record struct MapRenderOpenGlWorldVisibleRun(
+internal readonly record struct MapRenderWorldVisibleRun(
     int FirstIndex,
     int IndexCount,
     int SurfaceSpanCount)
@@ -27,7 +27,7 @@ internal readonly record struct MapRenderOpenGlWorldVisibleRun(
     public int EndIndexExclusive => checked(FirstIndex + IndexCount);
 }
 
-internal readonly record struct MapRenderOpenGlWorldSurfaceCompactionResult(
+internal readonly record struct MapRenderWorldSurfaceCompactionResult(
     int RunCount,
     int VisibleSurfaceSpanCount,
     long VisibleIndexCount);
@@ -37,14 +37,14 @@ internal readonly record struct MapRenderOpenGlWorldSurfaceCompactionResult(
 /// visibility mask to contiguous host draw ranges. The input order is retained
 /// exactly; this does not sort or reinterpret authored material/pass state.
 /// </summary>
-internal static class MapRenderOpenGlWorldSurfaceRunCompactor
+internal static class MapRenderWorldSurfaceRunCompactor
 {
-    public static MapRenderOpenGlWorldSurfaceCompactionResult Compact(
-        ReadOnlySpan<MapRenderOpenGlWorldSurfaceSpan> spans,
+    public static MapRenderWorldSurfaceCompactionResult Compact(
+        ReadOnlySpan<MapRenderWorldSurfaceSpan> spans,
         ReadOnlySpan<uint> dpvsSurfaceWords,
         bool hasDpvsVisibility,
         MapRenderCameraFrustum? frustum,
-        Span<MapRenderOpenGlWorldVisibleRun> destination)
+        Span<MapRenderWorldVisibleRun> destination)
     {
         if (destination.Length < spans.Length)
         {
@@ -58,7 +58,7 @@ internal static class MapRenderOpenGlWorldSurfaceRunCompactor
         long visibleIndexCount = 0;
         for (int spanOrdinal = 0; spanOrdinal < spans.Length; spanOrdinal++)
         {
-            MapRenderOpenGlWorldSurfaceSpan span = spans[spanOrdinal];
+            MapRenderWorldSurfaceSpan span = spans[spanOrdinal];
             if (!IsVisible(
                     span,
                     dpvsSurfaceWords,
@@ -73,7 +73,7 @@ internal static class MapRenderOpenGlWorldSurfaceRunCompactor
                 visibleIndexCount + span.IndexCount);
             if (runCount != 0)
             {
-                MapRenderOpenGlWorldVisibleRun previous =
+                MapRenderWorldVisibleRun previous =
                     destination[runCount - 1];
                 if (previous.EndIndexExclusive == span.FirstIndex)
                 {
@@ -101,7 +101,7 @@ internal static class MapRenderOpenGlWorldSurfaceRunCompactor
     }
 
     private static bool IsVisible(
-        MapRenderOpenGlWorldSurfaceSpan span,
+        MapRenderWorldSurfaceSpan span,
         ReadOnlySpan<uint> dpvsSurfaceWords,
         bool hasDpvsVisibility,
         MapRenderCameraFrustum? frustum)

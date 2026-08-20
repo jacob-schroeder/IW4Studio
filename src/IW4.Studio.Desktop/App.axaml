@@ -21,6 +21,31 @@
       <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
       <Setter Property="FontFamily" Value="{DynamicResource StudioFontFamily}" />
     </Style>
+    
+    <Style Selector="Button.hyperlink">
+      <Setter Property="Foreground" Value="#0066CC" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <TextBlock Text="{TemplateBinding Content}"
+                     Foreground="{TemplateBinding Foreground}"
+                     TextDecorations="Underline" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+
+    <!-- Hover state -->
+    <Style Selector="Button.hyperlink:pointerover /template/ TextBlock">
+      <Setter Property="Foreground" Value="{TemplateBinding Foreground}" />
+    </Style>
+
+    <!-- Pressed state -->
+    <Style Selector="Button.hyperlink:pressed /template/ TextBlock">
+      <Setter Property="Foreground" Value="{TemplateBinding Foreground}" />
+    </Style>
 
     <!-- Align Inter's visual text baseline with centered vector icons in icon-and-label rows. -->
     <Style Selector="Grid.iconTextRow > TextBlock">
@@ -122,6 +147,7 @@
     <Style Selector="Button.recentFile">
       <Setter Property="MinHeight" Value="50" />
       <Setter Property="Padding" Value="9,7" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />

@@ -1,11 +1,14 @@
 using System.Buffers.Binary;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Numerics;
 
+using IW4.Assets.Assets.Material;
 using IW4.Render.Execution;
 using IW4.Render.EditorPreview;
 using IW4.Render.Geometry;
 using IW4.Render.Materials;
+using IW4.Render.Scheduling;
 using IW4.Render.Scheduling.StaticModels;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.FramePlans;
@@ -46,7 +49,9 @@ public static class RenderSceneSnapshotBuilder
             includeDiagnosticGeometry,
             includeWireframeGeometry: includeDiagnosticGeometry,
             includeCompatibilityDrawResources: true,
-            includeNormalCameraDrawResources: true);
+            includeNormalCameraDrawResources: true,
+            includeAllStaticLodDrawResources: true,
+            preferProvenAuthoredTexturePayloads: false);
 
     /// <summary>
     /// Creates the lightweight semantic snapshot used by the interactive
@@ -67,7 +72,29 @@ public static class RenderSceneSnapshotBuilder
             includeDiagnosticGeometry: false,
             includeWireframeGeometry: true,
             includeCompatibilityDrawResources: false,
-            includeNormalCameraDrawResources: false);
+            includeNormalCameraDrawResources: false,
+            includeAllStaticLodDrawResources: false,
+            preferProvenAuthoredTexturePayloads: true);
+
+    /// <summary>
+    /// Creates the complete immutable normal-camera inventory consumed by the
+    /// native Metal backend while retaining the interactive renderer's proven
+    /// authored-BC memory policy. Diagnostic solids remain excluded; sky,
+    /// textured world/static, and the explicit collision wireframe are owned
+    /// by the snapshot before it reaches the native window thread.
+    /// </summary>
+    internal static RenderSceneSnapshot CreateInteractiveMetal(
+        MapRenderScene scene,
+        long revision = 0) =>
+        Create(
+            scene,
+            revision,
+            includeDiagnosticGeometry: false,
+            includeWireframeGeometry: true,
+            includeCompatibilityDrawResources: false,
+            includeNormalCameraDrawResources: true,
+            includeAllStaticLodDrawResources: true,
+            preferProvenAuthoredTexturePayloads: true);
 
     private static RenderSceneSnapshot Create(
         MapRenderScene scene,
@@ -75,7 +102,9 @@ public static class RenderSceneSnapshotBuilder
         bool includeDiagnosticGeometry,
         bool includeWireframeGeometry,
         bool includeCompatibilityDrawResources,
-        bool includeNormalCameraDrawResources)
+        bool includeNormalCameraDrawResources,
+        bool includeAllStaticLodDrawResources,
+        bool preferProvenAuthoredTexturePayloads)
     {
         ArgumentNullException.ThrowIfNull(scene);
         if (revision < 0)
@@ -150,8 +179,7 @@ public static class RenderSceneSnapshotBuilder
                         source.Texture,
                         textureIdentity,
                         preferProvenAuthoredPayload:
-                            !includeCompatibilityDrawResources &&
-                            !includeNormalCameraDrawResources);
+                            preferProvenAuthoredTexturePayloads);
                     var sampler = new RenderSamplerDescriptor(
                         samplerIdentity,
                         source.Texture.DecodedSamplerState);
@@ -231,7 +259,10 @@ public static class RenderSceneSnapshotBuilder
 
         RenderNormalCameraDrawSnapshot? normalCameraDraws =
             includeNormalCameraDrawResources
-                ? AppendNormalCameraDrawResources(scene)
+                ? AppendNormalCameraDrawResources(
+                    scene,
+                    includeAllStaticLodDrawResources,
+                    preferProvenAuthoredTexturePayloads)
                 : null;
 
         var resourceSnapshot = new RenderResourceSnapshot(
@@ -1926,7 +1957,10 @@ public static class RenderSceneSnapshotBuilder
     }
 
     private static RenderNormalCameraDrawSnapshot
-        AppendNormalCameraDrawResources(MapRenderScene scene)
+        AppendNormalCameraDrawResources(
+            MapRenderScene scene,
+            bool includeAllStaticLodDrawResources,
+            bool preferProvenAuthoredTexturePayloads)
     {
         var vertexLayouts = new List<RenderVertexLayoutDescriptor>();
         var instanceLayouts = new List<RenderInstanceLayoutDescriptor>();
@@ -1939,7 +1973,8 @@ public static class RenderSceneSnapshotBuilder
             new List<RenderNormalCameraDrawOmissionSnapshot>();
         var groups = new List<MapRenderEditorDrawGroup<
             RenderNormalCameraDrawSubmissionSnapshot>>();
-        var textureCache = new NormalCameraTextureResourceCache();
+        var textureCache = new NormalCameraTextureResourceCache(
+            preferProvenAuthoredTexturePayloads);
 
         MapRenderTexturedBatch[] worldBatches;
         if (scene.TexturedBatches is null)
@@ -1956,7 +1991,8 @@ public static class RenderSceneSnapshotBuilder
             worldBatches = scene.TexturedBatches.ToArray();
         }
 
-        bool usesAllStaticLods = CanUseAllStaticLodBatches(scene);
+        bool usesAllStaticLods = includeAllStaticLodDrawResources &&
+            CanUseAllStaticLodBatches(scene);
         IReadOnlyList<MapRenderInstancedTexturedBatch>? staticSource =
             usesAllStaticLods
                 ? scene.StaticModelLodTexturedBatches
@@ -1976,31 +2012,104 @@ public static class RenderSceneSnapshotBuilder
             staticBatches = staticSource.ToArray();
         }
 
-        AppendNormalCameraWorldGroups(
-            worldBatches,
-            textureCache,
-            prepared,
-            omissions,
-            groups,
-            vertexLayouts,
-            instanceLayouts,
-            geometries,
-            instances,
-            textures,
-            samplers);
-        AppendNormalCameraStaticGroups(
-            staticBatches,
-            worldBatches.Length,
-            textureCache,
-            prepared,
-            omissions,
-            groups,
-            vertexLayouts,
-            instanceLayouts,
-            geometries,
-            instances,
-            textures,
-            samplers);
+        var worldCollections = new List<NormalCameraWorldCollection>
+        {
+            new(worldBatches, ReceiverVariant: null)
+        };
+        var staticCollections = new List<NormalCameraStaticCollection>
+        {
+            new(staticBatches, ReceiverVariant: null)
+        };
+        if (scene.ReceiverVariants is { } receiverVariants)
+        {
+            MapRenderWorldSurfacePageMembership[] worldPages =
+            [
+                MapRenderWorldSurfacePageMembership.PageZero,
+                MapRenderWorldSurfacePageMembership.PageOne
+            ];
+            MapRenderStaticModelReceiverPage[] staticPages =
+            [
+                MapRenderStaticModelReceiverPage.StaticModelRigidPage2,
+                MapRenderStaticModelReceiverPage
+                    .StaticModelRigidNoSunShadowPage3
+            ];
+            MapRenderTechniqueVariantAllocation[] allocations =
+            [
+                MapRenderTechniqueVariantAllocation.Unshadowed,
+                MapRenderTechniqueVariantAllocation.ShadowMapAllocated
+            ];
+            foreach (MapRenderWorldSurfacePageMembership page in worldPages)
+            foreach (MapRenderTechniqueVariantAllocation allocation in
+                     allocations)
+            {
+                var key = new MapRenderWorldReceiverVariantKey(
+                    page,
+                    allocation);
+                worldCollections.Add(new(
+                    receiverVariants.GetWorldBatches(page, allocation),
+                    key));
+            }
+            foreach (MapRenderStaticModelReceiverPage page in staticPages)
+            foreach (MapRenderTechniqueVariantAllocation allocation in
+                     allocations)
+            {
+                var key = new MapRenderStaticModelReceiverVariantKey(
+                    page,
+                    allocation);
+                staticCollections.Add(new(
+                    receiverVariants.GetStaticModelBatches(page, allocation),
+                    key));
+            }
+        }
+
+        int worldSourceCount = worldCollections.Sum(collection =>
+            collection.Batches.Count);
+        int staticSourceCount = staticCollections.Sum(collection =>
+            collection.Batches.Count);
+        int worldCollectionOffset = 0;
+        foreach (NormalCameraWorldCollection collection in worldCollections)
+        {
+            AppendNormalCameraWorldGroups(
+                collection.Batches,
+                worldCollectionOffset,
+                collection.ReceiverVariant,
+                textureCache,
+                prepared,
+                omissions,
+                groups,
+                vertexLayouts,
+                instanceLayouts,
+                geometries,
+                instances,
+                textures,
+                samplers);
+            worldCollectionOffset = checked(
+                worldCollectionOffset + collection.Batches.Count);
+        }
+
+        int staticCollectionOffset = 0;
+        long staticOutputOrdinal = 0;
+        foreach (NormalCameraStaticCollection collection in staticCollections)
+        {
+            AppendNormalCameraStaticGroups(
+                collection.Batches,
+                worldSourceCount,
+                staticCollectionOffset,
+                ref staticOutputOrdinal,
+                collection.ReceiverVariant,
+                textureCache,
+                prepared,
+                omissions,
+                groups,
+                vertexLayouts,
+                instanceLayouts,
+                geometries,
+                instances,
+                textures,
+                samplers);
+            staticCollectionOffset = checked(
+                staticCollectionOffset + collection.Batches.Count);
+        }
 
         return new RenderNormalCameraDrawSnapshot(
             usesAllStaticLods
@@ -2015,8 +2124,8 @@ public static class RenderSceneSnapshotBuilder
                 instances,
                 textures,
                 samplers),
-            worldBatches.Length,
-            staticBatches.Length,
+            worldSourceCount,
+            staticSourceCount,
             prepared,
             omissions
                 .OrderBy(value => value.SourceOrdinal ?? int.MaxValue)
@@ -2036,15 +2145,20 @@ public static class RenderSceneSnapshotBuilder
         if (allLodBatches is not { Count: > 0 })
             return false;
 
-        var scheduledStaticObjectIndices = scene.StaticModelScheduling
-            .Select(scheduling => scheduling.ObjectIndex)
-            .ToHashSet();
         var preparedStaticObjectLods = new Dictionary<int, int>();
         foreach (MapRenderInstancedTexturedBatch batch in
                  scene.InstancedTexturedBatches)
         {
             foreach (MapRenderStaticModelInstance instance in batch.Instances)
             {
+                if ((uint)batch.LodIndex >= 32u ||
+                    preparedStaticObjectLods.TryGetValue(
+                        instance.ObjectIndex,
+                        out int existingLod) &&
+                    existingLod != batch.LodIndex)
+                {
+                    return false;
+                }
                 preparedStaticObjectLods.TryAdd(
                     instance.ObjectIndex,
                     batch.LodIndex);
@@ -2057,20 +2171,21 @@ public static class RenderSceneSnapshotBuilder
                     instance.ObjectIndex,
                     batch.LodIndex)))
                 .ToHashSet();
-        return allLodBatches.All(batch =>
-            batch.Instances.All(instance =>
-                scheduledStaticObjectIndices.Contains(instance.ObjectIndex) ||
-                (preparedStaticObjectLods.TryGetValue(
-                     instance.ObjectIndex,
-                     out int fallbackLod) &&
-                 fallbackLod >= 0 &&
-                 allLodObjectRows.Contains((
-                     instance.ObjectIndex,
-                     fallbackLod)))));
+        return preparedStaticObjectLods.All(pair =>
+                   allLodObjectRows.Contains((pair.Key, pair.Value))) &&
+            allLodBatches.All(batch =>
+                (uint)batch.LodIndex < 32u &&
+                batch.Instances.All(instance =>
+                    preparedStaticObjectLods.TryGetValue(
+                        instance.ObjectIndex,
+                        out int fallbackLod) &&
+                    fallbackLod >= 0));
     }
 
     private static void AppendNormalCameraWorldGroups(
         IReadOnlyList<MapRenderTexturedBatch> sourceBatches,
+        int collectionOrdinalOffset,
+        MapRenderWorldReceiverVariantKey? receiverVariant,
         NormalCameraTextureResourceCache textureCache,
         ICollection<RenderNormalCameraPreparedPassSnapshot> prepared,
         ICollection<RenderNormalCameraDrawOmissionSnapshot> omissions,
@@ -2086,11 +2201,12 @@ public static class RenderSceneSnapshotBuilder
         NormalCameraWorldSourceEntry[] entries = sourceBatches
             .Select((batch, collectionOrdinal) =>
                 new NormalCameraWorldSourceEntry(
-                    collectionOrdinal,
+                    checked(collectionOrdinalOffset + collectionOrdinal),
                     batch,
                     CreateNormalCameraWorldGroupKey(
                         batch,
-                        collectionOrdinal)))
+                        checked(collectionOrdinalOffset +
+                            collectionOrdinal))))
             .ToArray();
 
         foreach (IGrouping<NormalCameraWorldGroupKey,
@@ -2124,6 +2240,7 @@ public static class RenderSceneSnapshotBuilder
                 {
                     candidates.Add(CreateNormalCameraWorldCandidate(
                         entry.Batch!,
+                        receiverVariant,
                         authoredSourceOrdinal,
                         entry.CollectionOrdinal,
                         textureCache));
@@ -2157,7 +2274,8 @@ public static class RenderSceneSnapshotBuilder
                         RenderNormalCameraDrawSourceKind.World,
                         authoredSourceOrdinal,
                         entry.CollectionOrdinal,
-                        codes));
+                        codes,
+                        worldReceiverVariant: receiverVariant));
                 }
                 continue;
             }
@@ -2180,7 +2298,8 @@ public static class RenderSceneSnapshotBuilder
                         authoredSourceOrdinal,
                         candidate.Pass.CollectionOrdinal,
                         [RenderNormalCameraDrawOmissionCode
-                            .GeometryMissingOrMalformed]));
+                            .GeometryMissingOrMalformed],
+                        worldReceiverVariant: receiverVariant));
                 }
                 continue;
             }
@@ -2217,6 +2336,9 @@ public static class RenderSceneSnapshotBuilder
     private static void AppendNormalCameraStaticGroups(
         IReadOnlyList<MapRenderInstancedTexturedBatch> sourceBatches,
         int worldSourceCount,
+        int collectionOrdinalOffset,
+        ref long staticOutputOrdinal,
+        MapRenderStaticModelReceiverVariantKey? receiverVariant,
         NormalCameraTextureResourceCache textureCache,
         ICollection<RenderNormalCameraPreparedPassSnapshot> prepared,
         ICollection<RenderNormalCameraDrawOmissionSnapshot> omissions,
@@ -2232,13 +2354,13 @@ public static class RenderSceneSnapshotBuilder
         NormalCameraStaticSourceEntry[] entries = sourceBatches
             .Select((batch, collectionOrdinal) =>
                 new NormalCameraStaticSourceEntry(
-                    collectionOrdinal,
+                    checked(collectionOrdinalOffset + collectionOrdinal),
                     batch,
                     batch?.EditorDrawGroupId >= 0
                         ? batch.EditorDrawGroupId
-                        : int.MaxValue - collectionOrdinal))
+                        : int.MaxValue - checked(
+                            collectionOrdinalOffset + collectionOrdinal)))
             .ToArray();
-        long staticOutputOrdinal = 0;
         foreach (IGrouping<int, NormalCameraStaticSourceEntry> sourceGroup in
                  entries.GroupBy(value => value.DrawGroupId)
                      .OrderBy(group => group.Min(value =>
@@ -2270,6 +2392,7 @@ public static class RenderSceneSnapshotBuilder
                 {
                     candidates.Add(CreateNormalCameraStaticCandidate(
                         entry.Batch!,
+                        receiverVariant,
                         authoredSourceOrdinal,
                         entry.CollectionOrdinal,
                         textureCache));
@@ -2303,7 +2426,8 @@ public static class RenderSceneSnapshotBuilder
                         RenderNormalCameraDrawSourceKind.StaticModel,
                         authoredSourceOrdinal,
                         entry.CollectionOrdinal,
-                        codes));
+                        codes,
+                        staticReceiverVariant: receiverVariant));
                 }
                 continue;
             }
@@ -2459,11 +2583,14 @@ public static class RenderSceneSnapshotBuilder
     private static NormalCameraDrawCandidate
         CreateNormalCameraWorldCandidate(
             MapRenderTexturedBatch source,
+            MapRenderWorldReceiverVariantKey? receiverVariant,
             int authoredSourceOrdinal,
             int collectionOrdinal,
             NormalCameraTextureResourceCache textureCache) =>
         CreateNormalCameraCandidate(
             RenderNormalCameraDrawSourceKind.World,
+            receiverVariant,
+            staticReceiverVariant: null,
             source.Pass,
             source.PrimarySampler,
             source.Texture,
@@ -2496,11 +2623,14 @@ public static class RenderSceneSnapshotBuilder
     private static NormalCameraDrawCandidate
         CreateNormalCameraStaticCandidate(
             MapRenderInstancedTexturedBatch source,
+            MapRenderStaticModelReceiverVariantKey? receiverVariant,
             int authoredSourceOrdinal,
             int collectionOrdinal,
             NormalCameraTextureResourceCache textureCache) =>
         CreateNormalCameraCandidate(
             RenderNormalCameraDrawSourceKind.StaticModel,
+            worldReceiverVariant: null,
+            receiverVariant,
             source.Pass,
             source.PrimarySampler,
             source.Texture,
@@ -2532,6 +2662,8 @@ public static class RenderSceneSnapshotBuilder
 
     private static NormalCameraDrawCandidate CreateNormalCameraCandidate(
         RenderNormalCameraDrawSourceKind sourceKind,
+        MapRenderWorldReceiverVariantKey? worldReceiverVariant,
+        MapRenderStaticModelReceiverVariantKey? staticReceiverVariant,
         MaterialPassIdentity pass,
         MaterialSamplerIdentity primarySampler,
         Texture baseTexture,
@@ -2566,79 +2698,29 @@ public static class RenderSceneSnapshotBuilder
                 ? "world."
                 : "static.",
             collectionOrdinal.ToString("D8", CultureInfo.InvariantCulture));
-        var vertexLayout = new RenderVertexLayoutDescriptor(
-            new RenderSemanticIdentity(
-                RenderSemanticResourceKind.VertexLayout,
-                prefix + ".vertex-layout.position-uv0-f32.stride-88"),
-            MapRenderScene.TexturedVertexFloatCount * sizeof(float),
-            [
-                new RenderVertexElementDescriptor(
-                    RenderVertexSemantic.Position,
-                    0,
-                    RenderVertexElementFormat.Float32x3,
-                    0),
-                new RenderVertexElementDescriptor(
-                    RenderVertexSemantic.TextureCoordinate,
-                    0,
-                    RenderVertexElementFormat.Float32x2,
-                    3 * sizeof(float))
-            ]);
-        var geometry = new RenderGeometryDescriptor(
-            new RenderSemanticIdentity(
-                RenderSemanticResourceKind.Geometry,
-                prefix + ".geometry"),
-            vertexLayout,
-            RenderGeometryCoordinateSpace.Render,
-            RenderPrimitiveTopology.TriangleList,
-            RenderIndexFormat.Unsigned32,
-            vertices.Length / MapRenderScene.TexturedVertexFloatCount,
-            indices.Length,
-            EncodeSingles(vertices),
-            EncodeUInt32(indices));
+        NormalCameraGeometryResource geometryResource =
+            textureCache.GetOrCreateGeometry(vertices, indices);
+        RenderVertexLayoutDescriptor vertexLayout = geometryResource.Layout;
+        RenderGeometryDescriptor geometry = geometryResource.Geometry;
+        NormalCameraRsxVertexInputsResource rsxInputsResource =
+            textureCache.GetOrCreateRsxVertexInputs(rsxVertexInputs);
 
         RenderInstanceLayoutDescriptor? instanceLayout = null;
         RenderInstanceDescriptor? instanceDescriptor = null;
+        ImmutableArray<MapRenderStaticModelInstance> frozenStaticInstances =
+            ImmutableArray<MapRenderStaticModelInstance>.Empty;
+        string staticInstancesContentDigest =
+            textureCache.EmptyStaticInstancesContentDigest;
+        GfxCameraRegionType? staticCameraRegion = null;
         if (sourceKind == RenderNormalCameraDrawSourceKind.StaticModel)
         {
-            instanceLayout = new RenderInstanceLayoutDescriptor(
-                new RenderSemanticIdentity(
-                    RenderSemanticResourceKind.InstanceLayout,
-                    prefix + ".instance-layout.transform-rows-f32.stride-48"),
-                MapRenderStaticInstanceBufferPacker
-                    .PlacementOnlyFloatStride * sizeof(float),
-                [
-                    new RenderInstanceElementDescriptor(
-                        RenderInstanceSemantic.TransformRow,
-                        0,
-                        RenderVertexElementFormat.Float32x4,
-                        0),
-                    new RenderInstanceElementDescriptor(
-                        RenderInstanceSemantic.TransformRow,
-                        1,
-                        RenderVertexElementFormat.Float32x4,
-                        4 * sizeof(float)),
-                    new RenderInstanceElementDescriptor(
-                        RenderInstanceSemantic.TransformRow,
-                        2,
-                        RenderVertexElementFormat.Float32x4,
-                        8 * sizeof(float))
-                ]);
-            var packed = new float[checked(
-                staticInstances.Count *
-                MapRenderStaticInstanceBufferPacker
-                    .PlacementOnlyFloatStride)];
-            MapRenderStaticInstanceBufferPacker.PackAll(
-                staticInstances,
-                MapRenderStaticInstanceLightingPayload.None,
-                packed);
-            instanceDescriptor = new RenderInstanceDescriptor(
-                new RenderSemanticIdentity(
-                    RenderSemanticResourceKind.Instances,
-                    prefix + ".instances"),
-                instanceLayout,
-                staticInstances.Count,
-                EncodeSingles(packed),
-                RenderPayloadByteOrder.LittleEndian);
+            NormalCameraStaticInstancesResource staticResource =
+                textureCache.GetOrCreateStaticInstances(staticInstances);
+            frozenStaticInstances = staticResource.Instances;
+            staticInstancesContentDigest = staticResource.ContentDigest;
+            staticCameraRegion = staticResource.CameraRegion;
+            instanceLayout = staticResource.Layout;
+            instanceDescriptor = staticResource.Descriptor;
         }
 
         var sourceTextures = new List<Texture>();
@@ -2695,11 +2777,11 @@ public static class RenderSceneSnapshotBuilder
                 : new RenderWorldShaderProvenanceSnapshot(
                     depthPrepassShader,
                     depthPrepassShader.ProgramExecutionStatus);
-        RenderBounds localBounds = IncludeNormalCameraVertexBounds(
-            RenderBounds.Empty,
-            vertices);
+        RenderBounds localBounds = geometryResource.LocalBounds;
         var preparedPass = new RenderNormalCameraPreparedPassSnapshot(
             sourceKind,
+            worldReceiverVariant,
+            staticReceiverVariant,
             authoredSourceOrdinal,
             collectionOrdinal,
             editorDrawGroupId,
@@ -2722,11 +2804,9 @@ public static class RenderSceneSnapshotBuilder
             frozenSamplers,
             pickRanges.Select(range =>
                 new RenderMaterialPickRangeSnapshot(range)),
-            staticInstances,
-            sourceKind == RenderNormalCameraDrawSourceKind.StaticModel
-                ? MapRenderOpenGlStaticCameraRegionPolicy.ResolveUniformRegion(
-                    staticInstances)
-                : null,
+            frozenStaticInstances,
+            staticInstancesContentDigest,
+            staticCameraRegion,
             textureResources,
             baseResource.TextureIdentity,
             baseResource.SamplerIdentity,
@@ -2739,7 +2819,8 @@ public static class RenderSceneSnapshotBuilder
             geometry,
             instanceLayout,
             instanceDescriptor,
-            rsxVertexInputs,
+            rsxInputsResource.Values,
+            rsxInputsResource.ContentDigest,
             localBounds);
         return new NormalCameraDrawCandidate(
             preparedPass,
@@ -3030,18 +3111,24 @@ public static class RenderSceneSnapshotBuilder
         ICollection<RenderSamplerDescriptor> samplers)
     {
         prepared.Add(candidate.Pass);
-        vertexLayouts.Add(candidate.VertexLayout);
-        geometries.Add(candidate.Geometry);
+        textureCache.CommitGeometry(
+            candidate.VertexLayout,
+            candidate.Geometry,
+            vertexLayouts,
+            geometries);
         if (candidate.InstanceLayout is not null &&
             candidate.Instances is not null)
         {
-            instanceLayouts.Add(candidate.InstanceLayout);
-            instances.Add(candidate.Instances);
+            textureCache.CommitInstances(
+                candidate.InstanceLayout,
+                candidate.Instances,
+                instanceLayouts,
+                instances);
         }
         foreach (RenderNormalCameraTextureResourceSnapshot resource in
                  candidate.TextureResources)
         {
-            textureCache.Commit(resource, textures, samplers);
+            textureCache.CommitTexture(resource, textures, samplers);
         }
     }
 
@@ -3057,7 +3144,9 @@ public static class RenderSceneSnapshotBuilder
                 RenderNormalCameraDrawSourceKind.StaticModel,
                 authoredSourceOrdinal,
                 candidate.Pass.CollectionOrdinal,
-                [code]));
+                [code],
+                staticReceiverVariant:
+                    candidate.Pass.StaticReceiverVariant));
         }
     }
 
@@ -3161,21 +3250,257 @@ public static class RenderSceneSnapshotBuilder
         IReadOnlyList<RenderNormalCameraTextureResourceSnapshot>
             TextureResources);
 
+    private sealed record NormalCameraGeometryResource(
+        RenderVertexLayoutDescriptor Layout,
+        RenderGeometryDescriptor Geometry,
+        RenderBounds LocalBounds);
+
+    private sealed record NormalCameraRsxVertexInputsResource(
+        ImmutableArray<float> Values,
+        string ContentDigest);
+
+    private sealed record NormalCameraStaticInstancesResource(
+        ImmutableArray<MapRenderStaticModelInstance> Instances,
+        string ContentDigest,
+        GfxCameraRegionType? CameraRegion,
+        RenderInstanceLayoutDescriptor Layout,
+        RenderInstanceDescriptor Descriptor);
+
+    private readonly record struct NormalCameraGeometryPayloadKey(
+        float[] Vertices,
+        uint[] Indices);
+
     /// <summary>
-    /// Scene-local identity cache for normal-camera textures. Material passes
-    /// frequently share the exact Texture object; snapshotting that
-    /// payload once avoids multiplying immutable RGBA/authored byte arrays by
-    /// surface and authored-pass count. Resources are committed only when a
-    /// candidate group is admitted, so typed omissions do not leave orphaned
-    /// catalog entries.
+    /// Scene-local identity cache for immutable normal-camera payloads.
+    /// Material passes and fixed receiver alternatives share the exact scene
+    /// arrays and textures; freezing and digesting them once avoids multiplying
+    /// geometry, RSX, instance, and image work by every authored technique
+    /// channel. Resources are committed only when a candidate group is
+    /// admitted, so typed omissions do not leave orphaned catalog entries.
     /// </summary>
     private sealed class NormalCameraTextureResourceCache
     {
+        private readonly bool _preferProvenAuthoredPayloads;
         private readonly Dictionary<Texture,
             RenderNormalCameraTextureResourceSnapshot> _resources = new(
                 ReferenceEqualityComparer.Instance);
-        private readonly HashSet<RenderSemanticIdentity> _committed = [];
+        private readonly Dictionary<NormalCameraGeometryPayloadKey,
+            NormalCameraGeometryResource> _geometryResources = [];
+        private readonly Dictionary<float[],
+            NormalCameraRsxVertexInputsResource> _rsxVertexInputs = new(
+                ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<IReadOnlyList<
+                MapRenderStaticModelInstance>,
+            NormalCameraStaticInstancesResource>
+            _staticInstancesByReference = new(
+                ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<int,
+            List<NormalCameraStaticInstancesResource>>
+            _staticInstancesByContentHash = [];
+        private readonly HashSet<RenderSemanticIdentity>
+            _committedTextures = [];
+        private readonly HashSet<RenderSemanticIdentity>
+            _committedVertexLayouts = [];
+        private readonly HashSet<RenderSemanticIdentity>
+            _committedGeometries = [];
+        private readonly HashSet<RenderSemanticIdentity>
+            _committedInstanceLayouts = [];
+        private readonly HashSet<RenderSemanticIdentity>
+            _committedInstances = [];
+        private RenderVertexLayoutDescriptor? _vertexLayout;
+        private RenderInstanceLayoutDescriptor? _instanceLayout;
         private int _nextResourceOrdinal;
+        private int _nextGeometryOrdinal;
+        private int _nextInstanceOrdinal;
+
+        internal NormalCameraTextureResourceCache(
+            bool preferProvenAuthoredPayloads)
+        {
+            _preferProvenAuthoredPayloads =
+                preferProvenAuthoredPayloads;
+            ImmutableArray<MapRenderStaticModelInstance> empty = [];
+            EmptyStaticInstancesContentDigest =
+                RenderNormalCameraPreparedPassSnapshot
+                    .ComputeStaticInstancesContentDigest(empty);
+        }
+
+        internal string EmptyStaticInstancesContentDigest { get; }
+
+        internal NormalCameraGeometryResource GetOrCreateGeometry(
+            float[] vertices,
+            uint[] indices)
+        {
+            ArgumentNullException.ThrowIfNull(vertices);
+            ArgumentNullException.ThrowIfNull(indices);
+            var key = new NormalCameraGeometryPayloadKey(vertices, indices);
+            if (_geometryResources.TryGetValue(
+                    key,
+                    out NormalCameraGeometryResource? existing))
+            {
+                return existing;
+            }
+
+            RenderVertexLayoutDescriptor layout = _vertexLayout ??=
+                new RenderVertexLayoutDescriptor(
+                    new RenderSemanticIdentity(
+                        RenderSemanticResourceKind.VertexLayout,
+                        "scene.normal-camera.vertex-layout.position-uv0-f32.stride-88"),
+                    MapRenderScene.TexturedVertexFloatCount * sizeof(float),
+                    [
+                        new RenderVertexElementDescriptor(
+                            RenderVertexSemantic.Position,
+                            0,
+                            RenderVertexElementFormat.Float32x3,
+                            0),
+                        new RenderVertexElementDescriptor(
+                            RenderVertexSemantic.TextureCoordinate,
+                            0,
+                            RenderVertexElementFormat.Float32x2,
+                            3 * sizeof(float))
+                    ]);
+            int ordinal = _nextGeometryOrdinal;
+            var geometry = new RenderGeometryDescriptor(
+                new RenderSemanticIdentity(
+                    RenderSemanticResourceKind.Geometry,
+                    "scene.normal-camera.geometry." + ordinal.ToString(
+                        "D8",
+                        CultureInfo.InvariantCulture)),
+                layout,
+                RenderGeometryCoordinateSpace.Render,
+                RenderPrimitiveTopology.TriangleList,
+                RenderIndexFormat.Unsigned32,
+                vertices.Length / MapRenderScene.TexturedVertexFloatCount,
+                indices.Length,
+                EncodeSingles(vertices),
+                EncodeUInt32(indices));
+            var resource = new NormalCameraGeometryResource(
+                layout,
+                geometry,
+                IncludeNormalCameraVertexBounds(
+                    RenderBounds.Empty,
+                    vertices));
+            _geometryResources.Add(key, resource);
+            _nextGeometryOrdinal = checked(ordinal + 1);
+            return resource;
+        }
+
+        internal NormalCameraRsxVertexInputsResource
+            GetOrCreateRsxVertexInputs(float[] source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            if (_rsxVertexInputs.TryGetValue(
+                    source,
+                    out NormalCameraRsxVertexInputsResource? existing))
+            {
+                return existing;
+            }
+
+            ImmutableArray<float> values =
+                ImmutableArray.CreateRange(source);
+            var resource = new NormalCameraRsxVertexInputsResource(
+                values,
+                RenderNormalCameraPreparedPassSnapshot
+                    .ComputeRsxVertexInputsContentDigest(values));
+            _rsxVertexInputs.Add(source, resource);
+            return resource;
+        }
+
+        internal NormalCameraStaticInstancesResource
+            GetOrCreateStaticInstances(
+                IReadOnlyList<MapRenderStaticModelInstance> source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            if (_staticInstancesByReference.TryGetValue(
+                    source,
+                    out NormalCameraStaticInstancesResource? existing))
+            {
+                return existing;
+            }
+
+            var hash = new HashCode();
+            hash.Add(source.Count);
+            for (int index = 0; index < source.Count; index++)
+                hash.Add(source[index]);
+            int contentHash = hash.ToHashCode();
+            if (_staticInstancesByContentHash.TryGetValue(
+                    contentHash,
+                    out List<NormalCameraStaticInstancesResource>?
+                        candidates))
+            {
+                foreach (NormalCameraStaticInstancesResource candidate in
+                         candidates)
+                {
+                    if (StaticInstancesEqual(candidate.Instances, source))
+                    {
+                        _staticInstancesByReference.Add(source, candidate);
+                        return candidate;
+                    }
+                }
+            }
+            else
+            {
+                candidates = [];
+                _staticInstancesByContentHash.Add(contentHash, candidates);
+            }
+
+            ImmutableArray<MapRenderStaticModelInstance> instances =
+                ImmutableArray.CreateRange(source);
+            RenderInstanceLayoutDescriptor layout = _instanceLayout ??=
+                new RenderInstanceLayoutDescriptor(
+                    new RenderSemanticIdentity(
+                        RenderSemanticResourceKind.InstanceLayout,
+                        "scene.normal-camera.instance-layout.transform-rows-f32.stride-48"),
+                    MapRenderStaticInstanceBufferPacker
+                        .PlacementOnlyFloatStride * sizeof(float),
+                    [
+                        new RenderInstanceElementDescriptor(
+                            RenderInstanceSemantic.TransformRow,
+                            0,
+                            RenderVertexElementFormat.Float32x4,
+                            0),
+                        new RenderInstanceElementDescriptor(
+                            RenderInstanceSemantic.TransformRow,
+                            1,
+                            RenderVertexElementFormat.Float32x4,
+                            4 * sizeof(float)),
+                        new RenderInstanceElementDescriptor(
+                            RenderInstanceSemantic.TransformRow,
+                            2,
+                            RenderVertexElementFormat.Float32x4,
+                            8 * sizeof(float))
+                    ]);
+            var packed = new float[checked(
+                instances.Length *
+                MapRenderStaticInstanceBufferPacker
+                    .PlacementOnlyFloatStride)];
+            MapRenderStaticInstanceBufferPacker.PackAll(
+                instances,
+                MapRenderStaticInstanceLightingPayload.None,
+                packed);
+            int ordinal = _nextInstanceOrdinal;
+            var descriptor = new RenderInstanceDescriptor(
+                new RenderSemanticIdentity(
+                    RenderSemanticResourceKind.Instances,
+                    "scene.normal-camera.instances." + ordinal.ToString(
+                        "D8",
+                        CultureInfo.InvariantCulture)),
+                layout,
+                instances.Length,
+                EncodeSingles(packed),
+                RenderPayloadByteOrder.LittleEndian);
+            var resource = new NormalCameraStaticInstancesResource(
+                instances,
+                RenderNormalCameraPreparedPassSnapshot
+                    .ComputeStaticInstancesContentDigest(instances),
+                MapRenderOpenGlStaticCameraRegionPolicy.ResolveUniformRegion(
+                    instances),
+                layout,
+                descriptor);
+            candidates.Add(resource);
+            _staticInstancesByReference.Add(source, resource);
+            _nextInstanceOrdinal = checked(ordinal + 1);
+            return resource;
+        }
 
         internal RenderNormalCameraTextureResourceSnapshot GetOrCreate(
             Texture source)
@@ -3195,7 +3520,8 @@ public static class RenderSceneSnapshotBuilder
                 source,
                 new RenderSemanticIdentity(
                     RenderSemanticResourceKind.Texture,
-                    "scene.normal-camera.texture." + ordinalText));
+                    "scene.normal-camera.texture." + ordinalText),
+                _preferProvenAuthoredPayloads);
             var sampler = new RenderSamplerDescriptor(
                 new RenderSemanticIdentity(
                     RenderSemanticResourceKind.Sampler,
@@ -3210,16 +3536,54 @@ public static class RenderSceneSnapshotBuilder
             return resource;
         }
 
-        internal void Commit(
+        internal void CommitTexture(
             RenderNormalCameraTextureResourceSnapshot resource,
             ICollection<RenderTextureDescriptor> textures,
             ICollection<RenderSamplerDescriptor> samplers)
         {
             ArgumentNullException.ThrowIfNull(resource);
-            if (!_committed.Add(resource.TextureIdentity))
+            if (!_committedTextures.Add(resource.TextureIdentity))
                 return;
             textures.Add(resource.Texture);
             samplers.Add(resource.Sampler);
+        }
+
+        internal void CommitGeometry(
+            RenderVertexLayoutDescriptor layout,
+            RenderGeometryDescriptor geometry,
+            ICollection<RenderVertexLayoutDescriptor> vertexLayouts,
+            ICollection<RenderGeometryDescriptor> geometries)
+        {
+            if (_committedVertexLayouts.Add(layout.Identity))
+                vertexLayouts.Add(layout);
+            if (_committedGeometries.Add(geometry.Identity))
+                geometries.Add(geometry);
+        }
+
+        internal void CommitInstances(
+            RenderInstanceLayoutDescriptor layout,
+            RenderInstanceDescriptor instances,
+            ICollection<RenderInstanceLayoutDescriptor> instanceLayouts,
+            ICollection<RenderInstanceDescriptor> instanceResources)
+        {
+            if (_committedInstanceLayouts.Add(layout.Identity))
+                instanceLayouts.Add(layout);
+            if (_committedInstances.Add(instances.Identity))
+                instanceResources.Add(instances);
+        }
+
+        private static bool StaticInstancesEqual(
+            ImmutableArray<MapRenderStaticModelInstance> left,
+            IReadOnlyList<MapRenderStaticModelInstance> right)
+        {
+            if (left.Length != right.Count)
+                return false;
+            for (int index = 0; index < left.Length; index++)
+            {
+                if (left[index] != right[index])
+                    return false;
+            }
+            return true;
         }
     }
 
@@ -3228,10 +3592,18 @@ public static class RenderSceneSnapshotBuilder
         MapRenderTexturedBatch? Batch,
         NormalCameraWorldGroupKey GroupKey);
 
+    private readonly record struct NormalCameraWorldCollection(
+        IReadOnlyList<MapRenderTexturedBatch> Batches,
+        MapRenderWorldReceiverVariantKey? ReceiverVariant);
+
     private readonly record struct NormalCameraStaticSourceEntry(
         int CollectionOrdinal,
         MapRenderInstancedTexturedBatch? Batch,
         int DrawGroupId);
+
+    private readonly record struct NormalCameraStaticCollection(
+        IReadOnlyList<MapRenderInstancedTexturedBatch> Batches,
+        MapRenderStaticModelReceiverVariantKey? ReceiverVariant);
 
     private readonly record struct NormalCameraWorldGroupKey(
         string MaterialName,

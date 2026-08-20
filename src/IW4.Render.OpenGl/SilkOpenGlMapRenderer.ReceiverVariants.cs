@@ -167,9 +167,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     };
                     bool allowsDecodedPerSurfaceFrustumCull =
                         AllowsDecodedPerSurfaceFrustumCull(mesh);
-                    if (!MapRenderOpenGlWorldSurfaceSpanCatalog.TryCreate(
+                    if (!MapRenderWorldSurfaceSpanCatalog.TryCreate(
                             batches[batchIndex],
-                            out MapRenderOpenGlWorldSurfaceSpan[] spans,
+                            out MapRenderWorldSurfaceSpan[] spans,
                             includeDecodedBounds:
                                 allowsDecodedPerSurfaceFrustumCull))
                     {

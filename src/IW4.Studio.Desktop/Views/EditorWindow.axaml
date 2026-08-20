@@ -50,23 +50,38 @@
   </NativeMenu.Menu>
 
   <Grid RowDefinitions="52,*,25">
+  
+    <!-- Background="{DynamicResource StudioSurfaceBrush}" -->
     <Border Grid.Row="0"
             Padding="14,7"
-            Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,0,0,1">
+      
+      <Border.Background>
+        <ImageBrush
+          Source="/Resources/map.png"
+          Stretch="UniformToFill" 
+          TileMode="Tile" 
+          AlignmentX="Left"
+          AlignmentY="Top"
+          Opacity="0.75" />
+      </Border.Background>
+            
       <Grid ColumnDefinitions="Auto,12,*,Auto" VerticalAlignment="Center">
+        
+        <!-- Background="{DynamicResource StudioAccentStrongBrush}" -->
         <Border Grid.Column="0"
                 Width="32"
                 Height="32"
                 CornerRadius="7"
-                Background="{DynamicResource StudioAccentStrongBrush}">
-          <svg:Svg Width="46"
-                   Height="46"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   Stretch="Uniform"
-                   Path="/Resources/logo.svg" />
+                >
+          <Image
+            Width="46"
+            Height="46"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Source="/Resources/logo_simple.png"
+            Stretch="Uniform" />
         </Border>
         <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
           <TextBlock Text="{Binding TargetFileName}"
@@ -82,16 +97,6 @@
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9">
-          <Border Padding="10,5"
-                  CornerRadius="12"
-                  Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
-            <TextBlock Text="{Binding ModeName}"
-                       VerticalAlignment="Center"
-                       HorizontalAlignment="Center"
-                       Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
-                       FontSize="10"
-                       FontWeight="SemiBold" />
-          </Border>
           <Button Classes="ghost"
                   MinHeight="32"
                   Padding="11,5"

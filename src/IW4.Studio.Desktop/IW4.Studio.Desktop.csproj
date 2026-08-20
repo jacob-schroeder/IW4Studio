@@ -9,14 +9,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <Version>1.0.1</Version>
+    <Version>1.1.2</Version>
     <Title>IW4 Studio</Title>
     <Authors>Jacob Schroeder</Authors>
     <Description>Studio and workspace editor for IW4 (Infinity Ward) fastfiles on the Playstation 3 platform.</Description>
     <PackageProjectUrl>https://github.com/jacob-schroeder/IW4Studio</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jacob-schroeder/IW4Studio</RepositoryUrl>
     <Product>IW4 Studio</Product>
-    <AssemblyVersion>1.0.1</AssemblyVersion>
+    <AssemblyVersion>1.1.2</AssemblyVersion>
     <AssemblyName>IW4 Studio</AssemblyName>
   </PropertyGroup>
 
@@ -27,6 +27,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.3" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
     <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
     <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
@@ -37,9 +38,12 @@
   <ItemGroup>
     <ProjectReference Include="..\IW4.Gsc\IW4.Gsc.csproj" />
     <ProjectReference Include="..\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\IW4.Render.Metal\IW4.Render.Metal.csproj" />
     <ProjectReference Include="..\IW4.Render.OpenGl\IW4.Render.OpenGl.csproj" />
-    <AvaloniaResource Include="..\..\Resources\logo_alt.svg" Link="Resources\logo_alt.svg" />
+    <AvaloniaResource Include="..\..\Resources\logo.png" Link="Resources\logo.png" />
+    <AvaloniaResource Include="..\..\Resources\logo_simple.png" Link="Resources\logo_simple.png" />
     <AvaloniaResource Include="..\..\Resources\logo.svg" Link="Resources\logo.svg" />
+    <AvaloniaResource Include="..\..\Resources\images\map.png" Link="Resources\map.png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -270,7 +270,10 @@ internal sealed class EditorPresentationSession : IDisposable
         }
 
         MapRenderNormalCameraClearColorResult clearColor =
-            CreateClearColor(camera, fallbackClearColor, activeFog);
+            MapRenderNormalCameraClearColorProducer.ProduceEditorPreview(
+                camera.FarPlane,
+                fallbackClearColor,
+                activeFog);
         EditorPresentationFrame frame =
             EditorPresentationFramePlanner
                 .Create(
@@ -448,73 +451,6 @@ internal sealed class EditorPresentationSession : IDisposable
                     requirement.Status ==
                         ShaderRuntimeSamplerRequirementStatus
                             .SameRevisionTextureRequired));
-
-    private static MapRenderNormalCameraClearColorResult CreateClearColor(
-        RenderCamera camera,
-        Vector3 fallbackClearColor,
-        MapRenderActiveFogState? activeFog)
-    {
-        if (!IsFiniteUnitColor(fallbackClearColor))
-        {
-            throw new ArgumentOutOfRangeException(nameof(fallbackClearColor));
-        }
-
-        MapRenderRgba8Color primary = ToRgba8(fallbackClearColor);
-        MapRenderActiveFogState fog = activeFog ?? InactiveFog(primary);
-        return MapRenderNormalCameraClearColorProducer.Produce(
-            new MapRenderNormalCameraClearColorInput(
-                activeFog is null
-                    ? MapRenderNormalCameraClearMode.Steady
-                    : MapRenderNormalCameraClearMode.FogColor,
-                developerEnabled: false,
-                systemMilliseconds: 0,
-                primary,
-                primary,
-                new MapRenderNormalCameraFarPlaneState(
-                    camera.FarPlane,
-                    camera.FarPlane),
-                fog));
-    }
-
-    private static MapRenderActiveFogState InactiveFog(
-        MapRenderRgba8Color color)
-    {
-        var bgra = new MapRenderBgra8Color(
-            color.Blue,
-            color.Green,
-            color.Red,
-            color.Alpha);
-        return new MapRenderActiveFogState(
-            startTime: 0,
-            finishTime: 0,
-            bgra,
-            fogStart: 0f,
-            density: 0f,
-            fogMaxOpacity: 0f,
-            new MapRenderActiveSunFogState(
-                enabled: false,
-                bgra,
-                Vector3.UnitZ,
-                beginFadeAngleDegrees: 0f,
-                endFadeAngleDegrees: 0f,
-                scale: 0f));
-    }
-
-    private static MapRenderRgba8Color ToRgba8(Vector3 color) => new(
-        ToByte(color.X),
-        ToByte(color.Y),
-        ToByte(color.Z),
-        byte.MaxValue);
-
-    private static byte ToByte(float value) => checked((byte)Math.Clamp(
-        (int)MathF.Round(value * byte.MaxValue),
-        byte.MinValue,
-        byte.MaxValue));
-
-    private static bool IsFiniteUnitColor(Vector3 color) =>
-        float.IsFinite(color.X) && color.X is >= 0f and <= 1f &&
-        float.IsFinite(color.Y) && color.Y is >= 0f and <= 1f &&
-        float.IsFinite(color.Z) && color.Z is >= 0f and <= 1f;
 
     private static void TryDispose(
         IDisposable? owner,

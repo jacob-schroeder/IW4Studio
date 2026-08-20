@@ -54,7 +54,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
         bool includeDiagnosticGeometry = input.BuildProfile switch
         {
             MapRenderSceneBuildProfile.Neutral => true,
-            MapRenderSceneBuildProfile.InteractiveOpenGl => false,
+            MapRenderSceneBuildProfile.InteractiveNative => false,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(input),
                 input.BuildProfile,
@@ -113,7 +113,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
         var textureCache = new RenderTextureCache(
             preferProvenAuthoredPayloads:
                 input.BuildProfile ==
-                MapRenderSceneBuildProfile.InteractiveOpenGl);
+                MapRenderSceneBuildProfile.InteractiveNative);
         var failedTextureCacheKeys = new HashSet<RenderTextureCacheKey>();
         var worldTextureCache = new MapRenderWorldTextureCache();
         var failedWorldTextureCacheKeys =

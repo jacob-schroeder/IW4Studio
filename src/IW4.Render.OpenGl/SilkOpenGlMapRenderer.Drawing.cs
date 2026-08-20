@@ -1992,7 +1992,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private static GlTexturedMesh SelectWorldVisibleRun(
         in GlTexturedMesh mesh,
-        MapRenderOpenGlWorldVisibleRun run) =>
+        MapRenderWorldVisibleRun run) =>
         mesh with
         {
             IndexCount = checked((uint)run.IndexCount),

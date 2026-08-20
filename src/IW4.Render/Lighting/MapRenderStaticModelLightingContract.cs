@@ -1,5 +1,7 @@
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;
+using IW4.Render.Resources;
+using IW4.Render.Shaders;
 
 namespace IW4.Render.Lighting;
 
@@ -18,15 +20,54 @@ internal readonly record struct MapRenderStaticModelLightingContract(
         out MapRenderStaticModelLightingContract contract)
     {
         ArgumentNullException.ThrowIfNull(execution);
+        return TryCreate(
+            execution.RuntimeSamplerRequirements,
+            execution.ProgramSamplerDestinations,
+            execution.CodeSamplerDestinations,
+            execution.ProgramVertexConstantDestinations,
+            execution.ConstantDestinations,
+            execution.CodePixelConstantPatchPlans,
+            out contract);
+    }
+
+    internal static bool TryCreate(
+        RenderWorldShaderProvenanceSnapshot execution,
+        out MapRenderStaticModelLightingContract contract)
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        return TryCreate(
+            execution.RuntimeSamplerRequirements,
+            execution.ProgramSamplerDestinations,
+            execution.CodeSamplerDestinations,
+            execution.ProgramVertexConstantDestinations,
+            execution.ConstantDestinations,
+            execution.CodePixelConstantPatchPlans,
+            out contract);
+    }
+
+    private static bool TryCreate(
+        IEnumerable<ShaderRuntimeSamplerRequirement> runtimeRequirements,
+        IEnumerable<int> programSamplerDestinations,
+        IEnumerable<ShaderSamplerDestination> codeSamplerDestinations,
+        IEnumerable<int> programVertexConstantDestinations,
+        IEnumerable<ShaderConstantDestination> constantDestinations,
+        IEnumerable<CodePixelConstantPatchPlan> codePixelConstantPatchPlans,
+        out MapRenderStaticModelLightingContract contract)
+    {
         contract = default;
 
-        if (!HasConsumedAtlasSampler(execution) ||
+        if (!HasConsumedAtlasSampler(
+                runtimeRequirements,
+                programSamplerDestinations,
+                codeSamplerDestinations) ||
             !HasVertexSourceRow(
-                execution,
+                programVertexConstantDestinations,
+                constantDestinations,
                 FrameDirectCodeConstants
                     .StaticModelBaseLightingCoordsRowIndex) ||
             !HasPixelSourceRow(
-                execution,
+                constantDestinations,
+                codePixelConstantPatchPlans,
                 FrameDirectCodeConstants.ModelLightingSamplerRowIndex))
         {
             return false;
@@ -34,19 +75,22 @@ internal readonly record struct MapRenderStaticModelLightingContract(
 
         bool hasDirectionalDirection =
             HasPixelSourceRow(
-                execution,
+                constantDestinations,
+                codePixelConstantPatchPlans,
                 FrameDirectCodeConstants
                     .DirectionalLightDirectionRowIndex);
         bool addsDirectionalDiffuse =
             hasDirectionalDirection &&
             HasPixelSourceRow(
-                execution,
+                constantDestinations,
+                codePixelConstantPatchPlans,
                 FrameDirectCodeConstants
                     .DirectionalLightDiffuseRowIndex);
         bool addsDirectionalSpecular =
             hasDirectionalDirection &&
             HasPixelSourceRow(
-                execution,
+                constantDestinations,
+                codePixelConstantPatchPlans,
                 FrameDirectCodeConstants
                     .DirectionalLightSpecularRowIndex);
         contract = new(
@@ -56,7 +100,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     }
 
     /// <summary>
-    /// Rejects a scene before GL resource construction when an actually-read
+    /// Rejects a scene before backend resource construction when an actually-read
     /// raw-3 model-lighting sampler has no atlas publication. This
     /// prevents an atlas-authored static program from silently falling back to
     /// the generic ambient path.
@@ -71,7 +115,10 @@ internal readonly record struct MapRenderStaticModelLightingContract(
 
         if (executions.Any(execution =>
                 execution is not null &&
-                HasConsumedAtlasSampler(execution)))
+                HasConsumedAtlasSampler(
+                    execution.RuntimeSamplerRequirements,
+                    execution.ProgramSamplerDestinations,
+                    execution.CodeSamplerDestinations)))
         {
             throw new InvalidDataException(
                 "A static-model program consumes the raw-3 " +
@@ -80,10 +127,12 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     }
 
     private static bool HasConsumedAtlasSampler(
-        ShaderExecutionContract execution)
+        IEnumerable<ShaderRuntimeSamplerRequirement> runtimeRequirements,
+        IEnumerable<int> programSamplerDestinations,
+        IEnumerable<ShaderSamplerDestination> codeSamplerDestinations)
     {
-        ShaderRuntimeSamplerRequirement[] requirements = execution
-            .RuntimeSamplerRequirements
+        int[] sampledDestinations = programSamplerDestinations.ToArray();
+        ShaderRuntimeSamplerRequirement[] requirements = runtimeRequirements
             .Where(requirement =>
                 requirement.CodeSamplerArgument ==
                     MaterialTextureSource.ModelLighting &&
@@ -93,7 +142,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
                 requirement.Status ==
                     ShaderRuntimeSamplerRequirementStatus
                         .ImmutableSceneAtlasRequired &&
-                execution.ProgramSamplerDestinations.Contains(
+                sampledDestinations.Contains(
                     requirement.Destination))
             .ToArray();
         if (requirements.Length != 1)
@@ -101,7 +150,7 @@ internal readonly record struct MapRenderStaticModelLightingContract(
 
         ShaderRuntimeSamplerRequirement requirement =
             requirements[0];
-        return execution.CodeSamplerDestinations.Count(destination =>
+        return codeSamplerDestinations.Count(destination =>
             destination.ArgumentIndex == requirement.ArgumentIndex &&
             string.Equals(
                 destination.ArgumentType,
@@ -117,27 +166,29 @@ internal readonly record struct MapRenderStaticModelLightingContract(
     }
 
     private static bool HasVertexSourceRow(
-        ShaderExecutionContract execution,
+        IEnumerable<int> programVertexConstantDestinations,
+        IEnumerable<ShaderConstantDestination> constantDestinations,
         ushort sourceRow) =>
-        execution.ConstantDestinations.Any(destination =>
+        constantDestinations.Any(destination =>
             string.Equals(
                 destination.ArgumentType,
                 "CodeVertexConst",
                 StringComparison.Ordinal) &&
             destination.CodeConstantSourceRow == sourceRow &&
-            execution.ProgramVertexConstantDestinations.Contains(
+            programVertexConstantDestinations.Contains(
                 destination.Destination));
 
     private static bool HasPixelSourceRow(
-        ShaderExecutionContract execution,
+        IEnumerable<ShaderConstantDestination> constantDestinations,
+        IEnumerable<CodePixelConstantPatchPlan> codePixelConstantPatchPlans,
         ushort sourceRow) =>
-        execution.ConstantDestinations.Any(destination =>
+        constantDestinations.Any(destination =>
             string.Equals(
                 destination.ArgumentType,
                 "CodePixelConst",
                 StringComparison.Ordinal) &&
             destination.CodeConstantSourceRow == sourceRow &&
-            execution.CodePixelConstantPatchPlans.Any(plan =>
+            codePixelConstantPatchPlans.Any(plan =>
                 plan.ArgumentOrdinal == destination.ArgumentIndex &&
                 plan.Destination == destination.Destination &&
                 plan.CodeIndex == sourceRow &&

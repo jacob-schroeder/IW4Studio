@@ -1,4 +1,5 @@
 using IW4.Runtime.Diagnostics;
+using System.Reflection;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
@@ -9,6 +10,9 @@ public sealed class WelcomeViewModel : ObservableObject
     private string _errorMessage = string.Empty;
     private bool _isBusy;
     private bool _hasError;
+
+    public string DesktopVersionLabel => AssemblyConst.AssemblyVersion;
+    public string PlatformLabel => AssemblyConst.Platform;
 
     public IReadOnlyList<RecentFastFileItem> RecentFiles { get; private set; } = [];
 

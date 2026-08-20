@@ -120,7 +120,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     worldBatch.AllowsDecodedPerSurfaceFrustumCull
                         ? _currentPreviewFrustum
                         : null;
-                MapRenderOpenGlWorldSurfaceCompactionResult compaction =
+                MapRenderWorldSurfaceCompactionResult compaction =
                     worldBatch.Compact(
                         dpvsSurfaceWords,
                         hasDpvsVisibility,
@@ -169,7 +169,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     continue;
                 }
 
-                MapRenderOpenGlWorldSurfaceCompactionResult compaction =
+                MapRenderWorldSurfaceCompactionResult compaction =
                     worldBatch.Compact(
                         selected,
                         hasDpvsVisibility: true,

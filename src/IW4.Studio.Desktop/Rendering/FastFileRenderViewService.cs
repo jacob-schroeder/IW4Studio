@@ -43,6 +43,17 @@ public sealed class FastFileRenderViewService : IDisposable
         _sceneBuilder = sceneBuilder;
     }
 
+    private static RenderSceneSnapshot CreateInteractiveSnapshot(
+        MapRenderScene scene,
+        long revision) =>
+        OperatingSystem.IsMacOS()
+            ? RenderSceneSnapshotBuilder.CreateInteractiveMetal(
+                scene,
+                revision)
+            : RenderSceneSnapshotBuilder.CreateInteractiveOpenGl(
+                scene,
+                revision);
+
     private RenderViewSceneBuildResult BuildSceneCore(
         FastFileWorkspace workspace,
         long snapshotRevision,
@@ -104,7 +115,7 @@ public sealed class FastFileRenderViewService : IDisposable
             buildProgress)
         {
             ImagePayloadResolver = loadedZone.ImagePayloadResolver,
-            BuildProfile = MapRenderSceneBuildProfile.InteractiveOpenGl
+            BuildProfile = MapRenderSceneBuildProfile.InteractiveNative
         };
 
         MapRenderScene scene;
@@ -117,10 +128,9 @@ public sealed class FastFileRenderViewService : IDisposable
         }
         buildCancellationToken.ThrowIfCancellationRequested();
         buildProgress?.Invoke("freezing scene resources for the renderer");
-        RenderSceneSnapshot sceneSnapshot =
-            RenderSceneSnapshotBuilder.CreateInteractiveOpenGl(
-                scene,
-                snapshotRevision);
+        RenderSceneSnapshot sceneSnapshot = CreateInteractiveSnapshot(
+            scene,
+            snapshotRevision);
         buildCancellationToken.ThrowIfCancellationRequested();
         RenderViewSceneBuildResult result =
             RenderViewSceneBuildResult.Renderable(
@@ -134,7 +144,7 @@ public sealed class FastFileRenderViewService : IDisposable
         RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
         buildCancellationToken.ThrowIfCancellationRequested();
         buildProgress?.Invoke(
-            "scene resources are ready for OpenGL initialization");
+            "scene resources are ready for native renderer initialization");
         return result;
     }
 
@@ -418,9 +428,7 @@ public sealed class FastFileRenderViewService : IDisposable
                     result.GfxWorld,
                     result.ClipMap,
                     scene,
-                    RenderSceneSnapshotBuilder.CreateInteractiveOpenGl(
-                        scene,
-                        snapshotRevision));
+                    CreateInteractiveSnapshot(scene, snapshotRevision));
                 _snapshotResults.Add(snapshotRevision, revised);
                 return revised;
             }

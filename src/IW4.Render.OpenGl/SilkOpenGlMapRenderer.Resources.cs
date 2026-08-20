@@ -164,9 +164,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
             bool allowsDecodedPerSurfaceFrustumCull =
                 AllowsDecodedPerSurfaceFrustumCull(mesh);
-            if (MapRenderOpenGlWorldSurfaceSpanCatalog.TryCreate(
+            if (MapRenderWorldSurfaceSpanCatalog.TryCreate(
                     batches[batchIndex],
-                    out MapRenderOpenGlWorldSurfaceSpan[] spans,
+                    out MapRenderWorldSurfaceSpan[] spans,
                     includeDecodedBounds:
                         allowsDecodedPerSurfaceFrustumCull))
             {
@@ -175,7 +175,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     allowsDecodedPerSurfaceFrustumCull);
                 _worldSurfaceCandidateCount = checked(
                     _worldSurfaceCandidateCount + spans.Length);
-                foreach (MapRenderOpenGlWorldSurfaceSpan span in spans)
+                foreach (MapRenderWorldSurfaceSpan span in spans)
                 {
                     _worldSurfaceCandidateIndexCount = checked(
                         _worldSurfaceCandidateIndexCount + span.IndexCount);
@@ -245,7 +245,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 {
                     continue;
                 }
-                foreach (MapRenderOpenGlWorldSurfaceSpan span in batch.Spans)
+                foreach (MapRenderWorldSurfaceSpan span in batch.Spans)
                 {
                     if ((uint)span.SurfaceIndex <
                         (uint)ExecutableSurfaces.Length)
@@ -432,7 +432,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private sealed class WorldSurfaceBatchRuntime
     {
         public WorldSurfaceBatchRuntime(
-            MapRenderOpenGlWorldSurfaceSpan[] spans,
+            MapRenderWorldSurfaceSpan[] spans,
             bool allowsDecodedPerSurfaceFrustumCull)
         {
             ArgumentNullException.ThrowIfNull(spans);
@@ -445,24 +445,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             AllowsDecodedPerSurfaceFrustumCull =
                 allowsDecodedPerSurfaceFrustumCull;
             VisibleRuns =
-                new MapRenderOpenGlWorldVisibleRun[spans.Length];
+                new MapRenderWorldVisibleRun[spans.Length];
         }
 
-        public MapRenderOpenGlWorldSurfaceSpan[] Spans { get; }
+        public MapRenderWorldSurfaceSpan[] Spans { get; }
 
-        public MapRenderOpenGlWorldVisibleRun[] VisibleRuns { get; }
+        public MapRenderWorldVisibleRun[] VisibleRuns { get; }
 
         public bool AllowsDecodedPerSurfaceFrustumCull { get; }
 
         public int RunCount { get; private set; }
 
-        public MapRenderOpenGlWorldSurfaceCompactionResult Compact(
+        public MapRenderWorldSurfaceCompactionResult Compact(
             ReadOnlySpan<uint> dpvsSurfaceWords,
             bool hasDpvsVisibility,
             MapRenderCameraFrustum? frustum)
         {
-            MapRenderOpenGlWorldSurfaceCompactionResult result =
-                MapRenderOpenGlWorldSurfaceRunCompactor.Compact(
+            MapRenderWorldSurfaceCompactionResult result =
+                MapRenderWorldSurfaceRunCompactor.Compact(
                     Spans,
                     dpvsSurfaceWords,
                     hasDpvsVisibility,

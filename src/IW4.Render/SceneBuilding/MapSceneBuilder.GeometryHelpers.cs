@@ -44,7 +44,7 @@ public sealed partial class MapSceneBuilder
         profile switch
         {
             MapRenderSceneBuildProfile.Neutral => true,
-            MapRenderSceneBuildProfile.InteractiveOpenGl => true,
+            MapRenderSceneBuildProfile.InteractiveNative => true,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(profile),
                 profile,

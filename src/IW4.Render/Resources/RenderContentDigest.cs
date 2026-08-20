@@ -1,6 +1,7 @@
 using IW4.Render.Techniques;
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -60,6 +61,39 @@ internal sealed class RenderContentDigestWriter : IDisposable
 
     internal void WriteSingle(float value) =>
         WriteInt32(BitConverter.SingleToInt32Bits(value));
+
+    internal void WriteSingles(ImmutableArray<float> values)
+    {
+        if (values.IsDefault)
+        {
+            throw new ArgumentException(
+                "Digest float storage is uninitialized.",
+                nameof(values));
+        }
+
+        WriteInt32(values.Length);
+        if (values.IsEmpty)
+            return;
+        if (BitConverter.IsLittleEndian)
+        {
+            _hash.AppendData(MemoryMarshal.AsBytes(values.AsSpan()));
+            return;
+        }
+
+        Span<byte> bytes = stackalloc byte[256 * sizeof(float)];
+        for (int first = 0; first < values.Length; first += 256)
+        {
+            int count = Math.Min(256, values.Length - first);
+            Span<byte> chunk = bytes[..(count * sizeof(float))];
+            for (int index = 0; index < count; index++)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    chunk.Slice(index * sizeof(float), sizeof(float)),
+                    BitConverter.SingleToInt32Bits(values[first + index]));
+            }
+            _hash.AppendData(chunk);
+        }
+    }
 
     internal void WriteNullableInt32(int? value)
     {

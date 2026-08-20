@@ -9,17 +9,17 @@ namespace IW4.Render.World;
 /// Failure is conservative: the renderer retains the original whole-batch draw
 /// instead of dropping geometry whose range metadata cannot be resolved.
 /// </summary>
-internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
+internal static class MapRenderWorldSurfaceSpanCatalog
 {
     /// <summary>
     /// Builds the same ordered full-index-coverage catalog from the immutable
-    /// normal-camera snapshot consumed by Vulkan. Bounds are intentionally
-    /// empty: translated RSX programs use DPVS-only visibility in the OpenGL
-    /// oracle because their decoded positions are not conservative.
+    /// normal-camera snapshot consumed by native backends. Bounds are
+    /// intentionally empty: translated RSX programs use DPVS-only visibility
+    /// because their decoded positions are not conservative.
     /// </summary>
     public static bool TryCreate(
         RenderNormalCameraPreparedPassSnapshot pass,
-        out MapRenderOpenGlWorldSurfaceSpan[] spans)
+        out MapRenderWorldSurfaceSpan[] spans)
     {
         ArgumentNullException.ThrowIfNull(pass);
         spans = [];
@@ -37,7 +37,7 @@ internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
 
         int expectedFirstIndex = 0;
         int ordinal = 0;
-        var result = new MapRenderOpenGlWorldSurfaceSpan[
+        var result = new MapRenderWorldSurfaceSpan[
             surfaceRangeCount];
         foreach (RenderMaterialPickRangeSnapshot range in pass.PickRanges)
         {
@@ -80,7 +80,7 @@ internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
 
     public static bool TryCreate(
         MapRenderTexturedBatch batch,
-        out MapRenderOpenGlWorldSurfaceSpan[] spans,
+        out MapRenderWorldSurfaceSpan[] spans,
         bool includeDecodedBounds = true)
     {
         ArgumentNullException.ThrowIfNull(batch);
@@ -99,7 +99,7 @@ internal static class MapRenderOpenGlWorldSurfaceSpanCatalog
         // coverage and fall back to the original whole-batch draw otherwise.
         int expectedFirstIndex = 0;
         int ordinal = 0;
-        var result = new MapRenderOpenGlWorldSurfaceSpan[surfaceRangeCount];
+        var result = new MapRenderWorldSurfaceSpan[surfaceRangeCount];
         foreach (MapRenderPickRange range in batch.PickRanges)
         {
             if (range.Kind != MapRenderPickKind.GfxSurface)

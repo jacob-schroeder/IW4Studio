@@ -16,7 +16,7 @@ namespace IW4.Render;
 public enum MapRenderSceneBuildProfile : byte
 {
     Neutral = 0,
-    InteractiveOpenGl = 1
+    InteractiveNative = 1
 }
 
 /// <summary>
