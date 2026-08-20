@@ -149,11 +149,11 @@ public sealed class FastFileRenderViewService : IDisposable
     }
 
     /// <summary>
-    /// Coalesces all callers for one immutable workspace/runtime revision onto
-    /// one background scene build. This lets Studio begin preparing the map as
-    /// soon as the loaded editor opens and lets a later Render Map click reuse
-    /// that exact scene and snapshot instead of repeating asset resolution,
-    /// texture decode, geometry construction, and snapshot preparation.
+    /// Coalesces concurrent Live Preview callers for one immutable
+    /// workspace/runtime revision onto one background scene build so they
+    /// reuse the exact scene and snapshot instead of repeating asset
+    /// resolution, texture decode, geometry construction, and snapshot
+    /// preparation.
     /// </summary>
     public async Task<RenderViewSceneBuildResult> BuildSceneAsync(
         FastFileWorkspace workspace,

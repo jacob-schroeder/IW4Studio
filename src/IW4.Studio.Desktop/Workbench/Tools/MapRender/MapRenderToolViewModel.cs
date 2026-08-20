@@ -5,26 +5,19 @@ using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
-using IW4.Studio.Desktop.Rendering;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.MapRender;
 
 /// <summary>
-/// Right-dock controller for the existing native Silk.NET renderer. It reports
-/// scene preparation in the workbench but intentionally does not pretend the
-/// native framebuffer is embedded in Avalonia.
+/// Right-dock launcher for the native Silk.NET renderer. Scene preparation is
+/// scoped to the native preview lifetime rather than retained by the workbench.
 /// </summary>
 public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
 {
     private const string LevelBriefingMaterialName = "$levelbriefing";
 
     private readonly CancellationTokenSource _previewCancellation = new();
-    private string _statusHeading = "Preparing Live Preview";
-    private string _statusMessage =
-        "Building a reusable scene snapshot from the loaded workspace…";
     private Bitmap? _levelBriefingPreview;
-    private bool _isPreparing = true;
-    private bool _canLaunch;
     private bool _disposed;
 
     public MapRenderToolViewModel(FastFileWorkspace workspace)
@@ -64,70 +57,15 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
 
     public bool HasNoLevelBriefingPreview => !HasLevelBriefingPreview;
 
-    public string StatusHeading
-    {
-        get => _statusHeading;
-        private set => SetProperty(ref _statusHeading, value);
-    }
+    public string StatusHeading => "Live Preview";
 
-    public string StatusMessage
-    {
-        get => _statusMessage;
-        private set => SetProperty(ref _statusMessage, value);
-    }
+    public string StatusMessage =>
+        "Open the native preview to prepare this map's render scene.";
 
-    public bool IsPreparing
-    {
-        get => _isPreparing;
-        private set => SetProperty(ref _isPreparing, value);
-    }
-
-    public bool CanLaunch
-    {
-        get => _canLaunch;
-        private set => SetProperty(ref _canLaunch, value);
-    }
-
-    public void ReportProgress(string message)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-            return;
-
-        IsPreparing = true;
-        StatusHeading = "Preparing Live Preview";
-        StatusMessage = message;
-    }
-
-    public void ReportResult(RenderViewSceneBuildResult result)
-    {
-        ArgumentNullException.ThrowIfNull(result);
-        IsPreparing = false;
-        CanLaunch = result.IsRenderable;
-        StatusHeading = result.IsRenderable
-            ? "Live Preview ready"
-            : "Live Preview unavailable";
-        StatusMessage = result.IsRenderable
-            ? "The scene is cached. Open it in the native Silk.NET render window."
-            : result.NonRenderableReason
-              ?? "This fastfile does not contain renderable map assets.";
-    }
-
-    public void ReportFailure(Exception exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        IsPreparing = false;
-        CanLaunch = false;
-        StatusHeading = "Could not prepare Live Preview";
-        StatusMessage = exception.Message;
-    }
+    public bool CanLaunch => true;
 
     public void RequestLaunch()
-    {
-        if (!CanLaunch)
-            return;
-
-        LaunchRequested?.Invoke(this, EventArgs.Empty);
-    }
+        => LaunchRequested?.Invoke(this, EventArgs.Empty);
 
     public void Dispose()
     {

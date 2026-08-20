@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Lifecycle;
 using IW4.Studio.Desktop.Rendering;
@@ -18,11 +17,11 @@ public sealed partial class EditorWindow : Window
     private readonly DestructiveNavigationCoordinator _navigationCoordinator;
     private readonly IUnsavedChangesDialog _unsavedChangesDialog;
     private readonly TransactionalSaveAsService _saveAsService = new();
-    private readonly FastFileRenderViewService _renderViewService = new();
+    private FastFileRenderViewService? _renderViewService;
+    private Task? _renderViewServiceDisposal;
     private StudioWorkbenchViewModel? _workbench;
     private GscEngineReferenceWindow? _gscEngineReferenceWindow;
     private readonly HashSet<MapRenderWindow> _livePreviewWindows = [];
-    private readonly RetryableRenderWarmup _renderWarmup = new();
     private int _saveAsInProgress;
     private int _navigationInProgress;
     private bool _approvedCloseRetry;
@@ -52,10 +51,7 @@ public sealed partial class EditorWindow : Window
         : this(navigationCoordinator)
     {
         ArgumentNullException.ThrowIfNull(workspace);
-        var constructionRollback = new List<Action>
-        {
-            _renderViewService.Dispose
-        };
+        var constructionRollback = new List<Action>();
         try
         {
             var workbench = new StudioWorkbenchViewModel(workspace);
@@ -85,8 +81,6 @@ public sealed partial class EditorWindow : Window
                     DataContext = null;
             });
             Title = $"{Path.GetFileName(workspace.Document.Request.Path)} — IW4 Studio";
-            Opened += EditorWindow_Opened;
-            constructionRollback.Add(() => Opened -= EditorWindow_Opened);
             EventHandler closedHandler = (_, _) => DisposeEditor();
             Closed += closedHandler;
             constructionRollback.Add(() => Closed -= closedHandler);
@@ -187,25 +181,69 @@ public sealed partial class EditorWindow : Window
         workbench.ActivateTool(StudioToolIds.LivePreview);
     }
 
-    private void Workbench_LivePreviewRequested(
+    private async void Workbench_LivePreviewRequested(
         object? sender,
         EventArgs e)
     {
+        if (_disposed)
+            return;
+
+        if (_renderViewServiceDisposal is { } pendingDisposal)
+        {
+            try
+            {
+                await pendingDisposal;
+            }
+            finally
+            {
+                if (ReferenceEquals(
+                        _renderViewServiceDisposal,
+                        pendingDisposal))
+                {
+                    _renderViewServiceDisposal = null;
+                }
+            }
+        }
         if (_disposed || _workbench is not { } workbench)
             return;
 
+        FastFileRenderViewService renderViewService =
+            _renderViewService ??= new FastFileRenderViewService();
         var renderWindow = new MapRenderWindow(
             workbench.Workspace,
             workbench.TargetFileName,
-            _renderViewService);
+            renderViewService);
         _livePreviewWindows.Add(renderWindow);
-        renderWindow.Closed += (_, _) =>
-            _livePreviewWindows.Remove(renderWindow);
+        renderWindow.Closed += LivePreviewWindow_Closed;
         workbench.ConsoleOutput.Append(
             Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information,
             "Live Preview",
             "Opening the native in-game rendering preview.");
         renderWindow.Show(this);
+    }
+
+    private void LivePreviewWindow_Closed(object? sender, EventArgs e)
+    {
+        if (sender is not MapRenderWindow renderWindow)
+            return;
+
+        renderWindow.Closed -= LivePreviewWindow_Closed;
+        _livePreviewWindows.Remove(renderWindow);
+        if (_livePreviewWindows.Count != 0)
+            return;
+
+        FastFileRenderViewService? renderViewService = _renderViewService;
+        _renderViewService = null;
+        if (renderViewService is null)
+            return;
+
+        if (_disposed)
+        {
+            renderViewService.Dispose();
+            return;
+        }
+
+        _renderViewServiceDisposal = Task.Run(renderViewService.Dispose);
     }
 
     private async void Workbench_EditorTabCloseRequested(
@@ -290,75 +328,6 @@ public sealed partial class EditorWindow : Window
 
         _gscEngineReferenceWindow.NavigateTo(args.BuiltIn);
         _gscEngineReferenceWindow.Activate();
-    }
-
-    private void EditorWindow_Opened(object? sender, EventArgs e)
-    {
-        if (_disposed || _workbench is not { } workbench)
-            return;
-
-        EnsureRenderWarmup(workbench);
-    }
-
-    private Task<RenderViewSceneBuildResult> EnsureRenderWarmup(
-        StudioWorkbenchViewModel workbench)
-    {
-        Task<RenderViewSceneBuildResult> warmup =
-            _renderWarmup.GetOrCreate(
-                () => _renderViewService.BuildSceneAsync(
-                    workbench.Workspace,
-                    progress: message =>
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            if (!_disposed)
-                            {
-                                _workbench?.ReportRenderProgress(
-                                    message);
-                            }
-                        })),
-                out bool created);
-        if (created)
-            _ = ObserveRenderWarmupAsync(warmup, workbench);
-        return warmup;
-    }
-
-    private async Task ObserveRenderWarmupAsync(
-        Task<RenderViewSceneBuildResult> warmup,
-        StudioWorkbenchViewModel workbench)
-    {
-        try
-        {
-            RenderViewSceneBuildResult result =
-                await warmup.ConfigureAwait(false);
-            if (!_disposed && _renderWarmup.IsCurrent(warmup))
-            {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (!_disposed &&
-                        _renderWarmup.IsCurrent(warmup))
-                    {
-                        workbench.ReportRenderResult(result);
-                    }
-                });
-            }
-        }
-        catch (OperationCanceledException) when (_disposed)
-        {
-        }
-        catch (Exception exception)
-        {
-            if (!_disposed && _renderWarmup.IsCurrent(warmup))
-            {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (!_disposed &&
-                        _renderWarmup.IsCurrent(warmup))
-                    {
-                        workbench.ReportRenderFailure(exception);
-                    }
-                });
-            }
-        }
     }
 
     private void ThemeMenuItem_Click(object? sender, EventArgs e)
@@ -591,7 +560,10 @@ public sealed partial class EditorWindow : Window
             }
         }
         _livePreviewWindows.Clear();
-        _renderViewService.Dispose();
+        _renderViewService?.Dispose();
+        _renderViewService = null;
+        _renderViewServiceDisposal?.GetAwaiter().GetResult();
+        _renderViewServiceDisposal = null;
         _gscEngineReferenceWindow?.Close();
         _gscEngineReferenceWindow = null;
         if (_workbench is not null)

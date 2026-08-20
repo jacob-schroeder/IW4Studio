@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Numerics;
 using System.Runtime.Versioning;
 
@@ -27,8 +28,8 @@ public sealed unsafe partial class MetalMapRenderer
         _staticModelLightingWorkingSet;
     private MetalStaticModelLightingResources?
         _staticModelLightingResources;
-    private MetalPreparedNormalCameraPass[]
-        _staticModelLightingPreparedPasses = [];
+    private MetalStaticModelLightingInstancePayload[]
+        _staticModelLightingInstancePayloads = [];
     private int[] _staticModelLightingObjectIndices = [];
     private bool[] _staticModelLightingAdmittedByObject = [];
     private int _staticModelLightingInstanceBufferByteCount;
@@ -138,44 +139,63 @@ public sealed unsafe partial class MetalMapRenderer
             _staticModelLightingInstanceBuffers.Length];
         try
         {
-            int cursor = 0;
+            var offsets = new Dictionary<
+                ImmutableArray<MapRenderStaticModelInstance>,
+                int>();
+            var instancePayloads =
+                new List<MetalStaticModelLightingInstancePayload>();
+            long cursor = 0;
             for (int passIndex = 0;
                  passIndex < consumers.Length;
                  passIndex++)
             {
                 MetalPreparedNormalCameraPass pass = consumers[passIndex];
-                pass.StaticModelLightingInstanceOffset = Align(cursor);
-                cursor = checked(
-                    pass.StaticModelLightingInstanceOffset +
-                    pass.Source.StaticInstances.Length *
-                    MapRenderStaticInstanceBufferPacker.FloatStride(
-                        MapRenderStaticInstanceLightingPayload
-                            .BaseLightingCoords) *
-                    sizeof(float));
+                ImmutableArray<MapRenderStaticModelInstance> instances =
+                    pass.Source.StaticInstances;
+                if (!offsets.TryGetValue(instances, out int offset))
+                {
+                    long floatCount = checked(
+                        (long)instances.Length *
+                        MapRenderStaticInstanceBufferPacker.FloatStride(
+                            MapRenderStaticInstanceLightingPayload
+                                .BaseLightingCoords));
+                    offset = ReserveNormalCameraFloatSlice(
+                        ref cursor,
+                        floatCount);
+                    offsets.Add(instances, offset);
+                    instancePayloads.Add(
+                        new MetalStaticModelLightingInstancePayload(
+                            instances,
+                            offset));
+                }
+                pass.StaticModelLightingInstanceOffset = offset;
             }
+            int bufferByteCount = checked((int)cursor);
             for (int frameSlot = 0;
                  frameSlot < instanceBuffers.Length;
                  frameSlot++)
             {
-                instanceBuffers[frameSlot] = CreateSharedBuffer(cursor);
+                instanceBuffers[frameSlot] = CreateSharedBuffer(
+                    bufferByteCount);
                 BufferBytes(
                     instanceBuffers[frameSlot],
                     0,
-                    cursor).Clear();
+                    bufferByteCount).Clear();
                 PackStaticModelLightingInstances(
                     instanceBuffers[frameSlot],
-                    consumers,
+                    instancePayloads,
                     workingSet.CoordinatesByObject);
             }
 
             _staticModelLightingAtlas = atlas;
             _staticModelLightingWorkingSet = workingSet;
             _staticModelLightingResources = resources;
-            _staticModelLightingPreparedPasses = consumers;
+            _staticModelLightingInstancePayloads =
+                instancePayloads.ToArray();
             _staticModelLightingObjectIndices = objectIndices.ToArray();
             _staticModelLightingAdmittedByObject = new bool[
                 _normalCameraStaticVisible.Length];
-            _staticModelLightingInstanceBufferByteCount = cursor;
+            _staticModelLightingInstanceBufferByteCount = bufferByteCount;
             Array.Copy(
                 instanceBuffers,
                 _staticModelLightingInstanceBuffers,
@@ -208,7 +228,7 @@ public sealed unsafe partial class MetalMapRenderer
         _staticModelLightingResources = null;
         _staticModelLightingAtlas = null;
         _staticModelLightingWorkingSet = null;
-        _staticModelLightingPreparedPasses = [];
+        _staticModelLightingInstancePayloads = [];
         _staticModelLightingObjectIndices = [];
         _staticModelLightingAdmittedByObject = [];
         _staticModelLightingInstanceBufferByteCount = 0;
@@ -274,7 +294,7 @@ public sealed unsafe partial class MetalMapRenderer
         {
             PackStaticModelLightingInstances(
                 instanceBuffer,
-                _staticModelLightingPreparedPasses,
+                _staticModelLightingInstancePayloads,
                 workingSet.CoordinatesByObject);
             _staticModelLightingInstanceGenerations[frameSlot] =
                 workingSet.AssignmentGeneration;
@@ -360,29 +380,34 @@ public sealed unsafe partial class MetalMapRenderer
 
     private static void PackStaticModelLightingInstances(
         MTLBuffer buffer,
-        IReadOnlyList<MetalPreparedNormalCameraPass> passes,
+        IReadOnlyList<MetalStaticModelLightingInstancePayload> payloads,
         Vector4[] coordinatesByObject)
     {
-        for (int passIndex = 0;
-             passIndex < passes.Count;
-             passIndex++)
+        for (int payloadIndex = 0;
+             payloadIndex < payloads.Count;
+             payloadIndex++)
         {
-            MetalPreparedNormalCameraPass pass = passes[passIndex];
+            MetalStaticModelLightingInstancePayload payload =
+                payloads[payloadIndex];
             int floatCount = checked(
-                pass.Source.StaticInstances.Length *
+                payload.Instances.Length *
                 MapRenderStaticInstanceBufferPacker.FloatStride(
                     MapRenderStaticInstanceLightingPayload
                         .BaseLightingCoords));
             MapRenderStaticInstanceBufferPacker.PackAll(
-                pass.Source.StaticInstances,
+                payload.Instances,
                 MapRenderStaticInstanceLightingPayload.BaseLightingCoords,
                 BufferFloats(
                     buffer,
-                    pass.StaticModelLightingInstanceOffset,
+                    payload.Offset,
                     floatCount),
                 coordinatesByObject);
         }
     }
+
+    private readonly record struct MetalStaticModelLightingInstancePayload(
+        ImmutableArray<MapRenderStaticModelInstance> Instances,
+        int Offset);
 
     private void RecordStaticModelLightingTelemetry(
         MapRenderStaticModelLightingWorkingSet? workingSet)

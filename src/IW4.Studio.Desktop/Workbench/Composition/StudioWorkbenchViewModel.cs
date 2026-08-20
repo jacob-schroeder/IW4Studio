@@ -38,8 +38,6 @@ namespace IW4.Studio.Desktop.Workbench.Composition;
 /// </summary>
 public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 {
-    private const string LivePreviewDiagnosticSource = "Live Preview";
-
     private readonly WorkbenchSelectionContext _selectionContext = new();
     private readonly CancellationTokenSource _gscWorkspaceWarmupCancellation = new();
     private readonly WorkbenchAssetSelectionRouter _selectionRouter;
@@ -560,73 +558,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             return;
 
         _selectionContext.Select(tab.Selection);
-    }
-
-    public void ReportRenderProgress(string message)
-    {
-        LivePreview.ReportProgress(message);
-        ConsoleOutput.Append(
-            ConsoleOutputLevel.Debug,
-            "Live Preview",
-            message);
-    }
-
-    public void ReportRenderResult(RenderViewSceneBuildResult result)
-    {
-        LivePreview.ReportResult(result);
-        if (result.IsRenderable)
-        {
-            ConsoleOutput.Append(
-                ConsoleOutputLevel.Information,
-                "Live Preview",
-                "Render scene ready.");
-            Diagnostics.ReplaceBySource(
-                LivePreviewDiagnosticSource,
-                [
-                    new WorkbenchDiagnostic(
-                        "scene-ready",
-                        WorkbenchDiagnosticSeverity.Information,
-                        LivePreviewDiagnosticSource,
-                        "Render scene ready.")
-                ]);
-        }
-        else
-        {
-            string reason = result.NonRenderableReason
-                ?? "No renderable map assets were found.";
-            ConsoleOutput.Append(
-                ConsoleOutputLevel.Warning,
-                "Live Preview",
-                reason);
-            Diagnostics.ReplaceBySource(
-                LivePreviewDiagnosticSource,
-                [
-                    new WorkbenchDiagnostic(
-                        "scene-unavailable",
-                        WorkbenchDiagnosticSeverity.Warning,
-                        LivePreviewDiagnosticSource,
-                        reason)
-                ]);
-        }
-    }
-
-    public void ReportRenderFailure(Exception exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        LivePreview.ReportFailure(exception);
-        ConsoleOutput.Append(
-            ConsoleOutputLevel.Error,
-            "Live Preview",
-            exception.Message);
-        Diagnostics.ReplaceBySource(
-            LivePreviewDiagnosticSource,
-            [
-                new WorkbenchDiagnostic(
-                    "scene-failed",
-                    WorkbenchDiagnosticSeverity.Error,
-                    LivePreviewDiagnosticSource,
-                    exception.Message)
-            ]);
     }
 
     public void LogSaveResult(SaveAsResult result)

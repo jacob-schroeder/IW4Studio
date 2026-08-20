@@ -1486,52 +1486,109 @@ public sealed unsafe partial class MetalMapRenderer
     private void CreateImmutableDrawBuffer(
         IReadOnlyList<MetalPreparedNormalCameraPass> passes)
     {
-        int cursor = 0;
+        var rsxVertexInputOffsets = new Dictionary<
+            ImmutableArray<float>,
+            int>();
+        var ownedInstanceOffsets = new Dictionary<
+            MetalImmutableOwnedInstancePayloadKey,
+            int>();
+        long cursor = 0;
         foreach (MetalPreparedNormalCameraPass pass in passes)
         {
-            pass.RsxVertexInputOffset = Align(cursor);
-            cursor = checked(
-                pass.RsxVertexInputOffset +
-                pass.Source.RsxVertexInputs.Length * sizeof(float));
+            ImmutableArray<float> rsxVertexInputs =
+                pass.Source.RsxVertexInputs;
+            if (!rsxVertexInputOffsets.TryGetValue(
+                    rsxVertexInputs,
+                    out int rsxVertexInputOffset))
+            {
+                rsxVertexInputOffset = ReserveNormalCameraFloatSlice(
+                    ref cursor,
+                    rsxVertexInputs.Length);
+                rsxVertexInputOffsets.Add(
+                    rsxVertexInputs,
+                    rsxVertexInputOffset);
+            }
+            pass.RsxVertexInputOffset = rsxVertexInputOffset;
             if (!pass.NeedsImmutableOwnedInstanceData)
                 continue;
-            pass.OwnedInstanceOffset = Align(cursor);
-            cursor = checked(
-                pass.OwnedInstanceOffset +
-                pass.Source.StaticInstances.Length *
-                MapRenderStaticInstanceBufferPacker.FloatStride(
-                    pass.LightingPayload) *
-                sizeof(float));
+
+            var ownedInstancePayload =
+                new MetalImmutableOwnedInstancePayloadKey(
+                    pass.Source.StaticInstances,
+                    pass.LightingPayload);
+            if (!ownedInstanceOffsets.TryGetValue(
+                    ownedInstancePayload,
+                    out int ownedInstanceOffset))
+            {
+                long floatCount = checked(
+                    (long)ownedInstancePayload.Instances.Length *
+                    MapRenderStaticInstanceBufferPacker.FloatStride(
+                        ownedInstancePayload.LightingPayload));
+                ownedInstanceOffset = ReserveNormalCameraFloatSlice(
+                    ref cursor,
+                    floatCount);
+                ownedInstanceOffsets.Add(
+                    ownedInstancePayload,
+                    ownedInstanceOffset);
+            }
+            pass.OwnedInstanceOffset = ownedInstanceOffset;
         }
         if (cursor == 0)
             return;
 
-        _normalCameraImmutableBuffer = CreateSharedBuffer(cursor);
+        int bufferByteCount = checked((int)cursor);
+        _normalCameraImmutableBuffer = CreateSharedBuffer(bufferByteCount);
         Span<byte> bytes = BufferBytes(
             _normalCameraImmutableBuffer,
             0,
-            cursor);
+            bufferByteCount);
         bytes.Clear();
-        foreach (MetalPreparedNormalCameraPass pass in passes)
+        foreach ((ImmutableArray<float> values, int offset) in
+                 rsxVertexInputOffsets)
         {
-            pass.Source.RsxVertexInputs.AsSpan().CopyTo(
+            values.AsSpan().CopyTo(
                 BufferFloats(
                     _normalCameraImmutableBuffer,
-                    pass.RsxVertexInputOffset,
-                    pass.Source.RsxVertexInputs.Length));
-            if (!pass.NeedsImmutableOwnedInstanceData)
-                continue;
+                    offset,
+                    values.Length));
+        }
+        foreach ((MetalImmutableOwnedInstancePayloadKey payload, int offset)
+                 in ownedInstanceOffsets)
+        {
+            int floatCount = checked(
+                payload.Instances.Length *
+                MapRenderStaticInstanceBufferPacker.FloatStride(
+                    payload.LightingPayload));
             MapRenderStaticInstanceBufferPacker.PackAll(
-                pass.Source.StaticInstances,
-                pass.LightingPayload,
+                payload.Instances,
+                payload.LightingPayload,
                 BufferFloats(
                     _normalCameraImmutableBuffer,
-                    pass.OwnedInstanceOffset,
-                    pass.Source.StaticInstances.Length *
-                    MapRenderStaticInstanceBufferPacker.FloatStride(
-                        pass.LightingPayload)));
+                    offset,
+                    floatCount));
         }
     }
+
+    private static int ReserveNormalCameraFloatSlice(
+        ref long cursor,
+        long floatCount)
+    {
+        if (floatCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(floatCount));
+        long offset = AlignNormalCameraBufferOffset(cursor);
+        long end = checked(offset + checked(floatCount * sizeof(float)));
+        if (end > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Metal normal-camera buffer payloads require {end} bytes, exceeding the {int.MaxValue}-byte mapped-buffer limit.");
+        }
+        cursor = end;
+        return checked((int)offset);
+    }
+
+    private static long AlignNormalCameraBufferOffset(long value) => checked(
+        (value + ConstantBufferAlignment - 1) &
+        ~(long)(ConstantBufferAlignment - 1));
 
     private void CreateFrameConstantBuffers(
         IReadOnlyList<MetalPreparedNormalCameraPass> passes)
@@ -2908,6 +2965,10 @@ public sealed unsafe partial class MetalMapRenderer
     private readonly record struct MetalNormalCameraRuntimeSamplerBinding(
         ulong Destination,
         ShaderRuntimeSamplerResourceKind ResourceKind);
+
+    private readonly record struct MetalImmutableOwnedInstancePayloadKey(
+        ImmutableArray<MapRenderStaticModelInstance> Instances,
+        MapRenderStaticInstanceLightingPayload LightingPayload);
 
     private readonly record struct MetalNormalCameraLightAttenuationIdentity(
         RenderSemanticIdentity Texture,

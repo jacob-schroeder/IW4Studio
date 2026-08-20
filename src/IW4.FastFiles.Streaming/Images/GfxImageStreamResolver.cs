@@ -16,6 +16,7 @@ public sealed class GfxImageStreamResolver : IDisposable
     private const int FullBlockSize = 0x10000;
     private const ushort BlockTerminator = 1;
     private const int PackageReadAttemptCount = 3;
+    private const long MaxCachedPackagePayloadBytes = 64L * 1024 * 1024;
     private const long MaxCachedPackageBlockBytes = 64L * 1024 * 1024;
     private const int MaxCachedPackageBlockCount = 2048;
 
@@ -23,8 +24,12 @@ public sealed class GfxImageStreamResolver : IDisposable
     private readonly string _packageDirectory;
     private readonly ConcurrentDictionary<uint, string> _packagePaths = [];
     private readonly ConcurrentDictionary<
-        (DbHeaderImageStreamEntry Entry, int ByteCount),
+        PackagePayloadCacheKey,
         Lazy<PackagePayloadReadResult>> _payloadCache = [];
+    private readonly object _packagePayloadLruGate = new();
+    private readonly Dictionary<PackagePayloadCacheKey, PackagePayloadLruEntry>
+        _packagePayloadLruEntries = [];
+    private readonly LinkedList<PackagePayloadCacheKey> _packagePayloadLru = [];
     private readonly ConcurrentDictionary<
         uint,
         Lazy<PackageOpenResult>> _packageReaders = [];
@@ -36,6 +41,7 @@ public sealed class GfxImageStreamResolver : IDisposable
         _packageBlockLruEntries = [];
     private readonly LinkedList<PackageBlockCacheKey> _packageBlockLru = [];
     private readonly object _lifetimeGate = new();
+    private long _cachedPackagePayloadBytes;
     private long _cachedPackageBlockBytes;
     private int _activeReads;
     private bool _disposeStarted;
@@ -249,6 +255,12 @@ public sealed class GfxImageStreamResolver : IDisposable
                 _packageBlocks.Clear();
                 _payloadCache.Clear();
                 _packagePaths.Clear();
+                lock (_packagePayloadLruGate)
+                {
+                    _packagePayloadLruEntries.Clear();
+                    _packagePayloadLru.Clear();
+                    _cachedPackagePayloadBytes = 0;
+                }
                 lock (_packageBlockLruGate)
                 {
                     _packageBlockLruEntries.Clear();
@@ -374,7 +386,7 @@ public sealed class GfxImageStreamResolver : IDisposable
         out byte[] payload,
         out string reason)
     {
-        var cacheKey = (entry, byteCount);
+        var cacheKey = new PackagePayloadCacheKey(entry, byteCount);
         Lazy<PackagePayloadReadResult> pending = _payloadCache.GetOrAdd(
             cacheKey,
             _ => new Lazy<PackagePayloadReadResult>(
@@ -391,9 +403,67 @@ public sealed class GfxImageStreamResolver : IDisposable
             throw;
         }
 
+        if (result.Success)
+        {
+            TouchSuccessfulPackagePayload(
+                cacheKey,
+                pending,
+                result.Payload.Length);
+        }
+
         payload = result.Payload;
         reason = result.Reason;
         return result.Success;
+    }
+
+    private void TouchSuccessfulPackagePayload(
+        PackagePayloadCacheKey key,
+        Lazy<PackagePayloadReadResult> pending,
+        int byteCount)
+    {
+        lock (_packagePayloadLruGate)
+        {
+            if (!_payloadCache.TryGetValue(
+                    key,
+                    out Lazy<PackagePayloadReadResult>? current) ||
+                !ReferenceEquals(current, pending))
+            {
+                return;
+            }
+
+            if (_packagePayloadLruEntries.TryGetValue(
+                    key,
+                    out PackagePayloadLruEntry? existing))
+            {
+                _packagePayloadLru.Remove(existing.Node);
+                _packagePayloadLru.AddLast(existing.Node);
+                return;
+            }
+
+            LinkedListNode<PackagePayloadCacheKey> node =
+                _packagePayloadLru.AddLast(key);
+            _packagePayloadLruEntries.Add(
+                key,
+                new PackagePayloadLruEntry(pending, node, byteCount));
+            _cachedPackagePayloadBytes = checked(
+                _cachedPackagePayloadBytes + byteCount);
+
+            while (_cachedPackagePayloadBytes >
+                       MaxCachedPackagePayloadBytes &&
+                   _packagePayloadLru.First is { } oldest)
+            {
+                PackagePayloadCacheKey oldestKey = oldest.Value;
+                PackagePayloadLruEntry oldestEntry =
+                    _packagePayloadLruEntries[oldestKey];
+                _packagePayloadLru.RemoveFirst();
+                _packagePayloadLruEntries.Remove(oldestKey);
+                _cachedPackagePayloadBytes -= oldestEntry.ByteCount;
+                RemoveExact(
+                    _payloadCache,
+                    oldestKey,
+                    oldestEntry.Pending);
+            }
+        }
     }
 
     private PackagePayloadReadResult ReadPackagePayload(
@@ -829,6 +899,15 @@ public sealed class GfxImageStreamResolver : IDisposable
     private readonly record struct PackageBlockCacheKey(
         uint FileIndex,
         long BlockOffset);
+
+    private readonly record struct PackagePayloadCacheKey(
+        DbHeaderImageStreamEntry Entry,
+        int ByteCount);
+
+    private sealed record PackagePayloadLruEntry(
+        Lazy<PackagePayloadReadResult> Pending,
+        LinkedListNode<PackagePayloadCacheKey> Node,
+        int ByteCount);
 
     private sealed record PackageBlockLruEntry(
         Lazy<PackageBlockReadResult> Pending,
