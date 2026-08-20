@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 
+using IW4.Render.Metal.Native;
 using IW4.Render.Resources;
 using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Textures;
@@ -146,7 +147,8 @@ internal sealed class MetalResourceCache : IDisposable
         long frameIndex,
         long residencyBudgetBytes,
         long uploadBudgetBytes,
-        int evictionGraceFrames)
+        int evictionGraceFrames,
+        bool waitForCompletion)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return RequireLoaded().PrepareTextureResidency(
@@ -154,7 +156,8 @@ internal sealed class MetalResourceCache : IDisposable
             frameIndex,
             residencyBudgetBytes,
             uploadBudgetBytes,
-            evictionGraceFrames);
+            evictionGraceFrames,
+            waitForCompletion);
     }
 
     internal void ConfigureDeferredStaticResources(
@@ -189,10 +192,26 @@ internal sealed class MetalResourceCache : IDisposable
 
     internal bool AdmitStaticResources(
         IReadOnlyList<RenderSemanticIdentity> geometries,
-        IReadOnlyList<RenderSemanticIdentity> instances)
+        IReadOnlyList<RenderSemanticIdentity> instances,
+        bool waitForCompletion)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return RequireLoaded().AdmitStaticResources(geometries, instances);
+        return RequireLoaded().AdmitStaticResources(
+            geometries,
+            instances,
+            waitForCompletion);
+    }
+
+    internal void DrainCompletedUploads()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _resources?.DrainCompletedUploads();
+    }
+
+    internal void WaitForPendingUploads()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _resources?.WaitForPendingUploads();
     }
 
     /// <summary>
@@ -255,6 +274,7 @@ internal sealed class MetalResourceSet : IDisposable
     private readonly List<MetalTextureAllocation>
         _textureAllocationScratch = [];
     private readonly List<MTLTexture> _textureStagingScratch = [];
+    private readonly List<PendingUpload> _pendingUploads = new(capacity: 8);
     private MTLBuffer _staticBuffer;
     private int _residentTextureCount;
     private long _residentTextureByteCount;
@@ -583,7 +603,8 @@ internal sealed class MetalResourceSet : IDisposable
 
     internal bool AdmitStaticResources(
         IReadOnlyList<RenderSemanticIdentity> geometryIdentities,
-        IReadOnlyList<RenderSemanticIdentity> instanceIdentities)
+        IReadOnlyList<RenderSemanticIdentity> instanceIdentities,
+        bool waitForCompletion)
     {
         ArgumentNullException.ThrowIfNull(geometryIdentities);
         ArgumentNullException.ThrowIfNull(instanceIdentities);
@@ -672,14 +693,10 @@ internal sealed class MetalResourceSet : IDisposable
                 destinationOffset: 0,
                 cursor);
             blit.EndEncoding();
-            commandBuffer.Commit();
-            commandBuffer.WaitUntilCompleted();
-            if (commandBuffer.Status != MTLCommandBufferStatus.Completed)
-            {
-                throw new InvalidOperationException(
-                    $"Metal progressive static upload failed with " +
-                    $"command-buffer status {commandBuffer.Status}.");
-            }
+            SubmitUpload(
+                commandBuffer,
+                "progressive static upload",
+                waitForCompletion);
 
             foreach (GeometryPlacement placement in geometryPlacements)
             {
@@ -712,7 +729,8 @@ internal sealed class MetalResourceSet : IDisposable
         long frameIndex,
         long residencyBudgetBytes,
         long uploadBudgetBytes,
-        int evictionGraceFrames)
+        int evictionGraceFrames,
+        bool waitForCompletion)
     {
         ArgumentNullException.ThrowIfNull(visibleTextures);
         if (frameIndex < 0)
@@ -819,7 +837,8 @@ internal sealed class MetalResourceSet : IDisposable
         {
             UploadSelectedTextures(
                 _selectedTextureUploads,
-                _textureAllocationScratch);
+                _textureAllocationScratch,
+                waitForCompletion);
         }
 
         long evictionBytes = 0;
@@ -871,7 +890,8 @@ internal sealed class MetalResourceSet : IDisposable
 
     private void UploadSelectedTextures(
         IReadOnlyList<MetalTextureResource> textures,
-        ICollection<MetalTextureAllocation> pending)
+        ICollection<MetalTextureAllocation> pending,
+        bool waitForCompletion)
     {
         using var pool = new NSAutoreleasePool();
         MTLCommandBuffer commandBuffer = _commandQueue.CommandBuffer();
@@ -902,14 +922,10 @@ internal sealed class MetalResourceSet : IDisposable
                     _textureStagingScratch));
             }
             blit.EndEncoding();
-            commandBuffer.Commit();
-            commandBuffer.WaitUntilCompleted();
-            if (commandBuffer.Status != MTLCommandBufferStatus.Completed)
-            {
-                throw new InvalidOperationException(
-                    $"Metal texture residency upload failed with " +
-                    $"command-buffer status {commandBuffer.Status}.");
-            }
+            SubmitUpload(
+                commandBuffer,
+                "texture residency upload",
+                waitForCompletion);
         }
         catch
         {
@@ -930,23 +946,124 @@ internal sealed class MetalResourceSet : IDisposable
         }
     }
 
+    internal void DrainCompletedUploads() =>
+        RetirePendingUploads(waitForCompletion: false);
+
+    internal void WaitForPendingUploads() =>
+        RetirePendingUploads(waitForCompletion: true);
+
+    private void SubmitUpload(
+        MTLCommandBuffer commandBuffer,
+        string label,
+        bool waitForCompletion)
+    {
+        if (waitForCompletion)
+        {
+            commandBuffer.Commit();
+            commandBuffer.WaitUntilCompleted();
+            ThrowIfUploadFailed(commandBuffer, label);
+            return;
+        }
+
+        _pendingUploads.EnsureCapacity(
+            checked(_pendingUploads.Count + 1));
+        MetalObjectiveC.Retain(commandBuffer.NativePtr);
+        try
+        {
+            commandBuffer.Commit();
+            _pendingUploads.Add(new PendingUpload(commandBuffer, label));
+        }
+        catch
+        {
+            commandBuffer.Dispose();
+            throw;
+        }
+    }
+
+    private void RetirePendingUploads(bool waitForCompletion)
+    {
+        Exception? firstFailure = null;
+        for (int index = _pendingUploads.Count - 1; index >= 0; index--)
+        {
+            PendingUpload upload = _pendingUploads[index];
+            MTLCommandBufferStatus status = upload.CommandBuffer.Status;
+            if (status is not (MTLCommandBufferStatus.Completed or
+                               MTLCommandBufferStatus.Error))
+            {
+                if (!waitForCompletion)
+                    continue;
+                upload.CommandBuffer.WaitUntilCompleted();
+            }
+
+            try
+            {
+                ThrowIfUploadFailed(upload.CommandBuffer, upload.Label);
+            }
+            catch (Exception exception)
+            {
+                firstFailure ??= exception;
+            }
+            finally
+            {
+                // Balances the retain taken when the upload crossed the
+                // frame's autorelease-pool boundary.
+                upload.CommandBuffer.Dispose();
+                _pendingUploads.RemoveAt(index);
+            }
+        }
+
+        if (firstFailure is not null)
+            throw firstFailure;
+    }
+
+    private static void ThrowIfUploadFailed(
+        MTLCommandBuffer commandBuffer,
+        string label)
+    {
+        MTLCommandBufferStatus status = commandBuffer.Status;
+        if (status == MTLCommandBufferStatus.Completed)
+            return;
+        if (status == MTLCommandBufferStatus.Error)
+        {
+            string detail = commandBuffer.Error.NativePtr == 0
+                ? "unknown command-buffer error"
+                : commandBuffer.Error.LocalizedDescription.ToString() ??
+                  "unknown command-buffer error";
+            throw new InvalidOperationException(
+                $"Metal {label} failed: {detail}");
+        }
+        throw new InvalidOperationException(
+            $"Metal {label} stopped in command-buffer status {status}.");
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
 
-        foreach (MetalTextureResource texture in _ownedTextures)
-            texture.Dispose();
-        foreach (MTLSamplerState sampler in _ownedSamplerStates)
-            sampler.Dispose();
-        foreach (MTLBuffer buffer in _progressiveStaticBuffers)
-            buffer.Dispose();
-        _progressiveStaticBuffers.Clear();
-        if (_staticBuffer.NativePtr != 0)
-            _staticBuffer.Dispose();
-        _staticBuffer = default;
-        _disposed = true;
+        try
+        {
+            WaitForPendingUploads();
+        }
+        finally
+        {
+            foreach (MetalTextureResource texture in _ownedTextures)
+                texture.Dispose();
+            foreach (MTLSamplerState sampler in _ownedSamplerStates)
+                sampler.Dispose();
+            foreach (MTLBuffer buffer in _progressiveStaticBuffers)
+                buffer.Dispose();
+            _progressiveStaticBuffers.Clear();
+            if (_staticBuffer.NativePtr != 0)
+                _staticBuffer.Dispose();
+            _staticBuffer = default;
+            _disposed = true;
+        }
     }
+
+    private readonly record struct PendingUpload(
+        MTLCommandBuffer CommandBuffer,
+        string Label);
 
     private static GeometryPlacement[] CreateGeometryPlacements(
         IReadOnlyList<RenderGeometryDescriptor> descriptors,

@@ -18,7 +18,7 @@ namespace IW4.Render.Metal.Pipelines;
 internal sealed unsafe class MetalMapRenderTelemetryOverlay : IDisposable
 {
     internal const int DrawCallCount = 2;
-    internal const int PassCount = 1;
+    internal const int PassCount = 0;
     internal const int ProgramChangeCount = 1;
     internal const int RenderStateChangeCount = 1;
     internal const int BufferChangeCount = 1;
@@ -84,22 +84,21 @@ internal sealed unsafe class MetalMapRenderTelemetryOverlay : IDisposable
     }
 
     /// <summary>
-    /// Encodes one load/store render pass into a command slot already retired
-    /// by <see cref="MetalCommandBufferRing.Begin"/>. Rewriting that slot's
-    /// shared buffer is therefore safe without a separate synchronization.
+    /// Encodes into the final host-output render pass and a command slot already
+    /// retired by <see cref="MetalCommandBufferRing.Begin"/>. Rewriting that
+    /// slot's shared buffer is therefore safe without separate synchronization.
     /// </summary>
-    internal long Encode(
-        MTLCommandBuffer commandBuffer,
+    internal long EncodeInto(
+        MTLRenderCommandEncoder encoder,
         MTLTexture target,
-        int commandSlot,
-        Action<MTLRenderPassDescriptor>? attachPass = null)
+        int commandSlot)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (commandBuffer.NativePtr == 0)
+        if (encoder.NativePtr == 0)
         {
             throw new ArgumentException(
-                "A Metal command buffer is required.",
-                nameof(commandBuffer));
+                "A Metal render command encoder is required.",
+                nameof(encoder));
         }
         if (target.NativePtr == 0 ||
             target.PixelFormat != MTLPixelFormat.BGRA8Unorm)
@@ -116,55 +115,39 @@ internal sealed unsafe class MetalMapRenderTelemetryOverlay : IDisposable
         }
 
         MTLBuffer vertices = PrepareSlotBuffer(commandSlot);
-        using MTLRenderPassDescriptor pass = CreatePass(target);
-        attachPass?.Invoke(pass);
-        MTLRenderCommandEncoder encoder =
-            commandBuffer.RenderCommandEncoder(pass);
-        if (encoder.NativePtr == 0)
-        {
-            throw new InvalidOperationException(
-                "Metal could not begin the telemetry overlay pass.");
-        }
+        SetViewport(encoder, target.Width, target.Height);
+        encoder.SetRenderPipelineState(_pipeline);
+        encoder.SetCullMode(MTLCullMode.None);
+        encoder.SetTriangleFillMode(MTLTriangleFillMode.Fill);
+        encoder.SetVertexBuffer(vertices, 0, PositionBufferIndex);
 
-        try
-        {
-            SetViewport(encoder, target.Width, target.Height);
-            encoder.SetRenderPipelineState(_pipeline);
-            encoder.SetCullMode(MTLCullMode.None);
-            encoder.SetVertexBuffer(vertices, 0, PositionBufferIndex);
+        var framebufferSize = new Vector2(
+            checked((float)target.Width),
+            checked((float)target.Height));
+        encoder.SetVertexBytes(
+            (nint)(&framebufferSize),
+            checked((ulong)sizeof(Vector2)),
+            FramebufferSizeBufferIndex);
 
-            var framebufferSize = new Vector2(
-                checked((float)target.Width),
-                checked((float)target.Height));
-            encoder.SetVertexBytes(
-                (nint)(&framebufferSize),
-                checked((ulong)sizeof(Vector2)),
-                FramebufferSizeBufferIndex);
+        Vector4 backgroundColor = BackgroundColor;
+        encoder.SetFragmentBytes(
+            (nint)(&backgroundColor),
+            checked((ulong)sizeof(Vector4)),
+            ColorBufferIndex);
+        encoder.DrawPrimitives(
+            MTLPrimitiveType.Triangle,
+            0,
+            checked((ulong)_backgroundVertexCount));
 
-            Vector4 backgroundColor = BackgroundColor;
-            encoder.SetFragmentBytes(
-                (nint)(&backgroundColor),
-                checked((ulong)sizeof(Vector4)),
-                ColorBufferIndex);
-            encoder.DrawPrimitives(
-                MTLPrimitiveType.Triangle,
-                0,
-                checked((ulong)_backgroundVertexCount));
-
-            Vector4 textColor = TextColor;
-            encoder.SetFragmentBytes(
-                (nint)(&textColor),
-                checked((ulong)sizeof(Vector4)),
-                ColorBufferIndex);
-            encoder.DrawPrimitives(
-                MTLPrimitiveType.Triangle,
-                checked((ulong)_backgroundVertexCount),
-                checked((ulong)_textVertexCount));
-        }
-        finally
-        {
-            encoder.EndEncoding();
-        }
+        Vector4 textColor = TextColor;
+        encoder.SetFragmentBytes(
+            (nint)(&textColor),
+            checked((ulong)sizeof(Vector4)),
+            ColorBufferIndex);
+        encoder.DrawPrimitives(
+            MTLPrimitiveType.Triangle,
+            checked((ulong)_backgroundVertexCount),
+            checked((ulong)_textVertexCount));
 
         return checked(
             (_backgroundVertexCount + (long)_textVertexCount) / 3L);
@@ -314,22 +297,6 @@ internal sealed unsafe class MetalMapRenderTelemetryOverlay : IDisposable
             if (library.NativePtr != 0)
                 library.Dispose();
         }
-    }
-
-    private static MTLRenderPassDescriptor CreatePass(MTLTexture target)
-    {
-        var descriptor = new MTLRenderPassDescriptor
-        {
-            RenderTargetWidth = target.Width,
-            RenderTargetHeight = target.Height,
-            DefaultRasterSampleCount = 1
-        };
-        MTLRenderPassColorAttachmentDescriptor color =
-            descriptor.ColorAttachments.Object(0);
-        color.Texture = target;
-        color.LoadAction = MTLLoadAction.Load;
-        color.StoreAction = MTLStoreAction.Store;
-        return descriptor;
     }
 
     private static void SetViewport(

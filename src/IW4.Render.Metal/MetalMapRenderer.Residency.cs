@@ -106,7 +106,8 @@ public sealed partial class MetalMapRenderer
                 _frameIndex,
                 TextureResidencyBudgetBytes,
                 TextureUploadBudgetBytesPerFrame,
-                Math.Max(0, TextureEvictionGraceFrames));
+                Math.Max(0, TextureEvictionGraceFrames),
+                waitForCompletion: false);
         _normalCameraTextureResidencyFrameIndex = _frameIndex;
         _normalCameraTextureResidencyCamera = camera;
         PublishNormalCameraTextureResidencyTelemetry();
@@ -178,7 +179,8 @@ public sealed partial class MetalMapRenderer
             frameIndex: 0,
             TextureResidencyBudgetBytes,
             uploadBudgetBytes: long.MaxValue,
-            Math.Max(0, TextureEvictionGraceFrames));
+            Math.Max(0, TextureEvictionGraceFrames),
+            waitForCompletion: true);
     }
 
     private void CollectPrefetchNormalCameraGroupTextures(

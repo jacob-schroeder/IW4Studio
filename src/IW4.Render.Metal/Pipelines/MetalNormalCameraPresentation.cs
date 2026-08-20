@@ -17,7 +17,8 @@ internal readonly record struct
         bool ExecutedFilmColorManipulation,
         bool ExecutedGlow,
         int GlowGaussianPassCount,
-        int FullscreenDrawCount);
+        int FullscreenDrawCount,
+        long TelemetryOverlayTriangleCount);
 
 /// <summary>
 /// Scene-revision-owned execution of IW4's selected normal-camera post
@@ -264,6 +265,8 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
         MTLTexture resolvedSceneColor,
         MTLTexture hostOutput,
         MetalRenderStateCache renderStates,
+        MetalMapRenderTelemetryOverlay telemetryOverlay,
+        int commandSlot,
         Action<MTLRenderPassDescriptor>? attachPass = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -281,8 +284,9 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
             throw new InvalidOperationException(
                 "The native glow target chain does not match this presentation revision.");
         }
+        ArgumentNullException.ThrowIfNull(telemetryOverlay);
 
-        EncodePass(
+        long telemetryOverlayTriangleCount = EncodePass(
             commandBuffer,
             hostOutput,
             resolvedSceneColor,
@@ -290,7 +294,9 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
                 "The selected postfx draw is unavailable."),
             preserveDestination: false,
             renderStates,
-            attachPass);
+            attachPass,
+            telemetryOverlay: _usesGlow ? null : telemetryOverlay,
+            commandSlot: commandSlot);
 
         if (_usesGlow)
         {
@@ -331,7 +337,7 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
                 input = output;
             }
 
-            EncodePass(
+            telemetryOverlayTriangleCount = EncodePass(
                 commandBuffer,
                 hostOutput,
                 _glowTarget11,
@@ -339,7 +345,9 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
                     "The glow apply draw is unavailable."),
                 preserveDestination: true,
                 renderStates,
-                attachPass);
+                attachPass,
+                telemetryOverlay,
+                commandSlot);
         }
 
         return new MetalNormalCameraPresentationExecutionResult(
@@ -348,7 +356,9 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
             ExecutedGlow: _usesGlow,
             GlowGaussianPassCount: _glowFilterPassCount,
             FullscreenDrawCount: 1 +
-                (_usesGlow ? 2 + _glowFilterPassCount : 0));
+                (_usesGlow ? 2 + _glowFilterPassCount : 0),
+            TelemetryOverlayTriangleCount:
+                telemetryOverlayTriangleCount);
     }
 
     public void Dispose()
@@ -515,14 +525,16 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
         }
     }
 
-    private void EncodePass(
+    private long EncodePass(
         MTLCommandBuffer commandBuffer,
         MTLTexture target,
         MTLTexture source,
         MetalFullscreenDraw draw,
         bool preserveDestination,
         MetalRenderStateCache renderStates,
-        Action<MTLRenderPassDescriptor>? attachPass)
+        Action<MTLRenderPassDescriptor>? attachPass,
+        MetalMapRenderTelemetryOverlay? telemetryOverlay = null,
+        int commandSlot = -1)
     {
         using MTLRenderPassDescriptor pass = CreateColorPass(
             target,
@@ -544,6 +556,10 @@ internal sealed class MetalNormalCameraPresentation : IDisposable
                 source,
                 _sampler,
                 renderStates);
+            return telemetryOverlay?.EncodeInto(
+                encoder,
+                target,
+                commandSlot) ?? 0;
         }
         finally
         {

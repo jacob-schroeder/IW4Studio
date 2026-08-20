@@ -213,6 +213,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                 // Collect that slot before its counter buffer is attached to
                 // the new command buffer.
                 DrainGpuTelemetry(telemetryFrameIndex);
+                _resources.DrainCompletedUploads();
+                _auxiliaryResources.DrainCompletedUploads();
                 commandSlot = _commandBuffers.ResolveSlot(commandBuffer);
                 _gpuPassTimer.BeginFrame(commandSlot, telemetryFrameIndex);
             }
@@ -400,18 +402,14 @@ public sealed partial class MetalMapRenderer : IMapRenderer
                         _targets.ResolvedColor,
                         hostOutput,
                         _renderStates,
+                        _telemetryOverlay,
+                        commandSlot,
                         pass => _gpuPassTimer.AttachPass(
                             pass,
                             commandSlot,
                             MapRenderGpuPhase.Presentation));
-                long overlayTriangleCount = _telemetryOverlay.Encode(
-                    commandBuffer,
-                    hostOutput,
-                    commandSlot,
-                    pass => _gpuPassTimer.AttachPass(
-                        pass,
-                        commandSlot,
-                        MapRenderGpuPhase.Presentation));
+                long overlayTriangleCount =
+                    presentation.TelemetryOverlayTriangleCount;
                 int postDrawCount = presentation.FullscreenDrawCount;
                 long presentationDrawCount = checked(
                     postDrawCount +
@@ -829,6 +827,8 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         long nextCpuFrameIndex = Math.Max(0, _lastCompletedCpuFrameIndex + 1);
         DrainGpuTelemetry(nextCpuFrameIndex);
         _commandBuffers.WaitForIdle();
+        _resources.WaitForPendingUploads();
+        _auxiliaryResources.WaitForPendingUploads();
         DrainGpuTelemetry(nextCpuFrameIndex);
     }
 

@@ -132,7 +132,8 @@ public sealed partial class MetalMapRenderer
             _progressiveStaticAdmissionScratch.AddRange(
                 _progressiveStaticGroups);
             PublishProgressiveStaticGroups(
-                _progressiveStaticAdmissionScratch);
+                _progressiveStaticAdmissionScratch,
+                waitForCompletion: true);
             _progressiveStaticPendingGroupCount = 0;
             if (_publishedProgressiveStaticGroups.Count != 0)
                 StaticResourceMaterializationWaveCount = 1;
@@ -201,7 +202,8 @@ public sealed partial class MetalMapRenderer
                     _progressiveStaticAdmissionScratch.Add(group);
             }
             PublishProgressiveStaticGroups(
-                _progressiveStaticAdmissionScratch);
+                _progressiveStaticAdmissionScratch,
+                waitForCompletion: true);
             PrefetchInitialNormalCameraTextureResidency(
                 initialGroups,
                 _progressiveStaticAdmissionScratch);
@@ -295,7 +297,9 @@ public sealed partial class MetalMapRenderer
             consecutiveEmptyLanes = 0;
         }
 
-        PublishProgressiveStaticGroups(_progressiveStaticAdmissionScratch);
+        PublishProgressiveStaticGroups(
+            _progressiveStaticAdmissionScratch,
+            waitForCompletion: false);
 
         _progressiveStaticPendingGroupCount =
             CountRequiredUnpublishedProgressiveStaticGroups();
@@ -456,7 +460,8 @@ public sealed partial class MetalMapRenderer
 
     private void PublishProgressiveStaticGroups(
         IReadOnlyList<MapRenderEditorDrawGroup<
-            RenderNormalCameraDrawSubmissionSnapshot>> groups)
+            RenderNormalCameraDrawSubmissionSnapshot>> groups,
+        bool waitForCompletion)
     {
         if (groups.Count == 0)
             return;
@@ -481,7 +486,8 @@ public sealed partial class MetalMapRenderer
         }
         _resources.AdmitStaticResources(
             _progressiveStaticGeometryScratch,
-            _progressiveStaticInstanceScratch);
+            _progressiveStaticInstanceScratch,
+            waitForCompletion);
         for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
             MapRenderEditorDrawGroup<
