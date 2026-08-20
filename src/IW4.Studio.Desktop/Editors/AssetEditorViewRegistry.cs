@@ -9,6 +9,7 @@ using IW4.Studio.Desktop.Editors.MaterialTechset;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Editors.XModel;
+using IW4.Studio.Desktop.Editors.Weapon;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 
@@ -78,6 +79,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new LocalizeViewFactory());
         registry.Register(new MaterialTechsetViewFactory());
         registry.Register(new XModelViewFactory(assetReferencePicker));
+        registry.Register(new WeaponViewFactory(assetReferencePicker));
         return registry;
     }
 

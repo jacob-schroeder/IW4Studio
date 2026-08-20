@@ -296,6 +296,41 @@ public sealed class InspectorIntegerPropertyRowViewModel
     }
 }
 
+/// <summary>Invariant, staged editor for a serialized unsigned 32-bit value.</summary>
+public sealed class InspectorUnsignedIntegerPropertyRowViewModel
+    : InspectorStagedPropertyRowViewModel<uint>
+{
+    private readonly uint _maxValue;
+
+    public InspectorUnsignedIntegerPropertyRowViewModel(
+        string label,
+        string fieldPath,
+        uint value,
+        Action<uint>? apply = null,
+        string? description = null,
+        bool isReadOnly = false,
+        uint maxValue = uint.MaxValue)
+        : base(label, fieldPath, value.ToString(CultureInfo.InvariantCulture), apply, description, isReadOnly)
+    {
+        _maxValue = maxValue;
+        ValidateInput();
+    }
+
+    protected override string Format(uint value) => value.ToString(CultureInfo.InvariantCulture);
+
+    protected override bool TryParse(string input, out uint value, out string? error)
+    {
+        bool parsed = uint.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        if (!parsed)
+        {
+            error = "Enter an unsigned whole number.";
+            return false;
+        }
+        error = value <= _maxValue ? null : $"Enter a value from 0 through {_maxValue.ToString(CultureInfo.InvariantCulture)}.";
+        return error is null;
+    }
+}
+
 public sealed class InspectorFloatPropertyRowViewModel
     : InspectorStagedPropertyRowViewModel<float>
 {

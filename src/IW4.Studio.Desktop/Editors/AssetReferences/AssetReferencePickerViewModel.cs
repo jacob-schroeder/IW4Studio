@@ -181,7 +181,11 @@ public sealed class AssetReferencePickerViewModel
                 XAssetType.Sound or
                 XAssetType.Menu or
                 XAssetType.PhysPreset or
-                XAssetType.PhysCollmap))
+                XAssetType.PhysCollmap or
+                XAssetType.XModel or
+                XAssetType.Fx or
+                XAssetType.Tracer or
+                XAssetType.XAnim))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(assetType),

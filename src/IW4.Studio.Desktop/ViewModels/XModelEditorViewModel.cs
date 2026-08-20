@@ -627,8 +627,9 @@ public sealed class XModelEditorViewModel
         string? buildFailure = null;
         try
         {
-            RenderAssetSource source = CreateAssetSource(
-                _session.Workspace);
+            RenderAssetSource source = WorkspaceRenderAssetSource.Create(
+                _session.Workspace,
+                "XModel material assets");
             scene = _sceneBuilder.Build(
                 _model,
                 source,
@@ -775,7 +776,9 @@ public sealed class XModelEditorViewModel
             _model = candidate;
             _scene = _sceneBuilder.Build(
                 candidate,
-                CreateAssetSource(_session.Workspace),
+                WorkspaceRenderAssetSource.Create(
+                    _session.Workspace,
+                    "XModel material assets"),
                 _imagePayloads,
                 CapturePreviewProviders());
             _buildFailure = null;
@@ -1092,26 +1095,6 @@ public sealed class XModelEditorViewModel
                 (issue.FieldPath, issue.Message, issue.Severity))
             .Select(group => group.First())
             .ToArray());
-    }
-
-    private static RenderAssetSource CreateAssetSource(
-        FastFileWorkspace workspace)
-    {
-        WorkspaceZone targetZone = workspace.LoadedZones.Single(zone =>
-            zone.IsTarget);
-        if (!targetZone.IsActive)
-        {
-            throw new InvalidOperationException(
-                "The target fastfile is inactive and cannot supply XModel material assets.");
-        }
-
-        LoadedXZone target = targetZone.LoadResult;
-        return new RenderAssetSource(
-            target.Context.Blocks,
-            target.Context.AssetPool,
-            target.Context.GfxImagesByAddress,
-            target.LoadedAssets,
-            target.XAssetList.Assets);
     }
 
     private static LodAuthoredMaterialSummary SummarizeAuthoredMaterials(

@@ -18,32 +18,25 @@
       <StackPanel Margin="0,0,0,10"
                   Spacing="4"
                   ToolTip.Tip="{Binding Description}">
-        <Grid ColumnDefinitions="92,*"
-              ColumnSpacing="8">
-          <StackPanel Orientation="Horizontal"
-                      Spacing="4"
-                      VerticalAlignment="Center">
-            <TextBlock Text="{Binding Label}"
-                       Classes="propertyLabel"
-                       VerticalAlignment="Center" />
-            <avalonia:MaterialIcon Kind="InformationOutline"
-                                   Width="12"
-                                   Height="12"
-                                   IsVisible="{Binding HasInfoIcon}"
-                                   Foreground="{DynamicResource StudioTextMutedBrush}"
-                                   ToolTip.Tip="{Binding Description}" />
-          </StackPanel>
-          <TextBox Grid.Column="1"
-                   MinHeight="29"
-                   Padding="8,4"
-                   Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
-        </Grid>
-        <TextBlock Margin="100,0,0,0"
-                   Text="{Binding ValidationMessage}"
+        <StackPanel Orientation="Horizontal"
+                    Spacing="4">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel" />
+          <avalonia:MaterialIcon Kind="InformationOutline"
+                                 Width="12"
+                                 Height="12"
+                                 IsVisible="{Binding HasInfoIcon}"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}"
+                                 ToolTip.Tip="{Binding Description}" />
+        </StackPanel>
+        <TextBox MinHeight="29"
+                 Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus"
+                 KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
                    FontSize="9"
                    TextWrapping="Wrap"
@@ -56,25 +49,33 @@
       <StackPanel Margin="0,0,0,10"
                   Spacing="4"
                   ToolTip.Tip="{Binding Description}">
-        <Grid ColumnDefinitions="92,*"
-              ColumnSpacing="8">
-          <TextBlock Text="{Binding Label}"
-                     Classes="propertyLabel"
-                     VerticalAlignment="Center" />
-          <TextBox Grid.Column="1"
-                   MinHeight="29"
-                   Padding="8,4"
-                   Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
-        </Grid>
-        <TextBlock Margin="100,0,0,0"
-                   Text="{Binding ValidationMessage}"
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <TextBox MinHeight="29"
+                 Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus"
+                 KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
                    FontSize="9"
                    TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type inspector:InspectorUnsignedIntegerPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorUnsignedIntegerPropertyRowViewModel">
+      <StackPanel Margin="0,0,0,10" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <TextBox MinHeight="29" Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}" IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus" KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}"
+                   IsVisible="{Binding HasValidationError}" FontSize="9" TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioErrorBrush}" />
       </StackPanel>
     </DataTemplate>
@@ -84,22 +85,16 @@
       <StackPanel Margin="0,0,0,10"
                   Spacing="4"
                   ToolTip.Tip="{Binding Description}">
-        <Grid ColumnDefinitions="92,*"
-              ColumnSpacing="8">
-          <TextBlock Text="{Binding Label}"
-                     Classes="propertyLabel"
-                     VerticalAlignment="Center" />
-          <TextBox Grid.Column="1"
-                   MinHeight="29"
-                   Padding="8,4"
-                   Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   IsReadOnly="{Binding IsReadOnly}"
-                   IsEnabled="{Binding !IsInteractionBlocked}"
-                   LostFocus="StagedInput_LostFocus"
-                   KeyDown="StagedInput_KeyDown" />
-        </Grid>
-        <TextBlock Margin="100,0,0,0"
-                   Text="{Binding ValidationMessage}"
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <TextBox MinHeight="29"
+                 Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus"
+                 KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
                    FontSize="9"
                    TextWrapping="Wrap"
@@ -112,18 +107,12 @@
       <StackPanel Margin="0,0,0,10"
                   Spacing="4"
                   ToolTip.Tip="{Binding Description}">
-        <Grid ColumnDefinitions="92,*"
-              ColumnSpacing="8">
-          <TextBlock Text="{Binding Label}"
-                     Classes="propertyLabel"
-                     VerticalAlignment="Center" />
-          <CheckBox Grid.Column="1"
-                    IsChecked="{Binding Value, Mode=TwoWay}"
-                    IsEnabled="{Binding IsEditable}"
-                    VerticalAlignment="Center" />
-        </Grid>
-        <TextBlock Margin="100,0,0,0"
-                   Text="{Binding ValidationMessage}"
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <CheckBox IsChecked="{Binding Value, Mode=TwoWay}"
+                  IsEnabled="{Binding IsEditable}"
+                  HorizontalAlignment="Left" />
+        <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
                    FontSize="9"
                    TextWrapping="Wrap"
@@ -136,21 +125,15 @@
       <StackPanel Margin="0,0,0,10"
                   Spacing="4"
                   ToolTip.Tip="{Binding Description}">
-        <Grid ColumnDefinitions="92,*"
-              ColumnSpacing="8">
-          <TextBlock Text="{Binding Label}"
-                     Classes="propertyLabel"
-                     VerticalAlignment="Center" />
-          <ComboBox Grid.Column="1"
-                    MinHeight="29"
-                    HorizontalAlignment="Stretch"
-                    Padding="8,3"
-                    ItemsSource="{Binding Choices}"
-                    SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
-                    IsEnabled="{Binding IsEditable}" />
-        </Grid>
-        <TextBlock Margin="100,0,0,0"
-                   Text="{Binding ValidationMessage}"
+        <TextBlock Text="{Binding Label}"
+                   Classes="propertyLabel" />
+        <ComboBox MinHeight="29"
+                  HorizontalAlignment="Stretch"
+                  Padding="8,3"
+                  ItemsSource="{Binding Choices}"
+                  SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
+                  IsEnabled="{Binding IsEditable}" />
+        <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
                    FontSize="9"
                    TextWrapping="Wrap"
@@ -360,17 +343,15 @@
 
     <DataTemplate DataType="{x:Type inspector:InspectorReadOnlyPropertyRowViewModel}"
                   x:DataType="inspector:InspectorReadOnlyPropertyRowViewModel">
-      <Grid Margin="0,0,0,9"
-            ColumnDefinitions="92,*"
-            ColumnSpacing="8"
-            ToolTip.Tip="{Binding Description}">
+      <StackPanel Margin="0,0,0,9"
+                  Spacing="4"
+                  ToolTip.Tip="{Binding Description}">
         <TextBlock Text="{Binding Label}"
                    Classes="propertyLabel" />
-        <TextBlock Grid.Column="1"
-                   Text="{Binding Value}"
+        <TextBlock Text="{Binding Value}"
                    Classes="propertyValue"
                    TextWrapping="Wrap" />
-      </Grid>
+      </StackPanel>
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type inspector:InspectorActionPropertyRowViewModel}"
@@ -378,28 +359,25 @@
       <StackPanel Margin="0,0,0,10"
                   Spacing="4"
                   ToolTip.Tip="{Binding Description}">
-        <Grid ColumnDefinitions="92,*,Auto"
+        <StackPanel Orientation="Horizontal"
+                    Spacing="4">
+          <TextBlock Text="{Binding Label}"
+                     Classes="propertyLabel" />
+          <avalonia:MaterialIcon Kind="InformationOutline"
+                                 Width="12"
+                                 Height="12"
+                                 IsVisible="{Binding HasInfoIcon}"
+                                 Foreground="{DynamicResource StudioTextMutedBrush}"
+                                 ToolTip.Tip="{Binding Description}" />
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto"
               ColumnSpacing="8">
-          <StackPanel Orientation="Horizontal"
-                      Spacing="4"
-                      VerticalAlignment="Center">
-            <TextBlock Text="{Binding Label}"
-                       Classes="propertyLabel"
-                       VerticalAlignment="Center" />
-            <avalonia:MaterialIcon Kind="InformationOutline"
-                                   Width="12"
-                                   Height="12"
-                                   IsVisible="{Binding HasInfoIcon}"
-                                   Foreground="{DynamicResource StudioTextMutedBrush}"
-                                   ToolTip.Tip="{Binding Description}" />
-          </StackPanel>
-          <TextBlock Grid.Column="1"
-                     Text="{Binding Value}"
+          <TextBlock Text="{Binding Value}"
                      Classes="propertyValue"
                      VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis"
                      TextWrapping="Wrap" />
-          <Button Grid.Column="2"
+          <Button Grid.Column="1"
                   Width="29"
                   Height="29"
                   MinWidth="29"
@@ -417,8 +395,7 @@
                        VerticalAlignment="Center" />
           </Button>
         </Grid>
-        <TextBlock Margin="100,0,0,0"
-                   Text="{Binding ValidationMessage}"
+        <TextBlock Text="{Binding ValidationMessage}"
                    IsVisible="{Binding HasValidationError}"
                    FontSize="9"
                    TextWrapping="Wrap"

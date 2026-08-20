@@ -5,6 +5,7 @@ using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Menu;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.Assets.Weapon;
 using IW4.Assets.XModel.Export;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
@@ -93,6 +94,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
         registry.Register(new XModelAdapter());
+        registry.Register(new WeaponAdapter());
         return registry;
     }
     public void Register(IAssetAuthoringAdapter adapter)
