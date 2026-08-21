@@ -15,9 +15,9 @@
         MinWidth="1180"
         MinHeight="700"
         WindowStartupLocation="CenterScreen">
-  <Grid RowDefinitions="30,52,*,25">
+  <Grid RowDefinitions="Auto,52,*,25">
 
-    <Menu x:Name="WindowMenu" Grid.Row="0" />
+    <Menu x:Name="WindowMenu" Grid.Row="0" Height="30" />
   
     <!-- Background="{DynamicResource StudioSurfaceBrush}" -->
     <Border Grid.Row="1"

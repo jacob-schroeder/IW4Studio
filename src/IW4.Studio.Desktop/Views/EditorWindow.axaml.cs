@@ -38,6 +38,7 @@ public sealed partial class EditorWindow : Window
         InitializeComponent();
         NativeMenu.SetMenu(this, StudioMenu.CreateNativeMenu(this, ExecuteMenuAction));
         StudioMenu.PopulateWindowMenu(WindowMenu, this, ExecuteMenuAction);
+        WindowMenu.IsVisible = !OperatingSystem.IsMacOS();
         Icon = AppIcon.Create();
         _unsavedChangesDialog = new AvaloniaUnsavedChangesDialog(this);
     }

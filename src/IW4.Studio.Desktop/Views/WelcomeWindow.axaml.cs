@@ -31,6 +31,7 @@ public sealed partial class WelcomeWindow : Window
         InitializeComponent();
         NativeMenu.SetMenu(this, StudioMenu.CreateWelcomeNativeMenu(this, ExecuteMenuAction));
         StudioMenu.PopulateWelcomeWindowMenu(WindowMenu, this, ExecuteMenuAction);
+        WindowMenu.IsVisible = !OperatingSystem.IsMacOS();
         Icon = AppIcon.Create();
         DataContext = _viewModel;
         _viewModel.SetRecentFiles(_settingsStore.LoadRecentFastFiles());
