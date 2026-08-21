@@ -36,6 +36,8 @@ public sealed partial class EditorWindow : Window
     {
         _navigationCoordinator = navigationCoordinator ?? throw new ArgumentNullException(nameof(navigationCoordinator));
         InitializeComponent();
+        NativeMenu.SetMenu(this, StudioMenu.CreateNativeMenu(this, ExecuteMenuAction));
+        StudioMenu.PopulateWindowMenu(WindowMenu, this, ExecuteMenuAction);
         Icon = AppIcon.Create();
         _unsavedChangesDialog = new AvaloniaUnsavedChangesDialog(this);
     }
@@ -107,6 +109,8 @@ public sealed partial class EditorWindow : Window
 
     public event Action<EditorWindow>? WelcomeRequested;
 
+    public event Action<EditorWindow>? AboutRequested;
+
     public event Action<ThemeMode>? ThemeRequested;
 
     /// <summary>
@@ -117,7 +121,7 @@ public sealed partial class EditorWindow : Window
     internal event Action<DestructiveNavigationAction>? ApprovedCloseRequested;
 
     internal void SetThemeMode(ThemeMode mode)
-        => ThemeMenuSelection.Set(this, mode);
+        => ThemeMenuSelection.Set(this, WindowMenu, mode);
 
     /// <summary>
     /// Called by the application after the open-another guard has already
@@ -158,22 +162,13 @@ public sealed partial class EditorWindow : Window
         Func<Task> shutdownAsync) =>
         RequestNavigationAsync(DestructiveNavigationAction.ApplicationShutdown, shutdownAsync);
 
-    private async void OpenAnotherMenuItem_Click(object? sender, EventArgs e) =>
-        await RequestOpenAnotherAsync();
-
     private async void OpenAnotherButton_Click(object? sender, RoutedEventArgs e) =>
         await RequestOpenAnotherAsync();
-
-    private async void ExitMenuItem_Click(object? sender, EventArgs e) =>
-        await RequestCloseAsync(DestructiveNavigationAction.Exit);
-
-    private async void SaveAsMenuItem_Click(object? sender, EventArgs e) =>
-        await RequestSaveAsAsync();
 
     private async void SaveAsButton_Click(object? sender, RoutedEventArgs e) =>
         await RequestSaveAsAsync();
 
-    private void LivePreviewMenuItem_Click(object? sender, EventArgs e)
+    private void ActivateLivePreview()
     {
         if (_disposed || _workbench is not { } workbench)
             return;
@@ -330,12 +325,31 @@ public sealed partial class EditorWindow : Window
         _gscEngineReferenceWindow.Activate();
     }
 
-    private void ThemeMenuItem_Click(object? sender, EventArgs e)
+    private async void ExecuteMenuAction(StudioMenuAction action)
     {
-        if (sender is NativeMenuItem { CommandParameter: string value }
-            && Enum.TryParse(value, ignoreCase: true, out ThemeMode mode))
+        switch (action)
         {
-            ThemeRequested?.Invoke(mode);
+            case StudioMenuAction.ShowAbout:
+                AboutRequested?.Invoke(this);
+                break;
+            case StudioMenuAction.SaveAs:
+                await RequestSaveAsAsync();
+                break;
+            case StudioMenuAction.OpenAnother:
+                await RequestOpenAnotherAsync();
+                break;
+            case StudioMenuAction.Exit:
+                await RequestCloseAsync(DestructiveNavigationAction.Exit);
+                break;
+            case StudioMenuAction.LivePreview:
+                ActivateLivePreview();
+                break;
+            case StudioMenuAction.SelectDarkTheme:
+                ThemeRequested?.Invoke(ThemeMode.Dark);
+                break;
+            case StudioMenuAction.SelectLightTheme:
+                ThemeRequested?.Invoke(ThemeMode.Light);
+                break;
         }
     }
 

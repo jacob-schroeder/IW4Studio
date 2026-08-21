@@ -21,6 +21,7 @@ public sealed partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        NativeMenu.SetMenu(this, StudioMenu.CreateApplicationMenu(ExecuteApplicationMenuAction));
         _settingsStore = new AppSettingsStore(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
         _themeService = new ThemeService(this, _settingsStore);
@@ -45,6 +46,7 @@ public sealed partial class App : Application
             ?? throw new InvalidOperationException("Application settings have not been initialized.");
         var window = new WelcomeWindow(settingsStore);
         window.WorkspaceOpened += OpenEditor;
+        window.AboutRequested += WelcomeWindow_AboutRequested;
         window.ThemeRequested += SelectTheme;
         window.SetThemeMode(GetCurrentThemeMode());
         return window;
@@ -61,6 +63,7 @@ public sealed partial class App : Application
         {
             editorWindow = new EditorWindow(workspace, _navigationCoordinator);
             editorWindow.WelcomeRequested += ReturnToWelcome;
+            editorWindow.AboutRequested += EditorWindow_AboutRequested;
             editorWindow.ThemeRequested += SelectTheme;
             editorWindow.ApprovedCloseRequested +=
                 EditorWindow_ApprovedCloseRequested;
@@ -130,8 +133,16 @@ public sealed partial class App : Application
         }
     }
 
-    private async void AppAboutMenuItem_Click(object? sender, EventArgs e)
+    private void EditorWindow_AboutRequested(EditorWindow editorWindow) =>
+        ExecuteApplicationMenuAction(StudioMenuAction.ShowAbout);
+
+    private void WelcomeWindow_AboutRequested(WelcomeWindow welcomeWindow) =>
+        ExecuteApplicationMenuAction(StudioMenuAction.ShowAbout);
+
+    private async void ExecuteApplicationMenuAction(StudioMenuAction action)
     {
+        if (action is not StudioMenuAction.ShowAbout)
+            return;
         if (_desktop?.MainWindow is not Window owner)
             return;
 

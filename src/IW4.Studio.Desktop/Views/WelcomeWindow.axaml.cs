@@ -29,6 +29,8 @@ public sealed partial class WelcomeWindow : Window
         ArgumentNullException.ThrowIfNull(settingsStore);
         _settingsStore = settingsStore;
         InitializeComponent();
+        NativeMenu.SetMenu(this, StudioMenu.CreateWelcomeNativeMenu(this, ExecuteMenuAction));
+        StudioMenu.PopulateWelcomeWindowMenu(WindowMenu, this, ExecuteMenuAction);
         Icon = AppIcon.Create();
         DataContext = _viewModel;
         _viewModel.SetRecentFiles(_settingsStore.LoadRecentFastFiles());
@@ -42,10 +44,12 @@ public sealed partial class WelcomeWindow : Window
 
     public event Action<WelcomeWindow, FastFileWorkspace>? WorkspaceOpened;
 
+    public event Action<WelcomeWindow>? AboutRequested;
+
     public event Action<ThemeMode>? ThemeRequested;
 
     internal void SetThemeMode(ThemeMode mode)
-        => ThemeMenuSelection.Set(this, mode);
+        => ThemeMenuSelection.Set(this, WindowMenu, mode);
 
     private async void BrowseButton_Click(object? sender, RoutedEventArgs e)
     {
@@ -66,12 +70,19 @@ public sealed partial class WelcomeWindow : Window
             _viewModel.SelectedPath = path;
     }
 
-    private void ThemeMenuItem_Click(object? sender, EventArgs e)
+    private void ExecuteMenuAction(StudioMenuAction action)
     {
-        if (sender is NativeMenuItem { CommandParameter: string value }
-            && Enum.TryParse(value, ignoreCase: true, out ThemeMode mode))
+        switch (action)
         {
-            ThemeRequested?.Invoke(mode);
+            case StudioMenuAction.ShowAbout:
+                AboutRequested?.Invoke(this);
+                break;
+            case StudioMenuAction.SelectDarkTheme:
+                ThemeRequested?.Invoke(ThemeMode.Dark);
+                break;
+            case StudioMenuAction.SelectLightTheme:
+                ThemeRequested?.Invoke(ThemeMode.Light);
+                break;
         }
     }
 

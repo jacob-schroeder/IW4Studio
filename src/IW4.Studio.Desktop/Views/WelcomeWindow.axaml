@@ -16,27 +16,10 @@
         MinWidth="860"
         MinHeight="590"
         WindowStartupLocation="CenterScreen">
-  <NativeMenu.Menu>
-    <NativeMenu>
-      <NativeMenuItem Header="Options">
-        <NativeMenu>
-          <NativeMenuItem Header="Theme">
-            <NativeMenu>
-              <NativeMenuItem Header="Dark"
-                              ToggleType="Radio"
-                              CommandParameter="Dark"
-                              Click="ThemeMenuItem_Click" />
-              <NativeMenuItem Header="Light"
-                              ToggleType="Radio"
-                              CommandParameter="Light"
-                              Click="ThemeMenuItem_Click" />
-            </NativeMenu>
-          </NativeMenuItem>
-        </NativeMenu>
-      </NativeMenuItem>
-    </NativeMenu>
-  </NativeMenu.Menu>
-  <Grid>
+  <Grid RowDefinitions="30,*">
+    <Menu x:Name="WindowMenu" Grid.Row="0" />
+
+    <Grid Grid.Row="1">
     <Grid ColumnDefinitions="280,*">
       <Border Grid.Column="0"
               Background="{DynamicResource StudioSidebarBrush}"
@@ -417,5 +400,6 @@
         </StackPanel>
       </Border>
     </Border>
+    </Grid>
   </Grid>
 </Window>

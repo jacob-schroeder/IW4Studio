@@ -3,12 +3,6 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="IW4.Studio.Desktop.App"
              Name="IW4 Studio">
-  <NativeMenu.Menu>
-    <NativeMenu>
-      <NativeMenuItem Header="About IW4 Studio" Click="AppAboutMenuItem_Click" />
-    </NativeMenu>
-  </NativeMenu.Menu>
-
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />

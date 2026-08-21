@@ -15,44 +15,12 @@
         MinWidth="1180"
         MinHeight="700"
         WindowStartupLocation="CenterScreen">
-  <NativeMenu.Menu>
-    <NativeMenu>
-      <NativeMenuItem Header="File" IsVisible="True" IsEnabled="True">
-        <NativeMenu>
-          <NativeMenuItem Header="Save As…" IsEnabled="{Binding CanSaveAs}" Click="SaveAsMenuItem_Click" />
-          <NativeMenuItem Header="Open another fastfile…" Click="OpenAnotherMenuItem_Click" />
-          <NativeMenuItemSeparator />
-          <NativeMenuItem Header="Exit" Click="ExitMenuItem_Click" />
-        </NativeMenu>
-      </NativeMenuItem>
-      <NativeMenuItem Header="Edit" IsVisible="True" IsEnabled="True">
-        <NativeMenu>
-          <NativeMenuItem Header="Copy" IsEnabled="False" />
-          <NativeMenuItem Header="Paste" IsEnabled="False" />
-        </NativeMenu>
-      </NativeMenuItem>
-      <NativeMenuItem Header="Tools" IsVisible="True" IsEnabled="True">
-        <NativeMenu>
-          <NativeMenuItem Header="Live Preview" Click="LivePreviewMenuItem_Click" />
-        </NativeMenu>
-      </NativeMenuItem>
-      <NativeMenuItem Header="Options" IsVisible="True" IsEnabled="True">
-        <NativeMenu>
-          <NativeMenuItem Header="Theme">
-            <NativeMenu>
-              <NativeMenuItem Header="Dark" ToggleType="Radio" CommandParameter="Dark" Click="ThemeMenuItem_Click" />
-              <NativeMenuItem Header="Light" ToggleType="Radio" CommandParameter="Light" Click="ThemeMenuItem_Click" />
-            </NativeMenu>
-          </NativeMenuItem>
-        </NativeMenu>
-      </NativeMenuItem>
-    </NativeMenu>
-  </NativeMenu.Menu>
+  <Grid RowDefinitions="30,52,*,25">
 
-  <Grid RowDefinitions="52,*,25">
+    <Menu x:Name="WindowMenu" Grid.Row="0" />
   
     <!-- Background="{DynamicResource StudioSurfaceBrush}" -->
-    <Border Grid.Row="0"
+    <Border Grid.Row="1"
             Padding="14,7"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,0,0,1">
@@ -112,9 +80,9 @@
       </Grid>
     </Border>
 
-    <composition:StudioWorkbenchView Grid.Row="1" />
+    <composition:StudioWorkbenchView Grid.Row="2" />
 
-    <Border Grid.Row="2"
+    <Border Grid.Row="3"
             Padding="9,0"
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
