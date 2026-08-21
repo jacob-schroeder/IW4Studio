@@ -1,4 +1,5 @@
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Weapon;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Strings;
@@ -20,15 +21,16 @@ internal static class WeaponValidation
         OptionalTable(issues, "weapon.variant.hideTags", variant.HideTagsPointer.Type,
             WeaponVariantDef.HideTagCount, variant.HideTags.Count);
         OptionalParallelTable(issues, "weapon.variant.animationNames",
-            variant.AnimationNamesPointer.Type, WeaponVariantDef.WeaponAnimCount,
+            variant.AnimationNamesPointer.Type, (int)WeaponAnimationSlot.Count,
             variant.AnimationNamePointers.Count, variant.AnimationNames.Count);
         ScriptStrings(issues, "weapon.variant.hideTags", variant.HideTags);
         Texts(issues, "weapon.variant.animationNames", variant.AnimationNames);
-        Count(issues, "weapon.variant.accuracyGraphKnots",
-            variant.AccuracyGraphKnotCount, variant.AccuracyGraphKnots.Count);
-        Count(issues, "weapon.variant.originalAccuracyGraphKnots",
-            variant.OriginalAccuracyGraphKnotCount,
-            variant.OriginalAccuracyGraphKnots.Count);
+        Count(issues, "weapon.variant.aiVsAiAccuracyGraphKnots",
+            variant.AiVsAiAccuracyGraphKnotCount,
+            variant.AiVsAiAccuracyGraphKnots.Count);
+        Count(issues, "weapon.variant.aiVsPlayerAccuracyGraphKnots",
+            variant.AiVsPlayerAccuracyGraphKnotCount,
+            variant.AiVsPlayerAccuracyGraphKnots.Count);
         Provider(issues, "weapon.variant.killIcon", variant.KillIcon,
             XAssetType.Material);
         Provider(issues, "weapon.variant.dpadIcon", variant.DpadIcon,
@@ -73,13 +75,13 @@ internal static class WeaponValidation
         OptionalParallelTable(issues,
             "weapon.definition.rightHandAnimationNames",
             definition.RightHandAnimationNamesPointer.Type,
-            WeaponDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             definition.RightHandAnimationNamePointers.Count,
             definition.RightHandAnimationNames.Count);
         OptionalParallelTable(issues,
             "weapon.definition.leftHandAnimationNames",
             definition.LeftHandAnimationNamesPointer.Type,
-            WeaponDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             definition.LeftHandAnimationNamePointers.Count,
             definition.LeftHandAnimationNames.Count);
         Texts(issues, "weapon.definition.rightHandAnimationNames",
@@ -88,66 +90,46 @@ internal static class WeaponValidation
             definition.LeftHandAnimationNames);
 
         ValidateNoteTracks(issues, definition.NoteTrackMaps);
-        ExactParallel(issues, "weapon.definition.flashEffects", 2,
-            definition.FlashEffectPointers.Count, definition.FlashEffects.Count);
-        ExactParallel(issues, "weapon.definition.soundAliases",
-            WeaponDef.WeaponSoundAliasCount, definition.SoundAliasPointers.Count,
-            definition.SoundAliasValuePointers.Count,
-            definition.SoundAliasNames.Count);
-        OptionalParallelTable(issues, "weapon.definition.bounceSounds",
-            definition.BounceSoundPointer.Type, WeaponDef.SurfaceCount,
-            definition.BounceSoundPointers.Count,
-            definition.BounceSoundValuePointers.Count,
-            definition.BounceSoundNames.Count);
-        ExactParallel(issues, "weapon.definition.effects", 4,
-            definition.EffectPointers.Count, definition.Effects.Count);
-        ExactParallel(issues, "weapon.definition.materials", 2,
-            definition.MaterialPointers.Count, definition.Materials.Count);
+        OptionalTable(issues, "weapon.definition.bounceSounds",
+            definition.BounceSoundPointer.Type, (int)MaterialSurfaceType.Count,
+            definition.BounceSounds.Count);
         OptionalProviderTable(issues, "weapon.definition.worldGunModels",
             definition.WorldGunModelsPointer.Type, WeaponDef.GunModelCount,
             definition.WorldGunModelPointers.Count,
             definition.WorldGunModels.Count);
-        Exact(issues, "weapon.definition.iconMaterials", 3,
-            definition.IconMaterials.Count);
-        ExactParallel(issues, "weapon.definition.overlayMaterials", 4,
-            definition.Overlay.OverlayMaterials.Count,
-            definition.OverlayMaterials.Count);
-        Exact(issues, "weapon.definition.projectileEffects", 2,
-            definition.ProjectileEffects.Count);
-        Exact(issues, "weapon.definition.impactEffects", 2,
-            definition.ImpactEffects.Count);
         OptionalTable(issues, "weapon.definition.projectile.parallelBounce",
             definition.Projectile.ParallelBouncePointer.Type,
-            WeaponDef.SurfaceCount, definition.Projectile.ParallelBounce.Count);
+            (int)MaterialSurfaceType.Count,
+            definition.Projectile.ParallelBounce.Count);
         OptionalTable(issues,
             "weapon.definition.projectile.perpendicularBounce",
             definition.Projectile.PerpendicularBouncePointer.Type,
-            WeaponDef.SurfaceCount,
+            (int)MaterialSurfaceType.Count,
             definition.Projectile.PerpendicularBounce.Count);
         OptionalTable(issues,
             "weapon.definition.locationDamageMultipliers",
             definition.LocationDamageMultipliersPointer.Type,
-            WeaponDef.HitLocationCount,
+            (int)HitLocation.Count,
             definition.LocationDamageMultipliers.Count);
-        ExactParallel(issues,
-            "weapon.definition.turret.barrelSpinUpSoundNames",
-            WeaponDef.TurretBarrelSpinSoundCount,
-            definition.Turret.BarrelSpinUpSoundPointers.Count,
-            definition.Turret.BarrelSpinUpSoundValuePointers.Count,
-            definition.Turret.BarrelSpinUpSoundNames.Count);
-        ExactParallel(issues,
-            "weapon.definition.turret.barrelSpinDownSoundNames",
-            WeaponDef.TurretBarrelSpinSoundCount,
-            definition.Turret.BarrelSpinDownSoundPointers.Count,
-            definition.Turret.BarrelSpinDownSoundValuePointers.Count,
-            definition.Turret.BarrelSpinDownSoundNames.Count);
+        Exact(issues, "weapon.definition.turret.barrelSpinUpSounds",
+            (int)WeaponTurretBarrelSpinSoundSlot.Count,
+            definition.Turret.BarrelSpinUpSounds.Count);
+        Exact(issues, "weapon.definition.turret.barrelSpinDownSounds",
+            (int)WeaponTurretBarrelSpinSoundSlot.Count,
+            definition.Turret.BarrelSpinDownSounds.Count);
 
-        Count(issues, "weapon.definition.accuracy.graphKnots",
-            variant.AccuracyGraphKnotCount,
-            definition.Accuracy.GraphKnots.Count);
-        Count(issues, "weapon.definition.accuracy.originalGraphKnots",
-            variant.OriginalAccuracyGraphKnotCount,
-            definition.Accuracy.OriginalGraphKnots.Count);
+        Count(issues, "weapon.definition.accuracy.originalAiVsAiGraphKnots",
+            definition.Accuracy.OriginalAiVsAiGraphKnotCount,
+            definition.Accuracy.OriginalAiVsAiGraphKnots.Count);
+        Count(issues, "weapon.definition.accuracy.originalAiVsPlayerGraphKnots",
+            definition.Accuracy.OriginalAiVsPlayerGraphKnotCount,
+            definition.Accuracy.OriginalAiVsPlayerGraphKnots.Count);
+        Count(issues, "weapon.definition.accuracy.originalAiVsAiGraphKnots",
+            variant.AiVsAiAccuracyGraphKnotCount,
+            definition.Accuracy.OriginalAiVsAiGraphKnots.Count);
+        Count(issues, "weapon.definition.accuracy.originalAiVsPlayerGraphKnots",
+            variant.AiVsPlayerAccuracyGraphKnotCount,
+            definition.Accuracy.OriginalAiVsPlayerGraphKnots.Count);
 
         Defined(issues, "weapon.definition.weaponType", definition.WeaponType);
         Defined(issues, "weapon.definition.weaponClass", definition.WeaponClass);
@@ -175,12 +157,22 @@ internal static class WeaponValidation
             XAssetType.XModel);
         Provider(issues, "weapon.definition.handModel", definition.HandModel,
             XAssetType.XModel);
-        Providers(issues, "weapon.definition.flashEffects",
-            definition.FlashEffects, XAssetType.Fx);
-        Providers(issues, "weapon.definition.effects", definition.Effects,
-            XAssetType.Fx);
-        Providers(issues, "weapon.definition.materials", definition.Materials,
-            XAssetType.Material);
+        Provider(issues, "weapon.definition.flashEffects.view",
+            definition.FlashEffects.View, XAssetType.Fx);
+        Provider(issues, "weapon.definition.flashEffects.world",
+            definition.FlashEffects.World, XAssetType.Fx);
+        Provider(issues, "weapon.definition.shellEjectEffects.view",
+            definition.ShellEjectEffects.View, XAssetType.Fx);
+        Provider(issues, "weapon.definition.shellEjectEffects.world",
+            definition.ShellEjectEffects.World, XAssetType.Fx);
+        Provider(issues, "weapon.definition.shellEjectEffects.viewLastShot",
+            definition.ShellEjectEffects.ViewLastShot, XAssetType.Fx);
+        Provider(issues, "weapon.definition.shellEjectEffects.worldLastShot",
+            definition.ShellEjectEffects.WorldLastShot, XAssetType.Fx);
+        Provider(issues, "weapon.definition.reticle.centerMaterial",
+            definition.Reticle.CenterMaterial, XAssetType.Material);
+        Provider(issues, "weapon.definition.reticle.sideMaterial",
+            definition.Reticle.SideMaterial, XAssetType.Material);
         Providers(issues, "weapon.definition.worldGunModels",
             definition.WorldGunModels, XAssetType.XModel);
         Provider(issues, "weapon.definition.worldClipModel",
@@ -191,24 +183,38 @@ internal static class WeaponValidation
             definition.KnifeModel, XAssetType.XModel);
         Provider(issues, "weapon.definition.worldKnifeModel",
             definition.WorldKnifeModel, XAssetType.XModel);
-        Providers(issues, "weapon.definition.iconMaterials",
-            definition.IconMaterials, XAssetType.Material);
-        Providers(issues, "weapon.definition.overlayMaterials",
-            definition.OverlayMaterials, XAssetType.Material);
+        Provider(issues, "weapon.definition.icons.hudIcon",
+            definition.Icons.HudIcon, XAssetType.Material);
+        Provider(issues, "weapon.definition.icons.pickupIcon",
+            definition.Icons.PickupIcon, XAssetType.Material);
+        Provider(issues, "weapon.definition.icons.ammoCounterIcon",
+            definition.Icons.AmmoCounterIcon, XAssetType.Material);
+        Provider(issues, "weapon.definition.overlay.material",
+            definition.Overlay.Material, XAssetType.Material);
+        Provider(issues, "weapon.definition.overlay.materialLowRes",
+            definition.Overlay.MaterialLowRes, XAssetType.Material);
+        Provider(issues, "weapon.definition.overlay.materialEmp",
+            definition.Overlay.MaterialEmp, XAssetType.Material);
+        Provider(issues, "weapon.definition.overlay.materialEmpLowRes",
+            definition.Overlay.MaterialEmpLowRes, XAssetType.Material);
         Provider(issues, "weapon.definition.physCollmap",
             definition.PhysCollmap, XAssetType.PhysCollmap);
         Provider(issues, "weapon.definition.projectile.model",
             definition.Projectile.Model, XAssetType.XModel);
-        Providers(issues, "weapon.definition.projectileEffects",
-            definition.ProjectileEffects, XAssetType.Fx);
-        Providers(issues, "weapon.definition.impactEffects",
-            definition.ImpactEffects, XAssetType.Fx);
+        Provider(issues, "weapon.definition.projectile.explosionEffect",
+            definition.Projectile.ExplosionEffect, XAssetType.Fx);
+        Provider(issues, "weapon.definition.projectile.dudEffect",
+            definition.Projectile.DudEffect, XAssetType.Fx);
+        Provider(issues, "weapon.definition.projectile.trailEffect",
+            definition.Projectile.TrailEffect, XAssetType.Fx);
+        Provider(issues, "weapon.definition.projectile.beaconEffect",
+            definition.Projectile.BeaconEffect, XAssetType.Fx);
         Provider(issues, "weapon.definition.projectile.ignitionEffect",
-            definition.ViewShellEjectEffect, XAssetType.Fx);
+            definition.Projectile.IgnitionEffect, XAssetType.Fx);
         Provider(issues, "weapon.definition.tracer", definition.Tracer,
             XAssetType.Tracer);
         Provider(issues, "weapon.definition.turret.overheatEffect",
-            definition.TurretOverheatEffect, XAssetType.Fx);
+            definition.Turret.OverheatEffect, XAssetType.Fx);
 
         if (definition.PhysCollmap is null && definition.PhysCollmapName is not null)
         {
@@ -233,32 +239,32 @@ internal static class WeaponValidation
     {
         OptionalTable(issues, "weapon.definition.noteTrackMaps.soundKeys",
             maps.SoundMapKeysPointer.Type, WeaponDef.NoteTrackMapCount,
-            maps.SoundMapKeys.Count);
+            maps.SoundMappings.Count);
         OptionalTable(issues, "weapon.definition.noteTrackMaps.soundValues",
             maps.SoundMapValuesPointer.Type, WeaponDef.NoteTrackMapCount,
-            maps.SoundMapValues.Count);
+            maps.SoundMappings.Count);
         OptionalTable(issues, "weapon.definition.noteTrackMaps.rumbleKeys",
             maps.RumbleMapKeysPointer.Type, WeaponDef.NoteTrackMapCount,
-            maps.RumbleMapKeys.Count);
+            maps.RumbleMappings.Count);
         OptionalTable(issues, "weapon.definition.noteTrackMaps.rumbleValues",
             maps.RumbleMapValuesPointer.Type, WeaponDef.NoteTrackMapCount,
-            maps.RumbleMapValues.Count);
-        ScriptStrings(issues, "weapon.definition.noteTrackMaps.soundKeys",
-            maps.SoundMapKeys);
-        ScriptStrings(issues, "weapon.definition.noteTrackMaps.soundValues",
-            maps.SoundMapValues);
-        ScriptStrings(issues, "weapon.definition.noteTrackMaps.rumbleKeys",
-            maps.RumbleMapKeys);
-        ScriptStrings(issues, "weapon.definition.noteTrackMaps.rumbleValues",
-            maps.RumbleMapValues);
+            maps.RumbleMappings.Count);
+        NoteTrackMappings(issues,
+            "weapon.definition.noteTrackMaps.soundMappings",
+            maps.SoundMappings);
+        NoteTrackMappings(issues,
+            "weapon.definition.noteTrackMaps.rumbleMappings",
+            maps.RumbleMappings);
     }
 
     private static void ValidateDefinitionTexts(
         List<AssetValidationIssue> issues,
         WeaponDef value)
     {
-        Texts(issues, "weapon.definition.soundAliases", value.SoundAliasNames);
-        Texts(issues, "weapon.definition.bounceSounds", value.BounceSoundNames);
+        PrimarySoundTexts(issues, "weapon.definition.primarySounds",
+            value.PrimarySounds);
+        SoundAliasTexts(issues, "weapon.definition.bounceSounds",
+            value.BounceSounds);
         Text(issues, "weapon.definition.ammo.ammoName", value.Ammo.AmmoName);
         Text(issues, "weapon.definition.ammo.clipName", value.Ammo.ClipName);
         Text(issues, "weapon.definition.ammo.sharedAmmoCapName",
@@ -269,10 +275,10 @@ internal static class WeaponValidation
             value.Projectile.DudSound);
         Text(issues, "weapon.definition.projectile.ignitionSound",
             value.Projectile.IgnitionSound);
-        Text(issues, "weapon.definition.accuracy.graphName0",
-            value.Accuracy.GraphName0);
-        Text(issues, "weapon.definition.accuracy.graphName1",
-            value.Accuracy.GraphName1);
+        Text(issues, "weapon.definition.accuracy.aiVsAiGraphName",
+            value.Accuracy.AiVsAiGraphName);
+        Text(issues, "weapon.definition.accuracy.aiVsPlayerGraphName",
+            value.Accuracy.AiVsPlayerGraphName);
         Text(issues, "weapon.definition.hints.useHintString",
             value.Hints.UseHintString);
         Text(issues, "weapon.definition.hints.dropHintString",
@@ -287,14 +293,47 @@ internal static class WeaponValidation
             value.Turret.BarrelSpinRumble);
         Text(issues, "weapon.definition.turret.barrelSpinMaxSound",
             value.Turret.BarrelSpinMaxSound);
-        Texts(issues, "weapon.definition.turret.barrelSpinUpSoundNames",
-            value.Turret.BarrelSpinUpSoundNames);
-        Texts(issues, "weapon.definition.turret.barrelSpinDownSoundNames",
-            value.Turret.BarrelSpinDownSoundNames);
+        SoundAliasTexts(issues, "weapon.definition.turret.barrelSpinUpSounds",
+            value.Turret.BarrelSpinUpSounds);
+        SoundAliasTexts(issues, "weapon.definition.turret.barrelSpinDownSounds",
+            value.Turret.BarrelSpinDownSounds);
         Text(issues, "weapon.definition.missileConeSound.alias",
             value.MissileConeSound.Alias);
         Text(issues, "weapon.definition.missileConeSound.aliasAtBase",
             value.MissileConeSound.AliasAtBase);
+    }
+
+    private static void PrimarySoundTexts(
+        List<AssetValidationIssue> issues,
+        string path,
+        WeaponPrimarySoundFields sounds)
+    {
+        for (int index = 0; index < (int)WeaponPrimarySoundSlot.Count; index++)
+        {
+            var slot = (WeaponPrimarySoundSlot)index;
+            Text(issues, $"{path}.{slot}", sounds.Get(slot).Name);
+        }
+    }
+
+    private static void SoundAliasTexts(
+        List<AssetValidationIssue> issues,
+        string path,
+        IReadOnlyList<WeaponSoundAliasField> sounds)
+    {
+        for (int index = 0; index < sounds.Count; index++)
+            Text(issues, $"{path}[{index}]", sounds[index].Name);
+    }
+
+    private static void NoteTrackMappings(
+        List<AssetValidationIssue> issues,
+        string path,
+        IReadOnlyList<WeaponNoteTrackMapEntry> mappings)
+    {
+        for (int index = 0; index < mappings.Count; index++)
+        {
+            Text(issues, $"{path}[{index}].key", mappings[index].Key.Text);
+            Text(issues, $"{path}[{index}].value", mappings[index].Value.Text);
+        }
     }
 
     private static void OptionalProviderTable(

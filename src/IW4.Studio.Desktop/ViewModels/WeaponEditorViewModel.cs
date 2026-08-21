@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text;
+using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Weapon;
 using IW4.Assets.Assets.XModel;
@@ -560,11 +562,51 @@ public sealed class WeaponCategoryItemViewModel
 {
     private WeaponCategoryItemViewModel(WeaponPropertyCategory id, string title) { Id = id; Title = title; }
     public WeaponPropertyCategory Id { get; } public string Title { get; }
-    internal static WeaponCategoryItemViewModel[] CreateAll() => [new(WeaponPropertyCategory.Overview, "Overview and variant"), new(WeaponPropertyCategory.Models, "Models"), new(WeaponPropertyCategory.AnimationNames, "Animation names"), new(WeaponPropertyCategory.HideTagsAndNoteTracks, "Hide tags and note tracks"), new(WeaponPropertyCategory.ClassificationAndReticle, "Classification and reticle"), new(WeaponPropertyCategory.ViewAndPositionalMovement, "View and positional movement"), new(WeaponPropertyCategory.HudIconsAndAmmo, "HUD icons and ammo"), new(WeaponPropertyCategory.Timing, "Timing"), new(WeaponPropertyCategory.AimAndMovementTuning, "Aim and movement tuning"), new(WeaponPropertyCategory.OverlayAdsAndSpread, "Overlay, ADS, and spread"), new(WeaponPropertyCategory.PhysicsAndProjectile, "Physics and projectile"), new(WeaponPropertyCategory.KickRecoilAndAccuracy, "Kick, recoil, and accuracy"), new(WeaponPropertyCategory.DamageRangeAndAiTuning, "Damage, range, and AI tuning"), new(WeaponPropertyCategory.EffectsAndMaterials, "Effects and materials"), new(WeaponPropertyCategory.SoundsAndBounce, "Sounds and bounce response"), new(WeaponPropertyCategory.HintsAndRumble, "Hints and rumble"), new(WeaponPropertyCategory.TurretAndMissile, "Turret and missile-cone sound"), new(WeaponPropertyCategory.TailAndPreservedStorage, "Tail bytes and preserved storage")];
+    internal static WeaponCategoryItemViewModel[] CreateAll() => [new(WeaponPropertyCategory.Overview, "Overview and variant"), new(WeaponPropertyCategory.Models, "Models"), new(WeaponPropertyCategory.AnimationNames, "Animation names"), new(WeaponPropertyCategory.HideTagsAndNoteTracks, "Hide tags and note tracks"), new(WeaponPropertyCategory.ClassificationAndReticle, "Classification and reticle"), new(WeaponPropertyCategory.ViewAndPositionalMovement, "View and positional movement"), new(WeaponPropertyCategory.HudIconsAndAmmo, "HUD icons and ammo"), new(WeaponPropertyCategory.Timing, "Timing"), new(WeaponPropertyCategory.AimAndMovementTuning, "Aim and movement tuning"), new(WeaponPropertyCategory.OverlayAdsAndSpread, "Overlay, ADS, and spread"), new(WeaponPropertyCategory.PhysicsAndProjectile, "Physics and projectile"), new(WeaponPropertyCategory.KickRecoilAndAccuracy, "Kick, recoil, and accuracy"), new(WeaponPropertyCategory.DamageRangeAndAiTuning, "Damage, range, and AI tuning"), new(WeaponPropertyCategory.EffectsAndMaterials, "Flash and shell effects"), new(WeaponPropertyCategory.SoundsAndBounce, "Sounds and bounce response"), new(WeaponPropertyCategory.HintsAndRumble, "Hints and rumble"), new(WeaponPropertyCategory.TurretAndMissile, "Turret and missile-cone sound"), new(WeaponPropertyCategory.TailAndPreservedStorage, "Tail bytes and preserved storage")];
 }
 
-public enum WeaponIndexedRowKind { GunModel, HandModel, WorldGunModel, WorldClipModel, RocketModel, KnifeModel, WorldKnifeModel, ProjectileModel, VariantAnimation, RightAnimation, LeftAnimation, HideTag, SoundNoteKey, SoundNoteValue, RumbleNoteKey, RumbleNoteValue, VariantAccuracyGraph, VariantOriginalAccuracyGraph, DefinitionAccuracyGraph, DefinitionOriginalAccuracyGraph, LocationDamage, ProjectileParallelBounce, ProjectilePerpendicularBounce, FlashEffect, Effect, Material, IconMaterial, OverlayMaterial, ProjectileEffect, ImpactEffect, ViewShellEjectEffect, TurretOverheatEffect, Tracer, PrimarySound, BounceSound, TurretSpinUpSound, TurretSpinDownSound }
+public enum WeaponIndexedRowKind { GunModel, HandModel, WorldGunModel, WorldClipModel, RocketModel, KnifeModel, WorldKnifeModel, ProjectileModel, VariantAnimation, RightAnimation, LeftAnimation, HideTag, SoundNoteMapping, RumbleNoteMapping, AiVsAiCurrentAccuracyGraph, AiVsPlayerCurrentAccuracyGraph, AiVsAiOriginalAccuracyGraph, AiVsPlayerOriginalAccuracyGraph, LocationDamage, ProjectileParallelBounce, ProjectilePerpendicularBounce, BounceSound, TurretSpinUpSound, TurretSpinDownSound }
 internal static class WeaponIndexedRowKindExtensions { internal static bool IsModel(this WeaponIndexedRowKind value) => value is WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.HandModel or WeaponIndexedRowKind.WorldGunModel or WeaponIndexedRowKind.WorldClipModel or WeaponIndexedRowKind.RocketModel or WeaponIndexedRowKind.KnifeModel or WeaponIndexedRowKind.WorldKnifeModel or WeaponIndexedRowKind.ProjectileModel; }
+
+internal static class WeaponSemanticLabels
+{
+    internal static string SlotTitle<T>(string family, int index) where T : struct, Enum
+    {
+        string? name = Enum.GetName(typeof(T), index);
+        return name is null || string.Equals(name, "Count", StringComparison.Ordinal)
+            ? $"{family} — Unknown slot [{index:00}]"
+            : $"{family} — {HumanizeIdentifier(name)}";
+    }
+
+    internal static string HumanizeIdentifier(string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier)) return identifier;
+        var result = new StringBuilder(identifier.Length + 8);
+        for (int index = 0; index < identifier.Length; index++)
+        {
+            char current = identifier[index];
+            if (index > 0 && (char.IsDigit(current) && !char.IsDigit(identifier[index - 1]) ||
+                char.IsUpper(current) && (char.IsLower(identifier[index - 1]) ||
+                    index + 1 < identifier.Length && char.IsLower(identifier[index + 1]))))
+            {
+                result.Append(' ');
+            }
+            result.Append(current);
+        }
+
+        return string.Join(' ', result.ToString().Split(' ').Select(word => word switch
+        {
+            "Ads" => "ADS",
+            "Ai" => "AI",
+            "Emp" => "EMP",
+            "Hud" => "HUD",
+            "Dof" => "DOF",
+            "Fov" => "FOV",
+            "Vs" => "vs.",
+            _ => word
+        }));
+    }
+}
 
 public sealed class WeaponIndexedRowItemViewModel
 {
@@ -574,31 +616,34 @@ public sealed class WeaponIndexedRowItemViewModel
     {
         ArgumentNullException.ThrowIfNull(modelVariantLabels);
         if (draft.Definition is not { } definition) yield break;
-        IEnumerable<WeaponIndexedRowItemViewModel> Rows(WeaponIndexedRowKind kind, string label, int actual, int expected, bool tablePresent, params int[] parallelCounts)
+        IEnumerable<WeaponIndexedRowItemViewModel> BuildRows(WeaponIndexedRowKind kind, Func<int, string> title, int actual, int expected, bool tablePresent, params int[] parallelCounts)
         {
             int[] counts = [actual, .. parallelCounts];
             bool absent = !tablePresent && counts.All(count => count == 0);
             bool malformed = !absent && (!tablePresent || counts.Any(count => count != expected));
-            int count = absent ? expected : Math.Max(expected, actual);
-            return Enumerable.Range(0, count).Select(index => new WeaponIndexedRowItemViewModel(kind, index,
-                kind is WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.WorldGunModel
-                    ? ModelVariantTitle(label, index, modelVariantLabels)
-                    : $"{label} [{index:00}]",
-                tablePresent, index < actual, malformed));
+            int count = absent ? expected : Math.Max(expected, counts.Max());
+            return Enumerable.Range(0, count).Select(index => new WeaponIndexedRowItemViewModel(
+                kind, index, title(index), tablePresent, index < actual, malformed));
         }
-        IEnumerable<WeaponIndexedRowItemViewModel> ExactRows(WeaponIndexedRowKind kind, string label, int actual, int expected, params int[] parallelCounts) => Rows(kind, label, actual, expected, true, parallelCounts);
+        IEnumerable<WeaponIndexedRowItemViewModel> Rows(WeaponIndexedRowKind kind, string label, int actual, int expected, bool tablePresent, params int[] parallelCounts) =>
+            BuildRows(kind, index => kind is WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.WorldGunModel
+                ? ModelVariantTitle(label, index, modelVariantLabels)
+                : $"{label} [{index:00}]", actual, expected, tablePresent, parallelCounts);
+        IEnumerable<WeaponIndexedRowItemViewModel> SemanticRows<T>(WeaponIndexedRowKind kind, string label, int actual, int expected, bool tablePresent, params int[] parallelCounts) where T : struct, Enum =>
+            BuildRows(kind, index => WeaponSemanticLabels.SlotTitle<T>(label, index), actual, expected, tablePresent, parallelCounts);
+        IEnumerable<WeaponIndexedRowItemViewModel> ExactSemanticRows<T>(WeaponIndexedRowKind kind, string label, int actual, int expected, params int[] parallelCounts) where T : struct, Enum =>
+            SemanticRows<T>(kind, label, actual, expected, true, parallelCounts);
         bool Present(PointerType type) => type != PointerType.Null;
         IEnumerable<WeaponIndexedRowItemViewModel> selected = category switch
         {
             WeaponPropertyCategory.Models => Rows(WeaponIndexedRowKind.GunModel, "View model", definition.GunModels.Count, WeaponDef.GunModelCount, Present(definition.GunModelsPointer.Type), definition.GunModelPointers.Count).Concat([new(WeaponIndexedRowKind.HandModel, 0, "Hand model")]).Concat(Rows(WeaponIndexedRowKind.WorldGunModel, "World model", definition.WorldGunModels.Count, WeaponDef.GunModelCount, Present(definition.WorldGunModelsPointer.Type), definition.WorldGunModelPointers.Count)).Concat([new(WeaponIndexedRowKind.WorldClipModel, 0, "World clip model"), new(WeaponIndexedRowKind.RocketModel, 0, "Rocket model"), new(WeaponIndexedRowKind.KnifeModel, 0, "Knife model"), new(WeaponIndexedRowKind.WorldKnifeModel, 0, "World knife model"), new(WeaponIndexedRowKind.ProjectileModel, 0, "Projectile model")]),
-            WeaponPropertyCategory.AnimationNames => Rows(WeaponIndexedRowKind.VariantAnimation, "Variant animation", draft.Variant.AnimationNames.Count, WeaponVariantDef.WeaponAnimCount, Present(draft.Variant.AnimationNamesPointer.Type), draft.Variant.AnimationNamePointers.Count).Concat(Rows(WeaponIndexedRowKind.RightAnimation, "Right-hand animation", definition.RightHandAnimationNames.Count, WeaponDef.WeaponAnimCount, Present(definition.RightHandAnimationNamesPointer.Type), definition.RightHandAnimationNamePointers.Count)).Concat(Rows(WeaponIndexedRowKind.LeftAnimation, "Left-hand animation", definition.LeftHandAnimationNames.Count, WeaponDef.WeaponAnimCount, Present(definition.LeftHandAnimationNamesPointer.Type), definition.LeftHandAnimationNamePointers.Count)),
-            WeaponPropertyCategory.HideTagsAndNoteTracks => Rows(WeaponIndexedRowKind.HideTag, "Hide tag", draft.Variant.HideTags.Count, WeaponVariantDef.HideTagCount, Present(draft.Variant.HideTagsPointer.Type)).Concat(Rows(WeaponIndexedRowKind.SoundNoteKey, "Sound note key", definition.NoteTrackMaps.SoundMapKeys.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.SoundMapKeysPointer.Type))).Concat(Rows(WeaponIndexedRowKind.SoundNoteValue, "Sound note value", definition.NoteTrackMaps.SoundMapValues.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.SoundMapValuesPointer.Type))).Concat(Rows(WeaponIndexedRowKind.RumbleNoteKey, "Rumble note key", definition.NoteTrackMaps.RumbleMapKeys.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.RumbleMapKeysPointer.Type))).Concat(Rows(WeaponIndexedRowKind.RumbleNoteValue, "Rumble note value", definition.NoteTrackMaps.RumbleMapValues.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.RumbleMapValuesPointer.Type))),
-            WeaponPropertyCategory.KickRecoilAndAccuracy => Rows(WeaponIndexedRowKind.VariantAccuracyGraph, "Variant graph", draft.Variant.AccuracyGraphKnots.Count, draft.Variant.AccuracyGraphKnotCount, Present(draft.Variant.AccuracyGraphKnotsPointer.Type)).Concat(Rows(WeaponIndexedRowKind.VariantOriginalAccuracyGraph, "Variant original graph", draft.Variant.OriginalAccuracyGraphKnots.Count, draft.Variant.OriginalAccuracyGraphKnotCount, Present(draft.Variant.OriginalAccuracyGraphKnotsPointer.Type))).Concat(Rows(WeaponIndexedRowKind.DefinitionAccuracyGraph, "Definition graph", definition.Accuracy.GraphKnots.Count, draft.Variant.AccuracyGraphKnotCount, Present(definition.Accuracy.GraphKnotsPointer.Type))).Concat(Rows(WeaponIndexedRowKind.DefinitionOriginalAccuracyGraph, "Definition original graph", definition.Accuracy.OriginalGraphKnots.Count, draft.Variant.OriginalAccuracyGraphKnotCount, Present(definition.Accuracy.OriginalGraphKnotsPointer.Type))),
-            WeaponPropertyCategory.DamageRangeAndAiTuning => Rows(WeaponIndexedRowKind.LocationDamage, "Location damage", definition.LocationDamageMultipliers.Count, WeaponDef.HitLocationCount, Present(definition.LocationDamageMultipliersPointer.Type)),
-            WeaponPropertyCategory.PhysicsAndProjectile => Rows(WeaponIndexedRowKind.ProjectileParallelBounce, "Parallel bounce", definition.Projectile.ParallelBounce.Count, WeaponDef.SurfaceCount, Present(definition.Projectile.ParallelBouncePointer.Type)).Concat(Rows(WeaponIndexedRowKind.ProjectilePerpendicularBounce, "Perpendicular bounce", definition.Projectile.PerpendicularBounce.Count, WeaponDef.SurfaceCount, Present(definition.Projectile.PerpendicularBouncePointer.Type))),
-            WeaponPropertyCategory.EffectsAndMaterials => ExactRows(WeaponIndexedRowKind.FlashEffect, "Flash effect", definition.FlashEffects.Count, 2, definition.FlashEffectPointers.Count).Concat(ExactRows(WeaponIndexedRowKind.Effect, "Effect", definition.Effects.Count, 4, definition.EffectPointers.Count)).Concat(ExactRows(WeaponIndexedRowKind.Material, "Material", definition.Materials.Count, 2, definition.MaterialPointers.Count)).Concat(ExactRows(WeaponIndexedRowKind.IconMaterial, "Icon material", definition.IconMaterials.Count, 3)).Concat(ExactRows(WeaponIndexedRowKind.OverlayMaterial, "Overlay material", definition.OverlayMaterials.Count, 4, definition.Overlay.OverlayMaterials.Count)).Concat(ExactRows(WeaponIndexedRowKind.ProjectileEffect, "Projectile effect", definition.ProjectileEffects.Count, 2)).Concat(ExactRows(WeaponIndexedRowKind.ImpactEffect, "Impact effect", definition.ImpactEffects.Count, 2)).Concat([new(WeaponIndexedRowKind.ViewShellEjectEffect, 0, "View shell eject effect"), new(WeaponIndexedRowKind.TurretOverheatEffect, 0, "Turret overheat effect"), new(WeaponIndexedRowKind.Tracer, 0, "Tracer")]),
-            WeaponPropertyCategory.SoundsAndBounce => ExactRows(WeaponIndexedRowKind.PrimarySound, "Primary sound", definition.SoundAliasNames.Count, WeaponDef.WeaponSoundAliasCount, definition.SoundAliasPointers.Count, definition.SoundAliasValuePointers.Count).Concat(Rows(WeaponIndexedRowKind.BounceSound, "Bounce sound", definition.BounceSoundNames.Count, WeaponDef.SurfaceCount, Present(definition.BounceSoundPointer.Type), definition.BounceSoundPointers.Count, definition.BounceSoundValuePointers.Count)),
-            WeaponPropertyCategory.TurretAndMissile => ExactRows(WeaponIndexedRowKind.TurretSpinUpSound, "Turret spin-up sound", definition.Turret.BarrelSpinUpSoundNames.Count, WeaponDef.TurretBarrelSpinSoundCount, definition.Turret.BarrelSpinUpSoundPointers.Count, definition.Turret.BarrelSpinUpSoundValuePointers.Count).Concat(ExactRows(WeaponIndexedRowKind.TurretSpinDownSound, "Turret spin-down sound", definition.Turret.BarrelSpinDownSoundNames.Count, WeaponDef.TurretBarrelSpinSoundCount, definition.Turret.BarrelSpinDownSoundPointers.Count, definition.Turret.BarrelSpinDownSoundValuePointers.Count)),
+            WeaponPropertyCategory.AnimationNames => SemanticRows<WeaponAnimationSlot>(WeaponIndexedRowKind.VariantAnimation, "Variant animation", draft.Variant.AnimationNames.Count, (int)WeaponAnimationSlot.Count, Present(draft.Variant.AnimationNamesPointer.Type), draft.Variant.AnimationNamePointers.Count).Concat(SemanticRows<WeaponAnimationSlot>(WeaponIndexedRowKind.RightAnimation, "Right-hand animation", definition.RightHandAnimationNames.Count, (int)WeaponAnimationSlot.Count, Present(definition.RightHandAnimationNamesPointer.Type), definition.RightHandAnimationNamePointers.Count)).Concat(SemanticRows<WeaponAnimationSlot>(WeaponIndexedRowKind.LeftAnimation, "Left-hand animation", definition.LeftHandAnimationNames.Count, (int)WeaponAnimationSlot.Count, Present(definition.LeftHandAnimationNamesPointer.Type), definition.LeftHandAnimationNamePointers.Count)),
+            WeaponPropertyCategory.HideTagsAndNoteTracks => Rows(WeaponIndexedRowKind.HideTag, "Hide tag", draft.Variant.HideTags.Count, WeaponVariantDef.HideTagCount, Present(draft.Variant.HideTagsPointer.Type)).Concat(Rows(WeaponIndexedRowKind.SoundNoteMapping, "Sound note mapping", definition.NoteTrackMaps.SoundMappings.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.SoundMapKeysPointer.Type) && Present(definition.NoteTrackMaps.SoundMapValuesPointer.Type))).Concat(Rows(WeaponIndexedRowKind.RumbleNoteMapping, "Rumble note mapping", definition.NoteTrackMaps.RumbleMappings.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.RumbleMapKeysPointer.Type) && Present(definition.NoteTrackMaps.RumbleMapValuesPointer.Type))),
+            WeaponPropertyCategory.KickRecoilAndAccuracy => Rows(WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph, "AI vs. AI current graph", draft.Variant.AiVsAiAccuracyGraphKnots.Count, draft.Variant.AiVsAiAccuracyGraphKnotCount, Present(draft.Variant.AiVsAiAccuracyGraphKnotsPointer.Type)).Concat(Rows(WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph, "AI vs. player current graph", draft.Variant.AiVsPlayerAccuracyGraphKnots.Count, draft.Variant.AiVsPlayerAccuracyGraphKnotCount, Present(draft.Variant.AiVsPlayerAccuracyGraphKnotsPointer.Type))).Concat(Rows(WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph, "AI vs. AI original graph", definition.Accuracy.OriginalAiVsAiGraphKnots.Count, definition.Accuracy.OriginalAiVsAiGraphKnotCount, Present(definition.Accuracy.OriginalAiVsAiGraphKnotsPointer.Type))).Concat(Rows(WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph, "AI vs. player original graph", definition.Accuracy.OriginalAiVsPlayerGraphKnots.Count, definition.Accuracy.OriginalAiVsPlayerGraphKnotCount, Present(definition.Accuracy.OriginalAiVsPlayerGraphKnotsPointer.Type))),
+            WeaponPropertyCategory.DamageRangeAndAiTuning => SemanticRows<HitLocation>(WeaponIndexedRowKind.LocationDamage, "Location damage", definition.LocationDamageMultipliers.Count, (int)HitLocation.Count, Present(definition.LocationDamageMultipliersPointer.Type)),
+            WeaponPropertyCategory.PhysicsAndProjectile => SemanticRows<MaterialSurfaceType>(WeaponIndexedRowKind.ProjectileParallelBounce, "Parallel bounce", definition.Projectile.ParallelBounce.Count, (int)MaterialSurfaceType.Count, Present(definition.Projectile.ParallelBouncePointer.Type)).Concat(SemanticRows<MaterialSurfaceType>(WeaponIndexedRowKind.ProjectilePerpendicularBounce, "Perpendicular bounce", definition.Projectile.PerpendicularBounce.Count, (int)MaterialSurfaceType.Count, Present(definition.Projectile.PerpendicularBouncePointer.Type))),
+            WeaponPropertyCategory.SoundsAndBounce => SemanticRows<MaterialSurfaceType>(WeaponIndexedRowKind.BounceSound, "Bounce sound", definition.BounceSounds.Count, (int)MaterialSurfaceType.Count, Present(definition.BounceSoundPointer.Type)),
+            WeaponPropertyCategory.TurretAndMissile => ExactSemanticRows<WeaponTurretBarrelSpinSoundSlot>(WeaponIndexedRowKind.TurretSpinUpSound, "Turret spin-up sound", definition.Turret.BarrelSpinUpSounds.Count, (int)WeaponTurretBarrelSpinSoundSlot.Count).Concat(ExactSemanticRows<WeaponTurretBarrelSpinSoundSlot>(WeaponIndexedRowKind.TurretSpinDownSound, "Turret spin-down sound", definition.Turret.BarrelSpinDownSounds.Count, (int)WeaponTurretBarrelSpinSoundSlot.Count)),
             _ => []
         };
         foreach (WeaponIndexedRowItemViewModel row in selected) yield return row;

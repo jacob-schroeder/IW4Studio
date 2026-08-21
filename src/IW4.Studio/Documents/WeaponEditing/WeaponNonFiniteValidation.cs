@@ -14,8 +14,8 @@ internal static class WeaponNonFiniteValidation
 
     private static void Check(List<AssetValidationIssue> issues, WeaponAccuracyFields value, string path)
     {
-        Check(issues, $"{path}.graphKnots", value.GraphKnots);
-        Check(issues, $"{path}.originalGraphKnots", value.OriginalGraphKnots);
+        Check(issues, $"{path}.originalAiVsAiGraphKnots", value.OriginalAiVsAiGraphKnots);
+        Check(issues, $"{path}.originalAiVsPlayerGraphKnots", value.OriginalAiVsPlayerGraphKnots);
         Check(issues, $"{path}.leftArc", value.LeftArc);
         Check(issues, $"{path}.rightArc", value.RightArc);
         Check(issues, $"{path}.topArc", value.TopArc);
@@ -87,18 +87,18 @@ internal static class WeaponNonFiniteValidation
         Check(issues, value.PositionalMovement, $"{path}.positionalMovement");
         Check(issues, value.AimMovementTuning, $"{path}.aimMovementTuning");
         Check(issues, value.AdsViewAndSpread, $"{path}.adsViewAndSpread");
+        Check(issues, value.Overlay, $"{path}.overlay");
         Check(issues, value.Physics, $"{path}.physics");
         Check(issues, value.Projectile, $"{path}.projectile");
         Check(issues, value.Accuracy, $"{path}.accuracy");
         Check(issues, value.TurnSpeedAndRange, $"{path}.turnSpeedAndRange");
         Check(issues, value.Hints, $"{path}.hints");
-        Check(issues, $"{path}.oOPosAnimLength", value.OOPosAnimLength);
-        Check(issues, $"{path}.minDamage", value.MinDamage);
+        Check(issues, $"{path}.adsTransitionInRate", value.AdsTransitionInRate);
+        Check(issues, $"{path}.adsTransitionOutRate", value.AdsTransitionOutRate);
         Check(issues, $"{path}.maxDamageRange", value.MaxDamageRange);
         Check(issues, $"{path}.minDamageRange", value.MinDamageRange);
         Check(issues, $"{path}.destabilizationRateTime", value.DestabilizationRateTime);
         Check(issues, $"{path}.destabilizationCurvatureMax", value.DestabilizationCurvatureMax);
-        Check(issues, $"{path}.destabilizeDistance", value.DestabilizeDistance);
         Check(issues, $"{path}.locationDamageMultipliers", value.LocationDamageMultipliers);
         Check(issues, $"{path}.turretScopeZoomRate", value.TurretScopeZoomRate);
         Check(issues, $"{path}.turretScopeZoomMin", value.TurretScopeZoomMin);
@@ -199,6 +199,7 @@ internal static class WeaponNonFiniteValidation
 
     private static void Check(List<AssetValidationIssue> issues, WeaponProjectileFields value, string path)
     {
+        Check(issues, $"{path}.lowAmmoWarningThreshold", value.LowAmmoWarningThreshold);
         Check(issues, $"{path}.ricochetChance", value.RicochetChance);
         Check(issues, $"{path}.parallelBounce", value.ParallelBounce);
         Check(issues, $"{path}.perpendicularBounce", value.PerpendicularBounce);
@@ -210,18 +211,26 @@ internal static class WeaponNonFiniteValidation
         Check(issues, value.GunKickAndDistance, $"{path}.gunKickAndDistance");
     }
 
+    private static void Check(List<AssetValidationIssue> issues, WeaponOverlayFields value, string path)
+    {
+        Check(issues, $"{path}.width", value.Width);
+        Check(issues, $"{path}.height", value.Height);
+        Check(issues, $"{path}.widthSplitscreen", value.WidthSplitscreen);
+        Check(issues, $"{path}.heightSplitscreen", value.HeightSplitscreen);
+    }
+
     private static void Check(List<AssetValidationIssue> issues, WeaponTurnSpeedAndRangeFields value, string path)
     {
-        Check(issues, $"{path}.minTurnSpeed", value.MinTurnSpeed);
-        Check(issues, $"{path}.maxTurnSpeed", value.MaxTurnSpeed);
+        Check(issues, $"{path}.minVerticalTurnSpeed", value.MinVerticalTurnSpeed);
+        Check(issues, $"{path}.minHorizontalTurnSpeed", value.MinHorizontalTurnSpeed);
+        Check(issues, $"{path}.maxVerticalTurnSpeed", value.MaxVerticalTurnSpeed);
+        Check(issues, $"{path}.maxHorizontalTurnSpeed", value.MaxHorizontalTurnSpeed);
         Check(issues, $"{path}.pitchConvergenceTime", value.PitchConvergenceTime);
         Check(issues, $"{path}.yawConvergenceTime", value.YawConvergenceTime);
-        Check(issues, $"{path}.suppressTime", value.SuppressTime);
+        Check(issues, $"{path}.suppressionTime", value.SuppressionTime);
         Check(issues, $"{path}.maxRange", value.MaxRange);
         Check(issues, $"{path}.animationHorizontalRotateIncrement", value.AnimationHorizontalRotateIncrement);
         Check(issues, $"{path}.playerPositionDistance", value.PlayerPositionDistance);
-        Check(issues, $"{path}.scanSpeed", value.ScanSpeed);
-        Check(issues, $"{path}.scanAcceleration", value.ScanAcceleration);
     }
 
     private static void Check(List<AssetValidationIssue> issues, WeaponTurretFields value, string path)
@@ -239,8 +248,8 @@ internal static class WeaponNonFiniteValidation
         Check(issues, $"{path}.hipViewKickCenterSpeed", value.HipViewKickCenterSpeed);
         Check(issues, $"{path}.adsDofStart", value.AdsDofStart);
         Check(issues, $"{path}.adsDofEnd", value.AdsDofEnd);
-        Check(issues, $"{path}.accuracyGraphKnots", value.AccuracyGraphKnots);
-        Check(issues, $"{path}.originalAccuracyGraphKnots", value.OriginalAccuracyGraphKnots);
+        Check(issues, $"{path}.aiVsAiAccuracyGraphKnots", value.AiVsAiAccuracyGraphKnots);
+        Check(issues, $"{path}.aiVsPlayerAccuracyGraphKnots", value.AiVsPlayerAccuracyGraphKnots);
     }
 
     private static void Check(List<AssetValidationIssue> issues, WeaponViewMovementFields value, string path)

@@ -50,17 +50,17 @@ internal static class WeaponGraph
             DpadIconPointer = source.DpadIconPointer,
             KillIcon = source.KillIcon,
             DpadIcon = source.DpadIcon,
-            DropAmmoMin = source.DropAmmoMin,
+            FireAnimLength = source.FireAnimLength,
             FirstRaiseTime = source.FirstRaiseTime,
-            DropAmmoMax = source.DropAmmoMax,
+            AmmoDropStockMax = source.AmmoDropStockMax,
             AdsDofStart = source.AdsDofStart,
             AdsDofEnd = source.AdsDofEnd,
-            AccuracyGraphKnotCount = source.AccuracyGraphKnotCount,
-            OriginalAccuracyGraphKnotCount = source.OriginalAccuracyGraphKnotCount,
-            AccuracyGraphKnotsPointer = source.AccuracyGraphKnotsPointer,
-            AccuracyGraphKnots = CopyList(source.AccuracyGraphKnots),
-            OriginalAccuracyGraphKnotsPointer = source.OriginalAccuracyGraphKnotsPointer,
-            OriginalAccuracyGraphKnots = CopyList(source.OriginalAccuracyGraphKnots),
+            AiVsAiAccuracyGraphKnotCount = source.AiVsAiAccuracyGraphKnotCount,
+            AiVsPlayerAccuracyGraphKnotCount = source.AiVsPlayerAccuracyGraphKnotCount,
+            AiVsAiAccuracyGraphKnotsPointer = source.AiVsAiAccuracyGraphKnotsPointer,
+            AiVsAiAccuracyGraphKnots = CopyList(source.AiVsAiAccuracyGraphKnots),
+            AiVsPlayerAccuracyGraphKnotsPointer = source.AiVsPlayerAccuracyGraphKnotsPointer,
+            AiVsPlayerAccuracyGraphKnots = CopyList(source.AiVsPlayerAccuracyGraphKnots),
             MotionTracker = source.MotionTracker,
             Enhanced = source.Enhanced,
             DpadIconShowsAmmo = source.DpadIconShowsAmmo,
@@ -98,19 +98,11 @@ internal static class WeaponGraph
             FireType = source.FireType,
             OffhandClass = source.OffhandClass,
             Stance = source.Stance,
-            FlashEffectPointers = CopyList(source.FlashEffectPointers),
-            FlashEffects = CopyList(source.FlashEffects),
-            SoundAliasPointers = CopyList(source.SoundAliasPointers),
-            SoundAliasValuePointers = CopyList(source.SoundAliasValuePointers),
-            SoundAliasNames = CopyList(source.SoundAliasNames),
+            FlashEffects = Copy(source.FlashEffects),
+            PrimarySounds = Copy(source.PrimarySounds),
             BounceSoundPointer = source.BounceSoundPointer,
-            BounceSoundPointers = CopyList(source.BounceSoundPointers),
-            BounceSoundValuePointers = CopyList(source.BounceSoundValuePointers),
-            BounceSoundNames = CopyList(source.BounceSoundNames),
-            EffectPointers = CopyList(source.EffectPointers),
-            Effects = CopyList(source.Effects),
-            MaterialPointers = CopyList(source.MaterialPointers),
-            Materials = CopyList(source.Materials),
+            BounceSounds = CopyList(source.BounceSounds, Copy),
+            ShellEjectEffects = Copy(source.ShellEjectEffects),
             Reticle = Copy(source.Reticle),
             ViewMovement = Copy(source.ViewMovement),
             PositionalMovement = Copy(source.PositionalMovement),
@@ -126,10 +118,8 @@ internal static class WeaponGraph
             WorldKnifeModelPointer = source.WorldKnifeModelPointer,
             WorldKnifeModel = source.WorldKnifeModel,
             Icons = Copy(source.Icons),
-            IconMaterials = CopyList(source.IconMaterials),
             Ammo = Copy(source.Ammo),
             Overlay = Copy(source.Overlay),
-            OverlayMaterials = CopyList(source.OverlayMaterials),
             Timing = Copy(source.Timing),
             AimMovementTuning = Copy(source.AimMovementTuning),
             AdsViewAndSpread = Copy(source.AdsViewAndSpread),
@@ -138,15 +128,13 @@ internal static class WeaponGraph
             PhysCollmapName = source.PhysCollmapName,
             Physics = Copy(source.Physics),
             Projectile = Copy(source.Projectile),
-            ProjectileEffects = CopyList(source.ProjectileEffects),
-            ImpactEffects = CopyList(source.ImpactEffects),
-            ViewShellEjectEffect = source.ViewShellEjectEffect,
             Accuracy = Copy(source.Accuracy),
             TurnSpeedAndRange = Copy(source.TurnSpeedAndRange),
             Hints = Copy(source.Hints),
             ScriptNamePointer = source.ScriptNamePointer,
             ScriptName = source.ScriptName,
-            OOPosAnimLength = source.OOPosAnimLength,
+            AdsTransitionInRate = source.AdsTransitionInRate,
+            AdsTransitionOutRate = source.AdsTransitionOutRate,
             MinDamage = source.MinDamage,
             MinPlayerDamage = source.MinPlayerDamage,
             MaxDamageRange = source.MaxDamageRange,
@@ -154,7 +142,6 @@ internal static class WeaponGraph
             DestabilizationRateTime = source.DestabilizationRateTime,
             DestabilizationCurvatureMax = source.DestabilizationCurvatureMax,
             DestabilizeDistance = source.DestabilizeDistance,
-            DestabilizeDistanceToTimeScale = source.DestabilizeDistanceToTimeScale,
             LocationDamageMultipliersPointer = source.LocationDamageMultipliersPointer,
             LocationDamageMultipliers = CopyList(source.LocationDamageMultipliers),
             Rumble = Copy(source.Rumble),
@@ -167,7 +154,6 @@ internal static class WeaponGraph
             TurretOverheatDownRate = source.TurretOverheatDownRate,
             TurretOverheatPenalty = source.TurretOverheatPenalty,
             Turret = Copy(source.Turret),
-            TurretOverheatEffect = source.TurretOverheatEffect,
             MissileConeSound = Copy(source.MissileConeSound),
             TailFlags = Copy(source.TailFlags)
         };
@@ -178,17 +164,17 @@ internal static class WeaponGraph
         ArgumentNullException.ThrowIfNull(source);
         return new WeaponAccuracyFields
         {
-            GraphName0Pointer = source.GraphName0Pointer,
-            GraphName0 = source.GraphName0,
-            GraphName1Pointer = source.GraphName1Pointer,
-            GraphName1 = source.GraphName1,
-            GraphKnotsPointer = source.GraphKnotsPointer,
-            GraphKnots = CopyList(source.GraphKnots),
-            OriginalGraphKnotsPointer = source.OriginalGraphKnotsPointer,
-            OriginalGraphKnots = CopyList(source.OriginalGraphKnots),
-            LocalGraphKnotCount = source.LocalGraphKnotCount,
-            LocalOriginalGraphKnotCount = source.LocalOriginalGraphKnotCount,
-            AnimationNotifyComparison = source.AnimationNotifyComparison,
+            AiVsAiGraphNamePointer = source.AiVsAiGraphNamePointer,
+            AiVsAiGraphName = source.AiVsAiGraphName,
+            AiVsPlayerGraphNamePointer = source.AiVsPlayerGraphNamePointer,
+            AiVsPlayerGraphName = source.AiVsPlayerGraphName,
+            OriginalAiVsAiGraphKnotsPointer = source.OriginalAiVsAiGraphKnotsPointer,
+            OriginalAiVsAiGraphKnots = CopyList(source.OriginalAiVsAiGraphKnots),
+            OriginalAiVsPlayerGraphKnotsPointer = source.OriginalAiVsPlayerGraphKnotsPointer,
+            OriginalAiVsPlayerGraphKnots = CopyList(source.OriginalAiVsPlayerGraphKnots),
+            OriginalAiVsAiGraphKnotCount = source.OriginalAiVsAiGraphKnotCount,
+            OriginalAiVsPlayerGraphKnotCount = source.OriginalAiVsPlayerGraphKnotCount,
+            PositionReloadTransitionTime = source.PositionReloadTransitionTime,
             LeftArc = source.LeftArc,
             RightArc = source.RightArc,
             TopArc = source.TopArc,
@@ -196,6 +182,110 @@ internal static class WeaponGraph
             Accuracy = source.Accuracy,
             AiSpread = source.AiSpread,
             PlayerSpread = source.PlayerSpread
+        };
+    }
+
+    internal static WeaponFlashEffectFields Copy(WeaponFlashEffectFields source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new WeaponFlashEffectFields
+        {
+            ViewPointer = source.ViewPointer,
+            View = source.View,
+            WorldPointer = source.WorldPointer,
+            World = source.World
+        };
+    }
+
+    internal static WeaponShellEjectEffectFields Copy(WeaponShellEjectEffectFields source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new WeaponShellEjectEffectFields
+        {
+            ViewPointer = source.ViewPointer,
+            View = source.View,
+            WorldPointer = source.WorldPointer,
+            World = source.World,
+            ViewLastShotPointer = source.ViewLastShotPointer,
+            ViewLastShot = source.ViewLastShot,
+            WorldLastShotPointer = source.WorldLastShotPointer,
+            WorldLastShot = source.WorldLastShot
+        };
+    }
+
+    internal static WeaponSoundAliasField Copy(WeaponSoundAliasField source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new WeaponSoundAliasField
+        {
+            Pointer = source.Pointer,
+            ValuePointer = source.ValuePointer,
+            Name = source.Name
+        };
+    }
+
+    internal static WeaponNoteTrackMapEntry Copy(WeaponNoteTrackMapEntry source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new WeaponNoteTrackMapEntry
+        {
+            Key = source.Key,
+            Value = source.Value
+        };
+    }
+
+    internal static WeaponPrimarySoundFields Copy(WeaponPrimarySoundFields source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new WeaponPrimarySoundFields
+        {
+            PickupSound = Copy(source.PickupSound),
+            PickupSoundPlayer = Copy(source.PickupSoundPlayer),
+            AmmoPickupSound = Copy(source.AmmoPickupSound),
+            AmmoPickupSoundPlayer = Copy(source.AmmoPickupSoundPlayer),
+            ProjectileSound = Copy(source.ProjectileSound),
+            PullbackSound = Copy(source.PullbackSound),
+            PullbackSoundPlayer = Copy(source.PullbackSoundPlayer),
+            FireSound = Copy(source.FireSound),
+            FireSoundPlayer = Copy(source.FireSoundPlayer),
+            FireSoundPlayerAkimbo = Copy(source.FireSoundPlayerAkimbo),
+            FireLoopSound = Copy(source.FireLoopSound),
+            FireLoopSoundPlayer = Copy(source.FireLoopSoundPlayer),
+            FireStopSound = Copy(source.FireStopSound),
+            FireStopSoundPlayer = Copy(source.FireStopSoundPlayer),
+            FireLastSound = Copy(source.FireLastSound),
+            FireLastSoundPlayer = Copy(source.FireLastSoundPlayer),
+            EmptyFireSound = Copy(source.EmptyFireSound),
+            EmptyFireSoundPlayer = Copy(source.EmptyFireSoundPlayer),
+            MeleeSwipeSound = Copy(source.MeleeSwipeSound),
+            MeleeSwipeSoundPlayer = Copy(source.MeleeSwipeSoundPlayer),
+            MeleeHitSound = Copy(source.MeleeHitSound),
+            MeleeMissSound = Copy(source.MeleeMissSound),
+            RechamberSound = Copy(source.RechamberSound),
+            RechamberSoundPlayer = Copy(source.RechamberSoundPlayer),
+            ReloadSound = Copy(source.ReloadSound),
+            ReloadSoundPlayer = Copy(source.ReloadSoundPlayer),
+            ReloadEmptySound = Copy(source.ReloadEmptySound),
+            ReloadEmptySoundPlayer = Copy(source.ReloadEmptySoundPlayer),
+            ReloadStartSound = Copy(source.ReloadStartSound),
+            ReloadStartSoundPlayer = Copy(source.ReloadStartSoundPlayer),
+            ReloadEndSound = Copy(source.ReloadEndSound),
+            ReloadEndSoundPlayer = Copy(source.ReloadEndSoundPlayer),
+            DetonateSound = Copy(source.DetonateSound),
+            DetonateSoundPlayer = Copy(source.DetonateSoundPlayer),
+            NightVisionWearSound = Copy(source.NightVisionWearSound),
+            NightVisionWearSoundPlayer = Copy(source.NightVisionWearSoundPlayer),
+            NightVisionRemoveSound = Copy(source.NightVisionRemoveSound),
+            NightVisionRemoveSoundPlayer = Copy(source.NightVisionRemoveSoundPlayer),
+            AltSwitchSound = Copy(source.AltSwitchSound),
+            AltSwitchSoundPlayer = Copy(source.AltSwitchSoundPlayer),
+            RaiseSound = Copy(source.RaiseSound),
+            RaiseSoundPlayer = Copy(source.RaiseSoundPlayer),
+            FirstRaiseSound = Copy(source.FirstRaiseSound),
+            FirstRaiseSoundPlayer = Copy(source.FirstRaiseSoundPlayer),
+            PutawaySound = Copy(source.PutawaySound),
+            PutawaySoundPlayer = Copy(source.PutawaySoundPlayer),
+            ScanSound = Copy(source.ScanSound)
         };
     }
 
@@ -355,10 +445,13 @@ internal static class WeaponGraph
         return new WeaponIconPointers
         {
             HudIconPointer = source.HudIconPointer,
+            HudIcon = source.HudIcon,
             HudIconRatio = source.HudIconRatio,
             PickupIconPointer = source.PickupIconPointer,
+            PickupIcon = source.PickupIcon,
             PickupIconRatio = source.PickupIconRatio,
             AmmoCounterIconPointer = source.AmmoCounterIconPointer,
+            AmmoCounterIcon = source.AmmoCounterIcon,
             AmmoCounterIconRatio = source.AmmoCounterIconRatio,
             AmmoCounterClip = source.AmmoCounterClip,
             StartAmmo = source.StartAmmo
@@ -398,13 +491,11 @@ internal static class WeaponGraph
         return new WeaponNoteTrackMaps
         {
             SoundMapKeysPointer = source.SoundMapKeysPointer,
-            SoundMapKeys = CopyList(source.SoundMapKeys),
             SoundMapValuesPointer = source.SoundMapValuesPointer,
-            SoundMapValues = CopyList(source.SoundMapValues),
+            SoundMappings = CopyList(source.SoundMappings, Copy),
             RumbleMapKeysPointer = source.RumbleMapKeysPointer,
-            RumbleMapKeys = CopyList(source.RumbleMapKeys),
             RumbleMapValuesPointer = source.RumbleMapValuesPointer,
-            RumbleMapValues = CopyList(source.RumbleMapValues)
+            RumbleMappings = CopyList(source.RumbleMappings, Copy)
         };
     }
 
@@ -413,7 +504,14 @@ internal static class WeaponGraph
         ArgumentNullException.ThrowIfNull(source);
         return new WeaponOverlayFields
         {
-            OverlayMaterials = CopyList(source.OverlayMaterials),
+            MaterialPointer = source.MaterialPointer,
+            Material = source.Material,
+            MaterialLowResPointer = source.MaterialLowResPointer,
+            MaterialLowRes = source.MaterialLowRes,
+            MaterialEmpPointer = source.MaterialEmpPointer,
+            MaterialEmp = source.MaterialEmp,
+            MaterialEmpLowResPointer = source.MaterialEmpLowResPointer,
+            MaterialEmpLowRes = source.MaterialEmpLowRes,
             Reticle = source.Reticle,
             Interface = source.Interface,
             Width = source.Width,
@@ -479,7 +577,9 @@ internal static class WeaponGraph
             Model = source.Model,
             Explosion = source.Explosion,
             ExplosionEffectPointer = source.ExplosionEffectPointer,
+            ExplosionEffect = source.ExplosionEffect,
             DudEffectPointer = source.DudEffectPointer,
+            DudEffect = source.DudEffect,
             ExplosionSoundPointer = source.ExplosionSoundPointer,
             ExplosionSoundValuePointer = source.ExplosionSoundValuePointer,
             ExplosionSound = source.ExplosionSound,
@@ -494,12 +594,15 @@ internal static class WeaponGraph
             PerpendicularBouncePointer = source.PerpendicularBouncePointer,
             PerpendicularBounce = CopyList(source.PerpendicularBounce),
             TrailEffectPointer = source.TrailEffectPointer,
+            TrailEffect = source.TrailEffect,
             BeaconEffectPointer = source.BeaconEffectPointer,
+            BeaconEffect = source.BeaconEffect,
             ProjectileColor = source.ProjectileColor,
             GuidedMissileType = source.GuidedMissileType,
             MaxSteeringAcceleration = source.MaxSteeringAcceleration,
             IgnitionDelay = source.IgnitionDelay,
             IgnitionEffectPointer = source.IgnitionEffectPointer,
+            IgnitionEffect = source.IgnitionEffect,
             IgnitionSoundPointer = source.IgnitionSoundPointer,
             IgnitionSoundValuePointer = source.IgnitionSoundValuePointer,
             IgnitionSound = source.IgnitionSound,
@@ -515,6 +618,10 @@ internal static class WeaponGraph
         ArgumentNullException.ThrowIfNull(source);
         return new WeaponReticleFields
         {
+            CenterMaterialPointer = source.CenterMaterialPointer,
+            CenterMaterial = source.CenterMaterial,
+            SideMaterialPointer = source.SideMaterialPointer,
+            SideMaterial = source.SideMaterial,
             CenterSize = source.CenterSize,
             SideSize = source.SideSize,
             MinOffset = source.MinOffset,
@@ -642,16 +749,16 @@ internal static class WeaponGraph
         ArgumentNullException.ThrowIfNull(source);
         return new WeaponTurnSpeedAndRangeFields
         {
-            MinTurnSpeed = source.MinTurnSpeed,
-            MaxTurnSpeed = source.MaxTurnSpeed,
+            MinVerticalTurnSpeed = source.MinVerticalTurnSpeed,
+            MinHorizontalTurnSpeed = source.MinHorizontalTurnSpeed,
+            MaxVerticalTurnSpeed = source.MaxVerticalTurnSpeed,
+            MaxHorizontalTurnSpeed = source.MaxHorizontalTurnSpeed,
             PitchConvergenceTime = source.PitchConvergenceTime,
             YawConvergenceTime = source.YawConvergenceTime,
-            SuppressTime = source.SuppressTime,
+            SuppressionTime = source.SuppressionTime,
             MaxRange = source.MaxRange,
             AnimationHorizontalRotateIncrement = source.AnimationHorizontalRotateIncrement,
-            PlayerPositionDistance = source.PlayerPositionDistance,
-            ScanSpeed = source.ScanSpeed,
-            ScanAcceleration = source.ScanAcceleration
+            PlayerPositionDistance = source.PlayerPositionDistance
         };
     }
 
@@ -664,6 +771,7 @@ internal static class WeaponGraph
             OverheatSoundValuePointer = source.OverheatSoundValuePointer,
             OverheatSound = source.OverheatSound,
             OverheatEffectPointer = source.OverheatEffectPointer,
+            OverheatEffect = source.OverheatEffect,
             BarrelSpinRumblePointer = source.BarrelSpinRumblePointer,
             BarrelSpinRumble = source.BarrelSpinRumble,
             BarrelSpinSpeed = source.BarrelSpinSpeed,
@@ -672,12 +780,8 @@ internal static class WeaponGraph
             BarrelSpinMaxSoundPointer = source.BarrelSpinMaxSoundPointer,
             BarrelSpinMaxSoundValuePointer = source.BarrelSpinMaxSoundValuePointer,
             BarrelSpinMaxSound = source.BarrelSpinMaxSound,
-            BarrelSpinUpSoundPointers = CopyList(source.BarrelSpinUpSoundPointers),
-            BarrelSpinUpSoundValuePointers = CopyList(source.BarrelSpinUpSoundValuePointers),
-            BarrelSpinUpSoundNames = CopyList(source.BarrelSpinUpSoundNames),
-            BarrelSpinDownSoundPointers = CopyList(source.BarrelSpinDownSoundPointers),
-            BarrelSpinDownSoundValuePointers = CopyList(source.BarrelSpinDownSoundValuePointers),
-            BarrelSpinDownSoundNames = CopyList(source.BarrelSpinDownSoundNames)
+            BarrelSpinUpSounds = CopyList(source.BarrelSpinUpSounds, Copy),
+            BarrelSpinDownSounds = CopyList(source.BarrelSpinDownSounds, Copy)
         };
     }
 
@@ -727,15 +831,15 @@ internal static class WeaponGraph
         EqualityComparer<int>.Default.Equals(left.AlternateRaiseTime, right.AlternateRaiseTime) &&
         ProviderEquals(left.KillIcon, right.KillIcon) &&
         ProviderEquals(left.DpadIcon, right.DpadIcon) &&
-        EqualityComparer<int>.Default.Equals(left.DropAmmoMin, right.DropAmmoMin) &&
+        EqualityComparer<int>.Default.Equals(left.FireAnimLength, right.FireAnimLength) &&
         EqualityComparer<int>.Default.Equals(left.FirstRaiseTime, right.FirstRaiseTime) &&
-        EqualityComparer<int>.Default.Equals(left.DropAmmoMax, right.DropAmmoMax) &&
+        EqualityComparer<int>.Default.Equals(left.AmmoDropStockMax, right.AmmoDropStockMax) &&
         FloatEquals(left.AdsDofStart, right.AdsDofStart) &&
         FloatEquals(left.AdsDofEnd, right.AdsDofEnd) &&
-        EqualityComparer<ushort>.Default.Equals(left.AccuracyGraphKnotCount, right.AccuracyGraphKnotCount) &&
-        EqualityComparer<ushort>.Default.Equals(left.OriginalAccuracyGraphKnotCount, right.OriginalAccuracyGraphKnotCount) &&
-        ListsEqual(left.AccuracyGraphKnots, right.AccuracyGraphKnots, Vec2Equals) &&
-        ListsEqual(left.OriginalAccuracyGraphKnots, right.OriginalAccuracyGraphKnots, Vec2Equals) &&
+        EqualityComparer<ushort>.Default.Equals(left.AiVsAiAccuracyGraphKnotCount, right.AiVsAiAccuracyGraphKnotCount) &&
+        EqualityComparer<ushort>.Default.Equals(left.AiVsPlayerAccuracyGraphKnotCount, right.AiVsPlayerAccuracyGraphKnotCount) &&
+        ListsEqual(left.AiVsAiAccuracyGraphKnots, right.AiVsAiAccuracyGraphKnots, Vec2Equals) &&
+        ListsEqual(left.AiVsPlayerAccuracyGraphKnots, right.AiVsPlayerAccuracyGraphKnots, Vec2Equals) &&
         EqualityComparer<byte>.Default.Equals(left.MotionTracker, right.MotionTracker) &&
         EqualityComparer<byte>.Default.Equals(left.Enhanced, right.Enhanced) &&
         EqualityComparer<byte>.Default.Equals(left.DpadIconShowsAmmo, right.DpadIconShowsAmmo) &&
@@ -759,11 +863,10 @@ internal static class WeaponGraph
         EqualityComparer<WeaponFireType>.Default.Equals(left.FireType, right.FireType) &&
         EqualityComparer<OffhandClass>.Default.Equals(left.OffhandClass, right.OffhandClass) &&
         EqualityComparer<WeaponStance>.Default.Equals(left.Stance, right.Stance) &&
-        ListsEqual(left.FlashEffects, right.FlashEffects, ProviderEquals) &&
-        ListsEqual(left.SoundAliasNames, right.SoundAliasNames, StringEquals) &&
-        ListsEqual(left.BounceSoundNames, right.BounceSoundNames, StringEquals) &&
-        ListsEqual(left.Effects, right.Effects, ProviderEquals) &&
-        ListsEqual(left.Materials, right.Materials, ProviderEquals) &&
+        Equal(left.FlashEffects, right.FlashEffects) &&
+        Equal(left.PrimarySounds, right.PrimarySounds) &&
+        ListsEqual(left.BounceSounds, right.BounceSounds, Equal) &&
+        Equal(left.ShellEjectEffects, right.ShellEjectEffects) &&
         Equal(left.Reticle, right.Reticle) &&
         Equal(left.ViewMovement, right.ViewMovement) &&
         Equal(left.PositionalMovement, right.PositionalMovement) &&
@@ -773,10 +876,8 @@ internal static class WeaponGraph
         ProviderEquals(left.KnifeModel, right.KnifeModel) &&
         ProviderEquals(left.WorldKnifeModel, right.WorldKnifeModel) &&
         Equal(left.Icons, right.Icons) &&
-        ListsEqual(left.IconMaterials, right.IconMaterials, ProviderEquals) &&
         Equal(left.Ammo, right.Ammo) &&
         Equal(left.Overlay, right.Overlay) &&
-        ListsEqual(left.OverlayMaterials, right.OverlayMaterials, ProviderEquals) &&
         Equal(left.Timing, right.Timing) &&
         Equal(left.AimMovementTuning, right.AimMovementTuning) &&
         Equal(left.AdsViewAndSpread, right.AdsViewAndSpread) &&
@@ -784,22 +885,19 @@ internal static class WeaponGraph
         StringEquals(left.PhysCollmapName, right.PhysCollmapName) &&
         Equal(left.Physics, right.Physics) &&
         Equal(left.Projectile, right.Projectile) &&
-        ListsEqual(left.ProjectileEffects, right.ProjectileEffects, ProviderEquals) &&
-        ListsEqual(left.ImpactEffects, right.ImpactEffects, ProviderEquals) &&
-        ProviderEquals(left.ViewShellEjectEffect, right.ViewShellEjectEffect) &&
         Equal(left.Accuracy, right.Accuracy) &&
         Equal(left.TurnSpeedAndRange, right.TurnSpeedAndRange) &&
         Equal(left.Hints, right.Hints) &&
         StringEquals(left.ScriptName, right.ScriptName) &&
-        FloatEquals(left.OOPosAnimLength, right.OOPosAnimLength) &&
-        FloatEquals(left.MinDamage, right.MinDamage) &&
+        FloatEquals(left.AdsTransitionInRate, right.AdsTransitionInRate) &&
+        FloatEquals(left.AdsTransitionOutRate, right.AdsTransitionOutRate) &&
+        EqualityComparer<int>.Default.Equals(left.MinDamage, right.MinDamage) &&
         EqualityComparer<int>.Default.Equals(left.MinPlayerDamage, right.MinPlayerDamage) &&
         FloatEquals(left.MaxDamageRange, right.MaxDamageRange) &&
         FloatEquals(left.MinDamageRange, right.MinDamageRange) &&
         FloatEquals(left.DestabilizationRateTime, right.DestabilizationRateTime) &&
         FloatEquals(left.DestabilizationCurvatureMax, right.DestabilizationCurvatureMax) &&
-        FloatEquals(left.DestabilizeDistance, right.DestabilizeDistance) &&
-        EqualityComparer<int>.Default.Equals(left.DestabilizeDistanceToTimeScale, right.DestabilizeDistanceToTimeScale) &&
+        EqualityComparer<int>.Default.Equals(left.DestabilizeDistance, right.DestabilizeDistance) &&
         ListsEqual(left.LocationDamageMultipliers, right.LocationDamageMultipliers, FloatEquals) &&
         Equal(left.Rumble, right.Rumble) &&
         ProviderEquals(left.Tracer, right.Tracer) &&
@@ -810,20 +908,19 @@ internal static class WeaponGraph
         FloatEquals(left.TurretOverheatDownRate, right.TurretOverheatDownRate) &&
         FloatEquals(left.TurretOverheatPenalty, right.TurretOverheatPenalty) &&
         Equal(left.Turret, right.Turret) &&
-        ProviderEquals(left.TurretOverheatEffect, right.TurretOverheatEffect) &&
         Equal(left.MissileConeSound, right.MissileConeSound) &&
         Equal(left.TailFlags, right.TailFlags);
 
     internal static bool Equal(WeaponAccuracyFields? left, WeaponAccuracyFields? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
-        StringEquals(left.GraphName0, right.GraphName0) &&
-        StringEquals(left.GraphName1, right.GraphName1) &&
-        ListsEqual(left.GraphKnots, right.GraphKnots, Vec2Equals) &&
-        ListsEqual(left.OriginalGraphKnots, right.OriginalGraphKnots, Vec2Equals) &&
-        EqualityComparer<ushort>.Default.Equals(left.LocalGraphKnotCount, right.LocalGraphKnotCount) &&
-        EqualityComparer<ushort>.Default.Equals(left.LocalOriginalGraphKnotCount, right.LocalOriginalGraphKnotCount) &&
-        EqualityComparer<int>.Default.Equals(left.AnimationNotifyComparison, right.AnimationNotifyComparison) &&
+        StringEquals(left.AiVsAiGraphName, right.AiVsAiGraphName) &&
+        StringEquals(left.AiVsPlayerGraphName, right.AiVsPlayerGraphName) &&
+        ListsEqual(left.OriginalAiVsAiGraphKnots, right.OriginalAiVsAiGraphKnots, Vec2Equals) &&
+        ListsEqual(left.OriginalAiVsPlayerGraphKnots, right.OriginalAiVsPlayerGraphKnots, Vec2Equals) &&
+        EqualityComparer<ushort>.Default.Equals(left.OriginalAiVsAiGraphKnotCount, right.OriginalAiVsAiGraphKnotCount) &&
+        EqualityComparer<ushort>.Default.Equals(left.OriginalAiVsPlayerGraphKnotCount, right.OriginalAiVsPlayerGraphKnotCount) &&
+        EqualityComparer<int>.Default.Equals(left.PositionReloadTransitionTime, right.PositionReloadTransitionTime) &&
         FloatEquals(left.LeftArc, right.LeftArc) &&
         FloatEquals(left.RightArc, right.RightArc) &&
         FloatEquals(left.TopArc, right.TopArc) &&
@@ -831,6 +928,82 @@ internal static class WeaponGraph
         FloatEquals(left.Accuracy, right.Accuracy) &&
         FloatEquals(left.AiSpread, right.AiSpread) &&
         FloatEquals(left.PlayerSpread, right.PlayerSpread);
+
+    internal static bool Equal(WeaponFlashEffectFields? left, WeaponFlashEffectFields? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null && right is not null &&
+        ProviderEquals(left.View, right.View) &&
+        ProviderEquals(left.World, right.World);
+
+    internal static bool Equal(WeaponShellEjectEffectFields? left, WeaponShellEjectEffectFields? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null && right is not null &&
+        ProviderEquals(left.View, right.View) &&
+        ProviderEquals(left.World, right.World) &&
+        ProviderEquals(left.ViewLastShot, right.ViewLastShot) &&
+        ProviderEquals(left.WorldLastShot, right.WorldLastShot);
+
+    internal static bool Equal(WeaponSoundAliasField? left, WeaponSoundAliasField? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null && right is not null &&
+        StringEquals(left.Name, right.Name);
+
+    internal static bool Equal(WeaponNoteTrackMapEntry? left, WeaponNoteTrackMapEntry? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null && right is not null &&
+        ScriptStringEquals(left.Key, right.Key) &&
+        ScriptStringEquals(left.Value, right.Value);
+
+    internal static bool Equal(WeaponPrimarySoundFields? left, WeaponPrimarySoundFields? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null && right is not null &&
+        Equal(left.PickupSound, right.PickupSound) &&
+        Equal(left.PickupSoundPlayer, right.PickupSoundPlayer) &&
+        Equal(left.AmmoPickupSound, right.AmmoPickupSound) &&
+        Equal(left.AmmoPickupSoundPlayer, right.AmmoPickupSoundPlayer) &&
+        Equal(left.ProjectileSound, right.ProjectileSound) &&
+        Equal(left.PullbackSound, right.PullbackSound) &&
+        Equal(left.PullbackSoundPlayer, right.PullbackSoundPlayer) &&
+        Equal(left.FireSound, right.FireSound) &&
+        Equal(left.FireSoundPlayer, right.FireSoundPlayer) &&
+        Equal(left.FireSoundPlayerAkimbo, right.FireSoundPlayerAkimbo) &&
+        Equal(left.FireLoopSound, right.FireLoopSound) &&
+        Equal(left.FireLoopSoundPlayer, right.FireLoopSoundPlayer) &&
+        Equal(left.FireStopSound, right.FireStopSound) &&
+        Equal(left.FireStopSoundPlayer, right.FireStopSoundPlayer) &&
+        Equal(left.FireLastSound, right.FireLastSound) &&
+        Equal(left.FireLastSoundPlayer, right.FireLastSoundPlayer) &&
+        Equal(left.EmptyFireSound, right.EmptyFireSound) &&
+        Equal(left.EmptyFireSoundPlayer, right.EmptyFireSoundPlayer) &&
+        Equal(left.MeleeSwipeSound, right.MeleeSwipeSound) &&
+        Equal(left.MeleeSwipeSoundPlayer, right.MeleeSwipeSoundPlayer) &&
+        Equal(left.MeleeHitSound, right.MeleeHitSound) &&
+        Equal(left.MeleeMissSound, right.MeleeMissSound) &&
+        Equal(left.RechamberSound, right.RechamberSound) &&
+        Equal(left.RechamberSoundPlayer, right.RechamberSoundPlayer) &&
+        Equal(left.ReloadSound, right.ReloadSound) &&
+        Equal(left.ReloadSoundPlayer, right.ReloadSoundPlayer) &&
+        Equal(left.ReloadEmptySound, right.ReloadEmptySound) &&
+        Equal(left.ReloadEmptySoundPlayer, right.ReloadEmptySoundPlayer) &&
+        Equal(left.ReloadStartSound, right.ReloadStartSound) &&
+        Equal(left.ReloadStartSoundPlayer, right.ReloadStartSoundPlayer) &&
+        Equal(left.ReloadEndSound, right.ReloadEndSound) &&
+        Equal(left.ReloadEndSoundPlayer, right.ReloadEndSoundPlayer) &&
+        Equal(left.DetonateSound, right.DetonateSound) &&
+        Equal(left.DetonateSoundPlayer, right.DetonateSoundPlayer) &&
+        Equal(left.NightVisionWearSound, right.NightVisionWearSound) &&
+        Equal(left.NightVisionWearSoundPlayer, right.NightVisionWearSoundPlayer) &&
+        Equal(left.NightVisionRemoveSound, right.NightVisionRemoveSound) &&
+        Equal(left.NightVisionRemoveSoundPlayer, right.NightVisionRemoveSoundPlayer) &&
+        Equal(left.AltSwitchSound, right.AltSwitchSound) &&
+        Equal(left.AltSwitchSoundPlayer, right.AltSwitchSoundPlayer) &&
+        Equal(left.RaiseSound, right.RaiseSound) &&
+        Equal(left.RaiseSoundPlayer, right.RaiseSoundPlayer) &&
+        Equal(left.FirstRaiseSound, right.FirstRaiseSound) &&
+        Equal(left.FirstRaiseSoundPlayer, right.FirstRaiseSoundPlayer) &&
+        Equal(left.PutawaySound, right.PutawaySound) &&
+        Equal(left.PutawaySoundPlayer, right.PutawaySoundPlayer) &&
+        Equal(left.ScanSound, right.ScanSound);
 
     internal static bool Equal(WeaponAdsViewAndSpreadFields? left, WeaponAdsViewAndSpreadFields? right) =>
         ReferenceEquals(left, right) ||
@@ -960,8 +1133,11 @@ internal static class WeaponGraph
     internal static bool Equal(WeaponIconPointers? left, WeaponIconPointers? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
+        ProviderEquals(left.HudIcon, right.HudIcon) &&
         EqualityComparer<int>.Default.Equals(left.HudIconRatio, right.HudIconRatio) &&
+        ProviderEquals(left.PickupIcon, right.PickupIcon) &&
         EqualityComparer<int>.Default.Equals(left.PickupIconRatio, right.PickupIconRatio) &&
+        ProviderEquals(left.AmmoCounterIcon, right.AmmoCounterIcon) &&
         EqualityComparer<int>.Default.Equals(left.AmmoCounterIconRatio, right.AmmoCounterIconRatio) &&
         EqualityComparer<AmmoCounterClipType>.Default.Equals(left.AmmoCounterClip, right.AmmoCounterClip) &&
         EqualityComparer<int>.Default.Equals(left.StartAmmo, right.StartAmmo);
@@ -988,20 +1164,22 @@ internal static class WeaponGraph
     internal static bool Equal(WeaponNoteTrackMaps? left, WeaponNoteTrackMaps? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
-        ListsEqual(left.SoundMapKeys, right.SoundMapKeys, ScriptStringEquals) &&
-        ListsEqual(left.SoundMapValues, right.SoundMapValues, ScriptStringEquals) &&
-        ListsEqual(left.RumbleMapKeys, right.RumbleMapKeys, ScriptStringEquals) &&
-        ListsEqual(left.RumbleMapValues, right.RumbleMapValues, ScriptStringEquals);
+        ListsEqual(left.SoundMappings, right.SoundMappings, Equal) &&
+        ListsEqual(left.RumbleMappings, right.RumbleMappings, Equal);
 
     internal static bool Equal(WeaponOverlayFields? left, WeaponOverlayFields? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
+        ProviderEquals(left.Material, right.Material) &&
+        ProviderEquals(left.MaterialLowRes, right.MaterialLowRes) &&
+        ProviderEquals(left.MaterialEmp, right.MaterialEmp) &&
+        ProviderEquals(left.MaterialEmpLowRes, right.MaterialEmpLowRes) &&
         EqualityComparer<WeaponOverlayReticle>.Default.Equals(left.Reticle, right.Reticle) &&
         EqualityComparer<WeaponOverlayInterface>.Default.Equals(left.Interface, right.Interface) &&
-        EqualityComparer<int>.Default.Equals(left.Width, right.Width) &&
-        EqualityComparer<int>.Default.Equals(left.Height, right.Height) &&
-        EqualityComparer<int>.Default.Equals(left.WidthSplitscreen, right.WidthSplitscreen) &&
-        EqualityComparer<int>.Default.Equals(left.HeightSplitscreen, right.HeightSplitscreen);
+        FloatEquals(left.Width, right.Width) &&
+        FloatEquals(left.Height, right.Height) &&
+        FloatEquals(left.WidthSplitscreen, right.WidthSplitscreen) &&
+        FloatEquals(left.HeightSplitscreen, right.HeightSplitscreen);
 
     internal static bool Equal(WeaponPhysicsFields? left, WeaponPhysicsFields? right) =>
         ReferenceEquals(left, right) ||
@@ -1047,17 +1225,22 @@ internal static class WeaponGraph
         left is not null && right is not null &&
         ProviderEquals(left.Model, right.Model) &&
         EqualityComparer<WeaponProjectileExplosion>.Default.Equals(left.Explosion, right.Explosion) &&
+        ProviderEquals(left.ExplosionEffect, right.ExplosionEffect) &&
+        ProviderEquals(left.DudEffect, right.DudEffect) &&
         StringEquals(left.ExplosionSound, right.ExplosionSound) &&
         StringEquals(left.DudSound, right.DudSound) &&
         EqualityComparer<WeaponStickiness>.Default.Equals(left.Stickiness, right.Stickiness) &&
-        EqualityComparer<int>.Default.Equals(left.LowAmmoWarningThreshold, right.LowAmmoWarningThreshold) &&
+        FloatEquals(left.LowAmmoWarningThreshold, right.LowAmmoWarningThreshold) &&
         FloatEquals(left.RicochetChance, right.RicochetChance) &&
         ListsEqual(left.ParallelBounce, right.ParallelBounce, FloatEquals) &&
         ListsEqual(left.PerpendicularBounce, right.PerpendicularBounce, FloatEquals) &&
+        ProviderEquals(left.TrailEffect, right.TrailEffect) &&
+        ProviderEquals(left.BeaconEffect, right.BeaconEffect) &&
         Vec3Equals(left.ProjectileColor, right.ProjectileColor) &&
         EqualityComparer<GuidedMissileType>.Default.Equals(left.GuidedMissileType, right.GuidedMissileType) &&
         FloatEquals(left.MaxSteeringAcceleration, right.MaxSteeringAcceleration) &&
         EqualityComparer<int>.Default.Equals(left.IgnitionDelay, right.IgnitionDelay) &&
+        ProviderEquals(left.IgnitionEffect, right.IgnitionEffect) &&
         StringEquals(left.IgnitionSound, right.IgnitionSound) &&
         FloatEquals(left.AdsAimPitch, right.AdsAimPitch) &&
         FloatEquals(left.AdsCrosshairInFraction, right.AdsCrosshairInFraction) &&
@@ -1067,6 +1250,8 @@ internal static class WeaponGraph
     internal static bool Equal(WeaponReticleFields? left, WeaponReticleFields? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
+        ProviderEquals(left.CenterMaterial, right.CenterMaterial) &&
+        ProviderEquals(left.SideMaterial, right.SideMaterial) &&
         EqualityComparer<int>.Default.Equals(left.CenterSize, right.CenterSize) &&
         EqualityComparer<int>.Default.Equals(left.SideSize, right.SideSize) &&
         EqualityComparer<int>.Default.Equals(left.MinOffset, right.MinOffset) &&
@@ -1176,28 +1361,29 @@ internal static class WeaponGraph
     internal static bool Equal(WeaponTurnSpeedAndRangeFields? left, WeaponTurnSpeedAndRangeFields? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
-        FloatEquals(left.MinTurnSpeed, right.MinTurnSpeed) &&
-        FloatEquals(left.MaxTurnSpeed, right.MaxTurnSpeed) &&
+        FloatEquals(left.MinVerticalTurnSpeed, right.MinVerticalTurnSpeed) &&
+        FloatEquals(left.MinHorizontalTurnSpeed, right.MinHorizontalTurnSpeed) &&
+        FloatEquals(left.MaxVerticalTurnSpeed, right.MaxVerticalTurnSpeed) &&
+        FloatEquals(left.MaxHorizontalTurnSpeed, right.MaxHorizontalTurnSpeed) &&
         FloatEquals(left.PitchConvergenceTime, right.PitchConvergenceTime) &&
         FloatEquals(left.YawConvergenceTime, right.YawConvergenceTime) &&
-        FloatEquals(left.SuppressTime, right.SuppressTime) &&
+        FloatEquals(left.SuppressionTime, right.SuppressionTime) &&
         FloatEquals(left.MaxRange, right.MaxRange) &&
         FloatEquals(left.AnimationHorizontalRotateIncrement, right.AnimationHorizontalRotateIncrement) &&
-        FloatEquals(left.PlayerPositionDistance, right.PlayerPositionDistance) &&
-        FloatEquals(left.ScanSpeed, right.ScanSpeed) &&
-        FloatEquals(left.ScanAcceleration, right.ScanAcceleration);
+        FloatEquals(left.PlayerPositionDistance, right.PlayerPositionDistance);
 
     internal static bool Equal(WeaponTurretFields? left, WeaponTurretFields? right) =>
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
         StringEquals(left.OverheatSound, right.OverheatSound) &&
+        ProviderEquals(left.OverheatEffect, right.OverheatEffect) &&
         StringEquals(left.BarrelSpinRumble, right.BarrelSpinRumble) &&
         FloatEquals(left.BarrelSpinSpeed, right.BarrelSpinSpeed) &&
         FloatEquals(left.BarrelSpinUpTime, right.BarrelSpinUpTime) &&
         FloatEquals(left.BarrelSpinDownTime, right.BarrelSpinDownTime) &&
         StringEquals(left.BarrelSpinMaxSound, right.BarrelSpinMaxSound) &&
-        ListsEqual(left.BarrelSpinUpSoundNames, right.BarrelSpinUpSoundNames, StringEquals) &&
-        ListsEqual(left.BarrelSpinDownSoundNames, right.BarrelSpinDownSoundNames, StringEquals);
+        ListsEqual(left.BarrelSpinUpSounds, right.BarrelSpinUpSounds, Equal) &&
+        ListsEqual(left.BarrelSpinDownSounds, right.BarrelSpinDownSounds, Equal);
 
     internal static bool Equal(WeaponViewMovementFields? left, WeaponViewMovementFields? right) =>
         ReferenceEquals(left, right) ||
@@ -1215,6 +1401,11 @@ internal static class WeaponGraph
 
     private static IReadOnlyList<T> CopyList<T>(IReadOnlyList<T> source) =>
         Array.AsReadOnly(source.ToArray());
+
+    private static IReadOnlyList<TResult> CopyList<TSource, TResult>(
+        IReadOnlyList<TSource> source,
+        Func<TSource, TResult> copy) =>
+        Array.AsReadOnly(source.Select(copy).ToArray());
 
     private static bool ListsEqual<T>(
         IReadOnlyList<T> left,

@@ -56,8 +56,8 @@ public sealed partial class WeaponDraft
         EnsureSameCount(current.HideTags, value.HideTags, nameof(value));
         EnsureSameCount(current.AnimationNamePointers, value.AnimationNamePointers, nameof(value));
         EnsureSameCount(current.AnimationNames, value.AnimationNames, nameof(value));
-        EnsureSameCount(current.AccuracyGraphKnots, value.AccuracyGraphKnots, nameof(value));
-        EnsureSameCount(current.OriginalAccuracyGraphKnots, value.OriginalAccuracyGraphKnots, nameof(value));
+        EnsureSameCount(current.AiVsAiAccuracyGraphKnots, value.AiVsAiAccuracyGraphKnots, nameof(value));
+        EnsureSameCount(current.AiVsPlayerAccuracyGraphKnots, value.AiVsPlayerAccuracyGraphKnots, nameof(value));
         WeaponFiniteMutation.Ensure(current, value, nameof(value));
 
         _asset = new WeaponAsset
@@ -94,17 +94,17 @@ public sealed partial class WeaponDraft
                 DpadIconPointer = ProviderPointerIfUnchanged(current.DpadIcon, value.DpadIcon, current.DpadIconPointer),
                 KillIcon = value.KillIcon,
                 DpadIcon = value.DpadIcon,
-                DropAmmoMin = value.DropAmmoMin,
+                FireAnimLength = value.FireAnimLength,
                 FirstRaiseTime = value.FirstRaiseTime,
-                DropAmmoMax = value.DropAmmoMax,
+                AmmoDropStockMax = value.AmmoDropStockMax,
                 AdsDofStart = value.AdsDofStart,
                 AdsDofEnd = value.AdsDofEnd,
-                AccuracyGraphKnotCount = current.AccuracyGraphKnotCount,
-                OriginalAccuracyGraphKnotCount = current.OriginalAccuracyGraphKnotCount,
-                AccuracyGraphKnotsPointer = current.AccuracyGraphKnotsPointer,
-                AccuracyGraphKnots = CopyList(value.AccuracyGraphKnots),
-                OriginalAccuracyGraphKnotsPointer = current.OriginalAccuracyGraphKnotsPointer,
-                OriginalAccuracyGraphKnots = CopyList(value.OriginalAccuracyGraphKnots),
+                AiVsAiAccuracyGraphKnotCount = current.AiVsAiAccuracyGraphKnotCount,
+                AiVsPlayerAccuracyGraphKnotCount = current.AiVsPlayerAccuracyGraphKnotCount,
+                AiVsAiAccuracyGraphKnotsPointer = current.AiVsAiAccuracyGraphKnotsPointer,
+                AiVsAiAccuracyGraphKnots = CopyList(value.AiVsAiAccuracyGraphKnots),
+                AiVsPlayerAccuracyGraphKnotsPointer = current.AiVsPlayerAccuracyGraphKnotsPointer,
+                AiVsPlayerAccuracyGraphKnots = CopyList(value.AiVsPlayerAccuracyGraphKnots),
                 MotionTracker = value.MotionTracker,
                 Enhanced = value.Enhanced,
                 DpadIconShowsAmmo = value.DpadIconShowsAmmo,
@@ -153,20 +153,12 @@ public sealed partial class WeaponDraft
             FireType = value.FireType,
             OffhandClass = value.OffhandClass,
             Stance = value.Stance,
-            FlashEffectPointers = PreserveProviderPointers(current.FlashEffects, value.FlashEffects, current.FlashEffectPointers),
-            FlashEffects = CopyList(value.FlashEffects),
-            SoundAliasPointers = PreserveXStringPointers(current.SoundAliasNames, value.SoundAliasNames, current.SoundAliasPointers),
-            SoundAliasValuePointers = PreserveXStringPointers(current.SoundAliasNames, value.SoundAliasNames, current.SoundAliasValuePointers),
-            SoundAliasNames = CopyList(value.SoundAliasNames),
+            FlashEffects = SanitizeFlashEffects(current.FlashEffects, value.FlashEffects),
+            PrimarySounds = SanitizePrimarySounds(current.PrimarySounds, value.PrimarySounds),
             BounceSoundPointer = current.BounceSoundPointer,
-            BounceSoundPointers = PreserveXStringPointers(current.BounceSoundNames, value.BounceSoundNames, current.BounceSoundPointers),
-            BounceSoundValuePointers = PreserveXStringPointers(current.BounceSoundNames, value.BounceSoundNames, current.BounceSoundValuePointers),
-            BounceSoundNames = CopyList(value.BounceSoundNames),
-            EffectPointers = PreserveProviderPointers(current.Effects, value.Effects, current.EffectPointers),
-            Effects = CopyList(value.Effects),
-            MaterialPointers = PreserveProviderPointers(current.Materials, value.Materials, current.MaterialPointers),
-            Materials = CopyList(value.Materials),
-            Reticle = WeaponGraph.Copy(value.Reticle),
+            BounceSounds = SanitizeSoundAliases(current.BounceSounds, value.BounceSounds),
+            ShellEjectEffects = SanitizeShellEjectEffects(current.ShellEjectEffects, value.ShellEjectEffects),
+            Reticle = SanitizeReticle(current.Reticle, value.Reticle),
             ViewMovement = WeaponGraph.Copy(value.ViewMovement),
             PositionalMovement = WeaponGraph.Copy(value.PositionalMovement),
             WorldGunModelsPointer = current.WorldGunModelsPointer,
@@ -180,11 +172,9 @@ public sealed partial class WeaponDraft
             KnifeModel = value.KnifeModel,
             WorldKnifeModelPointer = ProviderPointerIfUnchanged(current.WorldKnifeModel, value.WorldKnifeModel, current.WorldKnifeModelPointer),
             WorldKnifeModel = value.WorldKnifeModel,
-            Icons = SanitizeIcons(current.Icons, value.Icons, current.IconMaterials, value.IconMaterials),
-            IconMaterials = CopyList(value.IconMaterials),
+            Icons = SanitizeIcons(current.Icons, value.Icons),
             Ammo = SanitizeAmmo(current.Ammo, value.Ammo),
-            Overlay = SanitizeOverlay(current.Overlay, value.Overlay, current.OverlayMaterials, value.OverlayMaterials),
-            OverlayMaterials = CopyList(value.OverlayMaterials),
+            Overlay = SanitizeOverlay(current.Overlay, value.Overlay),
             Timing = WeaponGraph.Copy(value.Timing),
             AimMovementTuning = WeaponGraph.Copy(value.AimMovementTuning),
             AdsViewAndSpread = WeaponGraph.Copy(value.AdsViewAndSpread),
@@ -192,16 +182,14 @@ public sealed partial class WeaponDraft
             PhysCollmap = value.PhysCollmap,
             PhysCollmapName = value.PhysCollmapName,
             Physics = WeaponGraph.Copy(value.Physics),
-            Projectile = SanitizeProjectile(current, value),
-            ProjectileEffects = CopyList(value.ProjectileEffects),
-            ImpactEffects = CopyList(value.ImpactEffects),
-            ViewShellEjectEffect = value.ViewShellEjectEffect,
+            Projectile = SanitizeProjectile(current.Projectile, value.Projectile),
             Accuracy = SanitizeAccuracy(current.Accuracy, value.Accuracy),
             TurnSpeedAndRange = WeaponGraph.Copy(value.TurnSpeedAndRange),
             Hints = SanitizeHints(current.Hints, value.Hints),
             ScriptNamePointer = XStringIfUnchanged(current.ScriptName, value.ScriptName, current.ScriptNamePointer),
             ScriptName = value.ScriptName,
-            OOPosAnimLength = value.OOPosAnimLength,
+            AdsTransitionInRate = value.AdsTransitionInRate,
+            AdsTransitionOutRate = value.AdsTransitionOutRate,
             MinDamage = value.MinDamage,
             MinPlayerDamage = value.MinPlayerDamage,
             MaxDamageRange = value.MaxDamageRange,
@@ -209,7 +197,6 @@ public sealed partial class WeaponDraft
             DestabilizationRateTime = value.DestabilizationRateTime,
             DestabilizationCurvatureMax = value.DestabilizationCurvatureMax,
             DestabilizeDistance = value.DestabilizeDistance,
-            DestabilizeDistanceToTimeScale = value.DestabilizeDistanceToTimeScale,
             LocationDamageMultipliersPointer = current.LocationDamageMultipliersPointer,
             LocationDamageMultipliers = CopyList(value.LocationDamageMultipliers),
             Rumble = SanitizeRumble(current.Rumble, value.Rumble),
@@ -221,8 +208,7 @@ public sealed partial class WeaponDraft
             TurretOverheatUpRate = value.TurretOverheatUpRate,
             TurretOverheatDownRate = value.TurretOverheatDownRate,
             TurretOverheatPenalty = value.TurretOverheatPenalty,
-            Turret = SanitizeTurret(current, value),
-            TurretOverheatEffect = value.TurretOverheatEffect,
+            Turret = SanitizeTurret(current.Turret, value.Turret),
             MissileConeSound = SanitizeMissile(current.MissileConeSound, value.MissileConeSound),
             TailFlags = PreserveTailPadding(current.TailFlags, value.TailFlags)
         };
@@ -266,17 +252,17 @@ public sealed partial class WeaponDraft
         DpadIconPointer = value.DpadIconPointer,
         KillIcon = value.KillIcon,
         DpadIcon = value.DpadIcon,
-        DropAmmoMin = value.DropAmmoMin,
+        FireAnimLength = value.FireAnimLength,
         FirstRaiseTime = value.FirstRaiseTime,
-        DropAmmoMax = value.DropAmmoMax,
+        AmmoDropStockMax = value.AmmoDropStockMax,
         AdsDofStart = value.AdsDofStart,
         AdsDofEnd = value.AdsDofEnd,
-        AccuracyGraphKnotCount = value.AccuracyGraphKnotCount,
-        OriginalAccuracyGraphKnotCount = value.OriginalAccuracyGraphKnotCount,
-        AccuracyGraphKnotsPointer = value.AccuracyGraphKnotsPointer,
-        AccuracyGraphKnots = CopyList(value.AccuracyGraphKnots),
-        OriginalAccuracyGraphKnotsPointer = value.OriginalAccuracyGraphKnotsPointer,
-        OriginalAccuracyGraphKnots = CopyList(value.OriginalAccuracyGraphKnots),
+        AiVsAiAccuracyGraphKnotCount = value.AiVsAiAccuracyGraphKnotCount,
+        AiVsPlayerAccuracyGraphKnotCount = value.AiVsPlayerAccuracyGraphKnotCount,
+        AiVsAiAccuracyGraphKnotsPointer = value.AiVsAiAccuracyGraphKnotsPointer,
+        AiVsAiAccuracyGraphKnots = CopyList(value.AiVsAiAccuracyGraphKnots),
+        AiVsPlayerAccuracyGraphKnotsPointer = value.AiVsPlayerAccuracyGraphKnotsPointer,
+        AiVsPlayerAccuracyGraphKnots = CopyList(value.AiVsPlayerAccuracyGraphKnots),
         MotionTracker = value.MotionTracker,
         Enhanced = value.Enhanced,
         DpadIconShowsAmmo = value.DpadIconShowsAmmo,
@@ -286,22 +272,100 @@ public sealed partial class WeaponDraft
     private static WeaponNoteTrackMaps SanitizeNoteTracks(WeaponNoteTrackMaps current, WeaponNoteTrackMaps value) => new()
     {
         SoundMapKeysPointer = current.SoundMapKeysPointer,
-        SoundMapKeys = PreserveScriptStrings(current.SoundMapKeys, value.SoundMapKeys),
         SoundMapValuesPointer = current.SoundMapValuesPointer,
-        SoundMapValues = PreserveScriptStrings(current.SoundMapValues, value.SoundMapValues),
+        SoundMappings = SanitizeNoteTrackMappings(current.SoundMappings, value.SoundMappings),
         RumbleMapKeysPointer = current.RumbleMapKeysPointer,
-        RumbleMapKeys = PreserveScriptStrings(current.RumbleMapKeys, value.RumbleMapKeys),
         RumbleMapValuesPointer = current.RumbleMapValuesPointer,
-        RumbleMapValues = PreserveScriptStrings(current.RumbleMapValues, value.RumbleMapValues)
+        RumbleMappings = SanitizeNoteTrackMappings(current.RumbleMappings, value.RumbleMappings)
     };
 
-    private static WeaponIconPointers SanitizeIcons(WeaponIconPointers current, WeaponIconPointers value, IReadOnlyList<IW4.Assets.Assets.Material.MaterialAsset?> currentMaterials, IReadOnlyList<IW4.Assets.Assets.Material.MaterialAsset?> materials) => new()
+    private static WeaponFlashEffectFields SanitizeFlashEffects(
+        WeaponFlashEffectFields current,
+        WeaponFlashEffectFields value) => new()
     {
-        HudIconPointer = ProviderPointerIfUnchanged(currentMaterials[0], materials[0], current.HudIconPointer),
+        ViewPointer = ProviderPointerIfUnchanged(current.View, value.View, current.ViewPointer),
+        View = value.View,
+        WorldPointer = ProviderPointerIfUnchanged(current.World, value.World, current.WorldPointer),
+        World = value.World
+    };
+
+    private static WeaponShellEjectEffectFields SanitizeShellEjectEffects(
+        WeaponShellEjectEffectFields current,
+        WeaponShellEjectEffectFields value) => new()
+    {
+        ViewPointer = ProviderPointerIfUnchanged(current.View, value.View, current.ViewPointer),
+        View = value.View,
+        WorldPointer = ProviderPointerIfUnchanged(current.World, value.World, current.WorldPointer),
+        World = value.World,
+        ViewLastShotPointer = ProviderPointerIfUnchanged(current.ViewLastShot, value.ViewLastShot, current.ViewLastShotPointer),
+        ViewLastShot = value.ViewLastShot,
+        WorldLastShotPointer = ProviderPointerIfUnchanged(current.WorldLastShot, value.WorldLastShot, current.WorldLastShotPointer),
+        WorldLastShot = value.WorldLastShot
+    };
+
+    private static WeaponPrimarySoundFields SanitizePrimarySounds(
+        WeaponPrimarySoundFields current,
+        WeaponPrimarySoundFields value) => new()
+    {
+        PickupSound = SanitizeSoundAlias(current.PickupSound, value.PickupSound),
+        PickupSoundPlayer = SanitizeSoundAlias(current.PickupSoundPlayer, value.PickupSoundPlayer),
+        AmmoPickupSound = SanitizeSoundAlias(current.AmmoPickupSound, value.AmmoPickupSound),
+        AmmoPickupSoundPlayer = SanitizeSoundAlias(current.AmmoPickupSoundPlayer, value.AmmoPickupSoundPlayer),
+        ProjectileSound = SanitizeSoundAlias(current.ProjectileSound, value.ProjectileSound),
+        PullbackSound = SanitizeSoundAlias(current.PullbackSound, value.PullbackSound),
+        PullbackSoundPlayer = SanitizeSoundAlias(current.PullbackSoundPlayer, value.PullbackSoundPlayer),
+        FireSound = SanitizeSoundAlias(current.FireSound, value.FireSound),
+        FireSoundPlayer = SanitizeSoundAlias(current.FireSoundPlayer, value.FireSoundPlayer),
+        FireSoundPlayerAkimbo = SanitizeSoundAlias(current.FireSoundPlayerAkimbo, value.FireSoundPlayerAkimbo),
+        FireLoopSound = SanitizeSoundAlias(current.FireLoopSound, value.FireLoopSound),
+        FireLoopSoundPlayer = SanitizeSoundAlias(current.FireLoopSoundPlayer, value.FireLoopSoundPlayer),
+        FireStopSound = SanitizeSoundAlias(current.FireStopSound, value.FireStopSound),
+        FireStopSoundPlayer = SanitizeSoundAlias(current.FireStopSoundPlayer, value.FireStopSoundPlayer),
+        FireLastSound = SanitizeSoundAlias(current.FireLastSound, value.FireLastSound),
+        FireLastSoundPlayer = SanitizeSoundAlias(current.FireLastSoundPlayer, value.FireLastSoundPlayer),
+        EmptyFireSound = SanitizeSoundAlias(current.EmptyFireSound, value.EmptyFireSound),
+        EmptyFireSoundPlayer = SanitizeSoundAlias(current.EmptyFireSoundPlayer, value.EmptyFireSoundPlayer),
+        MeleeSwipeSound = SanitizeSoundAlias(current.MeleeSwipeSound, value.MeleeSwipeSound),
+        MeleeSwipeSoundPlayer = SanitizeSoundAlias(current.MeleeSwipeSoundPlayer, value.MeleeSwipeSoundPlayer),
+        MeleeHitSound = SanitizeSoundAlias(current.MeleeHitSound, value.MeleeHitSound),
+        MeleeMissSound = SanitizeSoundAlias(current.MeleeMissSound, value.MeleeMissSound),
+        RechamberSound = SanitizeSoundAlias(current.RechamberSound, value.RechamberSound),
+        RechamberSoundPlayer = SanitizeSoundAlias(current.RechamberSoundPlayer, value.RechamberSoundPlayer),
+        ReloadSound = SanitizeSoundAlias(current.ReloadSound, value.ReloadSound),
+        ReloadSoundPlayer = SanitizeSoundAlias(current.ReloadSoundPlayer, value.ReloadSoundPlayer),
+        ReloadEmptySound = SanitizeSoundAlias(current.ReloadEmptySound, value.ReloadEmptySound),
+        ReloadEmptySoundPlayer = SanitizeSoundAlias(current.ReloadEmptySoundPlayer, value.ReloadEmptySoundPlayer),
+        ReloadStartSound = SanitizeSoundAlias(current.ReloadStartSound, value.ReloadStartSound),
+        ReloadStartSoundPlayer = SanitizeSoundAlias(current.ReloadStartSoundPlayer, value.ReloadStartSoundPlayer),
+        ReloadEndSound = SanitizeSoundAlias(current.ReloadEndSound, value.ReloadEndSound),
+        ReloadEndSoundPlayer = SanitizeSoundAlias(current.ReloadEndSoundPlayer, value.ReloadEndSoundPlayer),
+        DetonateSound = SanitizeSoundAlias(current.DetonateSound, value.DetonateSound),
+        DetonateSoundPlayer = SanitizeSoundAlias(current.DetonateSoundPlayer, value.DetonateSoundPlayer),
+        NightVisionWearSound = SanitizeSoundAlias(current.NightVisionWearSound, value.NightVisionWearSound),
+        NightVisionWearSoundPlayer = SanitizeSoundAlias(current.NightVisionWearSoundPlayer, value.NightVisionWearSoundPlayer),
+        NightVisionRemoveSound = SanitizeSoundAlias(current.NightVisionRemoveSound, value.NightVisionRemoveSound),
+        NightVisionRemoveSoundPlayer = SanitizeSoundAlias(current.NightVisionRemoveSoundPlayer, value.NightVisionRemoveSoundPlayer),
+        AltSwitchSound = SanitizeSoundAlias(current.AltSwitchSound, value.AltSwitchSound),
+        AltSwitchSoundPlayer = SanitizeSoundAlias(current.AltSwitchSoundPlayer, value.AltSwitchSoundPlayer),
+        RaiseSound = SanitizeSoundAlias(current.RaiseSound, value.RaiseSound),
+        RaiseSoundPlayer = SanitizeSoundAlias(current.RaiseSoundPlayer, value.RaiseSoundPlayer),
+        FirstRaiseSound = SanitizeSoundAlias(current.FirstRaiseSound, value.FirstRaiseSound),
+        FirstRaiseSoundPlayer = SanitizeSoundAlias(current.FirstRaiseSoundPlayer, value.FirstRaiseSoundPlayer),
+        PutawaySound = SanitizeSoundAlias(current.PutawaySound, value.PutawaySound),
+        PutawaySoundPlayer = SanitizeSoundAlias(current.PutawaySoundPlayer, value.PutawaySoundPlayer),
+        ScanSound = SanitizeSoundAlias(current.ScanSound, value.ScanSound)
+    };
+
+    private static WeaponIconPointers SanitizeIcons(WeaponIconPointers current, WeaponIconPointers value) => new()
+    {
+        HudIconPointer = ProviderPointerIfUnchanged(current.HudIcon, value.HudIcon, current.HudIconPointer),
+        HudIcon = value.HudIcon,
         HudIconRatio = value.HudIconRatio,
-        PickupIconPointer = ProviderPointerIfUnchanged(currentMaterials[1], materials[1], current.PickupIconPointer),
+        PickupIconPointer = ProviderPointerIfUnchanged(current.PickupIcon, value.PickupIcon, current.PickupIconPointer),
+        PickupIcon = value.PickupIcon,
         PickupIconRatio = value.PickupIconRatio,
-        AmmoCounterIconPointer = ProviderPointerIfUnchanged(currentMaterials[2], materials[2], current.AmmoCounterIconPointer),
+        AmmoCounterIconPointer = ProviderPointerIfUnchanged(current.AmmoCounterIcon, value.AmmoCounterIcon, current.AmmoCounterIconPointer),
+        AmmoCounterIcon = value.AmmoCounterIcon,
         AmmoCounterIconRatio = value.AmmoCounterIconRatio,
         AmmoCounterClip = value.AmmoCounterClip,
         StartAmmo = value.StartAmmo
@@ -327,9 +391,30 @@ public sealed partial class WeaponDraft
         DamageType = value.DamageType
     };
 
-    private static WeaponOverlayFields SanitizeOverlay(WeaponOverlayFields current, WeaponOverlayFields value, IReadOnlyList<IW4.Assets.Assets.Material.MaterialAsset?> currentMaterials, IReadOnlyList<IW4.Assets.Assets.Material.MaterialAsset?> materials) => new()
+    private static WeaponReticleFields SanitizeReticle(
+        WeaponReticleFields current,
+        WeaponReticleFields value) => new()
     {
-        OverlayMaterials = PreserveProviderPointers(currentMaterials, materials, current.OverlayMaterials),
+        CenterMaterialPointer = ProviderPointerIfUnchanged(current.CenterMaterial, value.CenterMaterial, current.CenterMaterialPointer),
+        CenterMaterial = value.CenterMaterial,
+        SideMaterialPointer = ProviderPointerIfUnchanged(current.SideMaterial, value.SideMaterial, current.SideMaterialPointer),
+        SideMaterial = value.SideMaterial,
+        CenterSize = value.CenterSize,
+        SideSize = value.SideSize,
+        MinOffset = value.MinOffset,
+        ActiveType = value.ActiveType
+    };
+
+    private static WeaponOverlayFields SanitizeOverlay(WeaponOverlayFields current, WeaponOverlayFields value) => new()
+    {
+        MaterialPointer = ProviderPointerIfUnchanged(current.Material, value.Material, current.MaterialPointer),
+        Material = value.Material,
+        MaterialLowResPointer = ProviderPointerIfUnchanged(current.MaterialLowRes, value.MaterialLowRes, current.MaterialLowResPointer),
+        MaterialLowRes = value.MaterialLowRes,
+        MaterialEmpPointer = ProviderPointerIfUnchanged(current.MaterialEmp, value.MaterialEmp, current.MaterialEmpPointer),
+        MaterialEmp = value.MaterialEmp,
+        MaterialEmpLowResPointer = ProviderPointerIfUnchanged(current.MaterialEmpLowRes, value.MaterialEmpLowRes, current.MaterialEmpLowResPointer),
+        MaterialEmpLowRes = value.MaterialEmpLowRes,
         Reticle = value.Reticle,
         Interface = value.Interface,
         Width = value.Width,
@@ -338,17 +423,17 @@ public sealed partial class WeaponDraft
         HeightSplitscreen = value.HeightSplitscreen
     };
 
-    private static WeaponProjectileFields SanitizeProjectile(WeaponDef currentDefinition, WeaponDef valueDefinition)
+    private static WeaponProjectileFields SanitizeProjectile(
+        WeaponProjectileFields current,
+        WeaponProjectileFields value) => new()
     {
-        WeaponProjectileFields current = currentDefinition.Projectile;
-        WeaponProjectileFields value = valueDefinition.Projectile;
-        return new WeaponProjectileFields
-        {
             ModelPointer = ProviderPointerIfUnchanged(current.Model, value.Model, current.ModelPointer),
             Model = value.Model,
             Explosion = value.Explosion,
-            ExplosionEffectPointer = ProviderPointerIfUnchanged(currentDefinition.ProjectileEffects[0], valueDefinition.ProjectileEffects[0], current.ExplosionEffectPointer),
-            DudEffectPointer = ProviderPointerIfUnchanged(currentDefinition.ProjectileEffects[1], valueDefinition.ProjectileEffects[1], current.DudEffectPointer),
+            ExplosionEffectPointer = ProviderPointerIfUnchanged(current.ExplosionEffect, value.ExplosionEffect, current.ExplosionEffectPointer),
+            ExplosionEffect = value.ExplosionEffect,
+            DudEffectPointer = ProviderPointerIfUnchanged(current.DudEffect, value.DudEffect, current.DudEffectPointer),
+            DudEffect = value.DudEffect,
             ExplosionSoundPointer = XStringIfUnchanged(current.ExplosionSound, value.ExplosionSound, current.ExplosionSoundPointer),
             ExplosionSoundValuePointer = XStringIfUnchanged(current.ExplosionSound, value.ExplosionSound, current.ExplosionSoundValuePointer),
             ExplosionSound = value.ExplosionSound,
@@ -362,15 +447,16 @@ public sealed partial class WeaponDraft
             ParallelBounce = CopyList(value.ParallelBounce),
             PerpendicularBouncePointer = current.PerpendicularBouncePointer,
             PerpendicularBounce = CopyList(value.PerpendicularBounce),
-            TrailEffectPointer = ProviderPointerIfUnchanged(currentDefinition.ImpactEffects[0], valueDefinition.ImpactEffects[0], current.TrailEffectPointer),
-            BeaconEffectPointer = ProviderPointerIfUnchanged(currentDefinition.ImpactEffects[1], valueDefinition.ImpactEffects[1], current.BeaconEffectPointer),
+            TrailEffectPointer = ProviderPointerIfUnchanged(current.TrailEffect, value.TrailEffect, current.TrailEffectPointer),
+            TrailEffect = value.TrailEffect,
+            BeaconEffectPointer = ProviderPointerIfUnchanged(current.BeaconEffect, value.BeaconEffect, current.BeaconEffectPointer),
+            BeaconEffect = value.BeaconEffect,
             ProjectileColor = value.ProjectileColor,
             GuidedMissileType = value.GuidedMissileType,
             MaxSteeringAcceleration = value.MaxSteeringAcceleration,
             IgnitionDelay = value.IgnitionDelay,
-            // The semantic provider is named ViewShellEjectEffect in the recovered
-            // model while this serialized cell is named IgnitionEffectPointer.
-            IgnitionEffectPointer = ProviderPointerIfUnchanged(currentDefinition.ViewShellEjectEffect, valueDefinition.ViewShellEjectEffect, current.IgnitionEffectPointer),
+            IgnitionEffectPointer = ProviderPointerIfUnchanged(current.IgnitionEffect, value.IgnitionEffect, current.IgnitionEffectPointer),
+            IgnitionEffect = value.IgnitionEffect,
             IgnitionSoundPointer = XStringIfUnchanged(current.IgnitionSound, value.IgnitionSound, current.IgnitionSoundPointer),
             IgnitionSoundValuePointer = XStringIfUnchanged(current.IgnitionSound, value.IgnitionSound, current.IgnitionSoundValuePointer),
             IgnitionSound = value.IgnitionSound,
@@ -378,22 +464,21 @@ public sealed partial class WeaponDraft
             AdsCrosshairInFraction = value.AdsCrosshairInFraction,
             AdsCrosshairOutFraction = value.AdsCrosshairOutFraction,
             GunKickAndDistance = WeaponGraph.Copy(value.GunKickAndDistance)
-        };
-    }
+    };
 
     private static WeaponAccuracyFields SanitizeAccuracy(WeaponAccuracyFields current, WeaponAccuracyFields value) => new()
     {
-        GraphName0Pointer = XStringIfUnchanged(current.GraphName0, value.GraphName0, current.GraphName0Pointer),
-        GraphName0 = value.GraphName0,
-        GraphName1Pointer = XStringIfUnchanged(current.GraphName1, value.GraphName1, current.GraphName1Pointer),
-        GraphName1 = value.GraphName1,
-        GraphKnotsPointer = current.GraphKnotsPointer,
-        GraphKnots = CopyList(value.GraphKnots),
-        OriginalGraphKnotsPointer = current.OriginalGraphKnotsPointer,
-        OriginalGraphKnots = CopyList(value.OriginalGraphKnots),
-        LocalGraphKnotCount = value.LocalGraphKnotCount,
-        LocalOriginalGraphKnotCount = value.LocalOriginalGraphKnotCount,
-        AnimationNotifyComparison = value.AnimationNotifyComparison,
+        AiVsAiGraphNamePointer = XStringIfUnchanged(current.AiVsAiGraphName, value.AiVsAiGraphName, current.AiVsAiGraphNamePointer),
+        AiVsAiGraphName = value.AiVsAiGraphName,
+        AiVsPlayerGraphNamePointer = XStringIfUnchanged(current.AiVsPlayerGraphName, value.AiVsPlayerGraphName, current.AiVsPlayerGraphNamePointer),
+        AiVsPlayerGraphName = value.AiVsPlayerGraphName,
+        OriginalAiVsAiGraphKnotsPointer = current.OriginalAiVsAiGraphKnotsPointer,
+        OriginalAiVsAiGraphKnots = CopyList(value.OriginalAiVsAiGraphKnots),
+        OriginalAiVsPlayerGraphKnotsPointer = current.OriginalAiVsPlayerGraphKnotsPointer,
+        OriginalAiVsPlayerGraphKnots = CopyList(value.OriginalAiVsPlayerGraphKnots),
+        OriginalAiVsAiGraphKnotCount = value.OriginalAiVsAiGraphKnotCount,
+        OriginalAiVsPlayerGraphKnotCount = value.OriginalAiVsPlayerGraphKnotCount,
+        PositionReloadTransitionTime = value.PositionReloadTransitionTime,
         LeftArc = value.LeftArc,
         RightArc = value.RightArc,
         TopArc = value.TopArc,
@@ -426,16 +511,15 @@ public sealed partial class WeaponDraft
         MeleeImpactRumble = value.MeleeImpactRumble
     };
 
-    private static WeaponTurretFields SanitizeTurret(WeaponDef currentDefinition, WeaponDef valueDefinition)
+    private static WeaponTurretFields SanitizeTurret(
+        WeaponTurretFields current,
+        WeaponTurretFields value) => new()
     {
-        WeaponTurretFields current = currentDefinition.Turret;
-        WeaponTurretFields value = valueDefinition.Turret;
-        return new WeaponTurretFields
-        {
             OverheatSoundPointer = XStringIfUnchanged(current.OverheatSound, value.OverheatSound, current.OverheatSoundPointer),
             OverheatSoundValuePointer = XStringIfUnchanged(current.OverheatSound, value.OverheatSound, current.OverheatSoundValuePointer),
             OverheatSound = value.OverheatSound,
-            OverheatEffectPointer = ProviderPointerIfUnchanged(currentDefinition.TurretOverheatEffect, valueDefinition.TurretOverheatEffect, current.OverheatEffectPointer),
+            OverheatEffectPointer = ProviderPointerIfUnchanged(current.OverheatEffect, value.OverheatEffect, current.OverheatEffectPointer),
+            OverheatEffect = value.OverheatEffect,
             BarrelSpinRumblePointer = XStringIfUnchanged(current.BarrelSpinRumble, value.BarrelSpinRumble, current.BarrelSpinRumblePointer),
             BarrelSpinRumble = value.BarrelSpinRumble,
             BarrelSpinSpeed = value.BarrelSpinSpeed,
@@ -444,14 +528,9 @@ public sealed partial class WeaponDraft
             BarrelSpinMaxSoundPointer = XStringIfUnchanged(current.BarrelSpinMaxSound, value.BarrelSpinMaxSound, current.BarrelSpinMaxSoundPointer),
             BarrelSpinMaxSoundValuePointer = XStringIfUnchanged(current.BarrelSpinMaxSound, value.BarrelSpinMaxSound, current.BarrelSpinMaxSoundValuePointer),
             BarrelSpinMaxSound = value.BarrelSpinMaxSound,
-            BarrelSpinUpSoundPointers = PreserveXStringPointers(current.BarrelSpinUpSoundNames, value.BarrelSpinUpSoundNames, current.BarrelSpinUpSoundPointers),
-            BarrelSpinUpSoundValuePointers = PreserveXStringPointers(current.BarrelSpinUpSoundNames, value.BarrelSpinUpSoundNames, current.BarrelSpinUpSoundValuePointers),
-            BarrelSpinUpSoundNames = CopyList(value.BarrelSpinUpSoundNames),
-            BarrelSpinDownSoundPointers = PreserveXStringPointers(current.BarrelSpinDownSoundNames, value.BarrelSpinDownSoundNames, current.BarrelSpinDownSoundPointers),
-            BarrelSpinDownSoundValuePointers = PreserveXStringPointers(current.BarrelSpinDownSoundNames, value.BarrelSpinDownSoundNames, current.BarrelSpinDownSoundValuePointers),
-            BarrelSpinDownSoundNames = CopyList(value.BarrelSpinDownSoundNames)
-        };
-    }
+            BarrelSpinUpSounds = SanitizeSoundAliases(current.BarrelSpinUpSounds, value.BarrelSpinUpSounds),
+            BarrelSpinDownSounds = SanitizeSoundAliases(current.BarrelSpinDownSounds, value.BarrelSpinDownSounds)
+    };
 
     private static WeaponMissileConeSoundFields SanitizeMissile(WeaponMissileConeSoundFields current, WeaponMissileConeSoundFields value) => new()
     {
@@ -535,40 +614,53 @@ public sealed partial class WeaponDraft
         EnsureSameCount(current.RightHandAnimationNames, value.RightHandAnimationNames, nameof(value));
         EnsureSameCount(current.LeftHandAnimationNamePointers, value.LeftHandAnimationNamePointers, nameof(value));
         EnsureSameCount(current.LeftHandAnimationNames, value.LeftHandAnimationNames, nameof(value));
-        EnsureSameCount(current.FlashEffectPointers, value.FlashEffectPointers, nameof(value));
-        EnsureSameCount(current.FlashEffects, value.FlashEffects, nameof(value));
-        EnsureSameCount(current.SoundAliasPointers, value.SoundAliasPointers, nameof(value));
-        EnsureSameCount(current.SoundAliasValuePointers, value.SoundAliasValuePointers, nameof(value));
-        EnsureSameCount(current.SoundAliasNames, value.SoundAliasNames, nameof(value));
-        EnsureSameCount(current.BounceSoundPointers, value.BounceSoundPointers, nameof(value));
-        EnsureSameCount(current.BounceSoundValuePointers, value.BounceSoundValuePointers, nameof(value));
-        EnsureSameCount(current.BounceSoundNames, value.BounceSoundNames, nameof(value));
-        EnsureSameCount(current.EffectPointers, value.EffectPointers, nameof(value));
-        EnsureSameCount(current.Effects, value.Effects, nameof(value));
-        EnsureSameCount(current.MaterialPointers, value.MaterialPointers, nameof(value));
-        EnsureSameCount(current.Materials, value.Materials, nameof(value));
+        EnsureSameCount(current.BounceSounds, value.BounceSounds, nameof(value));
         EnsureSameCount(current.WorldGunModelPointers, value.WorldGunModelPointers, nameof(value));
         EnsureSameCount(current.WorldGunModels, value.WorldGunModels, nameof(value));
-        EnsureSameCount(current.IconMaterials, value.IconMaterials, nameof(value));
-        EnsureSameCount(current.Overlay.OverlayMaterials, value.Overlay.OverlayMaterials, nameof(value));
-        EnsureSameCount(current.OverlayMaterials, value.OverlayMaterials, nameof(value));
-        EnsureSameCount(current.ProjectileEffects, value.ProjectileEffects, nameof(value));
-        EnsureSameCount(current.ImpactEffects, value.ImpactEffects, nameof(value));
         EnsureSameCount(current.Projectile.ParallelBounce, value.Projectile.ParallelBounce, nameof(value));
         EnsureSameCount(current.Projectile.PerpendicularBounce, value.Projectile.PerpendicularBounce, nameof(value));
-        EnsureSameCount(current.Accuracy.GraphKnots, value.Accuracy.GraphKnots, nameof(value));
-        EnsureSameCount(current.Accuracy.OriginalGraphKnots, value.Accuracy.OriginalGraphKnots, nameof(value));
+        EnsureSameCount(current.Accuracy.OriginalAiVsAiGraphKnots, value.Accuracy.OriginalAiVsAiGraphKnots, nameof(value));
+        EnsureSameCount(current.Accuracy.OriginalAiVsPlayerGraphKnots, value.Accuracy.OriginalAiVsPlayerGraphKnots, nameof(value));
         EnsureSameCount(current.LocationDamageMultipliers, value.LocationDamageMultipliers, nameof(value));
-        EnsureSameCount(current.Turret.BarrelSpinUpSoundPointers, value.Turret.BarrelSpinUpSoundPointers, nameof(value));
-        EnsureSameCount(current.Turret.BarrelSpinUpSoundValuePointers, value.Turret.BarrelSpinUpSoundValuePointers, nameof(value));
-        EnsureSameCount(current.Turret.BarrelSpinUpSoundNames, value.Turret.BarrelSpinUpSoundNames, nameof(value));
-        EnsureSameCount(current.Turret.BarrelSpinDownSoundPointers, value.Turret.BarrelSpinDownSoundPointers, nameof(value));
-        EnsureSameCount(current.Turret.BarrelSpinDownSoundValuePointers, value.Turret.BarrelSpinDownSoundValuePointers, nameof(value));
-        EnsureSameCount(current.Turret.BarrelSpinDownSoundNames, value.Turret.BarrelSpinDownSoundNames, nameof(value));
-        EnsureSameCount(current.NoteTrackMaps.SoundMapKeys, value.NoteTrackMaps.SoundMapKeys, nameof(value));
-        EnsureSameCount(current.NoteTrackMaps.SoundMapValues, value.NoteTrackMaps.SoundMapValues, nameof(value));
-        EnsureSameCount(current.NoteTrackMaps.RumbleMapKeys, value.NoteTrackMaps.RumbleMapKeys, nameof(value));
-        EnsureSameCount(current.NoteTrackMaps.RumbleMapValues, value.NoteTrackMaps.RumbleMapValues, nameof(value));
+        EnsureSameCount(current.Turret.BarrelSpinUpSounds, value.Turret.BarrelSpinUpSounds, nameof(value));
+        EnsureSameCount(current.Turret.BarrelSpinDownSounds, value.Turret.BarrelSpinDownSounds, nameof(value));
+        EnsureSameCount(current.NoteTrackMaps.SoundMappings, value.NoteTrackMaps.SoundMappings, nameof(value));
+        EnsureSameCount(current.NoteTrackMaps.RumbleMappings, value.NoteTrackMaps.RumbleMappings, nameof(value));
+    }
+
+    private static WeaponSoundAliasField SanitizeSoundAlias(
+        WeaponSoundAliasField current,
+        WeaponSoundAliasField value) => new()
+    {
+        Pointer = XStringIfUnchanged(current.Name, value.Name, current.Pointer),
+        ValuePointer = XStringIfUnchanged(current.Name, value.Name, current.ValuePointer),
+        Name = value.Name
+    };
+
+    private static IReadOnlyList<WeaponSoundAliasField> SanitizeSoundAliases(
+        IReadOnlyList<WeaponSoundAliasField> current,
+        IReadOnlyList<WeaponSoundAliasField> values)
+    {
+        var result = new WeaponSoundAliasField[values.Count];
+        for (int index = 0; index < values.Count; index++)
+            result[index] = SanitizeSoundAlias(current[index], values[index]);
+        return Array.AsReadOnly(result);
+    }
+
+    private static IReadOnlyList<WeaponNoteTrackMapEntry> SanitizeNoteTrackMappings(
+        IReadOnlyList<WeaponNoteTrackMapEntry> current,
+        IReadOnlyList<WeaponNoteTrackMapEntry> values)
+    {
+        var result = new WeaponNoteTrackMapEntry[values.Count];
+        for (int index = 0; index < values.Count; index++)
+        {
+            result[index] = new WeaponNoteTrackMapEntry
+            {
+                Key = PreserveScriptString(current[index].Key, values[index].Key),
+                Value = PreserveScriptString(current[index].Value, values[index].Value)
+            };
+        }
+        return Array.AsReadOnly(result);
     }
 
     private static IReadOnlyList<XPointer<T>> PreserveProviderPointers<T>(IReadOnlyList<T?> current, IReadOnlyList<T?> values, IReadOnlyList<XPointer<T>> pointers) where T : BaseAsset
@@ -592,13 +684,18 @@ public sealed partial class WeaponDraft
     {
         var result = new ScriptStringReference[values.Count];
         for (int index = 0; index < values.Count; index++)
-        {
-            string? text = string.IsNullOrEmpty(values[index].Text) ? null : values[index].Text;
-            result[index] = StringEquals(current[index].Text, text)
-                ? current[index]
-                : new ScriptStringReference(0, text, ScriptStringHandle.Null, default);
-        }
+            result[index] = PreserveScriptString(current[index], values[index]);
         return Array.AsReadOnly(result);
+    }
+
+    private static ScriptStringReference PreserveScriptString(
+        ScriptStringReference current,
+        ScriptStringReference value)
+    {
+        string? text = string.IsNullOrEmpty(value.Text) ? null : value.Text;
+        return StringEquals(current.Text, text)
+            ? current
+            : new ScriptStringReference(0, text, ScriptStringHandle.Null, default);
     }
 
     private static bool ProviderEquals(BaseAsset? left, BaseAsset? right) =>

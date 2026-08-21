@@ -9,8 +9,8 @@ internal static class WeaponFiniteMutation
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(value);
-        Ensure(previous.GraphKnots, value.GraphKnots, parameterName);
-        Ensure(previous.OriginalGraphKnots, value.OriginalGraphKnots, parameterName);
+        Ensure(previous.OriginalAiVsAiGraphKnots, value.OriginalAiVsAiGraphKnots, parameterName);
+        Ensure(previous.OriginalAiVsPlayerGraphKnots, value.OriginalAiVsPlayerGraphKnots, parameterName);
         Ensure(previous.LeftArc, value.LeftArc, parameterName);
         Ensure(previous.RightArc, value.RightArc, parameterName);
         Ensure(previous.TopArc, value.TopArc, parameterName);
@@ -88,18 +88,18 @@ internal static class WeaponFiniteMutation
         Ensure(previous.PositionalMovement, value.PositionalMovement, parameterName);
         Ensure(previous.AimMovementTuning, value.AimMovementTuning, parameterName);
         Ensure(previous.AdsViewAndSpread, value.AdsViewAndSpread, parameterName);
+        Ensure(previous.Overlay, value.Overlay, parameterName);
         Ensure(previous.Physics, value.Physics, parameterName);
         Ensure(previous.Projectile, value.Projectile, parameterName);
         Ensure(previous.Accuracy, value.Accuracy, parameterName);
         Ensure(previous.TurnSpeedAndRange, value.TurnSpeedAndRange, parameterName);
         Ensure(previous.Hints, value.Hints, parameterName);
-        Ensure(previous.OOPosAnimLength, value.OOPosAnimLength, parameterName);
-        Ensure(previous.MinDamage, value.MinDamage, parameterName);
+        Ensure(previous.AdsTransitionInRate, value.AdsTransitionInRate, parameterName);
+        Ensure(previous.AdsTransitionOutRate, value.AdsTransitionOutRate, parameterName);
         Ensure(previous.MaxDamageRange, value.MaxDamageRange, parameterName);
         Ensure(previous.MinDamageRange, value.MinDamageRange, parameterName);
         Ensure(previous.DestabilizationRateTime, value.DestabilizationRateTime, parameterName);
         Ensure(previous.DestabilizationCurvatureMax, value.DestabilizationCurvatureMax, parameterName);
-        Ensure(previous.DestabilizeDistance, value.DestabilizeDistance, parameterName);
         Ensure(previous.LocationDamageMultipliers, value.LocationDamageMultipliers, parameterName);
         Ensure(previous.TurretScopeZoomRate, value.TurretScopeZoomRate, parameterName);
         Ensure(previous.TurretScopeZoomMin, value.TurretScopeZoomMin, parameterName);
@@ -192,6 +192,16 @@ internal static class WeaponFiniteMutation
         Ensure(previous.ProjectileCurvature, value.ProjectileCurvature, parameterName);
     }
 
+    internal static void Ensure(WeaponOverlayFields previous, WeaponOverlayFields value, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(value);
+        Ensure(previous.Width, value.Width, parameterName);
+        Ensure(previous.Height, value.Height, parameterName);
+        Ensure(previous.WidthSplitscreen, value.WidthSplitscreen, parameterName);
+        Ensure(previous.HeightSplitscreen, value.HeightSplitscreen, parameterName);
+    }
+
     internal static void Ensure(WeaponPositionalMovementFields previous, WeaponPositionalMovementFields value, string parameterName)
     {
         ArgumentNullException.ThrowIfNull(previous);
@@ -212,6 +222,7 @@ internal static class WeaponFiniteMutation
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(value);
+        Ensure(previous.LowAmmoWarningThreshold, value.LowAmmoWarningThreshold, parameterName);
         Ensure(previous.RicochetChance, value.RicochetChance, parameterName);
         Ensure(previous.ParallelBounce, value.ParallelBounce, parameterName);
         Ensure(previous.PerpendicularBounce, value.PerpendicularBounce, parameterName);
@@ -227,16 +238,16 @@ internal static class WeaponFiniteMutation
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(value);
-        Ensure(previous.MinTurnSpeed, value.MinTurnSpeed, parameterName);
-        Ensure(previous.MaxTurnSpeed, value.MaxTurnSpeed, parameterName);
+        Ensure(previous.MinVerticalTurnSpeed, value.MinVerticalTurnSpeed, parameterName);
+        Ensure(previous.MinHorizontalTurnSpeed, value.MinHorizontalTurnSpeed, parameterName);
+        Ensure(previous.MaxVerticalTurnSpeed, value.MaxVerticalTurnSpeed, parameterName);
+        Ensure(previous.MaxHorizontalTurnSpeed, value.MaxHorizontalTurnSpeed, parameterName);
         Ensure(previous.PitchConvergenceTime, value.PitchConvergenceTime, parameterName);
         Ensure(previous.YawConvergenceTime, value.YawConvergenceTime, parameterName);
-        Ensure(previous.SuppressTime, value.SuppressTime, parameterName);
+        Ensure(previous.SuppressionTime, value.SuppressionTime, parameterName);
         Ensure(previous.MaxRange, value.MaxRange, parameterName);
         Ensure(previous.AnimationHorizontalRotateIncrement, value.AnimationHorizontalRotateIncrement, parameterName);
         Ensure(previous.PlayerPositionDistance, value.PlayerPositionDistance, parameterName);
-        Ensure(previous.ScanSpeed, value.ScanSpeed, parameterName);
-        Ensure(previous.ScanAcceleration, value.ScanAcceleration, parameterName);
     }
 
     internal static void Ensure(WeaponTurretFields previous, WeaponTurretFields value, string parameterName)
@@ -260,8 +271,8 @@ internal static class WeaponFiniteMutation
         Ensure(previous.HipViewKickCenterSpeed, value.HipViewKickCenterSpeed, parameterName);
         Ensure(previous.AdsDofStart, value.AdsDofStart, parameterName);
         Ensure(previous.AdsDofEnd, value.AdsDofEnd, parameterName);
-        Ensure(previous.AccuracyGraphKnots, value.AccuracyGraphKnots, parameterName);
-        Ensure(previous.OriginalAccuracyGraphKnots, value.OriginalAccuracyGraphKnots, parameterName);
+        Ensure(previous.AiVsAiAccuracyGraphKnots, value.AiVsAiAccuracyGraphKnots, parameterName);
+        Ensure(previous.AiVsPlayerAccuracyGraphKnots, value.AiVsPlayerAccuracyGraphKnots, parameterName);
     }
 
     internal static void Ensure(WeaponViewMovementFields previous, WeaponViewMovementFields value, string parameterName)

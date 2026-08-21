@@ -31,7 +31,6 @@ internal sealed class WeaponDefRoot
     public OffhandClass OffhandClass { get; set; }
     public WeaponStance Stance { get; set; }
     public IReadOnlyList<XPointer<FxEffectDefAsset>> FlashEffectPointers { get; set; } = [];
-    public XPointer<XString[]> SoundAliasPointersPointer { get; set; }
     public IReadOnlyList<XString> SoundAliasPointers { get; set; } = [];
     public XPointer<XString[]> BounceSoundPointer { get; set; }
     public IReadOnlyList<XPointer<FxEffectDefAsset>> EffectPointers { get; set; } = [];
@@ -55,7 +54,6 @@ internal sealed class WeaponDefRoot
     public XPointer<XModelAsset> ProjectileModelPointer { get; set; }
     public int ProjectileModelField { get; set; }
     public IReadOnlyList<XPointer<FxEffectDefAsset>> ProjectileEffectPointers { get; set; } = [];
-    public XPointer<XString[]> ProjectileSoundAliasPointersPointer { get; set; }
     public IReadOnlyList<XString> ProjectileSoundAliasPointers { get; set; } = [];
     public IReadOnlyList<int> ProjectileFieldsA { get; set; } = [];
     public XPointer<float[]> ParallelBouncePointer { get; set; }
@@ -64,17 +62,17 @@ internal sealed class WeaponDefRoot
     public IReadOnlyList<int> ImpactFieldsA { get; set; } = [];
     public int ImpactFieldB { get; set; }
     public IReadOnlyList<int> ImpactFieldsC { get; set; } = [];
-    public XPointer<FxEffectDefAsset> ViewShellEjectEffectPointer { get; set; }
-    public XString ShellEjectSoundPointer { get; set; }
-    public IReadOnlyList<int> ShellEjectFields { get; set; } = [];
+    public XPointer<FxEffectDefAsset> ProjectileIgnitionEffectPointer { get; set; }
+    public XString ProjectileIgnitionSoundPointer { get; set; }
+    public IReadOnlyList<int> ProjectileAdsFields { get; set; } = [];
     public IReadOnlyList<int> AdsHipGunKickAiDistanceFields { get; set; } = [];
-    public XString AccuracyGraphName0Pointer { get; set; }
-    public XString AccuracyGraphName1Pointer { get; set; }
-    public XPointer<Vec2[]> AccuracyGraphKnotsPointer { get; set; }
-    public XPointer<Vec2[]> OriginalAccuracyGraphKnotsPointer { get; set; }
-    public ushort LocalGraphKnotCount { get; set; }
-    public ushort LocalOriginalGraphKnotCount { get; set; }
-    public int AnimationNotifyComparison { get; set; }
+    public XString AiVsAiAccuracyGraphNamePointer { get; set; }
+    public XString AiVsPlayerAccuracyGraphNamePointer { get; set; }
+    public XPointer<Vec2[]> OriginalAiVsAiAccuracyGraphKnotsPointer { get; set; }
+    public XPointer<Vec2[]> OriginalAiVsPlayerAccuracyGraphKnotsPointer { get; set; }
+    public ushort OriginalAiVsAiAccuracyGraphKnotCount { get; set; }
+    public ushort OriginalAiVsPlayerAccuracyGraphKnotCount { get; set; }
+    public int PositionReloadTransitionTime { get; set; }
     public float LeftArc { get; set; }
     public float RightArc { get; set; }
     public float TopArc { get; set; }
@@ -93,15 +91,15 @@ internal sealed class WeaponDefRoot
     public float ScanAcceleration { get; set; }
     public int ScanPauseTime { get; set; }
     public XString ScriptNamePointer { get; set; }
-    public float OOPosAnimLength { get; set; }
-    public float MinDamage { get; set; }
+    public float AdsTransitionInRate { get; set; }
+    public float AdsTransitionOutRate { get; set; }
+    public int MinDamage { get; set; }
     public int MinPlayerDamage { get; set; }
     public float MaxDamageRange { get; set; }
     public float MinDamageRange { get; set; }
     public float DestabilizationRateTime { get; set; }
     public float DestabilizationCurvatureMax { get; set; }
-    public float DestabilizeDistance { get; set; }
-    public int DestabilizeDistanceToTimeScale { get; set; }
+    public int DestabilizeDistance { get; set; }
     public XPointer<float[]> LocationDamageMultipliersPointer { get; set; }
     public XString FireRumblePointer { get; set; }
     public XString MeleeImpactRumblePointer { get; set; }

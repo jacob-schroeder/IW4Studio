@@ -6,7 +6,6 @@ using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
-using FxEffectDefAsset = IW4.Assets.Assets.Fx.FxEffectDefAsset;
 using PhysicsPhysCollmapAsset = IW4.Assets.Assets.Physics.PhysCollmapAsset;
 using TracerDefAsset = IW4.Assets.Assets.Tracer.TracerDefAsset;
 using XModelAsset = IW4.Assets.Assets.XModel.XModelAsset;
@@ -118,7 +117,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             variant.AnimationNamePointers,
             variant.AnimationNames,
             variant.AnimationNamesPointer.Untyped,
-            WeaponVariantDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             "Weapon.Variant.AnimationNames",
             freeze);
         if (animations is { } animationStorage)
@@ -151,32 +150,32 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             XAssetType.Material,
             "Weapon.Variant.DpadIcon");
         RequireCount(
-            variant.AccuracyGraphKnotCount,
-            variant.AccuracyGraphKnots.Count,
-            "Weapon.Variant.AccuracyGraphKnots");
+            variant.AiVsAiAccuracyGraphKnotCount,
+            variant.AiVsAiAccuracyGraphKnots.Count,
+            "Weapon.Variant.AiVsAiAccuracyGraphKnots");
         RequireCount(
-            variant.OriginalAccuracyGraphKnotCount,
-            variant.OriginalAccuracyGraphKnots.Count,
-            "Weapon.Variant.OriginalAccuracyGraphKnots");
-        LinkStorageTarget? graph = FreezeVec2Array(
-            variant.AccuracyGraphKnots,
-            variant.AccuracyGraphKnotsPointer.Untyped,
-            "Weapon.Variant.AccuracyGraphKnots",
+            variant.AiVsPlayerAccuracyGraphKnotCount,
+            variant.AiVsPlayerAccuracyGraphKnots.Count,
+            "Weapon.Variant.AiVsPlayerAccuracyGraphKnots");
+        LinkStorageTarget? aiVsAiGraph = FreezeVec2Array(
+            variant.AiVsAiAccuracyGraphKnots,
+            variant.AiVsAiAccuracyGraphKnotsPointer.Untyped,
+            "Weapon.Variant.AiVsAiAccuracyGraphKnots",
             freeze);
-        if (graph is { } graphStorage)
-            AddDirect(operations, 0x68, graphStorage, "Weapon.Variant.AccuracyGraphKnots");
-        LinkStorageTarget? originalGraph = FreezeVec2Array(
-            variant.OriginalAccuracyGraphKnots,
-            variant.OriginalAccuracyGraphKnotsPointer.Untyped,
-            "Weapon.Variant.OriginalAccuracyGraphKnots",
+        if (aiVsAiGraph is { } aiVsAiGraphStorage)
+            AddDirect(operations, 0x68, aiVsAiGraphStorage, "Weapon.Variant.AiVsAiAccuracyGraphKnots");
+        LinkStorageTarget? aiVsPlayerGraph = FreezeVec2Array(
+            variant.AiVsPlayerAccuracyGraphKnots,
+            variant.AiVsPlayerAccuracyGraphKnotsPointer.Untyped,
+            "Weapon.Variant.AiVsPlayerAccuracyGraphKnots",
             freeze);
-        if (originalGraph is { } originalGraphStorage)
+        if (aiVsPlayerGraph is { } aiVsPlayerGraphStorage)
         {
             AddDirect(
                 operations,
                 0x6c,
-                originalGraphStorage,
-                "Weapon.Variant.OriginalAccuracyGraphKnots");
+                aiVsPlayerGraphStorage,
+                "Weapon.Variant.AiVsPlayerAccuracyGraphKnots");
         }
     }
 
@@ -232,7 +231,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             definition.RightHandAnimationNamePointers,
             definition.RightHandAnimationNames,
             definition.RightHandAnimationNamesPointer.Untyped,
-            WeaponDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             "Weapon.Definition.RightHandAnimationNames",
             freeze);
         if (rightAnimations is { } rightAnimationStorage)
@@ -247,7 +246,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             definition.LeftHandAnimationNamePointers,
             definition.LeftHandAnimationNames,
             definition.LeftHandAnimationNamesPointer.Untyped,
-            WeaponDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             "Weapon.Definition.LeftHandAnimationNames",
             freeze);
         if (leftAnimations is { } leftAnimationStorage)
@@ -268,78 +267,67 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
 
         WeaponNoteTrackMaps noteTracks = definition.NoteTrackMaps ??
             throw new InvalidDataException("Weapon.Definition.NoteTrackMaps cannot be null.");
-        FreezeScriptMap(
+        FreezeNoteTrackMap(
             operations,
             0x018,
-            noteTracks.SoundMapKeys,
-            noteTracks.SoundMapKeysPointer.Untyped,
-            "Weapon.Definition.NoteTrackMaps.SoundMapKeys",
-            freeze);
-        FreezeScriptMap(
-            operations,
             0x01c,
-            noteTracks.SoundMapValues,
+            noteTracks.SoundMappings,
+            noteTracks.SoundMapKeysPointer.Untyped,
             noteTracks.SoundMapValuesPointer.Untyped,
-            "Weapon.Definition.NoteTrackMaps.SoundMapValues",
+            "Weapon.Definition.NoteTrackMaps.SoundMappings",
             freeze);
-        FreezeScriptMap(
+        FreezeNoteTrackMap(
             operations,
             0x020,
-            noteTracks.RumbleMapKeys,
-            noteTracks.RumbleMapKeysPointer.Untyped,
-            "Weapon.Definition.NoteTrackMaps.RumbleMapKeys",
-            freeze);
-        FreezeScriptMap(
-            operations,
             0x024,
-            noteTracks.RumbleMapValues,
+            noteTracks.RumbleMappings,
+            noteTracks.RumbleMapKeysPointer.Untyped,
             noteTracks.RumbleMapValuesPointer.Untyped,
-            "Weapon.Definition.NoteTrackMaps.RumbleMapValues",
+            "Weapon.Definition.NoteTrackMaps.RumbleMappings",
             freeze);
 
-        AddProviders(
-            operations,
-            0x048,
-            definition.FlashEffectPointers,
-            definition.FlashEffects,
-            2,
-            XAssetType.Fx,
-            "Weapon.Definition.FlashEffects");
-        AddSoundCells(
-            operations,
-            0x050,
-            definition.SoundAliasPointers,
-            definition.SoundAliasValuePointers,
-            definition.SoundAliasNames,
-            WeaponDef.WeaponSoundAliasCount,
-            "Weapon.Definition.SoundAliases",
-            freeze);
+        WeaponFlashEffectFields flashEffects = definition.FlashEffects ??
+            throw new InvalidDataException("Weapon.Definition.FlashEffects cannot be null.");
+        AddProvider(operations, 0x048, flashEffects.View,
+            flashEffects.ViewPointer.Untyped,
+            XAssetType.Fx, "Weapon.Definition.FlashEffects.View");
+        AddProvider(operations, 0x04c, flashEffects.World,
+            flashEffects.WorldPointer.Untyped,
+            XAssetType.Fx, "Weapon.Definition.FlashEffects.World");
+
+        WeaponPrimarySoundFields primarySounds = definition.PrimarySounds ??
+            throw new InvalidDataException("Weapon.Definition.PrimarySounds cannot be null.");
+        AddPrimarySoundFields(operations, 0x050, primarySounds, freeze);
         LinkStorageTarget? bounceSounds = FreezeSoundCellTable(
-            definition.BounceSoundPointers,
-            definition.BounceSoundValuePointers,
-            definition.BounceSoundNames,
+            definition.BounceSounds,
             definition.BounceSoundPointer.Untyped,
-            WeaponDef.SurfaceCount,
+            (int)MaterialSurfaceType.Count,
             "Weapon.Definition.BounceSounds",
             freeze);
         if (bounceSounds is { } bounceStorage)
             AddDirect(operations, 0x10c, bounceStorage, "Weapon.Definition.BounceSounds");
-        AddProviders(
-            operations,
-            0x110,
-            definition.EffectPointers,
-            definition.Effects,
-            4,
-            XAssetType.Fx,
-            "Weapon.Definition.Effects");
-        AddProviders(
-            operations,
-            0x120,
-            definition.MaterialPointers,
-            definition.Materials,
-            2,
-            XAssetType.Material,
-            "Weapon.Definition.Materials");
+        WeaponShellEjectEffectFields shellEject = definition.ShellEjectEffects ??
+            throw new InvalidDataException("Weapon.Definition.ShellEjectEffects cannot be null.");
+        AddProvider(operations, 0x110, shellEject.View,
+            shellEject.ViewPointer.Untyped,
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.View");
+        AddProvider(operations, 0x114, shellEject.World,
+            shellEject.WorldPointer.Untyped,
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.World");
+        AddProvider(operations, 0x118, shellEject.ViewLastShot,
+            shellEject.ViewLastShotPointer.Untyped,
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.ViewLastShot");
+        AddProvider(operations, 0x11c, shellEject.WorldLastShot,
+            shellEject.WorldLastShotPointer.Untyped,
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.WorldLastShot");
+        WeaponReticleFields reticle = definition.Reticle ??
+            throw new InvalidDataException("Weapon.Definition.Reticle cannot be null.");
+        AddProvider(operations, 0x120, reticle.CenterMaterial,
+            reticle.CenterMaterialPointer.Untyped,
+            XAssetType.Material, "Weapon.Definition.Reticle.CenterMaterial");
+        AddProvider(operations, 0x124, reticle.SideMaterial,
+            reticle.SideMaterialPointer.Untyped,
+            XAssetType.Material, "Weapon.Definition.Reticle.SideMaterial");
 
         LinkStorageTarget? worldGunModels = FreezeProviderTable(
             definition.WorldGunModelPointers,
@@ -388,25 +376,24 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
 
         WeaponIconPointers icons = definition.Icons ??
             throw new InvalidDataException("Weapon.Definition.Icons cannot be null.");
-        RequireExactCount(definition.IconMaterials, 3, "Weapon.Definition.IconMaterials");
         AddProvider(
             operations,
             0x1ec,
-            definition.IconMaterials[0],
+            icons.HudIcon,
             icons.HudIconPointer.Untyped,
             XAssetType.Material,
             "Weapon.Definition.Icons.HudIcon");
         AddProvider(
             operations,
             0x1f4,
-            definition.IconMaterials[1],
+            icons.PickupIcon,
             icons.PickupIconPointer.Untyped,
             XAssetType.Material,
             "Weapon.Definition.Icons.PickupIcon");
         AddProvider(
             operations,
             0x1fc,
-            definition.IconMaterials[2],
+            icons.AmmoCounterIcon,
             icons.AmmoCounterIconPointer.Untyped,
             XAssetType.Material,
             "Weapon.Definition.Icons.AmmoCounterIcon");
@@ -423,14 +410,18 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
 
         WeaponOverlayFields overlay = definition.Overlay ??
             throw new InvalidDataException("Weapon.Definition.Overlay cannot be null.");
-        AddProviders(
-            operations,
-            0x308,
-            overlay.OverlayMaterials,
-            definition.OverlayMaterials,
-            4,
-            XAssetType.Material,
-            "Weapon.Definition.OverlayMaterials");
+        AddProvider(operations, 0x308, overlay.Material,
+            overlay.MaterialPointer.Untyped,
+            XAssetType.Material, "Weapon.Definition.Overlay.Material");
+        AddProvider(operations, 0x30c, overlay.MaterialLowRes,
+            overlay.MaterialLowResPointer.Untyped,
+            XAssetType.Material, "Weapon.Definition.Overlay.MaterialLowRes");
+        AddProvider(operations, 0x310, overlay.MaterialEmp,
+            overlay.MaterialEmpPointer.Untyped,
+            XAssetType.Material, "Weapon.Definition.Overlay.MaterialEmp");
+        AddProvider(operations, 0x314, overlay.MaterialEmpLowRes,
+            overlay.MaterialEmpLowResPointer.Untyped,
+            XAssetType.Material, "Weapon.Definition.Overlay.MaterialEmpLowRes");
         if (definition.PhysCollmap is null && definition.PhysCollmapName is not null)
         {
             throw new NotSupportedException(
@@ -470,7 +461,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         LinkStorageTarget? locationDamage = FreezeFloatArray(
             definition.LocationDamageMultipliers,
             definition.LocationDamageMultipliersPointer.Untyped,
-            WeaponDef.HitLocationCount,
+            (int)HitLocation.Count,
             "Weapon.Definition.LocationDamageMultipliers",
             freeze);
         if (locationDamage is { } locationStorage)
@@ -506,14 +497,10 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         AddProvider(operations, 0x420, projectile.Model,
             projectile.ModelPointer.Untyped,
             XAssetType.XModel, "Weapon.Definition.Projectile.Model");
-        RequireExactCount(
-            definition.ProjectileEffects,
-            2,
-            "Weapon.Definition.ProjectileEffects");
-        AddProvider(operations, 0x428, definition.ProjectileEffects[0],
+        AddProvider(operations, 0x428, projectile.ExplosionEffect,
             projectile.ExplosionEffectPointer.Untyped,
             XAssetType.Fx, "Weapon.Definition.Projectile.ExplosionEffect");
-        AddProvider(operations, 0x42c, definition.ProjectileEffects[1],
+        AddProvider(operations, 0x42c, projectile.DudEffect,
             projectile.DudEffectPointer.Untyped,
             XAssetType.Fx, "Weapon.Definition.Projectile.DudEffect");
         AddSoundCell(operations, 0x430, projectile.ExplosionSoundPointer,
@@ -526,7 +513,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         LinkStorageTarget? parallel = FreezeFloatArray(
             projectile.ParallelBounce,
             projectile.ParallelBouncePointer.Untyped,
-            WeaponDef.SurfaceCount,
+            (int)MaterialSurfaceType.Count,
             "Weapon.Definition.Projectile.ParallelBounce",
             freeze);
         if (parallel is { } parallelStorage)
@@ -540,7 +527,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         LinkStorageTarget? perpendicular = FreezeFloatArray(
             projectile.PerpendicularBounce,
             projectile.PerpendicularBouncePointer.Untyped,
-            WeaponDef.SurfaceCount,
+            (int)MaterialSurfaceType.Count,
             "Weapon.Definition.Projectile.PerpendicularBounce",
             freeze);
         if (perpendicular is { } perpendicularStorage)
@@ -552,17 +539,13 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
                 "Weapon.Definition.Projectile.PerpendicularBounce");
         }
 
-        RequireExactCount(
-            definition.ImpactEffects,
-            2,
-            "Weapon.Definition.ImpactEffects");
-        AddProvider(operations, 0x44c, definition.ImpactEffects[0],
+        AddProvider(operations, 0x44c, projectile.TrailEffect,
             projectile.TrailEffectPointer.Untyped,
             XAssetType.Fx, "Weapon.Definition.Projectile.TrailEffect");
-        AddProvider(operations, 0x450, definition.ImpactEffects[1],
+        AddProvider(operations, 0x450, projectile.BeaconEffect,
             projectile.BeaconEffectPointer.Untyped,
             XAssetType.Fx, "Weapon.Definition.Projectile.BeaconEffect");
-        AddProvider(operations, 0x46c, definition.ViewShellEjectEffect,
+        AddProvider(operations, 0x46c, projectile.IgnitionEffect,
             projectile.IgnitionEffectPointer.Untyped,
             XAssetType.Fx, "Weapon.Definition.Projectile.IgnitionEffect");
         AddSoundCell(operations, 0x470, projectile.IgnitionSoundPointer,
@@ -579,44 +562,44 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WeaponAccuracyFields accuracy = definition.Accuracy ??
             throw new InvalidDataException("Weapon.Definition.Accuracy cannot be null.");
         RequireCount(
-            variant.AccuracyGraphKnotCount,
-            accuracy.GraphKnots.Count,
-            "Weapon.Definition.Accuracy.GraphKnots");
+            variant.AiVsAiAccuracyGraphKnotCount,
+            accuracy.OriginalAiVsAiGraphKnots.Count,
+            "Weapon.Definition.Accuracy.OriginalAiVsAiGraphKnots");
         RequireCount(
-            variant.OriginalAccuracyGraphKnotCount,
-            accuracy.OriginalGraphKnots.Count,
-            "Weapon.Definition.Accuracy.OriginalGraphKnots");
-        AddXString(operations, 0x50c, accuracy.GraphName0,
-            accuracy.GraphName0Pointer.Untyped,
-            "Weapon.Definition.Accuracy.GraphName0", freeze);
-        LinkStorageTarget? graph = FreezeVec2Array(
-            accuracy.GraphKnots,
-            accuracy.GraphKnotsPointer.Untyped,
-            "Weapon.Definition.Accuracy.GraphKnots",
+            variant.AiVsPlayerAccuracyGraphKnotCount,
+            accuracy.OriginalAiVsPlayerGraphKnots.Count,
+            "Weapon.Definition.Accuracy.OriginalAiVsPlayerGraphKnots");
+        AddXString(operations, 0x50c, accuracy.AiVsAiGraphName,
+            accuracy.AiVsAiGraphNamePointer.Untyped,
+            "Weapon.Definition.Accuracy.AiVsAiGraphName", freeze);
+        LinkStorageTarget? aiVsAiOriginal = FreezeVec2Array(
+            accuracy.OriginalAiVsAiGraphKnots,
+            accuracy.OriginalAiVsAiGraphKnotsPointer.Untyped,
+            "Weapon.Definition.Accuracy.OriginalAiVsAiGraphKnots",
             freeze);
-        if (graph is { } graphStorage)
+        if (aiVsAiOriginal is { } aiVsAiOriginalStorage)
         {
             AddDirect(
                 operations,
                 0x514,
-                graphStorage,
-                "Weapon.Definition.Accuracy.GraphKnots");
+                aiVsAiOriginalStorage,
+                "Weapon.Definition.Accuracy.OriginalAiVsAiGraphKnots");
         }
-        AddXString(operations, 0x510, accuracy.GraphName1,
-            accuracy.GraphName1Pointer.Untyped,
-            "Weapon.Definition.Accuracy.GraphName1", freeze);
-        LinkStorageTarget? original = FreezeVec2Array(
-            accuracy.OriginalGraphKnots,
-            accuracy.OriginalGraphKnotsPointer.Untyped,
-            "Weapon.Definition.Accuracy.OriginalGraphKnots",
+        AddXString(operations, 0x510, accuracy.AiVsPlayerGraphName,
+            accuracy.AiVsPlayerGraphNamePointer.Untyped,
+            "Weapon.Definition.Accuracy.AiVsPlayerGraphName", freeze);
+        LinkStorageTarget? aiVsPlayerOriginal = FreezeVec2Array(
+            accuracy.OriginalAiVsPlayerGraphKnots,
+            accuracy.OriginalAiVsPlayerGraphKnotsPointer.Untyped,
+            "Weapon.Definition.Accuracy.OriginalAiVsPlayerGraphKnots",
             freeze);
-        if (original is { } originalStorage)
+        if (aiVsPlayerOriginal is { } aiVsPlayerOriginalStorage)
         {
             AddDirect(
                 operations,
                 0x518,
-                originalStorage,
-                "Weapon.Definition.Accuracy.OriginalGraphKnots");
+                aiVsPlayerOriginalStorage,
+                "Weapon.Definition.Accuracy.OriginalAiVsPlayerGraphKnots");
         }
     }
 
@@ -630,7 +613,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         AddSoundCell(operations, 0x5dc, turret.OverheatSoundPointer,
             turret.OverheatSoundValuePointer, turret.OverheatSound,
             "Weapon.Definition.Turret.OverheatSound", freeze);
-        AddProvider(operations, 0x5e0, definition.TurretOverheatEffect,
+        AddProvider(operations, 0x5e0, turret.OverheatEffect,
             turret.OverheatEffectPointer.Untyped,
             XAssetType.Fx, "Weapon.Definition.Turret.OverheatEffect");
         AddXString(operations, 0x5e4, turret.BarrelSpinRumble,
@@ -639,22 +622,18 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         AddSoundCell(operations, 0x5f4, turret.BarrelSpinMaxSoundPointer,
             turret.BarrelSpinMaxSoundValuePointer, turret.BarrelSpinMaxSound,
             "Weapon.Definition.Turret.BarrelSpinMaxSound", freeze);
-        AddSoundCells(
+        AddSoundFields(
             operations,
             0x5f8,
-            turret.BarrelSpinUpSoundPointers,
-            turret.BarrelSpinUpSoundValuePointers,
-            turret.BarrelSpinUpSoundNames,
-            WeaponDef.TurretBarrelSpinSoundCount,
+            turret.BarrelSpinUpSounds,
+            (int)WeaponTurretBarrelSpinSoundSlot.Count,
             "Weapon.Definition.Turret.BarrelSpinUpSounds",
             freeze);
-        AddSoundCells(
+        AddSoundFields(
             operations,
             0x608,
-            turret.BarrelSpinDownSoundPointers,
-            turret.BarrelSpinDownSoundValuePointers,
-            turret.BarrelSpinDownSoundNames,
-            WeaponDef.TurretBarrelSpinSoundCount,
+            turret.BarrelSpinDownSounds,
+            (int)WeaponTurretBarrelSpinSoundSlot.Count,
             "Weapon.Definition.Turret.BarrelSpinDownSounds",
             freeze);
 
@@ -833,31 +812,26 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
     }
 
     private static LinkStorageTarget? FreezeSoundCellTable(
-        IReadOnlyList<XString> pointers,
-        IReadOnlyList<XString> valuePointers,
-        IReadOnlyList<string?> values,
+        IReadOnlyList<WeaponSoundAliasField> fields,
         XPointerReference tablePointer,
         int expectedCount,
         string fieldPath,
         LinkAssetFreezeScope freeze)
     {
-        ArgumentNullException.ThrowIfNull(pointers);
-        ArgumentNullException.ThrowIfNull(valuePointers);
-        ArgumentNullException.ThrowIfNull(values);
-        bool absent = pointers.Count == 0 && valuePointers.Count == 0 &&
-            values.Count == 0 && tablePointer.Type == PointerType.Null;
+        ArgumentNullException.ThrowIfNull(fields);
+        bool absent = fields.Count == 0 && tablePointer.Type == PointerType.Null;
         if (absent)
             return null;
-        RequireExactCount(pointers, expectedCount, $"{fieldPath}.Pointers");
-        RequireExactCount(valuePointers, expectedCount, $"{fieldPath}.ValuePointers");
-        RequireExactCount(values, expectedCount, fieldPath);
+        RequireExactCount(fields, expectedCount, fieldPath);
         LinkStorageTarget?[] cells = new LinkStorageTarget?[expectedCount];
         for (int index = 0; index < expectedCount; index++)
         {
+            WeaponSoundAliasField field = fields[index] ??
+                throw new InvalidDataException($"{fieldPath}[{index}] cannot be null.");
             cells[index] = FreezeSoundCell(
-                pointers[index],
-                valuePointers[index],
-                values[index],
+                field.Pointer,
+                field.ValuePointer,
+                field.Name,
                 $"{fieldPath}[{index}]",
                 freeze);
         }
@@ -879,28 +853,48 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             allowStandaloneDetach: true);
     }
 
-    private static void AddSoundCells(
+    private static void AddSoundFields(
         ICollection<FrozenOperation> operations,
         int firstOffset,
-        IReadOnlyList<XString> pointers,
-        IReadOnlyList<XString> valuePointers,
-        IReadOnlyList<string?> values,
+        IReadOnlyList<WeaponSoundAliasField> fields,
         int expectedCount,
         string fieldPath,
         LinkAssetFreezeScope freeze)
     {
-        RequireExactCount(pointers, expectedCount, $"{fieldPath}.Pointers");
-        RequireExactCount(valuePointers, expectedCount, $"{fieldPath}.ValuePointers");
-        RequireExactCount(values, expectedCount, fieldPath);
+        RequireExactCount(fields, expectedCount, fieldPath);
         for (int index = 0; index < expectedCount; index++)
         {
+            WeaponSoundAliasField field = fields[index] ??
+                throw new InvalidDataException($"{fieldPath}[{index}] cannot be null.");
             AddSoundCell(
                 operations,
                 checked(firstOffset + index * sizeof(int)),
-                pointers[index],
-                valuePointers[index],
-                values[index],
+                field.Pointer,
+                field.ValuePointer,
+                field.Name,
                 $"{fieldPath}[{index}]",
+                freeze);
+        }
+    }
+
+    private static void AddPrimarySoundFields(
+        ICollection<FrozenOperation> operations,
+        int firstOffset,
+        WeaponPrimarySoundFields fields,
+        LinkAssetFreezeScope freeze)
+    {
+        for (int index = 0; index < (int)WeaponPrimarySoundSlot.Count; index++)
+        {
+            WeaponPrimarySoundSlot slot = (WeaponPrimarySoundSlot)index;
+            WeaponSoundAliasField field = fields.Get(slot) ??
+                throw new InvalidDataException($"Weapon.Definition.PrimarySounds.{slot} cannot be null.");
+            AddSoundCell(
+                operations,
+                checked(firstOffset + index * sizeof(int)),
+                field.Pointer,
+                field.ValuePointer,
+                field.Name,
+                $"Weapon.Definition.PrimarySounds.{slot}",
                 freeze);
         }
     }
@@ -973,6 +967,37 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             AddDirect(operations, offset, target, fieldPath);
     }
 
+    private static void FreezeNoteTrackMap(
+        ICollection<FrozenOperation> operations,
+        int keysOffset,
+        int valuesOffset,
+        IReadOnlyList<WeaponNoteTrackMapEntry> mappings,
+        XPointerReference keysPointer,
+        XPointerReference valuesPointer,
+        string fieldPath,
+        LinkAssetFreezeScope freeze)
+    {
+        ArgumentNullException.ThrowIfNull(mappings);
+        ScriptStringReference[] keys = mappings.Select((mapping, index) =>
+            mapping?.Key ?? throw new InvalidDataException($"{fieldPath}[{index}] cannot be null.")).ToArray();
+        ScriptStringReference[] values = mappings.Select((mapping, index) =>
+            mapping?.Value ?? throw new InvalidDataException($"{fieldPath}[{index}] cannot be null.")).ToArray();
+        FreezeScriptMap(
+            operations,
+            keysOffset,
+            keys,
+            keysPointer,
+            $"{fieldPath}.Keys",
+            freeze);
+        FreezeScriptMap(
+            operations,
+            valuesOffset,
+            values,
+            valuesPointer,
+            $"{fieldPath}.Values",
+            freeze);
+    }
+
     private static void AddXString(
         ICollection<FrozenOperation> operations,
         int offset,
@@ -1011,30 +1036,6 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             return null;
         }
         return freeze.FreezeRequiredXString(value, pointer, fieldPath);
-    }
-
-    private static void AddProviders<TAsset>(
-        ICollection<FrozenOperation> operations,
-        int firstOffset,
-        IReadOnlyList<XPointer<TAsset>> pointers,
-        IReadOnlyList<TAsset?> definitions,
-        int expectedCount,
-        XAssetType expectedType,
-        string fieldPath)
-        where TAsset : BaseAsset
-    {
-        RequireExactCount(pointers, expectedCount, $"{fieldPath}.Pointers");
-        RequireExactCount(definitions, expectedCount, fieldPath);
-        for (int index = 0; index < expectedCount; index++)
-        {
-            AddProvider(
-                operations,
-                checked(firstOffset + index * sizeof(int)),
-                definitions[index],
-                pointers[index].Untyped,
-                expectedType,
-                $"{fieldPath}[{index}]");
-        }
     }
 
     private static void AddProvider(
@@ -1112,10 +1113,10 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             variant.KillIcon is not null ||
             variant.DpadIconPointer.Raw != 0 ||
             variant.DpadIcon is not null ||
-            variant.AccuracyGraphKnotsPointer.Raw != 0 ||
-            variant.AccuracyGraphKnots.Count != 0 ||
-            variant.OriginalAccuracyGraphKnotsPointer.Raw != 0 ||
-            variant.OriginalAccuracyGraphKnots.Count != 0 ||
+            variant.AiVsAiAccuracyGraphKnotsPointer.Raw != 0 ||
+            variant.AiVsAiAccuracyGraphKnots.Count != 0 ||
+            variant.AiVsPlayerAccuracyGraphKnotsPointer.Raw != 0 ||
+            variant.AiVsPlayerAccuracyGraphKnots.Count != 0 ||
             BuildVariantTemplate(variant).Any(value => value != 0))
         {
             throw new InvalidDataException(
@@ -1188,13 +1189,13 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteUInt32(value.AlternateWeaponIndex);
         writer.WriteInt32(value.AlternateRaiseTime);
         writer.Skip(sizeof(int) * 2);
-        writer.WriteInt32(value.DropAmmoMin);
+        writer.WriteInt32(value.FireAnimLength);
         writer.WriteInt32(value.FirstRaiseTime);
-        writer.WriteInt32(value.DropAmmoMax);
+        writer.WriteInt32(value.AmmoDropStockMax);
         writer.WriteSingle(value.AdsDofStart);
         writer.WriteSingle(value.AdsDofEnd);
-        writer.WriteUInt16(value.AccuracyGraphKnotCount);
-        writer.WriteUInt16(value.OriginalAccuracyGraphKnotCount);
+        writer.WriteUInt16(value.AiVsAiAccuracyGraphKnotCount);
+        writer.WriteUInt16(value.AiVsPlayerAccuracyGraphKnotCount);
         writer.Skip(sizeof(int) * 2);
         writer.WriteByte(value.MotionTracker);
         writer.WriteByte(value.Enhanced);
@@ -1253,7 +1254,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteInt32((int)value.OffhandClass);
         writer.WriteInt32((int)value.Stance);
         writer.Skip(sizeof(int) * 2);
-        writer.Skip(sizeof(int) * WeaponDef.WeaponSoundAliasCount);
+        writer.Skip(sizeof(int) * (int)WeaponPrimarySoundSlot.Count);
         writer.Skip(sizeof(int));
         writer.Skip(sizeof(int) * 4);
         writer.Skip(sizeof(int) * 2);
@@ -1269,10 +1270,10 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.Skip(sizeof(int) * 4);
         writer.WriteInt32((int)overlay.Reticle);
         writer.WriteInt32((int)overlay.Interface);
-        writer.WriteInt32(overlay.Width);
-        writer.WriteInt32(overlay.Height);
-        writer.WriteInt32(overlay.WidthSplitscreen);
-        writer.WriteInt32(overlay.HeightSplitscreen);
+        writer.WriteSingle(overlay.Width);
+        writer.WriteSingle(overlay.Height);
+        writer.WriteSingle(overlay.WidthSplitscreen);
+        writer.WriteSingle(overlay.HeightSplitscreen);
         WriteAds(writer, ads);
         writer.Skip(sizeof(int));
         WritePhysics(writer, physics);
@@ -1281,15 +1282,15 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WriteTurn(writer, turn);
         WriteHints(writer, hints);
         writer.Skip(sizeof(int));
-        writer.WriteSingle(value.OOPosAnimLength);
-        writer.WriteSingle(value.MinDamage);
+        writer.WriteSingle(value.AdsTransitionInRate);
+        writer.WriteSingle(value.AdsTransitionOutRate);
+        writer.WriteInt32(value.MinDamage);
         writer.WriteInt32(value.MinPlayerDamage);
         writer.WriteSingle(value.MaxDamageRange);
         writer.WriteSingle(value.MinDamageRange);
         writer.WriteSingle(value.DestabilizationRateTime);
         writer.WriteSingle(value.DestabilizationCurvatureMax);
-        writer.WriteSingle(value.DestabilizeDistance);
-        writer.WriteInt32(value.DestabilizeDistanceToTimeScale);
+        writer.WriteInt32(value.DestabilizeDistance);
         writer.Skip(sizeof(int) * 4);
         writer.WriteSingle(value.TurretScopeZoomRate);
         writer.WriteSingle(value.TurretScopeZoomMin);
@@ -1527,7 +1528,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteInt32((int)value.Explosion);
         writer.Skip(sizeof(int) * 4);
         writer.WriteInt32((int)value.Stickiness);
-        writer.WriteInt32(value.LowAmmoWarningThreshold);
+        writer.WriteSingle(value.LowAmmoWarningThreshold);
         writer.WriteSingle(value.RicochetChance);
         writer.Skip(sizeof(int) * 4);
         WriteVec3(writer, value.ProjectileColor);
@@ -1593,9 +1594,9 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WeaponAccuracyFields value)
     {
         writer.Skip(sizeof(int) * 4);
-        writer.WriteUInt16(value.LocalGraphKnotCount);
-        writer.WriteUInt16(value.LocalOriginalGraphKnotCount);
-        writer.WriteInt32(value.AnimationNotifyComparison);
+        writer.WriteUInt16(value.OriginalAiVsAiGraphKnotCount);
+        writer.WriteUInt16(value.OriginalAiVsPlayerGraphKnotCount);
+        writer.WriteInt32(value.PositionReloadTransitionTime);
         WriteSingles(
             writer,
             value.LeftArc,
@@ -1612,16 +1613,16 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WeaponTurnSpeedAndRangeFields value) =>
         WriteSingles(
             writer,
-            value.MinTurnSpeed,
-            value.MaxTurnSpeed,
+            value.MinVerticalTurnSpeed,
+            value.MinHorizontalTurnSpeed,
+            value.MaxVerticalTurnSpeed,
+            value.MaxHorizontalTurnSpeed,
             value.PitchConvergenceTime,
             value.YawConvergenceTime,
-            value.SuppressTime,
+            value.SuppressionTime,
             value.MaxRange,
             value.AnimationHorizontalRotateIncrement,
-            value.PlayerPositionDistance,
-            value.ScanSpeed,
-            value.ScanAcceleration);
+            value.PlayerPositionDistance);
 
     private static void WriteHints(
         LinkTemplateWriter writer,
@@ -1646,8 +1647,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteSingle(value.BarrelSpinUpTime);
         writer.WriteSingle(value.BarrelSpinDownTime);
         writer.Skip(sizeof(int));
-        writer.Skip(sizeof(int) * WeaponDef.TurretBarrelSpinSoundCount);
-        writer.Skip(sizeof(int) * WeaponDef.TurretBarrelSpinSoundCount);
+        writer.Skip(sizeof(int) * (int)WeaponTurretBarrelSpinSoundSlot.Count);
+        writer.Skip(sizeof(int) * (int)WeaponTurretBarrelSpinSoundSlot.Count);
     }
 
     private static void WriteMissile(

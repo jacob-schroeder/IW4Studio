@@ -8,7 +8,6 @@ public sealed class WeaponVariantDef
 {
     public const int SerializedSize = 0x74;
     public const int HideTagCount = 32;
-    public const int WeaponAnimCount = 37;
 
     public int Offset { get; init; }
 
@@ -58,21 +57,21 @@ public sealed class WeaponVariantDef
     public MaterialAsset? KillIcon { get; init; }
     public MaterialAsset? DpadIcon { get; init; }
 
-    public int DropAmmoMin { get; init; }                   // 0x50
+    public int FireAnimLength { get; init; }                // 0x50
     public int FirstRaiseTime { get; init; }                // 0x54
-    public int DropAmmoMax { get; init; }                   // 0x58
+    public int AmmoDropStockMax { get; init; }              // 0x58
     public float AdsDofStart { get; init; }                 // 0x5C
     public float AdsDofEnd { get; init; }                   // 0x60
 
-    // 0x64 / 0x66: these are the counts used by WeaponDef +0x514/+0x518 loaders.
-    public ushort AccuracyGraphKnotCount { get; init; }
-    public ushort OriginalAccuracyGraphKnotCount { get; init; }
+    // 0x64 / 0x66: current accuracy-graph counts by target type.
+    public ushort AiVsAiAccuracyGraphKnotCount { get; init; }
+    public ushort AiVsPlayerAccuracyGraphKnotCount { get; init; }
 
-    // 0x68 / 0x6C: direct Vec2 arrays.
-    public XPointer<Math.Vec2[]> AccuracyGraphKnotsPointer { get; init; }
-    public IReadOnlyList<Math.Vec2> AccuracyGraphKnots { get; init; } = [];
-    public XPointer<Math.Vec2[]> OriginalAccuracyGraphKnotsPointer { get; init; }
-    public IReadOnlyList<Math.Vec2> OriginalAccuracyGraphKnots { get; init; } = [];
+    // 0x68 / 0x6C: current direct Vec2 arrays by target type.
+    public XPointer<Math.Vec2[]> AiVsAiAccuracyGraphKnotsPointer { get; init; }
+    public IReadOnlyList<Math.Vec2> AiVsAiAccuracyGraphKnots { get; init; } = [];
+    public XPointer<Math.Vec2[]> AiVsPlayerAccuracyGraphKnotsPointer { get; init; }
+    public IReadOnlyList<Math.Vec2> AiVsPlayerAccuracyGraphKnots { get; init; } = [];
 
     public byte MotionTracker { get; init; }                // 0x70
     public byte Enhanced { get; init; }                     // 0x71

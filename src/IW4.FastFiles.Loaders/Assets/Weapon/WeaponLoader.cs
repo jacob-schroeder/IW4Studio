@@ -4,6 +4,7 @@ using IW4.FastFiles.Loaders.Assets.Material;
 using IW4.FastFiles.Loaders.Assets.Physics;
 using IW4.FastFiles.Loaders.Assets.Tracer;
 using IW4.FastFiles.Loaders.Assets.XModel;
+using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Weapon;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
@@ -154,15 +155,15 @@ public sealed class WeaponLoader
             AlternateRaiseTime: rootCursor.ReadInt32(),
             KillIconPointer: ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell),
             DpadIconPointer: ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell),
-            DropAmmoMin: rootCursor.ReadInt32(),
+            FireAnimLength: rootCursor.ReadInt32(),
             FirstRaiseTime: rootCursor.ReadInt32(),
-            DropAmmoMax: rootCursor.ReadInt32(),
+            AmmoDropStockMax: rootCursor.ReadInt32(),
             AdsDofStart: rootCursor.ReadSingle(),
             AdsDofEnd: rootCursor.ReadSingle(),
-            AccuracyGraphKnotCount: rootCursor.ReadUInt16(),
-            OriginalAccuracyGraphKnotCount: rootCursor.ReadUInt16(),
-            AccuracyGraphKnotsPointer: ReadPointer<Vec2[]>(rootCursor, context, XPointerResolutionMode.Direct),
-            OriginalAccuracyGraphKnotsPointer: ReadPointer<Vec2[]>(rootCursor, context, XPointerResolutionMode.Direct),
+            AiVsAiAccuracyGraphKnotCount: rootCursor.ReadUInt16(),
+            AiVsPlayerAccuracyGraphKnotCount: rootCursor.ReadUInt16(),
+            AiVsAiAccuracyGraphKnotsPointer: ReadPointer<Vec2[]>(rootCursor, context, XPointerResolutionMode.Direct),
+            AiVsPlayerAccuracyGraphKnotsPointer: ReadPointer<Vec2[]>(rootCursor, context, XPointerResolutionMode.Direct),
             MotionTracker: rootCursor.ReadByte(),
             Enhanced: rootCursor.ReadByte(),
             DpadIconShowsAmmo: rootCursor.ReadByte(),
@@ -192,7 +193,7 @@ public sealed class WeaponLoader
         XStringArrayPayload animations = ReadXStringArray(
             cursor,
             root.AnimationNamesPointer.Untyped,
-            WeaponVariantDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             context);
         IReadOnlyList<XString> animationPointers = animations.Pointers;
         IReadOnlyList<string?> animationNames = animations.Values;
@@ -201,8 +202,8 @@ public sealed class WeaponLoader
         MaterialAsset? killIcon = ReadMaterialPointer(cursor, root.KillIconPointer.Untyped, "WeaponVariantDef.killIcon", context);
         MaterialAsset? dpadIcon = ReadMaterialPointer(cursor, root.DpadIconPointer.Untyped, "WeaponVariantDef.dpadIcon", context);
 
-        IReadOnlyList<Vec2> accuracyGraphKnots = ReadVec2Array(cursor, root.AccuracyGraphKnotsPointer.Untyped, root.AccuracyGraphKnotCount, context);
-        IReadOnlyList<Vec2> originalAccuracyGraphKnots = ReadVec2Array(cursor, root.OriginalAccuracyGraphKnotsPointer.Untyped, root.OriginalAccuracyGraphKnotCount, context);
+        IReadOnlyList<Vec2> aiVsAiAccuracyGraphKnots = ReadVec2Array(cursor, root.AiVsAiAccuracyGraphKnotsPointer.Untyped, root.AiVsAiAccuracyGraphKnotCount, context);
+        IReadOnlyList<Vec2> aiVsPlayerAccuracyGraphKnots = ReadVec2Array(cursor, root.AiVsPlayerAccuracyGraphKnotsPointer.Untyped, root.AiVsPlayerAccuracyGraphKnotCount, context);
 
         return new WeaponVariantDef
         {
@@ -236,17 +237,17 @@ public sealed class WeaponLoader
             DpadIconPointer = root.DpadIconPointer,
             KillIcon = killIcon,
             DpadIcon = dpadIcon,
-            DropAmmoMin = root.DropAmmoMin,
+            FireAnimLength = root.FireAnimLength,
             FirstRaiseTime = root.FirstRaiseTime,
-            DropAmmoMax = root.DropAmmoMax,
+            AmmoDropStockMax = root.AmmoDropStockMax,
             AdsDofStart = root.AdsDofStart,
             AdsDofEnd = root.AdsDofEnd,
-            AccuracyGraphKnotCount = root.AccuracyGraphKnotCount,
-            OriginalAccuracyGraphKnotCount = root.OriginalAccuracyGraphKnotCount,
-            AccuracyGraphKnotsPointer = root.AccuracyGraphKnotsPointer,
-            AccuracyGraphKnots = accuracyGraphKnots,
-            OriginalAccuracyGraphKnotsPointer = root.OriginalAccuracyGraphKnotsPointer,
-            OriginalAccuracyGraphKnots = originalAccuracyGraphKnots,
+            AiVsAiAccuracyGraphKnotCount = root.AiVsAiAccuracyGraphKnotCount,
+            AiVsPlayerAccuracyGraphKnotCount = root.AiVsPlayerAccuracyGraphKnotCount,
+            AiVsAiAccuracyGraphKnotsPointer = root.AiVsAiAccuracyGraphKnotsPointer,
+            AiVsAiAccuracyGraphKnots = aiVsAiAccuracyGraphKnots,
+            AiVsPlayerAccuracyGraphKnotsPointer = root.AiVsPlayerAccuracyGraphKnotsPointer,
+            AiVsPlayerAccuracyGraphKnots = aiVsPlayerAccuracyGraphKnots,
             MotionTracker = root.MotionTracker,
             Enhanced = root.Enhanced,
             DpadIconShowsAmmo = root.DpadIconShowsAmmo,
@@ -330,7 +331,7 @@ public sealed class WeaponLoader
         root.FlashEffectPointers = ReadAliasPointerArray<FxEffectDefAsset>(c, 2, context);
 
         Seek(c, 0x050);
-        root.SoundAliasPointers = ReadSoundAliasCellPointers(c, WeaponDef.WeaponSoundAliasCount, context);
+        root.SoundAliasPointers = ReadSoundAliasCellPointers(c, (int)WeaponPrimarySoundSlot.Count, context);
         root.BounceSoundPointer = ReadPointer<XString[]>(c, context, XPointerResolutionMode.Direct);
         root.EffectPointers = ReadAliasPointerArray<FxEffectDefAsset>(c, 4, context);
         root.MaterialPointers = ReadAliasPointerArray<MaterialAsset>(c, 2, context);
@@ -397,13 +398,16 @@ public sealed class WeaponLoader
         Seek(c, 0x308);
         root.Overlay = new WeaponOverlayFields
         {
-            OverlayMaterials = ReadAliasPointerArray<MaterialAsset>(c, 4, context),
+            MaterialPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
+            MaterialLowResPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
+            MaterialEmpPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
+            MaterialEmpLowResPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
             Reticle = (WeaponOverlayReticle)c.ReadInt32(),
             Interface = (WeaponOverlayInterface)c.ReadInt32(),
-            Width = c.ReadInt32(),
-            Height = c.ReadInt32(),
-            WidthSplitscreen = c.ReadInt32(),
-            HeightSplitscreen = c.ReadInt32()
+            Width = c.ReadSingle(),
+            Height = c.ReadSingle(),
+            WidthSplitscreen = c.ReadSingle(),
+            HeightSplitscreen = c.ReadSingle()
         };
         root.AdsViewAndSpread = ReadAdsViewAndSpreadFields(c);
 
@@ -423,19 +427,19 @@ public sealed class WeaponLoader
         root.ImpactFieldsA = ReadInt32Array(c, 3);
         root.ImpactFieldB = c.ReadInt32();
         root.ImpactFieldsC = ReadInt32Array(c, 2);
-        root.ViewShellEjectEffectPointer = ReadPointer<FxEffectDefAsset>(c, context, XPointerResolutionMode.AliasCell);
-        root.ShellEjectSoundPointer = ReadXStringPointer(c, context);
-        root.ShellEjectFields = ReadInt32Array(c, 3);
+        root.ProjectileIgnitionEffectPointer = ReadPointer<FxEffectDefAsset>(c, context, XPointerResolutionMode.AliasCell);
+        root.ProjectileIgnitionSoundPointer = ReadXStringPointer(c, context);
+        root.ProjectileAdsFields = ReadInt32Array(c, 3);
         root.AdsHipGunKickAiDistanceFields = ReadInt32Array(c, 35);
 
         Seek(c, 0x50c);
-        root.AccuracyGraphName0Pointer = ReadXStringPointer(c, context);
-        root.AccuracyGraphName1Pointer = ReadXStringPointer(c, context);
-        root.AccuracyGraphKnotsPointer = ReadPointer<Vec2[]>(c, context, XPointerResolutionMode.Direct);
-        root.OriginalAccuracyGraphKnotsPointer = ReadPointer<Vec2[]>(c, context, XPointerResolutionMode.Direct);
-        root.LocalGraphKnotCount = c.ReadUInt16();
-        root.LocalOriginalGraphKnotCount = c.ReadUInt16();
-        root.AnimationNotifyComparison = c.ReadInt32();
+        root.AiVsAiAccuracyGraphNamePointer = ReadXStringPointer(c, context);
+        root.AiVsPlayerAccuracyGraphNamePointer = ReadXStringPointer(c, context);
+        root.OriginalAiVsAiAccuracyGraphKnotsPointer = ReadPointer<Vec2[]>(c, context, XPointerResolutionMode.Direct);
+        root.OriginalAiVsPlayerAccuracyGraphKnotsPointer = ReadPointer<Vec2[]>(c, context, XPointerResolutionMode.Direct);
+        root.OriginalAiVsAiAccuracyGraphKnotCount = c.ReadUInt16();
+        root.OriginalAiVsPlayerAccuracyGraphKnotCount = c.ReadUInt16();
+        root.PositionReloadTransitionTime = c.ReadInt32();
         root.LeftArc = c.ReadSingle();
         root.RightArc = c.ReadSingle();
         root.TopArc = c.ReadSingle();
@@ -456,15 +460,15 @@ public sealed class WeaponLoader
         root.ScanPauseTime = c.ReadInt32();
 
         root.ScriptNamePointer = ReadXStringPointer(c, context);
-        root.OOPosAnimLength = c.ReadSingle();
-        root.MinDamage = c.ReadSingle();
+        root.AdsTransitionInRate = c.ReadSingle();
+        root.AdsTransitionOutRate = c.ReadSingle();
+        root.MinDamage = c.ReadInt32();
         root.MinPlayerDamage = c.ReadInt32();
         root.MaxDamageRange = c.ReadSingle();
         root.MinDamageRange = c.ReadSingle();
         root.DestabilizationRateTime = c.ReadSingle();
         root.DestabilizationCurvatureMax = c.ReadSingle();
-        root.DestabilizeDistance = c.ReadSingle();
-        root.DestabilizeDistanceToTimeScale = c.ReadInt32();
+        root.DestabilizeDistance = c.ReadInt32();
 
         root.LocationDamageMultipliersPointer = ReadPointer<float[]>(c, context, XPointerResolutionMode.Direct);
         root.FireRumblePointer = ReadXStringPointer(c, context);
@@ -484,8 +488,8 @@ public sealed class WeaponLoader
         root.TurretBarrelSpinUpTime = c.ReadSingle();
         root.TurretBarrelSpinDownTime = c.ReadSingle();
         root.TurretBarrelSpinMaxSoundPointer = ReadXStringPointer(c, context);
-        root.TurretBarrelSpinUpSoundPointers = ReadSoundAliasCellPointers(c, WeaponDef.TurretBarrelSpinSoundCount, context);
-        root.TurretBarrelSpinDownSoundPointers = ReadSoundAliasCellPointers(c, WeaponDef.TurretBarrelSpinSoundCount, context);
+        root.TurretBarrelSpinUpSoundPointers = ReadSoundAliasCellPointers(c, (int)WeaponTurretBarrelSpinSoundSlot.Count, context);
+        root.TurretBarrelSpinDownSoundPointers = ReadSoundAliasCellPointers(c, (int)WeaponTurretBarrelSpinSoundSlot.Count, context);
 
         root.MissileConeSoundAliasPointer = ReadXStringPointer(c, context);
         root.MissileConeSoundAliasAtBasePointer = ReadXStringPointer(c, context);
@@ -518,49 +522,51 @@ public sealed class WeaponLoader
         XStringArrayPayload rightHandAnimations = ReadXStringArray(
             cursor,
             root.RightHandAnimationNamesPointer.Untyped,
-            WeaponDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             context);
         IReadOnlyList<XString> rightHandAnimationNames = rightHandAnimations.Pointers;
         IReadOnlyList<string?> rightHandAnimationNameValues = rightHandAnimations.Values;
         XStringArrayPayload leftHandAnimations = ReadXStringArray(
             cursor,
             root.LeftHandAnimationNamesPointer.Untyped,
-            WeaponDef.WeaponAnimCount,
+            (int)WeaponAnimationSlot.Count,
             context);
         IReadOnlyList<XString> leftHandAnimationNames = leftHandAnimations.Pointers;
         IReadOnlyList<string?> leftHandAnimationNameValues = leftHandAnimations.Values;
         string? modeName = ReadXString(cursor, root.ModeNamePointer, context);
 
+        IReadOnlyList<ScriptStringReference> soundMapKeys = ReadScriptStringArray(
+            cursor,
+            root.NoteTrackMaps.SoundMapKeysPointer.Untyped,
+            WeaponDef.NoteTrackMapCount,
+            "WeaponDef.notetrackSoundMapKeys",
+            context);
+        IReadOnlyList<ScriptStringReference> soundMapValues = ReadScriptStringArray(
+            cursor,
+            root.NoteTrackMaps.SoundMapValuesPointer.Untyped,
+            WeaponDef.NoteTrackMapCount,
+            "WeaponDef.notetrackSoundMapValues",
+            context);
+        IReadOnlyList<ScriptStringReference> rumbleMapKeys = ReadScriptStringArray(
+            cursor,
+            root.NoteTrackMaps.RumbleMapKeysPointer.Untyped,
+            WeaponDef.NoteTrackMapCount,
+            "WeaponDef.notetrackRumbleMapKeys",
+            context);
+        IReadOnlyList<ScriptStringReference> rumbleMapValues = ReadScriptStringArray(
+            cursor,
+            root.NoteTrackMaps.RumbleMapValuesPointer.Untyped,
+            WeaponDef.NoteTrackMapCount,
+            "WeaponDef.notetrackRumbleMapValues",
+            context);
         WeaponNoteTrackMaps noteTrackMaps = new()
         {
             SoundMapKeysPointer = root.NoteTrackMaps.SoundMapKeysPointer,
-            SoundMapKeys = ReadScriptStringArray(
-                cursor,
-                root.NoteTrackMaps.SoundMapKeysPointer.Untyped,
-                WeaponDef.NoteTrackMapCount,
-                "WeaponDef.notetrackSoundMapKeys",
-                context),
             SoundMapValuesPointer = root.NoteTrackMaps.SoundMapValuesPointer,
-            SoundMapValues = ReadScriptStringArray(
-                cursor,
-                root.NoteTrackMaps.SoundMapValuesPointer.Untyped,
-                WeaponDef.NoteTrackMapCount,
-                "WeaponDef.notetrackSoundMapValues",
-                context),
+            SoundMappings = ZipNoteTrackMappings(soundMapKeys, soundMapValues, "WeaponDef.notetrackSoundMap"),
             RumbleMapKeysPointer = root.NoteTrackMaps.RumbleMapKeysPointer,
-            RumbleMapKeys = ReadScriptStringArray(
-                cursor,
-                root.NoteTrackMaps.RumbleMapKeysPointer.Untyped,
-                WeaponDef.NoteTrackMapCount,
-                "WeaponDef.notetrackRumbleMapKeys",
-                context),
             RumbleMapValuesPointer = root.NoteTrackMaps.RumbleMapValuesPointer,
-            RumbleMapValues = ReadScriptStringArray(
-                cursor,
-                root.NoteTrackMaps.RumbleMapValuesPointer.Untyped,
-                WeaponDef.NoteTrackMapCount,
-                "WeaponDef.notetrackRumbleMapValues",
-                context)
+            RumbleMappings = ZipNoteTrackMappings(rumbleMapKeys, rumbleMapValues, "WeaponDef.notetrackRumbleMap")
         };
 
         IReadOnlyList<FxEffectDefAsset?> flashEffects = ReadFxPointers(cursor, root.FlashEffectPointers, context);
@@ -568,7 +574,7 @@ public sealed class WeaponLoader
             cursor,
             root.SoundAliasPointers,
             context);
-        SoundAliasCellArrayPayload bounceSounds = ReadSoundAliasCellArray(cursor, root.BounceSoundPointer.Untyped, WeaponDef.SurfaceCount, context);
+        SoundAliasCellArrayPayload bounceSounds = ReadSoundAliasCellArray(cursor, root.BounceSoundPointer.Untyped, (int)MaterialSurfaceType.Count, context);
         IReadOnlyList<FxEffectDefAsset?> effects = ReadFxPointers(cursor, root.EffectPointers, context);
         IReadOnlyList<MaterialAsset?> materials = ReadMaterialPointers(cursor, root.MaterialPointers, "WeaponDef.materialPointers", context);
 
@@ -589,7 +595,10 @@ public sealed class WeaponLoader
         string? ammoName = ReadXString(cursor, root.Ammo.AmmoNamePointer, context);
         string? clipName = ReadXString(cursor, root.Ammo.ClipNamePointer, context);
         string? sharedAmmoCapName = ReadXString(cursor, root.Ammo.SharedAmmoCapNamePointer, context);
-        IReadOnlyList<MaterialAsset?> overlayMaterials = ReadMaterialPointers(cursor, root.Overlay.OverlayMaterials, "WeaponDef.overlayMaterials", context);
+        MaterialAsset? overlayMaterial = ReadMaterialPointer(cursor, root.Overlay.MaterialPointer.Untyped, "WeaponDef.overlayMaterial", context);
+        MaterialAsset? overlayMaterialLowRes = ReadMaterialPointer(cursor, root.Overlay.MaterialLowResPointer.Untyped, "WeaponDef.overlayMaterialLowRes", context);
+        MaterialAsset? overlayMaterialEmp = ReadMaterialPointer(cursor, root.Overlay.MaterialEmpPointer.Untyped, "WeaponDef.overlayMaterialEMP", context);
+        MaterialAsset? overlayMaterialEmpLowRes = ReadMaterialPointer(cursor, root.Overlay.MaterialEmpLowResPointer.Untyped, "WeaponDef.overlayMaterialEMPLowRes", context);
         PhysCollmapAsset? physCollmap = ReadPhysCollmapPointer(cursor, root.PhysCollmapPointer.Untyped, context);
 
         XModelAsset? projectileModel = ReadXModelPointer(cursor, root.ProjectileModelPointer.Untyped, context);
@@ -598,24 +607,24 @@ public sealed class WeaponLoader
             cursor,
             root.ProjectileSoundAliasPointers,
             context);
-        IReadOnlyList<float> parallelBounce = ReadFloatArray(cursor, root.ParallelBouncePointer.Untyped, WeaponDef.SurfaceCount, context);
-        IReadOnlyList<float> perpendicularBounce = ReadFloatArray(cursor, root.PerpendicularBouncePointer.Untyped, WeaponDef.SurfaceCount, context);
+        IReadOnlyList<float> parallelBounce = ReadFloatArray(cursor, root.ParallelBouncePointer.Untyped, (int)MaterialSurfaceType.Count, context);
+        IReadOnlyList<float> perpendicularBounce = ReadFloatArray(cursor, root.PerpendicularBouncePointer.Untyped, (int)MaterialSurfaceType.Count, context);
         IReadOnlyList<FxEffectDefAsset?> impactEffects = ReadFxPointers(cursor, root.ImpactEffectPointers, context);
-        FxEffectDefAsset? viewShellEjectEffect = ReadFxPointer(cursor, root.ViewShellEjectEffectPointer.Untyped, context);
-        SoundAliasCellPayload shellEjectSound = ReadSoundAliasCell(
+        FxEffectDefAsset? ignitionEffect = ReadFxPointer(cursor, root.ProjectileIgnitionEffectPointer.Untyped, context);
+        SoundAliasCellPayload ignitionSound = ReadSoundAliasCell(
             cursor,
-            root.ShellEjectSoundPointer,
+            root.ProjectileIgnitionSoundPointer,
             context);
 
-        string? graphName0 = ReadXString(cursor, root.AccuracyGraphName0Pointer, context);
-        IReadOnlyList<Vec2> graphKnots = ReadVec2Array(cursor, root.AccuracyGraphKnotsPointer.Untyped, owner.AccuracyGraphKnotCount, context);
-        string? graphName1 = ReadXString(cursor, root.AccuracyGraphName1Pointer, context);
-        IReadOnlyList<Vec2> originalGraphKnots = ReadVec2Array(cursor, root.OriginalAccuracyGraphKnotsPointer.Untyped, owner.OriginalAccuracyGraphKnotCount, context);
+        string? aiVsAiGraphName = ReadXString(cursor, root.AiVsAiAccuracyGraphNamePointer, context);
+        IReadOnlyList<Vec2> originalAiVsAiGraphKnots = ReadVec2Array(cursor, root.OriginalAiVsAiAccuracyGraphKnotsPointer.Untyped, owner.AiVsAiAccuracyGraphKnotCount, context);
+        string? aiVsPlayerGraphName = ReadXString(cursor, root.AiVsPlayerAccuracyGraphNamePointer, context);
+        IReadOnlyList<Vec2> originalAiVsPlayerGraphKnots = ReadVec2Array(cursor, root.OriginalAiVsPlayerAccuracyGraphKnotsPointer.Untyped, owner.AiVsPlayerAccuracyGraphKnotCount, context);
 
         string? useHintString = ReadXString(cursor, root.UseHintStringPointer, context);
         string? dropHintString = ReadXString(cursor, root.DropHintStringPointer, context);
         string? scriptName = ReadXString(cursor, root.ScriptNamePointer, context);
-        IReadOnlyList<float> locationDamageMultipliers = ReadFloatArray(cursor, root.LocationDamageMultipliersPointer.Untyped, WeaponDef.HitLocationCount, context);
+        IReadOnlyList<float> locationDamageMultipliers = ReadFloatArray(cursor, root.LocationDamageMultipliersPointer.Untyped, (int)HitLocation.Count, context);
         string? fireRumble = ReadXString(cursor, root.FireRumblePointer, context);
         string? meleeImpactRumble = ReadXString(cursor, root.MeleeImpactRumblePointer, context);
         TracerDefAsset? tracer = ReadTracerPointer(cursor, root.TracerPointer.Untyped, context);
@@ -674,20 +683,38 @@ public sealed class WeaponLoader
             FireType = root.FireType,
             OffhandClass = root.OffhandClass,
             Stance = root.Stance,
-            FlashEffectPointers = root.FlashEffectPointers,
-            FlashEffects = flashEffects,
-            SoundAliasPointers = root.SoundAliasPointers,
-            SoundAliasValuePointers = soundAliases.ValuePointers,
-            SoundAliasNames = soundAliases.Values,
+            FlashEffects = new WeaponFlashEffectFields
+            {
+                ViewPointer = root.FlashEffectPointers[0],
+                View = flashEffects[0],
+                WorldPointer = root.FlashEffectPointers[1],
+                World = flashEffects[1]
+            },
+            PrimarySounds = CreatePrimarySoundFields(root.SoundAliasPointers, soundAliases),
             BounceSoundPointer = root.BounceSoundPointer,
-            BounceSoundPointers = bounceSounds.Pointers,
-            BounceSoundValuePointers = bounceSounds.ValuePointers,
-            BounceSoundNames = bounceSounds.Values,
-            EffectPointers = root.EffectPointers,
-            Effects = effects,
-            MaterialPointers = root.MaterialPointers,
-            Materials = materials,
-            Reticle = root.Reticle,
+            BounceSounds = CreateSoundAliasFields(bounceSounds.Pointers, bounceSounds),
+            ShellEjectEffects = new WeaponShellEjectEffectFields
+            {
+                ViewPointer = root.EffectPointers[0],
+                View = effects[0],
+                WorldPointer = root.EffectPointers[1],
+                World = effects[1],
+                ViewLastShotPointer = root.EffectPointers[2],
+                ViewLastShot = effects[2],
+                WorldLastShotPointer = root.EffectPointers[3],
+                WorldLastShot = effects[3]
+            },
+            Reticle = new WeaponReticleFields
+            {
+                CenterMaterialPointer = root.MaterialPointers[0],
+                CenterMaterial = materials[0],
+                SideMaterialPointer = root.MaterialPointers[1],
+                SideMaterial = materials[1],
+                CenterSize = root.Reticle.CenterSize,
+                SideSize = root.Reticle.SideSize,
+                MinOffset = root.Reticle.MinOffset,
+                ActiveType = root.Reticle.ActiveType
+            },
             ViewMovement = root.ViewMovement,
             PositionalMovement = root.PositionalMovement,
             WorldGunModelsPointer = root.WorldGunModelsPointer,
@@ -701,8 +728,20 @@ public sealed class WeaponLoader
             KnifeModel = knifeModel,
             WorldKnifeModelPointer = root.WorldKnifeModelPointer,
             WorldKnifeModel = worldKnifeModel,
-            Icons = root.Icons,
-            IconMaterials = [hudIcon, pickupIcon, ammoCounterIcon],
+            Icons = new WeaponIconPointers
+            {
+                HudIconPointer = root.Icons.HudIconPointer,
+                HudIcon = hudIcon,
+                HudIconRatio = root.Icons.HudIconRatio,
+                PickupIconPointer = root.Icons.PickupIconPointer,
+                PickupIcon = pickupIcon,
+                PickupIconRatio = root.Icons.PickupIconRatio,
+                AmmoCounterIconPointer = root.Icons.AmmoCounterIconPointer,
+                AmmoCounterIcon = ammoCounterIcon,
+                AmmoCounterIconRatio = root.Icons.AmmoCounterIconRatio,
+                AmmoCounterClip = root.Icons.AmmoCounterClip,
+                StartAmmo = root.Icons.StartAmmo
+            },
             Ammo = new WeaponAmmoFields
             {
                 AmmoNamePointer = root.Ammo.AmmoNamePointer,
@@ -722,8 +761,23 @@ public sealed class WeaponLoader
                 MeleeDamage = root.Ammo.MeleeDamage,
                 DamageType = root.Ammo.DamageType
             },
-            Overlay = root.Overlay,
-            OverlayMaterials = overlayMaterials,
+            Overlay = new WeaponOverlayFields
+            {
+                MaterialPointer = root.Overlay.MaterialPointer,
+                Material = overlayMaterial,
+                MaterialLowResPointer = root.Overlay.MaterialLowResPointer,
+                MaterialLowRes = overlayMaterialLowRes,
+                MaterialEmpPointer = root.Overlay.MaterialEmpPointer,
+                MaterialEmp = overlayMaterialEmp,
+                MaterialEmpLowResPointer = root.Overlay.MaterialEmpLowResPointer,
+                MaterialEmpLowRes = overlayMaterialEmpLowRes,
+                Reticle = root.Overlay.Reticle,
+                Interface = root.Overlay.Interface,
+                Width = root.Overlay.Width,
+                Height = root.Overlay.Height,
+                WidthSplitscreen = root.Overlay.WidthSplitscreen,
+                HeightSplitscreen = root.Overlay.HeightSplitscreen
+            },
             Timing = root.Timing,
             AimMovementTuning = root.AimMovementTuning,
             AdsViewAndSpread = root.AdsViewAndSpread,
@@ -737,7 +791,9 @@ public sealed class WeaponLoader
                 Model = projectileModel,
                 Explosion = (WeaponProjectileExplosion)root.ProjectileModelField,
                 ExplosionEffectPointer = root.ProjectileEffectPointers[0],
+                ExplosionEffect = projectileEffects[0],
                 DudEffectPointer = root.ProjectileEffectPointers[1],
+                DudEffect = projectileEffects[1],
                 ExplosionSoundPointer = root.ProjectileSoundAliasPointers[0],
                 ExplosionSoundValuePointer = projectileSounds.ValuePointers[0],
                 ExplosionSound = projectileSounds.Values[0],
@@ -745,43 +801,43 @@ public sealed class WeaponLoader
                 DudSoundValuePointer = projectileSounds.ValuePointers[1],
                 DudSound = projectileSounds.Values[1],
                 Stickiness = (WeaponStickiness)root.ProjectileFieldsA[0],
-                LowAmmoWarningThreshold = root.ProjectileFieldsA[1],
+                LowAmmoWarningThreshold = SingleFromRawInt(root.ProjectileFieldsA[1]),
                 RicochetChance = SingleFromRawInt(root.ProjectileFieldsA[2]),
                 ParallelBouncePointer = root.ParallelBouncePointer,
                 ParallelBounce = parallelBounce,
                 PerpendicularBouncePointer = root.PerpendicularBouncePointer,
                 PerpendicularBounce = perpendicularBounce,
                 TrailEffectPointer = root.ImpactEffectPointers[0],
+                TrailEffect = impactEffects[0],
                 BeaconEffectPointer = root.ImpactEffectPointers[1],
+                BeaconEffect = impactEffects[1],
                 ProjectileColor = Vec3FromRawInts(root.ImpactFieldsA),
                 GuidedMissileType = (GuidedMissileType)root.ImpactFieldB,
                 MaxSteeringAcceleration = SingleFromRawInt(root.ImpactFieldsC[0]),
                 IgnitionDelay = root.ImpactFieldsC[1],
-                IgnitionEffectPointer = root.ViewShellEjectEffectPointer,
-                IgnitionSoundPointer = root.ShellEjectSoundPointer,
-                IgnitionSoundValuePointer = shellEjectSound.ValuePointer,
-                IgnitionSound = shellEjectSound.Value,
-                AdsAimPitch = SingleFromRawInt(root.ShellEjectFields[0]),
-                AdsCrosshairInFraction = SingleFromRawInt(root.ShellEjectFields[1]),
-                AdsCrosshairOutFraction = SingleFromRawInt(root.ShellEjectFields[2]),
+                IgnitionEffectPointer = root.ProjectileIgnitionEffectPointer,
+                IgnitionEffect = ignitionEffect,
+                IgnitionSoundPointer = root.ProjectileIgnitionSoundPointer,
+                IgnitionSoundValuePointer = ignitionSound.ValuePointer,
+                IgnitionSound = ignitionSound.Value,
+                AdsAimPitch = SingleFromRawInt(root.ProjectileAdsFields[0]),
+                AdsCrosshairInFraction = SingleFromRawInt(root.ProjectileAdsFields[1]),
+                AdsCrosshairOutFraction = SingleFromRawInt(root.ProjectileAdsFields[2]),
                 GunKickAndDistance = GunKickAndDistanceFromRawInts(root.AdsHipGunKickAiDistanceFields)
             },
-            ProjectileEffects = projectileEffects,
-            ImpactEffects = impactEffects,
-            ViewShellEjectEffect = viewShellEjectEffect,
             Accuracy = new WeaponAccuracyFields
             {
-                GraphName0Pointer = root.AccuracyGraphName0Pointer,
-                GraphName0 = graphName0,
-                GraphName1Pointer = root.AccuracyGraphName1Pointer,
-                GraphName1 = graphName1,
-                GraphKnotsPointer = root.AccuracyGraphKnotsPointer,
-                GraphKnots = graphKnots,
-                OriginalGraphKnotsPointer = root.OriginalAccuracyGraphKnotsPointer,
-                OriginalGraphKnots = originalGraphKnots,
-                LocalGraphKnotCount = root.LocalGraphKnotCount,
-                LocalOriginalGraphKnotCount = root.LocalOriginalGraphKnotCount,
-                AnimationNotifyComparison = root.AnimationNotifyComparison,
+                AiVsAiGraphNamePointer = root.AiVsAiAccuracyGraphNamePointer,
+                AiVsAiGraphName = aiVsAiGraphName,
+                AiVsPlayerGraphNamePointer = root.AiVsPlayerAccuracyGraphNamePointer,
+                AiVsPlayerGraphName = aiVsPlayerGraphName,
+                OriginalAiVsAiGraphKnotsPointer = root.OriginalAiVsAiAccuracyGraphKnotsPointer,
+                OriginalAiVsAiGraphKnots = originalAiVsAiGraphKnots,
+                OriginalAiVsPlayerGraphKnotsPointer = root.OriginalAiVsPlayerAccuracyGraphKnotsPointer,
+                OriginalAiVsPlayerGraphKnots = originalAiVsPlayerGraphKnots,
+                OriginalAiVsAiGraphKnotCount = root.OriginalAiVsAiAccuracyGraphKnotCount,
+                OriginalAiVsPlayerGraphKnotCount = root.OriginalAiVsPlayerAccuracyGraphKnotCount,
+                PositionReloadTransitionTime = root.PositionReloadTransitionTime,
                 LeftArc = root.LeftArc,
                 RightArc = root.RightArc,
                 TopArc = root.TopArc,
@@ -807,7 +863,8 @@ public sealed class WeaponLoader
             },
             ScriptNamePointer = root.ScriptNamePointer,
             ScriptName = scriptName,
-            OOPosAnimLength = root.OOPosAnimLength,
+            AdsTransitionInRate = root.AdsTransitionInRate,
+            AdsTransitionOutRate = root.AdsTransitionOutRate,
             MinDamage = root.MinDamage,
             MinPlayerDamage = root.MinPlayerDamage,
             MaxDamageRange = root.MaxDamageRange,
@@ -815,7 +872,6 @@ public sealed class WeaponLoader
             DestabilizationRateTime = root.DestabilizationRateTime,
             DestabilizationCurvatureMax = root.DestabilizationCurvatureMax,
             DestabilizeDistance = root.DestabilizeDistance,
-            DestabilizeDistanceToTimeScale = root.DestabilizeDistanceToTimeScale,
             LocationDamageMultipliersPointer = root.LocationDamageMultipliersPointer,
             LocationDamageMultipliers = locationDamageMultipliers,
             Rumble = new WeaponRumbleFields
@@ -839,6 +895,7 @@ public sealed class WeaponLoader
                 OverheatSoundValuePointer = turretOverheatSound.ValuePointer,
                 OverheatSound = turretOverheatSound.Value,
                 OverheatEffectPointer = root.TurretOverheatEffectPointer,
+                OverheatEffect = turretOverheatEffect,
                 BarrelSpinRumblePointer = root.TurretBarrelSpinRumblePointer,
                 BarrelSpinRumble = turretBarrelSpinRumble,
                 BarrelSpinSpeed = root.TurretBarrelSpinSpeed,
@@ -847,14 +904,9 @@ public sealed class WeaponLoader
                 BarrelSpinMaxSoundPointer = root.TurretBarrelSpinMaxSoundPointer,
                 BarrelSpinMaxSoundValuePointer = turretBarrelSpinMaxSound.ValuePointer,
                 BarrelSpinMaxSound = turretBarrelSpinMaxSound.Value,
-                BarrelSpinUpSoundPointers = root.TurretBarrelSpinUpSoundPointers,
-                BarrelSpinUpSoundValuePointers = barrelSpinUpSounds.ValuePointers,
-                BarrelSpinUpSoundNames = barrelSpinUpSounds.Values,
-                BarrelSpinDownSoundPointers = root.TurretBarrelSpinDownSoundPointers,
-                BarrelSpinDownSoundValuePointers = barrelSpinDownSounds.ValuePointers,
-                BarrelSpinDownSoundNames = barrelSpinDownSounds.Values
+                BarrelSpinUpSounds = CreateSoundAliasFields(root.TurretBarrelSpinUpSoundPointers, barrelSpinUpSounds),
+                BarrelSpinDownSounds = CreateSoundAliasFields(root.TurretBarrelSpinDownSoundPointers, barrelSpinDownSounds)
             },
-            TurretOverheatEffect = turretOverheatEffect,
             MissileConeSound = new WeaponMissileConeSoundFields
             {
                 AliasPointer = root.MissileConeSoundAliasPointer,
@@ -1213,6 +1265,118 @@ public sealed class WeaponLoader
             pointers,
             valuePointers,
             values);
+    }
+
+    private static IReadOnlyList<WeaponSoundAliasField> CreateSoundAliasFields(
+        IReadOnlyList<XString> pointers,
+        SoundAliasCellArrayPayload payload)
+    {
+        if (pointers.Count != payload.ValuePointers.Count ||
+            pointers.Count != payload.Values.Count)
+        {
+            throw new InvalidDataException(
+                "Sound-alias pointer, value-pointer, and name counts do not match.");
+        }
+
+        var fields = new WeaponSoundAliasField[pointers.Count];
+        for (int index = 0; index < fields.Length; index++)
+        {
+            fields[index] = new WeaponSoundAliasField
+            {
+                Pointer = pointers[index],
+                ValuePointer = payload.ValuePointers[index],
+                Name = payload.Values[index]
+            };
+        }
+
+        return fields;
+    }
+
+    private static WeaponPrimarySoundFields CreatePrimarySoundFields(
+        IReadOnlyList<XString> pointers,
+        SoundAliasCellArrayPayload payload)
+    {
+        IReadOnlyList<WeaponSoundAliasField> fields = CreateSoundAliasFields(pointers, payload);
+        if (fields.Count != (int)WeaponPrimarySoundSlot.Count)
+        {
+            throw new InvalidDataException(
+                $"Weapon primary sound table has {fields.Count} entries; expected {(int)WeaponPrimarySoundSlot.Count}.");
+        }
+
+        return new WeaponPrimarySoundFields
+        {
+            PickupSound = fields[(int)WeaponPrimarySoundSlot.PickupSound],
+            PickupSoundPlayer = fields[(int)WeaponPrimarySoundSlot.PickupSoundPlayer],
+            AmmoPickupSound = fields[(int)WeaponPrimarySoundSlot.AmmoPickupSound],
+            AmmoPickupSoundPlayer = fields[(int)WeaponPrimarySoundSlot.AmmoPickupSoundPlayer],
+            ProjectileSound = fields[(int)WeaponPrimarySoundSlot.ProjectileSound],
+            PullbackSound = fields[(int)WeaponPrimarySoundSlot.PullbackSound],
+            PullbackSoundPlayer = fields[(int)WeaponPrimarySoundSlot.PullbackSoundPlayer],
+            FireSound = fields[(int)WeaponPrimarySoundSlot.FireSound],
+            FireSoundPlayer = fields[(int)WeaponPrimarySoundSlot.FireSoundPlayer],
+            FireSoundPlayerAkimbo = fields[(int)WeaponPrimarySoundSlot.FireSoundPlayerAkimbo],
+            FireLoopSound = fields[(int)WeaponPrimarySoundSlot.FireLoopSound],
+            FireLoopSoundPlayer = fields[(int)WeaponPrimarySoundSlot.FireLoopSoundPlayer],
+            FireStopSound = fields[(int)WeaponPrimarySoundSlot.FireStopSound],
+            FireStopSoundPlayer = fields[(int)WeaponPrimarySoundSlot.FireStopSoundPlayer],
+            FireLastSound = fields[(int)WeaponPrimarySoundSlot.FireLastSound],
+            FireLastSoundPlayer = fields[(int)WeaponPrimarySoundSlot.FireLastSoundPlayer],
+            EmptyFireSound = fields[(int)WeaponPrimarySoundSlot.EmptyFireSound],
+            EmptyFireSoundPlayer = fields[(int)WeaponPrimarySoundSlot.EmptyFireSoundPlayer],
+            MeleeSwipeSound = fields[(int)WeaponPrimarySoundSlot.MeleeSwipeSound],
+            MeleeSwipeSoundPlayer = fields[(int)WeaponPrimarySoundSlot.MeleeSwipeSoundPlayer],
+            MeleeHitSound = fields[(int)WeaponPrimarySoundSlot.MeleeHitSound],
+            MeleeMissSound = fields[(int)WeaponPrimarySoundSlot.MeleeMissSound],
+            RechamberSound = fields[(int)WeaponPrimarySoundSlot.RechamberSound],
+            RechamberSoundPlayer = fields[(int)WeaponPrimarySoundSlot.RechamberSoundPlayer],
+            ReloadSound = fields[(int)WeaponPrimarySoundSlot.ReloadSound],
+            ReloadSoundPlayer = fields[(int)WeaponPrimarySoundSlot.ReloadSoundPlayer],
+            ReloadEmptySound = fields[(int)WeaponPrimarySoundSlot.ReloadEmptySound],
+            ReloadEmptySoundPlayer = fields[(int)WeaponPrimarySoundSlot.ReloadEmptySoundPlayer],
+            ReloadStartSound = fields[(int)WeaponPrimarySoundSlot.ReloadStartSound],
+            ReloadStartSoundPlayer = fields[(int)WeaponPrimarySoundSlot.ReloadStartSoundPlayer],
+            ReloadEndSound = fields[(int)WeaponPrimarySoundSlot.ReloadEndSound],
+            ReloadEndSoundPlayer = fields[(int)WeaponPrimarySoundSlot.ReloadEndSoundPlayer],
+            DetonateSound = fields[(int)WeaponPrimarySoundSlot.DetonateSound],
+            DetonateSoundPlayer = fields[(int)WeaponPrimarySoundSlot.DetonateSoundPlayer],
+            NightVisionWearSound = fields[(int)WeaponPrimarySoundSlot.NightVisionWearSound],
+            NightVisionWearSoundPlayer = fields[(int)WeaponPrimarySoundSlot.NightVisionWearSoundPlayer],
+            NightVisionRemoveSound = fields[(int)WeaponPrimarySoundSlot.NightVisionRemoveSound],
+            NightVisionRemoveSoundPlayer = fields[(int)WeaponPrimarySoundSlot.NightVisionRemoveSoundPlayer],
+            AltSwitchSound = fields[(int)WeaponPrimarySoundSlot.AltSwitchSound],
+            AltSwitchSoundPlayer = fields[(int)WeaponPrimarySoundSlot.AltSwitchSoundPlayer],
+            RaiseSound = fields[(int)WeaponPrimarySoundSlot.RaiseSound],
+            RaiseSoundPlayer = fields[(int)WeaponPrimarySoundSlot.RaiseSoundPlayer],
+            FirstRaiseSound = fields[(int)WeaponPrimarySoundSlot.FirstRaiseSound],
+            FirstRaiseSoundPlayer = fields[(int)WeaponPrimarySoundSlot.FirstRaiseSoundPlayer],
+            PutawaySound = fields[(int)WeaponPrimarySoundSlot.PutawaySound],
+            PutawaySoundPlayer = fields[(int)WeaponPrimarySoundSlot.PutawaySoundPlayer],
+            ScanSound = fields[(int)WeaponPrimarySoundSlot.ScanSound]
+        };
+    }
+
+    private static IReadOnlyList<WeaponNoteTrackMapEntry> ZipNoteTrackMappings(
+        IReadOnlyList<ScriptStringReference> keys,
+        IReadOnlyList<ScriptStringReference> values,
+        string memberName)
+    {
+        if (keys.Count != values.Count)
+        {
+            throw new InvalidDataException(
+                $"{memberName} has {keys.Count} keys but {values.Count} values.");
+        }
+
+        var mappings = new WeaponNoteTrackMapEntry[keys.Count];
+        for (int index = 0; index < mappings.Length; index++)
+        {
+            mappings[index] = new WeaponNoteTrackMapEntry
+            {
+                Key = keys[index],
+                Value = values[index]
+            };
+        }
+
+        return mappings;
     }
 
     private static SoundAliasCellPayload ReadSoundAliasCell(
@@ -1647,16 +1811,16 @@ public sealed class WeaponLoader
     {
         return new WeaponTurnSpeedAndRangeFields
         {
-            MinTurnSpeed = cursor.ReadSingle(),
-            MaxTurnSpeed = cursor.ReadSingle(),
+            MinVerticalTurnSpeed = cursor.ReadSingle(),
+            MinHorizontalTurnSpeed = cursor.ReadSingle(),
+            MaxVerticalTurnSpeed = cursor.ReadSingle(),
+            MaxHorizontalTurnSpeed = cursor.ReadSingle(),
             PitchConvergenceTime = cursor.ReadSingle(),
             YawConvergenceTime = cursor.ReadSingle(),
-            SuppressTime = cursor.ReadSingle(),
+            SuppressionTime = cursor.ReadSingle(),
             MaxRange = cursor.ReadSingle(),
             AnimationHorizontalRotateIncrement = cursor.ReadSingle(),
-            PlayerPositionDistance = cursor.ReadSingle(),
-            ScanSpeed = cursor.ReadSingle(),
-            ScanAcceleration = cursor.ReadSingle()
+            PlayerPositionDistance = cursor.ReadSingle()
         };
     }
 

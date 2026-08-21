@@ -1,0 +1,37 @@
+namespace IW4.Assets.Assets.Material;
+
+public enum MaterialSurfaceType
+{
+    Default = 0,
+    Bark = 1,
+    Brick = 2,
+    Carpet = 3,
+    Cloth = 4,
+    Concrete = 5,
+    Dirt = 6,
+    Flesh = 7,
+    Foliage = 8,
+    Glass = 9,
+    Grass = 10,
+    Gravel = 11,
+    Ice = 12,
+    Metal = 13,
+    Mud = 14,
+    Paper = 15,
+    Plaster = 16,
+    Rock = 17,
+    Sand = 18,
+    Snow = 19,
+    Water = 20,
+    Wood = 21,
+    Asphalt = 22,
+    Ceramic = 23,
+    Plastic = 24,
+    Rubber = 25,
+    Cushion = 26,
+    Fruit = 27,
+    PaintedMetal = 28,
+    RiotShield = 29,
+    Slush = 30,
+    Count = 31
+}

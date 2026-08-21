@@ -11,7 +11,9 @@ public sealed class WeaponProjectileFields
     public XModelAsset? Model { get; init; }
     public WeaponProjectileExplosion Explosion { get; init; }                     // 0x424
     public XPointer<FxEffectDefAsset> ExplosionEffectPointer { get; init; }       // 0x428
+    public FxEffectDefAsset? ExplosionEffect { get; init; }
     public XPointer<FxEffectDefAsset> DudEffectPointer { get; init; }             // 0x42C
+    public FxEffectDefAsset? DudEffect { get; init; }
     public XString ExplosionSoundPointer { get; init; }                           // 0x430
     public XString ExplosionSoundValuePointer { get; init; }
     public string? ExplosionSound { get; init; }
@@ -19,7 +21,7 @@ public sealed class WeaponProjectileFields
     public XString DudSoundValuePointer { get; init; }
     public string? DudSound { get; init; }
     public WeaponStickiness Stickiness { get; init; }                             // 0x438
-    public int LowAmmoWarningThreshold { get; init; }                             // 0x43C
+    public float LowAmmoWarningThreshold { get; init; }                           // 0x43C
     public float RicochetChance { get; init; }                                    // 0x440
 
     // 0x444 / 0x448: direct float[31] bounce-response arrays.
@@ -29,12 +31,15 @@ public sealed class WeaponProjectileFields
     public IReadOnlyList<float> PerpendicularBounce { get; init; } = [];
 
     public XPointer<FxEffectDefAsset> TrailEffectPointer { get; init; }           // 0x44C
+    public FxEffectDefAsset? TrailEffect { get; init; }
     public XPointer<FxEffectDefAsset> BeaconEffectPointer { get; init; }          // 0x450
+    public FxEffectDefAsset? BeaconEffect { get; init; }
     public Vec3 ProjectileColor { get; init; }                                    // 0x454..0x45C
     public GuidedMissileType GuidedMissileType { get; init; }                     // 0x460
     public float MaxSteeringAcceleration { get; init; }                           // 0x464
     public int IgnitionDelay { get; init; }                                       // 0x468
     public XPointer<FxEffectDefAsset> IgnitionEffectPointer { get; init; }        // 0x46C
+    public FxEffectDefAsset? IgnitionEffect { get; init; }
     public XString IgnitionSoundPointer { get; init; }                            // 0x470
     public XString IgnitionSoundValuePointer { get; init; }
     public string? IgnitionSound { get; init; }

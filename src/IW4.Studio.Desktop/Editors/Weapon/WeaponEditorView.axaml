@@ -122,7 +122,8 @@
                 <ListBox.ItemTemplate>
                   <DataTemplate>
                     <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding Title}" />
                       <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="9"
                                  Foreground="{DynamicResource StudioTextSubtleBrush}" />
                     </Grid>
