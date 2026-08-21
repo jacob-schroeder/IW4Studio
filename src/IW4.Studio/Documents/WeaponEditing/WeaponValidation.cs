@@ -107,8 +107,6 @@ internal static class WeaponValidation
             definition.WorldGunModelsPointer.Type, WeaponDef.GunModelCount,
             definition.WorldGunModelPointers.Count,
             definition.WorldGunModels.Count);
-        ExactParallel(issues, "weapon.definition.worldModels", 4,
-            definition.WorldModelPointers.Count, definition.WorldModels.Count);
         Exact(issues, "weapon.definition.iconMaterials", 3,
             definition.IconMaterials.Count);
         ExactParallel(issues, "weapon.definition.overlayMaterials", 4,
@@ -185,8 +183,14 @@ internal static class WeaponValidation
             XAssetType.Material);
         Providers(issues, "weapon.definition.worldGunModels",
             definition.WorldGunModels, XAssetType.XModel);
-        Providers(issues, "weapon.definition.worldModels",
-            definition.WorldModels, XAssetType.XModel);
+        Provider(issues, "weapon.definition.worldClipModel",
+            definition.WorldClipModel, XAssetType.XModel);
+        Provider(issues, "weapon.definition.rocketModel",
+            definition.RocketModel, XAssetType.XModel);
+        Provider(issues, "weapon.definition.knifeModel",
+            definition.KnifeModel, XAssetType.XModel);
+        Provider(issues, "weapon.definition.worldKnifeModel",
+            definition.WorldKnifeModel, XAssetType.XModel);
         Providers(issues, "weapon.definition.iconMaterials",
             definition.IconMaterials, XAssetType.Material);
         Providers(issues, "weapon.definition.overlayMaterials",

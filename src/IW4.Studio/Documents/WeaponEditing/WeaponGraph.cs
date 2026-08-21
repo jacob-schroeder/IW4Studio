@@ -117,8 +117,14 @@ internal static class WeaponGraph
             WorldGunModelsPointer = source.WorldGunModelsPointer,
             WorldGunModelPointers = CopyList(source.WorldGunModelPointers),
             WorldGunModels = CopyList(source.WorldGunModels),
-            WorldModelPointers = CopyList(source.WorldModelPointers),
-            WorldModels = CopyList(source.WorldModels),
+            WorldClipModelPointer = source.WorldClipModelPointer,
+            WorldClipModel = source.WorldClipModel,
+            RocketModelPointer = source.RocketModelPointer,
+            RocketModel = source.RocketModel,
+            KnifeModelPointer = source.KnifeModelPointer,
+            KnifeModel = source.KnifeModel,
+            WorldKnifeModelPointer = source.WorldKnifeModelPointer,
+            WorldKnifeModel = source.WorldKnifeModel,
             Icons = Copy(source.Icons),
             IconMaterials = CopyList(source.IconMaterials),
             Ammo = Copy(source.Ammo),
@@ -762,7 +768,10 @@ internal static class WeaponGraph
         Equal(left.ViewMovement, right.ViewMovement) &&
         Equal(left.PositionalMovement, right.PositionalMovement) &&
         ListsEqual(left.WorldGunModels, right.WorldGunModels, ProviderEquals) &&
-        ListsEqual(left.WorldModels, right.WorldModels, ProviderEquals) &&
+        ProviderEquals(left.WorldClipModel, right.WorldClipModel) &&
+        ProviderEquals(left.RocketModel, right.RocketModel) &&
+        ProviderEquals(left.KnifeModel, right.KnifeModel) &&
+        ProviderEquals(left.WorldKnifeModel, right.WorldKnifeModel) &&
         Equal(left.Icons, right.Icons) &&
         ListsEqual(left.IconMaterials, right.IconMaterials, ProviderEquals) &&
         Equal(left.Ammo, right.Ammo) &&

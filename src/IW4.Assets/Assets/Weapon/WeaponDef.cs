@@ -75,12 +75,23 @@ public sealed class WeaponDef
     public WeaponViewMovementFields ViewMovement { get; init; } = new();               // 0x138..0x1AC
     public WeaponPositionalMovementFields PositionalMovement { get; init; } = new();   // 0x1B0..0x1D4
 
-    // 0x1D8..0x1E8: XModel shell references.
+    // 0x1D8: direct XModelPtr[16] world-model variants.
     public XPointer<XPointer<XModelAsset>[]> WorldGunModelsPointer { get; init; }
     public IReadOnlyList<XPointer<XModelAsset>> WorldGunModelPointers { get; init; } = [];
     public IReadOnlyList<XModelAsset?> WorldGunModels { get; init; } = [];
-    public IReadOnlyList<XPointer<XModelAsset>> WorldModelPointers { get; init; } = [];
-    public IReadOnlyList<XModelAsset?> WorldModels { get; init; } = [];
+
+    // 0x1DC: alias-cell world clip XModel pointer.
+    public XPointer<XModelAsset> WorldClipModelPointer { get; init; }
+    public XModelAsset? WorldClipModel { get; init; }
+    // 0x1E0: alias-cell first-person rocket XModel pointer.
+    public XPointer<XModelAsset> RocketModelPointer { get; init; }
+    public XModelAsset? RocketModel { get; init; }
+    // 0x1E4: alias-cell first-person knife XModel pointer.
+    public XPointer<XModelAsset> KnifeModelPointer { get; init; }
+    public XModelAsset? KnifeModel { get; init; }
+    // 0x1E8: alias-cell world knife XModel pointer.
+    public XPointer<XModelAsset> WorldKnifeModelPointer { get; init; }
+    public XModelAsset? WorldKnifeModel { get; init; }
 
     public WeaponIconPointers Icons { get; init; } = new();  // 0x1EC..0x208
     public IReadOnlyList<Material.MaterialAsset?> IconMaterials { get; init; } = [];

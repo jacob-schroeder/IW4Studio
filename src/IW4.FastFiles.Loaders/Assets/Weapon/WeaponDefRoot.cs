@@ -40,7 +40,10 @@ internal sealed class WeaponDefRoot
     public WeaponViewMovementFields ViewMovement { get; set; } = new();
     public WeaponPositionalMovementFields PositionalMovement { get; set; } = new();
     public XPointer<XPointer<XModelAsset>[]> WorldGunModelsPointer { get; set; }
-    public IReadOnlyList<XPointer<XModelAsset>> WorldModelPointers { get; set; } = [];
+    public XPointer<XModelAsset> WorldClipModelPointer { get; set; }
+    public XPointer<XModelAsset> RocketModelPointer { get; set; }
+    public XPointer<XModelAsset> KnifeModelPointer { get; set; }
+    public XPointer<XModelAsset> WorldKnifeModelPointer { get; set; }
     public WeaponIconPointers Icons { get; set; } = new();
     public WeaponAmmoFields Ammo { get; set; } = new();
     public WeaponTimingFields Timing { get; set; } = new();

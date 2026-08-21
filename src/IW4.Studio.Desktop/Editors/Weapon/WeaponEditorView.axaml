@@ -30,7 +30,7 @@
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto"
                   VerticalContentAlignment="Stretch">
-      <Grid MinHeight="560" RowDefinitions="Auto,10,*,10,190">
+      <Grid MinHeight="560" RowDefinitions="Auto,10,*,10,Auto">
         <Border Padding="12,8" CornerRadius="7"
                 Background="{DynamicResource StudioSurfaceBrush}"
                 BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">

@@ -358,7 +358,10 @@ public sealed class WeaponLoader
 
         Seek(c, 0x1d8);
         root.WorldGunModelsPointer = ReadPointer<XPointer<XModelAsset>[]>(c, context, XPointerResolutionMode.Direct);
-        root.WorldModelPointers = ReadAliasPointerArray<XModelAsset>(c, 4, context);
+        root.WorldClipModelPointer = ReadPointer<XModelAsset>(c, context, XPointerResolutionMode.AliasCell);
+        root.RocketModelPointer = ReadPointer<XModelAsset>(c, context, XPointerResolutionMode.AliasCell);
+        root.KnifeModelPointer = ReadPointer<XModelAsset>(c, context, XPointerResolutionMode.AliasCell);
+        root.WorldKnifeModelPointer = ReadPointer<XModelAsset>(c, context, XPointerResolutionMode.AliasCell);
         root.Icons = new WeaponIconPointers
         {
             HudIconPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
@@ -575,7 +578,10 @@ public sealed class WeaponLoader
             WeaponDef.GunModelCount,
             context,
             out IReadOnlyList<XModelAsset?> worldGunModels);
-        IReadOnlyList<XModelAsset?> worldModels = ReadXModelPointers(cursor, root.WorldModelPointers, context);
+        XModelAsset? worldClipModel = ReadXModelPointer(cursor, root.WorldClipModelPointer.Untyped, context);
+        XModelAsset? rocketModel = ReadXModelPointer(cursor, root.RocketModelPointer.Untyped, context);
+        XModelAsset? knifeModel = ReadXModelPointer(cursor, root.KnifeModelPointer.Untyped, context);
+        XModelAsset? worldKnifeModel = ReadXModelPointer(cursor, root.WorldKnifeModelPointer.Untyped, context);
         MaterialAsset? hudIcon = ReadMaterialPointer(cursor, root.Icons.HudIconPointer.Untyped, "WeaponDef.icons.hudIcon", context);
         MaterialAsset? pickupIcon = ReadMaterialPointer(cursor, root.Icons.PickupIconPointer.Untyped, "WeaponDef.icons.pickupIcon", context);
         MaterialAsset? ammoCounterIcon = ReadMaterialPointer(cursor, root.Icons.AmmoCounterIconPointer.Untyped, "WeaponDef.icons.ammoCounterIcon", context);
@@ -687,8 +693,14 @@ public sealed class WeaponLoader
             WorldGunModelsPointer = root.WorldGunModelsPointer,
             WorldGunModelPointers = worldGunModelPointers,
             WorldGunModels = worldGunModels,
-            WorldModelPointers = root.WorldModelPointers,
-            WorldModels = worldModels,
+            WorldClipModelPointer = root.WorldClipModelPointer,
+            WorldClipModel = worldClipModel,
+            RocketModelPointer = root.RocketModelPointer,
+            RocketModel = rocketModel,
+            KnifeModelPointer = root.KnifeModelPointer,
+            KnifeModel = knifeModel,
+            WorldKnifeModelPointer = root.WorldKnifeModelPointer,
+            WorldKnifeModel = worldKnifeModel,
             Icons = root.Icons,
             IconMaterials = [hudIcon, pickupIcon, ammoCounterIcon],
             Ammo = new WeaponAmmoFields

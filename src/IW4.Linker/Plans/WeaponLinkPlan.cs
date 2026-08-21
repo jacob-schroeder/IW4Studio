@@ -357,14 +357,34 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
                 worldGunStorage,
                 "Weapon.Definition.WorldGunModels");
         }
-        AddProviders(
+        AddProvider(
             operations,
             0x1dc,
-            definition.WorldModelPointers,
-            definition.WorldModels,
-            4,
+            definition.WorldClipModel,
+            definition.WorldClipModelPointer.Untyped,
             XAssetType.XModel,
-            "Weapon.Definition.WorldModels");
+            "Weapon.Definition.WorldClipModel");
+        AddProvider(
+            operations,
+            0x1e0,
+            definition.RocketModel,
+            definition.RocketModelPointer.Untyped,
+            XAssetType.XModel,
+            "Weapon.Definition.RocketModel");
+        AddProvider(
+            operations,
+            0x1e4,
+            definition.KnifeModel,
+            definition.KnifeModelPointer.Untyped,
+            XAssetType.XModel,
+            "Weapon.Definition.KnifeModel");
+        AddProvider(
+            operations,
+            0x1e8,
+            definition.WorldKnifeModel,
+            definition.WorldKnifeModelPointer.Untyped,
+            XAssetType.XModel,
+            "Weapon.Definition.WorldKnifeModel");
 
         WeaponIconPointers icons = definition.Icons ??
             throw new InvalidDataException("Weapon.Definition.Icons cannot be null.");

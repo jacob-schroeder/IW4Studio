@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Globalization;
+using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Weapon;
 using IW4.Assets.Assets.XModel;
 using IW4.FastFiles.Pointers;
@@ -20,6 +22,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     IAssetEditorPropertiesRevealSource, IAssetEditorDiagnostics,
     IAssetEditorStagingState, IDisposable
 {
+    private const string CamoTableAssetName = "mp/camotable.csv";
     private readonly AssetEditorSession _session;
     private readonly AssetReferencePickerService? _assetReferencePicker;
     private readonly XModelSceneBuilder _sceneBuilder = new();
@@ -27,6 +30,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     private readonly Dictionary<XModelAsset, XModelRenderScene> _sceneCache =
         new(ReferenceEqualityComparer.Instance);
     private readonly List<INotifyPropertyChanged> _stagedRows = [];
+    private readonly IReadOnlyDictionary<int, string> _modelVariantLabels;
     private WeaponDraft _baseline;
     private WeaponDraft _workingDraft;
     private WeaponCategoryItemViewModel _selectedCategory;
@@ -64,6 +68,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             throw new InvalidDataException("The Weapon view model can host only Weapon editor sessions.");
         _assetReferencePicker = assetReferencePicker;
         _imagePayloads = new WorkspaceGfxImagePayloadResolver(session.Workspace);
+        _modelVariantLabels = CaptureModelVariantLabels(session);
         _baseline = session.OpenDraft<WeaponDraft>();
         _workingDraft = _baseline.Copy();
         Categories = Array.AsReadOnly(WeaponCategoryItemViewModel.CreateAll());
@@ -297,10 +302,13 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         var slots = new List<WeaponModelSlotItemViewModel>();
         if (_workingDraft.Definition is { } definition)
         {
-            AddModels(slots, WeaponIndexedRowKind.GunModel, "Gun model", definition.GunModels, WeaponDef.GunModelCount, definition.GunModelsPointer.Type != PointerType.Null, definition.GunModelPointers.Count);
+            AddModels(slots, WeaponIndexedRowKind.GunModel, "View model", definition.GunModels, WeaponDef.GunModelCount, definition.GunModelsPointer.Type != PointerType.Null, definition.GunModelPointers.Count);
             slots.Add(CreateModelSlot(WeaponIndexedRowKind.HandModel, 0, "Hand model", definition.HandModel, true));
-            AddModels(slots, WeaponIndexedRowKind.WorldGunModel, "World gun model", definition.WorldGunModels, WeaponDef.GunModelCount, definition.WorldGunModelsPointer.Type != PointerType.Null, definition.WorldGunModelPointers.Count);
-            AddModels(slots, WeaponIndexedRowKind.WorldModel, "World model", definition.WorldModels, 4, true, definition.WorldModelPointers.Count);
+            AddModels(slots, WeaponIndexedRowKind.WorldGunModel, "World model", definition.WorldGunModels, WeaponDef.GunModelCount, definition.WorldGunModelsPointer.Type != PointerType.Null, definition.WorldGunModelPointers.Count);
+            slots.Add(CreateModelSlot(WeaponIndexedRowKind.WorldClipModel, 0, "World clip model", definition.WorldClipModel, true));
+            slots.Add(CreateModelSlot(WeaponIndexedRowKind.RocketModel, 0, "Rocket model", definition.RocketModel, true));
+            slots.Add(CreateModelSlot(WeaponIndexedRowKind.KnifeModel, 0, "Knife model", definition.KnifeModel, true));
+            slots.Add(CreateModelSlot(WeaponIndexedRowKind.WorldKnifeModel, 0, "World knife model", definition.WorldKnifeModel, true));
             slots.Add(CreateModelSlot(WeaponIndexedRowKind.ProjectileModel, 0, "Projectile model", definition.Projectile.Model, true));
         }
         foreach (WeaponModelSlotItemViewModel slot in slots)
@@ -313,7 +321,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _selectedModelSlot = ModelSlots.FirstOrDefault(slot => slot.StableKey == preferred)
             ?? ModelSlots.FirstOrDefault(slot => slot.Kind == WeaponIndexedRowKind.GunModel && slot.State == WeaponModelSlotState.Resolved)
             ?? ModelSlots.FirstOrDefault(slot => slot.Kind == WeaponIndexedRowKind.HandModel)
-            ?? ModelSlots.FirstOrDefault(slot => slot.Kind is WeaponIndexedRowKind.WorldGunModel or WeaponIndexedRowKind.WorldModel or WeaponIndexedRowKind.ProjectileModel && slot.State == WeaponModelSlotState.Resolved)
+            ?? ModelSlots.FirstOrDefault(slot => slot.State == WeaponModelSlotState.Resolved)
             ?? ModelSlots.FirstOrDefault();
         OnPropertyChanged(nameof(SelectedModelSlot));
     }
@@ -332,10 +340,13 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     {
         string roleLabel = kind switch
         {
-            WeaponIndexedRowKind.GunModel => $"Gun model [{index:00}]",
+            WeaponIndexedRowKind.GunModel => WeaponIndexedRowItemViewModel.ModelVariantTitle("View model", index, _modelVariantLabels),
             WeaponIndexedRowKind.HandModel => "Hand model",
-            WeaponIndexedRowKind.WorldGunModel => $"World gun model [{index:00}]",
-            WeaponIndexedRowKind.WorldModel => $"World model [{index}]",
+            WeaponIndexedRowKind.WorldGunModel => WeaponIndexedRowItemViewModel.ModelVariantTitle("World model", index, _modelVariantLabels),
+            WeaponIndexedRowKind.WorldClipModel => "World clip model",
+            WeaponIndexedRowKind.RocketModel => "Rocket model",
+            WeaponIndexedRowKind.KnifeModel => "Knife model",
+            WeaponIndexedRowKind.WorldKnifeModel => "World knife model",
             WeaponIndexedRowKind.ProjectileModel => "Projectile model",
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
@@ -370,7 +381,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _isReplacingProjection = true;
         try
         {
-            IndexedRows = Array.AsReadOnly(WeaponIndexedRowItemViewModel.Create(_workingDraft, SelectedCategory.Id).ToArray()); _selectedIndexedRow = IndexedRows.FirstOrDefault(row => row.StableKey == preferredKey) ?? IndexedRows.FirstOrDefault(); OnPropertyChanged(nameof(SelectedIndexedRow)); OnPropertyChanged(nameof(HasIndexedRows)); SyncSelectedModelSlot();
+            IndexedRows = Array.AsReadOnly(WeaponIndexedRowItemViewModel.Create(_workingDraft, SelectedCategory.Id, _modelVariantLabels).ToArray()); _selectedIndexedRow = IndexedRows.FirstOrDefault(row => row.StableKey == preferredKey) ?? IndexedRows.FirstOrDefault(); OnPropertyChanged(nameof(SelectedIndexedRow)); OnPropertyChanged(nameof(HasIndexedRows)); SyncSelectedModelSlot();
         }
         finally { _isReplacingProjection = false; }
     }
@@ -484,6 +495,53 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         left.ExecutableGroupCount == right.ExecutableGroupCount &&
         left.BlockedGroupCount == right.BlockedGroupCount &&
         left.Diagnostics.SequenceEqual(right.Diagnostics, StringComparer.Ordinal);
+    private static IReadOnlyDictionary<int, string> CaptureModelVariantLabels(AssetEditorSession session)
+    {
+        var labels = new Dictionary<int, string>();
+        if (!session.Workspace.LoadedZone.Context.AssetPool.TryResolve(
+                XAssetType.StringTable,
+                CamoTableAssetName,
+                out StringTableAsset? table) ||
+            table is null || table.ColumnCount < 2 || table.RowCount <= 0)
+        {
+            return labels;
+        }
+
+        int cellCount;
+        try
+        {
+            cellCount = checked(table.RowCount * table.ColumnCount);
+        }
+        catch (OverflowException)
+        {
+            return labels;
+        }
+        if (table.Cells.Count != cellCount)
+            return labels;
+
+        var duplicateIndices = new HashSet<int>();
+        for (int row = 0; row < table.RowCount; row++)
+        {
+            int offset = checked(row * table.ColumnCount);
+            string? labelText = table.Cells[offset + 1].String;
+            if (!int.TryParse(table.Cells[offset].String, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out int index) ||
+                index < 0 || index >= WeaponDef.GunModelCount ||
+                string.IsNullOrWhiteSpace(labelText) ||
+                duplicateIndices.Contains(index))
+            {
+                continue;
+            }
+
+            string label = labelText.Trim();
+            if (!labels.TryAdd(index, label))
+            {
+                labels.Remove(index);
+                duplicateIndices.Add(index);
+            }
+        }
+        return labels;
+    }
     private static string Bounded(string message) => message.Length <= 180 ? message : message[..177] + "...";
     private void RebuildDiagnostics()
     {
@@ -505,15 +563,16 @@ public sealed class WeaponCategoryItemViewModel
     internal static WeaponCategoryItemViewModel[] CreateAll() => [new(WeaponPropertyCategory.Overview, "Overview and variant"), new(WeaponPropertyCategory.Models, "Models"), new(WeaponPropertyCategory.AnimationNames, "Animation names"), new(WeaponPropertyCategory.HideTagsAndNoteTracks, "Hide tags and note tracks"), new(WeaponPropertyCategory.ClassificationAndReticle, "Classification and reticle"), new(WeaponPropertyCategory.ViewAndPositionalMovement, "View and positional movement"), new(WeaponPropertyCategory.HudIconsAndAmmo, "HUD icons and ammo"), new(WeaponPropertyCategory.Timing, "Timing"), new(WeaponPropertyCategory.AimAndMovementTuning, "Aim and movement tuning"), new(WeaponPropertyCategory.OverlayAdsAndSpread, "Overlay, ADS, and spread"), new(WeaponPropertyCategory.PhysicsAndProjectile, "Physics and projectile"), new(WeaponPropertyCategory.KickRecoilAndAccuracy, "Kick, recoil, and accuracy"), new(WeaponPropertyCategory.DamageRangeAndAiTuning, "Damage, range, and AI tuning"), new(WeaponPropertyCategory.EffectsAndMaterials, "Effects and materials"), new(WeaponPropertyCategory.SoundsAndBounce, "Sounds and bounce response"), new(WeaponPropertyCategory.HintsAndRumble, "Hints and rumble"), new(WeaponPropertyCategory.TurretAndMissile, "Turret and missile-cone sound"), new(WeaponPropertyCategory.TailAndPreservedStorage, "Tail bytes and preserved storage")];
 }
 
-public enum WeaponIndexedRowKind { GunModel, HandModel, WorldGunModel, WorldModel, ProjectileModel, VariantAnimation, RightAnimation, LeftAnimation, HideTag, SoundNoteKey, SoundNoteValue, RumbleNoteKey, RumbleNoteValue, VariantAccuracyGraph, VariantOriginalAccuracyGraph, DefinitionAccuracyGraph, DefinitionOriginalAccuracyGraph, LocationDamage, ProjectileParallelBounce, ProjectilePerpendicularBounce, FlashEffect, Effect, Material, IconMaterial, OverlayMaterial, ProjectileEffect, ImpactEffect, ViewShellEjectEffect, TurretOverheatEffect, Tracer, PrimarySound, BounceSound, TurretSpinUpSound, TurretSpinDownSound }
-internal static class WeaponIndexedRowKindExtensions { internal static bool IsModel(this WeaponIndexedRowKind value) => value is WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.HandModel or WeaponIndexedRowKind.WorldGunModel or WeaponIndexedRowKind.WorldModel or WeaponIndexedRowKind.ProjectileModel; }
+public enum WeaponIndexedRowKind { GunModel, HandModel, WorldGunModel, WorldClipModel, RocketModel, KnifeModel, WorldKnifeModel, ProjectileModel, VariantAnimation, RightAnimation, LeftAnimation, HideTag, SoundNoteKey, SoundNoteValue, RumbleNoteKey, RumbleNoteValue, VariantAccuracyGraph, VariantOriginalAccuracyGraph, DefinitionAccuracyGraph, DefinitionOriginalAccuracyGraph, LocationDamage, ProjectileParallelBounce, ProjectilePerpendicularBounce, FlashEffect, Effect, Material, IconMaterial, OverlayMaterial, ProjectileEffect, ImpactEffect, ViewShellEjectEffect, TurretOverheatEffect, Tracer, PrimarySound, BounceSound, TurretSpinUpSound, TurretSpinDownSound }
+internal static class WeaponIndexedRowKindExtensions { internal static bool IsModel(this WeaponIndexedRowKind value) => value is WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.HandModel or WeaponIndexedRowKind.WorldGunModel or WeaponIndexedRowKind.WorldClipModel or WeaponIndexedRowKind.RocketModel or WeaponIndexedRowKind.KnifeModel or WeaponIndexedRowKind.WorldKnifeModel or WeaponIndexedRowKind.ProjectileModel; }
 
 public sealed class WeaponIndexedRowItemViewModel
 {
     internal WeaponIndexedRowItemViewModel(WeaponIndexedRowKind kind, int index, string title, bool tablePresent = true, bool hasValue = true, bool isMalformed = false) { Kind = kind; Index = index; Title = title; IsTablePresent = tablePresent; HasValue = hasValue; IsMalformed = isMalformed; }
     public WeaponIndexedRowKind Kind { get; } public int Index { get; } public string Title { get; } public bool IsTablePresent { get; } public bool HasValue { get; } public bool IsMalformed { get; } public bool IsTableAbsent => !IsTablePresent && !IsMalformed; public bool CanEditValue => IsTablePresent && HasValue && !IsMalformed; public string Detail => IsTableAbsent ? "Table absent" : IsMalformed ? HasValue ? $"Index {Index} · Malformed table" : "Malformed table" : $"Index {Index}"; public string StableKey => $"{Kind}:{Index}";
-    internal static IEnumerable<WeaponIndexedRowItemViewModel> Create(WeaponDraft draft, WeaponPropertyCategory category)
+    internal static IEnumerable<WeaponIndexedRowItemViewModel> Create(WeaponDraft draft, WeaponPropertyCategory category, IReadOnlyDictionary<int, string> modelVariantLabels)
     {
+        ArgumentNullException.ThrowIfNull(modelVariantLabels);
         if (draft.Definition is not { } definition) yield break;
         IEnumerable<WeaponIndexedRowItemViewModel> Rows(WeaponIndexedRowKind kind, string label, int actual, int expected, bool tablePresent, params int[] parallelCounts)
         {
@@ -521,13 +580,17 @@ public sealed class WeaponIndexedRowItemViewModel
             bool absent = !tablePresent && counts.All(count => count == 0);
             bool malformed = !absent && (!tablePresent || counts.Any(count => count != expected));
             int count = absent ? expected : Math.Max(expected, actual);
-            return Enumerable.Range(0, count).Select(index => new WeaponIndexedRowItemViewModel(kind, index, $"{label} [{index:00}]", tablePresent, index < actual, malformed));
+            return Enumerable.Range(0, count).Select(index => new WeaponIndexedRowItemViewModel(kind, index,
+                kind is WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.WorldGunModel
+                    ? ModelVariantTitle(label, index, modelVariantLabels)
+                    : $"{label} [{index:00}]",
+                tablePresent, index < actual, malformed));
         }
         IEnumerable<WeaponIndexedRowItemViewModel> ExactRows(WeaponIndexedRowKind kind, string label, int actual, int expected, params int[] parallelCounts) => Rows(kind, label, actual, expected, true, parallelCounts);
         bool Present(PointerType type) => type != PointerType.Null;
         IEnumerable<WeaponIndexedRowItemViewModel> selected = category switch
         {
-            WeaponPropertyCategory.Models => Rows(WeaponIndexedRowKind.GunModel, "Gun model", definition.GunModels.Count, WeaponDef.GunModelCount, Present(definition.GunModelsPointer.Type), definition.GunModelPointers.Count).Concat([new(WeaponIndexedRowKind.HandModel, 0, "Hand model")]).Concat(Rows(WeaponIndexedRowKind.WorldGunModel, "World gun model", definition.WorldGunModels.Count, WeaponDef.GunModelCount, Present(definition.WorldGunModelsPointer.Type), definition.WorldGunModelPointers.Count)).Concat(ExactRows(WeaponIndexedRowKind.WorldModel, "World model", definition.WorldModels.Count, 4, definition.WorldModelPointers.Count)).Concat([new(WeaponIndexedRowKind.ProjectileModel, 0, "Projectile model")]),
+            WeaponPropertyCategory.Models => Rows(WeaponIndexedRowKind.GunModel, "View model", definition.GunModels.Count, WeaponDef.GunModelCount, Present(definition.GunModelsPointer.Type), definition.GunModelPointers.Count).Concat([new(WeaponIndexedRowKind.HandModel, 0, "Hand model")]).Concat(Rows(WeaponIndexedRowKind.WorldGunModel, "World model", definition.WorldGunModels.Count, WeaponDef.GunModelCount, Present(definition.WorldGunModelsPointer.Type), definition.WorldGunModelPointers.Count)).Concat([new(WeaponIndexedRowKind.WorldClipModel, 0, "World clip model"), new(WeaponIndexedRowKind.RocketModel, 0, "Rocket model"), new(WeaponIndexedRowKind.KnifeModel, 0, "Knife model"), new(WeaponIndexedRowKind.WorldKnifeModel, 0, "World knife model"), new(WeaponIndexedRowKind.ProjectileModel, 0, "Projectile model")]),
             WeaponPropertyCategory.AnimationNames => Rows(WeaponIndexedRowKind.VariantAnimation, "Variant animation", draft.Variant.AnimationNames.Count, WeaponVariantDef.WeaponAnimCount, Present(draft.Variant.AnimationNamesPointer.Type), draft.Variant.AnimationNamePointers.Count).Concat(Rows(WeaponIndexedRowKind.RightAnimation, "Right-hand animation", definition.RightHandAnimationNames.Count, WeaponDef.WeaponAnimCount, Present(definition.RightHandAnimationNamesPointer.Type), definition.RightHandAnimationNamePointers.Count)).Concat(Rows(WeaponIndexedRowKind.LeftAnimation, "Left-hand animation", definition.LeftHandAnimationNames.Count, WeaponDef.WeaponAnimCount, Present(definition.LeftHandAnimationNamesPointer.Type), definition.LeftHandAnimationNamePointers.Count)),
             WeaponPropertyCategory.HideTagsAndNoteTracks => Rows(WeaponIndexedRowKind.HideTag, "Hide tag", draft.Variant.HideTags.Count, WeaponVariantDef.HideTagCount, Present(draft.Variant.HideTagsPointer.Type)).Concat(Rows(WeaponIndexedRowKind.SoundNoteKey, "Sound note key", definition.NoteTrackMaps.SoundMapKeys.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.SoundMapKeysPointer.Type))).Concat(Rows(WeaponIndexedRowKind.SoundNoteValue, "Sound note value", definition.NoteTrackMaps.SoundMapValues.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.SoundMapValuesPointer.Type))).Concat(Rows(WeaponIndexedRowKind.RumbleNoteKey, "Rumble note key", definition.NoteTrackMaps.RumbleMapKeys.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.RumbleMapKeysPointer.Type))).Concat(Rows(WeaponIndexedRowKind.RumbleNoteValue, "Rumble note value", definition.NoteTrackMaps.RumbleMapValues.Count, WeaponDef.NoteTrackMapCount, Present(definition.NoteTrackMaps.RumbleMapValuesPointer.Type))),
             WeaponPropertyCategory.KickRecoilAndAccuracy => Rows(WeaponIndexedRowKind.VariantAccuracyGraph, "Variant graph", draft.Variant.AccuracyGraphKnots.Count, draft.Variant.AccuracyGraphKnotCount, Present(draft.Variant.AccuracyGraphKnotsPointer.Type)).Concat(Rows(WeaponIndexedRowKind.VariantOriginalAccuracyGraph, "Variant original graph", draft.Variant.OriginalAccuracyGraphKnots.Count, draft.Variant.OriginalAccuracyGraphKnotCount, Present(draft.Variant.OriginalAccuracyGraphKnotsPointer.Type))).Concat(Rows(WeaponIndexedRowKind.DefinitionAccuracyGraph, "Definition graph", definition.Accuracy.GraphKnots.Count, draft.Variant.AccuracyGraphKnotCount, Present(definition.Accuracy.GraphKnotsPointer.Type))).Concat(Rows(WeaponIndexedRowKind.DefinitionOriginalAccuracyGraph, "Definition original graph", definition.Accuracy.OriginalGraphKnots.Count, draft.Variant.OriginalAccuracyGraphKnotCount, Present(definition.Accuracy.OriginalGraphKnotsPointer.Type))),
@@ -540,6 +603,10 @@ public sealed class WeaponIndexedRowItemViewModel
         };
         foreach (WeaponIndexedRowItemViewModel row in selected) yield return row;
     }
+    internal static string ModelVariantTitle(string family, int index, IReadOnlyDictionary<int, string> labels) =>
+        labels.TryGetValue(index, out string? label)
+            ? $"{family} — {label}"
+            : $"{family} [{index:00}]";
 }
 
 public sealed class WeaponModelSlotItemViewModel : ObservableObject

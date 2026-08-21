@@ -172,8 +172,14 @@ public sealed partial class WeaponDraft
             WorldGunModelsPointer = current.WorldGunModelsPointer,
             WorldGunModelPointers = PreserveProviderPointers(current.WorldGunModels, value.WorldGunModels, current.WorldGunModelPointers),
             WorldGunModels = CopyList(value.WorldGunModels),
-            WorldModelPointers = PreserveProviderPointers(current.WorldModels, value.WorldModels, current.WorldModelPointers),
-            WorldModels = CopyList(value.WorldModels),
+            WorldClipModelPointer = ProviderPointerIfUnchanged(current.WorldClipModel, value.WorldClipModel, current.WorldClipModelPointer),
+            WorldClipModel = value.WorldClipModel,
+            RocketModelPointer = ProviderPointerIfUnchanged(current.RocketModel, value.RocketModel, current.RocketModelPointer),
+            RocketModel = value.RocketModel,
+            KnifeModelPointer = ProviderPointerIfUnchanged(current.KnifeModel, value.KnifeModel, current.KnifeModelPointer),
+            KnifeModel = value.KnifeModel,
+            WorldKnifeModelPointer = ProviderPointerIfUnchanged(current.WorldKnifeModel, value.WorldKnifeModel, current.WorldKnifeModelPointer),
+            WorldKnifeModel = value.WorldKnifeModel,
             Icons = SanitizeIcons(current.Icons, value.Icons, current.IconMaterials, value.IconMaterials),
             IconMaterials = CopyList(value.IconMaterials),
             Ammo = SanitizeAmmo(current.Ammo, value.Ammo),
@@ -543,8 +549,6 @@ public sealed partial class WeaponDraft
         EnsureSameCount(current.Materials, value.Materials, nameof(value));
         EnsureSameCount(current.WorldGunModelPointers, value.WorldGunModelPointers, nameof(value));
         EnsureSameCount(current.WorldGunModels, value.WorldGunModels, nameof(value));
-        EnsureSameCount(current.WorldModelPointers, value.WorldModelPointers, nameof(value));
-        EnsureSameCount(current.WorldModels, value.WorldModels, nameof(value));
         EnsureSameCount(current.IconMaterials, value.IconMaterials, nameof(value));
         EnsureSameCount(current.Overlay.OverlayMaterials, value.Overlay.OverlayMaterials, nameof(value));
         EnsureSameCount(current.OverlayMaterials, value.OverlayMaterials, nameof(value));
