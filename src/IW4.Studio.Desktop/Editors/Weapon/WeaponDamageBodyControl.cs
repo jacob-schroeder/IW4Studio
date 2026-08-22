@@ -205,40 +205,148 @@ public sealed class WeaponDamageBodyControl : Control
         double scale)
     {
         // A front-facing figure presents the subject's right side on the viewer's left.
-        DrawPolygonRegion(context, regions, HitLocation.RightUpperArm, origin, scale,
-            (-31, 73), (-47, 77), (-57, 126), (-43, 130), (-29, 91));
-        DrawPolygonRegion(context, regions, HitLocation.LeftUpperArm, origin, scale,
-            (31, 73), (47, 77), (57, 126), (43, 130), (29, 91));
-        DrawPolygonRegion(context, regions, HitLocation.RightLowerArm, origin, scale,
-            (-57, 126), (-43, 129), (-49, 179), (-63, 176));
-        DrawPolygonRegion(context, regions, HitLocation.LeftLowerArm, origin, scale,
-            (57, 126), (43, 129), (49, 179), (63, 176));
-        DrawEllipseRegion(context, regions, HitLocation.RightHand, origin, scale,
-            -64, 176, 16, 25);
-        DrawEllipseRegion(context, regions, HitLocation.LeftHand, origin, scale,
-            48, 176, 16, 25);
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.RightUpperArm,
+            origin,
+            scale,
+            4,
+            (-29, 74), (-39, 72), (-47, 79), (-51, 101),
+            (-57, 132), (-45, 136), (-38, 110), (-29, 90));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LeftUpperArm,
+            origin,
+            scale,
+            4,
+            (29, 74), (39, 72), (47, 79), (51, 101),
+            (57, 132), (45, 136), (38, 110), (29, 90));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.RightLowerArm,
+            origin,
+            scale,
+            3.5,
+            (-57, 130), (-45, 133), (-47, 153), (-53, 183),
+            (-64, 181), (-61, 156));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LeftLowerArm,
+            origin,
+            scale,
+            3.5,
+            (57, 130), (45, 133), (47, 153), (53, 183),
+            (64, 181), (61, 156));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.RightHand,
+            origin,
+            scale,
+            3,
+            (-64, 178), (-53, 180), (-51, 187), (-52, 197),
+            (-56, 205), (-61, 205), (-66, 197), (-67, 188));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LeftHand,
+            origin,
+            scale,
+            3,
+            (64, 178), (53, 180), (51, 187), (52, 197),
+            (56, 205), (61, 205), (66, 197), (67, 188));
 
-        DrawPolygonRegion(context, regions, HitLocation.RightUpperLeg, origin, scale,
-            (-22, 166), (-2, 166), (-7, 234), (-26, 234));
-        DrawPolygonRegion(context, regions, HitLocation.LeftUpperLeg, origin, scale,
-            (2, 166), (22, 166), (26, 234), (7, 234));
-        DrawPolygonRegion(context, regions, HitLocation.RightLowerLeg, origin, scale,
-            (-26, 235), (-7, 235), (-9, 296), (-25, 296));
-        DrawPolygonRegion(context, regions, HitLocation.LeftLowerLeg, origin, scale,
-            (26, 235), (7, 235), (9, 296), (25, 296));
-        DrawPolygonRegion(context, regions, HitLocation.RightFoot, origin, scale,
-            (-25, 297), (-9, 297), (-5, 310), (-30, 310));
-        DrawPolygonRegion(context, regions, HitLocation.LeftFoot, origin, scale,
-            (25, 297), (9, 297), (5, 310), (30, 310));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.RightUpperLeg,
+            origin,
+            scale,
+            4,
+            (-22, 168), (-1, 168), (-3, 192), (-5, 215),
+            (-7, 240), (-20, 240), (-24, 218), (-26, 190));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LeftUpperLeg,
+            origin,
+            scale,
+            4,
+            (22, 168), (1, 168), (3, 192), (5, 215),
+            (7, 240), (20, 240), (24, 218), (26, 190));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.RightLowerLeg,
+            origin,
+            scale,
+            3.5,
+            (-20, 237), (-7, 237), (-6, 251), (-9, 272),
+            (-10, 297), (-23, 297), (-24, 272), (-25, 253));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LeftLowerLeg,
+            origin,
+            scale,
+            3.5,
+            (20, 237), (7, 237), (6, 251), (9, 272),
+            (10, 297), (23, 297), (24, 272), (25, 253));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.RightFoot,
+            origin,
+            scale,
+            2.5,
+            (-23, 295), (-10, 295), (-8, 302), (-2, 307),
+            (-2, 312), (-29, 312), (-30, 308), (-27, 302));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LeftFoot,
+            origin,
+            scale,
+            2.5,
+            (23, 295), (10, 295), (8, 302), (2, 307),
+            (2, 312), (29, 312), (30, 308), (27, 302));
 
         DrawRoundedRegion(context, regions, HitLocation.Neck, origin, scale,
-            -8, 57, 16, 17, 4);
-        DrawPolygonRegion(context, regions, HitLocation.UpperTorso, origin, scale,
-            (-31, 70), (31, 70), (27, 123), (-27, 123));
-        DrawPolygonRegion(context, regions, HitLocation.LowerTorso, origin, scale,
-            (-27, 124), (27, 124), (22, 167), (-22, 167));
-        DrawEllipseRegion(context, regions, HitLocation.Head, origin, scale,
-            -17, 20, 34, 40);
+            -7, 56, 14, 18, 5);
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.UpperTorso,
+            origin,
+            scale,
+            5,
+            (-12, 68), (-25, 69), (-36, 77), (-33, 95),
+            (-29, 121), (-23, 130), (23, 130), (29, 121),
+            (33, 95), (36, 77), (25, 69), (12, 68));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.LowerTorso,
+            origin,
+            scale,
+            5,
+            (-23, 128), (23, 128), (22, 148), (27, 165),
+            (22, 176), (13, 180), (-13, 180), (-22, 176),
+            (-27, 165), (-22, 148));
+        DrawRoundedPolygonRegion(
+            context,
+            regions,
+            HitLocation.Head,
+            origin,
+            scale,
+            4,
+            (-10, 20), (-15, 25), (-17, 35), (-15, 47),
+            (-10, 56), (-4, 61), (0, 62), (4, 61),
+            (10, 56), (15, 47), (17, 35), (15, 25), (10, 20));
         DrawHelmetRegion(context, regions, origin, scale);
 
         if (scale >= 0.55)
@@ -274,14 +382,16 @@ public sealed class WeaponDamageBodyControl : Control
         Point origin,
         double scale)
     {
-        Point[] points = TransformPoints(origin, scale,
-            (-17, 27), (-17, 19), (-12, 11), (0, 7),
-            (12, 11), (17, 19), (17, 27), (0, 23));
-        DrawPolygonRegion(
+        DrawRoundedPolygonRegion(
             context,
             regions,
-            (int)HitLocation.Helmet,
-            points);
+            HitLocation.Helmet,
+            origin,
+            scale,
+            3,
+            (-16, 29), (-17, 21), (-13, 12), (-7, 7),
+            (0, 5), (7, 7), (13, 12), (17, 21),
+            (16, 29), (9, 26), (0, 24), (-9, 26));
     }
 
     private void DrawAffordances(
@@ -412,23 +522,6 @@ public sealed class WeaponDamageBodyControl : Control
         }
     }
 
-    private void DrawEllipseRegion(
-        DrawingContext context,
-        List<HitRegion> regions,
-        HitLocation location,
-        Point origin,
-        double scale,
-        double x,
-        double y,
-        double width,
-        double height)
-    {
-        var bounds = TransformRect(origin, scale, x, y, width, height);
-        int index = (int)location;
-        context.DrawEllipse(FillFor(index), BorderFor(index), bounds);
-        regions.Add(new HitRegion(index, HitShape.Ellipse, bounds, null));
-    }
-
     private void DrawRoundedRegion(
         DrawingContext context,
         List<HitRegion> regions,
@@ -443,38 +536,38 @@ public sealed class WeaponDamageBodyControl : Control
     {
         var bounds = TransformRect(origin, scale, x, y, width, height);
         int index = (int)location;
-        float scaledRadius = checked((float)(radius * scale));
-        context.FillRectangle(FillFor(index), bounds, scaledRadius);
-        context.DrawRectangle(BorderFor(index), bounds, scaledRadius);
-        regions.Add(new HitRegion(index, HitShape.Rectangle, bounds, null));
+        double scaledRadius = radius * scale;
+        var geometry = new RectangleGeometry(
+            bounds,
+            scaledRadius,
+            scaledRadius);
+        context.DrawGeometry(FillFor(index), BorderFor(index), geometry);
+        regions.Add(new HitRegion(
+            index,
+            HitShape.Geometry,
+            geometry.Bounds,
+            geometry));
     }
 
-    private void DrawPolygonRegion(
+    private void DrawRoundedPolygonRegion(
         DrawingContext context,
         List<HitRegion> regions,
         HitLocation location,
         Point origin,
         double scale,
-        params (double X, double Y)[] points) =>
-        DrawPolygonRegion(
-            context,
-            regions,
-            (int)location,
-            TransformPoints(origin, scale, points));
-
-    private void DrawPolygonRegion(
-        DrawingContext context,
-        List<HitRegion> regions,
-        int index,
-        Point[] points)
+        double radius,
+        params (double X, double Y)[] points)
     {
-        var geometry = CreatePolygon(points);
+        int index = (int)location;
+        var geometry = CreateRoundedPolygon(
+            TransformPoints(origin, scale, points),
+            radius * scale);
         context.DrawGeometry(FillFor(index), BorderFor(index), geometry);
         regions.Add(new HitRegion(
             index,
-            HitShape.Polygon,
-            BoundsOf(points),
-            points));
+            HitShape.Geometry,
+            geometry.Bounds,
+            geometry));
     }
 
     private IBrush FillFor(int index)
@@ -563,20 +656,63 @@ public sealed class WeaponDamageBodyControl : Control
             width * scale,
             height * scale);
 
-    private static Rect BoundsOf(IReadOnlyList<Point> points)
+    private static StreamGeometry CreateRoundedPolygon(
+        IReadOnlyList<Point> points,
+        double radius)
     {
-        double left = double.PositiveInfinity;
-        double top = double.PositiveInfinity;
-        double right = double.NegativeInfinity;
-        double bottom = double.NegativeInfinity;
-        foreach (Point point in points)
+        var geometry = new StreamGeometry();
+        if (points.Count < 3)
+            return geometry;
+
+        var entries = new Point[points.Count];
+        var exits = new Point[points.Count];
+        for (int index = 0; index < points.Count; index++)
         {
-            left = Math.Min(left, point.X);
-            top = Math.Min(top, point.Y);
-            right = Math.Max(right, point.X);
-            bottom = Math.Max(bottom, point.Y);
+            Point previous = points[(index + points.Count - 1) % points.Count];
+            Point current = points[index];
+            Point next = points[(index + 1) % points.Count];
+            double incomingLength = Distance(current, previous);
+            double outgoingLength = Distance(current, next);
+            double trim = Math.Min(
+                radius,
+                Math.Min(incomingLength, outgoingLength) * 0.42);
+            entries[index] = MoveToward(current, previous, trim, incomingLength);
+            exits[index] = MoveToward(current, next, trim, outgoingLength);
         }
-        return new Rect(left, top, right - left, bottom - top);
+
+        using StreamGeometryContext path = geometry.Open();
+        path.BeginFigure(entries[0], isFilled: true);
+        path.QuadraticBezierTo(points[0], exits[0]);
+        for (int index = 1; index < points.Count; index++)
+        {
+            path.LineTo(entries[index]);
+            path.QuadraticBezierTo(points[index], exits[index]);
+        }
+        path.LineTo(entries[0]);
+        path.EndFigure(isClosed: true);
+        return geometry;
+    }
+
+    private static double Distance(Point first, Point second)
+    {
+        double x = second.X - first.X;
+        double y = second.Y - first.Y;
+        return Math.Sqrt(x * x + y * y);
+    }
+
+    private static Point MoveToward(
+        Point start,
+        Point end,
+        double distance,
+        double totalDistance)
+    {
+        if (totalDistance <= double.Epsilon)
+            return start;
+
+        double amount = distance / totalDistance;
+        return new Point(
+            start.X + (end.X - start.X) * amount,
+            start.Y + (end.Y - start.Y) * amount);
     }
 
     private static StreamGeometry CreatePolygon(IReadOnlyList<Point> points)
@@ -670,15 +806,14 @@ public sealed class WeaponDamageBodyControl : Control
     private enum HitShape
     {
         Rectangle,
-        Ellipse,
-        Polygon
+        Geometry
     }
 
     private sealed record HitRegion(
         int Index,
         HitShape Shape,
         Rect Bounds,
-        IReadOnlyList<Point>? Points)
+        Geometry? Geometry)
     {
         public bool Contains(Point point)
         {
@@ -687,41 +822,9 @@ public sealed class WeaponDamageBodyControl : Control
 
             return Shape switch
             {
-                HitShape.Ellipse => ContainsEllipse(point),
-                HitShape.Polygon => ContainsPolygon(point),
+                HitShape.Geometry => Geometry?.FillContains(point) == true,
                 _ => true
             };
-        }
-
-        private bool ContainsEllipse(Point point)
-        {
-            if (Bounds.Width <= 0 || Bounds.Height <= 0)
-                return false;
-            double x = (point.X - Bounds.Center.X) / (Bounds.Width * 0.5);
-            double y = (point.Y - Bounds.Center.Y) / (Bounds.Height * 0.5);
-            return x * x + y * y <= 1;
-        }
-
-        private bool ContainsPolygon(Point point)
-        {
-            if (Points is not { Count: >= 3 } points)
-                return false;
-
-            bool inside = false;
-            for (int current = 0, previous = points.Count - 1;
-                 current < points.Count;
-                 previous = current++)
-            {
-                Point a = points[current];
-                Point b = points[previous];
-                if ((a.Y > point.Y) == (b.Y > point.Y))
-                    continue;
-                double crossingX =
-                    (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X;
-                if (point.X < crossingX)
-                    inside = !inside;
-            }
-            return inside;
         }
     }
 }

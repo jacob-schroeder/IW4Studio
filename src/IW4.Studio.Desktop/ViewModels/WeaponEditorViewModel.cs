@@ -72,6 +72,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     private int _selectedAccuracyGraphIndex;
     private IReadOnlyList<WeaponLocationDamageItemViewModel> _locationDamageItems = [];
     private IReadOnlyList<float> _locationDamageMultipliers = [];
+    private IReadOnlyList<InspectorPropertyRowViewModel> _visibleLocationDamageInspectorRows = [];
     private int _selectedLocationDamageIndex;
     private IReadOnlyList<WeaponBounceSurfaceItemViewModel> _bounceSurfaces = [];
     private int _selectedBounceSurfaceIndex;
@@ -262,11 +263,14 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     public bool ShowsSemanticBrowser => HasIndexedRows && !IsLocationDamageCategory;
     public bool HasVisibleInspectorRows =>
         VisibleInspectorSections.Count > 0 ||
-        VisibleSidebarInspectorSections.Count > 0;
+        VisibleSidebarInspectorSections.Count > 0 ||
+        VisibleLocationDamageInspectorRows.Count > 0;
     public bool HasVisibleSidebarInspectorRows =>
         VisibleSidebarInspectorSections.Count > 0;
     public bool HasPropertySidebarContent =>
-        HasIndexedRows || HasVisibleSidebarInspectorRows;
+        HasIndexedRows ||
+        HasVisibleSidebarInspectorRows ||
+        HasVisibleLocationDamageInspectorRows;
     public bool IsAccuracyCategory =>
         SelectedCategory.Id == WeaponPropertyCategory.KickRecoilAndAccuracy;
     public bool IsLocationDamageCategory =>
@@ -317,6 +321,15 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         get => _locationDamageMultipliers;
         private set => SetProperty(ref _locationDamageMultipliers, value);
     }
+
+    public IReadOnlyList<InspectorPropertyRowViewModel> VisibleLocationDamageInspectorRows
+    {
+        get => _visibleLocationDamageInspectorRows;
+        private set => SetProperty(ref _visibleLocationDamageInspectorRows, value);
+    }
+
+    public bool HasVisibleLocationDamageInspectorRows =>
+        VisibleLocationDamageInspectorRows.Count > 0;
 
     public int SelectedLocationDamageIndex
     {
@@ -508,7 +521,12 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     {
         ArgumentNullException.ThrowIfNull(mutation);
         mutation(); RefreshValidation(); RebuildModelSlots();
-        if (!_isCommittingRows && rebuildInspector) RefreshInspector(); NotifyState();
+        if (!_isCommittingRows)
+        {
+            if (rebuildInspector) RefreshInspector();
+            else RefreshSemanticVisualizations();
+        }
+        NotifyState();
     }
     internal void MutateModel(WeaponIndexedRowKind kind, int index, Action mutation)
     {
@@ -1016,15 +1034,27 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         VisibleIndexedRows = Array.AsReadOnly(indexedSource
             .Where(row => Matches(row.Title) || Matches(row.Detail))
             .ToArray());
+        VisibleLocationDamageInspectorRows = InspectorSelection is null
+            ? []
+            : Array.AsReadOnly(InspectorSelection.Sections
+                .SelectMany(section => section.Rows)
+                .Where(IsLocationDamageInspectorRow)
+                .Where(row =>
+                    Matches(row.Label) ||
+                    Matches(row.FieldPath) ||
+                    Matches(row.Description))
+                .ToArray());
         IReadOnlyList<InspectorSectionViewModel> cards = InspectorSelection is null
             ? []
             : Array.AsReadOnly(InspectorSelection.Sections
-                .SelectMany(section => section.Rows.Select(row => new
-                {
-                    Title = InspectorCardTitle(row, section.Title),
-                    Row = row,
-                    section.IsExpanded
-                }))
+                .SelectMany(section => section.Rows
+                    .Where(row => !IsLocationDamageInspectorRow(row))
+                    .Select(row => new
+                    {
+                        Title = InspectorCardTitle(row, section.Title),
+                        Row = row,
+                        section.IsExpanded
+                    }))
                 .GroupBy(item => item.Title, StringComparer.Ordinal)
                 .Select(group => new InspectorSectionViewModel(
                     group.Key,
@@ -1050,10 +1080,20 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         OnPropertyChanged(nameof(HasVisibleIndexedRows));
         OnPropertyChanged(nameof(HasVisibleInspectorRows));
         OnPropertyChanged(nameof(HasVisibleSidebarInspectorRows));
+        OnPropertyChanged(nameof(HasVisibleLocationDamageInspectorRows));
         OnPropertyChanged(nameof(HasPropertySidebarContent));
         OnPropertyChanged(nameof(ShowsSemanticTabs));
         OnPropertyChanged(nameof(SemanticBrowserSubtitle));
     }
+
+    private bool IsLocationDamageInspectorRow(
+        InspectorPropertyRowViewModel row) =>
+        IsLocationDamageCategory &&
+        SelectedIndexedRow?.Kind == WeaponIndexedRowKind.LocationDamage &&
+        (row.FieldPath.StartsWith(
+             "weapon.definition.locationDamageMultipliers[",
+             StringComparison.Ordinal) ||
+         row.FieldPath == "weapon.selection.storage");
 
     private bool UsesInspectorSidebar(string title, int cardCount)
     {
@@ -1139,11 +1179,9 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph or
             WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph =>
                 path.Contains("GraphKnots[", StringComparison.Ordinal),
-            WeaponIndexedRowKind.LocationDamage =>
-                path.StartsWith("weapon.definition.locationDamageMultipliers[", StringComparison.Ordinal),
-            WeaponIndexedRowKind.ProjectileParallelBounce =>
-                path.StartsWith("weapon.definition.projectile.parallelBounce[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.ProjectileParallelBounce or
             WeaponIndexedRowKind.ProjectilePerpendicularBounce =>
+                path.StartsWith("weapon.definition.projectile.parallelBounce[", StringComparison.Ordinal) ||
                 path.StartsWith("weapon.definition.projectile.perpendicularBounce[", StringComparison.Ordinal),
             WeaponIndexedRowKind.BounceSound =>
                 path.StartsWith("weapon.definition.bounceSounds[", StringComparison.Ordinal),
@@ -1175,7 +1213,6 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph or
         WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph or
         WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph => "Selected accuracy knot",
-        WeaponIndexedRowKind.LocationDamage => "Selected hit location",
         WeaponIndexedRowKind.ProjectileParallelBounce or
         WeaponIndexedRowKind.ProjectilePerpendicularBounce => "Selected bounce surface",
         WeaponIndexedRowKind.BounceSound => "Selected surface sound",

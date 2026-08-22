@@ -609,8 +609,11 @@ internal static class WeaponInspectorProjection
 
     private static void AddIndexedRows(WeaponEditorViewModel vm, WeaponDraft draft, WeaponDef definition, WeaponIndexedRowItemViewModel selected, List<InspectorPropertyRowViewModel> rows)
     {
-        rows.Add(ReadOnly("Role", "weapon.selection.role", selected.Title));
-        rows.Add(ReadOnly("Index", "weapon.selection.index", selected.Index.ToString(CultureInfo.InvariantCulture)));
+        if (selected.Kind != WeaponIndexedRowKind.LocationDamage)
+        {
+            rows.Add(ReadOnly("Role", "weapon.selection.role", selected.Title));
+            rows.Add(ReadOnly("Index", "weapon.selection.index", selected.Index.ToString(CultureInfo.InvariantCulture)));
+        }
         if (selected.Kind.IsModel() && vm.ModelSlots.FirstOrDefault(slot => slot.Kind == selected.Kind && slot.Index == selected.Index) is { } modelSlot)
         {
             rows.Add(ReadOnly("Preview state", "weapon.selection.previewState", modelSlot.StateText));
@@ -653,9 +656,14 @@ internal static class WeaponInspectorProjection
             case WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph: AddGraph(vm, rows, $"weapon.variant.aiVsPlayerAccuracyGraphKnots[{index}]", draft.Variant.AiVsPlayerAccuracyGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAiVsPlayerAccuracyGraphKnots(index, value)) : null); break;
             case WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph: AddGraph(vm, rows, $"weapon.definition.accuracy.originalAiVsAiGraphKnots[{index}]", definition.Accuracy.OriginalAiVsAiGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionAccuracyOriginalAiVsAiGraphKnots(index, value)) : null); break;
             case WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph: AddGraph(vm, rows, $"weapon.definition.accuracy.originalAiVsPlayerGraphKnots[{index}]", definition.Accuracy.OriginalAiVsPlayerGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionAccuracyOriginalAiVsPlayerGraphKnots(index, value)) : null); break;
-            case WeaponIndexedRowKind.LocationDamage: AddFloat(vm, rows, "Multiplier", $"weapon.definition.locationDamageMultipliers[{index}]", definition.LocationDamageMultipliers[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionLocationDamageMultipliers(index, value)) : null); break;
-            case WeaponIndexedRowKind.ProjectileParallelBounce: AddFloat(vm, rows, "Value", $"weapon.definition.projectile.parallelBounce[{index}]", definition.Projectile.ParallelBounce[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionProjectileParallelBounce(index, value)) : null); break;
-            case WeaponIndexedRowKind.ProjectilePerpendicularBounce: AddFloat(vm, rows, "Value", $"weapon.definition.projectile.perpendicularBounce[{index}]", definition.Projectile.PerpendicularBounce[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionProjectilePerpendicularBounce(index, value)) : null); break;
+            case WeaponIndexedRowKind.LocationDamage: AddFloat(vm, rows, "Multiplier", $"weapon.definition.locationDamageMultipliers[{index}]", definition.LocationDamageMultipliers[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionLocationDamageMultipliers(index, value), rebuildInspector: false) : null, Math.Min(0f, definition.LocationDamageMultipliers[index]), Math.Max(2f, definition.LocationDamageMultipliers[index]), 0.05f); break;
+            case WeaponIndexedRowKind.ProjectileParallelBounce:
+            case WeaponIndexedRowKind.ProjectilePerpendicularBounce:
+                if (index < definition.Projectile.ParallelBounce.Count)
+                    AddFloat(vm, rows, "Parallel", $"weapon.definition.projectile.parallelBounce[{index}]", definition.Projectile.ParallelBounce[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionProjectileParallelBounce(index, value), rebuildInspector: false) : null, Math.Min(0f, definition.Projectile.ParallelBounce[index]), Math.Max(1f, definition.Projectile.ParallelBounce[index]), 0.01f);
+                if (index < definition.Projectile.PerpendicularBounce.Count)
+                    AddFloat(vm, rows, "Perpendicular", $"weapon.definition.projectile.perpendicularBounce[{index}]", definition.Projectile.PerpendicularBounce[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionProjectilePerpendicularBounce(index, value), rebuildInspector: false) : null, Math.Min(0f, definition.Projectile.PerpendicularBounce[index]), Math.Max(1f, definition.Projectile.PerpendicularBounce[index]), 0.01f);
+                break;
             case WeaponIndexedRowKind.BounceSound: AddNameAsset(vm, rows, "Sound", $"weapon.definition.bounceSounds[{index}].name", definition.BounceSounds[index].Name, XAssetType.Sound, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionBounceSounds(index, WithName(RequireDefinition(draft).BounceSounds[index], value))) : null); break;
             case WeaponIndexedRowKind.TurretSpinUpSound: AddNameAsset(vm, rows, "Sound", $"weapon.definition.turret.barrelSpinUpSounds[{index}].name", definition.Turret.BarrelSpinUpSounds[index].Name, XAssetType.Sound, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionTurretBarrelSpinUpSounds(index, WithName(RequireDefinition(draft).Turret.BarrelSpinUpSounds[index], value))) : null); break;
             case WeaponIndexedRowKind.TurretSpinDownSound: AddNameAsset(vm, rows, "Sound", $"weapon.definition.turret.barrelSpinDownSounds[{index}].name", definition.Turret.BarrelSpinDownSounds[index].Name, XAssetType.Sound, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionTurretBarrelSpinDownSounds(index, WithName(RequireDefinition(draft).Turret.BarrelSpinDownSounds[index], value))) : null); break;
@@ -689,9 +697,9 @@ internal static class WeaponInspectorProjection
         if (!choices.Any(choice => choice.Value == selected)) choices.Add(new(selected, $"{selected} — Unknown imported value"));
         rows.Add(new InspectorChoicePropertyRowViewModel(label, path, choices, selected, apply is null ? null : text => apply((T)Enum.ToObject(typeof(T), int.Parse(text, CultureInfo.InvariantCulture)))));
     }
-    private static void AddFloat(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, float value, Action<float>? apply)
+    private static void AddFloat(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, float value, Action<float>? apply, float? sliderMinimum = null, float? sliderMaximum = null, float sliderTickFrequency = 0.01f)
     {
-        if (float.IsFinite(value)) { rows.Add(new InspectorFloatPropertyRowViewModel(label, path, value, apply)); return; }
+        if (float.IsFinite(value)) { rows.Add(new InspectorFloatPropertyRowViewModel(label, path, value, apply, sliderMinimum: sliderMinimum, sliderMaximum: sliderMaximum, sliderTickFrequency: sliderTickFrequency)); return; }
         rows.Add(ReadOnly($"{label} · imported", path + ".raw", $"{value:R} · 0x{BitConverter.SingleToInt32Bits(value):X8}"));
         rows.Add(new InspectorTextPropertyRowViewModel($"{label} replacement", path, string.Empty, apply is null ? null : text => apply(float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture)), ValidateFinite));
     }

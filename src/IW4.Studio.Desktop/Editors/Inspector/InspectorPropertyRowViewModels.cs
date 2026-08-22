@@ -334,13 +334,20 @@ public sealed class InspectorUnsignedIntegerPropertyRowViewModel
 public sealed class InspectorFloatPropertyRowViewModel
     : InspectorStagedPropertyRowViewModel<float>
 {
+    private double _sliderMaximum;
+    private double _sliderMinimum;
+    private double _sliderValue;
+
     public InspectorFloatPropertyRowViewModel(
         string label,
         string fieldPath,
         float value,
         Action<float>? apply = null,
         string? description = null,
-        bool isReadOnly = false)
+        bool isReadOnly = false,
+        float? sliderMinimum = null,
+        float? sliderMaximum = null,
+        float sliderTickFrequency = 0.01f)
         : base(
             label,
             fieldPath,
@@ -349,7 +356,55 @@ public sealed class InspectorFloatPropertyRowViewModel
             description,
             isReadOnly)
     {
+        if (sliderMinimum.HasValue != sliderMaximum.HasValue)
+            throw new ArgumentException("Slider bounds must be supplied together.");
+        if (sliderMinimum is { } minimum &&
+            sliderMaximum is { } maximum &&
+            (!float.IsFinite(minimum) || !float.IsFinite(maximum) || maximum <= minimum))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sliderMaximum),
+                "Slider bounds must be finite and the maximum must exceed the minimum.");
+        }
+        if (!float.IsFinite(sliderTickFrequency) || sliderTickFrequency <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sliderTickFrequency));
+
+        HasSlider = sliderMinimum.HasValue;
+        _sliderMinimum = HasSlider ? Math.Min(sliderMinimum!.Value, value) : 0;
+        _sliderMaximum = HasSlider ? Math.Max(sliderMaximum!.Value, value) : 1;
+        SliderTickFrequency = sliderTickFrequency;
+        _sliderValue = value;
+        PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName == nameof(Input))
+                SynchronizeSliderFromInput();
+        };
         ValidateInput();
+    }
+
+    public bool HasSlider { get; }
+
+    public double SliderMinimum => _sliderMinimum;
+
+    public double SliderMaximum => _sliderMaximum;
+
+    public double SliderTickFrequency { get; }
+
+    public double SliderValue
+    {
+        get => _sliderValue;
+        set
+        {
+            if (!HasSlider || !double.IsFinite(value))
+                return;
+
+            double constrained = Math.Clamp(value, SliderMinimum, SliderMaximum);
+            float numericValue = (float)constrained;
+            if (!SetProperty(ref _sliderValue, numericValue))
+                return;
+
+            Input = numericValue.ToString("0.###", CultureInfo.InvariantCulture);
+        }
     }
 
     protected override string Format(float value) => FormatInvariant(value);
@@ -370,6 +425,37 @@ public sealed class InspectorFloatPropertyRowViewModel
 
     private static string FormatInvariant(float value) =>
         value.ToString("G9", CultureInfo.InvariantCulture);
+
+    private void SynchronizeSliderFromInput()
+    {
+        if (!HasSlider ||
+            !float.TryParse(
+                Input,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out float value) ||
+            !float.IsFinite(value))
+        {
+            return;
+        }
+
+        if (value < _sliderMinimum)
+        {
+            _sliderMinimum = value;
+            OnPropertyChanged(nameof(SliderMinimum));
+        }
+        else if (value > _sliderMaximum)
+        {
+            _sliderMaximum = value;
+            OnPropertyChanged(nameof(SliderMaximum));
+        }
+
+        if (_sliderValue.Equals(value))
+            return;
+
+        _sliderValue = value;
+        OnPropertyChanged(nameof(SliderValue));
+    }
 }
 
 public sealed class InspectorBooleanPropertyRowViewModel
