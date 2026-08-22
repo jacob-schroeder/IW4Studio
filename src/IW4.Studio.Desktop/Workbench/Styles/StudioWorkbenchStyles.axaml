@@ -372,6 +372,7 @@
   <Style Selector="TextBlock.propertyLabel">
     <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="FontSize" Value="9" />
+    <Setter Property="LineHeight" Value="13" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{DynamicResource StudioTextSubtleBrush}" />
   </Style>

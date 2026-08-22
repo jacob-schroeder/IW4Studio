@@ -179,10 +179,7 @@
     <DataTemplate DataType="{x:Type inspector:InspectorAssetReferencePropertyRowViewModel}"
                   x:DataType="inspector:InspectorAssetReferencePropertyRowViewModel">
       <StackPanel Width="320" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
-        <StackPanel Orientation="Horizontal" Spacing="5">
-          <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
-          <TextBlock Text="{Binding AssetTypeText}" FontSize="8" Foreground="{DynamicResource StudioTextMutedBrush}" />
-        </StackPanel>
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" Margin="1,0,0,0" />
         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5">
           <Border Padding="8,6" CornerRadius="4" Background="{DynamicResource StudioInputBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
