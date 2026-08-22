@@ -1,66 +1,326 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:inspector="using:IW4.Studio.Desktop.Editors.Inspector"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="using:IW4.Studio.Desktop.ViewModels"
+             xmlns:weapon="using:IW4.Studio.Desktop.Editors.Weapon"
              xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
              x:Class="IW4.Studio.Desktop.Editors.Weapon.WeaponEditorView"
-             x:DataType="vm:WeaponEditorViewModel">
-  <Grid RowDefinitions="Auto,8,*">
-    <Border Padding="12,9" CornerRadius="7"
-            Background="{DynamicResource StudioSurfaceBrush}"
-            BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
-      <Grid ColumnDefinitions="Auto,12,*,Auto" ColumnSpacing="8">
-        <TextBlock Text="WEAPON" VerticalAlignment="Center" FontSize="9" FontWeight="Bold"
-                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
-        <StackPanel Grid.Column="2" Spacing="2">
+             x:DataType="vm:WeaponEditorViewModel"
+             SizeChanged="Editor_SizeChanged"
+             mc:Ignorable="d"
+             d:DesignWidth="1280"
+             d:DesignHeight="780">
+  <UserControl.Styles>
+    <Style Selector="ListBox.weaponCategoryRail">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.weaponCategoryRail > ListBoxItem">
+      <Setter Property="Padding" Value="9,7" />
+      <Setter Property="Margin" Value="0,0,0,3" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.weaponCategoryRail > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.weaponCategoryRail > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ListBox.semanticSlots">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.semanticSlots > ListBoxItem">
+      <Setter Property="Padding" Value="9,7" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.semanticSlots > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.semanticSlots > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ListBox.semanticTabs">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.semanticTabs > ListBoxItem">
+      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="Margin" Value="0,0,5,5" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ListBox.semanticTabs > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    </Style>
+    <Style Selector="ListBox.semanticTabs > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="ListBox.visualCards">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.visualCards > ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,7,7" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ListBox.visualCards > ListBoxItem:pointerover">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    </Style>
+    <Style Selector="ListBox.visualCards > ListBoxItem:selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="Border.propertyCard">
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBlock.cardHeading">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="{x:Type inspector:InspectorTextPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorTextPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <TextBox MinHeight="30" Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus" KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorIntegerPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorIntegerPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <TextBox MinHeight="30" Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus" KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorUnsignedIntegerPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorUnsignedIntegerPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <TextBox MinHeight="30" Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus" KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorFloatPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorFloatPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <TextBox MinHeight="30" Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus" KeyDown="StagedInput_KeyDown" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorBooleanPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorBooleanPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="5" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <CheckBox IsChecked="{Binding Value, Mode=TwoWay}" IsEnabled="{Binding IsEditable}" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorChoicePropertyRowViewModel}"
+                  x:DataType="inspector:InspectorChoicePropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <ComboBox MinHeight="30" Padding="8,3" ItemsSource="{Binding Choices}"
+                  SelectedItem="{Binding SelectedChoice, Mode=TwoWay}" IsEnabled="{Binding IsEditable}" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorAssetReferencePropertyRowViewModel}"
+                  x:DataType="inspector:InspectorAssetReferencePropertyRowViewModel">
+      <StackPanel Width="320" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <StackPanel Orientation="Horizontal" Spacing="5">
+          <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+          <TextBlock Text="{Binding AssetTypeText}" FontSize="8" Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5">
+          <Border Padding="8,6" CornerRadius="4" Background="{DynamicResource StudioInputBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+          </Border>
+          <Button Grid.Column="1" MinWidth="30" MinHeight="30" Padding="5"
+                  Command="{Binding BrowseCommand}" ToolTip.Tip="Choose asset">
+            <materialIcons:MaterialIcon Kind="FolderSearchOutline" Width="15" Height="15" />
+          </Button>
+          <Button Grid.Column="2" MinWidth="30" MinHeight="30" Padding="5"
+                  Command="{Binding ClearCommand}" ToolTip.Tip="Clear asset">
+            <materialIcons:MaterialIcon Kind="Close" Width="15" Height="15" />
+          </Button>
+        </Grid>
+        <TextBlock Text="Reference is not resolved in the current asset pool." IsVisible="{Binding IsMissing}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioWarningBrush}" />
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorReadOnlyPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorReadOnlyPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <Border Padding="8,6" CornerRadius="4" Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+          <TextBlock Text="{Binding Value}" TextWrapping="Wrap" />
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorSectionViewModel}"
+                  x:DataType="inspector:InspectorSectionViewModel">
+      <Border Classes="propertyCard" Margin="0,0,0,12">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="Auto,8,*" VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="TuneVariant" Width="17" Height="17"
+                                        Foreground="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Grid.Column="2" Text="{Binding Title}" Classes="cardHeading" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid ColumnDefinitions="220,10,*">
+    <Border Grid.Column="0" Classes="propertyCard" Padding="10">
+      <Grid RowDefinitions="Auto,12,*">
+        <StackPanel Margin="4,2,4,0" Spacing="3">
+          <TextBlock Text="WEAPON EDITOR" FontSize="8" FontWeight="Bold" LetterSpacing="0.8"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{Binding AccessText}" FontSize="9" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Text="{Binding AccessText}" FontSize="9" Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7">
-          <Button Classes="ghost" MinHeight="30" Padding="10,4"
-                  IsEnabled="{Binding CanRevert}" ToolTip.Tip="Revert the editable Weapon draft"
-                  AutomationProperties.Name="Revert Weapon draft" Click="RevertButton_Click">Revert</Button>
-          <Button Classes="primary" MinHeight="30" Padding="12,5"
-                  IsEnabled="{Binding CanApply}" ToolTip.Tip="Validate and apply the complete Weapon draft"
-                  AutomationProperties.Name="Apply Weapon draft" Click="ApplyButton_Click">Apply</Button>
-        </StackPanel>
+        <ListBox Grid.Row="2" Classes="weaponCategoryRail" ItemsSource="{Binding Categories}"
+                 SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 AutomationProperties.Name="Weapon property categories">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:WeaponCategoryItemViewModel">
+              <Grid ColumnDefinitions="24,*" ColumnSpacing="8">
+                <materialIcons:MaterialIcon Kind="{Binding Icon}" Width="16" Height="16"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                  <TextBlock Text="{Binding Title}" FontSize="10" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Subtitle}" FontSize="8"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </Grid>
     </Border>
 
-    <ScrollViewer Grid.Row="2"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto"
-                  VerticalContentAlignment="Stretch">
-      <Grid MinHeight="560" RowDefinitions="Auto,10,*,10,Auto">
-        <Border Padding="12,8" CornerRadius="7"
-                Background="{DynamicResource StudioSurfaceBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
-          <Grid ColumnDefinitions="Auto,260,Auto,150,Auto,Auto,Auto,Auto" ColumnSpacing="9">
-            <TextBlock Text="STATIC MODEL" VerticalAlignment="Center" FontSize="9" FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            <ComboBox Grid.Column="1" MinHeight="30" ItemsSource="{Binding ModelSlots}"
-                      SelectedItem="{Binding SelectedModelSlot, Mode=TwoWay}"
-                      AutomationProperties.Name="Weapon model selector" ToolTip.Tip="Inspect one selected static Weapon XModel reference; this is not an assembled or animated preview" />
-            <TextBlock Grid.Column="2" Text="LOD" VerticalAlignment="Center" FontSize="9" FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            <ComboBox Grid.Column="3" MinHeight="30" ItemsSource="{Binding Lods}"
-                      SelectedItem="{Binding SelectedLod, Mode=TwoWay}"
-                      AutomationProperties.Name="Weapon preview LOD selector" />
-            <Button Grid.Column="4" Classes="ghost" MinHeight="30" Padding="9,4"
-                    ToolTip.Tip="Reset orbit, pan, and zoom to fit the selected model"
-                    AutomationProperties.Name="Fit Weapon model preview" Click="FitButton_Click">Fit</Button>
-            <CheckBox Grid.Column="5" Content="Light" IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" />
-            <CheckBox Grid.Column="6" Content="Wire" IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
-            <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="8">
-              <CheckBox Content="Collision" IsEnabled="{Binding CanShowCollision}" IsChecked="{Binding IsCollisionEnabled, Mode=TwoWay}" />
-              <CheckBox Content="Tags" IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
-            </StackPanel>
-          </Grid>
-        </Border>
+    <Grid Grid.Column="2" RowDefinitions="260,10,Auto,10,*">
+      <Border Grid.Row="0" CornerRadius="8" ClipToBounds="True"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*">
+          <Border Padding="11,8" Background="#BF1C2026"
+                  BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1">
+            <WrapPanel Orientation="Horizontal">
+              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,10,5">
+                <TextBlock Text="MODEL" VerticalAlignment="Center" FontSize="8" FontWeight="Bold"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                <ComboBox Width="136" MinHeight="30" ItemsSource="{Binding PreviewModelFamilies}"
+                          SelectedItem="{Binding SelectedPreviewModelFamily, Mode=TwoWay}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,10,5">
+                <TextBlock Text="CAMO" VerticalAlignment="Center" FontSize="8" FontWeight="Bold"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                <ComboBox Width="136" MinHeight="30" ItemsSource="{Binding CamoOptions}"
+                          SelectedItem="{Binding SelectedCamo, Mode=TwoWay}"
+                          IsEnabled="{Binding IsCamoSelectionEnabled}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,10,5">
+                <TextBlock Text="LOD" VerticalAlignment="Center" FontSize="8" FontWeight="Bold"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                <ComboBox Width="92" MinHeight="30" ItemsSource="{Binding Lods}"
+                          SelectedItem="{Binding SelectedLod, Mode=TwoWay}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,0,5">
+                <Button Classes="ghost" MinWidth="31" MinHeight="31" Padding="6"
+                        Click="FitButton_Click" ToolTip.Tip="Frame selected model">
+                  <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="15" Height="15" />
+                </Button>
+                <ToggleButton Classes="ghost" MinWidth="31" MinHeight="31" Padding="6"
+                              IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" ToolTip.Tip="Studio lighting">
+                  <materialIcons:MaterialIcon Kind="WhiteBalanceSunny" Width="15" Height="15" />
+                </ToggleButton>
+                <ToggleButton Classes="ghost" MinWidth="31" MinHeight="31" Padding="6"
+                              IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" ToolTip.Tip="Wireframe">
+                  <materialIcons:MaterialIcon Kind="CubeOutline" Width="15" Height="15" />
+                </ToggleButton>
+                <ToggleButton Classes="ghost" MinWidth="31" MinHeight="31" Padding="6"
+                              IsEnabled="{Binding CanShowCollision}"
+                              IsChecked="{Binding IsCollisionEnabled, Mode=TwoWay}" ToolTip.Tip="Collision">
+                  <materialIcons:MaterialIcon Kind="VectorSquare" Width="15" Height="15" />
+                </ToggleButton>
+                <ToggleButton Classes="ghost" MinHeight="31" Padding="8,5"
+                              IsEnabled="{Binding CanFindModelTags}"
+                              IsChecked="{Binding ShowBoneTags, Mode=TwoWay}"
+                              ToolTip.Tip="Show model tags">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <materialIcons:MaterialIcon Kind="TagSearchOutline" Width="15" Height="15" />
+                    <TextBlock Text="Tags" FontSize="9" />
+                  </StackPanel>
+                </ToggleButton>
+              </StackPanel>
+            </WrapPanel>
+          </Border>
 
-        <Border Grid.Row="2" MinHeight="320" CornerRadius="8" ClipToBounds="True"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
-          <Grid>
+          <Grid Grid.Row="1">
             <xmodel:XModelPreviewControl x:Name="Preview" Scene="{Binding Scene}"
                                         SelectedLodIndex="{Binding SelectedLodIndex}"
                                         UseStudioEnvironment="{Binding IsStudioEnvironmentEnabled}"
@@ -71,13 +331,11 @@
                     AutomationProperties.Name="Weapon viewport input surface"
                     ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
             <xmodel:XModelBoneTagOverlay x:Name="BoneTagOverlay" IsHitTestVisible="False" ClipToBounds="True" />
-            <Border BorderBrush="{DynamicResource StudioWarningBrush}" BorderThickness="1"
-                    CornerRadius="7" IsVisible="{Binding HasPreviewDiagnostics}" IsHitTestVisible="False" />
             <Border HorizontalAlignment="Center" VerticalAlignment="Center" Padding="18,12" CornerRadius="6"
                     Background="#D816191F" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1"
                     IsVisible="{Binding HasPreviewMessage}" IsHitTestVisible="False">
               <StackPanel Spacing="4">
-                <TextBlock Text="STATIC SELECTED-MODEL PREVIEW" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                <TextBlock Text="MODEL PREVIEW" HorizontalAlignment="Center" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding PreviewMessage}" HorizontalAlignment="Center" FontSize="10"
                            MaxWidth="520" TextWrapping="Wrap" TextAlignment="Center"
                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
@@ -85,67 +343,236 @@
             </Border>
             <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Padding="8,4"
                     CornerRadius="4" Background="#C816191F" IsHitTestVisible="False">
-              <TextBlock Text="{Binding PreviewStatus}" FontSize="8" MaxWidth="420"
+              <TextBlock Text="{Binding PreviewStatus}" FontSize="8" MaxWidth="540"
                          TextTrimming="CharacterEllipsis" Foreground="#CDD5DF" />
             </Border>
-            <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Padding="8,4"
-                    CornerRadius="4" Background="#C816191F" IsHitTestVisible="False">
-              <TextBlock Text="LEFT DRAG · ORBIT   RIGHT/MIDDLE DRAG · PAN   SCROLL · ZOOM"
-                         FontSize="8" Foreground="#CDD5DF" />
-            </Border>
           </Grid>
-        </Border>
+        </Grid>
+      </Border>
 
-        <Border Grid.Row="4" Padding="12,9" CornerRadius="7"
-                Background="{DynamicResource StudioSurfaceBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
-          <Grid ColumnDefinitions="220,16,260,16,*">
-            <Grid RowDefinitions="Auto,5,*">
-              <TextBlock Text="PROPERTY CATEGORY" FontSize="8" FontWeight="Bold"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <ListBox Grid.Row="2" ItemsSource="{Binding Categories}"
-                       SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
-                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                       AutomationProperties.Name="Weapon property categories">
-                <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Title}" /></DataTemplate></ListBox.ItemTemplate>
-              </ListBox>
-            </Grid>
-            <Grid Grid.Column="2" RowDefinitions="Auto,5,*">
-              <TextBlock Text="INDEXED ROW / MODEL SLOT" FontSize="8" FontWeight="Bold"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <ListBox Grid.Row="2" ItemsSource="{Binding IndexedRows}"
-                       SelectedItem="{Binding SelectedIndexedRow, Mode=TwoWay}"
-                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                       IsVisible="{Binding HasIndexedRows}" AutomationProperties.Name="Weapon indexed property rows">
-                <ListBox.ItemTemplate>
-                  <DataTemplate>
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"
-                                 ToolTip.Tip="{Binding Title}" />
-                      <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="9"
-                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                    </Grid>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
-              <TextBlock Grid.Row="2" Text="This category has scalar fields; edit them in Properties."
-                         IsVisible="{Binding !HasIndexedRows}" TextWrapping="Wrap" FontSize="10"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            </Grid>
-            <StackPanel Grid.Column="4" Spacing="6">
-              <TextBlock Text="SELECTION SUMMARY" FontSize="8" FontWeight="Bold"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <TextBlock Text="{Binding SelectedCategory.Title}" FontWeight="SemiBold" />
-              <TextBlock Text="{Binding SelectedIndexedRow.Title}" FontSize="10" />
-              <TextBlock Text="{Binding CandidateState}" FontSize="10" />
-              <TextBlock Text="{Binding PreviewStatus}" FontSize="10" TextWrapping="Wrap"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            </StackPanel>
-          </Grid>
-        </Border>
+      <Grid Grid.Row="2" RowDefinitions="Auto,7,Auto">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="5" VerticalAlignment="Center">
+          <TextBlock Text="Weapon" FontSize="9" VerticalAlignment="Center" Margin="0,1,0,-1"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+          <materialIcons:MaterialIcon Grid.Column="1" Kind="ChevronRight" Width="12" Height="12"
+                                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="2" Text="{Binding SelectedCategory.Title}" FontSize="9" FontWeight="SemiBold"
+                     VerticalAlignment="Center" Margin="0,1,0,-1" />
+          <materialIcons:MaterialIcon Grid.Column="3" Kind="ChevronRight" Width="12" Height="12"
+                                      IsVisible="{Binding HasSelectedIndexedRow}"
+                                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="4" Text="{Binding SelectedIndexedRow.Title}" FontSize="9"
+                     IsVisible="{Binding HasSelectedIndexedRow}"
+                     VerticalAlignment="Center" Margin="0,1,0,-1"
+                     TextTrimming="CharacterEllipsis" Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Grid>
+        <TextBox Grid.Row="2" MinHeight="34"
+                 Text="{Binding PropertySearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 PlaceholderText="Search this category's properties or slots...">
+          <TextBox.InnerLeftContent>
+            <materialIcons:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="7,0,8,0"
+                                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </TextBox.InnerLeftContent>
+        </TextBox>
       </Grid>
-    </ScrollViewer>
+
+      <ScrollViewer Grid.Row="4" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid x:Name="PropertyWorkspaceGrid" ColumnDefinitions="2*,12,*" RowDefinitions="Auto">
+          <StackPanel x:Name="PropertyPrimaryPane" Grid.Column="0" MinWidth="0" Spacing="12">
+            <Border Classes="propertyCard" IsVisible="{Binding IsAccuracyCategory}">
+              <Grid RowDefinitions="Auto,10,210">
+                <Grid ColumnDefinitions="Auto,8,*,Auto" VerticalAlignment="Center">
+                  <materialIcons:MaterialIcon Kind="ChartBellCurve" Width="18" Height="18"
+                                              Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Grid.Column="2" Text="Accuracy graph" Classes="cardHeading" VerticalAlignment="Center" />
+                  <ComboBox Grid.Column="3" MinWidth="220" ItemsSource="{Binding AccuracyGraphs}"
+                            SelectedIndex="{Binding SelectedAccuracyGraphIndex, Mode=TwoWay}" />
+                </Grid>
+                <Border Grid.Row="2" CornerRadius="6" ClipToBounds="True"
+                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+                  <weapon:WeaponAccuracyGraphControl Points="{Binding SelectedAccuracyGraph.Points}" />
+                </Border>
+              </Grid>
+            </Border>
+
+            <Border Classes="propertyCard" IsVisible="{Binding IsLocationDamageCategory}">
+              <StackPanel Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="Target" Width="18" Height="18"
+                                              Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Text="Location multipliers" Classes="cardHeading" />
+                  <TextBlock Text="Select a region to edit its engine value" FontSize="9"
+                             VerticalAlignment="Center" Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </StackPanel>
+                <ListBox Classes="visualCards" ItemsSource="{Binding LocationDamageItems}"
+                         SelectedIndex="{Binding SelectedLocationDamageIndex, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                  <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WeaponLocationDamageItemViewModel">
+                      <Border Width="150" Padding="10,8" CornerRadius="6"
+                              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <TextBlock Text="{Binding Title}" FontSize="9" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Grid.Column="1" Text="{Binding MultiplierText}" FontSize="10" FontWeight="SemiBold"
+                                     Foreground="{DynamicResource StudioAccentBrush}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="propertyCard" IsVisible="{Binding IsBounceCategory}">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,8,*,Auto" VerticalAlignment="Center">
+                  <materialIcons:MaterialIcon Kind="RocketLaunchOutline" Width="18" Height="18"
+                                              Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Grid.Column="2" Text="Surface bounce response" Classes="cardHeading" />
+                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="5">
+                    <RadioButton Content="Parallel" GroupName="BounceAxis"
+                                 IsChecked="{Binding IsParallelBounceSelected, Mode=TwoWay}" />
+                    <RadioButton Content="Perpendicular" GroupName="BounceAxis"
+                                 IsChecked="{Binding IsPerpendicularBounceSelected, Mode=TwoWay}" />
+                  </StackPanel>
+                </Grid>
+                <ListBox Classes="visualCards" ItemsSource="{Binding BounceSurfaces}"
+                         SelectedIndex="{Binding SelectedBounceSurfaceIndex, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                  <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WeaponBounceSurfaceItemViewModel">
+                      <Border Width="166" Padding="10,8" CornerRadius="6"
+                              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+                        <StackPanel Spacing="5">
+                          <TextBlock Text="{Binding Title}" FontSize="9" FontWeight="SemiBold" />
+                          <Grid ColumnDefinitions="*,Auto,10,Auto">
+                            <TextBlock Text="Parallel" FontSize="8" Foreground="{DynamicResource StudioTextMutedBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding ParallelText}" FontSize="9" />
+                            <TextBlock Grid.Column="3" Text="{Binding PerpendicularText}" FontSize="9"
+                                       Foreground="{DynamicResource StudioAccentBrush}" />
+                          </Grid>
+                          <TextBlock Text="{Binding SoundText}" FontSize="8" TextTrimming="CharacterEllipsis"
+                                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding VisibleInspectorSections}" />
+            <Border Classes="propertyCard" IsVisible="{Binding !HasVisibleInspectorRows}">
+              <TextBlock Text="No properties match this search." FontSize="10"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </Border>
+          </StackPanel>
+
+          <StackPanel x:Name="PropertySidebarPane" Grid.Column="2" MinWidth="0" Spacing="12"
+                      IsVisible="{Binding HasPropertySidebarContent}">
+            <ItemsControl ItemsSource="{Binding VisibleSidebarInspectorSections}"
+                          IsVisible="{Binding HasVisibleSidebarInspectorRows}" />
+
+            <Border Classes="propertyCard" IsVisible="{Binding IsLocationDamageCategory}">
+              <StackPanel Spacing="9">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="HumanMale" Width="18" Height="18"
+                                              Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Text="Hit location" Classes="cardHeading" />
+                </StackPanel>
+                <weapon:WeaponDamageBodyControl Height="400"
+                                                Multipliers="{Binding LocationDamageMultipliers}"
+                                                SelectedIndex="{Binding SelectedLocationDamageIndex, Mode=TwoWay}" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="propertyCard" IsVisible="{Binding IsHideTagTabSelected}">
+              <StackPanel Spacing="9">
+                <Grid ColumnDefinitions="Auto,8,*,Auto" VerticalAlignment="Center">
+                  <materialIcons:MaterialIcon Kind="TagSearchOutline" Width="18" Height="18"
+                                              Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Grid.Column="2" Text="Detected on model" Classes="cardHeading" />
+                  <TextBlock Grid.Column="3" Text="{Binding DetectedModelTagCountText}" FontSize="9"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding DetectedModelTags}" IsVisible="{Binding HasDetectedModelTags}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Classes="ghost" Margin="0,0,6,6" Padding="9,5"
+                              Click="AssignDetectedTag_Click" ToolTip.Tip="Assign to the selected hide-tag slot">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                          <materialIcons:MaterialIcon Kind="Plus" Width="13" Height="13" />
+                          <TextBlock Text="{Binding}" FontSize="9" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="No tag_* bones are available on the selected XModel."
+                           IsVisible="{Binding !HasDetectedModelTags}" FontSize="9"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="propertyCard" IsVisible="{Binding ShowsSemanticBrowser}">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Semantic slots" Classes="cardHeading" />
+                    <TextBlock Text="{Binding SemanticBrowserSubtitle}" FontSize="9"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Text="{Binding VisibleIndexedRows.Count, StringFormat='{}{0} items'}"
+                             FontSize="9" Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </Grid>
+                <ListBox Classes="semanticTabs" ItemsSource="{Binding SemanticTabs}"
+                         SelectedItem="{Binding SelectedSemanticTab, Mode=TwoWay}"
+                         IsVisible="{Binding ShowsSemanticTabs}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                  <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WeaponSemanticTabItemViewModel">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="{Binding Title}" FontSize="9" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding CountText}" FontSize="8"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <ListBox MaxHeight="420" Classes="semanticSlots"
+                         ItemsSource="{Binding VisibleIndexedRows}"
+                         SelectedItem="{Binding SelectedIndexedRow, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WeaponIndexedRowItemViewModel">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBlock Text="{Binding Title}" FontSize="9" TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding Title}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="8"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Text="No semantic slots match this search."
+                           IsVisible="{Binding !HasVisibleIndexedRows}" FontSize="9"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+    </Grid>
   </Grid>
 </UserControl>

@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:composition="using:IW4.Studio.Desktop.Workbench.Composition"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
         x:Class="IW4.Studio.Desktop.Views.EditorWindow"
         x:DataType="composition:StudioWorkbenchViewModel"
@@ -65,11 +66,35 @@
                      Foreground="{DynamicResource StudioTextSubtleBrush}"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9" Name="ActionBar">
+        <StackPanel Grid.Column="3"
+                    Orientation="Horizontal"
+                    Spacing="9"
+                    Name="ActionBar"
+                    IsVisible="{Binding HasSelectedWeaponEditor}">
           <Button Classes="ghost"
                   MinHeight="32"
-                  Padding="11,5"
-                  Content="Example Button"  />
+                  Padding="10,5"
+                  IsEnabled="{Binding SelectedWeaponEditor.CanRevert}"
+                  ToolTip.Tip="Revert the editable Weapon draft"
+                  AutomationProperties.Name="Revert Weapon draft"
+                  Click="RevertWeaponDraftButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
+              <TextBlock Text="Revert" />
+            </StackPanel>
+          </Button>
+          <Button Classes="primary"
+                  MinHeight="32"
+                  Padding="12,5"
+                  IsEnabled="{Binding SelectedWeaponEditor.CanApply}"
+                  ToolTip.Tip="Validate and apply the complete Weapon draft"
+                  AutomationProperties.Name="Apply Weapon draft"
+                  Click="ApplyWeaponDraftButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
         </StackPanel>
       </Grid>
     </Border>

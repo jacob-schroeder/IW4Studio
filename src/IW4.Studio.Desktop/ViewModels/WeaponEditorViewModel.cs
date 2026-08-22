@@ -5,7 +5,9 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Weapon;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
+using IW4.FastFiles.Strings;
 using IW4.FastFiles.Zone;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
@@ -16,6 +18,7 @@ using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.Editors.Weapon;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;
+using Material.Icons;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
@@ -59,6 +62,25 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     private bool _isWireframeEnabled;
     private bool _isCollisionEnabled;
     private bool _showBoneTags;
+    private string _propertySearchText = string.Empty;
+    private IReadOnlyList<WeaponSemanticTabItemViewModel> _semanticTabs = [];
+    private WeaponSemanticTabItemViewModel? _selectedSemanticTab;
+    private IReadOnlyList<WeaponIndexedRowItemViewModel> _visibleIndexedRows = [];
+    private IReadOnlyList<InspectorSectionViewModel> _visibleInspectorSections = [];
+    private IReadOnlyList<InspectorSectionViewModel> _visibleSidebarInspectorSections = [];
+    private IReadOnlyList<WeaponAccuracyGraphItemViewModel> _accuracyGraphs = [];
+    private int _selectedAccuracyGraphIndex;
+    private IReadOnlyList<WeaponLocationDamageItemViewModel> _locationDamageItems = [];
+    private IReadOnlyList<float> _locationDamageMultipliers = [];
+    private int _selectedLocationDamageIndex;
+    private IReadOnlyList<WeaponBounceSurfaceItemViewModel> _bounceSurfaces = [];
+    private int _selectedBounceSurfaceIndex;
+    private bool _isParallelBounceSelected = true;
+    private IReadOnlyList<string> _detectedModelTags = [];
+    private readonly IReadOnlyList<WeaponPreviewModelFamilyItemViewModel> _previewModelFamilies;
+    private readonly IReadOnlyList<WeaponCamoItemViewModel> _camoOptions;
+    private WeaponPreviewModelFamilyItemViewModel? _selectedPreviewModelFamily;
+    private WeaponCamoItemViewModel? _selectedCamo;
     private bool _isReplacingProjection;
     private bool _isCommittingRows;
     private bool _disposed;
@@ -71,6 +93,14 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _assetReferencePicker = assetReferencePicker;
         _imagePayloads = new WorkspaceGfxImagePayloadResolver(session.Workspace);
         _modelVariantLabels = CaptureModelVariantLabels(session);
+        _previewModelFamilies = Array.AsReadOnly(WeaponPreviewModelFamilyItemViewModel.CreateAll());
+        _camoOptions = Array.AsReadOnly(Enumerable.Range(0, WeaponDef.GunModelCount)
+            .Select(index => new WeaponCamoItemViewModel(
+                index,
+                _modelVariantLabels.TryGetValue(index, out string? label)
+                    ? WeaponSemanticLabels.HumanizeIdentifier(label)
+                    : index == 0 ? "None" : $"Camo {index:00}"))
+            .ToArray());
         _baseline = session.OpenDraft<WeaponDraft>();
         _workingDraft = _baseline.Copy();
         Categories = Array.AsReadOnly(WeaponCategoryItemViewModel.CreateAll());
@@ -102,7 +132,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         {
             if (value is not null && !Lods.Contains(value)) throw new ArgumentOutOfRangeException(nameof(value));
             if (ReferenceEquals(value, _selectedLod)) return;
-            if (!TryCommitInspectorRows()) { OnPropertyChanged(); RevealProperties(); return; }
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
             _selectedLod = value; OnPropertyChanged(); OnPropertyChanged(nameof(SelectedLodIndex)); ResetRendererStatus();
             if (Scene is not null && SelectedModelSlot?.ResolvedModel is { } model)
             {
@@ -115,9 +145,243 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     public bool IsStudioEnvironmentEnabled { get => _isStudioEnvironmentEnabled; set => SetProperty(ref _isStudioEnvironmentEnabled, value); }
     public bool IsWireframeEnabled { get => _isWireframeEnabled; set => SetProperty(ref _isWireframeEnabled, value); }
     public bool IsCollisionEnabled { get => _isCollisionEnabled; set => SetProperty(ref _isCollisionEnabled, value); }
-    public bool ShowBoneTags { get => _showBoneTags; set => SetProperty(ref _showBoneTags, value); }
+    public bool ShowBoneTags
+    {
+        get => _showBoneTags;
+        set
+        {
+            if (!SetProperty(ref _showBoneTags, value) || !value) return;
+            RefreshDetectedModelTags();
+        }
+    }
     public bool CanShowCollision => SelectedLod?.Lod.CollisionTriangleCount > 0;
     public IReadOnlyList<WeaponCategoryItemViewModel> Categories { get; }
+    public IReadOnlyList<WeaponPreviewModelFamilyItemViewModel> PreviewModelFamilies =>
+        _previewModelFamilies;
+    public IReadOnlyList<WeaponCamoItemViewModel> CamoOptions => _camoOptions;
+
+    public WeaponPreviewModelFamilyItemViewModel? SelectedPreviewModelFamily
+    {
+        get => _selectedPreviewModelFamily;
+        set
+        {
+            if (value is not null && !PreviewModelFamilies.Contains(value))
+                throw new ArgumentOutOfRangeException(nameof(value));
+            if (ReferenceEquals(value, _selectedPreviewModelFamily)) return;
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
+            _selectedPreviewModelFamily = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsCamoSelectionEnabled));
+            SelectPreviewModelSlot();
+        }
+    }
+
+    public WeaponCamoItemViewModel? SelectedCamo
+    {
+        get => _selectedCamo;
+        set
+        {
+            if (value is not null && !CamoOptions.Contains(value))
+                throw new ArgumentOutOfRangeException(nameof(value));
+            if (ReferenceEquals(value, _selectedCamo)) return;
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
+            _selectedCamo = value;
+            OnPropertyChanged();
+            if (IsCamoSelectionEnabled) SelectPreviewModelSlot();
+        }
+    }
+
+    public bool IsCamoSelectionEnabled =>
+        SelectedPreviewModelFamily?.SupportsCamo == true;
+
+    public string PropertySearchText
+    {
+        get => _propertySearchText;
+        set
+        {
+            value ??= string.Empty;
+            if (!SetProperty(ref _propertySearchText, value)) return;
+            RefreshSearchProjection();
+        }
+    }
+
+    public IReadOnlyList<WeaponIndexedRowItemViewModel> VisibleIndexedRows
+    {
+        get => _visibleIndexedRows;
+        private set => SetProperty(ref _visibleIndexedRows, value);
+    }
+
+    public IReadOnlyList<WeaponSemanticTabItemViewModel> SemanticTabs
+    {
+        get => _semanticTabs;
+        private set => SetProperty(ref _semanticTabs, value);
+    }
+
+    public WeaponSemanticTabItemViewModel? SelectedSemanticTab
+    {
+        get => _selectedSemanticTab;
+        set
+        {
+            if (_isReplacingProjection) return;
+            if (value is null && SemanticTabs.Count > 0)
+            {
+                OnPropertyChanged();
+                return;
+            }
+            if ((value is not null && !SemanticTabs.Contains(value)) ||
+                ReferenceEquals(value, _selectedSemanticTab)) return;
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
+            _selectedSemanticTab = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsHideTagTabSelected));
+            OnPropertyChanged(nameof(SemanticBrowserSubtitle));
+            SelectSemanticTabRow();
+            RefreshSearchProjection();
+        }
+    }
+
+    public IReadOnlyList<InspectorSectionViewModel> VisibleInspectorSections
+    {
+        get => _visibleInspectorSections;
+        private set => SetProperty(ref _visibleInspectorSections, value);
+    }
+
+    public IReadOnlyList<InspectorSectionViewModel> VisibleSidebarInspectorSections
+    {
+        get => _visibleSidebarInspectorSections;
+        private set => SetProperty(ref _visibleSidebarInspectorSections, value);
+    }
+
+    public bool HasVisibleIndexedRows => VisibleIndexedRows.Count > 0;
+    public bool ShowsSemanticTabs =>
+        SemanticTabs.Count > 1 && string.IsNullOrWhiteSpace(PropertySearchText);
+    public string SemanticBrowserSubtitle =>
+        string.IsNullOrWhiteSpace(PropertySearchText)
+            ? SelectedSemanticTab?.Title ?? string.Empty
+            : "All matching slots";
+    public bool ShowsSemanticBrowser => HasIndexedRows && !IsLocationDamageCategory;
+    public bool HasVisibleInspectorRows =>
+        VisibleInspectorSections.Count > 0 ||
+        VisibleSidebarInspectorSections.Count > 0;
+    public bool HasVisibleSidebarInspectorRows =>
+        VisibleSidebarInspectorSections.Count > 0;
+    public bool HasPropertySidebarContent =>
+        HasIndexedRows || HasVisibleSidebarInspectorRows;
+    public bool IsAccuracyCategory =>
+        SelectedCategory.Id == WeaponPropertyCategory.KickRecoilAndAccuracy;
+    public bool IsLocationDamageCategory =>
+        SelectedCategory.Id == WeaponPropertyCategory.DamageRangeAndAiTuning;
+    public bool IsBounceCategory =>
+        SelectedCategory.Id == WeaponPropertyCategory.PhysicsAndProjectile;
+    public bool IsHideTagsCategory =>
+        SelectedCategory.Id == WeaponPropertyCategory.HideTagsAndNoteTracks;
+    public bool IsHideTagTabSelected =>
+        SelectedSemanticTab?.Rows.Any(row =>
+            row.Kind == WeaponIndexedRowKind.HideTag) == true;
+
+    public IReadOnlyList<WeaponAccuracyGraphItemViewModel> AccuracyGraphs
+    {
+        get => _accuracyGraphs;
+        private set => SetProperty(ref _accuracyGraphs, value);
+    }
+
+    public int SelectedAccuracyGraphIndex
+    {
+        get => _selectedAccuracyGraphIndex;
+        set
+        {
+            if (value < 0 || value >= AccuracyGraphs.Count ||
+                value == _selectedAccuracyGraphIndex) return;
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
+            _selectedAccuracyGraphIndex = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedAccuracyGraph));
+            SelectAccuracyGraph(AccuracyGraphs[value].RowKind);
+        }
+    }
+
+    public WeaponAccuracyGraphItemViewModel? SelectedAccuracyGraph =>
+        SelectedAccuracyGraphIndex >= 0 &&
+        SelectedAccuracyGraphIndex < AccuracyGraphs.Count
+            ? AccuracyGraphs[SelectedAccuracyGraphIndex]
+            : null;
+
+    public IReadOnlyList<WeaponLocationDamageItemViewModel> LocationDamageItems
+    {
+        get => _locationDamageItems;
+        private set => SetProperty(ref _locationDamageItems, value);
+    }
+
+    public IReadOnlyList<float> LocationDamageMultipliers
+    {
+        get => _locationDamageMultipliers;
+        private set => SetProperty(ref _locationDamageMultipliers, value);
+    }
+
+    public int SelectedLocationDamageIndex
+    {
+        get => _selectedLocationDamageIndex;
+        set
+        {
+            if (value < 0 || value >= LocationDamageItems.Count ||
+                value == _selectedLocationDamageIndex) return;
+            _selectedLocationDamageIndex = value;
+            OnPropertyChanged();
+            SelectIndexedRow(WeaponIndexedRowKind.LocationDamage, value);
+        }
+    }
+
+    public IReadOnlyList<WeaponBounceSurfaceItemViewModel> BounceSurfaces
+    {
+        get => _bounceSurfaces;
+        private set => SetProperty(ref _bounceSurfaces, value);
+    }
+
+    public int SelectedBounceSurfaceIndex
+    {
+        get => _selectedBounceSurfaceIndex;
+        set
+        {
+            if (value < 0 || value >= BounceSurfaces.Count ||
+                value == _selectedBounceSurfaceIndex) return;
+            _selectedBounceSurfaceIndex = value;
+            OnPropertyChanged();
+            SelectBounceIndexedRow();
+        }
+    }
+
+    public bool IsParallelBounceSelected
+    {
+        get => _isParallelBounceSelected;
+        set
+        {
+            if (!SetProperty(ref _isParallelBounceSelected, value)) return;
+            OnPropertyChanged(nameof(IsPerpendicularBounceSelected));
+            SelectBounceIndexedRow();
+        }
+    }
+
+    public bool IsPerpendicularBounceSelected
+    {
+        get => !IsParallelBounceSelected;
+        set
+        {
+            if (value) IsParallelBounceSelected = false;
+        }
+    }
+
+    public IReadOnlyList<string> DetectedModelTags
+    {
+        get => _detectedModelTags;
+        private set => SetProperty(ref _detectedModelTags, value);
+    }
+
+    public bool HasDetectedModelTags => DetectedModelTags.Count > 0;
+    public bool CanFindModelTags => Scene is not null && HasDetectedModelTags;
+    public string DetectedModelTagCountText =>
+        DetectedModelTags.Count == 1
+            ? "1 model tag"
+            : $"{DetectedModelTags.Count} model tags";
 
     public WeaponCategoryItemViewModel SelectedCategory
     {
@@ -126,20 +390,29 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         {
             ArgumentNullException.ThrowIfNull(value);
             if (_isReplacingProjection || !Categories.Contains(value) || ReferenceEquals(value, _selectedCategory)) return;
-            if (!TryCommitInspectorRows()) { OnPropertyChanged(); RevealProperties(); return; }
-            _selectedCategory = value; OnPropertyChanged(); RebuildIndexedRows(null); RefreshInspector(); RevealProperties();
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
+            _selectedCategory = value; OnPropertyChanged(); NotifyCategoryPresentation();
+            RebuildIndexedRows(null); RefreshInspector();
         }
     }
     public IReadOnlyList<WeaponIndexedRowItemViewModel> IndexedRows { get => _indexedRows; private set => SetProperty(ref _indexedRows, value); }
     public bool HasIndexedRows => IndexedRows.Count > 0;
+    public bool HasSelectedIndexedRow => SelectedIndexedRow is not null;
     public WeaponIndexedRowItemViewModel? SelectedIndexedRow
     {
         get => _selectedIndexedRow;
         set
         {
-            if (_isReplacingProjection || (value is not null && !IndexedRows.Contains(value)) || ReferenceEquals(value, _selectedIndexedRow)) return;
-            if (!TryCommitInspectorRows()) { OnPropertyChanged(); RevealProperties(); return; }
-            _selectedIndexedRow = value; OnPropertyChanged(); SyncSelectedModelSlot(); RefreshInspector(); RevealProperties();
+            if (_isReplacingProjection) return;
+            if (value is null && IndexedRows.Count > 0)
+            {
+                OnPropertyChanged();
+                return;
+            }
+            if ((value is not null && !IndexedRows.Contains(value)) ||
+                ReferenceEquals(value, _selectedIndexedRow)) return;
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
+            _selectedIndexedRow = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedIndexedRow)); SyncSelectedSemanticTab(); SyncSelectedModelSlot(); RefreshInspector();
         }
     }
     public IReadOnlyList<WeaponModelSlotItemViewModel> ModelSlots { get => _modelSlots; private set => SetProperty(ref _modelSlots, value); }
@@ -149,8 +422,9 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         set
         {
             if (_isReplacingProjection || (value is not null && !ModelSlots.Contains(value)) || ReferenceEquals(value, _selectedModelSlot)) return;
-            if (!TryCommitInspectorRows()) { OnPropertyChanged(); RevealProperties(); return; }
+            if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
             _selectedModelSlot = value; OnPropertyChanged();
+            SyncPreviewSelectors();
             if (value is not null)
             {
                 WeaponCategoryItemViewModel modelsCategory = Categories.Single(category =>
@@ -159,12 +433,13 @@ public sealed class WeaponEditorViewModel : ObservableObject,
                 {
                     _selectedCategory = modelsCategory;
                     OnPropertyChanged(nameof(SelectedCategory));
+                    NotifyCategoryPresentation();
                     RebuildIndexedRows(value.StableKey);
                 }
                 _selectedIndexedRow = IndexedRows.FirstOrDefault(row => row.Kind == value.Kind && row.Index == value.Index);
-                OnPropertyChanged(nameof(SelectedIndexedRow)); RefreshInspector();
+                OnPropertyChanged(nameof(SelectedIndexedRow)); OnPropertyChanged(nameof(HasSelectedIndexedRow)); SyncSelectedSemanticTab(); RefreshInspector();
             }
-            RebuildSelectedModelPreview(); RevealProperties();
+            RebuildSelectedModelPreview();
         }
     }
 
@@ -206,6 +481,29 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         foreach (IInspectorStagedPropertyRow row in _stagedRows.OfType<IInspectorStagedPropertyRow>()) row.ResetInput();
         _workingDraft = _baseline.Copy(); RefreshAll();
     }
+
+    public void AssignDetectedModelTag(string tagName)
+    {
+        if (!IsEditable || string.IsNullOrWhiteSpace(tagName) ||
+            SelectedIndexedRow is not
+            {
+                Kind: WeaponIndexedRowKind.HideTag,
+                CanEditValue: true
+            } row)
+        {
+            return;
+        }
+
+        string value = tagName.Trim();
+        Mutate(() => _workingDraft.SetVariantHideTags(
+            row.Index,
+            new ScriptStringReference(
+                0,
+                value,
+                ScriptStringHandle.Null,
+                default)));
+    }
+
     internal void Mutate(Action mutation, bool rebuildInspector = true)
     {
         ArgumentNullException.ThrowIfNull(mutation);
@@ -326,6 +624,43 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             ?? ModelSlots.FirstOrDefault(slot => slot.State == WeaponModelSlotState.Resolved)
             ?? ModelSlots.FirstOrDefault();
         OnPropertyChanged(nameof(SelectedModelSlot));
+        SyncPreviewSelectors();
+    }
+
+    private void SyncPreviewSelectors()
+    {
+        WeaponPreviewModelFamilyItemViewModel? family = _selectedModelSlot is null
+            ? PreviewModelFamilies.FirstOrDefault()
+            : PreviewModelFamilies.FirstOrDefault(candidate =>
+                candidate.RowKind == _selectedModelSlot.Kind);
+        WeaponCamoItemViewModel? camo = CamoOptions.FirstOrDefault(candidate =>
+            candidate.Index == (_selectedModelSlot is
+            {
+                Kind: WeaponIndexedRowKind.GunModel or WeaponIndexedRowKind.WorldGunModel
+            } ? _selectedModelSlot.Index : 0));
+        if (!ReferenceEquals(_selectedPreviewModelFamily, family))
+        {
+            _selectedPreviewModelFamily = family;
+            OnPropertyChanged(nameof(SelectedPreviewModelFamily));
+            OnPropertyChanged(nameof(IsCamoSelectionEnabled));
+        }
+        if (!ReferenceEquals(_selectedCamo, camo))
+        {
+            _selectedCamo = camo;
+            OnPropertyChanged(nameof(SelectedCamo));
+        }
+    }
+
+    private void SelectPreviewModelSlot()
+    {
+        if (SelectedPreviewModelFamily is not { } family) return;
+        int index = family.SupportsCamo ? SelectedCamo?.Index ?? 0 : 0;
+        WeaponModelSlotItemViewModel? slot = ModelSlots.FirstOrDefault(candidate =>
+            candidate.Kind == family.RowKind && candidate.Index == index);
+        if (ReferenceEquals(_selectedModelSlot, slot)) return;
+        _selectedModelSlot = slot;
+        OnPropertyChanged(nameof(SelectedModelSlot));
+        RebuildSelectedModelPreview();
     }
     private void AddModels(List<WeaponModelSlotItemViewModel> target, WeaponIndexedRowKind kind, string family, IReadOnlyList<XModelAsset?> models, int conceptualCount, bool tablePresent, params int[] parallelCounts)
     {
@@ -383,14 +718,202 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _isReplacingProjection = true;
         try
         {
-            IndexedRows = Array.AsReadOnly(WeaponIndexedRowItemViewModel.Create(_workingDraft, SelectedCategory.Id, _modelVariantLabels).ToArray()); _selectedIndexedRow = IndexedRows.FirstOrDefault(row => row.StableKey == preferredKey) ?? IndexedRows.FirstOrDefault(); OnPropertyChanged(nameof(SelectedIndexedRow)); OnPropertyChanged(nameof(HasIndexedRows)); SyncSelectedModelSlot();
+            IndexedRows = Array.AsReadOnly(WeaponIndexedRowItemViewModel.Create(_workingDraft, SelectedCategory.Id, _modelVariantLabels).ToArray());
+            _selectedIndexedRow = IndexedRows.FirstOrDefault(row => row.StableKey == preferredKey) ?? IndexedRows.FirstOrDefault();
+            OnPropertyChanged(nameof(SelectedIndexedRow));
+            OnPropertyChanged(nameof(HasSelectedIndexedRow));
+            OnPropertyChanged(nameof(HasIndexedRows));
+            OnPropertyChanged(nameof(HasPropertySidebarContent));
+            RebuildSemanticTabs();
+            SyncSelectedModelSlot();
         }
         finally { _isReplacingProjection = false; }
+    }
+    private void RebuildSemanticTabs()
+    {
+        WeaponSemanticTabItemViewModel Tab(
+            string key,
+            string title,
+            Func<WeaponIndexedRowItemViewModel, bool> belongsToTab,
+            WeaponIndexedRowKind? selectionKind = null) =>
+            new(key, title, IndexedRows.Where(belongsToTab), selectionKind);
+
+        IEnumerable<WeaponSemanticTabItemViewModel> projected = SelectedCategory.Id switch
+        {
+            WeaponPropertyCategory.Models =>
+            [
+                Tab("models.view", "View models", row =>
+                    row.Kind == WeaponIndexedRowKind.GunModel),
+                Tab("models.world", "World models", row =>
+                    row.Kind == WeaponIndexedRowKind.WorldGunModel),
+                Tab("models.single", "Single models", row =>
+                    row.Kind.IsModel() && row.Kind is not
+                        (WeaponIndexedRowKind.GunModel or
+                            WeaponIndexedRowKind.WorldGunModel))
+            ],
+            WeaponPropertyCategory.AnimationNames =>
+            [
+                Tab("animations.weapon", "Weapon", row =>
+                    row.Kind == WeaponIndexedRowKind.VariantAnimation),
+                Tab("animations.right-hand", "Right hand", row =>
+                    row.Kind == WeaponIndexedRowKind.RightAnimation),
+                Tab("animations.left-hand", "Left hand", row =>
+                    row.Kind == WeaponIndexedRowKind.LeftAnimation)
+            ],
+            WeaponPropertyCategory.HideTagsAndNoteTracks =>
+            [
+                Tab("note-tracks.hide-tags", "Hide tags", row =>
+                    row.Kind == WeaponIndexedRowKind.HideTag),
+                Tab("note-tracks.sound", "Sound notetracks", row =>
+                    row.Kind == WeaponIndexedRowKind.SoundNoteMapping),
+                Tab("note-tracks.rumble", "Rumble notetracks", row =>
+                    row.Kind == WeaponIndexedRowKind.RumbleNoteMapping)
+            ],
+            WeaponPropertyCategory.KickRecoilAndAccuracy =>
+            [
+                Tab("accuracy.ai-vs-ai-current", "AI vs. AI · Current", row =>
+                    row.Kind == WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph,
+                    WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph),
+                Tab("accuracy.ai-vs-player-current", "AI vs. player · Current", row =>
+                    row.Kind == WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph,
+                    WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph),
+                Tab("accuracy.ai-vs-ai-original", "AI vs. AI · Original", row =>
+                    row.Kind == WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph,
+                    WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph),
+                Tab("accuracy.ai-vs-player-original", "AI vs. player · Original", row =>
+                    row.Kind == WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph,
+                    WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph)
+            ],
+            WeaponPropertyCategory.PhysicsAndProjectile =>
+            [
+                Tab("bounce.parallel", "Parallel", row =>
+                    row.Kind == WeaponIndexedRowKind.ProjectileParallelBounce),
+                Tab("bounce.perpendicular", "Perpendicular", row =>
+                    row.Kind == WeaponIndexedRowKind.ProjectilePerpendicularBounce)
+            ],
+            WeaponPropertyCategory.SoundsAndBounce =>
+            [
+                Tab("sounds.surface-bounce", "Surface bounce", row =>
+                    row.Kind == WeaponIndexedRowKind.BounceSound)
+            ],
+            WeaponPropertyCategory.TurretAndMissile =>
+            [
+                Tab("turret.spin-up", "Spin up", row =>
+                    row.Kind == WeaponIndexedRowKind.TurretSpinUpSound),
+                Tab("turret.spin-down", "Spin down", row =>
+                    row.Kind == WeaponIndexedRowKind.TurretSpinDownSound)
+            ],
+            WeaponPropertyCategory.DamageRangeAndAiTuning =>
+            [
+                Tab("damage.locations", "Locations", row =>
+                    row.Kind == WeaponIndexedRowKind.LocationDamage)
+            ],
+            _ => []
+        };
+
+        string? preferredKey = _selectedSemanticTab?.Key;
+        SemanticTabs = Array.AsReadOnly(projected
+            .Where(tab => tab.Rows.Count > 0 || tab.SelectionKind is not null)
+            .ToArray());
+        _selectedSemanticTab = _selectedIndexedRow is null
+            ? SemanticTabs.FirstOrDefault(tab => tab.Key == preferredKey) ??
+                SemanticTabs.FirstOrDefault()
+            : SemanticTabs.FirstOrDefault(tab =>
+                tab.Rows.Contains(_selectedIndexedRow)) ??
+                SemanticTabs.FirstOrDefault();
+        OnPropertyChanged(nameof(SelectedSemanticTab));
+        OnPropertyChanged(nameof(ShowsSemanticTabs));
+        OnPropertyChanged(nameof(SemanticBrowserSubtitle));
+        OnPropertyChanged(nameof(ShowsSemanticBrowser));
+        OnPropertyChanged(nameof(IsHideTagTabSelected));
+    }
+    private void SyncSelectedSemanticTab()
+    {
+        WeaponSemanticTabItemViewModel? selected = _selectedIndexedRow is null
+            ? SemanticTabs.FirstOrDefault(tab =>
+                ReferenceEquals(tab, _selectedSemanticTab)) ??
+                SemanticTabs.FirstOrDefault()
+            : SemanticTabs.FirstOrDefault(tab =>
+                tab.Rows.Contains(_selectedIndexedRow));
+        if (ReferenceEquals(selected, _selectedSemanticTab)) return;
+        _selectedSemanticTab = selected;
+        OnPropertyChanged(nameof(SelectedSemanticTab));
+        OnPropertyChanged(nameof(IsHideTagTabSelected));
+        OnPropertyChanged(nameof(SemanticBrowserSubtitle));
+    }
+    private void SelectSemanticTabRow()
+    {
+        if (_selectedSemanticTab is not { } tab) return;
+        if (tab.Rows.Count == 0)
+        {
+            if (tab.SelectionKind is { } selectionKind)
+                SelectEmptyAccuracyGraph(selectionKind);
+            return;
+        }
+        int preferredIndex = SelectedIndexedRow?.Index ?? tab.Rows[0].Index;
+        if (SelectedIndexedRow?.Kind is not
+                (WeaponIndexedRowKind.ProjectileParallelBounce or
+                    WeaponIndexedRowKind.ProjectilePerpendicularBounce or
+                    WeaponIndexedRowKind.BounceSound) &&
+            tab.Rows[0].Kind is
+                WeaponIndexedRowKind.ProjectileParallelBounce or
+                WeaponIndexedRowKind.ProjectilePerpendicularBounce or
+                WeaponIndexedRowKind.BounceSound)
+            preferredIndex = _selectedBounceSurfaceIndex;
+        WeaponIndexedRowItemViewModel row = tab.Rows.FirstOrDefault(candidate =>
+            candidate.Index == preferredIndex) ?? tab.Rows[0];
+        if (!ReferenceEquals(row, SelectedIndexedRow)) SelectedIndexedRow = row;
+    }
+
+    private void SelectAccuracyGraph(WeaponIndexedRowKind kind)
+    {
+        WeaponIndexedRowItemViewModel? row = IndexedRows.FirstOrDefault(candidate =>
+            candidate.Kind == kind && candidate.Index == 0);
+        if (row is not null)
+        {
+            if (!ReferenceEquals(row, SelectedIndexedRow)) SelectedIndexedRow = row;
+            return;
+        }
+
+        WeaponSemanticTabItemViewModel? tab = SemanticTabs.FirstOrDefault(candidate =>
+            candidate.SelectionKind == kind);
+        if (!ReferenceEquals(tab, _selectedSemanticTab))
+        {
+            _selectedSemanticTab = tab;
+            OnPropertyChanged(nameof(SelectedSemanticTab));
+            OnPropertyChanged(nameof(IsHideTagTabSelected));
+            OnPropertyChanged(nameof(SemanticBrowserSubtitle));
+        }
+        if (_selectedIndexedRow is not null)
+        {
+            _selectedIndexedRow = null;
+            OnPropertyChanged(nameof(SelectedIndexedRow));
+            OnPropertyChanged(nameof(HasSelectedIndexedRow));
+        }
+        RefreshInspector();
+    }
+
+    private void SelectEmptyAccuracyGraph(WeaponIndexedRowKind kind)
+    {
+        int graphIndex = AccuracyGraphs.ToList().FindIndex(graph =>
+            graph.RowKind == kind);
+        if (graphIndex >= 0 && graphIndex != _selectedAccuracyGraphIndex)
+        {
+            _selectedAccuracyGraphIndex = graphIndex;
+            OnPropertyChanged(nameof(SelectedAccuracyGraphIndex));
+            OnPropertyChanged(nameof(SelectedAccuracyGraph));
+        }
+        if (_selectedIndexedRow is null) return;
+        _selectedIndexedRow = null;
+        OnPropertyChanged(nameof(SelectedIndexedRow));
+        OnPropertyChanged(nameof(HasSelectedIndexedRow));
+        RefreshInspector();
     }
     private void SyncSelectedModelSlot()
     {
         if (SelectedIndexedRow is not { } row || !row.Kind.IsModel()) return;
         _selectedModelSlot = ModelSlots.FirstOrDefault(slot => slot.Kind == row.Kind && slot.Index == row.Index); OnPropertyChanged(nameof(SelectedModelSlot));
+        SyncPreviewSelectors();
         if (!_isReplacingProjection) RebuildSelectedModelPreview();
     }
     private void RebuildSelectedModelPreview()
@@ -467,13 +990,525 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     {
         OnPropertyChanged(nameof(Scene)); OnPropertyChanged(nameof(Lods)); OnPropertyChanged(nameof(SelectedLod)); OnPropertyChanged(nameof(SelectedLodIndex));
         OnPropertyChanged(nameof(PreviewState)); OnPropertyChanged(nameof(PreviewMessage)); OnPropertyChanged(nameof(PreviewStatus));
+        RefreshDetectedModelTags();
         RefreshCollisionCapability(); RebuildDiagnostics(); NotifyState();
     }
     private void RefreshInspector()
     {
         foreach (INotifyPropertyChanged row in _stagedRows) row.PropertyChanged -= StagedRow_PropertyChanged; _stagedRows.Clear(); InspectorSelection = WeaponInspectorProjection.Create(this);
         if (InspectorSelection is not null) foreach (INotifyPropertyChanged row in InspectorSelection.Sections.SelectMany(section => section.Rows).OfType<INotifyPropertyChanged>()) if (row is IInspectorStagedPropertyRow) { _stagedRows.Add(row); row.PropertyChanged += StagedRow_PropertyChanged; }
+        RefreshSemanticVisualizations();
+        RefreshSearchProjection();
         NotifyState();
+    }
+
+    private void RefreshSearchProjection()
+    {
+        string query = PropertySearchText.Trim();
+        IReadOnlyList<WeaponIndexedRowItemViewModel> indexedSource =
+            string.IsNullOrEmpty(query)
+                ? SelectedSemanticTab?.Rows ?? IndexedRows
+                : IndexedRows;
+        bool Matches(string? value) =>
+            string.IsNullOrEmpty(query) ||
+            value?.Contains(query, StringComparison.OrdinalIgnoreCase) == true;
+
+        VisibleIndexedRows = Array.AsReadOnly(indexedSource
+            .Where(row => Matches(row.Title) || Matches(row.Detail))
+            .ToArray());
+        IReadOnlyList<InspectorSectionViewModel> cards = InspectorSelection is null
+            ? []
+            : Array.AsReadOnly(InspectorSelection.Sections
+                .SelectMany(section => section.Rows.Select(row => new
+                {
+                    Title = InspectorCardTitle(row, section.Title),
+                    Row = row,
+                    section.IsExpanded
+                }))
+                .GroupBy(item => item.Title, StringComparer.Ordinal)
+                .Select(group => new InspectorSectionViewModel(
+                    group.Key,
+                    group.Select(item => item.Row),
+                    group.First().IsExpanded))
+                .ToArray());
+        InspectorSectionViewModel[] visibleCards = cards
+            .Select(section => new InspectorSectionViewModel(
+                section.Title,
+                section.Rows.Where(row =>
+                    Matches(row.Label) ||
+                    Matches(row.FieldPath) ||
+                    Matches(row.Description)),
+                section.IsExpanded))
+            .Where(section => section.Rows.Count > 0)
+            .ToArray();
+        VisibleInspectorSections = Array.AsReadOnly(visibleCards
+            .Where(section => !UsesInspectorSidebar(section.Title, cards.Count))
+            .ToArray());
+        VisibleSidebarInspectorSections = Array.AsReadOnly(visibleCards
+            .Where(section => UsesInspectorSidebar(section.Title, cards.Count))
+            .ToArray());
+        OnPropertyChanged(nameof(HasVisibleIndexedRows));
+        OnPropertyChanged(nameof(HasVisibleInspectorRows));
+        OnPropertyChanged(nameof(HasVisibleSidebarInspectorRows));
+        OnPropertyChanged(nameof(HasPropertySidebarContent));
+        OnPropertyChanged(nameof(ShowsSemanticTabs));
+        OnPropertyChanged(nameof(SemanticBrowserSubtitle));
+    }
+
+    private bool UsesInspectorSidebar(string title, int cardCount)
+    {
+        if (HasIndexedRows)
+            return cardCount > 1 &&
+                title.StartsWith("Selected ", StringComparison.Ordinal);
+
+        return SelectedCategory.Id switch
+        {
+            WeaponPropertyCategory.Overview => title is
+                "Variant identity" or "Definition identity" or "Native identity",
+            WeaponPropertyCategory.ClassificationAndReticle => title == "Reticle",
+            WeaponPropertyCategory.ViewAndPositionalMovement => title == "Positional movement",
+            WeaponPropertyCategory.HudIconsAndAmmo => title is "HUD icons" or "Variant HUD",
+            WeaponPropertyCategory.Timing => title is "Night-vision timing" or "Fuse timing",
+            WeaponPropertyCategory.AimAndMovementTuning => title == "Movement and zoom",
+            WeaponPropertyCategory.OverlayAdsAndSpread => title is
+                "Overlay and reticle" or "ADS sway and error",
+            WeaponPropertyCategory.EffectsAndMaterials => title == "Shell-eject effects",
+            WeaponPropertyCategory.HintsAndRumble => title == "Rumble",
+            WeaponPropertyCategory.TailAndPreservedStorage => title is
+                "Variant flags" or "Native storage",
+            _ => false
+        };
+    }
+
+    private string InspectorCardTitle(
+        InspectorPropertyRowViewModel row,
+        string fallbackTitle)
+    {
+        string path = row.FieldPath;
+        if (!HasDefinition) return fallbackTitle;
+        if (IsSelectedIndexedRowProperty(path)) return SelectedSlotCardTitle();
+
+        return SelectedCategory.Id switch
+        {
+            WeaponPropertyCategory.Overview => OverviewCardTitle(path),
+            WeaponPropertyCategory.ClassificationAndReticle =>
+                path.StartsWith("weapon.definition.reticle.", StringComparison.Ordinal)
+                    ? "Reticle"
+                    : "Weapon classification",
+            WeaponPropertyCategory.ViewAndPositionalMovement =>
+                path.StartsWith("weapon.definition.positionalMovement.", StringComparison.Ordinal)
+                    ? "Positional movement"
+                    : "View movement",
+            WeaponPropertyCategory.HudIconsAndAmmo => HudAndAmmoCardTitle(path),
+            WeaponPropertyCategory.Timing => TimingCardTitle(path),
+            WeaponPropertyCategory.AimAndMovementTuning => AimMovementCardTitle(path),
+            WeaponPropertyCategory.OverlayAdsAndSpread => OverlayAdsCardTitle(path),
+            WeaponPropertyCategory.PhysicsAndProjectile => PhysicsCardTitle(path),
+            WeaponPropertyCategory.KickRecoilAndAccuracy => RecoilCardTitle(path),
+            WeaponPropertyCategory.DamageRangeAndAiTuning => DamageCardTitle(path),
+            WeaponPropertyCategory.EffectsAndMaterials =>
+                path.StartsWith("weapon.definition.shellEjectEffects.", StringComparison.Ordinal)
+                    ? "Shell-eject effects"
+                    : "Flash effects",
+            WeaponPropertyCategory.SoundsAndBounce => SoundCardTitle(path),
+            WeaponPropertyCategory.HintsAndRumble =>
+                path.StartsWith("weapon.definition.rumble.", StringComparison.Ordinal)
+                    ? "Rumble"
+                    : "Hints and feedback",
+            WeaponPropertyCategory.TurretAndMissile => TurretCardTitle(path),
+            WeaponPropertyCategory.TailAndPreservedStorage => StorageCardTitle(path),
+            _ => fallbackTitle
+        };
+    }
+
+    private bool IsSelectedIndexedRowProperty(string path)
+    {
+        if (path == "weapon.selection" ||
+            path.StartsWith("weapon.selection.", StringComparison.Ordinal))
+            return true;
+        if (SelectedIndexedRow is not { } selected) return false;
+        if (SelectedCategory.Id is WeaponPropertyCategory.Models or
+            WeaponPropertyCategory.AnimationNames or
+            WeaponPropertyCategory.HideTagsAndNoteTracks)
+            return true;
+
+        return selected.Kind switch
+        {
+            WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph or
+            WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph or
+            WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph or
+            WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph =>
+                path.Contains("GraphKnots[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.LocationDamage =>
+                path.StartsWith("weapon.definition.locationDamageMultipliers[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.ProjectileParallelBounce =>
+                path.StartsWith("weapon.definition.projectile.parallelBounce[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.ProjectilePerpendicularBounce =>
+                path.StartsWith("weapon.definition.projectile.perpendicularBounce[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.BounceSound =>
+                path.StartsWith("weapon.definition.bounceSounds[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.TurretSpinUpSound =>
+                path.StartsWith("weapon.definition.turret.barrelSpinUpSounds[", StringComparison.Ordinal),
+            WeaponIndexedRowKind.TurretSpinDownSound =>
+                path.StartsWith("weapon.definition.turret.barrelSpinDownSounds[", StringComparison.Ordinal),
+            _ => false
+        };
+    }
+
+    private string SelectedSlotCardTitle() => SelectedIndexedRow?.Kind switch
+    {
+        WeaponIndexedRowKind.GunModel or
+        WeaponIndexedRowKind.HandModel or
+        WeaponIndexedRowKind.WorldGunModel or
+        WeaponIndexedRowKind.WorldClipModel or
+        WeaponIndexedRowKind.RocketModel or
+        WeaponIndexedRowKind.KnifeModel or
+        WeaponIndexedRowKind.WorldKnifeModel or
+        WeaponIndexedRowKind.ProjectileModel => "Selected model",
+        WeaponIndexedRowKind.VariantAnimation or
+        WeaponIndexedRowKind.RightAnimation or
+        WeaponIndexedRowKind.LeftAnimation => "Selected animation",
+        WeaponIndexedRowKind.HideTag => "Selected hide tag",
+        WeaponIndexedRowKind.SoundNoteMapping => "Selected sound notetrack mapping",
+        WeaponIndexedRowKind.RumbleNoteMapping => "Selected rumble notetrack mapping",
+        WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph or
+        WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph or
+        WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph or
+        WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph => "Selected accuracy knot",
+        WeaponIndexedRowKind.LocationDamage => "Selected hit location",
+        WeaponIndexedRowKind.ProjectileParallelBounce or
+        WeaponIndexedRowKind.ProjectilePerpendicularBounce => "Selected bounce surface",
+        WeaponIndexedRowKind.BounceSound => "Selected surface sound",
+        WeaponIndexedRowKind.TurretSpinUpSound or
+        WeaponIndexedRowKind.TurretSpinDownSound => "Selected barrel-spin sound",
+        _ => "Selected semantic slot"
+    };
+
+    private static string OverviewCardTitle(string path)
+    {
+        if (path.EndsWith(".internalName", StringComparison.Ordinal)) return "Native identity";
+        if (path.StartsWith("weapon.definition.", StringComparison.Ordinal)) return "Definition identity";
+        string member = LastPathMember(path);
+        if (member is "displayName" or "alternateWeaponName" or "alternateWeaponIndex")
+            return "Variant identity";
+        if (member.StartsWith("ads", StringComparison.Ordinal)) return "ADS presentation";
+        if (member.EndsWith("Time", StringComparison.Ordinal) ||
+            member.EndsWith("Length", StringComparison.Ordinal))
+            return "Variant timing";
+        return "Variant combat values";
+    }
+
+    private static string HudAndAmmoCardTitle(string path)
+    {
+        if (path.StartsWith("weapon.definition.ammo.", StringComparison.Ordinal))
+            return "Ammo and damage";
+        if (path.StartsWith("weapon.definition.icons.", StringComparison.Ordinal))
+            return "HUD icons";
+        return "Variant HUD";
+    }
+
+    private static string TimingCardTitle(string path)
+    {
+        string member = LastPathMember(path);
+        if (member.StartsWith("reload", StringComparison.Ordinal)) return "Reload timing";
+        if (member.StartsWith("melee", StringComparison.Ordinal) ||
+            member.StartsWith("rechamber", StringComparison.Ordinal))
+            return "Melee and rechamber timing";
+        if (member.StartsWith("nightVision", StringComparison.Ordinal)) return "Night-vision timing";
+        if (member is "fuseTime" or "aiFuseTime") return "Fuse timing";
+        if (member.StartsWith("raise", StringComparison.Ordinal) ||
+            member.StartsWith("drop", StringComparison.Ordinal) ||
+            member.StartsWith("altDrop", StringComparison.Ordinal) ||
+            member.StartsWith("quick", StringComparison.Ordinal) ||
+            member.StartsWith("breach", StringComparison.Ordinal) ||
+            member.StartsWith("empty", StringComparison.Ordinal) ||
+            member.StartsWith("sprint", StringComparison.Ordinal) ||
+            member.StartsWith("stunned", StringComparison.Ordinal))
+            return "Handling and movement timing";
+        return "Fire and detonation timing";
+    }
+
+    private static string AimMovementCardTitle(string path)
+    {
+        string member = LastPathMember(path);
+        return member.StartsWith("aim", StringComparison.Ordinal) ||
+            member.StartsWith("autoAim", StringComparison.Ordinal) ||
+            member.StartsWith("enemyCrosshair", StringComparison.Ordinal)
+                ? "Aim assistance"
+                : "Movement and zoom";
+    }
+
+    private static string OverlayAdsCardTitle(string path)
+    {
+        if (path.StartsWith("weapon.definition.overlay.", StringComparison.Ordinal))
+            return "Overlay and reticle";
+        string member = LastPathMember(path);
+        if (member.StartsWith("hipSpread", StringComparison.Ordinal)) return "Hip-fire spread";
+        if (member.Contains("Idle", StringComparison.Ordinal) ||
+            member.Contains("Bob", StringComparison.Ordinal) ||
+            member == "hipReticleSidePosition")
+            return "View bob and idle";
+        if (member.StartsWith("adsSway", StringComparison.Ordinal) ||
+            member.StartsWith("adsViewError", StringComparison.Ordinal))
+            return "ADS sway and error";
+        return "Weapon sway";
+    }
+
+    private static string PhysicsCardTitle(string path)
+    {
+        if (path.StartsWith("weapon.definition.physics.", StringComparison.Ordinal))
+            return "Physics and ballistics";
+        if (path.StartsWith("weapon.definition.projectile.", StringComparison.Ordinal))
+            return "Projectile behavior";
+        return "Physics assets";
+    }
+
+    private static string RecoilCardTitle(string path)
+    {
+        if (path.Contains("AccuracyGraphKnotCount", StringComparison.Ordinal) ||
+            path.Contains("accuracyGraphKnotCount", StringComparison.Ordinal))
+            return "Accuracy graph storage";
+        if (path.StartsWith("weapon.definition.accuracy.", StringComparison.Ordinal))
+            return "AI accuracy";
+        if (path.StartsWith("weapon.definition.projectile.gunKickAndDistance.", StringComparison.Ordinal))
+        {
+            string member = LastPathMember(path);
+            if (member.StartsWith("ads", StringComparison.Ordinal)) return "ADS recoil";
+            if (member.StartsWith("hip", StringComparison.Ordinal)) return "Hip-fire recoil";
+            return "Engagement distance";
+        }
+        return "Accuracy and recoil";
+    }
+
+    private static string DamageCardTitle(string path)
+    {
+        if (path.StartsWith("weapon.definition.turnSpeedAndRange.", StringComparison.Ordinal))
+            return "AI turn speed and range";
+        string member = LastPathMember(path);
+        if (member.StartsWith("destabil", StringComparison.Ordinal)) return "AI destabilization";
+        if (member.StartsWith("adsTransition", StringComparison.Ordinal)) return "ADS transition rates";
+        return "Damage and range";
+    }
+
+    private static string SoundCardTitle(string path)
+    {
+        const string prefix = "weapon.definition.primarySounds.";
+        if (!path.StartsWith(prefix, StringComparison.Ordinal)) return "Weapon sounds";
+        string member = path[prefix.Length..];
+        if (member.StartsWith("fire", StringComparison.Ordinal) ||
+            member.StartsWith("emptyFire", StringComparison.Ordinal))
+            return "Fire sounds";
+        if (member.StartsWith("melee", StringComparison.Ordinal) ||
+            member.StartsWith("rechamber", StringComparison.Ordinal))
+            return "Melee and rechamber sounds";
+        if (member.StartsWith("reload", StringComparison.Ordinal)) return "Reload sounds";
+        if (member.StartsWith("pickup", StringComparison.Ordinal) ||
+            member.StartsWith("ammoPickup", StringComparison.Ordinal) ||
+            member.StartsWith("projectile", StringComparison.Ordinal) ||
+            member.StartsWith("pullback", StringComparison.Ordinal))
+            return "Pickup and projectile sounds";
+        return "Handling and mode sounds";
+    }
+
+    private static string TurretCardTitle(string path)
+    {
+        if (path.StartsWith("weapon.definition.missileConeSound.", StringComparison.Ordinal))
+            return "Missile-cone sound";
+        if (path.StartsWith("weapon.definition.turret.", StringComparison.Ordinal))
+            return "Turret barrel";
+        return "Turret scope and heat";
+    }
+
+    private static string StorageCardTitle(string path)
+    {
+        if (path.StartsWith("weapon.preserved.", StringComparison.Ordinal) ||
+            path.EndsWith(".offset", StringComparison.Ordinal))
+            return "Native storage";
+        if (path.StartsWith("weapon.variant.", StringComparison.Ordinal)) return "Variant flags";
+
+        string member = LastPathMember(path);
+        if (member.Contains("ammo", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("clip", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("reload", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("rechamber", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("empty", StringComparison.OrdinalIgnoreCase))
+            return "Ammo and reload flags";
+        if (member.Contains("projectile", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("explosion", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("bullet", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("deton", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("grenade", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("throw", StringComparison.OrdinalIgnoreCase))
+            return "Projectile and explosive flags";
+        if (member.Contains("ads", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("aim", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("crosshair", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("laser", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("thermal", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("killIcon", StringComparison.OrdinalIgnoreCase))
+            return "Aiming and display flags";
+        if (member.Contains("lockon", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("missile", StringComparison.OrdinalIgnoreCase) ||
+            member.Contains("turret", StringComparison.OrdinalIgnoreCase))
+            return "Turret and missile flags";
+        return "Weapon behavior flags";
+    }
+
+    private static string LastPathMember(string path)
+    {
+        int separator = path.LastIndexOf('.');
+        string member = separator < 0 ? path : path[(separator + 1)..];
+        int index = member.IndexOf('[');
+        return index < 0 ? member : member[..index];
+    }
+
+    private void RefreshSemanticVisualizations()
+    {
+        RefreshAccuracyGraphs();
+        RefreshLocationDamage();
+        RefreshBounceSurfaces();
+        RefreshDetectedModelTags();
+    }
+
+    private void RefreshAccuracyGraphs()
+    {
+        WeaponDef? definition = _workingDraft.Definition;
+        WeaponIndexedRowKind? selectedKind = SelectedIndexedRow?.Kind;
+        WeaponIndexedRowKind preferredKind = selectedKind is
+            WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph or
+            WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph or
+            WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph or
+            WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph
+                ? selectedKind.Value
+                : SelectedAccuracyGraph?.RowKind ??
+                    WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph;
+        AccuracyGraphs = definition is null
+            ? []
+            : Array.AsReadOnly(new[]
+            {
+                new WeaponAccuracyGraphItemViewModel(
+                    WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph,
+                    "AI vs. AI",
+                    "Current",
+                    _workingDraft.Variant.AiVsAiAccuracyGraphKnots),
+                new WeaponAccuracyGraphItemViewModel(
+                    WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph,
+                    "AI vs. player",
+                    "Current",
+                    _workingDraft.Variant.AiVsPlayerAccuracyGraphKnots),
+                new WeaponAccuracyGraphItemViewModel(
+                    WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph,
+                    "AI vs. AI",
+                    "Original",
+                    definition.Accuracy.OriginalAiVsAiGraphKnots),
+                new WeaponAccuracyGraphItemViewModel(
+                    WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph,
+                    "AI vs. player",
+                    "Original",
+                    definition.Accuracy.OriginalAiVsPlayerGraphKnots)
+            });
+        _selectedAccuracyGraphIndex = Math.Max(0,
+            AccuracyGraphs.ToList().FindIndex(graph => graph.RowKind == preferredKind));
+        OnPropertyChanged(nameof(SelectedAccuracyGraphIndex));
+        OnPropertyChanged(nameof(SelectedAccuracyGraph));
+    }
+
+    private void RefreshLocationDamage()
+    {
+        IReadOnlyList<float> values = _workingDraft.Definition?.LocationDamageMultipliers ?? [];
+        LocationDamageMultipliers = Array.AsReadOnly(values.ToArray());
+        LocationDamageItems = Array.AsReadOnly(Enumerable.Range(0, (int)HitLocation.Count)
+            .Select(index => new WeaponLocationDamageItemViewModel(
+                WeaponSemanticLabels.HumanizeIdentifier(((HitLocation)index).ToString()),
+                index < values.Count ? values[index] : null))
+            .ToArray());
+        int selectedIndex = SelectedIndexedRow is
+            {
+                Kind: WeaponIndexedRowKind.LocationDamage
+            } row ? row.Index : _selectedLocationDamageIndex;
+        _selectedLocationDamageIndex = Math.Clamp(
+            selectedIndex,
+            0,
+            Math.Max(0, LocationDamageItems.Count - 1));
+        OnPropertyChanged(nameof(SelectedLocationDamageIndex));
+    }
+
+    private void RefreshBounceSurfaces()
+    {
+        WeaponDef? definition = _workingDraft.Definition;
+        BounceSurfaces = definition is null
+            ? []
+            : Array.AsReadOnly(Enumerable.Range(0, (int)MaterialSurfaceType.Count)
+                .Select(index => new WeaponBounceSurfaceItemViewModel(
+                    WeaponSemanticLabels.HumanizeIdentifier(
+                        ((MaterialSurfaceType)index).ToString()),
+                    index < definition.Projectile.ParallelBounce.Count
+                        ? definition.Projectile.ParallelBounce[index]
+                        : null,
+                    index < definition.Projectile.PerpendicularBounce.Count
+                        ? definition.Projectile.PerpendicularBounce[index]
+                        : null,
+                    index < definition.BounceSounds.Count
+                        ? definition.BounceSounds[index].Name
+                        : null))
+                .ToArray());
+        if (SelectedIndexedRow is
+            {
+                Kind: WeaponIndexedRowKind.ProjectileParallelBounce or
+                    WeaponIndexedRowKind.ProjectilePerpendicularBounce
+            } row)
+        {
+            _selectedBounceSurfaceIndex = row.Index;
+            _isParallelBounceSelected =
+                row.Kind == WeaponIndexedRowKind.ProjectileParallelBounce;
+        }
+        _selectedBounceSurfaceIndex = Math.Clamp(
+            _selectedBounceSurfaceIndex,
+            0,
+            Math.Max(0, BounceSurfaces.Count - 1));
+        OnPropertyChanged(nameof(SelectedBounceSurfaceIndex));
+        OnPropertyChanged(nameof(IsParallelBounceSelected));
+        OnPropertyChanged(nameof(IsPerpendicularBounceSelected));
+    }
+
+    private void RefreshDetectedModelTags()
+    {
+        DetectedModelTags = Scene is null
+            ? []
+            : Array.AsReadOnly(Scene.Bones
+                .Select(bone => bone.Name)
+                .Where(name => name.StartsWith("tag_", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+        OnPropertyChanged(nameof(HasDetectedModelTags));
+        OnPropertyChanged(nameof(CanFindModelTags));
+        OnPropertyChanged(nameof(DetectedModelTagCountText));
+    }
+
+    private void SelectBounceIndexedRow() => SelectIndexedRow(
+        IsParallelBounceSelected
+            ? WeaponIndexedRowKind.ProjectileParallelBounce
+            : WeaponIndexedRowKind.ProjectilePerpendicularBounce,
+        SelectedBounceSurfaceIndex);
+
+    private void SelectIndexedRow(WeaponIndexedRowKind kind, int index)
+    {
+        if (_isReplacingProjection) return;
+        WeaponIndexedRowItemViewModel? row = IndexedRows.FirstOrDefault(candidate =>
+            candidate.Kind == kind && candidate.Index == index);
+        if (row is not null && !ReferenceEquals(row, SelectedIndexedRow))
+            SelectedIndexedRow = row;
+    }
+
+    private void NotifyCategoryPresentation()
+    {
+        OnPropertyChanged(nameof(IsAccuracyCategory));
+        OnPropertyChanged(nameof(IsLocationDamageCategory));
+        OnPropertyChanged(nameof(IsBounceCategory));
+        OnPropertyChanged(nameof(IsHideTagsCategory));
+        OnPropertyChanged(nameof(ShowsSemanticBrowser));
+        OnPropertyChanged(nameof(IsHideTagTabSelected));
     }
     private void NotifyState()
     {
@@ -560,9 +1595,44 @@ public enum WeaponPreviewState { NoSelection, Empty, TableAbsent, Malformed, Unr
 public enum WeaponModelSlotState { Resolved, Empty, Unresolved, NonRenderable, TableAbsent, Malformed }
 public sealed class WeaponCategoryItemViewModel
 {
-    private WeaponCategoryItemViewModel(WeaponPropertyCategory id, string title) { Id = id; Title = title; }
-    public WeaponPropertyCategory Id { get; } public string Title { get; }
-    internal static WeaponCategoryItemViewModel[] CreateAll() => [new(WeaponPropertyCategory.Overview, "Overview and variant"), new(WeaponPropertyCategory.Models, "Models"), new(WeaponPropertyCategory.AnimationNames, "Animation names"), new(WeaponPropertyCategory.HideTagsAndNoteTracks, "Hide tags and note tracks"), new(WeaponPropertyCategory.ClassificationAndReticle, "Classification and reticle"), new(WeaponPropertyCategory.ViewAndPositionalMovement, "View and positional movement"), new(WeaponPropertyCategory.HudIconsAndAmmo, "HUD icons and ammo"), new(WeaponPropertyCategory.Timing, "Timing"), new(WeaponPropertyCategory.AimAndMovementTuning, "Aim and movement tuning"), new(WeaponPropertyCategory.OverlayAdsAndSpread, "Overlay, ADS, and spread"), new(WeaponPropertyCategory.PhysicsAndProjectile, "Physics and projectile"), new(WeaponPropertyCategory.KickRecoilAndAccuracy, "Kick, recoil, and accuracy"), new(WeaponPropertyCategory.DamageRangeAndAiTuning, "Damage, range, and AI tuning"), new(WeaponPropertyCategory.EffectsAndMaterials, "Flash and shell effects"), new(WeaponPropertyCategory.SoundsAndBounce, "Sounds and bounce response"), new(WeaponPropertyCategory.HintsAndRumble, "Hints and rumble"), new(WeaponPropertyCategory.TurretAndMissile, "Turret and missile-cone sound"), new(WeaponPropertyCategory.TailAndPreservedStorage, "Tail bytes and preserved storage")];
+    private WeaponCategoryItemViewModel(
+        WeaponPropertyCategory id,
+        string title,
+        string subtitle,
+        MaterialIconKind icon)
+    {
+        Id = id;
+        Title = title;
+        Subtitle = subtitle;
+        Icon = icon;
+    }
+
+    internal WeaponPropertyCategory Id { get; }
+    public string Title { get; }
+    public string Subtitle { get; }
+    public MaterialIconKind Icon { get; }
+
+    internal static WeaponCategoryItemViewModel[] CreateAll() =>
+    [
+        new(WeaponPropertyCategory.Overview, "Overview and variant", "Summary and identity", MaterialIconKind.InformationOutline),
+        new(WeaponPropertyCategory.Models, "Models", "XModels and camos", MaterialIconKind.CubeOutline),
+        new(WeaponPropertyCategory.AnimationNames, "Animation names", "View and hand animation slots", MaterialIconKind.AnimationPlayOutline),
+        new(WeaponPropertyCategory.HideTagsAndNoteTracks, "Hide tags and note tracks", "Tags and notetrack mapping", MaterialIconKind.TagMultipleOutline),
+        new(WeaponPropertyCategory.ClassificationAndReticle, "Classification and reticle", "Display and targeting", MaterialIconKind.Crosshairs),
+        new(WeaponPropertyCategory.ViewAndPositionalMovement, "View and positional movement", "Viewmodel placement", MaterialIconKind.AxisArrow),
+        new(WeaponPropertyCategory.HudIconsAndAmmo, "HUD icons and ammo", "HUD and ammunition", MaterialIconKind.Ammunition),
+        new(WeaponPropertyCategory.Timing, "Timing", "Fire and reload timing", MaterialIconKind.TimerOutline),
+        new(WeaponPropertyCategory.AimAndMovementTuning, "Aim and movement tuning", "Accuracy and movement", MaterialIconKind.TuneVariant),
+        new(WeaponPropertyCategory.OverlayAdsAndSpread, "Overlay, ADS, and spread", "Overlay and sight behavior", MaterialIconKind.ImageFilterCenterFocus),
+        new(WeaponPropertyCategory.PhysicsAndProjectile, "Physics and projectile", "Projectile and bounce", MaterialIconKind.RocketLaunchOutline),
+        new(WeaponPropertyCategory.KickRecoilAndAccuracy, "Kick, recoil, and accuracy", "Recoil and accuracy graphs", MaterialIconKind.ChartBellCurve),
+        new(WeaponPropertyCategory.DamageRangeAndAiTuning, "Damage, range, and AI tuning", "Damage and hit locations", MaterialIconKind.Target),
+        new(WeaponPropertyCategory.EffectsAndMaterials, "Flash and shell effects", "Muzzle and shell effects", MaterialIconKind.Flare),
+        new(WeaponPropertyCategory.SoundsAndBounce, "Sounds and bounce response", "Audio and surface response", MaterialIconKind.Waveform),
+        new(WeaponPropertyCategory.HintsAndRumble, "Hints and rumble", "Prompts and feedback", MaterialIconKind.Vibration),
+        new(WeaponPropertyCategory.TurretAndMissile, "Turret and missile-cone sound", "Turret and missile tuning", MaterialIconKind.Radar),
+        new(WeaponPropertyCategory.TailAndPreservedStorage, "Tail bytes and preserved storage", "Native preserved values", MaterialIconKind.DatabaseLockOutline)
+    ];
 }
 
 public enum WeaponIndexedRowKind { GunModel, HandModel, WorldGunModel, WorldClipModel, RocketModel, KnifeModel, WorldKnifeModel, ProjectileModel, VariantAnimation, RightAnimation, LeftAnimation, HideTag, SoundNoteMapping, RumbleNoteMapping, AiVsAiCurrentAccuracyGraph, AiVsPlayerCurrentAccuracyGraph, AiVsAiOriginalAccuracyGraph, AiVsPlayerOriginalAccuracyGraph, LocationDamage, ProjectileParallelBounce, ProjectilePerpendicularBounce, BounceSound, TurretSpinUpSound, TurretSpinDownSound }
@@ -654,6 +1724,27 @@ public sealed class WeaponIndexedRowItemViewModel
             : $"{family} [{index:00}]";
 }
 
+public sealed class WeaponSemanticTabItemViewModel
+{
+    internal WeaponSemanticTabItemViewModel(
+        string key,
+        string title,
+        IEnumerable<WeaponIndexedRowItemViewModel> rows,
+        WeaponIndexedRowKind? selectionKind)
+    {
+        Key = key;
+        Title = title;
+        Rows = Array.AsReadOnly(rows.ToArray());
+        SelectionKind = selectionKind;
+    }
+
+    internal string Key { get; }
+    public string Title { get; }
+    internal IReadOnlyList<WeaponIndexedRowItemViewModel> Rows { get; }
+    internal WeaponIndexedRowKind? SelectionKind { get; }
+    public string CountText => Rows.Count == 1 ? "1 item" : $"{Rows.Count} items";
+}
+
 public sealed class WeaponModelSlotItemViewModel : ObservableObject
 {
     private WeaponModelSlotState _state;
@@ -668,4 +1759,93 @@ public sealed class WeaponModelSlotItemViewModel : ObservableObject
     internal void SetState(WeaponModelSlotState state) { if (_state == state) return; _state = state; OnPropertyChanged(nameof(State)); OnPropertyChanged(nameof(StateText)); OnPropertyChanged(nameof(DisplayName)); }
     private static WeaponModelSlotState ReferenceState(WeaponModelSlotState state) => state == WeaponModelSlotState.NonRenderable ? WeaponModelSlotState.Resolved : state;
     public override string ToString() => DisplayName;
+}
+
+public sealed class WeaponPreviewModelFamilyItemViewModel
+{
+    private WeaponPreviewModelFamilyItemViewModel(
+        WeaponIndexedRowKind rowKind,
+        string title,
+        bool supportsCamo)
+    {
+        RowKind = rowKind;
+        Title = title;
+        SupportsCamo = supportsCamo;
+    }
+
+    internal WeaponIndexedRowKind RowKind { get; }
+    private string Title { get; }
+    internal bool SupportsCamo { get; }
+
+    internal static WeaponPreviewModelFamilyItemViewModel[] CreateAll() =>
+    [
+        new(WeaponIndexedRowKind.GunModel, "View model", supportsCamo: true),
+        new(WeaponIndexedRowKind.WorldGunModel, "World model", supportsCamo: true),
+        new(WeaponIndexedRowKind.HandModel, "Hand model", supportsCamo: false),
+        new(WeaponIndexedRowKind.WorldClipModel, "World clip model", supportsCamo: false),
+        new(WeaponIndexedRowKind.RocketModel, "Rocket model", supportsCamo: false),
+        new(WeaponIndexedRowKind.KnifeModel, "Knife model", supportsCamo: false),
+        new(WeaponIndexedRowKind.WorldKnifeModel, "World knife model", supportsCamo: false),
+        new(WeaponIndexedRowKind.ProjectileModel, "Projectile model", supportsCamo: false)
+    ];
+
+    public override string ToString() => Title;
+}
+
+public sealed class WeaponCamoItemViewModel(int index, string title)
+{
+    internal int Index { get; } = index;
+    private string Title { get; } = title;
+    public override string ToString() => Title;
+}
+
+public sealed class WeaponAccuracyGraphItemViewModel
+{
+    internal WeaponAccuracyGraphItemViewModel(
+        WeaponIndexedRowKind rowKind,
+        string title,
+        string variant,
+        IReadOnlyList<Vec2> points)
+    {
+        RowKind = rowKind;
+        Title = title;
+        Variant = variant;
+        Points = Array.AsReadOnly(points.ToArray());
+    }
+
+    internal WeaponIndexedRowKind RowKind { get; }
+    private string Title { get; }
+    private string Variant { get; }
+    public IReadOnlyList<Vec2> Points { get; }
+    private string DisplayName => $"{Title} · {Variant}";
+    public override string ToString() => DisplayName;
+}
+
+public sealed class WeaponLocationDamageItemViewModel(
+    string title,
+    float? multiplier)
+{
+    public string Title { get; } = title;
+    public string MultiplierText => multiplier is { } value && float.IsFinite(value)
+        ? $"{value:0.###}×"
+        : "—";
+}
+
+public sealed class WeaponBounceSurfaceItemViewModel(
+    string title,
+    float? parallel,
+    float? perpendicular,
+    string? soundName)
+{
+    public string Title { get; } = title;
+    public string ParallelText => Format(parallel);
+    public string PerpendicularText => Format(perpendicular);
+    public string SoundText => string.IsNullOrWhiteSpace(soundName)
+        ? "No bounce sound"
+        : soundName;
+
+    private static string Format(float? value) =>
+        value is { } number && float.IsFinite(number)
+            ? number.ToString("0.###", CultureInfo.InvariantCulture)
+            : "—";
 }

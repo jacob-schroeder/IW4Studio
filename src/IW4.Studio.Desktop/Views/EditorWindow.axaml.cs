@@ -169,6 +169,16 @@ public sealed partial class EditorWindow : Window
     private async void SaveAsButton_Click(object? sender, RoutedEventArgs e) =>
         await RequestSaveAsAsync();
 
+    private void RevertWeaponDraftButton_Click(
+        object? sender,
+        RoutedEventArgs e) =>
+        _workbench?.SelectedWeaponEditor?.RevertDraft();
+
+    private void ApplyWeaponDraftButton_Click(
+        object? sender,
+        RoutedEventArgs e) =>
+        _workbench?.SelectedWeaponEditor?.ApplyDraft();
+
     private void ActivateLivePreview()
     {
         if (_disposed || _workbench is not { } workbench)

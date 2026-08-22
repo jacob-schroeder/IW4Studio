@@ -54,7 +54,7 @@
           <materialIcons:MaterialIcon Kind="Magnify"
                                        Width="16"
                                        Height="16"
-                                       Margin="0,0,7,0"
+                                       Margin="7,0,8,0"
                                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
         </TextBox.InnerLeftContent>
       </TextBox>

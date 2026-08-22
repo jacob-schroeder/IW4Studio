@@ -281,6 +281,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public bool HasNoOpenEditorTabs => !HasOpenEditorTabs;
 
+    public WeaponEditorViewModel? SelectedWeaponEditor =>
+        SelectedEditorTab?.CatalogEditor?.HostedViewModel as
+            WeaponEditorViewModel;
+
+    public bool HasSelectedWeaponEditor => SelectedWeaponEditor is not null;
+
     public EditorViewModel Editor { get; }
 
     public FastFileAssetsNavigatorViewModel FastFileAssets { get; }
@@ -512,6 +518,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         {
             _selectedEditorTab = null;
             OnPropertyChanged(nameof(SelectedEditorTab));
+            NotifySelectedWeaponEditorChanged();
         }
 
         _editorTabsByKey.Remove(tab.Key);
@@ -828,6 +835,13 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
         _selectedEditorTab = tab;
         OnPropertyChanged(nameof(SelectedEditorTab));
+        NotifySelectedWeaponEditorChanged();
+    }
+
+    private void NotifySelectedWeaponEditorChanged()
+    {
+        OnPropertyChanged(nameof(SelectedWeaponEditor));
+        OnPropertyChanged(nameof(HasSelectedWeaponEditor));
     }
 
     private void Editor_PropertyChanged(
