@@ -24,6 +24,7 @@ public sealed partial class App : Application
         NativeMenu.SetMenu(this, StudioMenu.CreateApplicationMenu(ExecuteApplicationMenuAction));
         _settingsStore = new AppSettingsStore(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+        LivePreviewDebugDump.Configure(_settingsStore.LoadDebug());
         _themeService = new ThemeService(this, _settingsStore);
     }
 
@@ -169,8 +170,17 @@ public sealed partial class App : Application
 
     private static void Desktop_Exit(
         object? sender,
-        ControlledApplicationLifetimeExitEventArgs e) =>
-        SilkMapRenderOpenGlShareGroup.Shutdown();
+        ControlledApplicationLifetimeExitEventArgs e)
+    {
+        try
+        {
+            SilkMapRenderOpenGlShareGroup.Shutdown();
+        }
+        finally
+        {
+            LivePreviewDebugDump.Shutdown();
+        }
+    }
 
     private async Task RequestShutdownAsync(EditorWindow editorWindow)
     {

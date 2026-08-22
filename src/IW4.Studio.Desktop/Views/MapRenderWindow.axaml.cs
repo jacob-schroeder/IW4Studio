@@ -84,6 +84,9 @@ public sealed partial class MapRenderWindow : Window
 
         try
         {
+            LivePreviewDebugDump.Write(
+                $"Live Preview scene build started; " +
+                $"targetZone={workspace.LoadedZone.Zone.Name}");
             FastFileRenderViewService renderViewService =
                 _renderViewService ??
                 throw new InvalidOperationException(
@@ -93,11 +96,17 @@ public sealed partial class MapRenderWindow : Window
                     workspace,
                     progress: UpdateBuildProgress,
                     cancellationToken: _buildWaitCancellation.Token);
+            LivePreviewDebugDump.Write(
+                $"Live Preview scene build completed; " +
+                $"renderable={result.IsRenderable}");
             if (_closed)
                 return;
 
             if (!result.IsRenderable)
             {
+                LivePreviewDebugDump.Write(
+                    $"Live Preview scene is not renderable: " +
+                    $"{result.NonRenderableReason}");
                 ShowStatus(
                     "Map rendering is unavailable",
                     result.NonRenderableReason ??
@@ -112,6 +121,8 @@ public sealed partial class MapRenderWindow : Window
         }
         catch (Exception exception)
         {
+            LivePreviewDebugDump.Write(
+                $"Live Preview scene preparation failed: {exception}");
             if (!_closed)
             {
                 ShowStatus(
@@ -126,6 +137,8 @@ public sealed partial class MapRenderWindow : Window
         if (_closed || string.IsNullOrWhiteSpace(progress))
             return;
 
+        LivePreviewDebugDump.Write(
+            $"Live Preview scene progress: {progress}");
         if (Dispatcher.UIThread.CheckAccess())
             StatusMessage.Text = progress;
         else
@@ -140,6 +153,12 @@ public sealed partial class MapRenderWindow : Window
         ShowStatus(
             "Starting Live Preview",
             "Creating the native Silk.NET render window…");
+        string backend = OperatingSystem.IsMacOS()
+            ? "Metal"
+            : "OpenGL";
+        LivePreviewDebugDump.Write(
+            $"Live Preview native startup began; " +
+            $"backend={backend}; scene={scene.Name}");
         try
         {
             Func<string, Task> copyTextAsync = text =>
@@ -158,12 +177,18 @@ public sealed partial class MapRenderWindow : Window
                         copyTextAsync);
             nativeRenderWindow.Failed += NativeRenderWindow_Failed;
             nativeRenderWindow.Stopped += NativeRenderWindow_Stopped;
+            LivePreviewDebugDump.Write(
+                "Live Preview native Show entered");
             nativeRenderWindow.Show();
+            LivePreviewDebugDump.Write(
+                "Live Preview native Show completed");
             _nativeRenderWindow = nativeRenderWindow;
             Hide();
         }
         catch (Exception exception)
         {
+            LivePreviewDebugDump.Write(
+                $"Live Preview native startup failed: {exception}");
             _nativeRendererFailed = true;
             ShowStatus("Could not start Live Preview", exception.Message);
         }
@@ -171,6 +196,8 @@ public sealed partial class MapRenderWindow : Window
 
     private void NativeRenderWindow_Failed(object? sender, Exception exception)
     {
+        LivePreviewDebugDump.Write(
+            $"Live Preview native renderer failed: {exception}");
         _nativeRendererFailed = true;
         Dispatcher.UIThread.Post(() =>
         {
@@ -182,15 +209,21 @@ public sealed partial class MapRenderWindow : Window
         });
     }
 
-    private void NativeRenderWindow_Stopped(object? sender, EventArgs e) =>
+    private void NativeRenderWindow_Stopped(object? sender, EventArgs e)
+    {
+        LivePreviewDebugDump.Write(
+            "Live Preview native renderer stopped");
         Dispatcher.UIThread.Post(() =>
         {
             if (!_closed && !_nativeRendererFailed)
                 Close();
         });
+    }
 
     private void MapRenderWindow_Closed(object? sender, EventArgs e)
     {
+        LivePreviewDebugDump.Write(
+            "Live Preview preparation window closed");
         _closed = true;
         _buildWaitCancellation.Cancel();
         if (_ownsRenderViewService)

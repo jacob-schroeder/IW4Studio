@@ -5,7 +5,7 @@ using IW4.Studio.Desktop.Themes;
 namespace IW4.Studio.Desktop.Persistence;
 
 /// <summary>
-/// Reads and updates the theme preference while preserving unrelated settings.
+/// Reads and updates application preferences while preserving unrelated settings.
 /// </summary>
 internal sealed class AppSettingsStore
 {
@@ -22,6 +22,14 @@ internal sealed class AppSettingsStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
         _settingsPath = Path.GetFullPath(settingsPath);
+    }
+
+    public bool LoadDebug()
+    {
+        JsonObject settings = ReadSettings();
+        return settings["debug"] is JsonValue debugValue &&
+            debugValue.TryGetValue(out bool enabled) &&
+            enabled;
     }
 
     public ThemeMode LoadTheme()

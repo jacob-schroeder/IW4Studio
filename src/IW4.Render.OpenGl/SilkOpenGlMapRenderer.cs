@@ -827,7 +827,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     public void Load(
         MapRenderScene scene,
         RenderSceneSnapshot? sceneSnapshot) =>
-        LoadCore(scene, sceneSnapshot, initialView: null);
+        LoadCore(
+            scene,
+            sceneSnapshot,
+            initialView: null,
+            loadProgress: null);
 
     /// <summary>
     /// Loads a scene for an already-known first view. Static-model OpenGL
@@ -838,7 +842,25 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         MapRenderScene scene,
         RenderSceneSnapshot? sceneSnapshot,
         RenderCamera initialCamera,
-        float initialAspectRatio)
+        float initialAspectRatio) =>
+        Load(
+            scene,
+            sceneSnapshot,
+            initialCamera,
+            initialAspectRatio,
+            loadProgress: null);
+
+    /// <summary>
+    /// Loads a scene for an already-known first view and reports coarse
+    /// synchronous initialization checkpoints to an optional caller sink.
+    /// Progress reporting is advisory and cannot fault renderer loading.
+    /// </summary>
+    public void Load(
+        MapRenderScene scene,
+        RenderSceneSnapshot? sceneSnapshot,
+        RenderCamera initialCamera,
+        float initialAspectRatio,
+        Action<string>? loadProgress)
     {
         if (!(initialAspectRatio > 0f) ||
             !float.IsFinite(initialAspectRatio))
@@ -852,13 +874,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             sceneSnapshot,
             new ProgressiveStaticInitialView(
                 initialCamera,
-                initialAspectRatio));
+                initialAspectRatio),
+            loadProgress);
     }
 
     private void LoadCore(
         MapRenderScene scene,
         RenderSceneSnapshot? sceneSnapshot,
-        ProgressiveStaticInitialView? initialView)
+        ProgressiveStaticInitialView? initialView,
+        Action<string>? loadProgress)
     {
         ThrowIfUnavailable();
         ArgumentNullException.ThrowIfNull(scene);
@@ -866,16 +890,38 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             System.Diagnostics.Stopwatch.GetTimestamp();
         long rendererLoadPhaseStarted = rendererLoadStarted;
         var rendererLoadPhases = new List<string>(8);
+        void ReportLoadProgress(string message)
+        {
+            try
+            {
+                loadProgress?.Invoke(message);
+            }
+            catch
+            {
+                // Advisory diagnostics cannot alter renderer initialization.
+            }
+        }
+        void BeginLoadPhase(string name)
+        {
+            ReportLoadProgress(
+                $"renderer phase started: {name}");
+            rendererLoadPhaseStarted =
+                System.Diagnostics.Stopwatch.GetTimestamp();
+        }
         void RecordLoadPhase(string name)
         {
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            rendererLoadPhases.Add(
+            string phase =
                 $"{name}={System.Diagnostics.Stopwatch.GetElapsedTime(rendererLoadPhaseStarted, now).TotalMilliseconds:0}ms" +
                 $"(programs={_authoredMaterials.ProgramCount}," +
                 $"sharedLinks={_sharedProgramCache.CreateTelemetry().SuccessfulUniqueLinkCount}," +
-                $"textures={_textureHandles.Count})");
-            rendererLoadPhaseStarted = now;
+                $"textures={_textureHandles.Count})";
+            rendererLoadPhases.Add(phase);
+            ReportLoadProgress(
+                $"renderer phase completed: {phase}");
         }
+
+        BeginLoadPhase("core-programs");
 
         bool isolateWorldSurface = IsolatedWorldSurfaceIndex.HasValue;
         if (sceneSnapshot is not null &&
@@ -1087,6 +1133,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _skyTextureLocation = _gl.GetUniformLocation(_skyProgram, "uSkyTexture");
         InitializeFixedSamplerUniforms();
         RecordLoadPhase("core-programs");
+        BeginLoadPhase("base-world");
         bool hasDiagnosticResources =
             !isolateWorldSurface &&
             !sceneSnapshot.Diagnostics.IsEmpty;
@@ -1149,8 +1196,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         AssignWorldMultiDrawBatchGroupIds();
         BuildWorldSurfaceBatchRuntimes(renderedBatches);
         RecordLoadPhase("base-world");
+        BeginLoadPhase("world-receivers");
         InitializeWorldReceiverVariants(scene, isolateWorldSurface);
         RecordLoadPhase("world-receivers");
+        BeginLoadPhase("base-static");
         _usesDynamicStaticLods =
             sceneSnapshot.NormalCameraDraws.SourceCount == 0
                 ? RenderSceneSnapshotBuilder.CanUseAllStaticLodBatches(
@@ -1230,21 +1279,26 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         }
         InitializeBaseStaticResources();
         RecordLoadPhase("base-static");
+        BeginLoadPhase("exact-normal-camera-static");
         InitializeExactNormalCameraStaticResources(
             exactNormalCameraStaticBatches);
         RecordLoadPhase("exact-normal-camera-static");
+        BeginLoadPhase("static-receivers");
         InitializeStaticReceiverVariants(scene, isolateWorldSurface);
         RecordLoadPhase("static-receivers");
+        BeginLoadPhase("static-prefetch");
         if (_progressiveStaticMaterializationEnabled &&
             initialView is { } progressivePrefetchView)
         {
             PrefetchInitialStaticNeighborhood(progressivePrefetchView);
         }
         RecordLoadPhase("static-prefetch");
+        BeginLoadPhase("draw-groups");
         RebuildEditorStaticDrawGroups(
             sceneSnapshot,
             isolateWorldSurface);
         RecordLoadPhase("draw-groups");
+        BeginLoadPhase("sky-wire");
         _previewSceneGeneration++;
         CancelPreviewDpvsWork();
         _previewDpvsCache = new MapRenderWorldDpvsCameraOnlyVisibilityCache();
@@ -1269,6 +1323,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 sceneSnapshot,
                 _wire);
         RecordLoadPhase("sky-wire");
+        BeginLoadPhase("presentation-shadow");
         int openGlLoweringReadyProgramCount = scene.TexturedBatches
             .GroupBy(
                 batch => batch.ShaderExecution.ProgramCacheKey,
@@ -1278,7 +1333,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 _authoredMaterials.IsVertexProgramLowerable(execution) &&
                 _authoredMaterials.IsFragmentProgramLowerable(execution));
         int renderCapableBatchCount = scene.TexturedBatches.Count(batch => batch.ShaderExecution.ProgramExecutionReady);
-        Console.WriteLine(
+        string pipelineSummary =
             $"Renderer pipeline: RSX GLSL validation: openGlLoweringReady={openGlLoweringReadyProgramCount} " +
             $"semanticPrograms={_authoredMaterials.ProgramCount} " +
             $"sharedUniqueLinks={_sharedProgramCache.CreateTelemetry().SuccessfulUniqueLinkCount} " +
@@ -1297,7 +1352,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             $"resolved:{StaticResourceResolvedBatchCount}/" +
             $"source:{StaticResourceSourceBatchCount}/" +
             $"deferred:{StaticResourceDeferredBatchCount} " +
-            $"skies={_skies.Length}.");
+            $"skies={_skies.Length}.";
+        Console.WriteLine(pipelineSummary);
+        ReportLoadProgress(pipelineSummary);
         _gl.Enable(EnableCap.DepthTest);
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.Disable(EnableCap.CullFace);
@@ -1316,6 +1373,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         InitializeSunShadowCasterResources(scene, isolateWorldSurface);
         InitializeSunShadowPipeline(scene, isolateWorldSurface);
         RecordLoadPhase("presentation-shadow");
+        ReportLoadProgress("renderer finalization started");
         EstablishStateShadowBaseline();
         _loaded = true;
         long rendererLoadFinished =
@@ -1328,7 +1386,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         OpenGlUniformLocationCacheTelemetry
             uniformLocationTelemetry =
                 _authoredMaterials.UniformLocationTelemetry;
-        Console.WriteLine(
+        string loadTiming =
             $"Renderer load timing: " +
             $"{string.Join(", ", rendererLoadPhases)}, " +
             $"linkedPrograms=requests:{linkedProgramTelemetry.SemanticRequestCount}/" +
@@ -1351,7 +1409,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             $"decodedRetained:{TextureDecodedFallbackBytesRetained}/" +
             $"authoredBc:{TextureAuthoredBcSourceBytes}/" +
             $"gpuResident:{TextureGpuResidentBytes}, " +
-            $"total={System.Diagnostics.Stopwatch.GetElapsedTime(rendererLoadStarted, rendererLoadFinished).TotalMilliseconds:0}ms.");
+            $"total={System.Diagnostics.Stopwatch.GetElapsedTime(rendererLoadStarted, rendererLoadFinished).TotalMilliseconds:0}ms.";
+        Console.WriteLine(loadTiming);
+        ReportLoadProgress(loadTiming);
     }
 
     private void RecomputeEditorPreviewDirectionalSunColors()
