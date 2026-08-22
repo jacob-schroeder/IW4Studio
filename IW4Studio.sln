@@ -28,6 +28,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Linker", "src\IW4.Linke
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Studio.Desktop", "src\IW4.Studio.Desktop\IW4.Studio.Desktop.csproj", "{CC835191-D4B1-4698-8E49-7D285F7E0889}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4Map", "src\Tools\IW4Map\IW4Map.csproj", "{B4AFB11A-DDE2-443B-B8DE-B633963E068F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{F659F56D-FE25-4723-937D-640C118C5BB1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -86,11 +90,16 @@ Global
 		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CC835191-D4B1-4698-8E49-7D285F7E0889}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4AFB11A-DDE2-443B-B8DE-B633963E068F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4AFB11A-DDE2-443B-B8DE-B633963E068F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4AFB11A-DDE2-443B-B8DE-B633963E068F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4AFB11A-DDE2-443B-B8DE-B633963E068F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{9E13A04E-38C2-475C-8543-017C61195C1B} = {FCDD3239-F358-4994-865E-BC1974E865CF}
+		{B4AFB11A-DDE2-443B-B8DE-B633963E068F} = {F659F56D-FE25-4723-937D-640C118C5BB1}
 	EndGlobalSection
 EndGlobal
