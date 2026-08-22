@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
+using IW4.Studio.Desktop.Editors.Font;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Menu;
 using IW4.Studio.Desktop.ViewModels;
@@ -99,6 +100,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     _gscSourceNavigation,
                     _gscUsagesPresenter,
                     assetReferencePicker);
+            editorViewRegistry.Register(new FontViewFactory(
+                menuMaterialResolver));
             editorViewRegistry.Register(new MenuEditorViewFactory(
                 _menuEditingCoordinator,
                 assetReferencePicker,

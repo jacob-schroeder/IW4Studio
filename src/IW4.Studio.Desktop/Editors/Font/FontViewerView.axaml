@@ -1,0 +1,162 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:menu="using:IW4.Studio.Desktop.Editors.Menu"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.Font.FontViewerView"
+             x:DataType="viewModels:FontViewerViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1080"
+             d:DesignHeight="720">
+  <Grid RowDefinitions="Auto,10,Auto,10,*">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding PixelHeightText, StringFormat='Pixel height: {0}'}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding GlyphCountText, StringFormat='Glyphs: {0}'}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Column="1"
+                Padding="9,4"
+                CornerRadius="4"
+                VerticalAlignment="Center"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <TextBlock Text="READ ONLY"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     LetterSpacing="0.5"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Padding="10,7"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,4,56"
+            ColumnDefinitions="*,12,230">
+        <Grid Grid.ColumnSpan="3"
+              ColumnDefinitions="*,Auto">
+          <TextBlock Text="PREVIEW TEXT"
+                     VerticalAlignment="Center"
+                     FontSize="9"
+                     FontWeight="Bold"
+                     LetterSpacing="0.7"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <Button Grid.Column="1"
+                  Classes="ghost"
+                  MinHeight="25"
+                  Padding="7,2"
+                  HorizontalAlignment="Right"
+                  ToolTip.Tip="Restore the pangram and every loaded glyph"
+                  Click="ResetPreviewButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <materialIcons:MaterialIcon Kind="Refresh" Width="14" Height="14" />
+              <TextBlock Text="Reset" />
+            </StackPanel>
+          </Button>
+        </Grid>
+
+        <TextBox Grid.Row="2"
+                 Height="56"
+                 Padding="8,4"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 Text="{Binding PreviewText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="Font preview text" />
+
+        <StackPanel Grid.Column="2"
+                    Grid.Row="2"
+                    VerticalAlignment="Center"
+                    Spacing="5">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="SCALE"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding PreviewScaleText}"
+                       FontSize="10"
+                       FontFamily="Consolas"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Grid>
+          <Slider Minimum="0.1"
+                  Maximum="1.0"
+                  TickFrequency="0.05"
+                  Value="{Binding PreviewScale, Mode=TwoWay}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="4">
+      <Border CornerRadius="8"
+              ClipToBounds="True"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="38,*">
+          <Border Padding="11,0"
+                  Background="{DynamicResource StudioSurfaceBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="8">
+              <TextBlock Text="IW4 PREVIEW"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.7"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Grid.Column="2"
+                         MaxWidth="360"
+                         Text="{Binding PreviewStatus}"
+                         ToolTip.Tip="{Binding PreviewDetails}"
+                         VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </Grid>
+          </Border>
+
+          <menu:MenuPreviewControl Grid.Row="1"
+                                   Scene="{Binding PreviewScene}"
+                                   IsDirectManipulationEnabled="False"
+                                   MaterialResolver="{Binding MaterialResolver}"
+                                   TextResourceResolver="{Binding TextResourceResolver}"
+                                   MaterialResolutionCompleted="PreviewControl_MaterialResolutionCompleted"
+                                   TextResolutionCompleted="PreviewControl_TextResolutionCompleted" />
+        </Grid>
+      </Border>
+
+    </Grid>
+  </Grid>
+</UserControl>
