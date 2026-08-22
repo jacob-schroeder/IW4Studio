@@ -272,6 +272,8 @@ public static class FontAssemblyCompiler
             Height = checked((ushort)rasterization.AtlasHeight),
             Depth = 1,
             MemoryLocation = GfxImageMemoryLocation.Local,
+            // CELL_GCM_TEXTURE_LN consumes the explicit byte row pitch at +0x10.
+            RenderTargetPitch = checked((uint)rasterization.AtlasWidth * 4),
             MapType = MapType.TwoDimensional,
             TextureSemantic = template.TextureSemantic,
             Category = ImageCategory.LoadFromFile,
