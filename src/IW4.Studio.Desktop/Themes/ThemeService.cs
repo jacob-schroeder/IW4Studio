@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Themes.Fluent;
 using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes.Design;
@@ -17,6 +19,7 @@ internal sealed class ThemeService
     private readonly Application _application;
     private readonly AppSettingsStore _settingsStore;
     private readonly FluentTheme? _fluentTheme;
+    private readonly Dictionary<Uri, Bitmap> _bannerImages = [];
 
     public ThemeService(Application application, AppSettingsStore settingsStore)
     {
@@ -60,6 +63,7 @@ internal sealed class ThemeService
 
         _application.RequestedThemeVariant = theme.BaseVariant;
         _application.Resources["StudioFontFamily"] = theme.FontFamily;
+        _application.Resources["StudioBannerImage"] = GetBannerImage(theme.BannerResource);
 
         SetBrush("StudioBackgroundBrush", palette.Surfaces.Canvas);
         SetBrush("StudioSurfaceBrush", palette.Surfaces.Default);
@@ -114,6 +118,17 @@ internal sealed class ThemeService
 
     private void SetBrush(string resourceName, Color color) =>
         _application.Resources[resourceName] = new SolidColorBrush(color);
+
+    private Bitmap GetBannerImage(Uri resource)
+    {
+        if (_bannerImages.TryGetValue(resource, out Bitmap? image))
+            return image;
+
+        using Stream stream = AssetLoader.Open(resource);
+        image = new Bitmap(stream);
+        _bannerImages.Add(resource, image);
+        return image;
+    }
 
     private void ConfigureFluentAccent(ITheme theme)
     {

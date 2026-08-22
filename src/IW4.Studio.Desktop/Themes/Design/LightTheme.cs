@@ -16,6 +16,8 @@ public sealed class LightTheme : ITheme
 
     public FontFamily FontFamily { get; } = new("Inter");
 
+    public Uri BannerResource { get; } = new("avares://IW4%20Studio/Resources/banner_light.png");
+
     public ThemePalette Palette { get; } = new(
         Accent: new ThemeAccentPalette(
             Default: Color.FromUInt32(0xFF8BD21C),

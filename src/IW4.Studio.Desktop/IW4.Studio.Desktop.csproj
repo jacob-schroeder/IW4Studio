@@ -44,6 +44,8 @@
     <AvaloniaResource Include="..\..\Resources\logo_simple.png" Link="Resources\logo_simple.png" />
     <AvaloniaResource Include="..\..\Resources\logo.svg" Link="Resources\logo.svg" />
     <AvaloniaResource Include="..\..\Resources\images\map.png" Link="Resources\map.png" />
+    <AvaloniaResource Include="..\..\Resources\images\banner_dark.png" Link="Resources\banner_dark.png" />
+    <AvaloniaResource Include="..\..\Resources\images\banner_light.png" Link="Resources\banner_light.png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -27,25 +27,26 @@
       
       <Border.Background>
         <ImageBrush
-          Source="/Resources/map.png"
-          Stretch="UniformToFill" 
+          Source="{DynamicResource StudioBannerImage}"
+          Stretch="Fill"
           TileMode="Tile" 
           AlignmentX="Left"
           AlignmentY="Top"
-          Opacity="0.75" />
+          Opacity="1" />
       </Border.Background>
             
       <Grid ColumnDefinitions="Auto,12,*,Auto" VerticalAlignment="Center">
         
         <!-- Background="{DynamicResource StudioAccentStrongBrush}" -->
         <Border Grid.Column="0"
-                Width="32"
-                Height="32"
-                CornerRadius="7"
+                Width="48"
+                Height="48"
+                CornerRadius="3"
+                ClipToBounds="True"
                 >
           <Image
-            Width="46"
-            Height="46"
+            Width="48"
+            Height="48"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             Source="/Resources/logo_simple.png"
