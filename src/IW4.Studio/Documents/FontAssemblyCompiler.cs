@@ -12,7 +12,7 @@ public sealed record FontRasterization(
     int PixelHeight,
     int AtlasWidth,
     int AtlasHeight,
-    IReadOnlyList<byte> AlphaBytes,
+    IReadOnlyList<byte> RgbaBytes,
     IReadOnlyList<FontRasterizedGlyph> Glyphs);
 
 public sealed record FontRasterizedGlyph(
@@ -35,7 +35,7 @@ public sealed record FontAssemblyCompileResult(
 }
 
 /// <summary>
-/// Converts renderer-neutral glyph coverage and metrics into one detached IW4
+/// Converts renderer-neutral glyph pixels and metrics into one detached IW4
 /// Font definition plus its owned Material/Image provider closure.
 /// </summary>
 public static class FontAssemblyCompiler
@@ -152,14 +152,15 @@ public static class FontAssemblyCompiler
                 "The IW4 font atlas dimensions must be powers of two."));
         }
 
-        long expectedAlphaBytes = (long)rasterization.AtlasWidth * rasterization.AtlasHeight;
-        if (rasterization.AlphaBytes is null ||
-            expectedAlphaBytes > int.MaxValue ||
-            rasterization.AlphaBytes.Count != expectedAlphaBytes)
+        long expectedRgbaBytes = (long)rasterization.AtlasWidth *
+            rasterization.AtlasHeight * 4;
+        if (rasterization.RgbaBytes is null ||
+            expectedRgbaBytes > int.MaxValue ||
+            rasterization.RgbaBytes.Count != expectedRgbaBytes)
         {
             issues.Add(Error(
-                "font.atlas.alphaBytes",
-                "The atlas coverage must contain exactly one tightly packed byte per pixel."));
+                "font.atlas.rgbaBytes",
+                "The atlas pixels must contain exactly four tightly packed RGBA bytes per pixel."));
         }
         if (rasterization.Glyphs is null ||
             rasterization.Glyphs.Count != template.Glyphs.Count)
@@ -253,13 +254,14 @@ public static class FontAssemblyCompiler
         int pixelByteCount = checked(rasterization.AtlasWidth * rasterization.AtlasHeight * 4);
         int payloadByteCount = checked((pixelByteCount + 0x7f) & ~0x7f);
         var payload = new byte[payloadByteCount];
-        for (int pixel = 0; pixel < rasterization.AlphaBytes.Count; pixel++)
+        int pixelCount = checked(rasterization.AtlasWidth * rasterization.AtlasHeight);
+        for (int pixel = 0; pixel < pixelCount; pixel++)
         {
             int offset = pixel * 4;
-            payload[offset] = rasterization.AlphaBytes[pixel];
-            payload[offset + 1] = byte.MaxValue;
-            payload[offset + 2] = byte.MaxValue;
-            payload[offset + 3] = byte.MaxValue;
+            payload[offset] = rasterization.RgbaBytes[offset + 3];
+            payload[offset + 1] = rasterization.RgbaBytes[offset];
+            payload[offset + 2] = rasterization.RgbaBytes[offset + 1];
+            payload[offset + 3] = rasterization.RgbaBytes[offset + 2];
         }
         return new GfxImageAsset
         {
@@ -375,8 +377,8 @@ public static class FontAssemblyCompiler
         WriteInt32(payload, rasterization.PixelHeight);
         WriteInt32(payload, rasterization.AtlasWidth);
         WriteInt32(payload, rasterization.AtlasHeight);
-        WriteInt32(payload, rasterization.AlphaBytes.Count);
-        payload.AddRange(rasterization.AlphaBytes);
+        WriteInt32(payload, rasterization.RgbaBytes.Count);
+        payload.AddRange(rasterization.RgbaBytes);
         WriteInt32(payload, rasterization.Glyphs.Count);
         foreach (FontRasterizedGlyph glyph in rasterization.Glyphs)
         {

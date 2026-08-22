@@ -23,6 +23,7 @@ public sealed class FontViewerViewModel
 
     private readonly AssetEditorSession _session;
     private readonly IMenuPreviewMaterialResolver _workspaceMaterialResolver;
+    private readonly WorkspaceGfxImagePayloadResolver _imagePayloadResolver;
     private readonly MenuNodeId _previewNodeId = MenuNodeId.New();
     private FontAsset _font;
     private FontAssemblyCompileResult? _compiledCandidate;
@@ -48,6 +49,7 @@ public sealed class FontViewerViewModel
             throw new InvalidDataException("The Font view model can host only Font editor sessions.");
         _workspaceMaterialResolver = materialResolver ??
             throw new ArgumentNullException(nameof(materialResolver));
+        _imagePayloadResolver = new WorkspaceGfxImagePayloadResolver(session.Workspace);
 
         _font = session.OpenDraft<FontDraft>().Font;
         _defaultPreviewText = BuildDefaultPreviewText(_font);
@@ -219,7 +221,10 @@ public sealed class FontViewerViewModel
 
         FontAsset template = _session.OpenDraft<FontDraft>().Font;
         OpenTypeFontRasterization rasterized =
-            OpenTypeFontRasterizer.Rasterize(sourceBytes, template);
+            OpenTypeFontRasterizer.Rasterize(
+                sourceBytes,
+                template,
+                _imagePayloadResolver);
         FontAssemblyCompileResult compiled = FontAssemblyCompiler.Compile(
             template,
             rasterized.Rasterization);
