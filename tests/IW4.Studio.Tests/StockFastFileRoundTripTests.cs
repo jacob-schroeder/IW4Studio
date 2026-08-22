@@ -13,6 +13,7 @@ using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
+using IW4.Linker.Plans;
 using IW4.Linker.SourceLayout;
 using IW4.Runtime.Database;
 using IW4.Runtime.IO;
@@ -57,8 +58,10 @@ public sealed class StockFastFileRoundTripTests
                 selectedLanguageMask: 0,
                 (_, loaded) =>
                 {
+                    ZoneObjectFile objectFile = Assert.IsType<ZoneObjectFile>(
+                        loaded.ZoneObjectFile);
                     SourceLayoutRelinkResult relink =
-                        new SourceLayoutRelinker().Relink(loaded.ZoneObjectFile);
+                        new SourceLayoutRelinker().Relink(objectFile);
                     Assert.True(
                         relink.Succeeded,
                         $"Source-layout relink failed for '{sourcePath}'.{Environment.NewLine}" +

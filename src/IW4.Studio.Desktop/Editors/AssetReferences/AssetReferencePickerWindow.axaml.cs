@@ -40,7 +40,7 @@ public sealed partial class AssetReferencePickerWindow : Window
         RoutedEventArgs e) =>
         Close((AssetReferencePickerResult?)null);
 
-    private static void CandidateRow_AttachedToVisualTree(
+    private void CandidateRow_AttachedToVisualTree(
         object? sender,
         Avalonia.VisualTreeAttachmentEventArgs e)
     {

@@ -202,7 +202,7 @@ public sealed partial class StudioWorkbenchView : UserControl
         }
     }
 
-    private static void CloseEditorTabButton_PointerPressed(
+    private void CloseEditorTabButton_PointerPressed(
         object? sender,
         PointerPressedEventArgs e)
     {
@@ -266,7 +266,7 @@ public sealed partial class StudioWorkbenchView : UserControl
         }
     }
 
-    private static void EditorTabStrip_PointerWheelChanged(
+    private void EditorTabStrip_PointerWheelChanged(
         object? sender,
         PointerWheelEventArgs e)
     {

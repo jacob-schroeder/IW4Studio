@@ -119,7 +119,7 @@ public sealed partial class MenuPreviewView : UserControl
             viewModel.ReportTextPreviewStatus(e.Status);
     }
 
-    private static void ScenarioStagedInput_LostFocus(
+    private void ScenarioStagedInput_LostFocus(
         object? sender,
         RoutedEventArgs e)
     {
@@ -132,7 +132,7 @@ public sealed partial class MenuPreviewView : UserControl
         }
     }
 
-    private static void ScenarioStagedInput_KeyDown(
+    private void ScenarioStagedInput_KeyDown(
         object? sender,
         KeyEventArgs e)
     {

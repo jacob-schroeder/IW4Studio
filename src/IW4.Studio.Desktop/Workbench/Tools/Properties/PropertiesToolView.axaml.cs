@@ -10,7 +10,7 @@ public sealed partial class PropertiesToolView : UserControl
 {
     public PropertiesToolView() => AvaloniaXamlLoader.Load(this);
 
-    private static void StagedInput_LostFocus(
+    private void StagedInput_LostFocus(
         object? sender,
         RoutedEventArgs e)
     {
@@ -18,7 +18,7 @@ public sealed partial class PropertiesToolView : UserControl
             _ = row.CommitInput();
     }
 
-    private static void StagedInput_KeyDown(
+    private void StagedInput_KeyDown(
         object? sender,
         KeyEventArgs e)
     {

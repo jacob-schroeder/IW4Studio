@@ -102,7 +102,7 @@ public sealed partial class WeaponEditorView : UserControl
         }
     }
 
-    private static void StagedInput_LostFocus(
+    private void StagedInput_LostFocus(
         object? sender,
         RoutedEventArgs e)
     {
@@ -115,7 +115,7 @@ public sealed partial class WeaponEditorView : UserControl
         }
     }
 
-    private static void StagedInput_KeyDown(object? sender, KeyEventArgs e)
+    private void StagedInput_KeyDown(object? sender, KeyEventArgs e)
     {
         if (sender is not Control
             {

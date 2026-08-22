@@ -10,6 +10,7 @@
              d:DesignWidth="980"
              d:DesignHeight="560">
   <UserControl.Resources>
+    <!-- ReSharper disable once Xaml.RedundantResource -->
     <ContextMenu x:Key="PreviewItemContextMenu"
                  x:DataType="menuVm:MenuDesignerViewModel"
                  Placement="Pointer">
