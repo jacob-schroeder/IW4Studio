@@ -65,18 +65,11 @@
                      Foreground="{DynamicResource StudioTextSubtleBrush}"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9">
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9" Name="ActionBar">
           <Button Classes="ghost"
                   MinHeight="32"
                   Padding="11,5"
-                  Content="Save As..."
-                  IsEnabled="{Binding CanSaveAs}"
-                  Click="SaveAsButton_Click" />
-          <Button Classes="ghost"
-                  MinHeight="32"
-                  Padding="11,5"
-                  Content="Open another..."
-                  Click="OpenAnotherButton_Click" />
+                  Content="Example Button"  />
         </StackPanel>
       </Grid>
     </Border>
