@@ -1,4 +1,5 @@
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.Font;
 using IW4.Assets.Assets.Localize;
 using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.StringTable;
@@ -94,6 +95,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
         registry.Register(new XModelAdapter());
+        registry.Register(new FontAdapter());
         registry.Register(new WeaponAdapter());
         registry.Register(new StructuredDataAdapter());
         return registry;
@@ -379,6 +381,35 @@ public sealed class AssetEditorSession : AssetEditorSurface
         Validation = new AssetEditorValidationState(validation);
         return changed;
     }
+
+    /// <summary>Publishes a compiled Font and its owned Material/Image closure in one revision.</summary>
+    public bool ApplyCompiledFont(
+        FontAsset definition,
+        IReadOnlyList<BaseAsset> providers,
+        out IReadOnlyList<AssetValidationIssue> issues)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(providers);
+        if (!CanEdit)
+            throw new InvalidOperationException("This asset is not editable.");
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.Font)
+            throw new InvalidOperationException("This editor does not host a Font.");
+        TargetZoneRowIdentity identity = _rowIdentity ?? throw new InvalidOperationException(
+            "An editable editor requires a stable target row.");
+        FontDraft candidate = new(definition);
+        AssetValidationIssue[] validation = _adapter.Validate(candidate)
+            .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))
+            .Select(group => group.First())
+            .ToArray();
+        issues = Array.AsReadOnly(validation);
+        if (validation.Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            return false;
+        bool changed = _session.PublishCompiledDefinition(identity, definition, providers);
+        Validation = new AssetEditorValidationState(validation);
+        return changed;
+    }
+
     public T ApplyAndRead<T>(Action<T> mutation) where T : notnull
     {
         _ = Apply(mutation);

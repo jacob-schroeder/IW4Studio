@@ -35,21 +35,68 @@
                        FontSize="10"
                        Foreground="{DynamicResource StudioTextMutedBrush}" />
           </StackPanel>
+          <TextBlock Text="{Binding StatusMessage}"
+                     IsVisible="{Binding HasStatusMessage}"
+                     MaxWidth="660"
+                     FontSize="9"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
 
-        <Border Grid.Column="1"
-                Padding="9,4"
-                CornerRadius="4"
-                VerticalAlignment="Center"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="1">
-          <TextBlock Text="READ ONLY"
-                     FontSize="9"
-                     FontWeight="SemiBold"
-                     LetterSpacing="0.5"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
-        </Border>
+        <Grid Grid.Column="1"
+              VerticalAlignment="Center">
+          <Border Padding="9,4"
+                  IsVisible="{Binding IsReadOnly}"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="READ ONLY"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.5"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+
+          <StackPanel IsVisible="{Binding IsEditable}"
+                      Orientation="Horizontal"
+                      HorizontalAlignment="Right"
+                      Spacing="7">
+            <Button Classes="ghost"
+                    MinHeight="30"
+                    Padding="10,4"
+                    IsEnabled="{Binding CanRevert}"
+                    ToolTip.Tip="Discard the staged replacement or restore the saved Font"
+                    Click="RevertFontButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+                <TextBlock Text="Revert" />
+              </StackPanel>
+            </Button>
+            <Button Classes="ghost"
+                    MinHeight="30"
+                    Padding="10,4"
+                    IsEnabled="{Binding CanReplace}"
+                    ToolTip.Tip="Compile a TrueType or OpenType file into this IW4 Font"
+                    Click="ReplaceFontButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <materialIcons:MaterialIcon Kind="FileCode" Width="15" Height="15" />
+                <TextBlock Text="Replace…" />
+              </StackPanel>
+            </Button>
+            <Button Classes="primary"
+                    MinHeight="30"
+                    Padding="12,5"
+                    IsEnabled="{Binding CanApply}"
+                    ToolTip.Tip="Publish the compiled Font and generated providers"
+                    Click="ApplyFontButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
+                <TextBlock Text="Apply" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
       </Grid>
     </Border>
 

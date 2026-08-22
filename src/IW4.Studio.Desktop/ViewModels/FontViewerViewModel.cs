@@ -1,70 +1,98 @@
 using System.Text;
 using IW4.Assets.Assets.Font;
 using IW4.Assets.Assets.Menu;
+using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
 using IW4.Studio.Desktop.Editors;
+using IW4.Studio.Desktop.Editors.Font;
 using IW4.Studio.Desktop.Editors.Menu;
 using IW4.Studio.Desktop.Rendering;
+using IW4.Studio.Documents;
 using IW4.Studio.Documents.MenuEditing;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
 public sealed class FontViewerViewModel
     : ObservableObject,
-      IAssetEditorProperties
+      IAssetEditorProperties,
+      IAssetEditorDiagnostics,
+      IAssetEditorStagingState
 {
     private const double DefaultPreviewScale = 0.4;
     private const int GlyphsPerLine = 48;
 
+    private readonly AssetEditorSession _session;
+    private readonly IMenuPreviewMaterialResolver _workspaceMaterialResolver;
     private readonly MenuNodeId _previewNodeId = MenuNodeId.New();
-    private readonly string _defaultPreviewText;
+    private FontAsset _font;
+    private FontAssemblyCompileResult? _compiledCandidate;
+    private string? _replacementSource;
+    private string _defaultPreviewText;
     private string _previewText;
     private double _previewScale = DefaultPreviewScale;
     private MenuPreviewScene _previewScene;
+    private IMenuPreviewMaterialResolver _materialResolver;
+    private IMenuTextResourceResolver _textResourceResolver;
     private MenuPreviewMaterialStatus? _materialStatus;
     private MenuPreviewTextStatus? _textStatus;
+    private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
+    private string _statusMessage = string.Empty;
+    private long _previewResourceRevision;
 
     public FontViewerViewModel(
-        FontAsset font,
+        AssetEditorSession session,
         IMenuPreviewMaterialResolver materialResolver)
     {
-        ArgumentNullException.ThrowIfNull(font);
-        MaterialResolver = materialResolver ??
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        if (session.Entry.AssetType != XAssetType.Font)
+            throw new InvalidDataException("The Font view model can host only Font editor sessions.");
+        _workspaceMaterialResolver = materialResolver ??
             throw new ArgumentNullException(nameof(materialResolver));
-        TextResourceResolver = new FontPreviewTextResourceResolver(font);
 
-        Name = string.IsNullOrWhiteSpace(font.Name)
-            ? "<unnamed font>"
-            : font.Name;
-        PixelHeightText = $"{font.PixelHeight:N0} px";
-        GlyphCountText = font.GlyphCount == font.Glyphs.Count
-            ? $"{font.Glyphs.Count:N0}"
-            : $"{font.Glyphs.Count:N0} loaded / {font.GlyphCount:N0} declared";
-        int previewableGlyphCount = font.Glyphs
-            .Select(glyph => (char)glyph.Letter)
-            .Where(IsPreviewableGlyph)
-            .Distinct()
-            .Count();
-        GlyphCoverageText = $"{previewableGlyphCount:N0} previewable characters";
-        MaterialName = font.Material?.Info.Name ?? "<unresolved>";
-        GlowMaterialName = font.GlowMaterial?.Info.Name ?? "<none>";
-
-        _defaultPreviewText = BuildDefaultPreviewText(font);
+        _font = session.OpenDraft<FontDraft>().Font;
+        _defaultPreviewText = BuildDefaultPreviewText(_font);
         _previewText = _defaultPreviewText;
+        _materialResolver = CreateMaterialResolver(_font);
+        _textResourceResolver = new FontPreviewTextResourceResolver(_font);
         _previewScene = BuildPreviewScene();
     }
 
-    public string Name { get; }
+    public WorkspaceAssetAccess Mode => _session.Mode;
 
-    public string PixelHeightText { get; }
+    public bool IsEditable => Mode == WorkspaceAssetAccess.Editable;
 
-    public string GlyphCountText { get; }
+    public bool IsReadOnly => !IsEditable;
 
-    public string GlyphCoverageText { get; }
+    public string Name => string.IsNullOrWhiteSpace(_font.Name)
+        ? "<unnamed font>"
+        : _font.Name;
 
-    public string MaterialName { get; }
+    public string PixelHeightText => $"{_font.PixelHeight:N0} px";
 
-    public string GlowMaterialName { get; }
+    public string GlyphCountText => _font.GlyphCount == _font.Glyphs.Count
+        ? $"{_font.Glyphs.Count:N0}"
+        : $"{_font.Glyphs.Count:N0} loaded / {_font.GlyphCount:N0} declared";
+
+    public string GlyphCoverageText
+    {
+        get
+        {
+            int count = _font.Glyphs
+                .Select(glyph => (char)glyph.Letter)
+                .Where(IsPreviewableGlyph)
+                .Distinct()
+                .Count();
+            return $"{count:N0} previewable characters";
+        }
+    }
+
+    public string MaterialName => _font.Material?.Info.Name ?? "<unresolved>";
+
+    public string GlowMaterialName => _font.GlowMaterial?.Info.Name ?? "<none>";
+
+    public string SourceFontText => string.IsNullOrWhiteSpace(_replacementSource)
+        ? "OTF/TTF outlines are not stored"
+        : _replacementSource;
 
     public string PropertySectionName => "FONT DATA";
 
@@ -76,12 +104,36 @@ public sealed class FontViewerViewModel
         new("Material", MaterialName),
         new("Glow material", GlowMaterialName),
         new("Storage", "Raster glyph atlas and metrics"),
-        new("Source font", "OTF/TTF outlines are not stored")
+        new("Source font", SourceFontText)
     ];
 
-    public IMenuPreviewMaterialResolver MaterialResolver { get; }
+    public IReadOnlyList<AssetValidationIssue> Diagnostics => _diagnostics;
 
-    public IMenuTextResourceResolver TextResourceResolver { get; }
+    public bool HasUnappliedChanges => _compiledCandidate is not null;
+
+    public bool CanReplace => IsEditable;
+
+    public bool CanApply => IsEditable && _compiledCandidate?.IsSuccess == true;
+
+    public bool CanRevert => IsEditable &&
+        (HasUnappliedChanges || _session.HasUnsavedChanges);
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set
+        {
+            if (!SetProperty(ref _statusMessage, value))
+                return;
+            OnPropertyChanged(nameof(HasStatusMessage));
+        }
+    }
+
+    public bool HasStatusMessage => !string.IsNullOrWhiteSpace(StatusMessage);
+
+    public IMenuPreviewMaterialResolver MaterialResolver => _materialResolver;
+
+    public IMenuTextResourceResolver TextResourceResolver => _textResourceResolver;
 
     public string PreviewText
     {
@@ -92,7 +144,7 @@ public sealed class FontViewerViewModel
             if (!SetProperty(ref _previewText, value))
                 return;
 
-            RebuildPreview();
+            RebuildPreviewScene();
         }
     }
 
@@ -108,7 +160,7 @@ public sealed class FontViewerViewModel
                 return;
 
             OnPropertyChanged(nameof(PreviewScaleText));
-            RebuildPreview();
+            RebuildPreviewScene();
         }
     }
 
@@ -127,7 +179,9 @@ public sealed class FontViewerViewModel
             if (_textStatus is { UsesGameGlyphs: true } &&
                 _materialStatus is { IsResolved: true })
             {
-                return "IW4 glyph metrics and font atlas";
+                return HasUnappliedChanges
+                    ? "Compiled IW4 candidate — not yet applied"
+                    : "IW4 glyph metrics and font atlas";
             }
             if (_textStatus is { UsesGameGlyphs: true })
                 return "Loading font atlas…";
@@ -155,6 +209,155 @@ public sealed class FontViewerViewModel
                 ? PreviewStatus
                 : string.Join(Environment.NewLine, details);
         }
+    }
+
+    internal FontReplacementCandidate CompileReplacement(
+        ReadOnlyMemory<byte> sourceBytes)
+    {
+        if (!IsEditable)
+            throw new InvalidOperationException("This Font is read-only.");
+
+        FontAsset template = _session.OpenDraft<FontDraft>().Font;
+        OpenTypeFontRasterization rasterized =
+            OpenTypeFontRasterizer.Rasterize(sourceBytes, template);
+        FontAssemblyCompileResult compiled = FontAssemblyCompiler.Compile(
+            template,
+            rasterized.Rasterization);
+        return new FontReplacementCandidate(
+            compiled,
+            rasterized.FamilyName,
+            rasterized.SubstitutedGlyphCount,
+            rasterized.Rasterization.AtlasWidth,
+            rasterized.Rasterization.AtlasHeight);
+    }
+
+    internal bool TryStageReplacement(
+        FontReplacementCandidate candidate,
+        string source,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        error = null;
+        if (!IsEditable)
+        {
+            error = "This Font is read-only.";
+            return false;
+        }
+
+        SetDiagnostics(candidate.Compiled.Issues);
+        if (!candidate.Compiled.IsSuccess)
+        {
+            error = string.Join(
+                " ",
+                candidate.Compiled.Issues
+                    .Where(issue => issue.Severity == AssetValidationSeverity.Error)
+                    .Take(3)
+                    .Select(issue => issue.Message));
+            StatusMessage = string.IsNullOrWhiteSpace(error)
+                ? "Font replacement compilation was blocked."
+                : $"Font replacement compilation blocked: {error}";
+            return false;
+        }
+
+        _compiledCandidate = candidate.Compiled;
+        _replacementSource = string.IsNullOrWhiteSpace(source)
+            ? "OpenType import"
+            : source;
+        UseFont(candidate.Compiled.Definition);
+        string substitutions = candidate.SubstitutedGlyphCount == 0
+            ? string.Empty
+            : $" {candidate.SubstitutedGlyphCount:N0} unavailable source glyph(s) use the native '.' fallback.";
+        StatusMessage =
+            $"Staged {candidate.FamilyName} as a {candidate.AtlasWidth:N0}×{candidate.AtlasHeight:N0} IW4 atlas; " +
+            $"review the preview, then Apply.{substitutions}";
+        NotifyEditingStateChanged();
+        return true;
+    }
+
+    public bool ApplyCompiledDraft()
+    {
+        if (!CanApply || _compiledCandidate is null)
+            return false;
+
+        bool applied;
+        IReadOnlyList<AssetValidationIssue> issues;
+        try
+        {
+            applied = _session.ApplyCompiledFont(
+                _compiledCandidate.Definition,
+                _compiledCandidate.Providers,
+                out issues);
+        }
+        catch (Exception exception) when (exception is
+                   InvalidDataException or
+                   InvalidOperationException or
+                   ArgumentException or
+                   OverflowException)
+        {
+            SetDiagnostics(
+                [new AssetValidationIssue(
+                    "font.apply",
+                    exception.Message,
+                    AssetValidationSeverity.Error)]);
+            StatusMessage = $"Font Apply blocked: {exception.Message}";
+            return false;
+        }
+
+        SetDiagnostics(issues);
+        if (!applied)
+        {
+            _compiledCandidate = null;
+            _replacementSource = null;
+            LoadCurrentFont();
+            StatusMessage = "The compiled Font already matches the applied asset.";
+            NotifyEditingStateChanged();
+            return false;
+        }
+
+        _compiledCandidate = null;
+        _replacementSource = null;
+        LoadCurrentFont();
+        StatusMessage =
+            "Applied the Font, cloned normal/glow Materials, and inline atlas Image atomically.";
+        NotifyEditingStateChanged();
+        return true;
+    }
+
+    public void RevertDraft()
+    {
+        if (!CanRevert)
+            return;
+
+        if (HasUnappliedChanges)
+        {
+            _compiledCandidate = null;
+            _replacementSource = null;
+            SetDiagnostics([]);
+            LoadCurrentFont();
+            StatusMessage = "Discarded the staged OpenType replacement.";
+            NotifyEditingStateChanged();
+            return;
+        }
+
+        bool reverted = _session.Revert();
+        SetDiagnostics([]);
+        LoadCurrentFont();
+        StatusMessage = reverted
+            ? "Reverted the Font and its owned Materials/Image to the saved baseline."
+            : "The Font already matches its saved baseline.";
+        NotifyEditingStateChanged();
+    }
+
+    public void ReportReplacementFailure(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+        SetDiagnostics(
+            [new AssetValidationIssue(
+                "font.import",
+                message,
+                AssetValidationSeverity.Error)]);
+        StatusMessage = $"Font replacement failed: {message}";
     }
 
     public void ResetPreviewText()
@@ -186,7 +389,43 @@ public sealed class FontViewerViewModel
         OnPropertyChanged(nameof(PreviewDetails));
     }
 
-    private void RebuildPreview()
+    private void LoadCurrentFont()
+    {
+        _font = _session.OpenDraft<FontDraft>().Font;
+        UseFont(_font);
+    }
+
+    private void UseFont(FontAsset font)
+    {
+        _font = font ?? throw new ArgumentNullException(nameof(font));
+        _defaultPreviewText = BuildDefaultPreviewText(font);
+        _materialResolver = CreateMaterialResolver(font);
+        _textResourceResolver = new FontPreviewTextResourceResolver(font);
+        _materialStatus = null;
+        _textStatus = null;
+        _previewScene = BuildPreviewScene();
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(PixelHeightText));
+        OnPropertyChanged(nameof(GlyphCountText));
+        OnPropertyChanged(nameof(GlyphCoverageText));
+        OnPropertyChanged(nameof(MaterialName));
+        OnPropertyChanged(nameof(GlowMaterialName));
+        OnPropertyChanged(nameof(SourceFontText));
+        OnPropertyChanged(nameof(EditorProperties));
+        OnPropertyChanged(nameof(MaterialResolver));
+        OnPropertyChanged(nameof(TextResourceResolver));
+        OnPropertyChanged(nameof(PreviewScene));
+        OnPropertyChanged(nameof(PreviewStatus));
+        OnPropertyChanged(nameof(PreviewDetails));
+    }
+
+    private IMenuPreviewMaterialResolver CreateMaterialResolver(FontAsset font) =>
+        new FontPreviewMaterialResolver(
+            _workspaceMaterialResolver,
+            font,
+            Interlocked.Increment(ref _previewResourceRevision));
+
+    private void RebuildPreviewScene()
     {
         _materialStatus = null;
         _textStatus = null;
@@ -224,6 +463,24 @@ public sealed class FontViewerViewModel
             [previewText],
             [],
             []);
+    }
+
+    private void SetDiagnostics(IEnumerable<AssetValidationIssue> issues)
+    {
+        _diagnostics = Array.AsReadOnly(issues
+            .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))
+            .Select(group => group.First())
+            .ToArray());
+        OnPropertyChanged(nameof(Diagnostics));
+    }
+
+    private void NotifyEditingStateChanged()
+    {
+        OnPropertyChanged(nameof(HasUnappliedChanges));
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(CanRevert));
+        OnPropertyChanged(nameof(EditorProperties));
+        OnPropertyChanged(nameof(PreviewStatus));
     }
 
     private static string BuildDefaultPreviewText(FontAsset font)
@@ -289,3 +546,10 @@ public sealed class FontViewerViewModel
         }
     }
 }
+
+internal sealed record FontReplacementCandidate(
+    FontAssemblyCompileResult Compiled,
+    string FamilyName,
+    int SubstitutedGlyphCount,
+    int AtlasWidth,
+    int AtlasHeight);
