@@ -17,6 +17,50 @@ internal sealed class D3dbspFile
 
     public IReadOnlyList<D3dbspLump> Lumps { get; }
 
+    public ReadOnlySpan<byte> GetRequiredData(D3dbspLumpType type) =>
+        Lumps.FirstOrDefault(lump => lump.Type == type)?.Data ??
+        throw new InvalidDataException($"The d3dbsp has no {FormatType(type)} chunk.");
+
+    public ReadOnlySpan<byte> GetOptionalData(D3dbspLumpType type) =>
+        Lumps.FirstOrDefault(lump => lump.Type == type)?.Data ?? [];
+
+    public bool HasLump(D3dbspLumpType type) =>
+        Lumps.Any(lump => lump.Type == type);
+
+    public static D3dbspFile Create(
+        IReadOnlyList<(D3dbspLumpType Type, byte[] Data)> lumps)
+    {
+        ArgumentNullException.ThrowIfNull(lumps);
+        if (lumps.Count > MaximumChunkCount)
+        {
+            throw new ArgumentException(
+                $"A version 22 d3dbsp cannot contain more than {MaximumChunkCount} chunks.",
+                nameof(lumps));
+        }
+
+        var seenTypes = new HashSet<D3dbspLumpType>();
+        var created = new D3dbspLump[lumps.Count];
+        for (int index = 0; index < lumps.Count; index++)
+        {
+            (D3dbspLumpType type, byte[] data) = lumps[index];
+            ArgumentNullException.ThrowIfNull(data);
+            if (!seenTypes.Add(type))
+            {
+                throw new ArgumentException(
+                    $"The d3dbsp contains duplicate {FormatType(type)} chunks.",
+                    nameof(lumps));
+            }
+
+            var payload = data.ToArray();
+            created[index] = new D3dbspLump(
+                type,
+                payload,
+                new byte[GetPaddingLength(checked((uint)payload.Length))]);
+        }
+
+        return new D3dbspFile(Array.AsReadOnly(created));
+    }
+
     public static D3dbspFile Read(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -111,15 +155,37 @@ internal sealed class D3dbspFile
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (Lumps.Count > MaximumChunkCount)
             throw new InvalidOperationException($"A version 22 d3dbsp cannot contain more than {MaximumChunkCount} chunks.");
+        string outputPath = Path.GetFullPath(path);
+        if (File.Exists(outputPath))
+            throw new IOException($"Output file '{outputPath}' already exists.");
+        string directory = Path.GetDirectoryName(outputPath) ??
+            throw new InvalidDataException("The d3dbsp output path has no containing directory.");
+        string temporaryPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using (var stream = new FileStream(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 1024 * 1024,
+                FileOptions.SequentialScan))
+            {
+                WriteTo(stream);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temporaryPath, outputPath);
+        }
+        finally
+        {
+            TryDeleteTemporaryFile(temporaryPath);
+        }
+    }
 
-        using var stream = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 1024 * 1024,
-            FileOptions.SequentialScan);
-
+    private void WriteTo(Stream stream)
+    {
         Span<byte> header = stackalloc byte[HeaderSize];
         BinaryPrimitives.WriteUInt32LittleEndian(header, Ident);
         BinaryPrimitives.WriteUInt32LittleEndian(header[4..], Version);
@@ -138,6 +204,20 @@ internal sealed class D3dbspFile
         {
             stream.Write(lump.Data);
             stream.Write(lump.Padding);
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 

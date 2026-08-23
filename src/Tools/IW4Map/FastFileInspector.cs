@@ -10,6 +10,31 @@ namespace IW4Map;
 
 internal static class FastFileInspector
 {
+    public static void FindAssets(string input, string contains)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contains);
+        string path = Path.GetFullPath(input);
+        using FastFileWorkspace workspace = Open(path);
+        WorkspaceAssetCatalogEntry[] matches = workspace.AssetCatalog.Entries
+            .Where(entry =>
+                entry.NormalizedName?.Contains(
+                    contains,
+                    StringComparison.OrdinalIgnoreCase) == true)
+            .OrderBy(entry => entry.AssetType)
+            .ThenBy(entry => entry.NormalizedName, StringComparer.Ordinal)
+            .ToArray();
+
+        Console.WriteLine($"file: {path}");
+        Console.WriteLine($"asset-name-contains: {contains}");
+        Console.WriteLine($"matches: {matches.Length}");
+        foreach (WorkspaceAssetCatalogEntry entry in matches)
+        {
+            Console.WriteLine(
+                $"{entry.AssetType,-18} {entry.Origin,-25} " +
+                $"{entry.Access,-18} {entry.OriginalName}");
+        }
+    }
+
     public static void Inspect(string input)
     {
         string path = Path.GetFullPath(input);
@@ -42,9 +67,17 @@ internal static class FastFileInspector
     internal static FastFileWorkspace Open(string input)
     {
         string path = Path.GetFullPath(input);
-        string profile = FastFileOpenProfiles.ResolveForTarget(path);
+        FastFileOpenMode mode;
+        try
+        {
+            mode = new ZonePlan(FastFileOpenProfiles.ResolveForTarget(path));
+        }
+        catch (NotSupportedException)
+        {
+            mode = Isolated.Instance;
+        }
         return new FastFileDocumentService().Open(
-            new FastFileDocumentOpenRequest(path, new ZonePlan(profile)));
+            new FastFileDocumentOpenRequest(path, mode));
     }
 
     internal static TAsset? GetSingle<TAsset>(FastFileWorkspace workspace) where TAsset : class =>
@@ -77,10 +110,33 @@ internal static class FastFileInspector
         Console.WriteLine($"gfx-map.vertices: {world.WorldDraw.VertexCount} declared, {world.WorldDraw.VertexData.PackedVertices.Count} packed bytes");
         Console.WriteLine($"gfx-map.vertex-layer: {world.WorldDraw.VertexLayerDataSize} declared, {world.WorldDraw.VertexLayerData.PackedLayerData.Count} packed bytes");
         Console.WriteLine($"gfx-map.indices: {world.WorldDraw.IndexCount} declared, {world.WorldDraw.Indices.Count} materialized");
+        int resolvedSurfaceMaterials = world.Dpvs.Surfaces.Count(surface => surface.Material is not null);
+        Console.WriteLine(
+            $"gfx-map.surface-materials: {resolvedSurfaceMaterials} resolved, " +
+            $"{world.Dpvs.Surfaces.Count - resolvedSurfaceMaterials} unresolved, " +
+            $"{world.Dpvs.Surfaces.Select(surface => surface.Material?.Info.Name).Where(name => name is not null).Distinct(StringComparer.Ordinal).Count()} distinct");
+        foreach (var material in world.Dpvs.Surfaces
+                     .Select(surface => surface.Material)
+                     .Where(material => material is not null)
+                     .DistinctBy(material => material!.Info.Name, StringComparer.Ordinal)
+                     .OrderBy(material => material!.Info.Name, StringComparer.Ordinal))
+        {
+            Console.WriteLine(
+                $"gfx-map.surface-material[{material!.Info.Name}]: " +
+                $"textures={material.TextureCount}/{material.Textures.Count}, " +
+                $"technique-set={material.TechniqueSet?.Name ?? "unresolved"}");
+        }
+        Console.WriteLine(
+            $"gfx-map.reflection-probe-images: " +
+            $"{world.WorldDraw.ReflectionProbeImages.Count(image => image is not null)} resolved, " +
+            $"{world.WorldDraw.ReflectionProbeImages.Count(image => image is null)} unresolved");
         Console.WriteLine($"gfx-map.light-grid-row-starts: {world.LightGrid.RowDataStart.Count}");
         Console.WriteLine($"gfx-map.light-grid-rows: {world.LightGrid.RawRowDataSize} declared, {world.LightGrid.RawRowData.Count} materialized bytes");
         Console.WriteLine($"gfx-map.light-grid-entries: {world.LightGrid.EntryCount} declared, {world.LightGrid.Entries.Count} materialized");
         Console.WriteLine($"gfx-map.light-grid-colors: {world.LightGrid.ColorCount} declared, {world.LightGrid.Colors.Count} materialized");
+        Console.WriteLine(
+            $"gfx-map.surface-visibility-words: " +
+            $"{(world.Dpvs.VisibilityCounts.Count > 7 ? world.Dpvs.VisibilityCounts[7] : 0)}");
     }
 
     private static void WriteClipMap(ClipMapAsset? clipMap)
@@ -108,6 +164,12 @@ internal static class FastFileInspector
         Console.WriteLine($"col-map.collision-partitions: {clipMap.PartitionCount} declared, {clipMap.Partitions.Count} materialized");
         Console.WriteLine($"col-map.collision-aabbs: {clipMap.AabbTreeCount} declared, {clipMap.AabbTrees.Count} materialized");
         Console.WriteLine($"col-map.models: {clipMap.NumSubModels} declared, {clipMap.CModels.Count} materialized");
+        Console.WriteLine(
+            $"col-map.invalid-leaf-bounds: " +
+            $"{clipMap.Leafs.Count(leaf => !HasOrderedEndpoints(leaf.Mins, leaf.Maxs))}");
+        Console.WriteLine(
+            $"col-map.invalid-model-bounds: " +
+            $"{clipMap.CModels.Count(model => !HasOrderedEndpoints(model.Mins, model.Maxs))}");
         Console.WriteLine($"col-map.brushes: {clipMap.NumBrushes} declared, {clipMap.Brushes.Count} materialized");
         Console.WriteLine($"col-map.dynamic-entities: {string.Join(",", clipMap.DynEntCount)}");
     }
@@ -168,4 +230,11 @@ internal static class FastFileInspector
         Console.WriteLine($"game-map-mp.glass-pieces: {world.GlassData?.PieceCount ?? 0} declared, {world.GlassData?.GlassPieces.Count ?? 0} materialized");
         Console.WriteLine($"game-map-mp.glass-names: {world.GlassData?.GlassNameCount ?? 0} declared, {world.GlassData?.GlassNames.Count ?? 0} materialized");
     }
+
+    private static bool HasOrderedEndpoints(
+        IW4.Assets.Math.Vec3 mins,
+        IW4.Assets.Math.Vec3 maxs) =>
+        mins.X <= maxs.X &&
+        mins.Y <= maxs.Y &&
+        mins.Z <= maxs.Z;
 }

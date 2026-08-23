@@ -321,7 +321,10 @@ internal static class D3dbspLightingCodec
                 "The linker-generated default light-grid color cannot be omitted from an empty color array.");
         }
 
-        int colorCount = lightGrid.Colors.Count - (omitLinkerGeneratedDefault ? 1 : 0);
+        int generatedFallbackCount = omitLinkerGeneratedDefault
+            ? GetGeneratedFallbackColorCount(lightGrid)
+            : 0;
+        int colorCount = lightGrid.Colors.Count - generatedFallbackCount;
         var data = new byte[checked(colorCount * GfxLightGridColors.SerializedSize)];
         for (int index = 0; index < colorCount; index++)
         {
@@ -339,6 +342,22 @@ internal static class D3dbspLightingCodec
         }
 
         return data;
+    }
+
+    private static int GetGeneratedFallbackColorCount(GfxLightGrid lightGrid)
+    {
+        if (lightGrid.EntryCount == 0 &&
+            lightGrid.Colors.Count == 2 &&
+            lightGrid.Colors[0] is { } first &&
+            lightGrid.Colors[1] is { } second &&
+            first.RgbBytes.SequenceEqual(second.RgbBytes))
+        {
+            // No-bake worlds carry a duplicated native fallback pair even
+            // though neither row originated in the compiled BSP.
+            return 2;
+        }
+
+        return 1;
     }
 
     public static byte[] EncodeLightRegions(
@@ -529,7 +548,12 @@ internal static class D3dbspLightingCodec
         }
 
         int sourceColorCount = payload.Length / GfxLightGridColors.SerializedSize;
-        var colors = new GfxLightGridColors[checked(sourceColorCount + 1)];
+        // The native PS3 world-stream helper unconditionally copies Colors[1]
+        // into writable runtime storage. A no-bake BSP therefore needs two
+        // identical fallback rows; sourced grids retain their authored rows
+        // plus the linker-generated fallback.
+        int fallbackColorCount = sourceColorCount == 0 ? 2 : 1;
+        var colors = new GfxLightGridColors[checked(sourceColorCount + fallbackColorCount)];
         for (int index = 0; index < sourceColorCount; index++)
         {
             colors[index] = new GfxLightGridColors(
@@ -538,7 +562,8 @@ internal static class D3dbspLightingCodec
                     GfxLightGridColors.SerializedSize).ToArray());
         }
 
-        colors[sourceColorCount] = CreateDefaultLightGridColors();
+        for (int index = sourceColorCount; index < colors.Length; index++)
+            colors[index] = CreateDefaultLightGridColors();
         return colors;
     }
 

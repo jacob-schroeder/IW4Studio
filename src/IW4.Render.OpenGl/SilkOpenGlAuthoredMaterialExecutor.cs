@@ -27,7 +27,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         string,
         OpenGlLinkedProgramHandleResolution> _resolveLinkedProgram;
     private readonly RsxVertexGlsl330ProgramResolver _vertexResolver = new();
-    private readonly RsxFragmentGlsl330ProgramResolver _fragmentResolver = new();
+    private readonly RsxFragmentGlsl330ProgramResolver _fragmentResolver;
     private readonly OpenGlUniformLocationCache _uniformLocations;
     private readonly Dictionary<OpenGlProgramKey, GlRsxProgram>
         _programs = [];
@@ -52,6 +52,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _resolveLinkedProgram = resolveLinkedProgram ??
             throw new ArgumentNullException(nameof(resolveLinkedProgram));
+        _fragmentResolver = new RsxFragmentGlsl330ProgramResolver(gl);
         _uniformLocations = new OpenGlUniformLocationCache(
             gl.GetUniformLocation);
     }

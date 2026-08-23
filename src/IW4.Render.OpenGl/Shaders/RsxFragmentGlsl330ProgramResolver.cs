@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 
 using IW4.Render.Execution;
 using IW4.Render.Shaders;
+using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl.Shaders;
 
@@ -12,6 +13,9 @@ namespace IW4.Render.OpenGl.Shaders;
 /// </summary>
 internal sealed class RsxFragmentGlsl330ProgramResolver
 {
+    private const string ShadingLanguagePackingExtension =
+        "GL_ARB_shading_language_packing";
+
     private static readonly RsxFragmentGlsl330ProgramResolution
         CoreProgramIrNotReady =
             RsxFragmentGlsl330ProgramResolution.Failure(
@@ -30,8 +34,16 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
     // semantic identity while changing control or decoded instruction state.
     private readonly Dictionary<string, CacheEntry> _buckets =
         new(StringComparer.Ordinal);
+    private readonly bool _useNativeHalfPacking;
 
     private int _count;
+
+    internal RsxFragmentGlsl330ProgramResolver(GL gl)
+    {
+        ArgumentNullException.ThrowIfNull(gl);
+        _useNativeHalfPacking = gl.IsExtensionPresent(
+            ShadingLanguagePackingExtension);
+    }
 
     /// <summary>
     /// Number of cold exact-IR lowerings. Cache hits do not advance this value.
@@ -99,7 +111,9 @@ internal sealed class RsxFragmentGlsl330ProgramResolver
         LoweringCount = checked(LoweringCount + 1);
         var key = new ExactLoweringKeySnapshot(program);
         RsxFragmentGlsl330LoweringResult lowering =
-            RsxFragmentGlsl330Lowerer.Lower(program);
+            RsxFragmentGlsl330Lowerer.Lower(
+                program,
+                _useNativeHalfPacking);
         if (!lowering.TranslationReady || lowering.Glsl is null)
         {
             string reason =

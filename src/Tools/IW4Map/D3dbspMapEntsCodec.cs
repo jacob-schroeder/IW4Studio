@@ -66,6 +66,37 @@ internal static class D3dbspMapEntsCodec
         return stages.AsReadOnly();
     }
 
+    public static IReadOnlyList<string> FindUnsupportedAssetGraphFeatures(
+        ReadOnlySpan<byte> source)
+    {
+        IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
+        var features = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (ParsedEntity entity in entities)
+        {
+            if (!entity.TryGetValue("classname", out string classname))
+                continue;
+
+            if (string.Equals(classname, "misc_model", StringComparison.OrdinalIgnoreCase))
+                features.Add("misc_model static-model assets");
+            else if (string.Equals(classname, "dyn_model", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(classname, "dyn_brushmodel", StringComparison.OrdinalIgnoreCase))
+                features.Add("dynamic-entity assets");
+            else if (string.Equals(classname, "reflection_probe", StringComparison.OrdinalIgnoreCase))
+                features.Add("authored reflection probes");
+            else if (string.Equals(classname, "glass", StringComparison.OrdinalIgnoreCase))
+                features.Add("destructible glass assets");
+
+            if (classname.StartsWith("trigger_", StringComparison.OrdinalIgnoreCase) &&
+                entity.TryGetValue("model", out string model) &&
+                model.StartsWith('*'))
+            {
+                features.Add("brush-backed MapTriggers");
+            }
+        }
+
+        return features.ToArray();
+    }
+
     private static bool CanPurge(ParsedEntity entity)
     {
         string classname = entity.TryGetValue("classname", out string value)

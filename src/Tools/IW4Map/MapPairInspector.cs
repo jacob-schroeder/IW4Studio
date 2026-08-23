@@ -47,12 +47,28 @@ internal static class MapPairInspector
         WriteCount("lightmaps", Count(d3dbsp, D3dbspLumpType.LightBytes, 3 * 1024 * 1024), gfxWorld.WorldDraw.Lightmaps.Count, "images may merge");
         WriteCount("light-grid row bytes", ByteCount(d3dbsp, D3dbspLumpType.LightGridRows), gfxWorld.LightGrid.RawRowData.Count, "size retained; row headers endian-transformed");
         WriteCount("light-grid entries", Count(d3dbsp, D3dbspLumpType.LightGridEntries, 4), gfxWorld.LightGrid.Entries.Count, "fields retained");
-        WriteCount("light-grid colors", Count(d3dbsp, D3dbspLumpType.LightGridColors, 168), gfxWorld.LightGrid.Colors.Count, "linker appends one default");
+        WriteCount(
+            "light-grid colors",
+            Count(d3dbsp, D3dbspLumpType.LightGridColors, 168),
+            gfxWorld.LightGrid.Colors.Count,
+            "linker appends a native fallback (two rows for no-bake worlds)");
         WriteCount("light regions", ByteCount(d3dbsp, D3dbspLumpType.LightRegions), gfxWorld.LightRegions.Count, "hull counts retained");
         WriteCount("reflection probes", Count(d3dbsp, D3dbspLumpType.ReflectionProbes, 131_140), checked((int)gfxWorld.WorldDraw.ReflectionProbeCount), "linker prepends one default");
-        WriteCount("triangle soups", Count(d3dbsp, D3dbspLumpType.Triangles, 24), gfxWorld.Dpvs.Surfaces.Count, "selected context transformed/sorted");
-        WriteCount("draw vertices", Count(d3dbsp, D3dbspLumpType.DrawVerts, 68), checked((int)gfxWorld.WorldDraw.VertexCount), "repacked/deduplicated");
-        WriteCount("draw indices", Count(d3dbsp, D3dbspLumpType.DrawIndices, 2), gfxWorld.WorldDraw.Indices.Count, "regrouped by surface");
+        WriteCount(
+            "triangle soups",
+            CountSelected(d3dbsp, D3dbspLumpType.UnlayeredTriangles, D3dbspLumpType.Triangles, 24),
+            gfxWorld.Dpvs.Surfaces.Count,
+            "selected context transformed/sorted");
+        WriteCount(
+            "draw vertices",
+            CountSelected(d3dbsp, D3dbspLumpType.UnlayeredDrawVerts, D3dbspLumpType.DrawVerts, 68),
+            checked((int)gfxWorld.WorldDraw.VertexCount),
+            "repacked/deduplicated");
+        WriteCount(
+            "draw indices",
+            CountSelected(d3dbsp, D3dbspLumpType.UnlayeredDrawIndices, D3dbspLumpType.DrawIndices, 2),
+            gfxWorld.WorldDraw.Indices.Count,
+            "regrouped by surface");
 
         Console.WriteLine();
         ComWorldAsset decodedComWorld = InspectPrimaryLights(d3dbsp, comWorld);
@@ -212,6 +228,11 @@ internal static class MapPairInspector
         IReadOnlyList<CollisionAabbTree> decodedAabbs =
             D3dbspCollisionCodec.DecodeCollisionAabbs(
                 GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionAabbs));
+        IReadOnlyList<CollisionPartition> decodedPartitions =
+            D3dbspCollisionCodec.DecodeCollisionPartitions(
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionPartitions),
+                decodedBorders,
+                decodedTriIndices.Count / 3);
         var decodedBrushGraph = D3dbspCollisionCodec.DecodeBrushes(
             RequireLump(d3dbsp, D3dbspLumpType.Brushes).Data,
             RequireLump(d3dbsp, D3dbspLumpType.BrushSides).Data,
@@ -219,7 +240,15 @@ internal static class MapPairInspector
             decodedBrushEdges,
             decodedPlanes,
             decodedMaterials,
-            linkedClipMap.Brushes.Select(brush => brush.GlassPieceIndex).ToArray());
+            new ushort[RequireLump(d3dbsp, D3dbspLumpType.Brushes).Data.Length / 4]);
+        var decodedLeafGraph = D3dbspCollisionCodec.DecodeLeafGraph(
+            RequireLump(d3dbsp, D3dbspLumpType.Leafs).Data,
+            RequireLump(d3dbsp, D3dbspLumpType.Models).Data,
+            decodedLeafBrushes,
+            decodedBrushGraph.BrushBounds,
+            decodedBrushGraph.BrushContents,
+            decodedAabbs,
+            decodedMaterials);
 
         bool directPayloadMatch =
             decodedBrushEdges.SequenceEqual(linkedClipMap.BrushEdges) &&
@@ -233,6 +262,10 @@ internal static class MapPairInspector
                 D3dbspCollisionCodec.EncodeCollisionBorders(linkedClipMap.Borders)) &&
             D3dbspCollisionCodec.EncodeCollisionAabbs(decodedAabbs).AsSpan().SequenceEqual(
                 D3dbspCollisionCodec.EncodeCollisionAabbs(linkedClipMap.AabbTrees));
+        bool partitionsMatch =
+            decodedPartitions.Count == linkedClipMap.Partitions.Count &&
+            decodedPartitions.Zip(linkedClipMap.Partitions).All(pair =>
+                CollisionPartitionEquals(pair.First, pair.Second));
         bool brushSidesMatch =
             decodedBrushGraph.BrushSides.Count == linkedClipMap.BrushSides.Count &&
             decodedBrushGraph.BrushSides.Zip(linkedClipMap.BrushSides).All(pair =>
@@ -248,17 +281,31 @@ internal static class MapPairInspector
         bool brushBoundsMatch = brushBoundsMismatchCount == 0;
         bool brushContentsMatch =
             decodedBrushGraph.BrushContents.SequenceEqual(linkedClipMap.BrushContents);
+        bool leafPayloadMatch =
+            decodedLeafGraph.Leafs.Count == linkedClipMap.Leafs.Count &&
+            decodedLeafGraph.Leafs.Zip(linkedClipMap.Leafs).All(pair =>
+                LeafEqualsExceptTreeRoot(pair.First, pair.Second));
+        bool modelsMatch =
+            decodedLeafGraph.CModels.Count == linkedClipMap.CModels.Count &&
+            decodedLeafGraph.CModels.Zip(linkedClipMap.CModels).All(pair =>
+                CModelEqualsExceptTreeRoot(pair.First, pair.Second));
 
         Console.WriteLine($"clip-map.planes-forward-graph-match: {planesMatch}");
         Console.WriteLine($"clip-map.materials-forward-graph-match: {materialsMatch}");
         Console.WriteLine($"clip-map.nodes-forward-graph-match: {nodesMatch}");
         Console.WriteLine($"clip-map.direct-payload-forward-graph-match: {directPayloadMatch}");
+        Console.WriteLine($"clip-map.partitions-forward-graph-match: {partitionsMatch}");
         Console.WriteLine($"clip-map.brush-sides-forward-graph-match: {brushSidesMatch}");
         Console.WriteLine($"clip-map.brush-topology-forward-graph-match: {brushTopologyMatch}");
         Console.WriteLine(
             $"clip-map.brush-bounds-forward-graph-match: {brushBoundsMatch} " +
             $"(row mismatches: {brushBoundsMismatchCount})");
         Console.WriteLine($"clip-map.brush-contents-forward-graph-match: {brushContentsMatch}");
+        Console.WriteLine($"clip-map.leaf-payload-forward-graph-match: {leafPayloadMatch}");
+        Console.WriteLine($"clip-map.models-forward-graph-match: {modelsMatch}");
+        Console.WriteLine(
+            $"clip-map.leaf-brush-tree-layout: canonical terminal nodes " +
+            $"({decodedLeafGraph.LeafBrushNodes.Count} rows; linked {linkedClipMap.LeafBrushNodes.Count})");
         Console.WriteLine("clip-map.brush-glass-index-source: linked glass graph (not stored in brush lumps)");
     }
 
@@ -308,6 +355,17 @@ internal static class MapPairInspector
         left.FirstAdjacentSideOffset == right.FirstAdjacentSideOffset &&
         left.EdgeCount == right.EdgeCount;
 
+    private static bool CollisionPartitionEquals(
+        CollisionPartition left,
+        CollisionPartition right) =>
+        left.TriCount == right.TriCount &&
+        left.BorderCount == right.BorderCount &&
+        left.FirstVertSegment == right.FirstVertSegment &&
+        left.Pad03 == right.Pad03 &&
+        left.FirstTri == right.FirstTri &&
+        D3dbspCollisionCodec.EncodeCollisionBorders(left.Borders).AsSpan().SequenceEqual(
+            D3dbspCollisionCodec.EncodeCollisionBorders(right.Borders));
+
     private static bool BrushEqualsExceptGlassPieceIndex(
         CBrush left,
         CBrush right) =>
@@ -324,6 +382,21 @@ internal static class MapPairInspector
         Bounds right) =>
         Vec3Equals(left.MidPoint, right.MidPoint) &&
         Vec3Equals(left.HalfSize, right.HalfSize);
+
+    private static bool LeafEqualsExceptTreeRoot(CLeaf left, CLeaf right) =>
+        left.FirstCollAabbIndex == right.FirstCollAabbIndex &&
+        left.CollAabbCount == right.CollAabbCount &&
+        left.BrushContents == right.BrushContents &&
+        left.TerrainContents == right.TerrainContents &&
+        Vec3Equals(left.Mins, right.Mins) &&
+        Vec3Equals(left.Maxs, right.Maxs);
+
+    private static bool CModelEqualsExceptTreeRoot(CModel left, CModel right) =>
+        Vec3Equals(left.Mins, right.Mins) &&
+        Vec3Equals(left.Maxs, right.Maxs) &&
+        BitConverter.SingleToInt32Bits(left.Radius) ==
+            BitConverter.SingleToInt32Bits(right.Radius) &&
+        LeafEqualsExceptTreeRoot(left.Leaf, right.Leaf);
 
     private static bool Vec3Equals(Vec3 left, Vec3 right) =>
         BitConverter.SingleToInt32Bits(left.X) == BitConverter.SingleToInt32Bits(right.X) &&
@@ -474,6 +547,13 @@ internal static class MapPairInspector
 
         return length / elementSize;
     }
+
+    private static int CountSelected(
+        D3dbspFile file,
+        D3dbspLumpType preferred,
+        D3dbspLumpType fallback,
+        int elementSize) =>
+        Count(file, file.HasLump(preferred) ? preferred : fallback, elementSize);
 
     private static int ByteCount(D3dbspFile file, D3dbspLumpType type) =>
         file.Lumps.FirstOrDefault(lump => lump.Type == type)?.Data.Length ?? 0;

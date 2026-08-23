@@ -163,6 +163,7 @@ internal sealed unsafe class
         _ownerThreadId = Environment.CurrentManagedThreadId;
         _sources =
             MapRenderOpenGlNormalCameraFullscreenProgramResolver.Resolve(
+                gl,
                 source,
                 _usesFilmColorManipulation,
                 _usesGlow,

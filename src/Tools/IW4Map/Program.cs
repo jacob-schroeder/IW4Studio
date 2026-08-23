@@ -10,7 +10,13 @@ static int Run(string[] args)
         {
             ["inspect", string input] => Inspect(input),
             ["inspect-fastfile", string input] => InspectFastFile(input),
+            ["find-fastfile-assets", string input, string contains] =>
+                FindFastFileAssets(input, contains),
             ["inspect-pair", string d3dbsp, string fastFile] => InspectPair(d3dbsp, fastFile),
+            ["to-d3dbsp", string fastFile, string output] => ToD3dbsp(fastFile, output),
+            ["to-fastfile", string d3dbsp, string template, string assetName, string output,
+                .. string[] optionsAndDependencies] =>
+                ToFastFile(d3dbsp, template, assetName, output, optionsAndDependencies),
             ["rewrite", string input, string output] => Rewrite(input, output),
             _ => Usage()
         };
@@ -18,6 +24,7 @@ static int Run(string[] args)
     catch (Exception exception) when (exception is
         ArgumentException or
         InvalidDataException or
+        NotSupportedException or
         IOException or
         UnauthorizedAccessException)
     {
@@ -32,9 +39,45 @@ static int InspectPair(string d3dbsp, string fastFile)
     return 0;
 }
 
+static int ToFastFile(
+    string d3dbsp,
+    string template,
+    string assetName,
+    string output,
+    IReadOnlyList<string> optionsAndDependencies)
+{
+    int fullbrightOptionCount = optionsAndDependencies.Count(
+        value => string.Equals(value, "--fullbright", StringComparison.Ordinal));
+    if (fullbrightOptionCount > 1)
+        throw new ArgumentException("The --fullbright option may be supplied only once.");
+    string[] dependencies = optionsAndDependencies
+        .Where(value => !string.Equals(value, "--fullbright", StringComparison.Ordinal))
+        .ToArray();
+    FastFileConverter.FromD3dbsp(
+        d3dbsp,
+        template,
+        assetName,
+        output,
+        forceFullbright: fullbrightOptionCount == 1,
+        dependencies);
+    return 0;
+}
+
+static int ToD3dbsp(string fastFile, string output)
+{
+    FastFileConverter.ToD3dbsp(fastFile, output);
+    return 0;
+}
+
 static int InspectFastFile(string input)
 {
     FastFileInspector.Inspect(input);
+    return 0;
+}
+
+static int FindFastFileAssets(string input, string contains)
+{
+    FastFileInspector.FindAssets(input, contains);
     return 0;
 }
 
@@ -85,7 +128,11 @@ static int Usage()
     Console.Error.WriteLine("usage:");
     Console.Error.WriteLine("  IW4Map inspect <input.d3dbsp>");
     Console.Error.WriteLine("  IW4Map inspect-fastfile <input.ff>");
+    Console.Error.WriteLine("  IW4Map find-fastfile-assets <input.ff> <name-contains>");
     Console.Error.WriteLine("  IW4Map inspect-pair <input.d3dbsp> <input.ff>");
+    Console.Error.WriteLine("  IW4Map to-d3dbsp <input.ff> <output.d3dbsp>");
+    Console.Error.WriteLine(
+        "  IW4Map to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [dependency.ff ...]");
     Console.Error.WriteLine("  IW4Map rewrite <input.d3dbsp> <output.d3dbsp>");
     return 2;
 }

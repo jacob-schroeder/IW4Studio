@@ -101,7 +101,9 @@ internal sealed unsafe class
             throw new ArgumentNullException(nameof(errorMonitor));
         _ownerThreadId = Environment.CurrentManagedThreadId;
         _sources =
-            MapRenderOpenGlNormalCameraFloatZProgramResolver.Resolve(source);
+            MapRenderOpenGlNormalCameraFloatZProgramResolver.Resolve(
+                gl,
+                source);
         if (_sources.AssetPoolRevision !=
                 source.AssetPoolRevisionAtConstruction ||
             !source.AssetLookup.HasCanonicalAssetPoolRevision(

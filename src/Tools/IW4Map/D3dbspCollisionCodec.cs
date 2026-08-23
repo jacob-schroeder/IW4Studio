@@ -10,6 +10,8 @@ internal static class D3dbspCollisionCodec
 {
     private const int DiskPlaneSize = 16;
     private const int DiskNodeSize = 36;
+    private const int DiskLeafSize = 24;
+    private const int DiskBrushModelSize = 48;
     private const int DiskBrushSize = 4;
     private const int DiskBrushSideSize = 8;
     private const int DiskLeafBrushSize = 4;
@@ -17,6 +19,7 @@ internal static class D3dbspCollisionCodec
     private const int DiskCollisionVertSize = 12;
     private const int DiskCollisionIndexSize = 2;
     private const int DiskCollisionBorderSize = 28;
+    private const int DiskCollisionPartitionSize = 12;
     private const int DiskCollisionAabbSize = 32;
     private const int DiskMaterialSize = 72;
 
@@ -320,6 +323,161 @@ internal static class D3dbspCollisionCodec
         return Array.AsReadOnly(leafBrushes);
     }
 
+    public static (
+        IReadOnlyList<CLeaf> Leafs,
+        IReadOnlyList<CModel> CModels,
+        IReadOnlyList<CLeafBrushNode> LeafBrushNodes) DecodeLeafGraph(
+        ReadOnlySpan<byte> diskLeafs,
+        ReadOnlySpan<byte> diskModels,
+        IReadOnlyList<ushort> leafBrushes,
+        IReadOnlyList<Bounds> brushBounds,
+        IReadOnlyList<uint> brushContents,
+        IReadOnlyList<CollisionAabbTree> collisionAabbs,
+        IReadOnlyList<ClipMaterial> materials)
+    {
+        ArgumentNullException.ThrowIfNull(leafBrushes);
+        ArgumentNullException.ThrowIfNull(brushBounds);
+        ArgumentNullException.ThrowIfNull(brushContents);
+        ArgumentNullException.ThrowIfNull(collisionAabbs);
+        ArgumentNullException.ThrowIfNull(materials);
+        if (brushBounds.Count != brushContents.Count)
+        {
+            throw new InvalidDataException(
+                $"Collision brush bounds and contents have different row counts ({brushBounds.Count} and {brushContents.Count}).");
+        }
+
+        int leafCount = GetElementCount(diskLeafs, DiskLeafSize, "collision leaf");
+        int modelCount = GetElementCount(diskModels, DiskBrushModelSize, "brush model");
+        if (modelCount == 0)
+            throw new InvalidDataException("The brush-model lump does not contain the required world model.");
+
+        var nodes = new List<CLeafBrushNode>(checked(1 + leafCount + modelCount));
+        // Native IW4 reserves row zero. Empty leaves retain LeafBrushNode == 0
+        // and never traverse this zero-valued union arm.
+        nodes.Add(new CLeafBrushNode
+        {
+            Data = new CLeafBrushNodeData
+            {
+                Children = new CLeafBrushNodeChildren
+                {
+                    ChildOffsets = new ushort[2]
+                }
+            }
+        });
+
+        var leafs = new CLeaf[leafCount];
+        for (int index = 0; index < leafs.Length; index++)
+        {
+            ReadOnlySpan<byte> row = diskLeafs.Slice(index * DiskLeafSize, DiskLeafSize);
+            int firstAabb = BinaryPrimitives.ReadInt32LittleEndian(row[4..]);
+            int aabbCount = BinaryPrimitives.ReadInt32LittleEndian(row[8..]);
+            int firstBrush = BinaryPrimitives.ReadInt32LittleEndian(row[12..]);
+            int brushCount = BinaryPrimitives.ReadInt32LittleEndian(row[16..]);
+            ValidateUShortRange(firstAabb, $"Collision leaf row {index} first AABB");
+            ValidateUShortRange(aabbCount, $"Collision leaf row {index} AABB count");
+            ValidateSlice(firstAabb, aabbCount, collisionAabbs.Count, $"Collision leaf row {index} AABB");
+            ValidateSlice(firstBrush, brushCount, leafBrushes.Count, $"Collision leaf row {index} brush");
+
+            ushort[] brushes = CopyBrushSlice(
+                leafBrushes,
+                firstBrush,
+                brushCount,
+                brushBounds.Count,
+                $"Collision leaf row {index}");
+            uint contents = CombineBrushContents(brushes, brushContents);
+            Bounds bounds = CalculateLeafBounds(brushes, brushBounds);
+            leafs[index] = new CLeaf
+            {
+                FirstCollAabbIndex = (ushort)firstAabb,
+                CollAabbCount = (ushort)aabbCount,
+                BrushContents = unchecked((int)contents),
+                TerrainContents = CombineTerrainContents(
+                    firstAabb,
+                    aabbCount,
+                    collisionAabbs,
+                    materials,
+                    $"Collision leaf row {index}"),
+                Mins = BoundsMins(bounds),
+                Maxs = BoundsMaxs(bounds),
+                LeafBrushNode = AddTerminalLeafBrushNode(nodes, brushes, contents)
+            };
+        }
+
+        var models = new CModel[modelCount];
+        for (int index = 0; index < models.Length; index++)
+        {
+            ReadOnlySpan<byte> row = diskModels.Slice(index * DiskBrushModelSize, DiskBrushModelSize);
+            var mins = new float[3];
+            var maxs = new float[3];
+            for (int axis = 0; axis < 3; axis++)
+            {
+                mins[axis] = ReadSingle(row, axis * sizeof(float)) - 1.0f;
+                maxs[axis] = ReadSingle(row, 12 + axis * sizeof(float)) + 1.0f;
+            }
+
+            CLeaf modelLeaf = new();
+            if (index != 0)
+            {
+                int firstAabb = BinaryPrimitives.ReadInt32LittleEndian(row[32..]);
+                int aabbCount = BinaryPrimitives.ReadInt32LittleEndian(row[36..]);
+                int firstBrush = BinaryPrimitives.ReadInt32LittleEndian(row[40..]);
+                int brushCount = BinaryPrimitives.ReadInt32LittleEndian(row[44..]);
+                ValidateUShortRange(firstAabb, $"Brush model row {index} first AABB");
+                ValidateUShortRange(aabbCount, $"Brush model row {index} AABB count");
+                ValidateSlice(firstAabb, aabbCount, collisionAabbs.Count, $"Brush model row {index} AABB");
+                ValidateSlice(firstBrush, brushCount, brushBounds.Count, $"Brush model row {index} brush");
+
+                var brushes = new ushort[brushCount];
+                for (int brush = 0; brush < brushes.Length; brush++)
+                {
+                    int brushIndex = checked(firstBrush + brush);
+                    if (brushIndex > ushort.MaxValue)
+                    {
+                        throw new InvalidDataException(
+                            $"Brush model row {index} references brush {brushIndex}, which exceeds the IW4 ushort range.");
+                    }
+                    brushes[brush] = (ushort)brushIndex;
+                }
+
+                uint contents = CombineBrushContents(brushes, brushContents);
+                Bounds leafBounds = CalculateLeafBounds(brushes, brushBounds);
+                modelLeaf = new CLeaf
+                {
+                    FirstCollAabbIndex = (ushort)firstAabb,
+                    CollAabbCount = (ushort)aabbCount,
+                    BrushContents = unchecked((int)contents),
+                    TerrainContents = CombineTerrainContents(
+                        firstAabb,
+                        aabbCount,
+                        collisionAabbs,
+                        materials,
+                        $"Brush model row {index}"),
+                    Mins = BoundsMins(leafBounds),
+                    Maxs = BoundsMaxs(leafBounds),
+                    LeafBrushNode = AddTerminalLeafBrushNode(nodes, brushes, contents)
+                };
+            }
+
+            Bounds modelBounds = DecodeBounds(mins, maxs);
+            float extentX = MathF.Max(MathF.Abs(mins[0]), MathF.Abs(maxs[0]));
+            float extentY = MathF.Max(MathF.Abs(mins[1]), MathF.Abs(maxs[1]));
+            float extentZ = MathF.Max(MathF.Abs(mins[2]), MathF.Abs(maxs[2]));
+            models[index] = new CModel
+            {
+                Mins = BoundsMins(modelBounds),
+                Maxs = BoundsMaxs(modelBounds),
+                Radius = MathF.Sqrt(
+                    extentX * extentX + extentY * extentY + extentZ * extentZ),
+                Leaf = modelLeaf
+            };
+        }
+
+        return (
+            Array.AsReadOnly(leafs),
+            Array.AsReadOnly(models),
+            Array.AsReadOnly(nodes.ToArray()));
+    }
+
     public static IReadOnlyList<uint> DecodeLeafSurfaces(ReadOnlySpan<byte> data)
     {
         int count = GetElementCount(data, DiskLeafSurfaceSize, "leaf surface");
@@ -418,6 +576,70 @@ internal static class D3dbspCollisionCodec
         return Array.AsReadOnly(aabbTrees);
     }
 
+    public static IReadOnlyList<CollisionPartition> DecodeCollisionPartitions(
+        ReadOnlySpan<byte> data,
+        IReadOnlyList<CollisionBorder> borders,
+        int triangleCount)
+    {
+        ArgumentNullException.ThrowIfNull(borders);
+        if (triangleCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(triangleCount));
+
+        int count = GetElementCount(data, DiskCollisionPartitionSize, "collision partition");
+        var partitions = new CollisionPartition[count];
+        int expectedFirstBorder = 0;
+        int coveredTriangleCount = 0;
+        for (int index = 0; index < partitions.Length; index++)
+        {
+            ReadOnlySpan<byte> row = data.Slice(
+                index * DiskCollisionPartitionSize,
+                DiskCollisionPartitionSize);
+            byte triCount = row[2];
+            byte borderCount = row[3];
+            int firstTri = BinaryPrimitives.ReadInt32LittleEndian(row[4..]);
+            int firstBorder = BinaryPrimitives.ReadInt32LittleEndian(row[8..]);
+            if (firstTri < 0 || firstTri > triangleCount - triCount)
+            {
+                throw new InvalidDataException(
+                    $"Collision partition row {index} references triangles {firstTri}..{firstTri + triCount}; the triangle table has {triangleCount} rows.");
+            }
+            if (firstBorder != expectedFirstBorder || firstBorder > borders.Count - borderCount)
+            {
+                throw new InvalidDataException(
+                    $"Collision partition row {index} references border slice {firstBorder}..{firstBorder + borderCount}; expected the next contiguous slice at {expectedFirstBorder} in a {borders.Count}-row table.");
+            }
+
+            var partitionBorders = new CollisionBorder[borderCount];
+            for (int borderIndex = 0; borderIndex < partitionBorders.Length; borderIndex++)
+                partitionBorders[borderIndex] = borders[firstBorder + borderIndex];
+
+            partitions[index] = new CollisionPartition
+            {
+                TriCount = triCount,
+                BorderCount = borderCount,
+                FirstVertSegment = 0,
+                Pad03 = 0,
+                FirstTri = firstTri,
+                Borders = Array.AsReadOnly(partitionBorders)
+            };
+            expectedFirstBorder = checked(expectedFirstBorder + borderCount);
+            coveredTriangleCount = checked(coveredTriangleCount + triCount);
+        }
+
+        if (expectedFirstBorder != borders.Count)
+        {
+            throw new InvalidDataException(
+                $"Collision partitions cover {expectedFirstBorder} of {borders.Count} border rows.");
+        }
+        if (coveredTriangleCount != triangleCount)
+        {
+            throw new InvalidDataException(
+                $"Collision partitions cover {coveredTriangleCount} of {triangleCount} triangles.");
+        }
+
+        return Array.AsReadOnly(partitions);
+    }
+
     public static byte[] EncodePlanes(IReadOnlyList<CPlane> planes)
     {
         ArgumentNullException.ThrowIfNull(planes);
@@ -432,6 +654,260 @@ internal static class D3dbspCollisionCodec
         }
 
         return data;
+    }
+
+    public static byte[] EncodeMaterials(IReadOnlyList<ClipMaterial> materials)
+    {
+        ArgumentNullException.ThrowIfNull(materials);
+        var data = new byte[checked(materials.Count * DiskMaterialSize)];
+        for (int index = 0; index < materials.Count; index++)
+        {
+            ClipMaterial material = materials[index] ??
+                throw new InvalidDataException($"Collision material row {index} is null.");
+            string name = material.Name ??
+                throw new InvalidDataException($"Collision material row {index} has no name.");
+            if (name.Contains('\0') || name.Any(character => character > byte.MaxValue) ||
+                Encoding.Latin1.GetByteCount(name) >= 64)
+            {
+                throw new InvalidDataException(
+                    $"Collision material row {index} name must fit in 63 Latin-1 bytes without an embedded terminator.");
+            }
+
+            Span<byte> row = data.AsSpan(index * DiskMaterialSize, DiskMaterialSize);
+            Encoding.Latin1.GetBytes(name, row);
+            BinaryPrimitives.WriteInt32LittleEndian(row[64..], material.SurfaceFlags);
+            BinaryPrimitives.WriteInt32LittleEndian(row[68..], material.Contents);
+        }
+
+        return data;
+    }
+
+    public static (byte[] BrushSides, byte[] Brushes) EncodeBrushGraph(ClipMapAsset clipMap)
+    {
+        ArgumentNullException.ThrowIfNull(clipMap);
+        ValidateDeclaredCount(clipMap.NumMaterials, clipMap.Materials.Count, "collision materials");
+        ValidateDeclaredCount(clipMap.NumBrushSides, clipMap.BrushSides.Count, "collision brush sides");
+        ValidateDeclaredCount(clipMap.NumBrushEdges, clipMap.BrushEdges.Count, "collision brush edges");
+        ValidateDeclaredCount(clipMap.NumBrushes, clipMap.Brushes.Count, "collision brushes");
+        if (clipMap.BrushBounds.Count != clipMap.Brushes.Count ||
+            clipMap.BrushContents.Count != clipMap.Brushes.Count)
+        {
+            throw new InvalidDataException(
+                "Collision brush, bounds, and contents tables must have equal row counts.");
+        }
+
+        int diskSideCount = checked(clipMap.Brushes.Count * 6 + clipMap.BrushSides.Count);
+        var sideData = new byte[checked(diskSideCount * DiskBrushSideSize)];
+        var brushData = new byte[checked(clipMap.Brushes.Count * DiskBrushSize)];
+        int diskSideIndex = 0;
+        int rootSideIndex = 0;
+        int rootEdgeIndex = 0;
+        for (int brushIndex = 0; brushIndex < clipMap.Brushes.Count; brushIndex++)
+        {
+            CBrush brush = clipMap.Brushes[brushIndex] ??
+                throw new InvalidDataException($"Collision brush row {brushIndex} is null.");
+            if (brush.Sides.Count != brush.NumSides)
+            {
+                throw new InvalidDataException(
+                    $"Collision brush row {brushIndex} has {brush.Sides.Count} non-axial sides; expected {brush.NumSides}.");
+            }
+            if (brush.AxialMaterialNum.Count != 6 ||
+                brush.FirstAdjacentSideOffsets.Count != 6 ||
+                brush.EdgeCount.Count != 6)
+            {
+                throw new InvalidDataException(
+                    $"Collision brush row {brushIndex} does not contain six axial material, adjacency-offset, and edge-count values.");
+            }
+
+            Bounds bounds = clipMap.BrushBounds[brushIndex] ??
+                throw new InvalidDataException($"Collision brush row {brushIndex} has null bounds.");
+            ValidateBounds(bounds, $"Collision brush row {brushIndex}");
+            float[] midpoint = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z];
+            float[] halfSize = [bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z];
+            int localEdgeOffset = 0;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                for (int direction = 0; direction < 2; direction++)
+                {
+                    int axialIndex = axis + direction * 3;
+                    if (brush.FirstAdjacentSideOffsets[axialIndex] != localEdgeOffset)
+                    {
+                        throw new NotSupportedException(
+                            $"Collision brush row {brushIndex} axial side {axialIndex} has a non-canonical adjacency offset.");
+                    }
+
+                    int materialIndex = brush.AxialMaterialNum[axialIndex];
+                    ValidateMaterialIndex(
+                        materialIndex,
+                        clipMap.Materials.Count,
+                        $"Collision brush row {brushIndex} axial side {axialIndex}");
+                    Span<byte> row = sideData.AsSpan(
+                        diskSideIndex++ * DiskBrushSideSize,
+                        DiskBrushSideSize);
+                    WriteSingle(
+                        row,
+                        0,
+                        direction == 0
+                            ? midpoint[axis] - halfSize[axis]
+                            : midpoint[axis] + halfSize[axis]);
+                    BinaryPrimitives.WriteInt32LittleEndian(row[4..], materialIndex);
+                    localEdgeOffset = checked(localEdgeOffset + brush.EdgeCount[axialIndex]);
+                }
+            }
+
+            for (int sideIndex = 0; sideIndex < brush.Sides.Count; sideIndex++)
+            {
+                CBrushSide side = brush.Sides[sideIndex] ??
+                    throw new InvalidDataException(
+                        $"Collision brush row {brushIndex} side {sideIndex} is null.");
+                if (side.FirstAdjacentSideOffset != localEdgeOffset)
+                {
+                    throw new NotSupportedException(
+                        $"Collision brush row {brushIndex} side {sideIndex} has a non-canonical adjacency offset.");
+                }
+                if (rootSideIndex >= clipMap.BrushSides.Count ||
+                    !EquivalentSide(side, clipMap.BrushSides[rootSideIndex]))
+                {
+                    throw new NotSupportedException(
+                        $"Collision brush row {brushIndex} side {sideIndex} does not match the flattened brush-side table.");
+                }
+
+                Span<byte> row = sideData.AsSpan(
+                    diskSideIndex++ * DiskBrushSideSize,
+                    DiskBrushSideSize);
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    row,
+                    FindPlaneIndex(clipMap.Planes, side.Plane, $"Collision brush row {brushIndex} side {sideIndex}"));
+                ValidateMaterialIndex(
+                    side.MaterialNum,
+                    clipMap.Materials.Count,
+                    $"Collision brush row {brushIndex} side {sideIndex}");
+                BinaryPrimitives.WriteInt32LittleEndian(row[4..], side.MaterialNum);
+                localEdgeOffset = checked(localEdgeOffset + side.EdgeCount);
+                rootSideIndex++;
+            }
+
+            if (localEdgeOffset != brush.BaseAdjacentSide.Count)
+            {
+                throw new NotSupportedException(
+                    $"Collision brush row {brushIndex} adjacency counts cover {localEdgeOffset} bytes, but its inline list contains {brush.BaseAdjacentSide.Count}.");
+            }
+            if (rootEdgeIndex > clipMap.BrushEdges.Count - brush.BaseAdjacentSide.Count ||
+                !brush.BaseAdjacentSide.SequenceEqual(
+                    clipMap.BrushEdges.Skip(rootEdgeIndex).Take(brush.BaseAdjacentSide.Count)))
+            {
+                throw new NotSupportedException(
+                    $"Collision brush row {brushIndex} inline adjacency list does not match the flattened brush-edge table.");
+            }
+            rootEdgeIndex = checked(rootEdgeIndex + brush.BaseAdjacentSide.Count);
+
+            int diskNumSides = checked(6 + brush.NumSides);
+            if (diskNumSides > short.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"Collision brush row {brushIndex} has too many sides for the v22 short field.");
+            }
+            int materialSelector = FindBrushMaterial(
+                clipMap.Materials,
+                clipMap.BrushContents[brushIndex],
+                brushIndex);
+            Span<byte> brushRow = brushData.AsSpan(
+                brushIndex * DiskBrushSize,
+                DiskBrushSize);
+            BinaryPrimitives.WriteInt16LittleEndian(brushRow, (short)diskNumSides);
+            BinaryPrimitives.WriteInt16LittleEndian(brushRow[2..], checked((short)materialSelector));
+        }
+
+        if (rootSideIndex != clipMap.BrushSides.Count || rootEdgeIndex != clipMap.BrushEdges.Count)
+        {
+            throw new NotSupportedException(
+                "Collision brush-local arrays do not cover the flattened brush-side and brush-edge tables.");
+        }
+
+        return (sideData, brushData);
+    }
+
+    public static byte[] EncodeNodes(
+        IReadOnlyList<CNode> nodes,
+        IReadOnlyList<CPlane> planes)
+    {
+        ArgumentNullException.ThrowIfNull(nodes);
+        ArgumentNullException.ThrowIfNull(planes);
+        var data = new byte[checked(nodes.Count * DiskNodeSize)];
+        for (int index = 0; index < nodes.Count; index++)
+        {
+            CNode node = nodes[index] ??
+                throw new InvalidDataException($"Collision node row {index} is null.");
+            if (node.Children.Count != 2)
+            {
+                throw new InvalidDataException(
+                    $"Collision node row {index} has {node.Children.Count} children instead of 2.");
+            }
+
+            Span<byte> row = data.AsSpan(index * DiskNodeSize, DiskNodeSize);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                row,
+                FindPlaneIndex(planes, node.Plane, $"Collision node row {index}"));
+            BinaryPrimitives.WriteInt32LittleEndian(row[4..], node.Children[0]);
+            BinaryPrimitives.WriteInt32LittleEndian(row[8..], node.Children[1]);
+        }
+
+        return data;
+    }
+
+    public static (byte[] Leafs, byte[] LeafBrushes) EncodeCanonicalLeafGraph(
+        ClipMapAsset clipMap)
+    {
+        ArgumentNullException.ThrowIfNull(clipMap);
+        ValidateDeclaredCount(clipMap.NumLeafs, clipMap.Leafs.Count, "collision leafs");
+        ValidateDeclaredCount(
+            clipMap.LeafBrushNodesCount,
+            clipMap.LeafBrushNodes.Count,
+            "collision leaf-brush nodes");
+        ValidateDeclaredCount(clipMap.NumLeafBrushes, clipMap.LeafBrushes.Count, "collision leaf brushes");
+
+        var flatBrushes = new List<ushort>(clipMap.LeafBrushes.Count);
+        var data = new byte[checked(clipMap.Leafs.Count * DiskLeafSize)];
+        for (int index = 0; index < clipMap.Leafs.Count; index++)
+        {
+            CLeaf leaf = clipMap.Leafs[index] ??
+                throw new InvalidDataException($"Collision leaf row {index} is null.");
+            ValidateSlice(
+                leaf.FirstCollAabbIndex,
+                leaf.CollAabbCount,
+                clipMap.AabbTrees.Count,
+                $"Collision leaf row {index} AABB");
+            IReadOnlyList<ushort> brushes = GetTerminalBrushes(
+                clipMap,
+                leaf,
+                $"Collision leaf row {index}");
+            int firstBrush = flatBrushes.Count;
+            foreach (ushort brushIndex in brushes)
+            {
+                if (brushIndex >= clipMap.Brushes.Count)
+                {
+                    throw new InvalidDataException(
+                        $"Collision leaf row {index} references brush {brushIndex}; the table has {clipMap.Brushes.Count} rows.");
+                }
+                flatBrushes.Add(brushIndex);
+            }
+
+            Span<byte> row = data.AsSpan(index * DiskLeafSize, DiskLeafSize);
+            BinaryPrimitives.WriteInt32LittleEndian(row, 0);
+            BinaryPrimitives.WriteInt32LittleEndian(row[4..], leaf.FirstCollAabbIndex);
+            BinaryPrimitives.WriteInt32LittleEndian(row[8..], leaf.CollAabbCount);
+            BinaryPrimitives.WriteInt32LittleEndian(row[12..], firstBrush);
+            BinaryPrimitives.WriteInt32LittleEndian(row[16..], brushes.Count);
+            BinaryPrimitives.WriteInt32LittleEndian(row[20..], 0);
+        }
+
+        if (!flatBrushes.SequenceEqual(clipMap.LeafBrushes))
+        {
+            throw new NotSupportedException(
+                "Canonical leaf terminal nodes do not reproduce the flattened collision leaf-brush table.");
+        }
+
+        return (data, EncodeLeafBrushes(flatBrushes));
     }
 
     public static byte[] EncodeBrushEdges(IReadOnlyList<byte> brushEdges) =>
@@ -598,6 +1074,62 @@ internal static class D3dbspCollisionCodec
         return data;
     }
 
+    public static byte[] EncodeCollisionPartitions(
+        IReadOnlyList<CollisionPartition> partitions,
+        int borderCount,
+        int triangleCount)
+    {
+        ArgumentNullException.ThrowIfNull(partitions);
+        if (borderCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(borderCount));
+        if (triangleCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(triangleCount));
+
+        var data = new byte[checked(partitions.Count * DiskCollisionPartitionSize)];
+        int firstBorder = 0;
+        int coveredTriangleCount = 0;
+        for (int index = 0; index < partitions.Count; index++)
+        {
+            CollisionPartition partition = partitions[index] ??
+                throw new InvalidDataException($"Collision partition row {index} is null.");
+            if (partition.Borders.Count != partition.BorderCount)
+            {
+                throw new InvalidDataException(
+                    $"Collision partition row {index} has {partition.Borders.Count} borders; expected {partition.BorderCount}.");
+            }
+            if (partition.FirstTri < 0 || partition.FirstTri > triangleCount - partition.TriCount)
+            {
+                throw new InvalidDataException(
+                    $"Collision partition row {index} references triangles {partition.FirstTri}..{partition.FirstTri + partition.TriCount}; the triangle table has {triangleCount} rows.");
+            }
+
+            Span<byte> row = data.AsSpan(
+                index * DiskCollisionPartitionSize,
+                DiskCollisionPartitionSize);
+            // Disk checkStamp is transient compiler state and is not retained by IW4.
+            BinaryPrimitives.WriteUInt16LittleEndian(row, 0);
+            row[2] = partition.TriCount;
+            row[3] = partition.BorderCount;
+            BinaryPrimitives.WriteInt32LittleEndian(row[4..], partition.FirstTri);
+            BinaryPrimitives.WriteInt32LittleEndian(row[8..], firstBorder);
+            firstBorder = checked(firstBorder + partition.BorderCount);
+            coveredTriangleCount = checked(coveredTriangleCount + partition.TriCount);
+        }
+
+        if (firstBorder != borderCount)
+        {
+            throw new InvalidDataException(
+                $"Collision partitions cover {firstBorder} of {borderCount} border rows.");
+        }
+        if (coveredTriangleCount != triangleCount)
+        {
+            throw new InvalidDataException(
+                $"Collision partitions cover {coveredTriangleCount} of {triangleCount} triangles.");
+        }
+
+        return data;
+    }
+
     private static byte[] EncodeBytes(IReadOnlyList<byte> values)
     {
         ArgumentNullException.ThrowIfNull(values);
@@ -606,6 +1138,140 @@ internal static class D3dbspCollisionCodec
             data[index] = values[index];
 
         return data;
+    }
+
+    public static IReadOnlyList<ushort> GetTerminalBrushesForEncoding(
+        ClipMapAsset clipMap,
+        CLeaf leaf,
+        string description) =>
+        GetTerminalBrushes(clipMap, leaf, description);
+
+    private static IReadOnlyList<ushort> GetTerminalBrushes(
+        ClipMapAsset clipMap,
+        CLeaf leaf,
+        string description)
+    {
+        if (leaf.LeafBrushNode == 0)
+            return Array.Empty<ushort>();
+        if ((uint)leaf.LeafBrushNode >= (uint)clipMap.LeafBrushNodes.Count)
+        {
+            throw new InvalidDataException(
+                $"{description} references leaf-brush node {leaf.LeafBrushNode}; the table has {clipMap.LeafBrushNodes.Count} rows.");
+        }
+
+        CLeafBrushNode node = clipMap.LeafBrushNodes[leaf.LeafBrushNode] ??
+            throw new InvalidDataException(
+                $"{description} references a null leaf-brush node.");
+        if (node.LeafBrushCount <= 0 || node.Data.Children is not null)
+        {
+            throw new NotSupportedException(
+                $"{description} uses a non-terminal leaf-brush tree; strict d3dbsp encoding supports terminal nodes only.");
+        }
+        if (node.Data.Brushes.Count != node.LeafBrushCount)
+        {
+            throw new InvalidDataException(
+                $"{description} leaf-brush node declares {node.LeafBrushCount} brushes but materializes {node.Data.Brushes.Count}.");
+        }
+        if (node.Contents != leaf.BrushContents)
+        {
+            throw new NotSupportedException(
+                $"{description} leaf-brush contents differ from the leaf contents.");
+        }
+
+        return node.Data.Brushes;
+    }
+
+    private static int FindBrushMaterial(
+        IReadOnlyList<ClipMaterial> materials,
+        uint contents,
+        int brushIndex)
+    {
+        for (int index = 0; index < materials.Count; index++)
+        {
+            ClipMaterial material = materials[index] ??
+                throw new InvalidDataException($"Collision material row {index} is null.");
+            if (unchecked((uint)material.Contents) == contents)
+            {
+                if (index > short.MaxValue)
+                {
+                    throw new InvalidDataException(
+                        $"Collision brush row {brushIndex} material selector {index} exceeds the v22 short range.");
+                }
+                return index;
+            }
+        }
+
+        throw new NotSupportedException(
+            $"Collision brush row {brushIndex} contents 0x{contents:X8} do not match any collision material.");
+    }
+
+    private static bool EquivalentSide(CBrushSide? left, CBrushSide? right) =>
+        left is not null &&
+        right is not null &&
+        EquivalentPlane(left.Plane, right.Plane) &&
+        left.MaterialNum == right.MaterialNum &&
+        left.FirstAdjacentSideOffset == right.FirstAdjacentSideOffset &&
+        left.EdgeCount == right.EdgeCount;
+
+    private static int FindPlaneIndex(
+        IReadOnlyList<CPlane> planes,
+        CPlane? plane,
+        string description)
+    {
+        if (plane is null)
+            throw new InvalidDataException($"{description} has no collision plane.");
+        for (int index = 0; index < planes.Count; index++)
+        {
+            if (ReferenceEquals(planes[index], plane))
+                return index;
+        }
+        for (int index = 0; index < planes.Count; index++)
+        {
+            if (EquivalentPlane(planes[index], plane))
+                return index;
+        }
+
+        throw new NotSupportedException(
+            $"{description} plane does not match the collision plane table.");
+    }
+
+    private static bool EquivalentPlane(CPlane? left, CPlane? right) =>
+        left is not null &&
+        right is not null &&
+        SameSingle(left.Normal.X, right.Normal.X) &&
+        SameSingle(left.Normal.Y, right.Normal.Y) &&
+        SameSingle(left.Normal.Z, right.Normal.Z) &&
+        SameSingle(left.Dist, right.Dist);
+
+    private static bool SameSingle(float left, float right) =>
+        BitConverter.SingleToInt32Bits(left) == BitConverter.SingleToInt32Bits(right);
+
+    private static void ValidateBounds(Bounds bounds, string description)
+    {
+        if (!float.IsFinite(bounds.MidPoint.X) ||
+            !float.IsFinite(bounds.MidPoint.Y) ||
+            !float.IsFinite(bounds.MidPoint.Z) ||
+            !float.IsFinite(bounds.HalfSize.X) ||
+            !float.IsFinite(bounds.HalfSize.Y) ||
+            !float.IsFinite(bounds.HalfSize.Z) ||
+            bounds.HalfSize.X < 0 ||
+            bounds.HalfSize.Y < 0 ||
+            bounds.HalfSize.Z < 0)
+        {
+            throw new InvalidDataException($"{description} has invalid midpoint/half-size bounds.");
+        }
+    }
+
+    private static void ValidateDeclaredCount(
+        long declared,
+        int actual,
+        string description)
+    {
+        if (declared != actual)
+        {
+            throw new InvalidDataException(
+                $"The {description} table declares {declared} rows but materializes {actual}.");
+        }
     }
 
     private static int GetElementCount(ReadOnlySpan<byte> data, int elementSize, string description)
@@ -642,6 +1308,134 @@ internal static class D3dbspCollisionCodec
             throw new InvalidDataException(
                 $"{description} references material {index}; the material table has {count} rows.");
         }
+    }
+
+    private static void ValidateSlice(int first, int count, int total, string description)
+    {
+        if (first < 0 || count < 0 || first > total - count)
+        {
+            throw new InvalidDataException(
+                $"{description} slice {first}..{first + (long)count} exceeds the {total}-row table.");
+        }
+    }
+
+    private static void ValidateUShortRange(int value, string description)
+    {
+        if ((uint)value > ushort.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"{description} value {value} exceeds the IW4 ushort range.");
+        }
+    }
+
+    private static ushort[] CopyBrushSlice(
+        IReadOnlyList<ushort> leafBrushes,
+        int first,
+        int count,
+        int brushCount,
+        string description)
+    {
+        var brushes = new ushort[count];
+        for (int index = 0; index < brushes.Length; index++)
+        {
+            ushort brush = leafBrushes[first + index];
+            if (brush >= brushCount)
+            {
+                throw new InvalidDataException(
+                    $"{description} references brush {brush}; the brush table has {brushCount} rows.");
+            }
+            brushes[index] = brush;
+        }
+        return brushes;
+    }
+
+    private static uint CombineBrushContents(
+        IReadOnlyList<ushort> brushes,
+        IReadOnlyList<uint> brushContents)
+    {
+        uint contents = 0;
+        for (int index = 0; index < brushes.Count; index++)
+            contents |= brushContents[brushes[index]];
+        return contents;
+    }
+
+    private static int CombineTerrainContents(
+        int first,
+        int count,
+        IReadOnlyList<CollisionAabbTree> collisionAabbs,
+        IReadOnlyList<ClipMaterial> materials,
+        string description)
+    {
+        int contents = 0;
+        for (int index = 0; index < count; index++)
+        {
+            CollisionAabbTree aabb = collisionAabbs[first + index] ??
+                throw new InvalidDataException($"{description} AABB {index} is null.");
+            if (aabb.MaterialIndex >= materials.Count)
+            {
+                throw new InvalidDataException(
+                    $"{description} AABB {index} references material {aabb.MaterialIndex}; the material table has {materials.Count} rows.");
+            }
+            contents |= materials[aabb.MaterialIndex].Contents;
+        }
+        return contents;
+    }
+
+    private static Bounds CalculateLeafBounds(
+        IReadOnlyList<ushort> brushes,
+        IReadOnlyList<Bounds> brushBounds)
+    {
+        if (brushes.Count == 0)
+            return new Bounds();
+
+        var mins = new[] { float.MaxValue, float.MaxValue, float.MaxValue };
+        var maxs = new[] { -float.MaxValue, -float.MaxValue, -float.MaxValue };
+        for (int index = 0; index < brushes.Count; index++)
+        {
+            Bounds bounds = brushBounds[brushes[index]] ??
+                throw new InvalidDataException($"Collision brush bounds row {brushes[index]} is null.");
+            float[] midpoint = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z];
+            float[] halfSize = [bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z];
+            for (int axis = 0; axis < 3; axis++)
+            {
+                mins[axis] = MathF.Min(mins[axis], midpoint[axis] - halfSize[axis]);
+                maxs[axis] = MathF.Max(maxs[axis], midpoint[axis] + halfSize[axis]);
+            }
+        }
+
+        for (int axis = 0; axis < 3; axis++)
+        {
+            mins[axis] -= 0.125f;
+            maxs[axis] += 0.125f;
+        }
+        return DecodeBounds(mins, maxs);
+    }
+
+    private static int AddTerminalLeafBrushNode(
+        ICollection<CLeafBrushNode> nodes,
+        IReadOnlyList<ushort> brushes,
+        uint contents)
+    {
+        if (brushes.Count == 0)
+            return 0;
+        if (brushes.Count > short.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"A collision leaf contains {brushes.Count} brushes; IW4 supports at most {short.MaxValue} in one terminal node.");
+        }
+
+        int index = nodes.Count;
+        nodes.Add(new CLeafBrushNode
+        {
+            LeafBrushCount = (short)brushes.Count,
+            Contents = unchecked((int)contents),
+            Data = new CLeafBrushNodeData
+            {
+                Brushes = Array.AsReadOnly(brushes.ToArray()),
+                LeafUnionPad = new byte[8]
+            }
+        });
+        return index;
     }
 
     private static byte ToByteOffset(int value, int brushIndex, string description)
@@ -693,6 +1487,20 @@ internal static class D3dbspCollisionCodec
             }
         };
     }
+
+    private static Vec3 BoundsMins(Bounds bounds) => new()
+    {
+        X = bounds.MidPoint.X - bounds.HalfSize.X,
+        Y = bounds.MidPoint.Y - bounds.HalfSize.Y,
+        Z = bounds.MidPoint.Z - bounds.HalfSize.Z
+    };
+
+    private static Vec3 BoundsMaxs(Bounds bounds) => new()
+    {
+        X = bounds.MidPoint.X + bounds.HalfSize.X,
+        Y = bounds.MidPoint.Y + bounds.HalfSize.Y,
+        Z = bounds.MidPoint.Z + bounds.HalfSize.Z
+    };
 
     // Round the computed midpoint once, after averaging the two disk floats.
     private static float Average(float left, float right) =>
