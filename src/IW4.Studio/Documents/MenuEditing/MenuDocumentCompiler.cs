@@ -21,7 +21,7 @@ internal static partial class MenuDocumentCompiler
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(edit);
-        return ApplyOwned(new MenuGraphClone(false).CloneMenu(source), identity.Clone(), edit);
+        return ApplyOwned(new MenuGraphClone().CloneMenu(source), identity.Clone(), edit);
     }
 
     /// <summary>

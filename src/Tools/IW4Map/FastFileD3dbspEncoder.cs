@@ -29,7 +29,7 @@ internal static class FastFileD3dbspEncoder
 
         string assetName = RequireMatchingNames(gfx, clip, com, ents, fx, game);
         ValidateCounts(gfx, clip, com, ents);
-        ValidateCanonicalCollisionGraph(clip, ents);
+        ValidateCanonicalCollisionGraph(clip, ents, com);
         ValidateCanonicalRenderGraph(gfx, clip, com);
         ValidateEmptyDerivedGraphs(fx, game);
 
@@ -203,15 +203,34 @@ internal static class FastFileD3dbspEncoder
         RequireCount(gfx.PrimaryLightCount, com.PrimaryLights.Count, "render primary lights");
         RequireCount(gfx.SurfaceCount, gfx.Dpvs.Surfaces.Count, "render surfaces");
         RequireCount(gfx.ModelCount, gfx.Models.Count, "render models");
+        RequireCount(gfx.WorldDraw.LightmapCount, gfx.WorldDraw.Lightmaps.Count, "render lightmaps");
         RequireCount(gfx.WorldDraw.IndexCount, gfx.WorldDraw.Indices.Count, "render indices");
         RequireCount(ents.NumEntityChars, ents.EntityStringBytes.Count, "entity bytes");
         RequireCount(ents.StageCount, ents.Stages.Count, "map stages");
     }
 
-    private static void ValidateCanonicalCollisionGraph(ClipMapAsset clip, MapEntsAsset ents)
+    private static void ValidateCanonicalCollisionGraph(
+        ClipMapAsset clip,
+        MapEntsAsset ents,
+        ComWorldAsset com)
     {
+        bool hasNoStaticModelTree =
+            clip.SModelNodeCount == 0 && clip.SModelNodes.Count == 0;
+        if (clip.SModelNodeCount == 1 && clip.SModelNodes.Count == 1)
+        {
+            SModelAabbNode root = clip.SModelNodes[0];
+            hasNoStaticModelTree =
+                root.FirstChild == 0 && root.ChildCount == 0 &&
+                root.Bounds.MidPoint.X == 0.0f &&
+                root.Bounds.MidPoint.Y == 0.0f &&
+                root.Bounds.MidPoint.Z == 0.0f &&
+                root.Bounds.HalfSize.X == 0.0f &&
+                root.Bounds.HalfSize.Y == 0.0f &&
+                root.Bounds.HalfSize.Z == 0.0f;
+        }
+
         if (clip.NumStaticModels != 0 || clip.StaticModelList.Count != 0 ||
-            clip.SModelNodeCount != 0 || clip.SModelNodes.Count != 0)
+            !hasNoStaticModelTree)
         {
             throw new NotSupportedException(
                 "Strict d3dbsp encoding does not support collision static models.");
@@ -233,8 +252,15 @@ internal static class FastFileD3dbspEncoder
             throw new NotSupportedException(
                 "Strict d3dbsp encoding does not support MapTriggers.");
         }
-        if (ents.StageCount != 0 || ents.Stages.Count != 0)
-            throw new NotSupportedException("Strict d3dbsp encoding does not support map stages.");
+        int sunPrimaryLightIndex =
+            D3dbspPrimaryLightCodec.GetLastSunPrimaryLightIndex(com.PrimaryLights);
+        if (!D3dbspMapEntsCodec.IsCanonicalDefaultStage(
+                ents.Stages,
+                sunPrimaryLightIndex))
+        {
+            throw new NotSupportedException(
+                "Strict d3dbsp encoding supports only the generated default map stage.");
+        }
 
         if (ents.EntityStringBytes.Count == 0 || ents.EntityStringBytes[^1] != 0 ||
             ents.EntityStringBytes.Take(ents.EntityStringBytes.Count - 1).Any(value => value == 0))
@@ -298,11 +324,31 @@ internal static class FastFileD3dbspEncoder
         }
 
         GfxWorldDraw draw = gfx.WorldDraw;
-        if (draw.LightmapCount != 0 || draw.Lightmaps.Count != 0 ||
+        bool hasNoLightmaps = draw.LightmapCount == 0 && draw.Lightmaps.Count == 0;
+        bool hasGeneratedFullbrightLightmap =
+            draw.LightmapCount == 1 && draw.Lightmaps.Count == 1 &&
+            draw.Lightmaps[0].Primary is not null &&
+            draw.Lightmaps[0].Secondary is not null &&
+            NormalizeReferenceName(draw.Lightmaps[0].Primary!.Name)
+                .Equals(
+                    D3dbspGfxCodec.FullbrightPrimaryLightmapImageName,
+                    StringComparison.Ordinal) &&
+            NormalizeReferenceName(draw.Lightmaps[0].Secondary!.Name)
+                .Equals(
+                    D3dbspGfxCodec.FullbrightSecondaryLightmapImageName,
+                    StringComparison.Ordinal);
+        if ((!hasNoLightmaps && !hasGeneratedFullbrightLightmap) ||
             draw.LightmapOverridePrimary is not null || draw.LightmapOverrideSecondary is not null)
         {
             throw new NotSupportedException(
-                "Strict d3dbsp encoding supports fullbright worlds without lightmaps only.");
+                "Strict d3dbsp encoding supports only the generated $white fullbright lightmap.");
+        }
+        if (gfx.Dpvs.Surfaces.Any(surface =>
+                surface.LightmapIndex != 0 && surface.LightmapIndex != 0x1f) ||
+            (hasNoLightmaps && gfx.Dpvs.Surfaces.Any(surface => surface.LightmapIndex != 0x1f)))
+        {
+            throw new NotSupportedException(
+                "Strict d3dbsp encoding supports only lightmap index 0 and no-lightmap index 31.");
         }
         if (draw.ReflectionProbeCount != 1 || draw.ReflectionProbeOrigins.Count != 1 ||
             draw.ReflectionProbeImages.Count != 1 || draw.ReflectionProbeImages[0] is null ||

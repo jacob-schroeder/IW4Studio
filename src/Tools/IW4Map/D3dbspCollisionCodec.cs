@@ -397,8 +397,9 @@ internal static class D3dbspCollisionCodec
                     collisionAabbs,
                     materials,
                     $"Collision leaf row {index}"),
-                Mins = BoundsMins(bounds),
-                Maxs = BoundsMaxs(bounds),
+                // IW4 stores cLeaf_t bounds as midpoint followed by half-size.
+                Mins = bounds.MidPoint,
+                Maxs = bounds.HalfSize,
                 LeafBrushNode = AddTerminalLeafBrushNode(nodes, brushes, contents)
             };
         }
@@ -452,8 +453,8 @@ internal static class D3dbspCollisionCodec
                         collisionAabbs,
                         materials,
                         $"Brush model row {index}"),
-                    Mins = BoundsMins(leafBounds),
-                    Maxs = BoundsMaxs(leafBounds),
+                    Mins = leafBounds.MidPoint,
+                    Maxs = leafBounds.HalfSize,
                     LeafBrushNode = AddTerminalLeafBrushNode(nodes, brushes, contents)
                 };
             }
@@ -464,8 +465,9 @@ internal static class D3dbspCollisionCodec
             float extentZ = MathF.Max(MathF.Abs(mins[2]), MathF.Abs(maxs[2]));
             models[index] = new CModel
             {
-                Mins = BoundsMins(modelBounds),
-                Maxs = BoundsMaxs(modelBounds),
+                // IW4 cmodel_t embeds the same midpoint/half-size Bounds layout.
+                Mins = modelBounds.MidPoint,
+                Maxs = modelBounds.HalfSize,
                 Radius = MathF.Sqrt(
                     extentX * extentX + extentY * extentY + extentZ * extentZ),
                 Leaf = modelLeaf
@@ -1487,20 +1489,6 @@ internal static class D3dbspCollisionCodec
             }
         };
     }
-
-    private static Vec3 BoundsMins(Bounds bounds) => new()
-    {
-        X = bounds.MidPoint.X - bounds.HalfSize.X,
-        Y = bounds.MidPoint.Y - bounds.HalfSize.Y,
-        Z = bounds.MidPoint.Z - bounds.HalfSize.Z
-    };
-
-    private static Vec3 BoundsMaxs(Bounds bounds) => new()
-    {
-        X = bounds.MidPoint.X + bounds.HalfSize.X,
-        Y = bounds.MidPoint.Y + bounds.HalfSize.Y,
-        Z = bounds.MidPoint.Z + bounds.HalfSize.Z
-    };
 
     // Round the computed midpoint once, after averaging the two disk floats.
     private static float Average(float left, float right) =>

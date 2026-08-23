@@ -93,7 +93,12 @@ public sealed class BehaviorExpressionCatalog
         GuidedBinary(rows, OperationEnum.OP_MULTIPLY, 146);
         GuidedBinary(rows, OperationEnum.OP_DIVIDE, 64);
         GuidedBinary(rows, OperationEnum.OP_MODULUS, 35);
-        GuidedBinary(rows, OperationEnum.OP_ADD, 388);
+        // The engine uses OP_ADD for both arithmetic and string concatenation.
+        GuidedBinary(
+            rows,
+            OperationEnum.OP_ADD,
+            388,
+            BehaviorExpressionResultKind.Unknown);
         GuidedBinary(rows, OperationEnum.OP_SUBTRACT, 144);
         GuidedUnary(rows, OperationEnum.OP_NOT, 159, BehaviorExpressionResultKind.Boolean);
         GuidedBinary(rows, OperationEnum.OP_LESSTHAN, 27, BehaviorExpressionResultKind.Boolean);
@@ -284,7 +289,7 @@ public sealed class BehaviorExpressionCatalog
         OperationEnum.OP_GREATERTHAN or OperationEnum.OP_GREATERTHANEQUALTO or
         OperationEnum.OP_EQUALS or OperationEnum.OP_NOTEQUAL => BehaviorExpressionResultKind.Boolean,
         OperationEnum.OP_MULTIPLY or OperationEnum.OP_DIVIDE or OperationEnum.OP_MODULUS or
-        OperationEnum.OP_ADD or OperationEnum.OP_SUBTRACT => BehaviorExpressionResultKind.Number,
+        OperationEnum.OP_SUBTRACT => BehaviorExpressionResultKind.Number,
         _ => BehaviorExpressionResultKind.Unknown
     };
 

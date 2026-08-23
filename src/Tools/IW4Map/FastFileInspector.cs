@@ -166,10 +166,10 @@ internal static class FastFileInspector
         Console.WriteLine($"col-map.models: {clipMap.NumSubModels} declared, {clipMap.CModels.Count} materialized");
         Console.WriteLine(
             $"col-map.invalid-leaf-bounds: " +
-            $"{clipMap.Leafs.Count(leaf => !HasOrderedEndpoints(leaf.Mins, leaf.Maxs))}");
+            $"{clipMap.Leafs.Count(leaf => !HasValidBounds(leaf.Mins, leaf.Maxs))}");
         Console.WriteLine(
             $"col-map.invalid-model-bounds: " +
-            $"{clipMap.CModels.Count(model => !HasOrderedEndpoints(model.Mins, model.Maxs))}");
+            $"{clipMap.CModels.Count(model => !HasValidBounds(model.Mins, model.Maxs))}");
         Console.WriteLine($"col-map.brushes: {clipMap.NumBrushes} declared, {clipMap.Brushes.Count} materialized");
         Console.WriteLine($"col-map.dynamic-entities: {string.Join(",", clipMap.DynEntCount)}");
     }
@@ -231,10 +231,16 @@ internal static class FastFileInspector
         Console.WriteLine($"game-map-mp.glass-names: {world.GlassData?.GlassNameCount ?? 0} declared, {world.GlassData?.GlassNames.Count ?? 0} materialized");
     }
 
-    private static bool HasOrderedEndpoints(
-        IW4.Assets.Math.Vec3 mins,
-        IW4.Assets.Math.Vec3 maxs) =>
-        mins.X <= maxs.X &&
-        mins.Y <= maxs.Y &&
-        mins.Z <= maxs.Z;
+    private static bool HasValidBounds(
+        IW4.Assets.Math.Vec3 midpoint,
+        IW4.Assets.Math.Vec3 halfSize) =>
+        float.IsFinite(midpoint.X) &&
+        float.IsFinite(midpoint.Y) &&
+        float.IsFinite(midpoint.Z) &&
+        float.IsFinite(halfSize.X) &&
+        float.IsFinite(halfSize.Y) &&
+        float.IsFinite(halfSize.Z) &&
+        halfSize.X >= 0.0f &&
+        halfSize.Y >= 0.0f &&
+        halfSize.Z >= 0.0f;
 }

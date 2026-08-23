@@ -74,7 +74,7 @@ internal static class MapPairInspector
         ComWorldAsset decodedComWorld = InspectPrimaryLights(d3dbsp, comWorld);
         InspectForwardLighting(d3dbsp, gfxWorld, decodedComWorld);
         InspectForwardCollision(d3dbsp, clipMap);
-        InspectMapEnts(d3dbsp, mapEnts);
+        InspectMapEnts(d3dbsp, mapEnts, decodedComWorld);
         InspectReversibleLumps(d3dbsp, clipMap, gfxWorld);
     }
 
@@ -309,7 +309,10 @@ internal static class MapPairInspector
         Console.WriteLine("clip-map.brush-glass-index-source: linked glass graph (not stored in brush lumps)");
     }
 
-    private static void InspectMapEnts(D3dbspFile d3dbsp, MapEntsAsset? linkedMapEnts)
+    private static void InspectMapEnts(
+        D3dbspFile d3dbsp,
+        MapEntsAsset? linkedMapEnts,
+        ComWorldAsset decodedComWorld)
     {
         if (linkedMapEnts is null)
         {
@@ -319,7 +322,12 @@ internal static class MapPairInspector
 
         byte[] entityLump = RequireLump(d3dbsp, D3dbspLumpType.Entities).Data;
         byte[] decodedEntityString = D3dbspMapEntsCodec.DecodeEntityString(entityLump);
-        IReadOnlyList<Stage> decodedStages = D3dbspMapEntsCodec.DecodeStages(entityLump);
+        int sunPrimaryLightIndex =
+            D3dbspPrimaryLightCodec.GetLastSunPrimaryLightIndex(
+                decodedComWorld.PrimaryLights);
+        IReadOnlyList<Stage> decodedStages = D3dbspMapEntsCodec.DecodeStages(
+            entityLump,
+            sunPrimaryLightIndex);
         bool stagesMatch =
             decodedStages.Count == linkedMapEnts.Stages.Count &&
             decodedStages.Zip(linkedMapEnts.Stages).All(pair => StageEquals(pair.First, pair.Second));

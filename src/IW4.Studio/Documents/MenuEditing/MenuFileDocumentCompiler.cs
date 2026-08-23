@@ -24,7 +24,7 @@ internal static class MenuFileDocumentCompiler
                 reference.Pointer,
                 reference.CanonicalMenu is null
                     ? null
-                    : new MenuGraphClone(false).CloneMenu(reference.CanonicalMenu))).ToList();
+                    : new MenuGraphClone().CloneMenu(reference.CanonicalMenu))).ToList();
         List<MenuFileRegistrationIdentity> identities =
             identity.Registrations.ToList();
 

@@ -49,8 +49,12 @@ internal static class D3dbspAssetGraphBuilder
             sourceEntities,
             forceFullbright);
         byte[] entityString = D3dbspMapEntsCodec.DecodeEntityString(sourceEntities);
-        IReadOnlyList<Stage> stages = D3dbspMapEntsCodec.DecodeStages(sourceEntities);
-        if (stages.Count != 0)
+        IReadOnlyList<Stage> stages = D3dbspMapEntsCodec.DecodeStages(
+            sourceEntities,
+            sunPrimaryLightIndex);
+        if (!D3dbspMapEntsCodec.IsCanonicalDefaultStage(
+                stages,
+                sunPrimaryLightIndex))
         {
             throw new NotSupportedException(
                 "The d3dbsp contains runtime stages, but its MapTriggers graph has not been recovered yet.");
@@ -170,7 +174,10 @@ internal static class D3dbspAssetGraphBuilder
             BrushBounds = brushGraph.BrushBounds,
             BrushContents = brushGraph.BrushContents,
             MapEnts = mapEnts,
-            SModelNodeCount = 0,
+            // IW4's point-trace path always starts at static-model tree node zero,
+            // even when the map has no static models.
+            SModelNodeCount = 1,
+            SModelNodes = [new SModelAabbNode()],
             DynEntCount = [0, 0],
             DynEntDefListPointers = new XPointer<DynEntityDef[]>[2],
             DynEntDefList = EmptyDynamicLists<DynEntityDef>(),
@@ -207,8 +214,7 @@ internal static class D3dbspAssetGraphBuilder
             sunPrimaryLightIndex,
             checksum,
             lightGrid,
-            lightRegions,
-            forceFullbright);
+            lightRegions);
 
         var fxWorld = new FxWorldAsset
         {
@@ -231,17 +237,25 @@ internal static class D3dbspAssetGraphBuilder
             CreateMapScript(assetName),
             CreateMapMarker(assetName)
         ];
-        BaseAsset[] dependencies =
-        [
-            .. renderMaterials
-                .GroupBy(material => material.SerializedAssetName, StringComparer.Ordinal)
-                .Select(group => group.First()),
-            .. gfxWorld.WorldDraw.ReflectionProbeImages
-                .OfType<GfxImageAsset>()
-        ];
+        BaseAsset[] ownedLightmapImages = gfxWorld.WorldDraw.Lightmaps
+            .SelectMany(lightmap => new[] { lightmap.Primary, lightmap.Secondary })
+            .OfType<GfxImageAsset>()
+            .Where(image => image.Name is { Length: > 0 } name && name[0] != ',')
+            .Cast<BaseAsset>()
+            .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
+            .ToArray();
+        BaseAsset[] dependencies = renderMaterials
+            .Cast<BaseAsset>()
+            .Concat(gfxWorld.WorldDraw.ReflectionProbeImages.OfType<GfxImageAsset>())
+            .Concat(gfxWorld.WorldDraw.Lightmaps.SelectMany(lightmap =>
+                new[] { lightmap.Primary, lightmap.Secondary }
+                    .OfType<GfxImageAsset>()
+                    .Where(image => image.Name is { Length: > 0 } name && name[0] == ',')))
+            .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
+            .ToArray();
         return new D3dbspAssetGraph(
             Array.AsReadOnly(roots),
-            Array.AsReadOnly<BaseAsset>([mapEnts]),
+            Array.AsReadOnly<BaseAsset>([mapEnts, .. ownedLightmapImages]),
             Array.AsReadOnly(dependencies),
             checksum,
             discardedLightByteCount);

@@ -15,6 +15,8 @@ internal static class D3dbspGfxCodec
     private const int PositionStride = 16;
     private const int LayerStride = 28;
     private const byte NoLightmapIndex = 0x1f;
+    internal const string FullbrightPrimaryLightmapImageName = "*lightmap0_primary";
+    internal const string FullbrightSecondaryLightmapImageName = "*lightmap0_secondary";
 
     public static GfxWorldAsset DecodeWorld(
         string assetName,
@@ -24,8 +26,7 @@ internal static class D3dbspGfxCodec
         int sunPrimaryLightIndex,
         uint checksum,
         GfxLightGrid lightGrid,
-        IReadOnlyList<GfxLightRegion> lightRegions,
-        bool forceFullbright)
+        IReadOnlyList<GfxLightRegion> lightRegions)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
@@ -78,6 +79,7 @@ internal static class D3dbspGfxCodec
             Vec3 position = ReadVec3(source, 0);
             Vec3 normal = ReadVec3(source, 12);
             Vec3 tangent = ReadVec3(source, 44);
+            Vec3 binormal = ReadVec3(source, 56);
             positions[index] = position;
 
             Span<byte> positionRow = packedPositions.AsSpan(
@@ -86,7 +88,10 @@ internal static class D3dbspGfxCodec
             WriteSingleBigEndian(positionRow, 0, position.X);
             WriteSingleBigEndian(positionRow, 4, position.Y);
             WriteSingleBigEndian(positionRow, 8, position.Z);
-            WriteSingleBigEndian(positionRow, 12, 1.0f);
+            WriteSingleBigEndian(
+                positionRow,
+                12,
+                CalculateBinormalSign(normal, tangent, binormal));
 
             Span<byte> layerRow = packedLayers.AsSpan(index * LayerStride, LayerStride);
             // DiskGfxVertex stores BGRA; the RSX U8N stream consumes RGBA.
@@ -106,6 +111,7 @@ internal static class D3dbspGfxCodec
         var surfaceBounds = new GfxSurfaceBounds[surfaceCount];
         var outputIndices = new List<ushort>(sourceIndexCount);
         BoundsAccumulator worldBounds = new();
+        bool needsFullbrightLightmap = false;
         for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
         {
             ReadOnlySpan<byte> row = triangleBytes.Slice(
@@ -158,11 +164,19 @@ internal static class D3dbspGfxCodec
                     $"Render surface {surfaceIndex} references primary light {primaryLightIndex}; the table has {primaryLightCount} rows.");
             }
             byte sourceLightmapIndex = row[2];
-            if (!forceFullbright && sourceLightmapIndex != NoLightmapIndex)
+            if (sourceLightmapIndex > NoLightmapIndex)
             {
-                throw new NotSupportedException(
-                    $"Render surface {surfaceIndex} references lightmap {sourceLightmapIndex}; " +
-                    "pass --fullbright to explicitly discard compiled lighting.");
+                throw new InvalidDataException(
+                    $"Render surface {surfaceIndex} has invalid lightmap index {sourceLightmapIndex}.");
+            }
+            byte outputLightmapIndex = sourceLightmapIndex;
+            if (sourceLightmapIndex != NoLightmapIndex)
+            {
+                // Native BSP loading creates an all-white lightmap when the
+                // light-byte lump is absent. --fullbright uses the same graph
+                // while deliberately discarding any compiled light bytes.
+                outputLightmapIndex = 0;
+                needsFullbrightLightmap = true;
             }
             if (row[3] != 0)
             {
@@ -182,7 +196,7 @@ internal static class D3dbspGfxCodec
                     BaseIndex = baseIndex
                 },
                 Material = materials[materialIndex],
-                LightmapIndex = NoLightmapIndex,
+                LightmapIndex = outputLightmapIndex,
                 ReflectionProbeIndex = 0,
                 PrimaryLightIndex = primaryLightIndex,
                 Flags = row[5] == 0
@@ -213,6 +227,26 @@ internal static class D3dbspGfxCodec
             .Select(value => checked((ushort)value))
             .ToArray();
         var defaultProbe = new GfxImageAsset { Name = ",*reflection_probe0" };
+        IReadOnlyList<GfxLightmapArray> lightmaps;
+        if (needsFullbrightLightmap)
+        {
+            lightmaps =
+            [
+                new GfxLightmapArray
+                {
+                    Primary = CreateFullbrightLightmapImage(
+                        FullbrightPrimaryLightmapImageName,
+                        primary: true),
+                    Secondary = CreateFullbrightLightmapImage(
+                        FullbrightSecondaryLightmapImageName,
+                        primary: false)
+                }
+            ];
+        }
+        else
+        {
+            lightmaps = [];
+        }
         // Native allocates this runtime bitset in 16-byte groups, then clears
         // one byte per authored surface during DPVS initialization.
         uint surfaceVisibilityWordCount = checked((uint)(
@@ -267,7 +301,8 @@ internal static class D3dbspGfxCodec
                 ReflectionProbeImagePointers = [default],
                 ReflectionProbeImages = [defaultProbe],
                 ReflectionProbeOrigins = [new GfxReflectionProbe(0, 0, 0)],
-                LightmapCount = 0,
+                LightmapCount = lightmaps.Count,
+                Lightmaps = lightmaps,
                 VertexCount = checked((uint)vertexCount),
                 VertexData = new GfxWorldVertexData
                 {
@@ -324,6 +359,42 @@ internal static class D3dbspGfxCodec
         };
     }
 
+    private static GfxImageAsset CreateFullbrightLightmapImage(
+        string name,
+        bool primary)
+    {
+        ushort width = primary ? (ushort)1024 : (ushort)512;
+        const ushort height = 1024;
+        int payloadByteCount = primary ? 1024 * 1024 : 512 * 1024 * 4;
+        var payload = new byte[payloadByteCount];
+        Array.Fill(payload, byte.MaxValue);
+        return new GfxImageAsset
+        {
+            Format = (byte)(primary
+                ? GfxImageBaseFormat.B8
+                : GfxImageBaseFormat.A8R8G8B8),
+            LevelCount = 1,
+            DimensionCount = GfxImageDimension.TwoDimensional,
+            TextureControl1 = primary ? 0x0001a9ffu : 0x0001aae4u,
+            Width = width,
+            Height = height,
+            Depth = 1,
+            MemoryLocation = GfxImageMemoryLocation.Local,
+            MapType = MapType.TwoDimensional,
+            TextureSemantic = TextureSemantic.Function,
+            Category = ImageCategory.Lightmap,
+            CardMemory = checked((uint)payload.Length),
+            BaseWidth = width,
+            BaseHeight = height,
+            BaseDepth = 1,
+            BaseLevelCount = 1,
+            Cached = GfxImageCached.No,
+            PayloadByteCount = payload.Length,
+            PayloadBytes = payload,
+            Name = name
+        };
+    }
+
     public static byte[] EncodeUnlayeredTriangles(
         GfxWorldAsset world,
         ClipMapAsset clipMap)
@@ -338,10 +409,12 @@ internal static class D3dbspGfxCodec
                 throw new InvalidDataException($"Render surface row {index} is null.");
             SrfTriangles triangles = surface.Triangles ??
                 throw new InvalidDataException($"Render surface row {index} has no triangle range.");
-            if (surface.LightmapIndex != NoLightmapIndex || surface.ReflectionProbeIndex != 0)
+            if (surface.ReflectionProbeIndex != 0 ||
+                (surface.LightmapIndex != NoLightmapIndex &&
+                 (world.WorldDraw.LightmapCount != 1 || surface.LightmapIndex != 0)))
             {
                 throw new NotSupportedException(
-                    $"Render surface row {index} uses a lightmap or authored reflection probe; strict d3dbsp encoding supports fullbright default-probe surfaces only.");
+                    $"Render surface row {index} uses a noncanonical lightmap or authored reflection probe; strict d3dbsp encoding supports only the generated fullbright lightmap and default probe.");
             }
             if ((surface.Flags & ~GfxSurfaceFlags.CastsSunShadow) != 0)
             {
@@ -381,7 +454,7 @@ internal static class D3dbspGfxCodec
                 throw new InvalidDataException($"Render surface row {index} material exceeds the v22 ushort range.");
             Span<byte> row = data.AsSpan(index * DiskTriangleSoupSize, DiskTriangleSoupSize);
             BinaryPrimitives.WriteUInt16LittleEndian(row, (ushort)materialIndex);
-            row[2] = NoLightmapIndex;
+            row[2] = surface.LightmapIndex;
             row[3] = 0;
             row[4] = surface.PrimaryLightIndex;
             row[5] = (surface.Flags & GfxSurfaceFlags.CastsSunShadow) != 0 ? (byte)1 : (byte)0;
@@ -702,6 +775,19 @@ internal static class D3dbspGfxCodec
         return (uint)(x & 0x7ff) |
             ((uint)(y & 0x7ff) << 11) |
             ((uint)(z & 0x3ff) << 22);
+    }
+
+    private static float CalculateBinormalSign(
+        Vec3 normal,
+        Vec3 tangent,
+        Vec3 binormal)
+    {
+        RequireFinite(binormal, "Render vertex binormal");
+        float crossX = normal.Y * tangent.Z - normal.Z * tangent.Y;
+        float crossY = normal.Z * tangent.X - normal.X * tangent.Z;
+        float crossZ = normal.X * tangent.Y - normal.Y * tangent.X;
+        float dot = crossX * binormal.X + crossY * binormal.Y + crossZ * binormal.Z;
+        return dot < 0.0f ? -1.0f : 1.0f;
     }
 
     private static int QuantizeNormal(float value, int scale) => checked((int)Math.Round(

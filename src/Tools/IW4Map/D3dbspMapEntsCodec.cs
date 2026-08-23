@@ -101,8 +101,18 @@ internal static class D3dbspMapEntsCodec
     private static void WriteLatin1(Stream output, string value) =>
         output.Write(Encoding.Latin1.GetBytes(value));
 
-    public static IReadOnlyList<Stage> DecodeStages(ReadOnlySpan<byte> source)
+    public static IReadOnlyList<Stage> DecodeStages(
+        ReadOnlySpan<byte> source,
+        int defaultSunPrimaryLightIndex)
     {
+        if ((uint)defaultSunPrimaryLightIndex > byte.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(defaultSunPrimaryLightIndex),
+                defaultSunPrimaryLightIndex,
+                "The default stage sun-primary-light index must fit in one byte.");
+        }
+
         IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
         var stages = new List<Stage>();
         foreach (ParsedEntity entity in entities)
@@ -124,6 +134,20 @@ internal static class D3dbspMapEntsCodec
             });
         }
 
+        if (stages.Count == 0)
+        {
+            // R_GetActiveStageIndex returns row zero for an empty table, and
+            // R_UpdateActiveStage then dereferences it without a count guard.
+            stages.Add(new Stage
+            {
+                StageName = "stage 0",
+                Origin = new Vec3(),
+                TriggerIndex = 1024,
+                SunPrimaryLightIndex = (byte)defaultSunPrimaryLightIndex,
+                Pad13 = 0
+            });
+        }
+
         if (stages.Count > byte.MaxValue)
         {
             throw new InvalidDataException(
@@ -131,6 +155,24 @@ internal static class D3dbspMapEntsCodec
         }
 
         return stages.AsReadOnly();
+    }
+
+    public static bool IsCanonicalDefaultStage(
+        IReadOnlyList<Stage> stages,
+        int sunPrimaryLightIndex)
+    {
+        ArgumentNullException.ThrowIfNull(stages);
+        if ((uint)sunPrimaryLightIndex > byte.MaxValue || stages.Count != 1)
+            return false;
+
+        Stage stage = stages[0];
+        return string.Equals(stage.StageName, "stage 0", StringComparison.Ordinal) &&
+            stage.Origin.X == 0.0f &&
+            stage.Origin.Y == 0.0f &&
+            stage.Origin.Z == 0.0f &&
+            stage.TriggerIndex == 1024 &&
+            stage.SunPrimaryLightIndex == sunPrimaryLightIndex &&
+            stage.Pad13 == 0;
     }
 
     public static IReadOnlyList<string> FindUnsupportedAssetGraphFeatures(
