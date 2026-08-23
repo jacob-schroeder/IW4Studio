@@ -14,6 +14,15 @@ internal static class LivePreviewDebugDump
     private static readonly Lock Sync = new();
     private static StreamWriter? s_writer;
 
+    internal static bool IsEnabled
+    {
+        get
+        {
+            lock (Sync)
+                return s_writer is not null;
+        }
+    }
+
     internal static void Configure(bool enabled)
     {
         lock (Sync)

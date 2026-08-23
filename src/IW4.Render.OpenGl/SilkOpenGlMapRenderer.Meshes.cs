@@ -74,38 +74,44 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (vertices.Length == 0 || indices.Length == 0)
             return default;
 
+        Action<string>? trace = CreateLoadDetailReporter("mesh upload");
+        trace?.Invoke(
+            $"started; vertexFloats={vertices.Length}; " +
+            $"indices={indices.Length}; usage={vertexUsage}");
+        trace?.Invoke("driver glGenVertexArray started");
         uint vao = _gl.GenVertexArray();
+        trace?.Invoke(
+            $"driver glGenVertexArray returned; handle={vao}");
+        trace?.Invoke("driver glGenBuffer started; role=vertex");
         uint vbo = _gl.GenBuffer();
+        trace?.Invoke(
+            $"driver glGenBuffer returned; role=vertex; handle={vbo}");
+        trace?.Invoke("driver glGenBuffer started; role=index");
         uint ebo = _gl.GenBuffer();
+        trace?.Invoke(
+            $"driver glGenBuffer returned; role=index; handle={ebo}");
 
+        trace?.Invoke(
+            $"driver glBindVertexArray started; handle={vao}");
         _gl.BindVertexArray(vao);
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo);
-        fixed (float* vertexPtr = vertices)
-        {
-            _gl.BufferData(
-                BufferTargetARB.ArrayBuffer,
-                (nuint)(vertices.Length * sizeof(float)),
-                vertexPtr,
-                vertexUsage);
-        }
-
-        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ebo);
-        fixed (uint* indexPtr = indices)
-        {
-            _gl.BufferData(
-                BufferTargetARB.ElementArrayBuffer,
-                (nuint)(indices.Length * sizeof(uint)),
-                indexPtr,
-                BufferUsageARB.StaticDraw);
-        }
+        trace?.Invoke(
+            $"driver glBindVertexArray returned; handle={vao}");
+        UploadBuffer(vbo, vertices, vertexUsage, trace);
+        UploadElementBuffer(ebo, indices, trace);
 
         const uint stride = MapRenderScene.VertexFloatCount * sizeof(float);
+        trace?.Invoke("vertex attribute setup started");
         _gl.EnableVertexAttribArray(0);
         _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, (void*)0);
         _gl.EnableVertexAttribArray(1);
         _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, stride, (void*)(3 * sizeof(float)));
+        trace?.Invoke("vertex attribute setup completed");
+        trace?.Invoke("driver glBindVertexArray restore started; handle=0");
         _gl.BindVertexArray(0);
+        trace?.Invoke("driver glBindVertexArray restore returned; handle=0");
 
+        trace?.Invoke(
+            $"completed; vao={vao}; vbo={vbo}; ebo={ebo}");
         return new GlMesh(vao, vbo, ebo, checked((uint)indices.Length));
     }
 
@@ -281,22 +287,46 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             batch.Instances.Count == 0)
             return default;
 
+        Action<string>? trace =
+            CreateLoadDetailReporter("instanced solid upload");
+        trace?.Invoke(
+            $"started; vertexFloats={batch.Vertices.Length}; " +
+            $"indices={batch.Indices.Length}; " +
+            $"instances={batch.Instances.Count}");
         uint vao = 0;
         uint vbo = 0;
         uint ebo = 0;
         uint instanceBuffer = 0;
         try
         {
+            trace?.Invoke("driver glGenVertexArray started");
             vao = _gl.GenVertexArray();
+            trace?.Invoke(
+                $"driver glGenVertexArray returned; handle={vao}");
+            trace?.Invoke("driver glGenBuffer started; role=vertex");
             vbo = _gl.GenBuffer();
+            trace?.Invoke(
+                $"driver glGenBuffer returned; role=vertex; handle={vbo}");
+            trace?.Invoke("driver glGenBuffer started; role=index");
             ebo = _gl.GenBuffer();
+            trace?.Invoke(
+                $"driver glGenBuffer returned; role=index; handle={ebo}");
+            trace?.Invoke("driver glGenBuffer started; role=instance");
             instanceBuffer = _gl.GenBuffer();
+            trace?.Invoke(
+                $"driver glGenBuffer returned; role=instance; " +
+                $"handle={instanceBuffer}");
+            trace?.Invoke(
+                $"driver glBindVertexArray started; handle={vao}");
             _gl.BindVertexArray(vao);
-            UploadBuffer(vbo, batch.Vertices);
-            UploadElementBuffer(ebo, batch.Indices);
+            trace?.Invoke(
+                $"driver glBindVertexArray returned; handle={vao}");
+            UploadBuffer(vbo, batch.Vertices, trace: trace);
+            UploadElementBuffer(ebo, batch.Indices, trace);
 
             const uint vertexStride =
                 MapRenderScene.VertexFloatCount * sizeof(float);
+            trace?.Invoke("vertex attribute setup started");
             _gl.EnableVertexAttribArray(0);
             _gl.VertexAttribPointer(
                 0,
@@ -313,12 +343,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 false,
                 vertexStride,
                 (void*)(3 * sizeof(float)));
+            trace?.Invoke("vertex attribute setup completed");
+            trace?.Invoke("instance-buffer upload started");
             UploadInstanceTransforms(
                 instanceBuffer,
                 batch.Instances,
-                firstAttribute: 2);
+                firstAttribute: 2,
+                trace: trace);
+            trace?.Invoke("instance-buffer upload completed");
+            trace?.Invoke("driver glBindVertexArray restore started; handle=0");
             _gl.BindVertexArray(0);
+            trace?.Invoke("driver glBindVertexArray restore returned; handle=0");
 
+            trace?.Invoke(
+                $"completed; vao={vao}; vbo={vbo}; ebo={ebo}; " +
+                $"instanceBuffer={instanceBuffer}");
             return new GlInstancedMesh(
                 vao,
                 vbo,
@@ -327,8 +366,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 checked((uint)batch.Indices.Length),
                 checked((uint)batch.Instances.Count));
         }
-        catch
+        catch (Exception exception)
         {
+            trace?.Invoke(
+                $"failed; exception={exception.GetType().FullName}; " +
+                $"message={QuoteLoadTraceValue(exception.Message)}");
             _gl.BindVertexArray(0);
             if (instanceBuffer != 0)
                 _gl.DeleteBuffer(instanceBuffer);
@@ -1611,16 +1653,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private void UploadBuffer(
         uint buffer,
         float[] values,
-        BufferUsageARB usage = BufferUsageARB.StaticDraw)
+        BufferUsageARB usage = BufferUsageARB.StaticDraw,
+        Action<string>? trace = null)
     {
+        trace?.Invoke(
+            $"driver glBindBuffer started; role=vertex; " +
+            $"target={BufferTargetARB.ArrayBuffer}; handle={buffer}");
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, buffer);
+        trace?.Invoke(
+            $"driver glBindBuffer returned; role=vertex; handle={buffer}");
         fixed (float* ptr = values)
         {
+            trace?.Invoke(
+                $"driver glBufferData started; role=vertex; " +
+                $"bytes={checked((long)values.Length * sizeof(float))}; " +
+                $"usage={usage}");
             _gl.BufferData(
                 BufferTargetARB.ArrayBuffer,
                 (nuint)(values.Length * sizeof(float)),
                 ptr,
                 usage);
+            trace?.Invoke(
+                $"driver glBufferData returned; role=vertex; " +
+                $"bytes={checked((long)values.Length * sizeof(float))}");
         }
     }
 
@@ -1656,27 +1711,44 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
     }
 
-    private void UploadElementBuffer(uint buffer, uint[] values)
+    private void UploadElementBuffer(
+        uint buffer,
+        uint[] values,
+        Action<string>? trace = null)
     {
+        trace?.Invoke(
+            $"driver glBindBuffer started; role=index; " +
+            $"target={BufferTargetARB.ElementArrayBuffer}; handle={buffer}");
         _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, buffer);
+        trace?.Invoke(
+            $"driver glBindBuffer returned; role=index; handle={buffer}");
         fixed (uint* ptr = values)
         {
+            trace?.Invoke(
+                $"driver glBufferData started; role=index; " +
+                $"indexType={DrawElementsType.UnsignedInt}; " +
+                $"bytes={checked((long)values.Length * sizeof(uint))}");
             _gl.BufferData(
                 BufferTargetARB.ElementArrayBuffer,
                 (nuint)(values.Length * sizeof(uint)),
                 ptr,
                 BufferUsageARB.StaticDraw);
+            trace?.Invoke(
+                $"driver glBufferData returned; role=index; " +
+                $"indexType={DrawElementsType.UnsignedInt}; " +
+                $"bytes={checked((long)values.Length * sizeof(uint))}");
         }
     }
 
     private void UploadElementBuffer(
         uint buffer,
         uint[] values,
-        DrawElementsType indexType)
+        DrawElementsType indexType,
+        Action<string>? trace = null)
     {
         if (indexType == DrawElementsType.UnsignedInt)
         {
-            UploadElementBuffer(buffer, values);
+            UploadElementBuffer(buffer, values, trace);
             return;
         }
         if (indexType != DrawElementsType.UnsignedShort)
@@ -1690,17 +1762,36 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         ushort[] packed = ArrayPool<ushort>.Shared.Rent(values.Length);
         try
         {
+            trace?.Invoke(
+                $"unsigned-short index staging started; " +
+                $"indices={values.Length}");
             for (int index = 0; index < values.Length; index++)
                 packed[index] = checked((ushort)values[index]);
+            trace?.Invoke(
+                $"unsigned-short index staging completed; " +
+                $"indices={values.Length}");
 
+            trace?.Invoke(
+                $"driver glBindBuffer started; role=index; " +
+                $"target={BufferTargetARB.ElementArrayBuffer}; handle={buffer}");
             _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, buffer);
+            trace?.Invoke(
+                $"driver glBindBuffer returned; role=index; handle={buffer}");
             fixed (ushort* ptr = packed)
             {
+                trace?.Invoke(
+                    $"driver glBufferData started; role=index; " +
+                    $"indexType={DrawElementsType.UnsignedShort}; " +
+                    $"bytes={checked((long)values.Length * sizeof(ushort))}");
                 _gl.BufferData(
                     BufferTargetARB.ElementArrayBuffer,
                     checked((nuint)values.Length * sizeof(ushort)),
                     ptr,
                     BufferUsageARB.StaticDraw);
+                trace?.Invoke(
+                    $"driver glBufferData returned; role=index; " +
+                    $"indexType={DrawElementsType.UnsignedShort}; " +
+                    $"bytes={checked((long)values.Length * sizeof(ushort))}");
             }
         }
         finally
@@ -1753,21 +1844,29 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         GlTexturedMesh[] replacement = meshes.ToArray();
         GlMesh genericArena = default;
         var translatedArenas = new List<GlMesh>();
+        Action<string>? trace =
+            CreateLoadDetailReporter("world geometry arenas");
         try
         {
+            trace?.Invoke("generic batch selection started");
             int[] genericMeshIndices = Enumerable
                 .Range(0, meshes.Count)
                 .Where(index =>
                     meshes[index].IndexCount != 0 &&
                     meshes[index].RsxProgram.Handle == 0)
                 .ToArray();
+            trace?.Invoke(
+                $"generic batch selection completed; " +
+                $"batches={genericMeshIndices.Length}");
             genericArena = CreateWorldGeometryArena(
                 batches,
                 meshes,
                 replacement,
                 genericMeshIndices,
-                packedRsxVertexLayout: null);
+                packedRsxVertexLayout: null,
+                arenaIdentity: "generic");
 
+            trace?.Invoke("translated batch grouping started");
             foreach (IGrouping<int, int> arenaGroup in Enumerable
                          .Range(0, meshes.Count)
                          .Where(index =>
@@ -1783,16 +1882,20 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         arenaGroup.Key);
                 translatedArenas.Add(CreateWorldGeometryArena(
                     batches,
-                    meshes,
-                    replacement,
-                    arenaGroup.ToArray(),
-                    layout));
+                        meshes,
+                        replacement,
+                        arenaGroup.ToArray(),
+                        layout,
+                        $"translated-mask-0x{arenaGroup.Key:X4}"));
                 WorldGeometryTranslatedArenaCount++;
                 WorldGeometryMaximumTranslatedArenaAttributeCount =
                     Math.Max(
                         WorldGeometryMaximumTranslatedArenaAttributeCount,
                         layout.AttributeCount);
             }
+            trace?.Invoke(
+                $"translated batch grouping completed; " +
+                $"arenas={translatedArenas.Count}");
 
             return (
                 replacement,
@@ -1836,16 +1939,25 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         IReadOnlyList<GlTexturedMesh> sourceMeshes,
         GlTexturedMesh[] replacement,
         IReadOnlyList<int> meshIndices,
-        OpenGlPackedRsxVertexLayout? packedRsxVertexLayout)
+        OpenGlPackedRsxVertexLayout? packedRsxVertexLayout,
+        string arenaIdentity)
     {
         ArgumentNullException.ThrowIfNull(meshIndices);
         if (meshIndices.Count == 0)
             return default;
 
+        Action<string>? trace = CreateLoadDetailReporter(
+            $"world geometry arena={arenaIdentity}");
         bool translated = packedRsxVertexLayout is not null;
         int sourceFloatsPerVertex = translated
             ? OpenGlPackedRsxVertexLayout.SourceFloatStride
             : MapRenderScene.TexturedVertexFloatCount;
+        trace?.Invoke(
+            $"source collection started; batches={meshIndices.Count}; " +
+            $"translated={translated}; " +
+            $"sourceFloatStride={sourceFloatsPerVertex}; " +
+            $"attributeMask={(packedRsxVertexLayout?.AttributeMask ?? 0):X4}; " +
+            $"attributeCount={packedRsxVertexLayout?.AttributeCount ?? 0}");
         var sources =
             new MapRenderOpenGlWorldGeometryArenaSource[
                 meshIndices.Count];
@@ -1862,7 +1974,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         : batches[meshIndex].Vertices,
                     batches[meshIndex].Indices);
         }
+        trace?.Invoke(
+            $"source collection completed; " +
+            $"sourceFloats={sources.Sum(source => (long)source.Vertices.Length)}; " +
+            $"sourceVertices={sources.Sum(source => (long)source.Vertices.Length / sourceFloatsPerVertex)}; " +
+            $"sourceIndices={sources.Sum(source => (long)source.Indices.Length)}");
 
+        long packingStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        trace?.Invoke("CPU arena packing started");
         MapRenderOpenGlWorldGeometryArenaPacking packing =
             packedRsxVertexLayout is { } rsxLayout
                 ? MapRenderOpenGlWorldGeometryArenaPacker
@@ -1870,18 +1989,40 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 : MapRenderOpenGlWorldGeometryArenaPacker.Pack(
                     sources,
                     sourceFloatsPerVertex);
+        trace?.Invoke(
+            $"CPU arena packing completed; " +
+            $"vertexFloats={packing.Vertices.Length}; " +
+            $"vertexBytes={checked((long)packing.Vertices.Length * sizeof(float))}; " +
+            $"indices={packing.Indices.Length}; " +
+            $"indexType={packing.IndexType}; " +
+            $"placements={packing.Placements.Length}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(packingStarted).TotalMilliseconds:0}ms");
 
+        trace?.Invoke("driver glGenVertexArray started");
         uint vao = _gl.GenVertexArray();
+        trace?.Invoke(
+            $"driver glGenVertexArray returned; handle={vao}");
+        trace?.Invoke("driver glGenBuffer started; role=vertex");
         uint vbo = _gl.GenBuffer();
+        trace?.Invoke(
+            $"driver glGenBuffer returned; role=vertex; handle={vbo}");
+        trace?.Invoke("driver glGenBuffer started; role=index");
         uint ebo = _gl.GenBuffer();
+        trace?.Invoke(
+            $"driver glGenBuffer returned; role=index; handle={ebo}");
         try
         {
+            trace?.Invoke(
+                $"driver glBindVertexArray started; handle={vao}");
             _gl.BindVertexArray(vao);
-            UploadBuffer(vbo, packing.Vertices);
+            trace?.Invoke(
+                $"driver glBindVertexArray returned; handle={vao}");
+            UploadBuffer(vbo, packing.Vertices, trace: trace);
             UploadElementBuffer(
                 ebo,
                 packing.Indices,
-                packing.IndexType);
+                packing.IndexType,
+                trace);
             WorldGeometryArenaUploadCount++;
             WorldGeometrySourceBatchCount = checked(
                 WorldGeometrySourceBatchCount + packing.SourceCount);
@@ -1892,6 +2033,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 WorldGeometryImmutableBufferUploadBytes +
                 packing.ImmutableBufferUploadBytes);
 
+            trace?.Invoke(
+                $"mesh placement projection started; " +
+                $"placements={packing.Placements.Length}");
             foreach (
                 MapRenderOpenGlWorldGeometryArenaPlacement placement in
                 packing.Placements)
@@ -1908,7 +2052,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     OwnsGeometry = false
                 };
             }
+            trace?.Invoke("mesh placement projection completed");
 
+            trace?.Invoke(
+                $"vertex attribute setup started; translated={translated}");
             if (translated)
             {
                 ConfigureRsxVertexAttributes(
@@ -1918,15 +2065,24 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             {
                 ConfigureTexturedVertexAttributes();
             }
+            trace?.Invoke("vertex attribute setup completed");
+            trace?.Invoke("driver glBindVertexArray restore started; handle=0");
             _gl.BindVertexArray(0);
+            trace?.Invoke("driver glBindVertexArray restore returned; handle=0");
+            trace?.Invoke(
+                $"completed; vao={vao}; vbo={vbo}; ebo={ebo}; " +
+                $"indices={packing.Indices.Length}");
             return new GlMesh(
                 vao,
                 vbo,
                 ebo,
                 checked((uint)packing.Indices.Length));
         }
-        catch
+        catch (Exception exception)
         {
+            trace?.Invoke(
+                $"failed; exception={exception.GetType().FullName}; " +
+                $"message={QuoteLoadTraceValue(exception.Message)}");
             _gl.BindVertexArray(0);
             DeleteMesh(new GlMesh(vao, vbo, ebo, 0));
             throw;
@@ -1940,8 +2096,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         bool configureAttributes = true,
         MapRenderStaticInstanceLightingPayload lightingPayload =
             MapRenderStaticInstanceLightingPayload.None,
-        BufferUsageARB usage = BufferUsageARB.StaticDraw)
+        BufferUsageARB usage = BufferUsageARB.StaticDraw,
+        Action<string>? trace = null)
     {
+        trace?.Invoke(
+            $"instance payload packing started; " +
+            $"instances={instances.Count}; lighting={lightingPayload}");
         int floatStride = MapRenderStaticInstanceBufferPacker.FloatStride(
             lightingPayload);
         int placementOffset =
@@ -1953,13 +2113,18 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             instances,
             lightingPayload,
             transforms);
+        trace?.Invoke(
+            $"instance payload packing completed; " +
+            $"floatStride={floatStride}; floats={transforms.Length}");
 
         UploadBuffer(
             instanceBuffer,
             transforms,
-            usage);
+            usage,
+            trace);
         if (!configureAttributes)
             return;
+        trace?.Invoke("instance attribute setup started");
         uint instanceStride = checked((uint)floatStride * sizeof(float));
         if (lightingPayload != MapRenderStaticInstanceLightingPayload.None)
         {
@@ -1992,6 +2157,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 (void*)((placementOffset + row * 4) * sizeof(float)));
             _gl.VertexAttribDivisor(attribute, 1);
         }
+        trace?.Invoke("instance attribute setup completed");
     }
 
     private static void WriteVector4(float[] destination, int offset, Vector4 value)
@@ -2117,10 +2283,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         IReadOnlySet<AuthoredProgramGroupKey> authorizedAuthoredProgramGroups,
         bool allowGenericFallback = true)
     {
+        bool traceEnabled = LoadProgressEnabled;
         if (batch.Vertices.Length == 0 ||
             batch.Indices.Length == 0 ||
             !CanUploadTexture(batch.Texture))
+        {
             return default;
+        }
 
         bool directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
             batch.ShaderExecution,
@@ -2177,15 +2346,32 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 batch.ShaderExecution,
                 batch.ColorLayers);
 
-        uint[] colorTextures = batch.ColorLayers
-            .Take(MapRenderScene.MaxColorLayerCount)
-            .Where(layer => CanUploadTexture(layer.Texture))
-            .Select(layer => CreateTexture(layer.Texture))
-            .ToArray();
+        var colorTextureList = new List<uint>(
+            Math.Min(
+                batch.ColorLayers.Count,
+                MapRenderScene.MaxColorLayerCount));
+        foreach (MaterialColorLayer layer in batch.ColorLayers
+                     .Take(MapRenderScene.MaxColorLayerCount))
+        {
+            if (!CanUploadTexture(layer.Texture))
+                continue;
+            colorTextureList.Add(CreateTexture(
+                layer.Texture,
+                loadTraceRole: !traceEnabled
+                    ? null
+                    : $"world-color-layer[{layer.LayerIndex}]"));
+        }
+        uint[] colorTextures = colorTextureList.ToArray();
         if (colorTextures.Length == 0)
-            colorTextures = [CreateTexture(batch.Texture)];
+        {
+            colorTextures = [CreateTexture(
+                batch.Texture,
+                loadTraceRole: "world-primary-fallback")];
+        }
         uint lightmapTexture = CanUploadTexture(batch.LightmapTexture)
-            ? CreateTexture(batch.LightmapTexture!)
+            ? CreateTexture(
+                batch.LightmapTexture!,
+                loadTraceRole: "world-lightmap")
             : 0;
         uint[] normalTextures = executeTranslatedAuthored
             ? []
@@ -2196,7 +2382,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     EditorMaterialTextureRole.NormalLayer1,
                     EditorMaterialTextureRole.NormalLayer2,
                     EditorMaterialTextureRole.NormalLayer3
-                ]);
+                ],
+                "world-normal");
         uint[] specularTextures = executeTranslatedAuthored
             ? []
             : CreateEditorRoleTextures(
@@ -2205,21 +2392,40 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     EditorMaterialTextureRole.BaseSpecular,
                     EditorMaterialTextureRole.SpecularLayer1,
                     EditorMaterialTextureRole.SpecularLayer2
-                ]);
+                ],
+                "world-specular");
         GlRsxProgram rsxProgram = executeTranslatedAuthored
             ? compiledRsxProgram
             : default;
-        GlRsxSamplerBinding[] rsxSamplerBindings = executeTranslatedAuthored
-            ? batch.MaterialSamplers
-                .Where(binding => CanUploadTexture(binding.Binding.Texture))
-                .GroupBy(binding => binding.Binding.Identity.SamplerDest)
-                .Select(group => group.First())
-                .Select(binding => new GlRsxSamplerBinding(
-                    binding.Binding.Identity.SamplerDest,
-                    CreateTexture(binding.Binding.Texture!),
-                    ToGlTextureTarget(binding.Binding.Texture!.Target)))
-                .ToArray()
-            : [];
+        GlRsxSamplerBinding[] rsxSamplerBindings;
+        if (executeTranslatedAuthored)
+        {
+            var samplerBindings = new List<GlRsxSamplerBinding>();
+            foreach (MapRenderWorldMaterialSamplerBinding binding in
+                     batch.MaterialSamplers
+                         .Where(binding =>
+                             CanUploadTexture(binding.Binding.Texture))
+                         .GroupBy(binding =>
+                             binding.Binding.Identity.SamplerDest)
+                         .Select(group => group.First()))
+            {
+                int destination = binding.Binding.Identity.SamplerDest;
+                var samplerTexture = binding.Binding.Texture!;
+                samplerBindings.Add(new GlRsxSamplerBinding(
+                    destination,
+                    CreateTexture(
+                        samplerTexture,
+                        loadTraceRole: !traceEnabled
+                            ? null
+                            : $"world-rsx-sampler[{destination}]"),
+                    ToGlTextureTarget(samplerTexture.Target)));
+            }
+            rsxSamplerBindings = samplerBindings.ToArray();
+        }
+        else
+        {
+            rsxSamplerBindings = [];
+        }
         GlRsxConstantBinding[] rsxConstantBindings = rsxProgram.Handle == 0
             ? []
             : CreateRsxConstantBindings(

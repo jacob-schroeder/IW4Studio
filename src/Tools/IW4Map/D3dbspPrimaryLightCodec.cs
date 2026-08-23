@@ -18,8 +18,9 @@ internal static class D3dbspPrimaryLightCodec
         if (lights.Count <= 1)
         {
             throw new InvalidDataException(
-                "A v22 ComWorld must contain the sun light and at least one additional primary light.");
+                "A v22 ComWorld must contain the none sentinel and at least one map light.");
         }
+        _ = GetLastSunPrimaryLightIndex(lights);
 
         return new ComWorldAsset
         {
@@ -28,6 +29,36 @@ internal static class D3dbspPrimaryLightCodec
             PrimaryLightCount = lights.Count,
             PrimaryLights = lights
         };
+    }
+
+    public static int GetLastSunPrimaryLightIndex(IReadOnlyList<ComPrimaryLight> lights)
+    {
+        ArgumentNullException.ThrowIfNull(lights);
+        if (lights.Count == 0 || lights[0] is null || lights[0].Type != GfxLightType.None)
+            throw new InvalidDataException("A v22 primary-light table must begin with the none sentinel.");
+        for (int index = 1; index < lights.Count; index++)
+        {
+            if (lights[index] is null)
+                throw new InvalidDataException($"Primary light row {index} is null.");
+        }
+
+        int firstNonSunIndex = 1;
+        while (firstNonSunIndex < lights.Count &&
+               lights[firstNonSunIndex].Type == GfxLightType.Directional)
+        {
+            firstNonSunIndex++;
+        }
+
+        for (int index = firstNonSunIndex; index < lights.Count; index++)
+        {
+            if (lights[index].Type == GfxLightType.Directional)
+            {
+                throw new InvalidDataException(
+                    "Directional primary lights must form one contiguous table prefix after the none sentinel.");
+            }
+        }
+
+        return firstNonSunIndex - 1;
     }
 
     public static IReadOnlyList<ComPrimaryLight> Decode(ReadOnlySpan<byte> data)
@@ -61,7 +92,7 @@ internal static class D3dbspPrimaryLightCodec
                     row.Slice(DefinitionNameOffset, DefinitionNameSize),
                     index);
                 if (cosHalfFovOuter >= cosHalfFovInner)
-                    cosHalfFovInner = cosHalfFovOuter * 0.75f + 0.25f;
+                    cosHalfFovInner = (float)((double)cosHalfFovOuter * 0.75 + 0.25);
 
                 cosHalfFovExpanded = rotationLimit switch
                 {
@@ -181,8 +212,12 @@ internal static class D3dbspPrimaryLightCodec
 
     private static float CosOfSumOfArcCos(float cos0, float cos1)
     {
-        float sinSq0 = 1.0f - cos0 * cos0;
-        float sinSq1 = 1.0f - cos1 * cos1;
-        return cos0 * cos1 - MathF.Sqrt(sinSq0 * sinSq1);
+        // Preserve linker_pc's explicit float spills around x87 intermediates.
+        double cosProduct = (double)cos0 * cos1;
+        float sinSq1 = (float)(1.0 - (double)cos1 * cos1);
+        float sinSq0 = (float)(1.0 - (double)cos0 * cos0);
+        float sinProduct = (float)((double)sinSq1 * sinSq0);
+        float sin = MathF.Sqrt(sinProduct);
+        return (float)(cosProduct - sin);
     }
 }

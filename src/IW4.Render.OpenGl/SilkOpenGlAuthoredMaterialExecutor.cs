@@ -178,7 +178,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             fixedFunctionIdentity,
             postLinkValidator: null,
             out _,
-            out blocker);
+            out blocker,
+            trace: null);
     }
 
     internal GlRsxProgram GetOrCreateComposedProgram(
@@ -189,7 +190,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         string diagnosticIdentity,
         Func<uint, OpenGlProgramKey, string?>? postLinkValidator,
         out OpenGlProgramKey programKey,
-        out string? blocker)
+        out string? blocker,
+        Action<string>? trace = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexGlsl);
         ArgumentNullException.ThrowIfNull(pixelSource);
@@ -208,10 +210,26 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             return cached;
         if (_programFailures.TryGetValue(programKey, out blocker))
             return default;
+        trace?.Invoke(
+            $"executor unique semantic program started; " +
+            $"programKey={programKey}; " +
+            $"vertexChars={vertexGlsl.Length}; " +
+            $"fragmentChars={pixelSource.ExactGlsl.Length}; " +
+            $"samplerCount={samplerDestinations.Length}; " +
+            $"samplers=[{string.Join(',', samplerDestinations)}]");
 
         _semanticRequestCount = checked(_semanticRequestCount + 1);
+        trace?.Invoke(
+            $"executor shared-link resolution started; " +
+            $"programKey={programKey}");
         OpenGlLinkedProgramHandleResolution linkResolution =
             _resolveLinkedProgram(vertexGlsl, pixelSource.ExactGlsl);
+        trace?.Invoke(
+            $"executor shared-link resolution completed; " +
+            $"programKey={programKey}; " +
+            $"ready={linkResolution.IsReady}; " +
+            $"reuse={linkResolution.IsReuse}; " +
+            $"handle={linkResolution.Handle}");
         if (linkResolution.IsReuse)
             _linkReuseCount = checked(_linkReuseCount + 1);
         else if (linkResolution.IsReady)
@@ -222,32 +240,73 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 $"RSX GLSL validation failed for {diagnosticIdentity} " +
                 $"({programKey}): {linkResolution.FailureReason}";
             _programFailures.TryAdd(programKey, blocker);
+            trace?.Invoke(
+                $"executor link blocked; programKey={programKey}");
             return default;
         }
 
         uint handle = linkResolution.Handle;
-        int[] samplerLocations = samplerDestinations
-            .Select(destination => _uniformLocations.Get(
-                handle,
-                $"rsxSampler{destination}"))
-            .ToArray();
-        _state.UseProgram(handle);
+        var samplerLocations = new int[samplerDestinations.Length];
         for (int index = 0; index < samplerDestinations.Length; index++)
+        {
+            int destination = samplerDestinations[index];
+            trace?.Invoke(
+                $"executor sampler uniform lookup started; " +
+                $"programKey={programKey}; destination={destination}");
+            samplerLocations[index] = _uniformLocations.Get(
+                handle,
+                $"rsxSampler{destination}");
+            trace?.Invoke(
+                $"executor sampler uniform lookup completed; " +
+                $"programKey={programKey}; destination={destination}; " +
+                $"location={samplerLocations[index]}");
+        }
+        trace?.Invoke(
+            $"executor glUseProgram started; programKey={programKey}; " +
+            $"handle={handle}");
+        _state.UseProgram(handle);
+        trace?.Invoke(
+            $"executor glUseProgram completed; programKey={programKey}; " +
+            $"handle={handle}");
+        for (int index = 0; index < samplerDestinations.Length; index++)
+        {
+            trace?.Invoke(
+                $"executor sampler uniform assignment started; " +
+                $"programKey={programKey}; " +
+                $"destination={samplerDestinations[index]}; " +
+                $"location={samplerLocations[index]}");
             _state.Uniform1(samplerLocations[index], samplerDestinations[index]);
+            trace?.Invoke(
+                $"executor sampler uniform assignment completed; " +
+                $"programKey={programKey}; " +
+                $"destination={samplerDestinations[index]}");
+        }
 
+        trace?.Invoke(
+            $"executor post-link validation started; " +
+            $"programKey={programKey}");
         if (postLinkValidator?.Invoke(handle, programKey) is
             { } validationBlocker)
         {
             blocker = validationBlocker;
             _programFailures.TryAdd(programKey, blocker);
+            trace?.Invoke(
+                $"executor post-link validation failed; " +
+                $"programKey={programKey}");
             return default;
         }
+        trace?.Invoke(
+            $"executor post-link validation completed; " +
+            $"programKey={programKey}");
 
         var program = new GlRsxProgram(
             handle,
             samplerDestinations,
             samplerLocations);
         _programs.Add(programKey, program);
+        trace?.Invoke(
+            $"executor semantic-cache add completed; " +
+            $"programKey={programKey}; handle={handle}");
         return program;
     }
 

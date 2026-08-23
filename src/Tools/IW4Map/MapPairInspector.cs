@@ -2,6 +2,8 @@ using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.MapEnts;
+using IW4.Assets.Assets.Physics;
+using IW4.Assets.Math;
 using IW4.Studio.Documents;
 
 namespace IW4Map;
@@ -26,7 +28,7 @@ internal static class MapPairInspector
         Console.WriteLine($"map-name: {gfxWorld.Name}");
         Console.WriteLine();
         Console.WriteLine("source                         d3dbsp      linked      relation");
-        WriteCount("materials", Count(d3dbsp, D3dbspLumpType.Materials, 72), clipMap.Materials.Count, "count retained; flags transformed");
+        WriteCount("materials", Count(d3dbsp, D3dbspLumpType.Materials, 72), clipMap.Materials.Count, "names and flags retained");
         WriteCount("planes", Count(d3dbsp, D3dbspLumpType.Planes, 16), clipMap.Planes.Count, "float equations retained");
         WriteCount("brush sides", Count(d3dbsp, D3dbspLumpType.BrushSides, 8), clipMap.BrushSides.Count, "axial sides fold into brushes");
         WriteCount("brush edges", ByteCount(d3dbsp, D3dbspLumpType.BrushEdges), clipMap.BrushEdges.Count, "bytes retained");
@@ -53,12 +55,14 @@ internal static class MapPairInspector
         WriteCount("draw indices", Count(d3dbsp, D3dbspLumpType.DrawIndices, 2), gfxWorld.WorldDraw.Indices.Count, "regrouped by surface");
 
         Console.WriteLine();
-        InspectPrimaryLights(d3dbsp, comWorld);
-        InspectForwardLighting(d3dbsp, gfxWorld);
+        ComWorldAsset decodedComWorld = InspectPrimaryLights(d3dbsp, comWorld);
+        InspectForwardLighting(d3dbsp, gfxWorld, decodedComWorld);
+        InspectForwardCollision(d3dbsp, clipMap);
+        InspectMapEnts(d3dbsp, mapEnts);
         InspectReversibleLumps(d3dbsp, clipMap, gfxWorld);
     }
 
-    private static void InspectPrimaryLights(
+    private static ComWorldAsset InspectPrimaryLights(
         D3dbspFile d3dbsp,
         ComWorldAsset linkedComWorld)
     {
@@ -78,33 +82,45 @@ internal static class MapPairInspector
                 BitConverter.SingleToInt32Bits(pair.Second.CosHalfFovExpanded))
             : -1;
 
-        Console.WriteLine($"com-world.asset-name-match: {decodedComWorld.Name == linkedComWorld.Name}");
+        Console.WriteLine("com-world.asset-name-source: caller-supplied; not stored in d3dbsp");
         Console.WriteLine($"com-world.is-in-use-match: {decodedComWorld.IsInUse == linkedComWorld.IsInUse}");
         Console.WriteLine($"com-world.primary-light-count-match: {decodedComWorld.PrimaryLightCount == linkedComWorld.PrimaryLightCount}");
         Console.WriteLine($"primary-lights.codec-roundtrip-byte-exact: {decodedBytes.AsSpan().SequenceEqual(lump.Data)}");
         Console.WriteLine($"primary-lights.fastfile-to-disk-byte-exact: {fastFileBytes.AsSpan().SequenceEqual(lump.Data)}");
         Console.WriteLine($"primary-lights.expanded-fov-mismatches: {expandedMismatchCount}");
+        return decodedComWorld;
     }
 
     private static void InspectForwardLighting(
         D3dbspFile d3dbsp,
-        GfxWorldAsset linkedGfxWorld)
+        GfxWorldAsset linkedGfxWorld,
+        ComWorldAsset decodedComWorld)
     {
+        uint lastSunPrimaryLightIndex = checked((uint)
+            D3dbspPrimaryLightCodec.GetLastSunPrimaryLightIndex(
+                decodedComWorld.PrimaryLights));
+        bool hasLightRegions = d3dbsp.Lumps.Any(
+            lump => lump.Type == D3dbspLumpType.LightRegions);
         GfxLightGrid decodedLightGrid = D3dbspLightingCodec.DecodeLightGrid(
             RequireLump(d3dbsp, D3dbspLumpType.LightGridHeader).Data,
             GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightGridRows),
             GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightGridEntries),
             GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightGridColors),
-            linkedGfxWorld.LightGrid.SunPrimaryLightIndex,
-            d3dbsp.Lumps.Any(lump => lump.Type == D3dbspLumpType.LightRegions));
+            lastSunPrimaryLightIndex,
+            hasLightRegions);
         IReadOnlyList<GfxLightRegion> decodedLightRegions =
             D3dbspLightingCodec.DecodeLightRegions(
-                RequireLump(d3dbsp, D3dbspLumpType.LightRegions).Data,
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightRegions),
                 GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightRegionHulls),
-                GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightRegionAxes));
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.LightRegionAxes),
+                decodedComWorld.PrimaryLightCount,
+                hasLightRegions);
 
         GfxLightGrid linkedLightGrid = linkedGfxWorld.LightGrid;
         bool lightGridMatch =
+            linkedGfxWorld.SunPrimaryLightIndex >= 0 &&
+            decodedLightGrid.SunPrimaryLightIndex == (uint)linkedGfxWorld.SunPrimaryLightIndex &&
+            decodedComWorld.PrimaryLightCount == linkedGfxWorld.PrimaryLightCount &&
             decodedLightGrid.HasLightRegionsRaw == linkedLightGrid.HasLightRegionsRaw &&
             decodedLightGrid.SunPrimaryLightIndex == linkedLightGrid.SunPrimaryLightIndex &&
             decodedLightGrid.RawRowDataSize == linkedLightGrid.RawRowDataSize &&
@@ -123,16 +139,208 @@ internal static class MapPairInspector
                         linkedLightGrid,
                         omitLinkerGeneratedDefault: false));
         bool lightRegionsMatch =
-            D3dbspLightingCodec.EncodeLightRegions(decodedLightRegions).AsSpan().SequenceEqual(
-                D3dbspLightingCodec.EncodeLightRegions(linkedGfxWorld.LightRegions)) &&
-            D3dbspLightingCodec.EncodeLightRegionHulls(decodedLightRegions).AsSpan().SequenceEqual(
-                D3dbspLightingCodec.EncodeLightRegionHulls(linkedGfxWorld.LightRegions)) &&
-            D3dbspLightingCodec.EncodeLightRegionAxes(decodedLightRegions).AsSpan().SequenceEqual(
-                D3dbspLightingCodec.EncodeLightRegionAxes(linkedGfxWorld.LightRegions));
+            decodedLightRegions.Count == decodedComWorld.PrimaryLightCount &&
+            decodedLightRegions.Count == linkedGfxWorld.LightRegions.Count &&
+            D3dbspLightingCodec.EncodeLightRegions(
+                decodedLightRegions,
+                decodedLightGrid.HasLightRegions).AsSpan().SequenceEqual(
+                    D3dbspLightingCodec.EncodeLightRegions(
+                        linkedGfxWorld.LightRegions,
+                        linkedLightGrid.HasLightRegions)) &&
+            D3dbspLightingCodec.EncodeLightRegionHulls(
+                decodedLightRegions,
+                decodedLightGrid.HasLightRegions).AsSpan().SequenceEqual(
+                    D3dbspLightingCodec.EncodeLightRegionHulls(
+                        linkedGfxWorld.LightRegions,
+                        linkedLightGrid.HasLightRegions)) &&
+            D3dbspLightingCodec.EncodeLightRegionAxes(
+                decodedLightRegions,
+                decodedLightGrid.HasLightRegions).AsSpan().SequenceEqual(
+                    D3dbspLightingCodec.EncodeLightRegionAxes(
+                        linkedGfxWorld.LightRegions,
+                        linkedLightGrid.HasLightRegions));
 
         Console.WriteLine($"gfx-light-grid.asset-graph-match: {lightGridMatch}");
         Console.WriteLine($"gfx-light-regions.asset-graph-match: {lightRegionsMatch}");
     }
+
+    private static void InspectForwardCollision(D3dbspFile d3dbsp, ClipMapAsset linkedClipMap)
+    {
+        IReadOnlyList<CPlane> decodedPlanes =
+            D3dbspCollisionCodec.DecodePlanes(
+                RequireLump(d3dbsp, D3dbspLumpType.Planes).Data);
+        IReadOnlyList<ClipMaterial> decodedMaterials =
+            D3dbspCollisionCodec.DecodeMaterials(
+                RequireLump(d3dbsp, D3dbspLumpType.Materials).Data);
+        IReadOnlyList<CNode> decodedNodes = D3dbspCollisionCodec.DecodeNodes(
+            RequireLump(d3dbsp, D3dbspLumpType.Nodes).Data,
+            decodedPlanes);
+
+        bool planesMatch =
+            decodedPlanes.Count == linkedClipMap.Planes.Count &&
+            decodedPlanes.Zip(linkedClipMap.Planes).All(pair =>
+                PlaneEquals(pair.First, pair.Second));
+        bool materialsMatch =
+            decodedMaterials.Count == linkedClipMap.Materials.Count &&
+            decodedMaterials.Zip(linkedClipMap.Materials).All(pair =>
+                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal) &&
+                pair.First.SurfaceFlags == pair.Second.SurfaceFlags &&
+                pair.First.Contents == pair.Second.Contents);
+        bool nodesMatch =
+            decodedNodes.Count == linkedClipMap.Nodes.Count &&
+            decodedNodes.Zip(linkedClipMap.Nodes).All(pair =>
+                PlaneEquals(pair.First.Plane, pair.Second.Plane) &&
+                pair.First.Children.SequenceEqual(pair.Second.Children));
+
+        IReadOnlyList<byte> decodedBrushEdges = D3dbspCollisionCodec.DecodeBrushEdges(
+            GetOptionalLumpData(d3dbsp, D3dbspLumpType.BrushEdges));
+        IReadOnlyList<ushort> decodedLeafBrushes = D3dbspCollisionCodec.DecodeLeafBrushes(
+            GetOptionalLumpData(d3dbsp, D3dbspLumpType.LeafBrushes));
+        IReadOnlyList<uint> decodedLeafSurfaces = D3dbspCollisionCodec.DecodeLeafSurfaces(
+            GetOptionalLumpData(d3dbsp, D3dbspLumpType.LeafSurfaces));
+        IReadOnlyList<Vec3> decodedVerts =
+            D3dbspCollisionCodec.DecodeCollisionVerts(
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionVerts));
+        IReadOnlyList<ushort> decodedTriIndices = D3dbspCollisionCodec.DecodeCollisionTris(
+            GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionTris));
+        IReadOnlyList<byte> decodedEdgeWalkable =
+            D3dbspCollisionCodec.DecodeCollisionEdgeWalkable(
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionEdgeWalkable));
+        IReadOnlyList<CollisionBorder> decodedBorders =
+            D3dbspCollisionCodec.DecodeCollisionBorders(
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionBorders));
+        IReadOnlyList<CollisionAabbTree> decodedAabbs =
+            D3dbspCollisionCodec.DecodeCollisionAabbs(
+                GetOptionalLumpData(d3dbsp, D3dbspLumpType.CollisionAabbs));
+        var decodedBrushGraph = D3dbspCollisionCodec.DecodeBrushes(
+            RequireLump(d3dbsp, D3dbspLumpType.Brushes).Data,
+            RequireLump(d3dbsp, D3dbspLumpType.BrushSides).Data,
+            RequireLump(d3dbsp, D3dbspLumpType.BrushSideEdgeCounts).Data,
+            decodedBrushEdges,
+            decodedPlanes,
+            decodedMaterials,
+            linkedClipMap.Brushes.Select(brush => brush.GlassPieceIndex).ToArray());
+
+        bool directPayloadMatch =
+            decodedBrushEdges.SequenceEqual(linkedClipMap.BrushEdges) &&
+            decodedLeafBrushes.SequenceEqual(linkedClipMap.LeafBrushes) &&
+            decodedLeafSurfaces.SequenceEqual(linkedClipMap.LeafSurfaces) &&
+            D3dbspCollisionCodec.EncodeCollisionVerts(decodedVerts).AsSpan().SequenceEqual(
+                D3dbspCollisionCodec.EncodeCollisionVerts(linkedClipMap.Verts)) &&
+            decodedTriIndices.SequenceEqual(linkedClipMap.TriIndices) &&
+            decodedEdgeWalkable.SequenceEqual(linkedClipMap.TriEdgeIsWalkable) &&
+            D3dbspCollisionCodec.EncodeCollisionBorders(decodedBorders).AsSpan().SequenceEqual(
+                D3dbspCollisionCodec.EncodeCollisionBorders(linkedClipMap.Borders)) &&
+            D3dbspCollisionCodec.EncodeCollisionAabbs(decodedAabbs).AsSpan().SequenceEqual(
+                D3dbspCollisionCodec.EncodeCollisionAabbs(linkedClipMap.AabbTrees));
+        bool brushSidesMatch =
+            decodedBrushGraph.BrushSides.Count == linkedClipMap.BrushSides.Count &&
+            decodedBrushGraph.BrushSides.Zip(linkedClipMap.BrushSides).All(pair =>
+                BrushSideEquals(pair.First, pair.Second));
+        bool brushTopologyMatch =
+            decodedBrushGraph.Brushes.Count == linkedClipMap.Brushes.Count &&
+            decodedBrushGraph.Brushes.Zip(linkedClipMap.Brushes).All(pair =>
+                BrushEqualsExceptGlassPieceIndex(pair.First, pair.Second));
+        int brushBoundsMismatchCount = decodedBrushGraph.BrushBounds.Count == linkedClipMap.BrushBounds.Count
+            ? decodedBrushGraph.BrushBounds.Zip(linkedClipMap.BrushBounds).Count(pair =>
+                !BoundsEquals(pair.First, pair.Second))
+            : -1;
+        bool brushBoundsMatch = brushBoundsMismatchCount == 0;
+        bool brushContentsMatch =
+            decodedBrushGraph.BrushContents.SequenceEqual(linkedClipMap.BrushContents);
+
+        Console.WriteLine($"clip-map.planes-forward-graph-match: {planesMatch}");
+        Console.WriteLine($"clip-map.materials-forward-graph-match: {materialsMatch}");
+        Console.WriteLine($"clip-map.nodes-forward-graph-match: {nodesMatch}");
+        Console.WriteLine($"clip-map.direct-payload-forward-graph-match: {directPayloadMatch}");
+        Console.WriteLine($"clip-map.brush-sides-forward-graph-match: {brushSidesMatch}");
+        Console.WriteLine($"clip-map.brush-topology-forward-graph-match: {brushTopologyMatch}");
+        Console.WriteLine(
+            $"clip-map.brush-bounds-forward-graph-match: {brushBoundsMatch} " +
+            $"(row mismatches: {brushBoundsMismatchCount})");
+        Console.WriteLine($"clip-map.brush-contents-forward-graph-match: {brushContentsMatch}");
+        Console.WriteLine("clip-map.brush-glass-index-source: linked glass graph (not stored in brush lumps)");
+    }
+
+    private static void InspectMapEnts(D3dbspFile d3dbsp, MapEntsAsset? linkedMapEnts)
+    {
+        if (linkedMapEnts is null)
+        {
+            Console.WriteLine("map-ents.asset-graph-match: unavailable (the fastfile has no MapEnts definition)");
+            return;
+        }
+
+        byte[] entityLump = RequireLump(d3dbsp, D3dbspLumpType.Entities).Data;
+        byte[] decodedEntityString = D3dbspMapEntsCodec.DecodeEntityString(entityLump);
+        IReadOnlyList<Stage> decodedStages = D3dbspMapEntsCodec.DecodeStages(entityLump);
+        bool stagesMatch =
+            decodedStages.Count == linkedMapEnts.Stages.Count &&
+            decodedStages.Zip(linkedMapEnts.Stages).All(pair => StageEquals(pair.First, pair.Second));
+
+        Console.WriteLine(
+            $"map-ents.entity-string-forward-graph-match: " +
+            decodedEntityString.SequenceEqual(linkedMapEnts.EntityStringBytes));
+        Console.WriteLine($"map-ents.stages-forward-graph-match: {stagesMatch}");
+        Console.WriteLine("map-ents.triggers-forward-graph-match: unresolved (no direct d3dbsp lump)");
+    }
+
+    private static bool PlaneEquals(
+        CPlane? left,
+        CPlane? right) =>
+        left is not null &&
+        right is not null &&
+        BitConverter.SingleToInt32Bits(left.Normal.X) ==
+            BitConverter.SingleToInt32Bits(right.Normal.X) &&
+        BitConverter.SingleToInt32Bits(left.Normal.Y) ==
+            BitConverter.SingleToInt32Bits(right.Normal.Y) &&
+        BitConverter.SingleToInt32Bits(left.Normal.Z) ==
+            BitConverter.SingleToInt32Bits(right.Normal.Z) &&
+        BitConverter.SingleToInt32Bits(left.Dist) ==
+            BitConverter.SingleToInt32Bits(right.Dist) &&
+        left.Type == right.Type &&
+        left.SignBits == right.SignBits;
+
+    private static bool BrushSideEquals(
+        CBrushSide left,
+        CBrushSide right) =>
+        PlaneEquals(left.Plane, right.Plane) &&
+        left.MaterialNum == right.MaterialNum &&
+        left.FirstAdjacentSideOffset == right.FirstAdjacentSideOffset &&
+        left.EdgeCount == right.EdgeCount;
+
+    private static bool BrushEqualsExceptGlassPieceIndex(
+        CBrush left,
+        CBrush right) =>
+        left.NumSides == right.NumSides &&
+        left.Sides.Count == right.Sides.Count &&
+        left.Sides.Zip(right.Sides).All(pair => BrushSideEquals(pair.First, pair.Second)) &&
+        left.BaseAdjacentSide.SequenceEqual(right.BaseAdjacentSide) &&
+        left.AxialMaterialNum.SequenceEqual(right.AxialMaterialNum) &&
+        left.FirstAdjacentSideOffsets.SequenceEqual(right.FirstAdjacentSideOffsets) &&
+        left.EdgeCount.SequenceEqual(right.EdgeCount);
+
+    private static bool BoundsEquals(
+        Bounds left,
+        Bounds right) =>
+        Vec3Equals(left.MidPoint, right.MidPoint) &&
+        Vec3Equals(left.HalfSize, right.HalfSize);
+
+    private static bool Vec3Equals(Vec3 left, Vec3 right) =>
+        BitConverter.SingleToInt32Bits(left.X) == BitConverter.SingleToInt32Bits(right.X) &&
+        BitConverter.SingleToInt32Bits(left.Y) == BitConverter.SingleToInt32Bits(right.Y) &&
+        BitConverter.SingleToInt32Bits(left.Z) == BitConverter.SingleToInt32Bits(right.Z);
+
+    private static bool StageEquals(Stage left, Stage right) =>
+        string.Equals(left.StageName, right.StageName, StringComparison.Ordinal) &&
+        BitConverter.SingleToInt32Bits(left.Origin.X) ==
+            BitConverter.SingleToInt32Bits(right.Origin.X) &&
+        BitConverter.SingleToInt32Bits(left.Origin.Y) ==
+            BitConverter.SingleToInt32Bits(right.Origin.Y) &&
+        BitConverter.SingleToInt32Bits(left.Origin.Z) ==
+            BitConverter.SingleToInt32Bits(right.Origin.Z) &&
+        left.TriggerIndex == right.TriggerIndex &&
+        left.SunPrimaryLightIndex == right.SunPrimaryLightIndex &&
+        left.Pad13 == right.Pad13;
 
     private static void InspectReversibleLumps(
         D3dbspFile d3dbsp,
@@ -204,15 +412,21 @@ internal static class MapPairInspector
         WriteLumpComparison(
             d3dbsp,
             D3dbspLumpType.LightRegions,
-            D3dbspLightingCodec.EncodeLightRegions(gfxWorld.LightRegions));
+            D3dbspLightingCodec.EncodeLightRegions(
+                gfxWorld.LightRegions,
+                lightGrid.HasLightRegions));
         WriteLumpComparison(
             d3dbsp,
             D3dbspLumpType.LightRegionHulls,
-            D3dbspLightingCodec.EncodeLightRegionHulls(gfxWorld.LightRegions));
+            D3dbspLightingCodec.EncodeLightRegionHulls(
+                gfxWorld.LightRegions,
+                lightGrid.HasLightRegions));
         WriteLumpComparison(
             d3dbsp,
             D3dbspLumpType.LightRegionAxes,
-            D3dbspLightingCodec.EncodeLightRegionAxes(gfxWorld.LightRegions));
+            D3dbspLightingCodec.EncodeLightRegionAxes(
+                gfxWorld.LightRegions,
+                lightGrid.HasLightRegions));
     }
 
     private static void WriteLumpComparison(

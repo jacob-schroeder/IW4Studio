@@ -851,9 +851,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             loadProgress: null);
 
     /// <summary>
-    /// Loads a scene for an already-known first view and reports coarse
-    /// synchronous initialization checkpoints to an optional caller sink.
-    /// Progress reporting is advisory and cannot fault renderer loading.
+    /// Loads a scene for an already-known first view and reports synchronous
+    /// initialization diagnostics to an optional caller sink. The callback
+    /// may receive verbose per-resource checkpoints; reporting is advisory
+    /// and cannot fault renderer loading.
     /// </summary>
     public void Load(
         MapRenderScene scene,
@@ -884,23 +885,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         ProgressiveStaticInitialView? initialView,
         Action<string>? loadProgress)
     {
+        using LoadProgressScope loadProgressScope =
+            BeginLoadProgress(loadProgress);
         ThrowIfUnavailable();
         ArgumentNullException.ThrowIfNull(scene);
+        ResetLoadTraceSequences();
         long rendererLoadStarted =
             System.Diagnostics.Stopwatch.GetTimestamp();
         long rendererLoadPhaseStarted = rendererLoadStarted;
         var rendererLoadPhases = new List<string>(8);
-        void ReportLoadProgress(string message)
-        {
-            try
-            {
-                loadProgress?.Invoke(message);
-            }
-            catch
-            {
-                // Advisory diagnostics cannot alter renderer initialization.
-            }
-        }
         void BeginLoadPhase(string name)
         {
             ReportLoadProgress(
@@ -1134,22 +1127,83 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         InitializeFixedSamplerUniforms();
         RecordLoadPhase("core-programs");
         BeginLoadPhase("base-world");
+        long baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
         bool hasDiagnosticResources =
             !isolateWorldSurface &&
             !sceneSnapshot.Diagnostics.IsEmpty;
-        _solid = hasDiagnosticResources
-            ? CreateMesh(scene.SolidVertices, scene.SolidIndices)
-            : default;
-        _fallbackSolid = hasDiagnosticResources
-            ? CreateMesh(
-                scene.FallbackSolidVertices,
-                scene.FallbackSolidIndices)
-            : default;
-        _instancedSolid = hasDiagnosticResources
-            ? scene.InstancedSolidBatches
-                .Select(CreateInstancedSolidMesh)
-                .ToArray()
-            : [];
+        ReportLoadProgress(
+            $"renderer base-world subphase started: diagnostic-resources; " +
+            $"enabled={hasDiagnosticResources}; " +
+            $"solidVertices={scene.SolidVertices.Length / MapRenderScene.VertexFloatCount}; " +
+            $"solidIndices={scene.SolidIndices.Length}; " +
+            $"fallbackVertices={scene.FallbackSolidVertices.Length / MapRenderScene.VertexFloatCount}; " +
+            $"fallbackIndices={scene.FallbackSolidIndices.Length}; " +
+            $"instancedBatches={scene.InstancedSolidBatches.Count}");
+        if (hasDiagnosticResources)
+        {
+            if (LoadProgressEnabled)
+            {
+                using (BeginLoadTraceContext(
+                           "base-world-diagnostic=solid"))
+                {
+                    _solid = CreateMesh(
+                        scene.SolidVertices,
+                        scene.SolidIndices);
+                }
+            }
+            else
+            {
+                _solid = CreateMesh(
+                    scene.SolidVertices,
+                    scene.SolidIndices);
+            }
+
+            if (LoadProgressEnabled)
+            {
+                using (BeginLoadTraceContext(
+                           "base-world-diagnostic=fallback"))
+                {
+                    _fallbackSolid = CreateMesh(
+                        scene.FallbackSolidVertices,
+                        scene.FallbackSolidIndices);
+                }
+            }
+            else
+            {
+                _fallbackSolid = CreateMesh(
+                    scene.FallbackSolidVertices,
+                    scene.FallbackSolidIndices);
+            }
+
+            var instancedSolid = new GlInstancedMesh[
+                scene.InstancedSolidBatches.Count];
+            for (int index = 0;
+                 index < scene.InstancedSolidBatches.Count;
+                 index++)
+            {
+                if (LoadProgressEnabled)
+                {
+                    using var context = BeginLoadTraceContext(
+                        $"base-world-diagnostic-instanced={index + 1}/" +
+                        scene.InstancedSolidBatches.Count);
+                    instancedSolid[index] = CreateInstancedSolidMesh(
+                        scene.InstancedSolidBatches[index]);
+                }
+                else
+                {
+                    instancedSolid[index] = CreateInstancedSolidMesh(
+                        scene.InstancedSolidBatches[index]);
+                }
+            }
+            _instancedSolid = instancedSolid;
+        }
+        else
+        {
+            _solid = default;
+            _fallbackSolid = default;
+            _instancedSolid = [];
+        }
         _diagnosticResourceCatalog = !hasDiagnosticResources
             ? MapRenderOpenGlNormalCameraDiagnosticResourceCatalog
                 .CreateUnavailable(sceneSnapshot)
@@ -1158,6 +1212,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 _fallbackSolid,
                 _solid,
                 _instancedSolid);
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: diagnostic-resources; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportLoadProgress(
+            $"renderer base-world subphase started: batch-selection; " +
+            $"sourceBatches={scene.TexturedBatches.Count}; " +
+            $"isolatedSurface={IsolatedWorldSurfaceIndex?.ToString() ?? "none"}");
         IReadOnlyList<MapRenderTexturedBatch> renderedBatches = isolateWorldSurface
             ? scene.TexturedBatches
                 .Select(batch => CreateIsolatedWorldSurfaceBatch(batch, IsolatedWorldSurfaceIndex!.Value))
@@ -1166,19 +1229,127 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                 .ToArray()
             : scene.TexturedBatches;
         _renderedWorldBatches = renderedBatches.ToArray();
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: batch-selection; " +
+            $"renderedBatches={renderedBatches.Count}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        int authoredCandidateCount = LoadProgressEnabled
+            ? scene.TexturedBatches.Count(batch =>
+                IncludesAuthoredProgramCandidate(
+                    HasAuthoredTechniquePass(batch.Pass)))
+            : 0;
+        ReportLoadProgress(
+            $"renderer base-world subphase started: authored-program-preflight; " +
+            $"sourceBatches={scene.TexturedBatches.Count}; " +
+            $"candidates={authoredCandidateCount}");
         IReadOnlySet<AuthoredProgramGroupKey> authorizedAuthoredProgramGroups =
             AuthorizeAtomicProgramGroups(
                 scene.TexturedBatches,
                 batch => IncludesAuthoredProgramCandidate(
                     HasAuthoredTechniquePass(batch.Pass)),
                 AuthoredProgramGroup,
-                PreflightAuthoredProgram);
-        _textured = renderedBatches
-            .Select(batch => CreateWorldTexturedResourceShell(
-                batch,
-                authorizedAuthoredProgramGroups))
-            .ToArray();
+                PreflightBaseWorldAuthoredProgram);
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: authored-program-preflight; " +
+            $"authorizedGroups={authorizedAuthoredProgramGroups.Count}; " +
+            $"programs={_authoredMaterials.ProgramCount}; " +
+            $"failures={_authoredMaterials.FailureCount}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportLoadProgress(
+            $"renderer base-world subphase started: resource-shells; " +
+            $"batches={renderedBatches.Count}; " +
+            $"authorizedGroups={authorizedAuthoredProgramGroups.Count}");
+        _textured = new GlTexturedMesh[renderedBatches.Count];
+        for (int index = 0; index < renderedBatches.Count; index++)
+        {
+            MapRenderTexturedBatch batch = renderedBatches[index];
+            if (!LoadProgressEnabled)
+            {
+                _textured[index] = CreateWorldTexturedResourceShell(
+                    batch,
+                    authorizedAuthoredProgramGroups);
+                continue;
+            }
+
+            long traceSequence = NextLoadBatchTraceSequence();
+            using var context = BeginLoadTraceContext(
+                $"base-world-resource={traceSequence}; " +
+                $"batch={index + 1}/{renderedBatches.Count}; " +
+                DescribeWorldBatchTraceContext(batch));
+            bool reportProgress =
+                index == 0 ||
+                (index + 1) % BaseWorldResourceProgressInterval == 0 ||
+                index == renderedBatches.Count - 1;
+            if (reportProgress)
+            {
+                ReportLoadDetail(
+                    "resource-shell progress checkpoint started");
+            }
+            long resourceStarted =
+                System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                GlTexturedMesh resource =
+                    CreateWorldTexturedResourceShell(
+                        batch,
+                        authorizedAuthoredProgramGroups);
+                _textured[index] = resource;
+                double elapsedMilliseconds =
+                    System.Diagnostics.Stopwatch
+                        .GetElapsedTime(resourceStarted)
+                        .TotalMilliseconds;
+                if (reportProgress || elapsedMilliseconds >= 250d)
+                {
+                    ReportLoadDetail(
+                        $"resource shell completed; " +
+                        $"slow={elapsedMilliseconds >= 250d}; " +
+                        $"executable={resource.IndexCount != 0}; " +
+                        $"translated={resource.RsxProgram.Handle != 0}; " +
+                        $"colorTextures={resource.ColorTextures?.Length ?? 0}; " +
+                        $"rsxSamplers={resource.RsxSamplerBindings?.Length ?? 0}; " +
+                        $"elapsed={elapsedMilliseconds:0}ms");
+                }
+            }
+            catch (Exception exception)
+            {
+                ReportLoadDetail(
+                    $"resource shell failed; " +
+                    $"exception={exception.GetType().FullName}; " +
+                    $"message={QuoteLoadTraceValue(exception.Message)}; " +
+                    $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(resourceStarted).TotalMilliseconds:0}ms");
+                throw;
+            }
+        }
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: resource-shells; " +
+            $"batches={_textured.Length}; " +
+            $"programs={_authoredMaterials.ProgramCount}; " +
+            $"textures={_textureHandles.Count}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportLoadProgress(
+            $"renderer base-world subphase started: geometry-arenas; " +
+            $"batches={renderedBatches.Count}");
         PackWorldGeometryArenas(renderedBatches);
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: geometry-arenas; " +
+            $"arenas={WorldGeometryArenaUploadCount}; " +
+            $"sourceBatches={WorldGeometrySourceBatchCount}; " +
+            $"bufferUploads={WorldGeometryImmutableBufferUploadCount}; " +
+            $"bufferBytes={WorldGeometryImmutableBufferUploadBytes}; " +
+            $"translatedArenas={WorldGeometryTranslatedArenaCount}; " +
+            $"maxTranslatedAttributes={WorldGeometryMaximumTranslatedArenaAttributeCount}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportLoadProgress(
+            $"renderer base-world subphase started: bounds; " +
+            $"batches={_textured.Length}");
         for (int index = 0; index < _textured.Length; index++)
         {
             GlTexturedMesh mesh = _textured[index];
@@ -1193,8 +1364,31 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                     batch.Vertices)
             };
         }
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: bounds; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportLoadProgress(
+            "renderer base-world subphase started: multidraw-groups");
         AssignWorldMultiDrawBatchGroupIds();
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: multidraw-groups; " +
+            $"colorGroups={_nextWorldMultiDrawBatchGroupId}; " +
+            $"depthGroups={_nextWorldDepthMultiDrawBatchGroupId}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
+        baseWorldSubphaseStarted =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportLoadProgress(
+            $"renderer base-world subphase started: surface-runtimes; " +
+            $"batches={renderedBatches.Count}");
         BuildWorldSurfaceBatchRuntimes(renderedBatches);
+        ReportLoadProgress(
+            $"renderer base-world subphase completed: surface-runtimes; " +
+            $"candidates={_worldSurfaceCandidateCount}; " +
+            $"candidateIndices={_worldSurfaceCandidateIndexCount}; " +
+            $"fallbackBatches={_worldSurfaceFallbackBatchCount}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(baseWorldSubphaseStarted).TotalMilliseconds:0}ms");
         RecordLoadPhase("base-world");
         BeginLoadPhase("world-receivers");
         InitializeWorldReceiverVariants(scene, isolateWorldSurface);

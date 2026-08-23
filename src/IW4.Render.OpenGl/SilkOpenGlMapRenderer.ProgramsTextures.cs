@@ -26,7 +26,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private uint[] CreateEditorRoleTextures(
         IReadOnlyList<MaterialSamplerBinding> bindings,
-        IReadOnlyList<EditorMaterialTextureRole> roles)
+        IReadOnlyList<EditorMaterialTextureRole> roles,
+        string? loadTraceRolePrefix = null)
     {
         var result = new uint[roles.Count];
         for (int roleIndex = 0; roleIndex < roles.Count; roleIndex++)
@@ -36,7 +37,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     roles[roleIndex]) is { } texture &&
                 CanUploadTexture(texture))
             {
-                result[roleIndex] = CreateTexture(texture);
+                result[roleIndex] = CreateTexture(
+                    texture,
+                    loadTraceRole: LoadProgressEnabled
+                        ? $"{loadTraceRolePrefix ?? "editor-role"}:" +
+                          roles[roleIndex]
+                        : null);
             }
         }
 
@@ -152,6 +158,54 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             vertexPlan!,
             usesStaticModelInstancing: false,
             out _).Handle != 0;
+    }
+
+    private bool PreflightBaseWorldAuthoredProgram(
+        MapRenderTexturedBatch batch)
+    {
+        if (!LoadProgressEnabled)
+            return PreflightAuthoredProgram(batch);
+
+        long traceSequence = NextLoadBatchTraceSequence();
+        using var context = BeginLoadTraceContext(
+            $"base-world-preflight={traceSequence}; " +
+            DescribeWorldBatchTraceContext(batch));
+        bool reportProgress =
+            traceSequence == 1 ||
+            traceSequence % BaseWorldPreflightProgressInterval == 0;
+        if (reportProgress)
+        {
+            ReportLoadDetail(
+                "authored-preflight progress checkpoint started");
+        }
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            bool ready = PreflightAuthoredProgram(batch);
+            double elapsedMilliseconds =
+                System.Diagnostics.Stopwatch
+                    .GetElapsedTime(started)
+                    .TotalMilliseconds;
+            if (reportProgress || elapsedMilliseconds >= 250d)
+            {
+                ReportLoadDetail(
+                    $"authored preflight completed; " +
+                    $"slow={elapsedMilliseconds >= 250d}; ready={ready}; " +
+                    $"programs={_authoredMaterials.ProgramCount}; " +
+                    $"failures={_authoredMaterials.FailureCount}; " +
+                    $"elapsed={elapsedMilliseconds:0}ms");
+            }
+            return ready;
+        }
+        catch (Exception exception)
+        {
+            ReportLoadDetail(
+                $"authored preflight failed; " +
+                $"exception={exception.GetType().FullName}; " +
+                $"message={QuoteLoadTraceValue(exception.Message)}; " +
+                $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0}ms");
+            throw;
+        }
     }
 
     private bool PreflightAuthoredProgram(
@@ -361,6 +415,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         out MapRenderOpenGlStaticModelProgramUniforms?
             staticModelUniforms)
     {
+        Action<string>? trace =
+            CreateLoadDetailReporter("authored program");
         staticModelUniforms = null;
         if (!_authoredMaterials.TryResolveRawProgramSources(
                 execution,
@@ -369,6 +425,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 out OpenGlAuthoredFragmentSource fragmentSource,
                 out string? blocker))
         {
+            trace?.Invoke(
+                $"preparation blocked; step=raw-source-resolution; " +
+                $"executionKey={QuoteLoadTraceValue(execution.ProgramCacheKey)}; " +
+                $"reason={QuoteLoadTraceValue(blocker)}");
             return default;
         }
 
@@ -381,6 +441,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 out OpenGlRsxShaderPackerMode shaderPackerMode,
                 out string fixedFunctionEpilogue))
         {
+            trace?.Invoke(
+                $"preparation blocked; step=fixed-function-composition; " +
+                $"executionKey={QuoteLoadTraceValue(execution.ProgramCacheKey)}");
             return default;
         }
 
@@ -395,6 +458,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _authoredMaterials.RecordPreparationFailure(
                 $"{execution.ProgramCacheKey}|mapFrameVertexConstants",
                 frameConstantBlocker);
+            trace?.Invoke(
+                $"preparation blocked; step=frame-constant-composition; " +
+                $"executionKey={QuoteLoadTraceValue(execution.ProgramCacheKey)}; " +
+                $"reason={QuoteLoadTraceValue(frameConstantBlocker)}");
             return default;
         }
 
@@ -414,6 +481,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _authoredMaterials.RecordPreparationFailure(
                     $"{execution.ProgramCacheKey}|staticModelInstancing",
                     compositionBlocker);
+                trace?.Invoke(
+                    $"preparation blocked; step=static-instance-composition; " +
+                    $"executionKey={QuoteLoadTraceValue(execution.ProgramCacheKey)}; " +
+                    $"reason={QuoteLoadTraceValue(compositionBlocker)}");
                 return default;
             }
             compositionReady = true;
@@ -455,6 +526,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             _authoredMaterials.RecordPreparationFailure(
                 $"{diagnosticIdentity}|sourceComposition",
                 blocker);
+            trace?.Invoke(
+                $"preparation blocked; step=fragment-source-composition; " +
+                $"executionKey={QuoteLoadTraceValue(execution.ProgramCacheKey)}; " +
+                $"reason={QuoteLoadTraceValue(exception.Message)}");
             return default;
         }
 
@@ -480,7 +555,16 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     usesFrameConstants,
                     compositionReady),
             out OpenGlProgramKey programKey,
-            out _);
+            out blocker,
+            trace);
+        if (program.Handle == 0)
+        {
+            trace?.Invoke(
+                $"program unavailable; " +
+                $"executionKey={QuoteLoadTraceValue(execution.ProgramCacheKey)}; " +
+                $"programKey={programKey}; " +
+                $"blocker={QuoteLoadTraceValue(blocker)}");
+        }
         if (program.Handle != 0 && compositionReady)
         {
             if (!_staticModelProgramUniforms.TryGetValue(
@@ -492,6 +576,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _authoredMaterials.RecordPreparationFailure(
                     $"{programKey}|staticModelUniforms",
                     missingUniformsBlocker);
+                trace?.Invoke(
+                    $"program unavailable; step=static-instance-uniform-bridge; " +
+                    $"programKey={programKey}; " +
+                    $"reason={QuoteLoadTraceValue(missingUniformsBlocker)}");
                 return default;
             }
             staticModelUniforms = uniforms;
@@ -593,8 +681,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private uint CreateTexture(
         Texture texture,
-        bool pinForRendererLifetime = false)
+        bool pinForRendererLifetime = false,
+        string? loadTraceRole = null)
     {
+        Action<string>? trace = null;
         AccountTexturePayload(texture);
         if (!TryDescribeTextureUpload(
                 texture,
@@ -613,11 +703,33 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     cachedHandle,
                     out MapRenderOpenGlTextureResidencyEntry cachedEntry))
             {
+                trace = CreateTextureLoadTrace(
+                    texture,
+                    loadTraceRole,
+                    pinForRendererLifetime);
+                trace?.Invoke(
+                    $"cached texture pin started; handle={cachedHandle}");
                 PinTextureEntry(cachedEntry);
+                trace?.Invoke(
+                    $"cached texture pin completed; handle={cachedHandle}; " +
+                    $"resident={cachedEntry.IsResident}");
             }
             return cachedHandle;
         }
 
+        trace = CreateTextureLoadTrace(
+            texture,
+            loadTraceRole,
+            pinForRendererLifetime);
+        trace?.Invoke(
+            $"new texture allocation started; " +
+            $"binding={QuoteLoadTraceValue(texture.BindingIdentity)}; " +
+            $"target={texture.Target}; faces={faceCount}; " +
+            $"storageLevels={storageLevelCount}; " +
+            $"estimatedResidentBytes={estimatedResidentBytes}; " +
+            $"directAuthoredBc={usesDirectAuthoredBcUpload}");
+
+        trace?.Invoke("driver glGenTexture started");
         uint handle = _gl.GenTexture();
         TextureTarget textureTarget = ToGlTextureTarget(texture.Target);
         bool isPinned = pinForRendererLifetime;
@@ -633,23 +745,38 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 _state.ActiveTexture(0);
                 previousTexture =
                     _state.GetTextureBinding(0, textureTarget);
+                trace?.Invoke(
+                    $"driver texture bind started; path=state-shadow; " +
+                    $"target={textureTarget}; handle={handle}");
                 _state.BindTexture(textureTarget, handle);
             }
             else
             {
+                trace?.Invoke(
+                    $"driver glBindTexture started; " +
+                    $"target={textureTarget}; handle={handle}");
                 _gl.BindTexture(textureTarget, handle);
             }
             try
             {
+                trace?.Invoke(
+                    "driver glPixelStore started; " +
+                    "parameter=UnpackAlignment; value=1");
                 _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
                 InitializeTextureFallbackStorageBound(
                     textureTarget,
-                    faceCount);
+                    faceCount,
+                    trace);
+                trace?.Invoke("texture parameter application started");
                 _textureParameters.Apply(
                     texture,
                     maxMipLevel: 0,
-                    textureTarget);
+                    textureTarget,
+                    trace);
+                trace?.Invoke("texture parameter application completed");
 
+                trace?.Invoke(
+                    $"residency cache add started; handle={handle}");
                 MapRenderOpenGlTextureResidencyEntry entry =
                     _textureHandles.Add(
                         texture,
@@ -662,9 +789,16 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         authoredBcPlan,
                         usesDirectAuthoredBcUpload);
                 cached = true;
+                trace?.Invoke(
+                    $"residency cache add completed; handle={handle}; " +
+                    $"cacheEntries={_textureHandles.Count}");
                 if (isPinned)
                 {
+                    trace?.Invoke(
+                        $"pinned storage upload started; handle={handle}");
                     UploadTextureStorageBound(entry);
+                    trace?.Invoke(
+                        $"pinned storage upload completed; handle={handle}");
                     entry.MarkResident(
                         _activeRenderFrameIndex >= 0
                             ? _activeRenderFrameIndex
@@ -675,6 +809,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             {
                 if (useStateShadow)
                 {
+                    trace?.Invoke(
+                        $"driver texture binding restore started; " +
+                        $"path=state-shadow; target={textureTarget}; " +
+                        $"handle={previousTexture}; unit={previousTextureUnit}");
                     _state.BindTexture(
                         textureTarget,
                         previousTexture);
@@ -682,13 +820,22 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 }
                 else
                 {
+                    trace?.Invoke(
+                        $"driver glBindTexture restore started; " +
+                        $"target={textureTarget}; handle=0");
                     _gl.BindTexture(textureTarget, 0);
                 }
             }
+            trace?.Invoke(
+                $"request completed; path=new-texture; handle={handle}");
             return handle;
         }
-        catch
+        catch (Exception exception)
         {
+            trace?.Invoke(
+                $"request failed; exception={exception.GetType().FullName}; " +
+                $"message={QuoteLoadTraceValue(exception.Message)}; " +
+                $"handle={handle}");
             if (cached)
             {
                 if (_textureHandles.TryGetEntry(
@@ -699,8 +846,28 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 }
                 _textureHandles.Remove(texture, handle);
             }
+            trace?.Invoke(
+                $"driver glDeleteTexture started; handle={handle}");
             _gl.DeleteTexture(handle);
             throw;
+        }
+
+        Action<string>? CreateTextureLoadTrace(
+            Texture source,
+            string? role,
+            bool pinned)
+        {
+            if (!LoadProgressEnabled)
+                return null;
+
+            long sequence = NextLoadTextureTraceSequence();
+            Action<string>? result = CreateLoadDetailReporter(
+                $"texture seq={sequence}; " +
+                $"role={QuoteLoadTraceValue(role ?? "unspecified")}; " +
+                $"name={QuoteLoadTraceValue(source.Name)}");
+            result?.Invoke(
+                $"request selected for detailed trace; pinned={pinned}");
+            return result;
         }
     }
 
@@ -1126,7 +1293,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void InitializeTextureFallbackStorageBound(
         TextureTarget target,
-        int faceCount)
+        int faceCount,
+        Action<string>? trace = null)
     {
         ReadOnlySpan<byte> fallback = [255, 255, 255, 255];
         fixed (byte* pixelPtr = fallback)
@@ -1137,6 +1305,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     ? (TextureTarget)(
                         (int)TextureTarget.TextureCubeMapPositiveX + face)
                     : TextureTarget.Texture2D;
+                trace?.Invoke(
+                    $"driver fallback glTexImage2D started; " +
+                    $"face={face + 1}/{faceCount}; " +
+                    $"target={uploadTarget}; size=1x1");
                 _gl.TexImage2D(
                     uploadTarget,
                     level: 0,
@@ -1330,50 +1502,109 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 vertexSource,
                 fragmentSource,
                 LinkProfileIdentity);
+        Action<string>? trace = null;
+        if (LoadProgressEnabled)
+        {
+            long sequence = NextLoadProgramTraceSequence();
+            trace = CreateLoadDetailReporter(
+                $"program seq={sequence}; key={key}");
+            trace?.Invoke(
+                $"resolution started; " +
+                $"vertexChars={vertexSource.Length}; " +
+                $"fragmentChars={fragmentSource.Length}; " +
+                $"vertexSha256={key.VertexGlslSha256}; " +
+                $"fragmentSha256={key.PixelGlslSha256}");
+        }
         if (_sceneProgramResolutions.TryGetValue(
                 key,
                 out OpenGlLinkedProgramHandleResolution
                     sceneResolution))
         {
+            trace?.Invoke(
+                $"scene-resolution cache hit; " +
+                $"ready={sceneResolution.IsReady}; " +
+                $"handle={sceneResolution.Handle}");
             return sceneResolution with { IsReuse = true };
         }
 
-        OpenGlLinkedProgramHandleResolution resolution =
-            _sharedProgramUsage.GetOrLink(
+        trace?.Invoke("shared-resolution lookup started");
+        bool linkInvoked = false;
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        OpenGlLinkedProgramHandleResolution resolution;
+        using (BeginProgramDriverTrace(trace))
+        {
+            resolution = _sharedProgramUsage.GetOrLink(
                 vertexSource,
                 fragmentSource,
-                () => LinkProgram(vertexSource, fragmentSource));
+                () =>
+                {
+                    linkInvoked = true;
+                    trace?.Invoke("shared-resolution miss; new link started");
+                    return LinkProgram(
+                        vertexSource,
+                        fragmentSource,
+                        trace);
+                });
+        }
+        trace?.Invoke(
+            $"shared-resolution lookup completed; " +
+            $"path={(linkInvoked ? "new-link" : "shared-cache-reuse")}; " +
+            $"ready={resolution.IsReady}; " +
+            $"reuse={resolution.IsReuse}; " +
+            $"cacheOwnsHandle={resolution.CacheOwnsHandle}; " +
+            $"cacheResident={resolution.IsCacheResident}; " +
+            $"handle={resolution.Handle}; " +
+            $"failure={QuoteLoadTraceValue(resolution.FailureReason)}; " +
+            $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0}ms");
         if (!resolution.IsCacheResident)
         {
             _sceneProgramResolutions.Add(key, resolution);
             if (resolution.IsReady)
                 _sceneOwnedProgramHandles.Add(resolution.Handle);
         }
+        trace?.Invoke("resolution completed");
         return resolution;
     }
 
-    private uint LinkProgram(string vertexSource, string fragmentSource)
+    private uint LinkProgram(
+        string vertexSource,
+        string fragmentSource,
+        Action<string>? trace)
     {
         _shaderCompilationCounter.RecordProgramCompilationAttempt();
         MapRenderOpenGlLoadShaderObjectCache? shaderObjectCache =
             _activeLoadShaderObjectCache;
-        uint vertexShader = shaderObjectCache?.GetOrCompile(
-                ShaderType.VertexShader,
-                vertexSource) ??
-            CompileShader(ShaderType.VertexShader, vertexSource);
+        uint vertexShader = AcquireShader(
+            ShaderType.VertexShader,
+            vertexSource,
+            "vertex");
         try
         {
-            uint fragmentShader = shaderObjectCache?.GetOrCompile(
-                    ShaderType.FragmentShader,
-                    fragmentSource) ??
-                CompileShader(ShaderType.FragmentShader, fragmentSource);
+            uint fragmentShader = AcquireShader(
+                ShaderType.FragmentShader,
+                fragmentSource,
+                "fragment");
             try
             {
+                trace?.Invoke("driver glCreateProgram started");
                 uint program = _gl.CreateProgram();
+                trace?.Invoke(
+                    $"driver glAttachShader started; stage=vertex; " +
+                    $"program={program}; shader={vertexShader}");
                 _gl.AttachShader(program, vertexShader);
+                trace?.Invoke(
+                    $"driver glAttachShader started; stage=fragment; " +
+                    $"program={program}; shader={fragmentShader}");
                 _gl.AttachShader(program, fragmentShader);
+                trace?.Invoke(
+                    $"driver glLinkProgram started; program={program}");
                 _gl.LinkProgram(program);
+                trace?.Invoke(
+                    $"driver link-status query started; program={program}");
                 _gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int status);
+                trace?.Invoke(
+                    $"driver link-status query completed; " +
+                    $"program={program}; status={status}");
                 if (status != 0)
                 {
                     if (shaderObjectCache is not null)
@@ -1381,14 +1612,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         // Linking has copied the executable into the program.
                         // Detach shared load-scoped objects so deleting the
                         // cache at the end of Load actually releases them.
+                        trace?.Invoke(
+                            $"driver glDetachShader started; stage=vertex; " +
+                            $"program={program}");
                         _gl.DetachShader(program, vertexShader);
+                        trace?.Invoke(
+                            $"driver glDetachShader started; stage=fragment; " +
+                            $"program={program}");
                         _gl.DetachShader(program, fragmentShader);
                     }
 
+                    trace?.Invoke(
+                        $"new link completed; program={program}");
                     return program;
                 }
 
+                trace?.Invoke(
+                    $"driver program-info-log query started; program={program}");
                 string info = _gl.GetProgramInfoLog(program);
+                trace?.Invoke(
+                    $"driver program-info-log query completed; " +
+                    $"program={program}; chars={info.Length}");
                 _gl.DeleteProgram(program);
                 throw new InvalidOperationException(
                     $"OpenGL program link failed: {info}");
@@ -1404,21 +1648,83 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             if (shaderObjectCache is null)
                 _gl.DeleteShader(vertexShader);
         }
+
+        uint AcquireShader(
+            ShaderType type,
+            string source,
+            string stage)
+        {
+            MapRenderOpenGlShaderObjectCacheTelemetry before =
+                trace is not null && shaderObjectCache is not null
+                    ? shaderObjectCache.CreateTelemetry()
+                    : default;
+            trace?.Invoke(
+                $"shader-object acquisition started; " +
+                $"stage={stage}; chars={source.Length}");
+            uint shader = shaderObjectCache?.GetOrCompile(type, source) ??
+                CompileShader(type, source);
+            string path = "uncached-compile";
+            if (trace is not null && shaderObjectCache is not null)
+            {
+                MapRenderOpenGlShaderObjectCacheTelemetry after =
+                    shaderObjectCache.CreateTelemetry();
+                path = after.CacheHitCount > before.CacheHitCount
+                    ? "load-cache-reuse"
+                    : after.SuccessfulCompilationCount >
+                        before.SuccessfulCompilationCount
+                        ? "compiled"
+                        : "unknown";
+            }
+            trace?.Invoke(
+                $"shader-object acquisition completed; " +
+                $"stage={stage}; path={path}; handle={shader}");
+            return shader;
+        }
     }
 
     private uint CompileShader(ShaderType type, string source)
     {
+        Action<string>? trace = _activeProgramDriverTrace;
+        string stage = type == ShaderType.VertexShader
+            ? "vertex"
+            : type == ShaderType.FragmentShader
+                ? "fragment"
+                : type.ToString();
+        trace?.Invoke(
+            $"driver glCreateShader started; stage={stage}; " +
+            $"chars={source.Length}");
         uint shader = _gl.CreateShader(type);
+        trace?.Invoke(
+            $"driver glShaderSource started; stage={stage}; " +
+            $"handle={shader}; chars={source.Length}");
         _gl.ShaderSource(shader, source);
+        trace?.Invoke(
+            $"driver glCompileShader started; stage={stage}; " +
+            $"handle={shader}");
         _gl.CompileShader(shader);
+        trace?.Invoke(
+            $"driver compile-status query started; stage={stage}; " +
+            $"handle={shader}");
         _gl.GetShader(shader, ShaderParameterName.CompileStatus, out int status);
+        trace?.Invoke(
+            $"driver compile-status query completed; stage={stage}; " +
+            $"handle={shader}; status={status}");
         if (status == 0)
         {
+            trace?.Invoke(
+                $"driver shader-info-log query started; stage={stage}; " +
+                $"handle={shader}");
             string info = _gl.GetShaderInfoLog(shader);
+            trace?.Invoke(
+                $"driver shader-info-log query completed; stage={stage}; " +
+                $"handle={shader}; chars={info.Length}");
             _gl.DeleteShader(shader);
             throw new InvalidOperationException($"OpenGL {type} compile failed: {info}");
         }
 
+        trace?.Invoke(
+            $"shader compilation completed; stage={stage}; " +
+            $"handle={shader}");
         return shader;
     }
 

@@ -36,82 +36,130 @@ internal sealed class SilkOpenGlTextureParameters
     internal void Apply(
         Texture texture,
         int maxMipLevel,
-        TextureTarget textureTarget)
+        TextureTarget textureTarget,
+        Action<string>? trace = null)
     {
         ArgumentNullException.ThrowIfNull(texture);
         ApplySwizzle(
             RsxTextureSwizzleDecoder.Decode(
                 texture.RsxTextureCommandState),
-            textureTarget);
-        ApplySampler(texture.DecodedSamplerState, maxMipLevel, textureTarget);
+            textureTarget,
+            trace);
+        ApplySampler(
+            texture.DecodedSamplerState,
+            maxMipLevel,
+            textureTarget,
+            trace);
     }
 
     internal void ApplySwizzle(
         RsxTextureSwizzle swizzle,
-        TextureTarget textureTarget)
+        TextureTarget textureTarget,
+        Action<string>? trace = null)
     {
-        _gl.TexParameter(
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureSwizzleR,
-            ToGlTextureSwizzle(swizzle.Red));
-        _gl.TexParameter(
+            ToGlTextureSwizzle(swizzle.Red),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureSwizzleG,
-            ToGlTextureSwizzle(swizzle.Green));
-        _gl.TexParameter(
+            ToGlTextureSwizzle(swizzle.Green),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureSwizzleB,
-            ToGlTextureSwizzle(swizzle.Blue));
-        _gl.TexParameter(
+            ToGlTextureSwizzle(swizzle.Blue),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureSwizzleA,
-            ToGlTextureSwizzle(swizzle.Alpha));
+            ToGlTextureSwizzle(swizzle.Alpha),
+            trace);
     }
 
     internal void ApplySampler(
         RsxSamplerState sampler,
         int maxMipLevel,
-        TextureTarget textureTarget)
+        TextureTarget textureTarget,
+        Action<string>? trace = null)
     {
         bool useMipChain = maxMipLevel > 0 &&
             sampler.MipFilter != TextureFilter.None;
-        _gl.TexParameter(
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureMinFilter,
-            (int)ToMinFilter(sampler, useMipChain));
-        _gl.TexParameter(
+            (int)ToMinFilter(sampler, useMipChain),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureMagFilter,
-            (int)ToMagFilter(sampler.MagFilter));
-        _gl.TexParameter(
+            (int)ToMagFilter(sampler.MagFilter),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureBaseLevel,
-            0);
-        _gl.TexParameter(
+            0,
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureMaxLevel,
-            useMipChain ? maxMipLevel : 0);
-        _gl.TexParameter(textureTarget, TextureLodBias, sampler.MipLodBias);
-        _gl.TexParameter(
+            useMipChain ? maxMipLevel : 0,
+            trace);
+        SetTextureParameter(
+            textureTarget,
+            TextureLodBias,
+            sampler.MipLodBias,
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureWrapS,
-            (int)ToWrapMode(sampler.AddressU));
-        _gl.TexParameter(
+            (int)ToWrapMode(sampler.AddressU),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureWrapT,
-            (int)ToWrapMode(sampler.AddressV));
-        _gl.TexParameter(
+            (int)ToWrapMode(sampler.AddressV),
+            trace);
+        SetTextureParameter(
             textureTarget,
             TextureParameterName.TextureWrapR,
-            (int)ToWrapMode(sampler.AddressW));
+            (int)ToWrapMode(sampler.AddressW),
+            trace);
 
         if (sampler.MaxAnisotropy > 1 && _anisotropicFilteringSupported)
         {
-            _gl.TexParameter(
+            SetTextureParameter(
                 textureTarget,
                 TextureMaxAnisotropyExt,
-                Math.Clamp((float)sampler.MaxAnisotropy, 1f, 16f));
+                Math.Clamp((float)sampler.MaxAnisotropy, 1f, 16f),
+                trace);
         }
+    }
+
+    private void SetTextureParameter(
+        TextureTarget textureTarget,
+        TextureParameterName name,
+        int value,
+        Action<string>? trace)
+    {
+        trace?.Invoke(
+            $"driver glTexParameter started; target={textureTarget}; " +
+            $"parameter={name}; value={value}");
+        _gl.TexParameter(textureTarget, name, value);
+    }
+
+    private void SetTextureParameter(
+        TextureTarget textureTarget,
+        TextureParameterName name,
+        float value,
+        Action<string>? trace)
+    {
+        trace?.Invoke(
+            $"driver glTexParameter started; target={textureTarget}; " +
+            $"parameter={name}; value={value:R}");
+        _gl.TexParameter(textureTarget, name, value);
     }
 
     private static int ToGlTextureSwizzle(

@@ -15,7 +15,7 @@ internal static class D3dbspLightingCodec
         ReadOnlySpan<byte> rowPayload,
         ReadOnlySpan<byte> entryPayload,
         ReadOnlySpan<byte> colorPayload,
-        uint sunPrimaryLightIndex,
+        uint lastSunPrimaryLightIndex,
         bool hasLightRegions)
     {
         if (headerPayload.Length < LightGridHeaderSize)
@@ -56,12 +56,26 @@ internal static class D3dbspLightingCodec
         }
 
         GfxLightGridEntry[] entries = DecodeLightGridEntries(entryPayload);
-        byte[] rawRowData = DecodeLightGridRows(rowPayload, rowDataStart, entries.Length);
+        byte[] rawRowData;
+        if (entries.Length == 0)
+        {
+            mins = [0, 0, 0];
+            maxs = [0, 0, 0];
+            rowAxis = GfxLightGridHorizontalAxis.X;
+            colAxis = GfxLightGridHorizontalAxis.Y;
+            rowDataStart = [ushort.MaxValue];
+            rawRowData = rowPayload.ToArray();
+        }
+        else
+        {
+            rawRowData = DecodeLightGridRows(rowPayload, rowDataStart, entries.Length);
+        }
+
         GfxLightGridColors[] colors = DecodeLightGridColors(colorPayload);
         var lightGrid = new GfxLightGrid
         {
             HasLightRegionsRaw = hasLightRegions ? Ps3BooleanTrueRaw : 0u,
-            SunPrimaryLightIndex = sunPrimaryLightIndex,
+            SunPrimaryLightIndex = lastSunPrimaryLightIndex,
             Mins = mins,
             Maxs = maxs,
             RowAxis = rowAxis,
@@ -83,8 +97,32 @@ internal static class D3dbspLightingCodec
     public static IReadOnlyList<GfxLightRegion> DecodeLightRegions(
         ReadOnlySpan<byte> regionPayload,
         ReadOnlySpan<byte> hullPayload,
-        ReadOnlySpan<byte> axisPayload)
+        ReadOnlySpan<byte> axisPayload,
+        int primaryLightCount,
+        bool hasLightRegions)
     {
+        if (primaryLightCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(primaryLightCount));
+        if (!hasLightRegions)
+        {
+            if (!regionPayload.IsEmpty || !hullPayload.IsEmpty || !axisPayload.IsEmpty)
+            {
+                throw new InvalidDataException(
+                    "Light-region payloads cannot be supplied when the light-region lump is absent.");
+            }
+
+            var emptyRegions = new GfxLightRegion[primaryLightCount];
+            for (int index = 0; index < emptyRegions.Length; index++)
+                emptyRegions[index] = new GfxLightRegion();
+            return emptyRegions;
+        }
+
+        if (regionPayload.Length != primaryLightCount)
+        {
+            throw new InvalidDataException(
+                $"Light-region payload contains {regionPayload.Length} regions but ComWorld contains {primaryLightCount} primary lights.");
+        }
+
         if (hullPayload.Length % LightRegionHullSize != 0)
         {
             throw new InvalidDataException(
@@ -303,9 +341,17 @@ internal static class D3dbspLightingCodec
         return data;
     }
 
-    public static byte[] EncodeLightRegions(IReadOnlyList<GfxLightRegion> regions)
+    public static byte[] EncodeLightRegions(
+        IReadOnlyList<GfxLightRegion> regions,
+        bool hasLightRegions)
     {
         ArgumentNullException.ThrowIfNull(regions);
+        if (!hasLightRegions)
+        {
+            ValidateAbsentLightRegions(regions);
+            return [];
+        }
+
         var data = new byte[regions.Count];
         for (int regionIndex = 0; regionIndex < regions.Count; regionIndex++)
         {
@@ -323,9 +369,17 @@ internal static class D3dbspLightingCodec
         return data;
     }
 
-    public static byte[] EncodeLightRegionHulls(IReadOnlyList<GfxLightRegion> regions)
+    public static byte[] EncodeLightRegionHulls(
+        IReadOnlyList<GfxLightRegion> regions,
+        bool hasLightRegions)
     {
         ArgumentNullException.ThrowIfNull(regions);
+        if (!hasLightRegions)
+        {
+            ValidateAbsentLightRegions(regions);
+            return [];
+        }
+
         int hullCount = CountHulls(regions);
         var data = new byte[checked(hullCount * LightRegionHullSize)];
         int outputIndex = 0;
@@ -351,9 +405,17 @@ internal static class D3dbspLightingCodec
         return data;
     }
 
-    public static byte[] EncodeLightRegionAxes(IReadOnlyList<GfxLightRegion> regions)
+    public static byte[] EncodeLightRegionAxes(
+        IReadOnlyList<GfxLightRegion> regions,
+        bool hasLightRegions)
     {
         ArgumentNullException.ThrowIfNull(regions);
+        if (!hasLightRegions)
+        {
+            ValidateAbsentLightRegions(regions);
+            return [];
+        }
+
         int axisCount = CountAxes(regions);
         var data = new byte[checked(axisCount * GfxLightRegionAxis.SerializedSize)];
         int outputIndex = 0;
@@ -624,6 +686,20 @@ internal static class D3dbspLightingCodec
         }
 
         return axisCount;
+    }
+
+    private static void ValidateAbsentLightRegions(IReadOnlyList<GfxLightRegion> regions)
+    {
+        for (int regionIndex = 0; regionIndex < regions.Count; regionIndex++)
+        {
+            GfxLightRegion region = RequireRegion(regions, regionIndex);
+            ValidateHullCount(region, regionIndex);
+            if (region.HullCount != 0)
+            {
+                throw new InvalidDataException(
+                    $"Light region {regionIndex} contains hulls while light regions are marked absent.");
+            }
+        }
     }
 
     private static GfxLightRegion RequireRegion(

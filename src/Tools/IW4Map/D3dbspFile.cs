@@ -48,12 +48,20 @@ internal sealed class D3dbspFile
         }
 
         var descriptors = new (D3dbspLumpType Type, uint Length)[chunkCount];
+        var seenTypes = new HashSet<D3dbspLumpType>();
         Span<byte> descriptor = stackalloc byte[ChunkDescriptorSize];
         for (int index = 0; index < descriptors.Length; index++)
         {
             ReadExactly(stream, descriptor, $"chunk descriptor {index}");
+            var type = (D3dbspLumpType)BinaryPrimitives.ReadUInt32LittleEndian(descriptor);
+            if (!seenTypes.Add(type))
+            {
+                throw new InvalidDataException(
+                    $"The d3dbsp directory contains duplicate {FormatType(type)} chunks.");
+            }
+
             descriptors[index] = (
-                (D3dbspLumpType)BinaryPrimitives.ReadUInt32LittleEndian(descriptor),
+                type,
                 BinaryPrimitives.ReadUInt32LittleEndian(descriptor[4..]));
         }
 

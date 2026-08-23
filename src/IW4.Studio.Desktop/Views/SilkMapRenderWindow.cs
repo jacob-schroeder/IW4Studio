@@ -330,7 +330,9 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             _sceneSnapshot,
             _interaction.Camera,
             initialAspectRatio,
-            LivePreviewDebugDump.Write);
+            LivePreviewDebugDump.IsEnabled
+                ? LivePreviewDebugDump.Write
+                : null);
         LivePreviewDebugDump.Write(
             $"OpenGL map renderer Load completed; " +
             $"elapsed={Stopwatch.GetElapsedTime(rendererLoadStarted).TotalMilliseconds:0}ms");
