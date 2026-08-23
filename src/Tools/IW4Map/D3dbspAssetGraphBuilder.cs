@@ -28,7 +28,8 @@ internal static class D3dbspAssetGraphBuilder
     public static D3dbspAssetGraph Build(
         string inputPath,
         string assetName,
-        bool forceFullbright)
+        bool forceFullbright,
+        int ps3WorldDrawPayloadCapacity)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ValidateAssetName(assetName);
@@ -212,6 +213,7 @@ internal static class D3dbspAssetGraphBuilder
             renderMaterials,
             comWorld.PrimaryLightCount,
             sunPrimaryLightIndex,
+            ps3WorldDrawPayloadCapacity,
             checksum,
             lightGrid,
             lightRegions);

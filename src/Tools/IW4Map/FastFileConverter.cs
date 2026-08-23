@@ -1,5 +1,6 @@
 using System.Globalization;
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Assets.StringTable;
@@ -126,11 +127,16 @@ internal static class FastFileConverter
         if (File.Exists(outputPath))
             throw new IOException($"Output file '{outputPath}' already exists.");
 
+        using FastFileWorkspace template = FastFileInspector.Open(templatePath);
+        GfxWorldAsset templateWorld =
+            FastFileInspector.GetSingle<GfxWorldAsset>(template) ??
+            throw new InvalidDataException(
+                $"The template fastfile '{templatePath}' does not contain exactly one GfxWorld asset.");
         D3dbspAssetGraph graph = D3dbspAssetGraphBuilder.Build(
             inputPath,
             assetName,
-            forceFullbright);
-        using FastFileWorkspace template = FastFileInspector.Open(templatePath);
+            forceFullbright,
+            templateWorld.UmbraGateCount);
         HashSet<AssetKey> mapMaterialKeys = graph.DependencyReferences
             .Where(asset => asset.SerializedAssetType == XAssetType.Material)
             .Select(AssetKey.FromDefinition)

@@ -314,13 +314,13 @@ internal static class FastFileD3dbspEncoder
                 "Strict d3dbsp encoding does not support dynamic-entity visibility data.");
         }
         if (gfx.HeroOnlyLightCount != 0 || gfx.HeroOnlyLights.Count != 0 ||
-            gfx.UmbraGateCount != 0 || gfx.UmbraGateData.Any(value => value != 0) ||
-            gfx.UmbraGateData2.Any(value => value != 0))
+            HasUnsupportedPs3WorldDrawPayload(gfx))
         {
             throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support hero-only lights or Umbra gates " +
+                "Strict d3dbsp encoding does not support hero-only lights or noncanonical " +
+                "PS3 world-draw payload state " +
                 $"(hero {gfx.HeroOnlyLightCount}/{gfx.HeroOnlyLights.Count}, " +
-                $"Umbra {gfx.UmbraGateCount}/{gfx.UmbraGateData.Count}/{gfx.UmbraGateData2.Count}).");
+                $"draw payload {gfx.UmbraGateCount}/{gfx.UmbraGateData.Count}/{gfx.UmbraGateData2.Count}).");
         }
 
         GfxWorldDraw draw = gfx.WorldDraw;
@@ -374,6 +374,24 @@ internal static class FastFileD3dbspEncoder
             throw new NotSupportedException(
                 "The render sun-primary-light index is not canonical for the primary-light table.");
         }
+    }
+
+    private static bool HasUnsupportedPs3WorldDrawPayload(GfxWorldAsset gfx)
+    {
+        if (gfx.UmbraGateCount < 0 || gfx.UmbraGateCount > int.MaxValue - 0x1000)
+            return true;
+
+        int reservationSize = checked(gfx.UmbraGateCount + 0x1000);
+        return !IsEmptyOrZeroReservation(gfx.UmbraGateData, reservationSize) ||
+               !IsEmptyOrZeroReservation(gfx.UmbraGateData2, reservationSize);
+    }
+
+    private static bool IsEmptyOrZeroReservation(
+        IReadOnlyList<byte> data,
+        int reservationSize)
+    {
+        return data.Count == 0 ||
+               (data.Count == reservationSize && !data.Any(value => value != 0));
     }
 
     private static void ValidateEmptyDerivedGraphs(FxWorldAsset fx, GameWorldMpAsset game)

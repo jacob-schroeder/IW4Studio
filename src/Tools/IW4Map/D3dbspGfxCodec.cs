@@ -15,6 +15,10 @@ internal static class D3dbspGfxCodec
     private const int PositionStride = 16;
     private const int LayerStride = 28;
     private const byte NoLightmapIndex = 0x1f;
+    private const int SortKeyLitDecal = 0x06;
+    private const int SortKeyEffectDecal = 0x27;
+    private const int SortKeyEffectAuto = 0x30;
+    private const int SortKeyDistortion = 0x2b;
     internal const string FullbrightPrimaryLightmapImageName = "*lightmap0_primary";
     internal const string FullbrightSecondaryLightmapImageName = "*lightmap0_secondary";
 
@@ -24,6 +28,7 @@ internal static class D3dbspGfxCodec
         IReadOnlyList<MaterialAsset> materials,
         int primaryLightCount,
         int sunPrimaryLightIndex,
+        int ps3WorldDrawPayloadCapacity,
         uint checksum,
         GfxLightGrid lightGrid,
         IReadOnlyList<GfxLightRegion> lightRegions)
@@ -42,6 +47,11 @@ internal static class D3dbspGfxCodec
         {
             throw new InvalidDataException(
                 $"The light-region table has {lightRegions.Count} rows; expected {primaryLightCount}.");
+        }
+        if (ps3WorldDrawPayloadCapacity <= 0)
+        {
+            throw new InvalidDataException(
+                "The PS3 template GfxWorld has no world-draw payload capacity.");
         }
 
         ReadOnlySpan<byte> triangleBytes = SelectRequiredLump(
@@ -262,6 +272,10 @@ internal static class D3dbspGfxCodec
             SkyCount = 0,
             SunPrimaryLightIndex = sunPrimaryLightIndex,
             PrimaryLightCount = primaryLightCount,
+            SortKeyLitDecal = SortKeyLitDecal,
+            SortKeyEffectDecal = SortKeyEffectDecal,
+            SortKeyEffectAuto = SortKeyEffectAuto,
+            SortKeyDistortion = SortKeyDistortion,
             DpvsPlanes = new GfxWorldDpvsPlanes
             {
                 CellCount = 1,
@@ -355,7 +369,10 @@ internal static class D3dbspGfxCodec
             },
             MapVertexChecksum = 0,
             FogTypesAllowed = FogTypesAllowed.Normal,
-            Pad279To27B = [0, 0, 0]
+            Pad279To27B = [0, 0, 0],
+            // PS3 extends GfxWorld with two alternating fragment-program upload arenas.
+            // Native rejects draw-route publication when this byte capacity is zero.
+            UmbraGateCount = ps3WorldDrawPayloadCapacity
         };
     }
 
