@@ -169,7 +169,7 @@ internal static class FastFileD3dbspEncoder
             !clip.MapEnts.EntityStringBytes.SequenceEqual(ents.EntityStringBytes))
         {
             throw new NotSupportedException(
-                "The ClipMap MapEnts reference does not match the owned MapEnts root.");
+                "The ClipMap MapEnts reference does not match the loaded MapEnts asset.");
         }
         if (clip.Checksum != gfx.Checksum)
             throw new NotSupportedException("The ClipMap and GfxWorld checksums differ.");

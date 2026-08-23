@@ -25,16 +25,31 @@ public sealed class OpenGlSharedProgramCache : IDisposable
 
     public OpenGlSharedProgramCache(
         GL deletionApi,
-        int maximumEntryCount = DefaultMaximumEntryCount)
+        int maximumEntryCount = DefaultMaximumEntryCount,
+        string? programBinaryCacheDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(deletionApi);
         if (maximumEntryCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(maximumEntryCount));
 
+        if (programBinaryCacheDirectory is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                programBinaryCacheDirectory);
+        }
+
         _deletionApi = deletionApi;
+        OpenGlProgramBinaryDiskCache? programBinaries =
+            programBinaryCacheDirectory is null
+                ? null
+                : new OpenGlProgramBinaryDiskCache(
+                    deletionApi,
+                    programBinaryCacheDirectory,
+                    maximumEntryCount);
         _handles = new OpenGlLinkedProgramHandleCache(
             LinkProfileIdentity,
-            maximumEntryCount);
+            maximumEntryCount,
+            programBinaries);
         _ownerThreadId = Environment.CurrentManagedThreadId;
     }
 
@@ -65,6 +80,18 @@ public sealed class OpenGlSharedProgramCache : IDisposable
     public long CapacityBypassCount =>
         CreateTelemetry().CapacityBypassCount;
 
+    public bool ProgramBinaryPersistenceEnabled =>
+        CreateTelemetry().ProgramBinaryPersistenceEnabled;
+
+    public long ProgramBinaryLoadAttemptCount =>
+        CreateTelemetry().ProgramBinaryLoadAttemptCount;
+
+    public long ProgramBinaryLoadHitCount =>
+        CreateTelemetry().ProgramBinaryLoadHitCount;
+
+    public long ProgramBinaryStoreCount =>
+        CreateTelemetry().ProgramBinaryStoreCount;
+
     public int ActiveUsageLaneCount
     {
         get
@@ -74,9 +101,10 @@ public sealed class OpenGlSharedProgramCache : IDisposable
         }
     }
 
-    internal UsageLease AcquireUsageLease()
+    internal UsageLease AcquireUsageLease(GL currentContextApi)
     {
         EnsureUsableOnOwnerThread();
+        ArgumentNullException.ThrowIfNull(currentContextApi);
         int usageLane;
         if (_availableUsageLanes.Count != 0)
         {
@@ -94,11 +122,15 @@ public sealed class OpenGlSharedProgramCache : IDisposable
             throw new InvalidOperationException(
                 $"OpenGL program-cache usage lane {usageLane} is already active.");
         }
-        return new UsageLease(this, usageLane);
+        return new UsageLease(
+            this,
+            currentContextApi,
+            usageLane);
     }
 
     private OpenGlLinkedProgramHandleResolution GetOrLink(
         int usageLane,
+        GL currentContextApi,
         string vertexGlsl,
         string pixelGlsl,
         Func<uint> link)
@@ -110,6 +142,7 @@ public sealed class OpenGlSharedProgramCache : IDisposable
                 $"OpenGL program-cache usage lane {usageLane} is not active.");
         }
         return _handles.GetOrLink(
+            currentContextApi,
             vertexGlsl,
             pixelGlsl,
             link,
@@ -216,16 +249,30 @@ public sealed class OpenGlSharedProgramCache : IDisposable
     internal sealed class UsageLease : IDisposable
     {
         private OpenGlSharedProgramCache? _owner;
+        private readonly GL _currentContextApi;
 
         internal UsageLease(
             OpenGlSharedProgramCache owner,
+            GL currentContextApi,
             int usageLane)
         {
             _owner = owner;
+            _currentContextApi = currentContextApi;
             UsageLane = usageLane;
         }
 
         internal int UsageLane { get; }
+
+        internal bool ProgramBinaryPersistenceEnabled
+        {
+            get
+            {
+                OpenGlSharedProgramCache owner =
+                    _owner ?? throw new ObjectDisposedException(
+                        nameof(UsageLease));
+                return owner.ProgramBinaryPersistenceEnabled;
+            }
+        }
 
         internal OpenGlLinkedProgramHandleResolution GetOrLink(
             string vertexGlsl,
@@ -237,6 +284,7 @@ public sealed class OpenGlSharedProgramCache : IDisposable
                     nameof(UsageLease));
             return owner.GetOrLink(
                 UsageLane,
+                _currentContextApi,
                 vertexGlsl,
                 pixelGlsl,
                 link);

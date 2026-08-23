@@ -306,6 +306,10 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             shareGroupLease.ProgramCache.SuccessfulLinkCount;
         long linkReusesBefore =
             shareGroupLease.ProgramCache.LinkReuseCount;
+        long binaryHitsBefore =
+            shareGroupLease.ProgramCache.ProgramBinaryLoadHitCount;
+        long binaryStoresBefore =
+            shareGroupLease.ProgramCache.ProgramBinaryStoreCount;
         LivePreviewDebugDump.Write(
             "OpenGL map renderer construction started");
         _renderer = new SilkOpenGlMapRenderer(
@@ -346,6 +350,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         string programReuse =
             $"OpenGL program reuse for '{_scene.Name}': " +
             $"newLinks={shareGroupLease.ProgramCache.SuccessfulLinkCount - successfulLinksBefore}, " +
+            $"binaryHits={shareGroupLease.ProgramCache.ProgramBinaryLoadHitCount - binaryHitsBefore}, " +
+            $"binaryStores={shareGroupLease.ProgramCache.ProgramBinaryStoreCount - binaryStoresBefore}, " +
             $"reusedLinks={shareGroupLease.ProgramCache.LinkReuseCount - linkReusesBefore}, " +
             $"cached={shareGroupLease.ProgramCache.CachedProgramCount}/" +
             $"{shareGroupLease.ProgramCache.MaximumEntryCount}, " +

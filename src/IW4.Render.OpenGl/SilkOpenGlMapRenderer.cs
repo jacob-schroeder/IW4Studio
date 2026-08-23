@@ -744,7 +744,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _sharedProgramCache = sharedProgramCache;
         _ownsSharedProgramCache = ownsSharedProgramCache;
         _sharedProgramUsage =
-            sharedProgramCache.AcquireUsageLease();
+            sharedProgramCache.AcquireUsageLease(gl);
         try
         {
             _state = new SilkOpenGlStateShadow(gl);
@@ -1584,7 +1584,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             $"Renderer load timing: " +
             $"{string.Join(", ", rendererLoadPhases)}, " +
             $"linkedPrograms=requests:{linkedProgramTelemetry.SemanticRequestCount}/" +
-            $"unique:{linkedProgramTelemetry.SuccessfulUniqueLinkCount}/" +
+            $"sourceLinked:{linkedProgramTelemetry.SuccessfulUniqueLinkCount}/" +
+            $"binaryHits:{linkedProgramTelemetry.ProgramBinaryLoadHitCount}/" +
+            $"binaryAttempts:{linkedProgramTelemetry.ProgramBinaryLoadAttemptCount}/" +
+            $"binaryStores:{linkedProgramTelemetry.ProgramBinaryStoreCount}/" +
             $"reused:{linkedProgramTelemetry.LinkReuseCount}/" +
             $"failed:{linkedProgramTelemetry.FailedUniqueLinkCount}/" +
             $"capacityBypass:{linkedProgramTelemetry.CapacityBypassCount}/" +

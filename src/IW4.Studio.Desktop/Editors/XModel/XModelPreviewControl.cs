@@ -7,6 +7,7 @@ using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
+using IW4.Studio.Desktop.Persistence;
 using Silk.NET.OpenGL;
 
 namespace IW4.Studio.Desktop.Editors.XModel;
@@ -161,7 +162,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         try
         {
             _renderer = new SilkXModelViewerRenderer(
-                GL.GetApi(gl.GetProcAddress));
+                GL.GetApi(gl.GetProcAddress),
+                OpenGlProgramBinaryCachePath.GetDirectory());
             _uploadRequired = true;
         }
         catch (Exception exception) when (exception is

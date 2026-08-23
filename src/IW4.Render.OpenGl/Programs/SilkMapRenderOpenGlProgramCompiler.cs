@@ -14,16 +14,19 @@ public sealed class SilkMapRenderOpenGlProgramCompiler :
     IMapRenderOpenGlLinkedProgramDescriber
 {
     private readonly GL _gl;
+    private readonly bool _requestRetrievableBinary;
 
     public SilkMapRenderOpenGlProgramCompiler(
         GL gl,
         string contextIdentity,
-        string linkProfileIdentity)
+        string linkProfileIdentity,
+        bool requestRetrievableBinary = false)
     {
         ArgumentNullException.ThrowIfNull(gl);
         ArgumentException.ThrowIfNullOrWhiteSpace(contextIdentity);
         ArgumentException.ThrowIfNullOrWhiteSpace(linkProfileIdentity);
         _gl = gl;
+        _requestRetrievableBinary = requestRetrievableBinary;
         ContextIdentity = contextIdentity;
         LinkProfileIdentity = linkProfileIdentity;
     }
@@ -116,6 +119,13 @@ public sealed class SilkMapRenderOpenGlProgramCompiler :
                 uint program = _gl.CreateProgram();
                 _gl.AttachShader(program, vertexShader);
                 _gl.AttachShader(program, fragmentShader);
+                if (_requestRetrievableBinary)
+                {
+                    _gl.ProgramParameter(
+                        program,
+                        ProgramParameterPName.BinaryRetrievableHint,
+                        1);
+                }
                 _gl.LinkProgram(program);
                 _gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int status);
                 if (status != 0)

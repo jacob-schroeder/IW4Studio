@@ -1,3 +1,5 @@
+using Silk.NET.OpenGL;
+
 namespace IW4.Render.OpenGl.Programs;
 
 /// <summary>
@@ -15,6 +17,7 @@ internal sealed class OpenGlLinkedProgramHandleCache
         OpenGlLinkedProgramHandleCacheKey,
         OpenGlLinkedProgramHandleResolution> _resolutions = [];
     private readonly HashSet<uint> _ownedHandles = [];
+    private readonly OpenGlProgramBinaryDiskCache? _programBinaries;
     private readonly string _linkProfileIdentity;
     private readonly int _maximumEntryCount;
     private readonly int _ownerThreadId =
@@ -25,25 +28,32 @@ internal sealed class OpenGlLinkedProgramHandleCache
     private long _linkReuseCount;
     private long _failedUniqueLinkCount;
     private long _capacityBypassCount;
+    private long _programBinaryLoadAttemptCount;
+    private long _programBinaryLoadHitCount;
+    private long _programBinaryStoreCount;
 
     internal OpenGlLinkedProgramHandleCache(
         string linkProfileIdentity,
-        int maximumEntryCount = int.MaxValue)
+        int maximumEntryCount = int.MaxValue,
+        OpenGlProgramBinaryDiskCache? programBinaries = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(linkProfileIdentity);
         if (maximumEntryCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(maximumEntryCount));
         _linkProfileIdentity = linkProfileIdentity;
         _maximumEntryCount = maximumEntryCount;
+        _programBinaries = programBinaries;
     }
 
     internal OpenGlLinkedProgramHandleResolution GetOrLink(
+        GL currentContextApi,
         string vertexGlsl,
         string pixelGlsl,
         Func<uint> link,
         int usageLane = 0)
     {
         EnsureOwnerThread();
+        ArgumentNullException.ThrowIfNull(currentContextApi);
         ArgumentNullException.ThrowIfNull(vertexGlsl);
         ArgumentNullException.ThrowIfNull(pixelGlsl);
         ArgumentNullException.ThrowIfNull(link);
@@ -66,8 +76,6 @@ internal sealed class OpenGlLinkedProgramHandleCache
             return cached with { IsReuse = true };
         }
 
-        _uniqueLinkAttemptCount =
-            checked(_uniqueLinkAttemptCount + 1);
         bool cacheResolution = _resolutions.Count < _maximumEntryCount;
         if (!cacheResolution)
         {
@@ -77,7 +85,31 @@ internal sealed class OpenGlLinkedProgramHandleCache
         OpenGlLinkedProgramHandleResolution resolution;
         try
         {
-            uint handle = link();
+            bool isProgramBinaryLoad = false;
+            uint handle = 0;
+            if (_programBinaries?.IsAvailable == true)
+            {
+                _programBinaryLoadAttemptCount = checked(
+                    _programBinaryLoadAttemptCount + 1);
+                if (_programBinaries.TryLoad(
+                        currentContextApi,
+                        key.ProgramKey,
+                        vertexGlsl,
+                        pixelGlsl,
+                        out handle))
+                {
+                    isProgramBinaryLoad = true;
+                    _programBinaryLoadHitCount = checked(
+                        _programBinaryLoadHitCount + 1);
+                }
+            }
+
+            if (!isProgramBinaryLoad)
+            {
+                _uniqueLinkAttemptCount = checked(
+                    _uniqueLinkAttemptCount + 1);
+                handle = link();
+            }
             if (handle == 0)
             {
                 throw new InvalidOperationException(
@@ -91,12 +123,26 @@ internal sealed class OpenGlLinkedProgramHandleCache
 
             if (cacheResolution)
                 _ownedHandles.Add(handle);
-            _successfulUniqueLinkCount =
-                checked(_successfulUniqueLinkCount + 1);
+            if (!isProgramBinaryLoad)
+            {
+                _successfulUniqueLinkCount = checked(
+                    _successfulUniqueLinkCount + 1);
+                if (_programBinaries?.TryStore(
+                        currentContextApi,
+                        key.ProgramKey,
+                        vertexGlsl,
+                        pixelGlsl,
+                        handle) == true)
+                {
+                    _programBinaryStoreCount = checked(
+                        _programBinaryStoreCount + 1);
+                }
+            }
             resolution = new(
                 Handle: handle,
                 FailureReason: null,
                 IsReuse: false,
+                IsProgramBinaryLoad: isProgramBinaryLoad,
                 CacheOwnsHandle: cacheResolution,
                 IsCacheResident: cacheResolution);
         }
@@ -108,6 +154,7 @@ internal sealed class OpenGlLinkedProgramHandleCache
                 Handle: 0,
                 FailureReason: exception.Message,
                 IsReuse: false,
+                IsProgramBinaryLoad: false,
                 CacheOwnsHandle: false,
                 IsCacheResident: cacheResolution);
         }
@@ -137,6 +184,14 @@ internal sealed class OpenGlLinkedProgramHandleCache
             LinkReuseCount: _linkReuseCount,
             FailedUniqueLinkCount: _failedUniqueLinkCount,
             CapacityBypassCount: _capacityBypassCount,
+            ProgramBinaryPersistenceEnabled:
+                _programBinaries?.IsAvailable == true,
+            ProgramBinaryLoadAttemptCount:
+                _programBinaryLoadAttemptCount,
+            ProgramBinaryLoadHitCount:
+                _programBinaryLoadHitCount,
+            ProgramBinaryStoreCount:
+                _programBinaryStoreCount,
             CachedEntryCount: _resolutions.Count,
             CachedHandleCount: _ownedHandles.Count,
             MaximumEntryCount: _maximumEntryCount);
@@ -153,6 +208,9 @@ internal sealed class OpenGlLinkedProgramHandleCache
         _linkReuseCount = 0;
         _failedUniqueLinkCount = 0;
         _capacityBypassCount = 0;
+        _programBinaryLoadAttemptCount = 0;
+        _programBinaryLoadHitCount = 0;
+        _programBinaryStoreCount = 0;
     }
 
     private void EnsureOwnerThread()
@@ -174,6 +232,7 @@ internal readonly record struct
         uint Handle,
         string? FailureReason,
         bool IsReuse,
+        bool IsProgramBinaryLoad,
         bool CacheOwnsHandle,
         bool IsCacheResident)
 {
@@ -190,6 +249,10 @@ internal readonly record struct
         long LinkReuseCount,
         long FailedUniqueLinkCount,
         long CapacityBypassCount,
+        bool ProgramBinaryPersistenceEnabled,
+        long ProgramBinaryLoadAttemptCount,
+        long ProgramBinaryLoadHitCount,
+        long ProgramBinaryStoreCount,
         int CachedEntryCount,
         int CachedHandleCount,
         int MaximumEntryCount);

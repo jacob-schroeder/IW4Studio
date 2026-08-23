@@ -121,7 +121,9 @@ internal sealed class EditorPresentationSession : IDisposable
                 new SilkMapRenderOpenGlProgramCompiler(
                     gl,
                     contextIdentity,
-                    linkProfileIdentity),
+                    linkProfileIdentity,
+                    sharedProgramUsage
+                        .ProgramBinaryPersistenceEnabled),
                 compilationCounter,
                 sharedProgramUsage);
             var colorAllocator =

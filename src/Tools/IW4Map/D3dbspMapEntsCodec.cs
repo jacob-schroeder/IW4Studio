@@ -7,6 +7,14 @@ namespace IW4Map;
 
 internal static class D3dbspMapEntsCodec
 {
+    private static readonly string[] MultiplayerSpawnFallbackClassnames =
+    [
+        "mp_dm_spawn",
+        "mp_tdm_spawn",
+        "mp_tdm_spawn_allies_start",
+        "mp_tdm_spawn_axis_start"
+    ];
+
     private static readonly HashSet<string> PurgeableClassnames = new(
         [
             "misc_model",
@@ -30,9 +38,68 @@ internal static class D3dbspMapEntsCodec
                 output.Write(source[entity.Begin..entity.End]);
         }
 
+        AppendMultiplayerSpawnFallbacks(output, entities);
         output.WriteByte(0);
         return output.ToArray();
     }
+
+    private static void AppendMultiplayerSpawnFallbacks(
+        Stream output,
+        IReadOnlyList<ParsedEntity> entities)
+    {
+        ParsedEntity[] sourceStarts = entities
+            .Where(entity => entity.HasClassname("info_player_start"))
+            .ToArray();
+        if (sourceStarts.Length == 0)
+            return;
+
+        foreach (string classname in MultiplayerSpawnFallbackClassnames)
+        {
+            if (entities.Any(entity => entity.HasClassname(classname)))
+                continue;
+
+            foreach (ParsedEntity sourceStart in sourceStarts)
+                WriteSyntheticSpawn(output, sourceStart, classname);
+        }
+
+        const string intermissionClassname = "mp_global_intermission";
+        if (!entities.Any(entity => entity.HasClassname(intermissionClassname)))
+            WriteSyntheticSpawn(output, sourceStarts[0], intermissionClassname);
+    }
+
+    private static void WriteSyntheticSpawn(
+        Stream output,
+        ParsedEntity source,
+        string classname)
+    {
+        string origin = source.GetRequiredValue("origin");
+        ParseVec3(origin, $"{classname} fallback origin");
+
+        string angles;
+        if (source.TryGetValue("angles", out string authoredAngles))
+        {
+            ParseVec3(authoredAngles, $"{classname} fallback angles");
+            angles = authoredAngles;
+        }
+        else if (source.TryGetValue("angle", out string authoredYaw))
+        {
+            float yaw = ParseSingle(authoredYaw, $"{classname} fallback angle");
+            angles = $"0 {yaw.ToString("R", CultureInfo.InvariantCulture)} 0";
+        }
+        else
+        {
+            angles = "0 0 0";
+        }
+
+        WriteLatin1(
+            output,
+            $"\n{{\n\"origin\" \"{origin}\"\n" +
+            $"\"angles\" \"{angles}\"\n" +
+            $"\"classname\" \"{classname}\"\n}}");
+    }
+
+    private static void WriteLatin1(Stream output, string value) =>
+        output.Write(Encoding.Latin1.GetBytes(value));
 
     public static IReadOnlyList<Stage> DecodeStages(ReadOnlySpan<byte> source)
     {
@@ -194,6 +261,10 @@ internal static class D3dbspMapEntsCodec
 
         public bool ContainsKey(string key) => _values.ContainsKey(key);
 
+        public bool HasClassname(string classname) =>
+            TryGetValue("classname", out string value) &&
+            string.Equals(value, classname, StringComparison.OrdinalIgnoreCase);
+
         public bool TryGetValue(string key, out string value)
         {
             if (_values.TryGetValue(key, out string? found))
@@ -209,7 +280,7 @@ internal static class D3dbspMapEntsCodec
         public string GetRequiredValue(string key) =>
             TryGetValue(key, out string value)
                 ? value
-                : throw new InvalidDataException($"A runtime stage entity has no '{key}' value.");
+                : throw new InvalidDataException($"An entity has no '{key}' value.");
     }
 
     private ref struct EntityParser

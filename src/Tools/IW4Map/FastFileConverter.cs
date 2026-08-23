@@ -1,4 +1,10 @@
+using System.Globalization;
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.Material;
+using IW4.Assets.Assets.Physics;
+using IW4.Assets.Assets.StringTable;
+using IW4.Assets.Assets.XModel;
+using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
@@ -8,6 +14,64 @@ namespace IW4Map;
 
 internal static class FastFileConverter
 {
+    // Exact PS3 FFA startup closure for the us_army/opforce_airborne factions.
+    private static readonly string[] BootstrapXModelNames =
+    [
+        "mp_body_army_sniper",
+        "head_allies_us_army_sniper",
+        "viewhands_sniper_us_army",
+        "mp_body_us_army_lmg",
+        "head_us_army_a",
+        "head_us_army_b",
+        "head_us_army_c",
+        "head_us_army_d",
+        "head_us_army_f",
+        "viewhands_us_army",
+        "mp_body_us_army_lmg_b",
+        "mp_body_us_army_lmg_c",
+        "mp_body_us_army_assault_a",
+        "mp_body_us_army_assault_b",
+        "mp_body_us_army_assault_c",
+        "mp_body_us_army_shotgun",
+        "mp_body_us_army_shotgun_b",
+        "mp_body_us_army_shotgun_c",
+        "mp_body_us_army_smg",
+        "mp_body_us_army_smg_b",
+        "mp_body_us_army_smg_c",
+        "mp_body_us_army_riot",
+        "head_us_army_e",
+        "mp_body_airborne_assault_a",
+        "head_airborne_a",
+        "head_airborne_b",
+        "head_airborne_c",
+        "head_airborne_d",
+        "head_airborne_e",
+        "viewhands_russian_airborne",
+        "mp_body_airborne_assault_b",
+        "mp_body_airborne_assault_c",
+        "mp_body_airborne_lmg",
+        "mp_body_airborne_lmg_b",
+        "mp_body_airborne_lmg_c",
+        "mp_body_airborne_shotgun",
+        "mp_body_airborne_shotgun_b",
+        "mp_body_airborne_shotgun_c",
+        "mp_body_airborne_smg",
+        "mp_body_airborne_smg_b",
+        "mp_body_airborne_smg_c",
+        "mp_body_op_airborne_sniper",
+        "head_op_airborne_sniper",
+        "viewhands_sniper_op_airborne",
+        "mp_body_riot_op_airborne",
+        "head_riot_op_airborne",
+        "mp_body_ally_sniper_ghillie_urban",
+        "head_allies_sniper_ghillie_urban",
+        "viewhands_ghillie_urban",
+        "mp_body_op_sniper_ghillie_urban",
+        "head_op_sniper_ghillie_urban",
+        "com_plasticcase_rangers",
+        "com_plasticcase_ussr"
+    ];
+
     public static void ToD3dbsp(string input, string output)
     {
         string inputPath = Path.GetFullPath(input);
@@ -67,6 +131,25 @@ internal static class FastFileConverter
             assetName,
             forceFullbright);
         using FastFileWorkspace template = FastFileInspector.Open(templatePath);
+        HashSet<AssetKey> mapMaterialKeys = graph.DependencyReferences
+            .Where(asset => asset.SerializedAssetType == XAssetType.Material)
+            .Select(AssetKey.FromDefinition)
+            .ToHashSet();
+        (
+            IReadOnlyList<XModelAsset> bootstrapXModels,
+            IReadOnlyList<BaseAsset> bootstrapModelProviders,
+            IReadOnlySet<AssetKey> bootstrapExternalProviderKeys,
+            int bootstrapXModelSurfsCount,
+            int bootstrapMaterialReferenceCount,
+            int bootstrapPhysPresetReferenceCount) =
+            ResolveBootstrapXModelGraph(
+                template,
+                templatePath,
+                mapMaterialKeys);
+        StringTableAsset bootstrapStringTable = CreateBootstrapStringTable(
+            assetName,
+            graph.Checksum,
+            out string signedChecksum);
 
         LinkAssetPool baseAssets = template.InitialLinkRequest.Assets;
         var existingKeys = baseAssets.Providers
@@ -81,11 +164,27 @@ internal static class FastFileConverter
             foreach (LinkAssetProvider provider in missingAssets.Providers)
                 existingKeys.Add(provider.Key);
         }
+        baseAssets = baseAssets.WithoutProviders(bootstrapExternalProviderKeys);
+        existingKeys.ExceptWith(bootstrapExternalProviderKeys);
 
-        var newSources = new List<LinkAssetProviderSource>(graph.Roots.Count);
+        var newSources = new List<LinkAssetProviderSource>(
+            graph.Roots.Count + graph.NestedAssets.Count +
+            bootstrapModelProviders.Count + 1);
         var externalFallbackNames = new List<string>();
         foreach (BaseAsset root in graph.Roots)
             newSources.Add(new LinkAssetProviderSource(root).AsAuthoredDetached());
+        foreach (BaseAsset nestedAsset in graph.NestedAssets)
+        {
+            newSources.Add(
+                new LinkAssetProviderSource(nestedAsset).AsAuthoredDetached());
+        }
+        newSources.Add(
+            new LinkAssetProviderSource(bootstrapStringTable).AsAuthoredDetached());
+        foreach (BaseAsset provider in bootstrapModelProviders)
+        {
+            newSources.Add(
+                new LinkAssetProviderSource(provider).AsAuthoredDetached());
+        }
 
         foreach (BaseAsset dependency in graph.DependencyReferences)
         {
@@ -100,9 +199,18 @@ internal static class FastFileConverter
 
         LinkAssetPool assets = baseAssets
             .WithHighestPrecedenceProviders(newSources);
-        LinkRoot[] roots = graph.Roots
-            .Select((asset, index) => CreateOwnedRoot(index, asset))
-            .ToArray();
+        var roots = new List<LinkRoot>(
+            graph.Roots.Count + bootstrapXModels.Count + 1);
+        roots.AddRange(graph.Roots.Select(CreateOwnedRoot));
+        roots.Add(CreateBootstrapRoot(
+            "iw4map:bootstrap:stringtable:dm",
+            bootstrapStringTable));
+        for (int index = 0; index < bootstrapXModels.Count; index++)
+        {
+            roots.Add(CreateBootstrapRoot(
+                $"iw4map:bootstrap:xmodel:{index}:{BootstrapXModelNames[index]}",
+                bootstrapXModels[index]));
+        }
         var request = new ZoneLinkRequest(
             assets,
             roots,
@@ -133,10 +241,20 @@ internal static class FastFileConverter
 
         WriteNewFileAtomically(outputPath, packageBytes.Span);
 
-        int referenceCount = newSources.Count - graph.Roots.Count;
         Console.WriteLine($"wrote: {outputPath}");
         Console.WriteLine($"map-asset: {assetName}");
-        Console.WriteLine($"owned-map-roots: {roots.Length}");
+        Console.WriteLine($"owned-map-roots: {graph.Roots.Count}");
+        Console.WriteLine($"nested-map-assets: {graph.NestedAssets.Count}");
+        Console.WriteLine($"owned-bootstrap-roots: {bootstrapXModels.Count + 1}");
+        Console.WriteLine($"owned-roots: {roots.Count}");
+        Console.WriteLine($"bootstrap-stringtable: {bootstrapStringTable.Name}");
+        Console.WriteLine($"bootstrap-mapcrc: {signedChecksum}");
+        Console.WriteLine($"bootstrap-xmodels: {bootstrapXModels.Count}");
+        Console.WriteLine($"bootstrap-xmodelsurfs: {bootstrapXModelSurfsCount}");
+        Console.WriteLine(
+            $"bootstrap-material-references: {bootstrapMaterialReferenceCount}");
+        Console.WriteLine(
+            $"bootstrap-physpreset-references: {bootstrapPhysPresetReferenceCount}");
         Console.WriteLine($"template-providers: {template.InitialLinkRequest.Assets.Providers.Count}");
         Console.WriteLine($"dependency-fastfiles: {dependencyPaths.Length}");
         Console.WriteLine(
@@ -144,14 +262,14 @@ internal static class FastFileConverter
                 ? "lighting-mode: source has no compiled lightmaps"
                 : $"lighting-mode: forced fullbright; discarded {graph.DiscardedLightByteCount} compiled light bytes");
         Console.WriteLine($"available-providers: {baseAssets.Providers.Count}");
-        Console.WriteLine($"external-reference-fallbacks: {referenceCount}");
+        Console.WriteLine($"external-reference-fallbacks: {externalFallbackNames.Count}");
         foreach (string referenceName in externalFallbackNames)
             Console.WriteLine($"external-reference: {referenceName}");
         Console.WriteLine($"decoded-zone-bytes: {decodedBytes.Length}");
         Console.WriteLine($"fastfile-bytes: {packageBytes.Length}");
     }
 
-    private static LinkRoot CreateOwnedRoot(int index, BaseAsset asset)
+    private static LinkRoot CreateOwnedRoot(BaseAsset asset, int index)
     {
         string name = asset.SerializedAssetName ??
             throw new InvalidDataException($"{asset.SerializedAssetType} root has no serialized name.");
@@ -162,6 +280,257 @@ internal static class FastFileConverter
             AssetKey.FromDefinition(asset),
             name,
             opaqueHeader: null);
+    }
+
+    private static LinkRoot CreateBootstrapRoot(string entryId, BaseAsset asset)
+    {
+        string name = asset.SerializedAssetName ??
+            throw new InvalidDataException(
+                $"{asset.SerializedAssetType} bootstrap root has no serialized name.");
+        return new LinkRoot(
+            entryId,
+            asset.SerializedAssetType,
+            LinkRootIntent.Owned,
+            AssetKey.FromDefinition(asset),
+            name,
+            opaqueHeader: null);
+    }
+
+    private static (
+        IReadOnlyList<XModelAsset> Models,
+        IReadOnlyList<BaseAsset> Providers,
+        IReadOnlySet<AssetKey> ExternalProviderKeys,
+        int XModelSurfsCount,
+        int MaterialReferenceCount,
+        int PhysPresetReferenceCount) ResolveBootstrapXModelGraph(
+        FastFileWorkspace template,
+        string templatePath,
+        IReadOnlySet<AssetKey> mapMaterialKeys)
+    {
+        ArgumentNullException.ThrowIfNull(mapMaterialKeys);
+        var models = new XModelAsset[BootstrapXModelNames.Length];
+        var missingNames = new List<string>();
+        var fullProviders = template.LoadedZone.Context.AssetPool.Slots
+            .SelectMany(slot => slot.Providers)
+            .Where(provider => !provider.IsReferencePlaceholder)
+            .OrderByDescending(provider =>
+                provider.Owner == template.LoadedZone.Context.ZoneOwner)
+            .ThenBy(provider => provider.RegistrationSequence)
+            .ToArray();
+        for (int index = 0; index < BootstrapXModelNames.Length; index++)
+        {
+            string name = BootstrapXModelNames[index];
+            XModelAsset? model = fullProviders.FirstOrDefault(
+                candidate =>
+                    candidate.Owner == template.LoadedZone.Context.ZoneOwner &&
+                    candidate.AssetType == XAssetType.XModel &&
+                    string.Equals(
+                        candidate.Name,
+                        name,
+                        StringComparison.Ordinal) &&
+                    candidate.Asset is XModelAsset)?.Asset as XModelAsset;
+            if (model is null)
+            {
+                missingNames.Add(name);
+                continue;
+            }
+
+            models[index] = model;
+        }
+
+        if (missingNames.Count != 0)
+        {
+            throw new InvalidDataException(
+                $"Template fastfile '{templatePath}' does not contain full XModel " +
+                $"providers for the {missingNames.Count} required PS3 FFA bootstrap " +
+                $"asset(s): {string.Join(", ", missingNames)}.");
+        }
+
+        var authoredProviders = new List<BaseAsset>(models.Length);
+        var authoredKeys = new HashSet<AssetKey>();
+        foreach (XModelAsset model in models)
+        {
+            if (authoredKeys.Add(AssetKey.FromDefinition(model)))
+                authoredProviders.Add(model);
+        }
+
+        int modelSurfsCount = 0;
+        var missingModelSurfs = new List<string>();
+        foreach (XModelAsset model in models)
+        {
+            foreach (XModelSurfsAsset retained in model.Lods
+                .Select(lod => lod.ModelSurfs)
+                .Where(modelSurfs => modelSurfs is not null)
+                .Cast<XModelSurfsAsset>())
+            {
+                AssetKey key = AssetKey.FromDefinition(retained);
+                if (authoredKeys.Contains(key))
+                    continue;
+
+                XModelSurfsAsset? modelSurfs = fullProviders.FirstOrDefault(
+                    candidate =>
+                        candidate.AssetType == XAssetType.XModelSurfs &&
+                        candidate.Asset is XModelSurfsAsset asset &&
+                        AssetKey.FromDefinition(asset) == key)?.Asset as XModelSurfsAsset;
+                if (modelSurfs is null)
+                {
+                    missingModelSurfs.Add(
+                        $"{model.SerializedAssetName} -> {retained.SerializedAssetName}");
+                    continue;
+                }
+
+                authoredKeys.Add(key);
+                authoredProviders.Add(modelSurfs);
+                modelSurfsCount++;
+            }
+        }
+
+        if (missingModelSurfs.Count != 0)
+        {
+            throw new InvalidDataException(
+                $"Template workspace for '{templatePath}' does not contain full " +
+                $"XModelSurfs providers for the required PS3 FFA bootstrap model graph: " +
+                $"{string.Join(", ", missingModelSurfs)}.");
+        }
+        if (modelSurfsCount != 105)
+        {
+            throw new InvalidDataException(
+                $"Template fastfile '{templatePath}' PS3 FFA bootstrap graph contains " +
+                $"{modelSurfsCount} unique full XModelSurfs provider key(s); " +
+                "the hardware-proven closure requires exactly 105.");
+        }
+
+        MaterialAsset[] materialDependencies = models
+            .SelectMany(model => model.Materials)
+            .OfType<MaterialAsset>()
+            .DistinctBy(AssetKey.FromDefinition)
+            .Where(material => !mapMaterialKeys.Contains(
+                AssetKey.FromDefinition(material)))
+            .ToArray();
+        PhysPresetAsset[] physPresetDependencies = models
+            .Select(model => model.PhysPreset)
+            .OfType<PhysPresetAsset>()
+            .DistinctBy(AssetKey.FromDefinition)
+            .ToArray();
+        if (materialDependencies.Length != 98 || physPresetDependencies.Length != 1)
+        {
+            throw new InvalidDataException(
+                $"Template fastfile '{templatePath}' PS3 FFA bootstrap dependency " +
+                $"closure contains {materialDependencies.Length} externalizable Material " +
+                $"and {physPresetDependencies.Length} PhysPreset provider key(s); " +
+                "the hardware-proven closure requires exactly 98 and 1.");
+        }
+
+        var externalProviderKeys = new HashSet<AssetKey>();
+        foreach (MaterialAsset material in materialDependencies)
+        {
+            MaterialAsset reference = CreateMaterialReference(material);
+            AssetKey key = AssetKey.FromDefinition(reference);
+            externalProviderKeys.Add(key);
+            authoredProviders.Add(reference);
+        }
+        foreach (PhysPresetAsset physPreset in physPresetDependencies)
+        {
+            PhysPresetAsset reference = CreatePhysPresetReference(physPreset);
+            AssetKey key = AssetKey.FromDefinition(reference);
+            externalProviderKeys.Add(key);
+            authoredProviders.Add(reference);
+        }
+
+        return (
+            Array.AsReadOnly(models),
+            authoredProviders.AsReadOnly(),
+            externalProviderKeys,
+            modelSurfsCount,
+            materialDependencies.Length,
+            physPresetDependencies.Length);
+    }
+
+    private static MaterialAsset CreateMaterialReference(MaterialAsset source) =>
+        new()
+        {
+            Info = new MaterialInfo
+            {
+                Name = CreateExternalReferenceName(source)
+            }
+        };
+
+    private static PhysPresetAsset CreatePhysPresetReference(
+        PhysPresetAsset source) =>
+        new()
+        {
+            Name = CreateExternalReferenceName(source)
+        };
+
+    private static string CreateExternalReferenceName(BaseAsset source)
+    {
+        string name = source.SerializedAssetName ?? throw new InvalidDataException(
+            $"{source.SerializedAssetType} bootstrap dependency has no serialized name.");
+        if (name.Length == 0 || name.Contains('\0'))
+        {
+            throw new InvalidDataException(
+                $"{source.SerializedAssetType} bootstrap dependency has invalid name '{name}'.");
+        }
+
+        return name[0] == ',' ? name : "," + name;
+    }
+
+    private static StringTableAsset CreateBootstrapStringTable(
+        string assetName,
+        uint checksum,
+        out string signedChecksum)
+    {
+        string mapName = Path.GetFileNameWithoutExtension(
+            assetName.Replace('\\', '/'));
+        if (mapName.Length == 0)
+        {
+            throw new InvalidDataException(
+                $"Map asset name '{assetName}' has no basename for its PS3 configstring table.");
+        }
+
+        signedChecksum = unchecked((int)checksum).ToString(CultureInfo.InvariantCulture);
+        string tableName =
+            $"mp/configstrings/configstrings_ps3_{mapName}_dm.csv";
+        return new StringTableAsset
+        {
+            Name = tableName,
+            ColumnCount = 2,
+            RowCount = 2,
+            Cells =
+            [
+                CreateStringTableCell("111"),
+                CreateStringTableCell("mapcrc"),
+                CreateStringTableCell("311"),
+                CreateStringTableCell(signedChecksum)
+            ]
+        };
+    }
+
+    private static StringTableCell CreateStringTableCell(string value) =>
+        new()
+        {
+            String = value,
+            Hash = CalculateStringTableHash(value)
+        };
+
+    private static int CalculateStringTableHash(string value)
+    {
+        uint hash = 0;
+        foreach (char character in value)
+        {
+            if (character > 0x7f)
+            {
+                throw new InvalidDataException(
+                    $"PS3 configstring value '{value}' contains a non-ASCII character.");
+            }
+
+            byte current = (byte)character;
+            if (current is >= (byte)'A' and <= (byte)'Z')
+                current += (byte)('a' - 'A');
+            hash = unchecked(hash * 31 + current);
+        }
+
+        return unchecked((int)hash);
     }
 
     private static void RequireDifferentPath(

@@ -1,3 +1,4 @@
+using System.Text;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.ComWorld;
@@ -8,6 +9,7 @@ using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
+using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.XModel;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
@@ -16,7 +18,9 @@ namespace IW4Map;
 
 internal sealed record D3dbspAssetGraph(
     IReadOnlyList<BaseAsset> Roots,
+    IReadOnlyList<BaseAsset> NestedAssets,
     IReadOnlyList<BaseAsset> DependencyReferences,
+    uint Checksum,
     int DiscardedLightByteCount);
 
 internal static class D3dbspAssetGraphBuilder
@@ -217,7 +221,16 @@ internal static class D3dbspAssetGraphBuilder
             GlassData = new GGlassData()
         };
 
-        BaseAsset[] roots = [mapEnts, comWorld, gameWorld, fxWorld, clipMap, gfxWorld];
+        BaseAsset[] roots =
+        [
+            clipMap,
+            comWorld,
+            gameWorld,
+            fxWorld,
+            gfxWorld,
+            CreateMapScript(assetName),
+            CreateMapMarker(assetName)
+        ];
         BaseAsset[] dependencies =
         [
             .. renderMaterials
@@ -228,13 +241,46 @@ internal static class D3dbspAssetGraphBuilder
         ];
         return new D3dbspAssetGraph(
             Array.AsReadOnly(roots),
+            Array.AsReadOnly<BaseAsset>([mapEnts]),
             Array.AsReadOnly(dependencies),
+            checksum,
             discardedLightByteCount);
     }
 
     private static IReadOnlyList<IReadOnlyList<T>> EmptyDynamicLists<T>() =>
         Array.AsReadOnly<IReadOnlyList<T>>(
             [Array.Empty<T>(), Array.Empty<T>()]);
+
+    private static RawFileAsset CreateMapScript(string assetName)
+    {
+        string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        // These factions own the player-model closure selected by FastFileConverter.
+        const string script =
+            "main()\r\n" +
+            "{\r\n" +
+            "\tmaps\\mp\\_load::main();\r\n" +
+            "\tgame[\"allies\"] = \"us_army\";\r\n" +
+            "\tgame[\"axis\"] = \"opforce_airborne\";\r\n" +
+            "\tgame[\"attackers\"] = \"allies\";\r\n" +
+            "\tgame[\"defenders\"] = \"axis\";\r\n" +
+            "}\r\n";
+        byte[] content = Encoding.ASCII.GetBytes(script);
+        return new RawFileAsset
+        {
+            Name = scriptName,
+            CompressedLen = 0,
+            Len = content.Length,
+            Buffer = [.. content, 0]
+        };
+    }
+
+    private static RawFileAsset CreateMapMarker(string assetName) => new()
+    {
+        Name = Path.GetFileNameWithoutExtension(assetName.Replace('\\', '/')),
+        CompressedLen = 0,
+        Len = 0,
+        Buffer = [0]
+    };
 
     private static MaterialAsset CreateMaterialReference(string? name, int index)
     {

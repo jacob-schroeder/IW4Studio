@@ -86,13 +86,18 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private bool? _viewerReflectionEnvironmentStudioEnabled;
     private bool _disposed;
 
-    public SilkXModelViewerRenderer(GL gl)
+    public SilkXModelViewerRenderer(
+        GL gl,
+        string? programBinaryCacheDirectory = null)
     {
         _gl = gl ?? throw new ArgumentNullException(nameof(gl));
         _state = new SilkOpenGlStateShadow(gl);
         _textureParameters = new SilkOpenGlTextureParameters(gl);
-        _sharedPrograms = new OpenGlSharedProgramCache(gl);
-        _sharedProgramUsage = _sharedPrograms.AcquireUsageLease();
+        _sharedPrograms = new OpenGlSharedProgramCache(
+            gl,
+            programBinaryCacheDirectory:
+                programBinaryCacheDirectory);
+        _sharedProgramUsage = _sharedPrograms.AcquireUsageLease(gl);
         try
         {
             _authoredMaterials = new SilkOpenGlAuthoredMaterialExecutor(
@@ -1529,7 +1534,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(target))
     };
 
-    private uint LinkProgram(string vertexSource, string fragmentSource)
+    private uint LinkProgram(
+        string vertexSource,
+        string fragmentSource,
+        bool requestRetrievableBinary = false)
     {
         uint vertexShader = CompileShader(
             ShaderType.VertexShader,
@@ -1544,6 +1552,13 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 uint program = _gl.CreateProgram();
                 _gl.AttachShader(program, vertexShader);
                 _gl.AttachShader(program, fragmentShader);
+                if (requestRetrievableBinary)
+                {
+                    _gl.ProgramParameter(
+                        program,
+                        ProgramParameterPName.BinaryRetrievableHint,
+                        1);
+                }
                 _gl.LinkProgram(program);
                 _gl.GetProgram(
                     program,
@@ -1591,7 +1606,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             _sharedProgramUsage.GetOrLink(
                 vertexSource,
                 fragmentSource,
-                () => LinkProgram(vertexSource, fragmentSource));
+                () => LinkProgram(
+                    vertexSource,
+                    fragmentSource,
+                    _sharedProgramUsage
+                        .ProgramBinaryPersistenceEnabled));
         if (!resolution.IsCacheResident)
         {
             _viewerProgramResolutions.Add(key, resolution);

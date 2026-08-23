@@ -1,4 +1,5 @@
 using IW4.Render.OpenGl.Programs;
+using IW4.Studio.Desktop.Persistence;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -47,7 +48,9 @@ internal sealed class SilkMapRenderOpenGlShareGroup : IDisposable
                 throw new InvalidOperationException(
                     "Silk.NET did not create the OpenGL share-root context.");
             ProgramCache = new OpenGlSharedProgramCache(
-                GL.GetApi(rootWindow));
+                GL.GetApi(rootWindow),
+                programBinaryCacheDirectory:
+                    OpenGlProgramBinaryCachePath.GetDirectory());
         }
         catch
         {
@@ -138,6 +141,10 @@ internal sealed class SilkMapRenderOpenGlShareGroup : IDisposable
             $"requests={ProgramCache.LinkRequestCount}, " +
             $"uniqueLinkAttempts={ProgramCache.UniqueLinkAttemptCount}, " +
             $"linked={ProgramCache.SuccessfulLinkCount}, " +
+            $"binaryEnabled={ProgramCache.ProgramBinaryPersistenceEnabled}, " +
+            $"binaryAttempts={ProgramCache.ProgramBinaryLoadAttemptCount}, " +
+            $"binaryHits={ProgramCache.ProgramBinaryLoadHitCount}, " +
+            $"binaryStores={ProgramCache.ProgramBinaryStoreCount}, " +
             $"reuses={ProgramCache.LinkReuseCount}, " +
             $"failed={ProgramCache.FailedLinkCount}, " +
             $"capacityBypass={ProgramCache.CapacityBypassCount}, " +

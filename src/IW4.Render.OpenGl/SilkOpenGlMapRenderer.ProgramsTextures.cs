@@ -1548,7 +1548,11 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         }
         trace?.Invoke(
             $"shared-resolution lookup completed; " +
-            $"path={(linkInvoked ? "new-link" : "shared-cache-reuse")}; " +
+            $"path={(linkInvoked
+                ? "new-link"
+                : resolution.IsProgramBinaryLoad && !resolution.IsReuse
+                    ? "program-binary"
+                    : "shared-cache-reuse")}; " +
             $"ready={resolution.IsReady}; " +
             $"reuse={resolution.IsReuse}; " +
             $"cacheOwnsHandle={resolution.CacheOwnsHandle}; " +
@@ -1596,6 +1600,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                     $"driver glAttachShader started; stage=fragment; " +
                     $"program={program}; shader={fragmentShader}");
                 _gl.AttachShader(program, fragmentShader);
+                if (_sharedProgramUsage
+                    .ProgramBinaryPersistenceEnabled)
+                {
+                    trace?.Invoke(
+                        $"driver program-binary hint started; " +
+                        $"program={program}");
+                    _gl.ProgramParameter(
+                        program,
+                        ProgramParameterPName.BinaryRetrievableHint,
+                        1);
+                }
                 trace?.Invoke(
                     $"driver glLinkProgram started; program={program}");
                 _gl.LinkProgram(program);
