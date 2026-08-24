@@ -36,6 +36,20 @@ public sealed partial class WeaponEditorView : UserControl
         _boneTagOverlay = this.FindControl<XModelBoneTagOverlay>("BoneTagOverlay");
         if (_preview is not null && this.FindControl<Border>("PreviewInputSurface") is { } input)
             _preview.AttachCameraInput(input);
+        if (this.FindControl<Slider>("CamoLoopSlider") is { } camoLoopSlider)
+        {
+            camoLoopSlider.AddHandler(
+                InputElement.PointerReleasedEvent,
+                CamoLoopSlider_PointerReleased,
+                RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            camoLoopSlider.AddHandler(
+                InputElement.KeyUpEvent,
+                CamoLoopSlider_KeyUp,
+                RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            camoLoopSlider.LostFocus += CamoLoopSlider_LostFocus;
+        }
     }
 
     internal WeaponEditorView(WeaponEditorViewModel viewModel, AssetReferencePickerService assetReferencePicker) : this()
@@ -174,6 +188,24 @@ public sealed partial class WeaponEditorView : UserControl
     private void ResetCamoAnimationButton_Click(
         object? sender,
         RoutedEventArgs e) => _preview?.ResetMaterialAnimation();
+
+    private void CamoLoopSlider_PointerReleased(
+        object? sender,
+        PointerReleasedEventArgs e) => CommitCamoLoopSeconds();
+
+    private void CamoLoopSlider_KeyUp(
+        object? sender,
+        KeyEventArgs e) => CommitCamoLoopSeconds();
+
+    private void CamoLoopSlider_LostFocus(
+        object? sender,
+        RoutedEventArgs e) => CommitCamoLoopSeconds();
+
+    private void CommitCamoLoopSeconds()
+    {
+        if (DataContext is WeaponEditorViewModel viewModel)
+            viewModel.CommitCamoLoopSeconds();
+    }
 
     private void Editor_SizeChanged(object? sender, SizeChangedEventArgs e)
         => UpdatePropertyWorkspaceLayout(

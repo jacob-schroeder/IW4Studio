@@ -21,6 +21,7 @@ public sealed partial class WeaponEditorViewModel
     private Bitmap? _camoImagePreview;
     private string? _camoImageName;
     private double _camoLoopSeconds = 10d;
+    private double _compiledCamoLoopSeconds = 10d;
     private bool _isCamoEditorOpen;
     private bool _isCamoAnimationPaused;
     private WeaponCamoCompileResult? _pendingCamoCompile;
@@ -74,11 +75,18 @@ public sealed partial class WeaponEditorViewModel
                 return;
 
             OnPropertyChanged(nameof(CamoLoopSecondsText));
-            CompileCamoAppearance();
         }
     }
 
     public string CamoLoopSecondsText => $"{CamoLoopSeconds:0} sec";
+
+    internal void CommitCamoLoopSeconds()
+    {
+        if (_compiledCamoLoopSeconds.Equals(_camoLoopSeconds))
+            return;
+
+        CompileCamoAppearance();
+    }
 
     public bool IsCamoEditorOpen
     {
@@ -337,6 +345,7 @@ public sealed partial class WeaponEditorViewModel
 
     private void CompileCamoAppearance()
     {
+        _compiledCamoLoopSeconds = _camoLoopSeconds;
         if (_camoImage is null ||
             _camoSourceModel is null ||
             _camoSourceSlotKey is null ||
