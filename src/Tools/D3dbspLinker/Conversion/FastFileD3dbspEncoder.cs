@@ -6,10 +6,10 @@ using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.D3dbsp;
 using IW4.Studio.Documents;
-using IW4Map.D3dbsp;
-using IW4Map.Inspection;
+using D3dbspLinker.D3dbsp;
+using D3dbspLinker.Inspection;
 
-namespace IW4Map.Conversion;
+namespace D3dbspLinker.Conversion;
 
 internal static class FastFileD3dbspEncoder
 {

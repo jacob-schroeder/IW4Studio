@@ -1,6 +1,6 @@
 using IW4.Assets.D3dbsp;
-using IW4Map.Conversion;
-using IW4Map.Inspection;
+using D3dbspLinker.Conversion;
+using D3dbspLinker.Inspection;
 
 return Run(args);
 
@@ -128,13 +128,13 @@ static int Rewrite(string input, string output)
 static int Usage()
 {
     Console.Error.WriteLine("usage:");
-    Console.Error.WriteLine("  IW4Map inspect <input.d3dbsp>");
-    Console.Error.WriteLine("  IW4Map inspect-fastfile <input.ff>");
-    Console.Error.WriteLine("  IW4Map find-fastfile-assets <input.ff> <name-contains>");
-    Console.Error.WriteLine("  IW4Map inspect-pair <input.d3dbsp> <input.ff>");
-    Console.Error.WriteLine("  IW4Map to-d3dbsp <input.ff> <output.d3dbsp>");
+    Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
+    Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");
+    Console.Error.WriteLine("  D3dbspLinker find-fastfile-assets <input.ff> <name-contains>");
+    Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
+    Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  IW4Map to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [dependency.ff ...]");
-    Console.Error.WriteLine("  IW4Map rewrite <input.d3dbsp> <output.d3dbsp>");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [dependency.ff ...]");
+    Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
     return 2;
 }

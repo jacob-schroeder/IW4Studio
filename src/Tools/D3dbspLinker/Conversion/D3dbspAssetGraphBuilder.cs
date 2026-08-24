@@ -14,9 +14,9 @@ using IW4.Assets.Assets.XModel;
 using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
-using IW4Map.D3dbsp;
+using D3dbspLinker.D3dbsp;
 
-namespace IW4Map.Conversion;
+namespace D3dbspLinker.Conversion;
 
 internal sealed record D3dbspAssetGraph(
     IReadOnlyList<BaseAsset> Roots,

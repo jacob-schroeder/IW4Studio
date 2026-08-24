@@ -6,9 +6,9 @@ using IW4.Assets.Assets.Physics;
 using IW4.Assets.D3dbsp;
 using IW4.Assets.Math;
 using IW4.Studio.Documents;
-using IW4Map.D3dbsp;
+using D3dbspLinker.D3dbsp;
 
-namespace IW4Map.Inspection;
+namespace D3dbspLinker.Inspection;
 
 internal static class MapPairInspector
 {

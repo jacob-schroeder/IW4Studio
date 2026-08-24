@@ -11,9 +11,9 @@ using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
 using IW4.Studio.Documents;
-using IW4Map.Inspection;
+using D3dbspLinker.Inspection;
 
-namespace IW4Map.Conversion;
+namespace D3dbspLinker.Conversion;
 
 internal static class FastFileConverter
 {
@@ -211,12 +211,12 @@ internal static class FastFileConverter
             graph.Roots.Count + bootstrapXModels.Count + 1);
         roots.AddRange(graph.Roots.Select(CreateOwnedRoot));
         roots.Add(CreateBootstrapRoot(
-            "iw4map:bootstrap:stringtable:dm",
+            "d3dbsplinker:bootstrap:stringtable:dm",
             bootstrapStringTable));
         for (int index = 0; index < bootstrapXModels.Count; index++)
         {
             roots.Add(CreateBootstrapRoot(
-                $"iw4map:bootstrap:xmodel:{index}:{BootstrapXModelNames[index]}",
+                $"d3dbsplinker:bootstrap:xmodel:{index}:{BootstrapXModelNames[index]}",
                 bootstrapXModels[index]));
         }
         var request = new ZoneLinkRequest(
@@ -282,7 +282,7 @@ internal static class FastFileConverter
         string name = asset.SerializedAssetName ??
             throw new InvalidDataException($"{asset.SerializedAssetType} root has no serialized name.");
         return new LinkRoot(
-            $"iw4map:{index}:{asset.SerializedAssetType}",
+            $"d3dbsplinker:{index}:{asset.SerializedAssetType}",
             asset.SerializedAssetType,
             LinkRootIntent.Owned,
             AssetKey.FromDefinition(asset),

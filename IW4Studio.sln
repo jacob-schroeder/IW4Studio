@@ -28,7 +28,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Linker", "src\IW4.Linke
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Studio.Desktop", "src\IW4.Studio.Desktop\IW4.Studio.Desktop.csproj", "{CC835191-D4B1-4698-8E49-7D285F7E0889}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4Map", "src\Tools\IW4Map\IW4Map.csproj", "{B4AFB11A-DDE2-443B-B8DE-B633963E068F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "D3dbspLinker", "src\Tools\D3dbspLinker\D3dbspLinker.csproj", "{B4AFB11A-DDE2-443B-B8DE-B633963E068F}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{F659F56D-FE25-4723-937D-640C118C5BB1}"
 EndProject

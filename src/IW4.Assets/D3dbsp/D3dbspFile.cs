@@ -82,7 +82,7 @@ public sealed class D3dbspFile
 
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(header[4..]);
         if (version != Version)
-            throw new InvalidDataException($"Unsupported d3dbsp version {version}; IW4Map requires version {Version}.");
+            throw new InvalidDataException($"Unsupported d3dbsp version {version}; D3dbspLinker requires version {Version}.");
 
         uint chunkCount = BinaryPrimitives.ReadUInt32LittleEndian(header[8..]);
         if (chunkCount > MaximumChunkCount)
