@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using Avalonia;
 using Avalonia.Controls;
@@ -5,6 +6,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.Persistence;
@@ -42,7 +45,22 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
             nameof(ShowBoneTags));
 
+    public static readonly StyledProperty<bool> IsMaterialAnimationEnabledProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, bool>(
+            nameof(IsMaterialAnimationEnabled));
+
+    public static readonly StyledProperty<bool> IsMaterialAnimationPausedProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, bool>(
+            nameof(IsMaterialAnimationPaused));
+
     private const float FieldOfView = MathF.PI / 4f;
+    private static readonly TimeSpan MaterialAnimationFrameInterval =
+        TimeSpan.FromMilliseconds(16);
+    private readonly DispatcherTimer _materialAnimationClock =
+        new(DispatcherPriority.Render)
+        {
+            Interval = MaterialAnimationFrameInterval
+        };
     private SilkXModelViewerRenderer? _renderer;
     private XModelRenderLod? _uploadedLod;
     private bool _uploadRequired = true;
@@ -59,12 +77,18 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     private float _zoom = 1f;
     private Vector3 _panOffset;
     private IReadOnlyList<ProjectedBoneTag> _projectedBoneTags = [];
+    private readonly List<Visual> _materialAnimationVisibilityAncestors = [];
+    private long _materialAnimationStartTimestamp;
+    private double _materialAnimationElapsedSeconds;
+    private bool _isMaterialAnimationClockRunning;
+    private bool _isAttachedToVisualTree;
 
     public XModelPreviewControl()
     {
         ClipToBounds = true;
         Focusable = true;
         SizeChanged += Preview_SizeChanged;
+        _materialAnimationClock.Tick += MaterialAnimationClock_Tick;
         AttachCameraInput(this);
     }
 
@@ -118,6 +142,26 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         set => SetValue(ShowBoneTagsProperty, value);
     }
 
+    public bool IsMaterialAnimationEnabled
+    {
+        get => GetValue(IsMaterialAnimationEnabledProperty);
+        set => SetValue(IsMaterialAnimationEnabledProperty, value);
+    }
+
+    public bool IsMaterialAnimationPaused
+    {
+        get => GetValue(IsMaterialAnimationPausedProperty);
+        set => SetValue(IsMaterialAnimationPausedProperty, value);
+    }
+
+    public void ResetMaterialAnimation()
+    {
+        _materialAnimationElapsedSeconds = 0;
+        if (_isMaterialAnimationClockRunning)
+            _materialAnimationStartTimestamp = Stopwatch.GetTimestamp();
+        RequestNextFrameRendering();
+    }
+
     public void Fit()
     {
         _yaw = MathF.PI * 0.75f;
@@ -126,6 +170,24 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         _panOffset = Vector3.Zero;
         RefreshProjectedBoneTags();
         RequestNextFrameRendering();
+    }
+
+    protected override void OnAttachedToVisualTree(
+        VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _isAttachedToVisualTree = true;
+        SubscribeMaterialAnimationVisibility();
+        UpdateMaterialAnimationClock();
+    }
+
+    protected override void OnDetachedFromVisualTree(
+        VisualTreeAttachmentEventArgs e)
+    {
+        _isAttachedToVisualTree = false;
+        UpdateMaterialAnimationClock();
+        UnsubscribeMaterialAnimationVisibility();
+        base.OnDetachedFromVisualTree(e);
     }
 
     internal void AttachCameraInput(Control input)
@@ -243,7 +305,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
                 pixelSize.Width,
                 pixelSize.Height,
                 camera,
-                materialTimeSeconds: 0f,
+                materialTimeSeconds: GetMaterialAnimationTimeSeconds(),
                 studioEnvironmentEnabled: UseStudioEnvironment,
                 showWireframe: ShowWireframe,
                 showCollision: ShowCollision);
@@ -282,6 +344,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             _uploadRequired = true;
             PublishRendererStatus(-1, null, null);
             Fit();
+            UpdateMaterialAnimationClock();
         }
         else if (change.Property == ShowWireframeProperty || change.Property == ShowCollisionProperty ||
                  change.Property == UseStudioEnvironmentProperty)
@@ -292,6 +355,97 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         {
             RefreshProjectedBoneTags();
         }
+        else if (change.Property == IsMaterialAnimationEnabledProperty ||
+                 change.Property == IsMaterialAnimationPausedProperty)
+        {
+            UpdateMaterialAnimationClock();
+            if (!IsMaterialAnimationEnabled)
+                ResetMaterialAnimation();
+            else
+                RequestNextFrameRendering();
+        }
+        else if (change.Property == IsVisibleProperty)
+        {
+            UpdateMaterialAnimationClock();
+        }
+    }
+
+    private void MaterialAnimationClock_Tick(
+        object? sender,
+        EventArgs e) => RequestNextFrameRendering();
+
+    private void SubscribeMaterialAnimationVisibility()
+    {
+        UnsubscribeMaterialAnimationVisibility();
+        foreach (Visual ancestor in this.GetVisualAncestors())
+        {
+            ancestor.PropertyChanged +=
+                MaterialAnimationVisibilityAncestor_PropertyChanged;
+            _materialAnimationVisibilityAncestors.Add(ancestor);
+        }
+    }
+
+    private void UnsubscribeMaterialAnimationVisibility()
+    {
+        foreach (Visual ancestor in _materialAnimationVisibilityAncestors)
+        {
+            ancestor.PropertyChanged -=
+                MaterialAnimationVisibilityAncestor_PropertyChanged;
+        }
+
+        _materialAnimationVisibilityAncestors.Clear();
+    }
+
+    private void MaterialAnimationVisibilityAncestor_PropertyChanged(
+        object? sender,
+        AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == IsVisibleProperty)
+            UpdateMaterialAnimationClock();
+    }
+
+    private void UpdateMaterialAnimationClock()
+    {
+        bool shouldRun =
+            _isAttachedToVisualTree &&
+            IsVisible &&
+            _materialAnimationVisibilityAncestors.All(
+                ancestor => ancestor.IsVisible) &&
+            IsMaterialAnimationEnabled &&
+            !IsMaterialAnimationPaused &&
+            Scene is not null;
+        if (shouldRun == _isMaterialAnimationClockRunning)
+            return;
+
+        if (shouldRun)
+        {
+            _materialAnimationStartTimestamp = Stopwatch.GetTimestamp();
+            _isMaterialAnimationClockRunning = true;
+            _materialAnimationClock.Start();
+        }
+        else
+        {
+            _materialAnimationElapsedSeconds +=
+                Stopwatch.GetElapsedTime(
+                    _materialAnimationStartTimestamp).TotalSeconds;
+            _isMaterialAnimationClockRunning = false;
+            _materialAnimationClock.Stop();
+        }
+    }
+
+    private float GetMaterialAnimationTimeSeconds()
+    {
+        if (!IsMaterialAnimationEnabled)
+            return 0;
+
+        double elapsedSeconds = _materialAnimationElapsedSeconds;
+        if (_isMaterialAnimationClockRunning)
+        {
+            elapsedSeconds += Stopwatch.GetElapsedTime(
+                _materialAnimationStartTimestamp).TotalSeconds;
+        }
+
+        return (float)elapsedSeconds;
     }
 
     private void CameraInput_PointerPressed(

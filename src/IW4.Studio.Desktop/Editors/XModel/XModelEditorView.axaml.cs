@@ -4,14 +4,12 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using System.Runtime.InteropServices;
 using IW4.AssetExchange.XModel;
 using IW4.FastFiles.Zone;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Editors.AssetReferences;
-using SkiaSharp;
 
 namespace IW4.Studio.Desktop.Editors.XModel;
 
@@ -139,12 +137,12 @@ public sealed partial class XModelEditorView : UserControl
                     bool read = replaceModel
                         ? XModelGlbReader.TryReadRigidModel(
                             stream,
-                            DecodeGlbImage,
+                            XModelImportImageDecoder.Decode,
                             out document,
                             out IReadOnlyList<string> blockers)
                         : XModelGlbReader.TryRead(
                             stream,
-                            DecodeGlbImage,
+                            XModelImportImageDecoder.Decode,
                             out document,
                             out blockers);
                     if (!read || document is null)
@@ -182,35 +180,6 @@ public sealed partial class XModelEditorView : UserControl
             viewModel.ReportXModelExportStatus($"XModel geometry import failed: {exception.Message}", IW4.Studio.Documents.AssetValidationSeverity.Error);
         }
         finally { _isImportInProgress = false; }
-    }
-
-    private static XModelImportImage DecodeGlbImage(
-        string mimeType,
-        ReadOnlyMemory<byte> encoded)
-    {
-        using SKData data = SKData.CreateCopy(encoded.ToArray());
-        using SKCodec codec = SKCodec.Create(data) ??
-            throw new InvalidDataException($"The embedded {mimeType} image could not be decoded.");
-        if (codec.Info.Width is <= 0 or > ushort.MaxValue ||
-            codec.Info.Height is <= 0 or > ushort.MaxValue)
-        {
-            throw new InvalidDataException("The embedded GLB image dimensions exceed IW4 limits.");
-        }
-        var info = new SKImageInfo(
-            codec.Info.Width,
-            codec.Info.Height,
-            SKColorType.Rgba8888,
-            SKAlphaType.Unpremul);
-        using var bitmap = new SKBitmap(info);
-        SKCodecResult result = codec.GetPixels(info, bitmap.GetPixels());
-        if (result != SKCodecResult.Success)
-            throw new InvalidDataException($"The embedded {mimeType} image could not be decoded ({result}).");
-        byte[] rgba = new byte[checked(info.Width * info.Height * 4)];
-        Marshal.Copy(bitmap.GetPixels(), rgba, 0, rgba.Length);
-        return new XModelImportImage(
-            info.Width,
-            info.Height,
-            Array.AsReadOnly(rgba));
     }
 
     private void ExportXModelMenuItem_Click(

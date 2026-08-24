@@ -5,6 +5,7 @@ using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Menu;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Weapon;
 using IW4.AssetExchange.XModel;
@@ -242,6 +243,15 @@ public sealed class AssetEditorSession : AssetEditorSurface
         return _session.CaptureAppliedXModelProviders(identity);
     }
 
+    /// <summary>Captures the owned provider closure retained by an applied Weapon revision.</summary>
+    public IReadOnlyList<BaseAsset> CaptureAppliedWeaponProviders()
+    {
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.Weapon || _rowIdentity is not { } identity)
+            return [];
+        return _session.CaptureAppliedWeaponProviders(identity);
+    }
+
     private XModelMaterialMapping[] ResolveWorkspaceXModelMaterialUsages(string? requestedName)
     {
         long revision = Workspace.LoadedZone.Context.AssetPool.Revision;
@@ -315,6 +325,34 @@ public sealed class AssetEditorSession : AssetEditorSurface
         return true;
     }
 
+    /// <summary>Resolves a TechniqueSet name to its current non-placeholder pool definition.</summary>
+    public bool TryResolveWorkspaceTechniqueSet(
+        string? name,
+        out MaterialTechniqueSetAsset? techniqueSet)
+    {
+        techniqueSet = null;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        long revision = Workspace.LoadedZone.Context.AssetPool.Revision;
+        if (!Workspace.LoadedZone.Context.AssetPool.TryResolve(
+                XAssetType.Techset,
+                name,
+                out MaterialTechniqueSetAsset? current) ||
+            current is null ||
+            current.RuntimeAddress?.AssetPoolAddress is not { } address ||
+            !Workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) ||
+            slot is null ||
+            slot.ActiveProvider.IsReferencePlaceholder ||
+            Workspace.LoadedZone.Context.AssetPool.Revision != revision)
+        {
+            return false;
+        }
+
+        techniqueSet = current;
+        return true;
+    }
+
     /// <summary>Validates a local candidate without publishing it to the editing session.</summary>
     public AssetEditorValidationState ValidateCandidate<T>(T candidate) where T : notnull
     {
@@ -378,6 +416,36 @@ public sealed class AssetEditorSession : AssetEditorSurface
         if (validation.Any(issue => issue.Severity == AssetValidationSeverity.Error))
             return false;
         bool changed = _session.PublishCompiledXModel(identity, compiled.Definition, compiled.Providers);
+        Validation = new AssetEditorValidationState(validation);
+        return changed;
+    }
+
+    /// <summary>Publishes a compiled Weapon and its isolated camo dependency closure in one revision.</summary>
+    public bool ApplyCompiledWeapon(
+        WeaponDraft candidate,
+        IReadOnlyList<BaseAsset> providers,
+        out IReadOnlyList<AssetValidationIssue> issues)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(providers);
+        if (!CanEdit)
+            throw new InvalidOperationException("This asset is not editable.");
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.Weapon)
+            throw new InvalidOperationException("This editor does not host a Weapon.");
+        TargetZoneRowIdentity identity = _rowIdentity ?? throw new InvalidOperationException(
+            "An editable editor requires a stable target row.");
+        AssetValidationIssue[] validation = _adapter.Validate(candidate)
+            .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))
+            .Select(group => group.First())
+            .ToArray();
+        issues = Array.AsReadOnly(validation);
+        if (validation.Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            return false;
+        bool changed = _session.PublishCompiledDefinition(
+            identity,
+            candidate.ToAsset(),
+            providers);
         Validation = new AssetEditorValidationState(validation);
         return changed;
     }

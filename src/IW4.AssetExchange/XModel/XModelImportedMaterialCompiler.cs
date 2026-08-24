@@ -168,7 +168,7 @@ public static class XModelImportedMaterialCompiler
         }
     }
 
-    private static bool TryResolveTemplateAlphaMode(
+    internal static bool TryResolveTemplateAlphaMode(
         MaterialAsset template,
         out XModelImportAlphaMode alphaMode,
         out float? alphaCutoff)
@@ -239,72 +239,79 @@ public static class XModelImportedMaterialCompiler
         return true;
     }
 
-    private static MaterialAsset CloneMaterialTemplate(
+    internal static MaterialAsset CloneMaterialTemplate(
         MaterialAsset template,
         string name,
         MaterialTextureDef colorRow,
         GfxImageAsset colorImage,
         MaterialTextureDef? normalRow,
         GfxImageAsset? normalImage,
-        bool doubleSided) => new()
+        bool doubleSided,
+        MaterialTechniqueSetAsset? techniqueSet = null,
+        IReadOnlyList<MaterialConstantDef>? constants = null)
     {
-        Info = new MaterialInfo
+        MaterialConstantDef[] copiedConstants = (constants ?? template.Constants)
+            .Select(row => new MaterialConstantDef
+            {
+                NameHash = row.NameHash,
+                NameBytes = row.NameBytes.ToArray(),
+                Literal = row.Literal
+            }).ToArray();
+        return new MaterialAsset
         {
-            Name = name,
-            GameFlags = template.Info.GameFlags,
-            SortKey = template.Info.SortKey,
-            TextureAtlasRowCount = template.Info.TextureAtlasRowCount,
-            TextureAtlasColumnCount = template.Info.TextureAtlasColumnCount,
-            DrawSurf = template.Info.DrawSurf,
-            SurfaceTypeBits = template.Info.SurfaceTypeBits,
-            HashIndex = template.Info.HashIndex,
-            Pad16 = template.Info.Pad16
-        },
-        StateBitsEntries = template.StateBitsEntries.ToArray(),
-        TextureCount = template.TextureCount,
-        ConstantCount = template.ConstantCount,
-        StateBitsCount = template.StateBitsCount,
-        StateFlags = doubleSided
-            ? template.StateFlags & ~(
-                MaterialStateFlags.CullBack |
-                MaterialStateFlags.CullFront |
-                MaterialStateFlags.CullBackShadow |
-                MaterialStateFlags.CullFrontShadow)
-            : template.StateFlags,
-        CameraRegion = template.CameraRegion,
-        XStringCount = template.XStringCount,
-        Pad43 = template.Pad43,
-        InlineTechniqueSlotStateBits = template.InlineTechniqueSlotStateBits.ToArray(),
-        Pad8E = template.Pad8E,
-        RuntimeTechniqueSlotStateBits = template.RuntimeTechniqueSlotStateBits.ToArray(),
-        TechniqueSet = template.TechniqueSet,
-        Textures = template.Textures.Select(row => new MaterialTextureDef
-        {
-            NameHash = row.NameHash,
-            NameStart = row.NameStart,
-            NameEnd = row.NameEnd,
-            SamplerState = row.SamplerState,
-            Semantic = row.Semantic,
-            Image = ReferenceEquals(row, colorRow)
-                ? colorImage
-                : ReferenceEquals(row, normalRow)
-                    ? normalImage
-                    : row.Image,
-            Water = row.Water
-        }).ToArray(),
-        Constants = template.Constants.Select(row => new MaterialConstantDef
-        {
-            NameHash = row.NameHash,
-            NameBytes = row.NameBytes.ToArray(),
-            Literal = row.Literal
-        }).ToArray(),
-        StateBits = template.StateBits.Select(row =>
-            CloneStateBits(row, doubleSided)).ToArray(),
-        XStrings = template.XStrings.Select(row => new MaterialXStringEntry(
-            row.Index,
-            default,
-            row.Value)).ToArray()
-    };
+            Info = new MaterialInfo
+            {
+                Name = name,
+                GameFlags = template.Info.GameFlags,
+                SortKey = template.Info.SortKey,
+                TextureAtlasRowCount = template.Info.TextureAtlasRowCount,
+                TextureAtlasColumnCount = template.Info.TextureAtlasColumnCount,
+                DrawSurf = template.Info.DrawSurf,
+                SurfaceTypeBits = template.Info.SurfaceTypeBits,
+                HashIndex = template.Info.HashIndex,
+                Pad16 = template.Info.Pad16
+            },
+            StateBitsEntries = template.StateBitsEntries.ToArray(),
+            TextureCount = template.TextureCount,
+            ConstantCount = checked((byte)copiedConstants.Length),
+            StateBitsCount = template.StateBitsCount,
+            StateFlags = doubleSided
+                ? template.StateFlags & ~(
+                    MaterialStateFlags.CullBack |
+                    MaterialStateFlags.CullFront |
+                    MaterialStateFlags.CullBackShadow |
+                    MaterialStateFlags.CullFrontShadow)
+                : template.StateFlags,
+            CameraRegion = template.CameraRegion,
+            XStringCount = template.XStringCount,
+            Pad43 = template.Pad43,
+            InlineTechniqueSlotStateBits = template.InlineTechniqueSlotStateBits.ToArray(),
+            Pad8E = template.Pad8E,
+            RuntimeTechniqueSlotStateBits = template.RuntimeTechniqueSlotStateBits.ToArray(),
+            TechniqueSet = techniqueSet ?? template.TechniqueSet,
+            Textures = template.Textures.Select(row => new MaterialTextureDef
+            {
+                NameHash = row.NameHash,
+                NameStart = row.NameStart,
+                NameEnd = row.NameEnd,
+                SamplerState = row.SamplerState,
+                Semantic = row.Semantic,
+                Image = ReferenceEquals(row, colorRow)
+                    ? colorImage
+                    : ReferenceEquals(row, normalRow)
+                        ? normalImage
+                        : row.Image,
+                Water = row.Water
+            }).ToArray(),
+            Constants = copiedConstants,
+            StateBits = template.StateBits.Select(row =>
+                CloneStateBits(row, doubleSided)).ToArray(),
+            XStrings = template.XStrings.Select(row => new MaterialXStringEntry(
+                row.Index,
+                default,
+                row.Value)).ToArray()
+        };
+    }
 
     private static GfxStateBits CloneStateBits(
         GfxStateBits source,
@@ -324,9 +331,10 @@ public static class XModelImportedMaterialCompiler
         };
     }
 
-    private static GfxImageAsset CreateColorImage(
+    internal static GfxImageAsset CreateColorImage(
         string name,
-        XModelImportMaterial material)
+        XModelImportMaterial material,
+        bool useWeaponCamoStorage = false)
     {
         XModelImportImage? source = material.BaseColorImage;
         int width = source?.Width ?? 4;
@@ -341,18 +349,24 @@ public static class XModelImportedMaterialCompiler
         for (int pixel = 0; pixel < width * height; pixel++)
         {
             int sourceOffset = pixel * 4;
-            float red = source is null ? 1f : SrgbToLinear(source.RgbaBytes[sourceOffset] / 255f);
-            float green = source is null ? 1f : SrgbToLinear(source.RgbaBytes[sourceOffset + 1] / 255f);
-            float blue = source is null ? 1f : SrgbToLinear(source.RgbaBytes[sourceOffset + 2] / 255f);
+            float red = source is null ? 1f : source.RgbaBytes[sourceOffset] / 255f;
+            float green = source is null ? 1f : source.RgbaBytes[sourceOffset + 1] / 255f;
+            float blue = source is null ? 1f : source.RgbaBytes[sourceOffset + 2] / 255f;
             float alpha = material.AlphaMode == XModelImportAlphaMode.Opaque
                 ? 1f
                 : (source is null ? 1f : source.RgbaBytes[sourceOffset + 3] / 255f) *
                   material.BaseColorFactor.W;
             int destination = sourceOffset;
             payload[destination] = ToByte(alpha);
-            payload[destination + 1] = ToByte(LinearToSrgb(red * material.BaseColorFactor.X));
-            payload[destination + 2] = ToByte(LinearToSrgb(green * material.BaseColorFactor.Y));
-            payload[destination + 3] = ToByte(LinearToSrgb(blue * material.BaseColorFactor.Z));
+            payload[destination + 1] = useWeaponCamoStorage
+                ? source is null ? byte.MaxValue : source.RgbaBytes[sourceOffset]
+                : ToByte(ApplySrgbFactor(red, material.BaseColorFactor.X));
+            payload[destination + 2] = useWeaponCamoStorage
+                ? source is null ? byte.MaxValue : source.RgbaBytes[sourceOffset + 1]
+                : ToByte(ApplySrgbFactor(green, material.BaseColorFactor.Y));
+            payload[destination + 3] = useWeaponCamoStorage
+                ? source is null ? byte.MaxValue : source.RgbaBytes[sourceOffset + 2]
+                : ToByte(ApplySrgbFactor(blue, material.BaseColorFactor.Z));
         }
         return new GfxImageAsset
         {
@@ -364,16 +378,19 @@ public static class XModelImportedMaterialCompiler
             Height = checked((ushort)height),
             Depth = 1,
             MemoryLocation = GfxImageMemoryLocation.Local,
+            RenderTargetPitch = useWeaponCamoStorage
+                ? checked((uint)width * 4u)
+                : 0,
             MapType = MapType.TwoDimensional,
             TextureSemantic = TextureSemantic.ColorMap,
             Category = ImageCategory.LoadFromFile,
-            UseSrgbReads = 1,
+            UseSrgbReads = useWeaponCamoStorage ? (byte)0 : (byte)1,
             CardMemory = checked((uint)payload.Length),
             BaseWidth = checked((ushort)width),
             BaseHeight = checked((ushort)height),
             BaseDepth = 1,
             BaseLevelCount = 1,
-            Cached = GfxImageCached.Auto,
+            Cached = useWeaponCamoStorage ? GfxImageCached.No : GfxImageCached.Auto,
             PayloadByteCount = payload.Length,
             PayloadBytes = payload,
             Name = name
@@ -437,6 +454,9 @@ public static class XModelImportedMaterialCompiler
             Name = name
         };
     }
+
+    private static float ApplySrgbFactor(float srgb, float linearFactor) =>
+        LinearToSrgb(SrgbToLinear(srgb) * linearFactor);
 
     private static float SrgbToLinear(float value) => value <= 0.04045f
         ? value / 12.92f

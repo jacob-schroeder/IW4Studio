@@ -22,7 +22,7 @@ using Material.Icons;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
-public sealed class WeaponEditorViewModel : ObservableObject,
+public sealed partial class WeaponEditorViewModel : ObservableObject,
     IAssetEditorProperties, IAssetEditorInspectorSource,
     IAssetEditorPropertiesRevealSource, IAssetEditorDiagnostics,
     IAssetEditorStagingState, IDisposable
@@ -106,6 +106,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _workingDraft = _baseline.Copy();
         Categories = Array.AsReadOnly(WeaponCategoryItemViewModel.CreateAll());
         _selectedCategory = Categories[0];
+        InitializeCamoAppearance();
         RefreshAll();
     }
 
@@ -138,7 +139,8 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             if (Scene is not null && SelectedModelSlot?.ResolvedModel is { } model)
             {
                 PreviewMessage = string.Empty;
-                PreviewStatus = $"{model.Name} · LOD {SelectedLodIndex} · static selected-model preview";
+                PreviewStatus = $"{model.Name} · LOD {SelectedLodIndex} · " +
+                    $"{(IsCamoAnimationPreviewEnabled ? "animated camo" : "static selected-model")} preview";
             }
             RefreshCollisionCapability(); RebuildDiagnostics(); NotifyState();
         }
@@ -453,6 +455,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
                 OnPropertyChanged(nameof(SelectedIndexedRow)); OnPropertyChanged(nameof(HasSelectedIndexedRow)); SyncSelectedSemanticTab(); RefreshInspector();
             }
             RebuildSelectedModelPreview();
+            RefreshCamoAppearanceProjection();
         }
     }
 
@@ -467,20 +470,46 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             return [new("Name", Name), new("Access", AccessText), new("Type", definition?.WeaponType.ToString() ?? "Unavailable"), new("Class", definition?.WeaponClass.ToString() ?? "Unavailable"), new("Category", SelectedCategory.Title), new("Selection", SelectedIndexedRow?.Title ?? "Category"), new("Model", SelectedModelSlot?.DisplayName ?? "None"), new("Candidate", CandidateState), new("Preview", PreviewStatus), new("LOD", SelectedLod?.DisplayName ?? "None"), new("Errors", Diagnostics.Count(issue => issue.Severity == AssetValidationSeverity.Error).ToString()), new("Warnings", Diagnostics.Count(issue => issue.Severity == AssetValidationSeverity.Warning).ToString())];
         }
     }
-    public string CandidateState => !HasDefinition ? "Invalid" : !IsEditable ? "Read-only" : _candidateDiagnostics.Any(issue => issue.Severity == AssetValidationSeverity.Error) ? "Invalid" : HasUnappliedChanges ? "Modified" : "Unchanged";
+    public string CandidateState => !HasDefinition ? "Invalid" : !IsEditable ? "Read-only" : HasCamoErrors || _candidateDiagnostics.Any(issue => issue.Severity == AssetValidationSeverity.Error) ? "Invalid" : HasUnappliedChanges ? "Modified" : "Unchanged";
     public bool HasErrors => Diagnostics.Any(issue => issue.Severity == AssetValidationSeverity.Error);
     public bool HasUnappliedChanges => StagedRowsHaveInput || !_session.CandidateMatchesCurrent(_workingDraft);
-    public bool CanApply => IsEditable && HasUnappliedChanges && !HasStagedErrors && !_candidateDiagnostics.Any(issue => issue.Severity == AssetValidationSeverity.Error);
+    public bool CanApply => IsEditable && HasUnappliedChanges && !HasStagedErrors && !HasCamoErrors && !_candidateDiagnostics.Any(issue => issue.Severity == AssetValidationSeverity.Error);
     public bool CanRevert => IsEditable && HasUnappliedChanges;
 
     public void ApplyDraft()
     {
         if (!IsEditable || !TryCommitInspectorRows()) return;
         RefreshValidation();
-        if (_candidateDiagnostics.Any(issue => issue.Severity == AssetValidationSeverity.Error)) { RevealProperties(); return; }
+        if (HasCamoErrors || _candidateDiagnostics.Any(issue =>
+                issue.Severity == AssetValidationSeverity.Error))
+        {
+            RevealProperties();
+            return;
+        }
         try
         {
-            _ = _session.Apply<WeaponDraft>(draft => draft.ReplaceWith(_workingDraft));
+            if (_pendingCamoCompile is { } compiled)
+            {
+                if (!_session.ApplyCompiledWeapon(
+                        _workingDraft,
+                        compiled.Providers,
+                        out IReadOnlyList<AssetValidationIssue> issues))
+                {
+                    SetCamoDiagnostics(issues);
+                    if (issues.Any(issue =>
+                            issue.Severity == AssetValidationSeverity.Error))
+                    {
+                        RevealProperties();
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                _ = _session.Apply<WeaponDraft>(draft =>
+                    draft.ReplaceWith(_workingDraft));
+            }
+            ClearCamoAppearanceDraft();
             _baseline = _session.OpenDraft<WeaponDraft>(); _workingDraft = _baseline.Copy(); RefreshAll();
         }
         catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or ArgumentException or OverflowException)
@@ -492,6 +521,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     {
         if (!IsEditable) return;
         foreach (IInspectorStagedPropertyRow row in _stagedRows.OfType<IInspectorStagedPropertyRow>()) row.ResetInput();
+        ClearCamoAppearanceDraft();
         _workingDraft = _baseline.Copy(); RefreshAll();
     }
 
@@ -542,6 +572,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         try
         {
             mutation();
+            CompleteCamoModelMutation(stableKey);
         }
         catch
         {
@@ -580,7 +611,8 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             PreviewMessage = string.Empty;
             int totalGroups = (uploadResult?.ExecutableGroupCount ?? 0) + (uploadResult?.BlockedGroupCount ?? 0);
             PreviewStatus = uploadResult is null
-                ? $"{model.Name} · LOD {SelectedLodIndex} · static selected-model preview"
+                ? $"{model.Name} · LOD {SelectedLodIndex} · " +
+                    $"{(IsCamoAnimationPreviewEnabled ? "animated camo" : "static selected-model")} preview"
                 : $"{model.Name} · LOD {SelectedLodIndex} · {uploadResult.ExecutableGroupCount}/{totalGroups} render groups executable";
         }
         _rendererDiagnostics = Array.AsReadOnly(issues.ToArray()); RebuildDiagnostics(); NotifyState();
@@ -643,6 +675,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             ?? ModelSlots.FirstOrDefault();
         OnPropertyChanged(nameof(SelectedModelSlot));
         SyncPreviewSelectors();
+        RefreshCamoAppearanceProjection();
     }
 
     private void SyncPreviewSelectors()
@@ -679,6 +712,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _selectedModelSlot = slot;
         OnPropertyChanged(nameof(SelectedModelSlot));
         RebuildSelectedModelPreview();
+        RefreshCamoAppearanceProjection();
     }
     private void AddModels(List<WeaponModelSlotItemViewModel> target, WeaponIndexedRowKind kind, string family, IReadOnlyList<XModelAsset?> models, int conceptualCount, bool tablePresent, params int[] parallelCounts)
     {
@@ -710,6 +744,20 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         if (semanticModel is null)
             return new(kind, index, family, roleLabel, null, null, WeaponModelSlotState.Empty, IsEditable && !malformedStorage, null, malformedStorage);
         string? name = semanticModel.Name;
+        if (IsAuthoredCamoModel(semanticModel))
+        {
+            return new(
+                kind,
+                index,
+                family,
+                roleLabel,
+                semanticModel,
+                semanticModel,
+                WeaponModelSlotState.Resolved,
+                IsEditable && !malformedStorage,
+                "Authored in this Weapon draft",
+                malformedStorage);
+        }
         XModelAsset? resolved = null;
         string? sourceDetail = null;
         if (string.IsNullOrWhiteSpace(name) || !TryResolveModel(name, out resolved, out sourceDetail))
@@ -933,6 +981,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
         _selectedModelSlot = ModelSlots.FirstOrDefault(slot => slot.Kind == row.Kind && slot.Index == row.Index); OnPropertyChanged(nameof(SelectedModelSlot));
         SyncPreviewSelectors();
         if (!_isReplacingProjection) RebuildSelectedModelPreview();
+        RefreshCamoAppearanceProjection();
     }
     private void RebuildSelectedModelPreview()
     {
@@ -966,7 +1015,8 @@ public sealed class WeaponEditorViewModel : ObservableObject,
                 scene = _sceneBuilder.Build(
                     model,
                     WorkspaceRenderAssetSource.Create(_session.Workspace, "Weapon XModel material assets"),
-                    _imagePayloads);
+                    _imagePayloads,
+                    CaptureCamoPreviewProviders());
                 if (_session.Workspace.LoadedZone.Context.AssetPool.Revision != poolRevision)
                     throw new InvalidOperationException("The asset pool changed while the selected Weapon model scene was being built.");
                 if (scene.Lods.Count > 0) _sceneCache.Add(model, scene);
@@ -983,7 +1033,7 @@ public sealed class WeaponEditorViewModel : ObservableObject,
             _selectedLod = _lods.FirstOrDefault(lod => lod.LodIndex == preferredLodIndex) ?? _lods.FirstOrDefault();
             _previewState = WeaponPreviewState.Ready;
             _previewMessage = string.Empty;
-            _previewStatus = $"{model.Name} · LOD {_selectedLod?.LodIndex ?? -1} · static selected-model preview";
+            _previewStatus = $"{model.Name} · LOD {_selectedLod?.LodIndex ?? -1} · {(IsCamoAnimationPreviewEnabled ? "animated camo" : "static selected-model")} preview";
             _previewDiagnostics = Array.AsReadOnly(scene.Diagnostics.Select(message => new AssetValidationIssue("weapon.preview.scene", $"{slot.RoleLabel} '{model.Name}': {message}", AssetValidationSeverity.Warning)).GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity)).Select(group => group.First()).ToArray());
         }
         catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or ArgumentException or OverflowException)
@@ -1619,11 +1669,11 @@ public sealed class WeaponEditorViewModel : ObservableObject,
     private static string Bounded(string message) => message.Length <= 180 ? message : message[..177] + "...";
     private void RebuildDiagnostics()
     {
-        Diagnostics = Array.AsReadOnly(_candidateDiagnostics.Concat(_previewDiagnostics).Concat(_rendererDiagnostics).GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity)).Select(group => group.First()).ToArray());
+        Diagnostics = Array.AsReadOnly(_candidateDiagnostics.Concat(_camoDiagnostics).Concat(_previewDiagnostics).Concat(_rendererDiagnostics).GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity)).Select(group => group.First()).ToArray());
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; foreach (INotifyPropertyChanged row in _stagedRows) row.PropertyChanged -= StagedRow_PropertyChanged; _stagedRows.Clear(); _sceneCache.Clear(); _scene = null; _lods = []; _selectedLod = null; AssetReferenceSelectionRequested = null; PropertiesRevealRequested = null;
+        if (_disposed) return; _disposed = true; DisposeCamoAppearance(); foreach (INotifyPropertyChanged row in _stagedRows) row.PropertyChanged -= StagedRow_PropertyChanged; _stagedRows.Clear(); _sceneCache.Clear(); _scene = null; _lods = []; _selectedLod = null; AssetReferenceSelectionRequested = null; PropertiesRevealRequested = null;
     }
 }
 

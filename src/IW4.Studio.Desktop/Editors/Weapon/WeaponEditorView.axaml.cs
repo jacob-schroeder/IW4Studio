@@ -3,7 +3,10 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using IW4.AssetExchange.XModel;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.Editors.AssetReferences;
@@ -16,10 +19,12 @@ namespace IW4.Studio.Desktop.Editors.Weapon;
 public sealed partial class WeaponEditorView : UserControl
 {
     private const double CompactPropertyWorkspaceWidth = 1040;
+    private const long MaximumCamoImageFileBytes = 128L * 1024 * 1024;
     private readonly XModelPreviewControl? _preview;
     private readonly XModelBoneTagOverlay? _boneTagOverlay;
     private AssetReferencePickerService? _assetReferencePicker;
     private bool _isAttached;
+    private bool _isCamoImageImportInProgress;
     private bool _usesCompactPropertyWorkspace;
 
     public WeaponEditorView()
@@ -67,6 +72,108 @@ public sealed partial class WeaponEditorView : UserControl
     }
 
     private void FitButton_Click(object? sender, RoutedEventArgs e) => _preview?.Fit();
+
+    private void ToggleCamoEditorButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (DataContext is WeaponEditorViewModel viewModel)
+            viewModel.ToggleCamoEditor();
+    }
+
+    private void CloseCamoEditorButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (DataContext is WeaponEditorViewModel viewModel)
+            viewModel.CloseCamoEditor();
+    }
+
+    private async void ChooseCamoImageButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (DataContext is not WeaponEditorViewModel viewModel ||
+            !viewModel.CanChooseCamoImage ||
+            _isCamoImageImportInProgress ||
+            TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)
+        {
+            return;
+        }
+
+        string? targetIdentity = viewModel.CaptureCamoTargetIdentity();
+        Bitmap? preview = null;
+        _isCamoImageImportInProgress = true;
+        try
+        {
+            IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "Choose weapon camo image",
+                    AllowMultiple = false,
+                    FileTypeFilter =
+                    [
+                        new FilePickerFileType("PNG or JPEG images")
+                        {
+                            Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG"]
+                        },
+                        new FilePickerFileType("PNG images")
+                        {
+                            Patterns = ["*.png", "*.PNG"]
+                        },
+                        new FilePickerFileType("JPEG images")
+                        {
+                            Patterns = ["*.jpg", "*.JPG", "*.jpeg", "*.JPEG"]
+                        }
+                    ]
+                });
+            if (files.Count != 1)
+                return;
+
+            IStorageFile file = files[0];
+            await using Stream source = await file.OpenReadAsync();
+            if (source.CanSeek && source.Length > MaximumCamoImageFileBytes)
+            {
+                throw new InvalidDataException(
+                    "The camo image file is larger than the 128 MiB import limit.");
+            }
+
+            using var encoded = new MemoryStream();
+            await source.CopyToAsync(encoded);
+            if (encoded.Length > MaximumCamoImageFileBytes)
+            {
+                throw new InvalidDataException(
+                    "The camo image file is larger than the 128 MiB import limit.");
+            }
+
+            byte[] bytes = encoded.ToArray();
+            XModelImportImage image = await Task.Run(() =>
+                XModelImportImageDecoder.DecodeWeaponCamo(file.Name, bytes));
+            if (!viewModel.IsCurrentCamoTarget(targetIdentity))
+                return;
+            using var previewStream = new MemoryStream(bytes, writable: false);
+            preview = new Bitmap(previewStream);
+            viewModel.SetCamoImage(file.Name, image, preview);
+            preview = null;
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or InvalidDataException or
+            NotSupportedException or OverflowException or ArgumentException or
+            InvalidOperationException)
+        {
+            viewModel.ReportCamoImageFailure(
+                $"The camo image could not be loaded: {exception.Message}");
+        }
+        finally
+        {
+            preview?.Dispose();
+            _isCamoImageImportInProgress = false;
+        }
+    }
+
+    private void ResetCamoAnimationButton_Click(
+        object? sender,
+        RoutedEventArgs e) => _preview?.ResetMaterialAnimation();
 
     private void Editor_SizeChanged(object? sender, SizeChangedEventArgs e)
         => UpdatePropertyWorkspaceLayout(
