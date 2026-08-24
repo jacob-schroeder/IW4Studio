@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using IW4.Assets.Math;
 
-namespace IW4.Assets.XModel.Export;
+namespace IW4.Assets.Export.XModel;
 
 /// <summary>
 /// The fixed PS3 XSurface streams used by MTL_WORLDVERT_TEX_2_NRM_2.

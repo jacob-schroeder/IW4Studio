@@ -1,6 +1,6 @@
 using System.Numerics;
 using System.Text.Json;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 
 namespace IW4.Render.Export;
 

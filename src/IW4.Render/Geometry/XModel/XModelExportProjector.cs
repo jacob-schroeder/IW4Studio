@@ -2,7 +2,7 @@ using System.Numerics;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 
 namespace IW4.Render.Geometry.XModel;
 

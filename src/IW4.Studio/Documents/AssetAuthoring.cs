@@ -7,7 +7,7 @@ using IW4.Assets.Assets.Menu;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Weapon;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Studio.Documents.MenuEditing;

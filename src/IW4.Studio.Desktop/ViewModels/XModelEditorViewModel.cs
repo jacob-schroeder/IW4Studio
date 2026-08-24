@@ -4,7 +4,7 @@ using IW4.Assets.Assets;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
 using IW4.Render;

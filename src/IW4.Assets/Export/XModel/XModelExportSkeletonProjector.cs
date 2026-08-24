@@ -1,7 +1,7 @@
 using System.Numerics;
 using IW4.Assets.Assets.XModel;
 
-namespace IW4.Assets.XModel.Export;
+namespace IW4.Assets.Export.XModel;
 
 /// <summary>
 /// Projects the canonical XModel BaseMat skeleton to the global transforms

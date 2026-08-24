@@ -1,6 +1,6 @@
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Material;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 using System.Numerics;
 
 namespace IW4.Studio.Documents;

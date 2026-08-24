@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace IW4.Assets.XModel.Export;
+namespace IW4.Assets.Export.XModel;
 
 /// <summary>Invariant-culture writer for OpenAssetTools XMODEL_EXPORT version 6.</summary>
 public static class XModelExportWriter

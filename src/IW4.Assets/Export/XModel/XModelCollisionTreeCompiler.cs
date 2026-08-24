@@ -2,7 +2,7 @@ using System.Numerics;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Math;
 
-namespace IW4.Assets.XModel.Export;
+namespace IW4.Assets.Export.XModel;
 
 /// <summary>Builds the conservative native collision-tree form for imported rigid XSurfaces.</summary>
 public static class XModelCollisionTreeCompiler

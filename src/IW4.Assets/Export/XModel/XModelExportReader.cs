@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace IW4.Assets.XModel.Export;
+namespace IW4.Assets.Export.XModel;
 
 /// <summary>One source-location diagnostic emitted while reading XMODEL_EXPORT.</summary>
 public sealed record XModelExportParseIssue(int Line, int Column, string Message);

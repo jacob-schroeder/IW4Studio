@@ -1,5 +1,5 @@
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;

@@ -5,7 +5,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using System.Runtime.InteropServices;
-using IW4.Assets.XModel.Export;
+using IW4.Assets.Export.XModel;
 using IW4.FastFiles.Zone;
 using IW4.Render;
 using IW4.Render.Export;
