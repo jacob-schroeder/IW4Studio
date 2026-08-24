@@ -4,12 +4,12 @@ namespace IW4.AssetExchange.SourceFormat.XModel;
 
 public class XModelExchange : SourceExchange<XModelAsset>, ISourceExchange<XModelAsset>
 {
-    public override void Link(XModelAsset asset)
+    public override XModelAsset Link(string path)
     {
         throw new NotImplementedException();
     }
 
-    public override void Unlink()
+    public override void Unlink(XModelAsset asset)
     {
         throw new NotImplementedException();
     }
