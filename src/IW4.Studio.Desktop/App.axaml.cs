@@ -62,7 +62,9 @@ public sealed partial class App : Application
         EditorWindow? editorWindow = null;
         try
         {
-            editorWindow = new EditorWindow(workspace, _navigationCoordinator);
+            editorWindow = new EditorWindow(
+                workspace,
+                _navigationCoordinator);
             editorWindow.WelcomeRequested += ReturnToWelcome;
             editorWindow.AboutRequested += EditorWindow_AboutRequested;
             editorWindow.ThemeRequested += SelectTheme;

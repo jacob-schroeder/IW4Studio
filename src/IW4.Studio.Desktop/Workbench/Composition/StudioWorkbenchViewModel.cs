@@ -55,6 +55,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private readonly ObservableCollection<WorkbenchEditorTabViewModel> _openEditorTabs = [];
     private readonly Dictionary<WorkbenchEditorTabKey, WorkbenchEditorTabViewModel>
         _editorTabsByKey = [];
+    private int _sourceDumpInProgress;
     private WorkbenchEditorTabViewModel? _selectedEditorTab;
     private bool _disposed;
 
@@ -444,6 +445,9 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public bool CanSaveAs => Editor.CanSaveAs;
 
+    public bool CanDumpSourceAssets =>
+        !_disposed && Volatile.Read(ref _sourceDumpInProgress) == 0;
+
     public DockActivationResult ActivateTool(string toolId)
     {
         DockActivationResult result = DockLayout.ActivateTool(toolId);
@@ -588,6 +592,114 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                         " ",
                         result.Diagnostics.DefaultIfEmpty(
                             "Save As was blocked.")));
+    }
+
+    public async Task DumpSourceAssetsAsync(string sourceDirectory)
+    {
+        if (_disposed ||
+            Interlocked.CompareExchange(ref _sourceDumpInProgress, 1, 0) != 0)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(CanDumpSourceAssets));
+        if (DockLayout.State.Bottom.ActiveToolId != StudioToolIds.ConsoleOutput)
+            _ = ActivateTool(StudioToolIds.ConsoleOutput);
+
+        try
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
+            sourceDirectory = Path.GetFullPath(sourceDirectory);
+            FastFileEditingSession session = Editor.EditingSession;
+            WorkspaceAssetCatalogEntry[] rows = session.Document.Rows.ToArray();
+            int supportedRowCount = rows.Count(row =>
+                SourceAssetDumpOperation.SupportedAssetTypes.Contains(
+                    row.AssetType));
+            int unsupportedRowCount = rows.Length - supportedRowCount;
+            AppliedAssetDefinitionsCapture capture = session.CaptureCurrentTargetAssets(
+                SourceAssetDumpOperation.SupportedAssetTypes);
+
+            ConsoleOutput.Append(
+                ConsoleOutputLevel.Information,
+                "Source Dump",
+                $"Dumping {supportedRowCount:N0} supported target assets from " +
+                $"revision {capture.Revision:N0} to '{sourceDirectory}'.");
+
+            CancellationToken cancellationToken = session.CancellationToken;
+            SourceAssetDumpResult result = await Task.Run(
+                () => SourceAssetDumpOperation.Execute(
+                    sourceDirectory,
+                    Workspace,
+                    capture,
+                    supportedRowCount,
+                    unsupportedRowCount,
+                    cancellationToken),
+                cancellationToken);
+            if (_disposed)
+                return;
+
+            foreach (SourceAssetDumpFailure failure in result.Failures)
+            {
+                ConsoleOutput.Append(
+                    ConsoleOutputLevel.Error,
+                    "Source Dump",
+                    $"{failure.AssetType} '{failure.AssetName}': {failure.Message}");
+            }
+
+            if (result.UnavailableSupportedAssetCount != 0)
+            {
+                ConsoleOutput.Append(
+                    ConsoleOutputLevel.Warning,
+                    "Source Dump",
+                    $"Skipped {result.UnavailableSupportedAssetCount:N0} supported target " +
+                    "assets whose linked definitions are unavailable.");
+            }
+            if (result.UnsupportedAssetCount != 0)
+            {
+                ConsoleOutput.Append(
+                    ConsoleOutputLevel.Information,
+                    "Source Dump",
+                    $"Skipped {result.UnsupportedAssetCount:N0} target assets whose source " +
+                    "formats are not implemented yet.");
+            }
+
+            ConsoleOutput.Append(
+                result.Failures.Count != 0
+                    ? ConsoleOutputLevel.Error
+                    : result.UnavailableSupportedAssetCount != 0
+                        ? ConsoleOutputLevel.Warning
+                        : ConsoleOutputLevel.Information,
+                "Source Dump",
+                $"Dumped {result.DumpedAssetCount:N0} assets to " +
+                $"{result.DumpedFileCount:N0} files from revision {result.Revision:N0}; " +
+                $"{result.Failures.Count:N0} failed.");
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_disposed)
+            {
+                ConsoleOutput.Append(
+                    ConsoleOutputLevel.Warning,
+                    "Source Dump",
+                    "Source dumping was cancelled.");
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!_disposed)
+            {
+                ConsoleOutput.Append(
+                    ConsoleOutputLevel.Error,
+                    "Source Dump",
+                    $"Source dumping failed before all assets could be processed: {exception.Message}");
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _sourceDumpInProgress, 0);
+            if (!_disposed)
+                OnPropertyChanged(nameof(CanDumpSourceAssets));
+        }
     }
 
     public void Dispose()

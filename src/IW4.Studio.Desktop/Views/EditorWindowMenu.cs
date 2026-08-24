@@ -39,7 +39,11 @@ internal static class StudioMenu
             "Tools",
             Items:
             [
-                new("Live Preview", StudioMenuAction.LivePreview)
+                new("Live Preview", StudioMenuAction.LivePreview),
+                new(
+                    "Dump Source Assets",
+                    StudioMenuAction.DumpSourceAssets,
+                    "CanDumpSourceAssets")
             ]),
         new(
             "Options",
@@ -211,6 +215,7 @@ internal enum StudioMenuAction
 {
     ShowAbout,
     SaveAs,
+    DumpSourceAssets,
     OpenAnother,
     Exit,
     LivePreview,

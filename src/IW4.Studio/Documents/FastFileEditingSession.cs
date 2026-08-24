@@ -182,10 +182,7 @@ public sealed class FastFileEditingSession : IDisposable
     public AppliedAssetDefinitionsCapture CaptureAppliedAssets(
         IEnumerable<XAssetType> assetTypes)
     {
-        ArgumentNullException.ThrowIfNull(assetTypes);
-        var requested = new HashSet<XAssetType>(assetTypes);
-        if (requested.Any(type => !Enum.IsDefined(type)))
-            throw new ArgumentOutOfRangeException(nameof(assetTypes));
+        HashSet<XAssetType> requested = ValidateCapturedAssetTypes(assetTypes);
 
         lock (_gate)
         {
@@ -204,6 +201,45 @@ public sealed class FastFileEditingSession : IDisposable
                 .ToArray();
             return new AppliedAssetDefinitionsCapture(_revision.Revision, definitions);
         }
+    }
+
+    public AppliedAssetDefinitionsCapture CaptureCurrentTargetAssets(
+        IEnumerable<XAssetType> assetTypes)
+    {
+        HashSet<XAssetType> requested = ValidateCapturedAssetTypes(assetTypes);
+
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            AppliedAssetDefinition[] definitions = Document.Rows
+                .Where(entry => entry.TargetRowIdentity is not null &&
+                    entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition &&
+                    entry.Access == WorkspaceAssetAccess.Editable &&
+                    requested.Contains(entry.AssetType) &&
+                    entry.Definition is not null)
+                .Select(entry =>
+                {
+                    TargetZoneRowIdentity identity = entry.TargetRowIdentity!.Value;
+                    IW4.Assets.Assets.BaseAsset definition =
+                        _drafts.TryGetValue(identity, out DraftState? draft)
+                            ? draft.CreateCurrentDefinition()
+                            : entry.Definition!;
+                    return new AppliedAssetDefinition(identity, definition);
+                })
+                .ToArray();
+            return new AppliedAssetDefinitionsCapture(_revision.Revision, definitions);
+        }
+    }
+
+    private static HashSet<XAssetType> ValidateCapturedAssetTypes(
+        IEnumerable<XAssetType> assetTypes)
+    {
+        ArgumentNullException.ThrowIfNull(assetTypes);
+        var requested = new HashSet<XAssetType>(assetTypes);
+        if (requested.Any(type => !Enum.IsDefined(type)))
+            throw new ArgumentOutOfRangeException(nameof(assetTypes));
+
+        return requested;
     }
 
     /// <summary>The current immutable request snapshot.</summary>

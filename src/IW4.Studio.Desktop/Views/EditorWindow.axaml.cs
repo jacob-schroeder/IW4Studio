@@ -43,11 +43,6 @@ public sealed partial class EditorWindow : Window
         _unsavedChangesDialog = new AvaloniaUnsavedChangesDialog(this);
     }
 
-    public EditorWindow(FastFileWorkspace workspace)
-        : this(workspace, new DestructiveNavigationCoordinator())
-    {
-    }
-
     internal EditorWindow(
         FastFileWorkspace workspace,
         DestructiveNavigationCoordinator navigationCoordinator)
@@ -346,6 +341,9 @@ public sealed partial class EditorWindow : Window
             case StudioMenuAction.SaveAs:
                 await RequestSaveAsAsync();
                 break;
+            case StudioMenuAction.DumpSourceAssets:
+                await RequestDumpSourceAssetsAsync();
+                break;
             case StudioMenuAction.OpenAnother:
                 await RequestOpenAnotherAsync();
                 break;
@@ -519,6 +517,41 @@ public sealed partial class EditorWindow : Window
                 ]
             });
             return file?.TryGetLocalPath();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task RequestDumpSourceAssetsAsync()
+    {
+        if (_disposed || _workbench is not { } workbench)
+            return;
+
+        string? destinationDirectory = await SelectSourceDumpDirectoryAsync();
+        if (destinationDirectory is null || _disposed)
+            return;
+
+        await workbench.DumpSourceAssetsAsync(destinationDirectory);
+    }
+
+    private async Task<string?> SelectSourceDumpDirectoryAsync()
+    {
+        try
+        {
+            IReadOnlyList<IStorageFolder> folders =
+                await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "Select source asset dump folder",
+                    AllowMultiple = false
+                });
+            string? destinationDirectory = folders.Count == 0
+                ? null
+                : folders[0].TryGetLocalPath();
+            return string.IsNullOrWhiteSpace(destinationDirectory)
+                ? null
+                : destinationDirectory;
         }
         catch
         {

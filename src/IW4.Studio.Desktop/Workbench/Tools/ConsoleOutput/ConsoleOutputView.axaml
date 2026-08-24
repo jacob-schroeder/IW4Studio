@@ -72,7 +72,15 @@
                        FontFamily="Consolas"
                        FontSize="10"
                        TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource StudioTextBrush}" />
+                       Foreground="{DynamicResource StudioTextBrush}">
+              <TextBlock.ContextFlyout>
+                <MenuFlyout>
+                  <MenuItem Header="Copy Detail"
+                            Tag="{Binding Message}"
+                            Click="CopyDetailMenuItem_Click" />
+                </MenuFlyout>
+              </TextBlock.ContextFlyout>
+            </TextBlock>
           </Grid>
         </DataTemplate>
       </ListBox.ItemTemplate>

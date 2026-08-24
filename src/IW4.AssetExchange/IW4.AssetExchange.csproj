@@ -7,7 +7,12 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\src\IW4.Assets\IW4.Assets.csproj" />
+      <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="SourceFormat\ISourceExchange.cs" />
+      <Compile Remove="SourceFormat\SourceExchange.cs" />
     </ItemGroup>
 
 </Project>

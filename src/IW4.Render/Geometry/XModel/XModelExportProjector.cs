@@ -24,10 +24,9 @@ public static class XModelExportProjector
         out IReadOnlyList<string> blockers)
     {
         ArgumentNullException.ThrowIfNull(model);
-        document = null;
-        var failures = new List<string>();
         if (!XModelLodGeometryCatalog.TryCreate(model, out IReadOnlyList<XModelLodGeometry> geometries))
         {
+            document = null;
             blockers = ["The XModel has no valid canonical loaded LOD geometry."];
             return false;
         }
@@ -36,9 +35,81 @@ public static class XModelExportProjector
             value.LodIndex == loadedLodIndex);
         if (geometry is null)
         {
+            document = null;
             blockers = [$"LOD {loadedLodIndex} is not a loaded canonical XModel LOD."];
             return false;
         }
+
+        return TryProjectLod(
+            model,
+            geometry,
+            loadedLodIndex,
+            out document,
+            out blockers);
+    }
+
+    /// <summary>
+    /// Projects any active LOD whose native XModelSurfs payload was
+    /// materialized by the loader. Unlike renderer selection, source export
+    /// must not discard rows below MaxLoadedLod.
+    /// </summary>
+    public static bool TryProjectMaterializedLod(
+        XModelAsset model,
+        int lodIndex,
+        out XModelExportDocument? document,
+        out IReadOnlyList<string> blockers)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        document = null;
+        int lodCount = model.NumLods == 0
+            ? model.Lods.Count
+            : model.NumLods;
+        if (lodCount is < 1 or > 4 ||
+            lodCount > model.Lods.Count ||
+            lodIndex < 0 ||
+            lodIndex >= lodCount)
+        {
+            blockers = [$"LOD {lodIndex} is not an active XModel LOD."];
+            return false;
+        }
+
+        XModelLodInfo lod = model.Lods[lodIndex];
+        XModelSurfsAsset? modelSurfs = lod.ModelSurfs;
+        int surfaceCount = lod.NumSurfs;
+        if (modelSurfs is null ||
+            surfaceCount <= 0 ||
+            surfaceCount > modelSurfs.Surfaces.Count)
+        {
+            blockers =
+            [
+                $"LOD {lodIndex} has no complete materialized XModelSurfs geometry."
+            ];
+            return false;
+        }
+
+        var geometry = new XModelLodGeometry(
+            lodIndex,
+            lod,
+            modelSurfs,
+            lod.SurfIndex,
+            surfaceCount);
+        return TryProjectLod(
+            model,
+            geometry,
+            lodIndex,
+            out document,
+            out blockers);
+    }
+
+    private static bool TryProjectLod(
+        XModelAsset model,
+        XModelLodGeometry geometry,
+        int loadedLodIndex,
+        out XModelExportDocument? document,
+        out IReadOnlyList<string> blockers)
+    {
+        document = null;
+        var failures = new List<string>();
         if (!XSurfaceVertexDecoder.TryCreate(
                 XSurfaceVertexDecoder.DefaultTexCoordSource,
                 out XSurfaceVertexDecoder? decoder) ||

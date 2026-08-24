@@ -26,6 +26,16 @@ public enum WindowStaticFlags : int
     WINDOW_STATIC_AUTOWRAPPED = 0x00800000,
 
     /// <summary>
+    /// Window is authored with the popup menu keyword.
+    /// </summary>
+    WINDOW_STATIC_POPUP = 0x01000000,
+
+    /// <summary>
+    /// Window is authored with the outOfBoundsClick menu keyword.
+    /// </summary>
+    WINDOW_STATIC_OUT_OF_BOUNDS_CLICK = 0x02000000,
+
+    /// <summary>
     /// Apply legacy split-screen placement scaling while drawing.
     /// </summary>
     WINDOW_STATIC_LEGACY_SPLITSCREEN_SCALE = 0x04000000,
@@ -43,5 +53,10 @@ public enum WindowStaticFlags : int
     /// <summary>
     /// Hide while the matching local-client UI/HUD state is active.
     /// </summary>
-    WINDOW_STATIC_HIDDEN_DURING_UI = 0x40000000
+    WINDOW_STATIC_HIDDEN_DURING_UI = 0x40000000,
+
+    /// <summary>
+    /// Window is authored with the textOnlyFocus menu keyword.
+    /// </summary>
+    WINDOW_STATIC_TEXT_ONLY_FOCUS = unchecked((int)0x80000000)
 }

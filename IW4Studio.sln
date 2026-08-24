@@ -32,7 +32,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "D3dbspLinker", "src\Tools\D
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{F659F56D-FE25-4723-937D-640C118C5BB1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.AssetExchange", "IW4.AssetExchange\IW4.AssetExchange.csproj", "{4B05E50B-8933-4929-8E04-4064EFA29140}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.AssetExchange", "src\IW4.AssetExchange\IW4.AssetExchange.csproj", "{4B05E50B-8933-4929-8E04-4064EFA29140}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

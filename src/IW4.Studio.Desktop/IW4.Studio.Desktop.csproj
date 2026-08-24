@@ -36,6 +36,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\IW4.AssetExchange\IW4.AssetExchange.csproj" />
     <ProjectReference Include="..\IW4.Gsc\IW4.Gsc.csproj" />
     <ProjectReference Include="..\IW4.Studio\IW4.Studio.csproj" />
     <ProjectReference Include="..\IW4.Render.Metal\IW4.Render.Metal.csproj" />
