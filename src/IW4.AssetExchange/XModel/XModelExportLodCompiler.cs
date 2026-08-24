@@ -1,7 +1,7 @@
 using System.Numerics;
 using IW4.Assets.Assets.XModel;
 
-namespace IW4.Assets.Export.XModel;
+namespace IW4.AssetExchange.XModel;
 
 /// <summary>Strict conversion of the visual portion of an XMODEL_EXPORT LOD to native XSurfaces.</summary>
 public static class XModelExportLodCompiler

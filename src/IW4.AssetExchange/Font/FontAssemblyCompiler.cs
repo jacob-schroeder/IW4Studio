@@ -6,7 +6,7 @@ using IW4.Assets.Assets.Font;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 
-namespace IW4.Studio.Documents;
+namespace IW4.AssetExchange.Font;
 
 public sealed record FontRasterization(
     int PixelHeight,
@@ -25,13 +25,27 @@ public sealed record FontRasterizedGlyph(
     int AtlasX,
     int AtlasY);
 
+public sealed record FontAssemblyError
+{
+    public FontAssemblyError(string fieldPath, string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fieldPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        FieldPath = fieldPath;
+        Message = message;
+    }
+
+    public string FieldPath { get; }
+
+    public string Message { get; }
+}
+
 public sealed record FontAssemblyCompileResult(
     FontAsset Definition,
     IReadOnlyList<BaseAsset> Providers,
-    IReadOnlyList<AssetValidationIssue> Issues)
+    IReadOnlyList<FontAssemblyError> Errors)
 {
-    public bool IsSuccess => Issues.All(
-        issue => issue.Severity != AssetValidationSeverity.Error);
+    public bool IsSuccess => Errors.Count == 0;
 }
 
 /// <summary>
@@ -40,7 +54,106 @@ public sealed record FontAssemblyCompileResult(
 /// </summary>
 public static class FontAssemblyCompiler
 {
+    private const int NativeAsciiGlyphCount = 96;
     private const int MaximumAtlasSize = 4096;
+
+    public static IReadOnlyList<FontAssemblyError> Validate(FontAsset value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        var errors = new List<FontAssemblyError>();
+        if (string.IsNullOrWhiteSpace(value.Name))
+        {
+            errors.Add(Error("font.name", "A Font requires an asset name."));
+        }
+        if (value.PixelHeight is <= 0 or > byte.MaxValue)
+        {
+            errors.Add(Error(
+                "font.pixelHeight",
+                $"IW4 Font pixel height must be between 1 and {byte.MaxValue}."));
+        }
+        if (value.GlyphCount != value.Glyphs.Count)
+        {
+            errors.Add(Error(
+                "font.glyphCount",
+                "Font.GlyphCount must equal its detached glyph count."));
+        }
+        if (value.Glyphs.Count < NativeAsciiGlyphCount)
+        {
+            errors.Add(Error(
+                "font.glyphs",
+                "The native IW4 glyph table requires 96 direct ASCII entries."));
+        }
+        else
+        {
+            for (int ordinal = 0; ordinal < NativeAsciiGlyphCount; ordinal++)
+            {
+                ushort expected = checked((ushort)(0x20 + ordinal));
+                FontGlyph? glyph = value.Glyphs[ordinal];
+                if (glyph is not null && glyph.Letter == expected)
+                    continue;
+                errors.Add(Error(
+                    $"font.glyphs[{ordinal}].letter",
+                    $"Native IW4 glyph ordinal {ordinal} must be U+{expected:X4}."));
+                break;
+            }
+            for (int ordinal = NativeAsciiGlyphCount + 1;
+                 ordinal < value.Glyphs.Count;
+                 ordinal++)
+            {
+                FontGlyph? previous = value.Glyphs[ordinal - 1];
+                FontGlyph? current = value.Glyphs[ordinal];
+                if (previous is not null &&
+                    current is not null &&
+                    previous.Letter <= current.Letter)
+                {
+                    continue;
+                }
+                errors.Add(Error(
+                    $"font.glyphs[{ordinal}].letter",
+                    "The native IW4 glyph suffix must be sorted by UTF-16 code unit."));
+                break;
+            }
+        }
+        if (value.Material is null || string.IsNullOrWhiteSpace(value.Material.Info.Name))
+        {
+            errors.Add(Error(
+                "font.material",
+                "A Font requires a materialized primary Material provider with an asset name."));
+        }
+        if (value.GlowMaterial is not null &&
+            string.IsNullOrWhiteSpace(value.GlowMaterial.Info.Name))
+        {
+            errors.Add(Error(
+                "font.glowMaterial",
+                "A materialized Font glow Material requires an asset name."));
+        }
+
+        for (int index = 0; index < value.Glyphs.Count; index++)
+        {
+            FontGlyph? glyph = value.Glyphs[index];
+            if (glyph is null)
+            {
+                errors.Add(Error(
+                    $"font.glyphs[{index}]",
+                    "Font glyph rows cannot be null."));
+                continue;
+            }
+            if (!float.IsFinite(glyph.S0) ||
+                !float.IsFinite(glyph.T0) ||
+                !float.IsFinite(glyph.S1) ||
+                !float.IsFinite(glyph.T1) ||
+                glyph.S0 < 0f || glyph.S0 > 1f ||
+                glyph.T0 < 0f || glyph.T0 > 1f ||
+                glyph.S1 < glyph.S0 || glyph.S1 > 1f ||
+                glyph.T1 < glyph.T0 || glyph.T1 > 1f)
+            {
+                errors.Add(Error(
+                    $"font.glyphs[{index}].uv",
+                    "Font glyph UV bounds must be finite, normalized, and ordered."));
+            }
+        }
+        return Array.AsReadOnly(errors.ToArray());
+    }
 
     public static FontAssemblyCompileResult Compile(
         FontAsset template,
@@ -48,22 +161,22 @@ public static class FontAssemblyCompiler
     {
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(rasterization);
-        var issues = new List<AssetValidationIssue>();
-        ValidateRasterization(template, rasterization, issues);
+        var errors = new List<FontAssemblyError>();
+        ValidateRasterization(template, rasterization, errors);
 
         MaterialTextureDef? primaryAtlasRow = SelectAtlasRow(
             template.Material,
             "font.material",
-            issues);
+            errors);
         MaterialTextureDef? glowAtlasRow = template.GlowMaterial is null
             ? null
-            : SelectAtlasRow(template.GlowMaterial, "font.glowMaterial", issues);
-        if (issues.Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            : SelectAtlasRow(template.GlowMaterial, "font.glowMaterial", errors);
+        if (errors.Count != 0)
         {
             return new FontAssemblyCompileResult(
                 CopyFont(template),
                 [],
-                Array.AsReadOnly(issues.ToArray()));
+                Array.AsReadOnly(errors.ToArray()));
         }
 
         string digest = ContentDigest(template, rasterization);
@@ -121,33 +234,33 @@ public static class FontAssemblyCompiler
         return new FontAssemblyCompileResult(
             definition,
             Array.AsReadOnly(providers),
-            Array.AsReadOnly(issues.ToArray()));
+            Array.AsReadOnly(errors.ToArray()));
     }
 
     private static void ValidateRasterization(
         FontAsset template,
         FontRasterization rasterization,
-        ICollection<AssetValidationIssue> issues)
+        ICollection<FontAssemblyError> errors)
     {
-        foreach (AssetValidationIssue issue in FontAuthoringValidator.Validate(template))
-            issues.Add(issue);
+        foreach (FontAssemblyError error in Validate(template))
+            errors.Add(error);
         if (rasterization.PixelHeight != template.PixelHeight)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 "font.pixelHeight",
                 $"The rasterized pixel height must preserve the template value {template.PixelHeight}."));
         }
         if (rasterization.AtlasWidth is <= 0 or > MaximumAtlasSize ||
             rasterization.AtlasHeight is <= 0 or > MaximumAtlasSize)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 "font.atlas",
                 $"The IW4 font atlas must be between 1 and {MaximumAtlasSize} pixels on each axis."));
         }
         else if (!IsPowerOfTwo(rasterization.AtlasWidth) ||
                  !IsPowerOfTwo(rasterization.AtlasHeight))
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 "font.atlas",
                 "The IW4 font atlas dimensions must be powers of two."));
         }
@@ -158,14 +271,14 @@ public static class FontAssemblyCompiler
             expectedRgbaBytes > int.MaxValue ||
             rasterization.RgbaBytes.Count != expectedRgbaBytes)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 "font.atlas.rgbaBytes",
                 "The atlas pixels must contain exactly four tightly packed RGBA bytes per pixel."));
         }
         if (rasterization.Glyphs is null ||
             rasterization.Glyphs.Count != template.Glyphs.Count)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 "font.glyphs",
                 "Replacement must preserve the template Font character set and glyph count."));
             return;
@@ -176,7 +289,7 @@ public static class FontAssemblyCompiler
             FontRasterizedGlyph? glyph = rasterization.Glyphs[index];
             if (glyph is null)
             {
-                issues.Add(Error(
+                errors.Add(Error(
                     $"font.glyphs[{index}]",
                     "Rasterized glyph rows cannot be null."));
                 continue;
@@ -184,7 +297,7 @@ public static class FontAssemblyCompiler
             FontGlyph? templateGlyph = template.Glyphs[index];
             if (templateGlyph is not null && glyph.Letter != templateGlyph.Letter)
             {
-                issues.Add(Error(
+                errors.Add(Error(
                     $"font.glyphs[{index}].letter",
                     $"Replacement must preserve U+{templateGlyph.Letter:X4} at this native table ordinal."));
             }
@@ -195,7 +308,7 @@ public static class FontAssemblyCompiler
                 right > rasterization.AtlasWidth ||
                 bottom > rasterization.AtlasHeight)
             {
-                issues.Add(Error(
+                errors.Add(Error(
                     $"font.glyphs[{index}].atlasBounds",
                     "The rasterized glyph rectangle lies outside the font atlas."));
             }
@@ -205,31 +318,31 @@ public static class FontAssemblyCompiler
     private static MaterialTextureDef? SelectAtlasRow(
         MaterialAsset? template,
         string fieldPath,
-        ICollection<AssetValidationIssue> issues)
+        ICollection<FontAssemblyError> errors)
     {
         if (template is null || string.IsNullOrWhiteSpace(template.Info.Name))
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 fieldPath,
                 "Font compilation requires a materialized Material template with an asset name."));
             return null;
         }
         if (template.TechniqueSet is null)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 fieldPath,
                 "Font compilation requires a materialized technique-set dependency."));
         }
         if (template.TextureCount != template.Textures.Count)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 $"{fieldPath}.textures",
                 "The Material texture count does not match its detached texture table."));
         }
         if (template.Textures.Any(row => row.Water is not null ||
                 row.Semantic == TextureSemantic.WaterMap))
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 $"{fieldPath}.textures",
                 "Water-material templates cannot be used for an IW4 Font atlas."));
         }
@@ -238,7 +351,7 @@ public static class FontAssemblyCompiler
             .ToArray();
         if (candidates.Length != 1)
         {
-            issues.Add(Error(
+            errors.Add(Error(
                 $"{fieldPath}.textures",
                 "An IW4 Font Material template must have exactly one materialized image texture row."));
             return null;
@@ -436,6 +549,6 @@ public static class FontAssemblyCompiler
         values.AddRange(bytes.ToArray());
     }
 
-    private static AssetValidationIssue Error(string fieldPath, string message) =>
-        new(fieldPath, message, AssetValidationSeverity.Error);
+    private static FontAssemblyError Error(string fieldPath, string message) =>
+        new(fieldPath, message);
 }

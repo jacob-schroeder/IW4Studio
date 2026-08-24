@@ -1,3 +1,4 @@
+using IW4.AssetExchange.RawFile;
 using IW4.AssetExchange.SourceFormat.Font;
 using IW4.AssetExchange.SourceFormat.Image;
 using IW4.AssetExchange.SourceFormat.Leaderboard;
@@ -36,9 +37,8 @@ using IW4.Assets.Assets.Vehicle;
 using IW4.Assets.Assets.Weapon;
 using IW4.Assets.Assets.XAnim;
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.Export.XModel;
+using IW4.AssetExchange.XModel;
 using IW4.FastFiles.Zone;
-using IW4.Render.Geometry.XModel;
 using IW4.Render.Textures;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;

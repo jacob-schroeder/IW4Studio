@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.Export.XModel;
+using IW4.AssetExchange.XModel;
 
 namespace IW4.AssetExchange.SourceFormat.XModel;
 

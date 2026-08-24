@@ -1,3 +1,4 @@
+using IW4.AssetExchange.RawFile;
 using IW4.FastFiles.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Gsc.BuiltIns;

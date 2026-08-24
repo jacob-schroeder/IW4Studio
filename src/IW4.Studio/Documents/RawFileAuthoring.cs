@@ -1,3 +1,4 @@
+using IW4.AssetExchange.RawFile;
 using IW4.Assets.Assets.RawFile;
 
 namespace IW4.Studio.Documents;

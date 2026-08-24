@@ -1,8 +1,6 @@
 using System.Numerics;
 using System.Text.Json;
-using IW4.Assets.Export.XModel;
-
-namespace IW4.Render.Export;
+namespace IW4.AssetExchange.XModel;
 
 public sealed class XModelGlbMaterialTexture
 {

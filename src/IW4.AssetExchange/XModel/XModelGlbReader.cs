@@ -1,9 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Text.Json;
-using IW4.Assets.Export.XModel;
-
-namespace IW4.Render.Export;
+namespace IW4.AssetExchange.XModel;
 
 /// <summary>
 /// Reads one binary glTF 2.0 model into the engine-neutral XMODEL_EXPORT

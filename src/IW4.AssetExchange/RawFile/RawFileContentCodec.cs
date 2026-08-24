@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using IW4.Assets.Assets.RawFile;
 
-namespace IW4.Studio.Documents;
+namespace IW4.AssetExchange.RawFile;
 
 /// <summary>Strict logical-content boundary for RawFile editing.  It neither
 /// guesses at malformed compression nor treats compressed bytes as text.</summary>

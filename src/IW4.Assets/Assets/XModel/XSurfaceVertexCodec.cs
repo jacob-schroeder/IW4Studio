@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using IW4.Assets.Math;
 
-namespace IW4.Assets.Export.XModel;
+namespace IW4.Assets.Assets.XModel;
 
 /// <summary>
 /// The fixed PS3 XSurface streams used by MTL_WORLDVERT_TEX_2_NRM_2.
@@ -12,6 +12,7 @@ namespace IW4.Assets.Export.XModel;
 public static class XSurfaceVertexCodec
 {
     public const int StreamStride = 0x10;
+    private const float MaximumReasonableCoordinate = 1_000_000f;
 
     public static void WriteVertex(
         Span<byte> verts0, Span<byte> verts1, int vertexIndex,
@@ -52,6 +53,15 @@ public static class XSurfaceVertexCodec
         position = new Vector3(ReadSingle(verts0, offset), ReadSingle(verts0, offset + 4), ReadSingle(verts0, offset + 8));
         return IsFinite(position);
     }
+
+    public static bool TryReadReasonablePosition(
+        IReadOnlyList<byte> verts0,
+        int vertexIndex,
+        out Vector3 position) =>
+        TryReadPosition(verts0, vertexIndex, out position) &&
+        MathF.Abs(position.X) < MaximumReasonableCoordinate &&
+        MathF.Abs(position.Y) < MaximumReasonableCoordinate &&
+        MathF.Abs(position.Z) < MaximumReasonableCoordinate;
 
     public static bool TryReadColor(IReadOnlyList<byte> verts1, int vertexIndex, out Vector4 color)
     {

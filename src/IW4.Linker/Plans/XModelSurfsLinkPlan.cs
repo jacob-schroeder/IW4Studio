@@ -1,5 +1,4 @@
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.Export.XModel;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
@@ -338,7 +337,7 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
 
         LinkStorageTarget? nodes = ResolveNodes(tree, freeze, $"{fieldPath}.Nodes");
         LinkStorageTarget? leafs = ResolveLeafs(tree, freeze, $"{fieldPath}.Leafs");
-        if (!XModelCollisionTreeCompiler.TryValidate(
+        if (!XModelCollisionTreeValidator.TryValidate(
                 tree,
                 rigid,
                 surface,

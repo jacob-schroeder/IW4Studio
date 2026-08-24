@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace IW4.Studio.Documents;
+namespace IW4.AssetExchange.RawFile;
 
 public enum RawFileContentKind
 {

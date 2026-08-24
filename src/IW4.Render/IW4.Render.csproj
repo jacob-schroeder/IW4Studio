@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\IW4.AssetExchange\IW4.AssetExchange.csproj" />
     <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
     <ProjectReference Include="..\IW4.Runtime\IW4.Runtime.csproj" />
   </ItemGroup>

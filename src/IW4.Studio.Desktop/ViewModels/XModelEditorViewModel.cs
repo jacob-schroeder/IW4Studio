@@ -4,13 +4,12 @@ using IW4.Assets.Assets;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
-using IW4.Assets.Export.XModel;
+using IW4.AssetExchange.XModel;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
 using IW4.Render;
 using IW4.Render.Assets;
 using IW4.Render.Geometry.XModel;
-using IW4.Render.Export;
 using IW4.Render.Materials;
 using IW4.Render.OpenGl.XModel;
 using IW4.Render.SceneBuilding;
@@ -905,7 +904,7 @@ public sealed class XModelEditorViewModel
 
             MaterialAsset? template = baselineMaterials
                 .Concat(workspaceTemplates)
-                .Where(candidate => XModelAssemblyCompiler.IsCompatibleImportTemplate(
+                .Where(candidate => XModelImportedMaterialCompiler.IsCompatibleImportTemplate(
                     source,
                     candidate,
                     out _))
@@ -1489,7 +1488,7 @@ public sealed class XModelImportedMaterialMappingItemViewModel
     public string MaterialName => _source.Name;
     public string TargetMaterialName => _source.ImportMaterial is not null &&
         _mapping is { } mapping
-            ? XModelAssemblyCompiler.ImportedMaterialName(
+            ? XModelImportedMaterialCompiler.ImportedMaterialName(
                 _modelName,
                 _source,
                 mapping.Material)

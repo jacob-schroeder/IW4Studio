@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace IW4.Assets.Export.XModel;
+namespace IW4.AssetExchange.XModel;
 
 /// <summary>
 /// The complete, lossless XMODEL_EXPORT version-6 handoff for one loaded IW4

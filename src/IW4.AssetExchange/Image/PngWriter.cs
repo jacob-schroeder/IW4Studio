@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
-using IW4.Assets.Assets.Image;
-
-namespace IW4.Render.Export;
+namespace IW4.AssetExchange.Image;
 
 public static class PngWriter
 {

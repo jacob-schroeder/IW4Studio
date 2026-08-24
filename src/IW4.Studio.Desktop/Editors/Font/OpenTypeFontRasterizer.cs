@@ -1,7 +1,7 @@
+using IW4.AssetExchange.Font;
 using IW4.Assets.Assets.Font;
 using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
-using IW4.Studio.Documents;
 using SkiaSharp;
 
 namespace IW4.Studio.Desktop.Editors.Font;

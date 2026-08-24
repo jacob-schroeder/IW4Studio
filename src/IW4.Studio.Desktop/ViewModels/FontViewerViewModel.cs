@@ -1,4 +1,5 @@
 using System.Text;
+using IW4.AssetExchange.Font;
 using IW4.Assets.Assets.Font;
 using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Zone;
@@ -249,13 +250,18 @@ public sealed class FontViewerViewModel
             return false;
         }
 
-        SetDiagnostics(candidate.Compiled.Issues);
+        AssetValidationIssue[] compileIssues = candidate.Compiled.Errors
+            .Select(error => new AssetValidationIssue(
+                error.FieldPath,
+                error.Message,
+                AssetValidationSeverity.Error))
+            .ToArray();
+        SetDiagnostics(compileIssues);
         if (!candidate.Compiled.IsSuccess)
         {
             error = string.Join(
                 " ",
-                candidate.Compiled.Issues
-                    .Where(issue => issue.Severity == AssetValidationSeverity.Error)
+                candidate.Compiled.Errors
                     .Take(3)
                     .Select(issue => issue.Message));
             StatusMessage = string.IsNullOrWhiteSpace(error)

@@ -2,14 +2,12 @@ using System.Numerics;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.Export.XModel;
 
-namespace IW4.Render.Geometry.XModel;
+namespace IW4.AssetExchange.XModel;
 
 /// <summary>
 /// Projects one loader-materialized XModel LOD to the complete XMODEL_EXPORT
-/// v6 handoff. This intentionally reads packed XSurface streams directly:
-/// XModelRenderScene has already compacted and converted render-only data.
+/// v6 handoff by reading the native packed XSurface streams directly.
 /// </summary>
 public static class XModelExportProjector
 {
@@ -24,25 +22,47 @@ public static class XModelExportProjector
         out IReadOnlyList<string> blockers)
     {
         ArgumentNullException.ThrowIfNull(model);
-        if (!XModelLodGeometryCatalog.TryCreate(model, out IReadOnlyList<XModelLodGeometry> geometries))
+        int lodCount = model.NumLods == 0
+            ? model.Lods.Count
+            : model.NumLods;
+        int firstLoadedLod = model.MaxLoadedLod;
+        if (lodCount <= 0 ||
+            lodCount > 4 ||
+            lodCount > model.Lods.Count ||
+            firstLoadedLod < 0 ||
+            firstLoadedLod >= lodCount)
         {
             document = null;
             blockers = ["The XModel has no valid canonical loaded LOD geometry."];
             return false;
         }
 
-        XModelLodGeometry? geometry = geometries.FirstOrDefault(value =>
-            value.LodIndex == loadedLodIndex);
-        if (geometry is null)
+        for (int lodIndex = firstLoadedLod; lodIndex < lodCount; lodIndex++)
+        {
+            XModelLodInfo loadedLod = model.Lods[lodIndex];
+            if (loadedLod.ModelSurfs is null ||
+                loadedLod.NumSurfs <= 0 ||
+                loadedLod.NumSurfs > loadedLod.ModelSurfs.Surfaces.Count)
+            {
+                document = null;
+                blockers = ["The XModel has no valid canonical loaded LOD geometry."];
+                return false;
+            }
+        }
+
+        if (loadedLodIndex < firstLoadedLod || loadedLodIndex >= lodCount)
         {
             document = null;
             blockers = [$"LOD {loadedLodIndex} is not a loaded canonical XModel LOD."];
             return false;
         }
 
+        XModelLodInfo lod = model.Lods[loadedLodIndex];
         return TryProjectLod(
             model,
-            geometry,
+            lod.ModelSurfs!,
+            lod.SurfIndex,
+            lod.NumSurfs,
             loadedLodIndex,
             out document,
             out blockers);
@@ -87,15 +107,11 @@ public static class XModelExportProjector
             return false;
         }
 
-        var geometry = new XModelLodGeometry(
-            lodIndex,
-            lod,
-            modelSurfs,
-            lod.SurfIndex,
-            surfaceCount);
         return TryProjectLod(
             model,
-            geometry,
+            modelSurfs,
+            lod.SurfIndex,
+            surfaceCount,
             lodIndex,
             out document,
             out blockers);
@@ -103,22 +119,15 @@ public static class XModelExportProjector
 
     private static bool TryProjectLod(
         XModelAsset model,
-        XModelLodGeometry geometry,
+        XModelSurfsAsset modelSurfs,
+        int materialSurfaceStart,
+        int surfaceCount,
         int loadedLodIndex,
         out XModelExportDocument? document,
         out IReadOnlyList<string> blockers)
     {
         document = null;
         var failures = new List<string>();
-        if (!XSurfaceVertexDecoder.TryCreate(
-                XSurfaceVertexDecoder.DefaultTexCoordSource,
-                out XSurfaceVertexDecoder? decoder) ||
-            decoder is null)
-        {
-            blockers = ["The recovered XSurface UV0 decoder is unavailable."];
-            return false;
-        }
-
         if (!XModelExportSkeletonProjector.TryProject(
                 model,
                 out IReadOnlyList<XModelExportBone> bones,
@@ -132,15 +141,15 @@ public static class XModelExportProjector
         {
             var vertices = new List<XModelExportVertex>();
             var triangles = new List<XModelExportTriangle>();
-            var objects = new List<XModelExportObject>(geometry.SurfaceCount);
+            var objects = new List<XModelExportObject>(surfaceCount);
             var materials = new List<XModelExportMaterial>();
             var materialRows = new Dictionary<MaterialAsset, int>(ReferenceEqualityComparer.Instance);
 
             for (int surfaceOffset = 0;
-                 surfaceOffset < geometry.SurfaceCount;
+                 surfaceOffset < surfaceCount;
                  surfaceOffset++)
             {
-                XSurface? surface = geometry.ModelSurfs.Surfaces[surfaceOffset];
+                XSurface? surface = modelSurfs.Surfaces[surfaceOffset];
                 string prefix = $"LOD {loadedLodIndex} surface {surfaceOffset}";
                 if (surface is null)
                 {
@@ -150,7 +159,7 @@ public static class XModelExportProjector
 
                 int materialIndex = ResolveMaterial(
                     model,
-                    geometry.MaterialSurfaceStart,
+                    materialSurfaceStart,
                     surfaceOffset,
                     materialRows,
                     materials,
@@ -171,11 +180,11 @@ public static class XModelExportProjector
                      vertexIndex < surface.VertCount;
                      vertexIndex++)
                 {
-                    if (!XSurfaceVertexDecoder.TryReadPosition(surface, vertexIndex, out Vector3 position) ||
-                        !decoder.TryReadNormal(surface, vertexIndex, out Vector3 normal) ||
-                        !decoder.TryReadColor(surface, vertexIndex, out Vector4 color) ||
-                        !decoder.TryReadTexCoord(surface, vertexIndex, out Vector2 uv0) ||
-                        !IsFinite(position) || !IsFinite(normal) ||
+                    if (!XSurfaceVertexCodec.TryReadReasonablePosition(surface.Verts0, vertexIndex, out Vector3 position) ||
+                        !XSurfaceVertexCodec.TryReadNormal(surface.Verts1, vertexIndex, out Vector3 normal) ||
+                        !XSurfaceVertexCodec.TryReadColor(surface.Verts1, vertexIndex, out Vector4 color) ||
+                        !XSurfaceVertexCodec.TryReadUv0(surface.Verts1, vertexIndex, out Vector2 uv0) ||
+                        !IsFinite(normal) ||
                         !IsFinite(color) || !IsFinite(uv0))
                     {
                         failures.Add($"{prefix} vertex {vertexIndex}: position, normal, color, or UV0 could not be decoded as finite data.");

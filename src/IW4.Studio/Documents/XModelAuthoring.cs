@@ -1,7 +1,7 @@
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
-using IW4.Assets.Export.XModel;
+using IW4.AssetExchange.XModel;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Studio.Documents;

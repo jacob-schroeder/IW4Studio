@@ -3,7 +3,6 @@ using System.Numerics;
 using IW4.Assets.Math;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
-using IW4.Assets.Export.XModel;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
 using IW4.Render.Shaders;
@@ -32,8 +31,6 @@ internal sealed class XSurfaceVertexDecoder
         MaterialStreamSource.Tangent;
     private const RsxVertexElementType PackedDirectionRsxType =
         RsxVertexElementType.Signed11_11_10Normalized;
-    private const float MaximumReasonableCoordinate = 1_000_000f;
-
     private readonly VertexSource _texCoord;
 
     private XSurfaceVertexDecoder(VertexSource texCoord)
@@ -186,10 +183,10 @@ internal sealed class XSurfaceVertexDecoder
         int vertexIndex,
         out Vector3 value)
     {
-        return XSurfaceVertexCodec.TryReadPosition(
+        return XSurfaceVertexCodec.TryReadReasonablePosition(
             surface.Verts0,
             vertexIndex,
-            out value) && IsReasonablePosition(value);
+            out value);
     }
 
     internal bool TryReadTexCoord(
@@ -479,13 +476,5 @@ internal sealed class XSurfaceVertexDecoder
         offset = (int)candidate;
         return true;
     }
-
-    private static bool IsReasonablePosition(Vector3 value) =>
-        float.IsFinite(value.X) &&
-        float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) &&
-        MathF.Abs(value.X) < MaximumReasonableCoordinate &&
-        MathF.Abs(value.Y) < MaximumReasonableCoordinate &&
-        MathF.Abs(value.Z) < MaximumReasonableCoordinate;
 
 }

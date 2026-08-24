@@ -1,3 +1,4 @@
+using IW4.AssetExchange.RawFile;
 using IW4.Assets.Assets.RawFile;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;

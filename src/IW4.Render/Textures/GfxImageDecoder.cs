@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Numerics;
 using IW4.Assets.Assets.Image;
 
-using IW4.Render.Export;
+using IW4.AssetExchange.Image;
 
 namespace IW4.Render.Textures;
 
