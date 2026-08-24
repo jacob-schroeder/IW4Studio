@@ -5,13 +5,15 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
 using IW4.Studio.Documents;
+using IW4Map.Inspection;
 
-namespace IW4Map;
+namespace IW4Map.Conversion;
 
 internal static class FastFileConverter
 {

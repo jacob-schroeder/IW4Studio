@@ -1,6 +1,6 @@
-namespace IW4Map;
+namespace IW4.Assets.D3dbsp;
 
-internal enum D3dbspLumpType : uint
+public enum D3dbspLumpType : uint
 {
     Materials = 0x00,
     LightBytes = 0x01,

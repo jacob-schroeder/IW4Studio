@@ -1,4 +1,6 @@
-using IW4Map;
+using IW4.Assets.D3dbsp;
+using IW4Map.Conversion;
+using IW4Map.Inspection;
 
 return Run(args);
 

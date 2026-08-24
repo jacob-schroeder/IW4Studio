@@ -3,10 +3,12 @@ using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.Assets.Physics;
+using IW4.Assets.D3dbsp;
 using IW4.Assets.Math;
 using IW4.Studio.Documents;
+using IW4Map.D3dbsp;
 
-namespace IW4Map;
+namespace IW4Map.Inspection;
 
 internal static class MapPairInspector
 {

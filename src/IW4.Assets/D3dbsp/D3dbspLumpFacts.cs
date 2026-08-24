@@ -1,6 +1,6 @@
-namespace IW4Map;
+namespace IW4.Assets.D3dbsp;
 
-internal static class D3dbspLumpFacts
+public static class D3dbspLumpFacts
 {
     public static int? GetV22ElementSize(D3dbspLumpType type) => type switch
     {

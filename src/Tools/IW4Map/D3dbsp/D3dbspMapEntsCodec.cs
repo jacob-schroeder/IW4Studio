@@ -3,7 +3,7 @@ using System.Text;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.Math;
 
-namespace IW4Map;
+namespace IW4Map.D3dbsp;
 
 internal static class D3dbspMapEntsCodec
 {

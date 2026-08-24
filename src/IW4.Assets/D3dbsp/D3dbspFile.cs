@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 
-namespace IW4Map;
+namespace IW4.Assets.D3dbsp;
 
-internal sealed class D3dbspFile
+public sealed class D3dbspFile
 {
     private const uint Ident = 0x50534249;
     private const uint Version = 22;

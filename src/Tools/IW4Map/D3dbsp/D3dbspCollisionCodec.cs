@@ -4,7 +4,7 @@ using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 
-namespace IW4Map;
+namespace IW4Map.D3dbsp;
 
 internal static class D3dbspCollisionCodec
 {

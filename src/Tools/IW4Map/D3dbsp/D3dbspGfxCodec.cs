@@ -3,9 +3,10 @@ using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.D3dbsp;
 using IW4.Assets.Math;
 
-namespace IW4Map;
+namespace IW4Map.D3dbsp;
 
 internal static class D3dbspGfxCodec
 {

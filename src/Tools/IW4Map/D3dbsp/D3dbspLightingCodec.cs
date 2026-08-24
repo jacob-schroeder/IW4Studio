@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using IW4.Assets.Assets.GfxMap;
 
-namespace IW4Map;
+namespace IW4Map.D3dbsp;
 
 internal static class D3dbspLightingCodec
 {

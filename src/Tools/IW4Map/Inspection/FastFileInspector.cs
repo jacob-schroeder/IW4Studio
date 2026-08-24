@@ -6,7 +6,7 @@ using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Studio.Documents;
 
-namespace IW4Map;
+namespace IW4Map.Inspection;
 
 internal static class FastFileInspector
 {

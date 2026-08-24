@@ -1,6 +1,6 @@
-namespace IW4Map;
+namespace IW4.Assets.D3dbsp;
 
-internal sealed class D3dbspLump
+public sealed class D3dbspLump
 {
     public D3dbspLump(
         D3dbspLumpType type,

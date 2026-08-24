@@ -11,10 +11,12 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Pointers;
 using IW4.FastFiles.Zone;
+using IW4Map.D3dbsp;
 
-namespace IW4Map;
+namespace IW4Map.Conversion;
 
 internal sealed record D3dbspAssetGraph(
     IReadOnlyList<BaseAsset> Roots,

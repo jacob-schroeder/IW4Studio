@@ -4,9 +4,12 @@ using IW4.Assets.Assets.FxMap;
 using IW4.Assets.Assets.GameMap;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.MapEnts;
+using IW4.Assets.D3dbsp;
 using IW4.Studio.Documents;
+using IW4Map.D3dbsp;
+using IW4Map.Inspection;
 
-namespace IW4Map;
+namespace IW4Map.Conversion;
 
 internal static class FastFileD3dbspEncoder
 {
