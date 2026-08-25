@@ -7,9 +7,9 @@ internal static class CompiledXAnimWriter
 {
     private const ushort Version17 = 17;
     private const ushort Version18 = 18;
-    private const byte FlagLooped = 0x01;
-    private const byte FlagDelta = 0x02;
-    private const byte FlagDelta3D = 0x04;
+    internal const byte FlagLooped = 0x01;
+    internal const byte FlagDelta = 0x02;
+    internal const byte FlagDelta3D = 0x04;
 
     // These are the exact literals used by OAT's compiled XAnim writer.
     private const float SmallTransSizeScale = 0.003921568859368563f;

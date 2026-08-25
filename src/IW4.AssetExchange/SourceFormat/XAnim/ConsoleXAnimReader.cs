@@ -54,7 +54,8 @@ internal static class ConsoleXAnimReader
         return new XAnimSourceParts
         {
             NumFrames = asset.NumFrames,
-            Looped = asset.Flags != 0,
+            Looped =
+                (asset.Flags & CompiledXAnimWriter.FlagLooped) != 0,
             Framerate = asset.Framerate,
             AssetType = asset.AssetType,
             Bones = bones,
@@ -117,11 +118,28 @@ internal static class ConsoleXAnimReader
         string assetName,
         bool useByteIndices)
     {
-        if (asset.Flags is not 0 and not 1)
+        const byte KnownFlags =
+            CompiledXAnimWriter.FlagLooped |
+            CompiledXAnimWriter.FlagDelta |
+            CompiledXAnimWriter.FlagDelta3D;
+        byte unknownFlags = (byte)(asset.Flags & ~KnownFlags);
+        if (unknownFlags != 0)
         {
             throw Invalid(
                 assetName,
-                $"has invalid console loop flag {asset.Flags}; expected 0 or 1.");
+                $"has unmapped console XAnim flag bits 0x{unknownFlags:X2} " +
+                $"in value 0x{asset.Flags:X2}.");
+        }
+
+        const byte DeltaFlags =
+            CompiledXAnimWriter.FlagDelta |
+            CompiledXAnimWriter.FlagDelta3D;
+        if ((asset.Flags & DeltaFlags) == DeltaFlags)
+        {
+            throw Invalid(
+                assetName,
+                $"sets both 2D and 3D delta flags in console XAnim flag " +
+                $"value 0x{asset.Flags:X2}.");
         }
         if (!float.IsFinite(asset.Framerate) || asset.Framerate < 0.0f)
         {
