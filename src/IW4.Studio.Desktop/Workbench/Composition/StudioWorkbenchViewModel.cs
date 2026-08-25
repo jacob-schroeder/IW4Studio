@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
@@ -621,8 +622,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 SourceAssetDumpOperation.SupportedAssetTypes);
             IReadOnlyList<MaterialShaderAsset> targetShaderProviders =
                 session.CaptureCurrentTargetShaderProviders();
+            IReadOnlyList<GfxImageAsset> targetImageProviders =
+                session.CaptureCurrentTargetImageProviders();
             int supportedAssetCount = checked(
-                supportedRowCount + targetShaderProviders.Count);
+                supportedRowCount +
+                targetShaderProviders.Count +
+                targetImageProviders.Count);
 
             ConsoleOutput.Append(
                 ConsoleOutputLevel.Information,
@@ -637,6 +642,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     Workspace,
                     capture,
                     targetShaderProviders,
+                    targetImageProviders,
                     supportedRowCount,
                     unsupportedRowCount,
                     cancellationToken),

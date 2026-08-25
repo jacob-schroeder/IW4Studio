@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
@@ -252,6 +253,29 @@ public sealed class FastFileEditingSession : IDisposable
                 .Select(entry => (MaterialShaderAsset)entry.Definition!)
                 .ToArray();
             return Array.AsReadOnly(shaders);
+        }
+    }
+
+    /// <summary>
+    /// Captures active full image providers owned by the selected target that
+    /// are not represented by serialized target rows.
+    /// </summary>
+    public IReadOnlyList<GfxImageAsset> CaptureCurrentTargetImageProviders()
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            GfxImageAsset[] images = Workspace.AssetCatalog.DependencyEntries
+                .Where(entry =>
+                    entry.Origin == WorkspaceAssetOrigin.DependencyOnly &&
+                    entry.Access == WorkspaceAssetAccess.ReadOnly &&
+                    entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
+                    entry.ProviderZone?.IsTarget == true &&
+                    entry.AssetType == XAssetType.Image &&
+                    entry.Definition is GfxImageAsset)
+                .Select(entry => (GfxImageAsset)entry.Definition!)
+                .ToArray();
+            return Array.AsReadOnly(images);
         }
     }
 

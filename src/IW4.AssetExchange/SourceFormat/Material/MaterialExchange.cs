@@ -14,16 +14,6 @@ namespace IW4.AssetExchange.SourceFormat.Material;
 public sealed class MaterialExchange
 {
     private const uint UnrepresentedStateBits0Mask = 0x20000000;
-    private const uint StencilFrontFieldsMask =
-        GfxStateBitsEncoding.StencilFrontPassMask |
-        GfxStateBitsEncoding.StencilFrontFailMask |
-        GfxStateBitsEncoding.StencilFrontDepthFailMask |
-        GfxStateBitsEncoding.StencilFrontFunctionMask;
-    private const uint StencilBackFieldsMask =
-        GfxStateBitsEncoding.StencilBackPassMask |
-        GfxStateBitsEncoding.StencilBackFailMask |
-        GfxStateBitsEncoding.StencilBackDepthFailMask |
-        GfxStateBitsEncoding.StencilBackFunctionMask;
 
     private static readonly JsonWriterOptions JsonOptions = new()
     {
@@ -706,30 +696,6 @@ public sealed class MaterialExchange
         {
             throw new InvalidDataException(
                 $"Material '{assetName}' state-bit row {index} sets word-0 bit 29, which material-v1 cannot represent.");
-        }
-        if (HasFlag(word0, GfxStateBits0Flags.AlphaTestDisabled) &&
-            (word0 & GfxStateBitsEncoding.AlphaTestMask) != 0)
-        {
-            throw new InvalidDataException(
-                $"Material '{assetName}' state-bit row {index} retains alpha-test bits while alpha testing is disabled.");
-        }
-        if (HasFlag(word1, GfxStateBits1Flags.DepthTestDisabled) &&
-            (word1 & GfxStateBitsEncoding.DepthTestMask) != 0)
-        {
-            throw new InvalidDataException(
-                $"Material '{assetName}' state-bit row {index} retains depth-test bits while depth testing is disabled.");
-        }
-        if (!HasFlag(word1, GfxStateBits1Flags.StencilEnabled) &&
-            (word1 & StencilFrontFieldsMask) != 0)
-        {
-            throw new InvalidDataException(
-                $"Material '{assetName}' state-bit row {index} retains front-stencil fields while front stencil is disabled.");
-        }
-        if (!HasFlag(word1, GfxStateBits1Flags.StencilBackFaceIndependent) &&
-            (word1 & StencilBackFieldsMask) != 0)
-        {
-            throw new InvalidDataException(
-                $"Material '{assetName}' state-bit row {index} retains back-stencil fields while back stencil is disabled.");
         }
 
         _ = BlendName(Field(word0, GfxStateBitsEncoding.SourceBlendRgbMask,

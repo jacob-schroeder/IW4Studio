@@ -43,7 +43,6 @@ using IW4.Assets.Assets.XAnim;
 using IW4.Assets.Assets.XModel;
 using IW4.AssetExchange.XModel;
 using IW4.FastFiles.Zone;
-using IW4.Render.Textures;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;
 
@@ -85,6 +84,7 @@ internal static class SourceAssetDumpOperation
         FastFileWorkspace workspace,
         AppliedAssetDefinitionsCapture capture,
         IReadOnlyList<MaterialShaderAsset> targetShaderProviders,
+        IReadOnlyList<GfxImageAsset> targetImageProviders,
         int supportedRowCount,
         int unsupportedRowCount,
         CancellationToken cancellationToken)
@@ -93,6 +93,7 @@ internal static class SourceAssetDumpOperation
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(capture);
         ArgumentNullException.ThrowIfNull(targetShaderProviders);
+        ArgumentNullException.ThrowIfNull(targetImageProviders);
         ArgumentOutOfRangeException.ThrowIfNegative(supportedRowCount);
         ArgumentOutOfRangeException.ThrowIfNegative(unsupportedRowCount);
 
@@ -171,7 +172,8 @@ internal static class SourceAssetDumpOperation
             .OrderBy(value => value.Definition is MenuFileAsset ? 0 : 1)
             .ThenBy(value => value.RowIdentity.SerializedIndex)
             .Select(value => value.Definition)
-            .Concat(targetShaderProviders);
+            .Concat(targetShaderProviders)
+            .Concat(targetImageProviders);
         foreach (BaseAsset asset in orderedAssets)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -334,23 +336,24 @@ internal static class SourceAssetDumpOperation
         GfxImageAsset image,
         WorkspaceGfxImagePayloadResolver imagePayloads)
     {
-        if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(
+        try
+        {
+            IReadOnlyList<ImageSourceMipLevel> mipLevels =
+                SourceImageDumpDecoder.Decode(image, imagePayloads);
+            return new ImageExchange().Unlink(
+                sourceDirectory,
                 image,
-                imagePayloads,
-                out GfxImagePreviewSnapshot? preview,
-                out string reason) ||
-            preview is null)
+                mipLevels);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or
+                                          NotSupportedException or
+                                          OverflowException)
         {
             throw new InvalidDataException(
-                $"Image '{image.Name ?? "<unnamed>"}' cannot be converted to DDS: {reason}");
+                $"Image '{image.Name ?? "<unnamed>"}' cannot be converted to " +
+                $"DDS: {exception.Message}",
+                exception);
         }
-
-        return new ImageExchange().Unlink(
-            sourceDirectory,
-            image,
-            preview.Width,
-            preview.Height,
-            preview.GetRgbaBytesCopy());
     }
 
     private static IReadOnlyList<string> DumpRawFile(

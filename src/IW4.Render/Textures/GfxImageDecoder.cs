@@ -117,25 +117,11 @@ internal static class GfxImageDecoder
             return false;
         }
 
-        ImagePixelFormat pixelFormat = ResolvePixelFormat(image.Format);
-        if (pixelFormat == ImagePixelFormat.Unknown)
+        if (!TryResolveDeclaredPixelFormat(
+                image,
+                out ImagePixelFormat pixelFormat,
+                out reason))
         {
-            reason = $"unsupported format 0x{image.Format:X2}";
-            return false;
-        }
-
-        uint formatKey = GfxImagePixelLayout.BuildFormatKey(
-            image.FormatEncoding,
-            image.TextureRemap);
-        if (pixelFormat == ImagePixelFormat.G8B8 && formatKey != GcmFormatKeyG8B8)
-        {
-            reason = $"unsupported CELL_GCM_TEXTURE_G8B8 native format key 0x{formatKey:X8}";
-            return false;
-        }
-        if (pixelFormat == ImagePixelFormat.Rg16Float &&
-            formatKey != GcmFormatKeyY16X16Float)
-        {
-            reason = $"unsupported CELL_GCM_TEXTURE_Y16_X16_FLOAT native format key 0x{formatKey:X8}";
             return false;
         }
 
@@ -174,8 +160,21 @@ internal static class GfxImageDecoder
                 ImagePixelFormat.Bc2 => DecodeBc2(payloadBytes, width, height),
                 ImagePixelFormat.Bc3 => DecodeBc3(payloadBytes, width, height),
                 ImagePixelFormat.Rg16Float => DecodeRg16FloatPreview(
-                    DecodeRg16Float(payloadBytes, width, height, image.Format, expectedBytes)),
-                _ => DecodeLinear(payloadBytes, width, height, pixelFormat, image.Format, expectedBytes)
+                    DecodeRg16Float(
+                        payloadBytes,
+                        width,
+                        height,
+                        depth: 1,
+                        image.Format,
+                        expectedBytes)),
+                _ => DecodeLinear(
+                    payloadBytes,
+                    width,
+                    height,
+                    depth: 1,
+                    pixelFormat,
+                    image.Format,
+                    expectedBytes)
             };
         }
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentOutOfRangeException)
@@ -203,7 +202,13 @@ internal static class GfxImageDecoder
         out string reason)
     {
         decoded = default;
-        ImagePixelFormat pixelFormat = ResolvePixelFormat(image.Format);
+        if (!TryResolveDeclaredPixelFormat(
+                image,
+                out ImagePixelFormat pixelFormat,
+                out reason))
+        {
+            return false;
+        }
         if (pixelFormat != ImagePixelFormat.Rg16Float)
         {
             if (!TryDecodeRgba(
@@ -245,15 +250,6 @@ internal static class GfxImageDecoder
             return false;
         }
 
-        uint formatKey = GfxImagePixelLayout.BuildFormatKey(
-            image.FormatEncoding,
-            image.TextureRemap);
-        if (formatKey != GcmFormatKeyY16X16Float)
-        {
-            reason = $"unsupported CELL_GCM_TEXTURE_Y16_X16_FLOAT native format key 0x{formatKey:X8}";
-            return false;
-        }
-
         int expectedBytes = GetTopMipSize(width, height, pixelFormat);
         if (payloadBytes.Count < expectedBytes)
         {
@@ -280,6 +276,7 @@ internal static class GfxImageDecoder
                     payloadBytes,
                     width,
                     height,
+                    depth: 1,
                     image.Format,
                     expectedBytes));
             return true;
@@ -387,6 +384,244 @@ internal static class GfxImageDecoder
         return true;
     }
 
+    internal static bool TryDecodeVolumeRgba(
+        GfxImageAsset image,
+        IReadOnlyList<byte> payloadBytes,
+        int width,
+        int height,
+        int depth,
+        out byte[] rgbaBytes,
+        out string reason)
+    {
+        rgbaBytes = [];
+        reason = string.Empty;
+        if (image.MapType != MapType.ThreeDimensional ||
+            image.DimensionCount != GfxImageDimension.ThreeDimensional ||
+            image.IsCubemap)
+        {
+            reason =
+                $"image is not an RSX volume texture (mapType=0x{(byte)image.MapType:X2}, " +
+                $"dimension={image.DimensionCount}, multiFace=0x{image.MultiFaceControl:X2})";
+            return false;
+        }
+        if (payloadBytes.Count == 0)
+        {
+            reason = "no payload bytes";
+            return false;
+        }
+        if (width <= 0 || height <= 0 || depth <= 0)
+        {
+            reason = $"invalid volume dimensions {width}x{height}x{depth}";
+            return false;
+        }
+        if (!TryResolveDeclaredPixelFormat(
+                image,
+                out ImagePixelFormat pixelFormat,
+                out reason))
+        {
+            return false;
+        }
+
+        int expectedBytes;
+        try
+        {
+            expectedBytes = checked(
+                GetTopMipSize(width, height, pixelFormat) * depth);
+        }
+        catch (OverflowException)
+        {
+            reason = $"volume dimensions {width}x{height}x{depth} are too large";
+            return false;
+        }
+        if (payloadBytes.Count < expectedBytes)
+        {
+            reason =
+                $"payload has 0x{payloadBytes.Count:X} byte(s), needs 0x{expectedBytes:X}";
+            return false;
+        }
+
+        bool requiresMortonDeswizzle =
+            (pixelFormat is ImagePixelFormat.Bgra32 or
+                            ImagePixelFormat.Drgb32 or
+                            ImagePixelFormat.Rg16Float or
+                            ImagePixelFormat.G8B8 or
+                            ImagePixelFormat.Luminance8) &&
+            IsSwizzledGcmFormat(image.Format);
+        if (requiresMortonDeswizzle &&
+            (!IsPowerOfTwo(width) ||
+             !IsPowerOfTwo(height) ||
+             !IsPowerOfTwo(depth)))
+        {
+            reason =
+                $"swizzled volume dimensions {width}x{height}x{depth} are unsupported";
+            return false;
+        }
+
+        try
+        {
+            rgbaBytes = pixelFormat switch
+            {
+                ImagePixelFormat.Bc1 => DecodeBcVolume(
+                    payloadBytes,
+                    width,
+                    height,
+                    depth,
+                    blockByteCount: 8,
+                    bytesPerSlice: GetTopMipSize(width, height, pixelFormat),
+                    DecodeBc1),
+                ImagePixelFormat.Bc2 => DecodeBcVolume(
+                    payloadBytes,
+                    width,
+                    height,
+                    depth,
+                    blockByteCount: 16,
+                    bytesPerSlice: GetTopMipSize(width, height, pixelFormat),
+                    DecodeBc2),
+                ImagePixelFormat.Bc3 => DecodeBcVolume(
+                    payloadBytes,
+                    width,
+                    height,
+                    depth,
+                    blockByteCount: 16,
+                    bytesPerSlice: GetTopMipSize(width, height, pixelFormat),
+                    DecodeBc3),
+                ImagePixelFormat.Rg16Float => DecodeRg16FloatPreview(
+                    DecodeRg16Float(
+                        payloadBytes,
+                        width,
+                        height,
+                        depth,
+                        image.Format,
+                        expectedBytes)),
+                _ => DecodeLinear(
+                    payloadBytes,
+                    width,
+                    height,
+                    depth,
+                    pixelFormat,
+                    image.Format,
+                    expectedBytes)
+            };
+        }
+        catch (Exception ex) when (ex is InvalidDataException or
+                                   NotSupportedException or
+                                   ArgumentOutOfRangeException or
+                                   OverflowException)
+        {
+            reason = ex.Message;
+            return false;
+        }
+
+        return true;
+    }
+
+    private delegate byte[] DecodeBcSlice(
+        IReadOnlyList<byte> payloadBytes,
+        int width,
+        int height);
+
+    private static byte[] DecodeBcVolume(
+        IReadOnlyList<byte> payloadBytes,
+        int width,
+        int height,
+        int depth,
+        int blockByteCount,
+        int bytesPerSlice,
+        DecodeBcSlice decodeSlice)
+    {
+        byte[] source = payloadBytes as byte[] ?? payloadBytes.ToArray();
+        if (depth > 1 &&
+            IsPowerOfTwo(width) &&
+            IsPowerOfTwo(height))
+        {
+            source = UntileBcVolumeVtc(
+                source,
+                width,
+                height,
+                depth,
+                blockByteCount);
+        }
+
+        byte[] result = new byte[checked(width * height * depth * 4)];
+        int decodedSliceBytes = checked(width * height * 4);
+        for (int slice = 0; slice < depth; slice++)
+        {
+            byte[] decoded = decodeSlice(
+                source.AsSpan(slice * bytesPerSlice, bytesPerSlice).ToArray(),
+                width,
+                height);
+            decoded.CopyTo(result, slice * decodedSliceBytes);
+        }
+        return result;
+    }
+
+    private static byte[] UntileBcVolumeVtc(
+        byte[] source,
+        int width,
+        int height,
+        int depth,
+        int blockByteCount)
+    {
+        int widthInBlocks = Math.Max(1, (width + 3) / 4);
+        int heightInBlocks = Math.Max(1, (height + 3) / 4);
+        int blocksPerSlice = checked(widthInBlocks * heightInBlocks);
+        byte[] result = new byte[checked(
+            blocksPerSlice * depth * blockByteCount)];
+        int destinationBlockOffset = 0;
+        int sourceBlockOffset = 0;
+        int tiledDepth = depth / 4 * 4;
+
+        for (int slice = 0; slice < tiledDepth; slice++)
+        {
+            for (int block = 0; block < blocksPerSlice; block++)
+            {
+                CopyBlock(
+                    source,
+                    sourceBlockOffset + block * 4,
+                    result,
+                    destinationBlockOffset + block,
+                    blockByteCount);
+            }
+
+            destinationBlockOffset += blocksPerSlice;
+            sourceBlockOffset = (slice & 3) == 3
+                ? checked(sourceBlockOffset + blocksPerSlice * 4 - 3)
+                : checked(sourceBlockOffset + 1);
+        }
+
+        int tailDepth = depth - tiledDepth;
+        for (int slice = 0; slice < tailDepth; slice++)
+        {
+            for (int block = 0; block < blocksPerSlice; block++)
+            {
+                CopyBlock(
+                    source,
+                    sourceBlockOffset + block * tailDepth,
+                    result,
+                    destinationBlockOffset + block,
+                    blockByteCount);
+            }
+
+            destinationBlockOffset += blocksPerSlice;
+            sourceBlockOffset++;
+        }
+
+        return result;
+    }
+
+    private static void CopyBlock(
+        byte[] source,
+        int sourceBlock,
+        byte[] destination,
+        int destinationBlock,
+        int blockByteCount)
+    {
+        source.AsSpan(sourceBlock * blockByteCount, blockByteCount)
+            .CopyTo(destination.AsSpan(
+                destinationBlock * blockByteCount,
+                blockByteCount));
+    }
+
     private static byte[] DeswizzleMorton2D(byte[] source, int width, int height, int bytesPerPixel)
     {
         int log2Width = BitOperations.Log2((uint)width);
@@ -404,6 +639,41 @@ internal static class GfxImageDecoder
                 int destinationPixel = y * width + x;
                 source.AsSpan(sourcePixel * bytesPerPixel, bytesPerPixel)
                     .CopyTo(result.AsSpan(destinationPixel * bytesPerPixel, bytesPerPixel));
+            }
+        }
+        return result;
+    }
+
+    private static byte[] DeswizzleMorton3D(
+        byte[] source,
+        int width,
+        int height,
+        int depth,
+        int bytesPerPixel)
+    {
+        int log2Width = BitOperations.Log2((uint)width);
+        int log2Height = BitOperations.Log2((uint)height);
+        int log2Depth = BitOperations.Log2((uint)depth);
+        byte[] result = new byte[source.Length];
+        for (int z = 0; z < depth; z++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int sourcePixel = MortonIndex3D(
+                        x,
+                        y,
+                        z,
+                        log2Width,
+                        log2Height,
+                        log2Depth);
+                    int destinationPixel = (z * height + y) * width + x;
+                    source.AsSpan(sourcePixel * bytesPerPixel, bytesPerPixel)
+                        .CopyTo(result.AsSpan(
+                            destinationPixel * bytesPerPixel,
+                            bytesPerPixel));
+                }
             }
         }
         return result;
@@ -431,6 +701,40 @@ internal static class GfxImageDecoder
                 index |= (y & 1) << outputBit++;
                 y >>= 1;
                 log2Height--;
+            }
+        }
+        return index;
+    }
+
+    private static int MortonIndex3D(
+        int x,
+        int y,
+        int z,
+        int log2Width,
+        int log2Height,
+        int log2Depth)
+    {
+        int index = 0;
+        int outputBit = 0;
+        while (log2Width > 0 || log2Height > 0 || log2Depth > 0)
+        {
+            if (log2Width > 0)
+            {
+                index |= (x & 1) << outputBit++;
+                x >>= 1;
+                log2Width--;
+            }
+            if (log2Height > 0)
+            {
+                index |= (y & 1) << outputBit++;
+                y >>= 1;
+                log2Height--;
+            }
+            if (log2Depth > 0)
+            {
+                index |= (z & 1) << outputBit++;
+                z >>= 1;
+                log2Depth--;
             }
         }
         return index;
@@ -493,6 +797,40 @@ internal static class GfxImageDecoder
         };
     }
 
+    private static bool TryResolveDeclaredPixelFormat(
+        GfxImageAsset image,
+        out ImagePixelFormat pixelFormat,
+        out string reason)
+    {
+        pixelFormat = ResolvePixelFormat(image.Format);
+        if (pixelFormat == ImagePixelFormat.Unknown)
+        {
+            reason = $"unsupported format 0x{image.Format:X2}";
+            return false;
+        }
+
+        uint formatKey = GfxImagePixelLayout.BuildFormatKey(
+            image.FormatEncoding,
+            image.TextureRemap);
+        if (pixelFormat == ImagePixelFormat.G8B8 &&
+            formatKey != GcmFormatKeyG8B8)
+        {
+            reason =
+                $"unsupported CELL_GCM_TEXTURE_G8B8 native format key 0x{formatKey:X8}";
+            return false;
+        }
+        if (pixelFormat == ImagePixelFormat.Rg16Float &&
+            formatKey != GcmFormatKeyY16X16Float)
+        {
+            reason =
+                $"unsupported CELL_GCM_TEXTURE_Y16_X16_FLOAT native format key 0x{formatKey:X8}";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
     internal static string DescribeFormat(int format)
     {
         return StripGcmFlags(format) switch
@@ -539,6 +877,7 @@ internal static class GfxImageDecoder
         IReadOnlyList<byte> payloadBytes,
         int width,
         int height,
+        int depth,
         ImagePixelFormat format,
         int rawFormat,
         int byteCount)
@@ -561,14 +900,21 @@ internal static class GfxImageDecoder
         };
         if (swizzledBytesPerPixel != 0 && IsSwizzledGcmFormat(rawFormat))
         {
-            payload = DeswizzleMorton2D(
-                payload.AsSpan(0, byteCount).ToArray(),
-                width,
-                height,
-                swizzledBytesPerPixel);
+            payload = depth == 1
+                ? DeswizzleMorton2D(
+                    payload.AsSpan(0, byteCount).ToArray(),
+                    width,
+                    height,
+                    swizzledBytesPerPixel)
+                : DeswizzleMorton3D(
+                    payload.AsSpan(0, byteCount).ToArray(),
+                    width,
+                    height,
+                    depth,
+                    swizzledBytesPerPixel);
         }
         ReadOnlySpan<byte> data = payload.AsSpan(0, byteCount);
-        byte[] pixels = new byte[checked(width * height * 4)];
+        byte[] pixels = new byte[checked(width * height * depth * 4)];
         switch (format)
         {
             case ImagePixelFormat.Bgra32:
@@ -610,17 +956,25 @@ internal static class GfxImageDecoder
         IReadOnlyList<byte> payloadBytes,
         int width,
         int height,
+        int depth,
         int rawFormat,
         int byteCount)
     {
         byte[] payload = payloadBytes as byte[] ?? payloadBytes.ToArray();
         if (IsSwizzledGcmFormat(rawFormat))
         {
-            payload = DeswizzleMorton2D(
-                payload.AsSpan(0, byteCount).ToArray(),
-                width,
-                height,
-                bytesPerPixel: 4);
+            payload = depth == 1
+                ? DeswizzleMorton2D(
+                    payload.AsSpan(0, byteCount).ToArray(),
+                    width,
+                    height,
+                    bytesPerPixel: 4)
+                : DeswizzleMorton3D(
+                    payload.AsSpan(0, byteCount).ToArray(),
+                    width,
+                    height,
+                    depth,
+                    bytesPerPixel: 4);
         }
 
         ReadOnlySpan<byte> source = payload.AsSpan(0, byteCount);
