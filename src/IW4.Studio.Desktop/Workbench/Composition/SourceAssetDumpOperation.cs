@@ -14,6 +14,7 @@ using IW4.AssetExchange.SourceFormat.Shader;
 using IW4.AssetExchange.SourceFormat.Sound;
 using IW4.AssetExchange.SourceFormat.StringTable;
 using IW4.AssetExchange.SourceFormat.StructuredData;
+using IW4.AssetExchange.SourceFormat.Technique;
 using IW4.AssetExchange.SourceFormat.Techset;
 using IW4.AssetExchange.SourceFormat.Tracer;
 using IW4.AssetExchange.SourceFormat.Vehicle;
@@ -106,6 +107,15 @@ internal static class SourceAssetDumpOperation
         LocalizeAsset[] localizeEntries = definitions
             .Select(value => value.Definition)
             .OfType<LocalizeAsset>()
+            .ToArray();
+        MaterialTechniqueSetAsset[] techniqueSets = definitions
+            .Select(value => value.Definition)
+            .OfType<MaterialTechniqueSetAsset>()
+            .ToArray();
+        MaterialShaderAsset[] shaderProviders = definitions
+            .Select(value => value.Definition)
+            .OfType<MaterialShaderAsset>()
+            .Concat(targetShaderProviders)
             .ToArray();
 
         MenuExchange? menuExchange = null;
@@ -257,6 +267,55 @@ internal static class SourceAssetDumpOperation
                 failures.Add(new SourceAssetDumpFailure(
                     asset.SerializedAssetType,
                     asset.SerializedAssetName ?? "<unnamed>",
+                    exception.Message));
+            }
+        }
+
+        var seenTechniques = new HashSet<MaterialTechniqueAsset>(
+            ReferenceEqualityComparer.Instance);
+        var techniqueSourceNames = new Dictionary<string, MaterialTechniqueAsset>(
+            OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal);
+        TechniqueExchange? techniqueExchange = null;
+        foreach (MaterialTechniqueAsset technique in techniqueSets
+            .SelectMany(techniqueSet => techniqueSet.TechniqueSlots)
+            .Select(slot => slot.Technique)
+            .Where(technique => technique is not null)
+            .Cast<MaterialTechniqueAsset>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!seenTechniques.Add(technique))
+                continue;
+
+            string sourceName = (technique.Name ?? string.Empty)
+                .Replace('\\', '/');
+            if (techniqueSourceNames.TryGetValue(
+                    sourceName,
+                    out MaterialTechniqueAsset? existing))
+            {
+                failures.Add(new SourceAssetDumpFailure(
+                    XAssetType.Techset,
+                    technique.Name ?? "<unnamed technique>",
+                    $"Technique source name collides with the distinct definition at 0x{existing.Offset:X}."));
+                continue;
+            }
+            techniqueSourceNames.Add(sourceName, technique);
+
+            try
+            {
+                techniqueExchange ??= new TechniqueExchange(shaderProviders);
+                IReadOnlyList<string> writtenFiles = techniqueExchange.Unlink(
+                    sourceDirectory,
+                    technique);
+                dumpedFileCount = checked(
+                    dumpedFileCount + writtenFiles.Count);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(new SourceAssetDumpFailure(
+                    XAssetType.Techset,
+                    technique.Name ?? "<unnamed technique>",
                     exception.Message));
             }
         }

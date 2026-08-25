@@ -995,6 +995,28 @@ public sealed class MaterialExchange
         return lookup;
     }
 
+    internal static bool TryGetKnownSourcePropertyName(
+        uint hash,
+        out string name)
+    {
+        if (KnownConstantNames.TryGetValue(hash, out string? constantName))
+        {
+            name = constantName;
+            return true;
+        }
+        if (KnownTextureNames.TryGetValue(hash, out string? textureName))
+        {
+            name = textureName;
+            return true;
+        }
+
+        name = string.Empty;
+        return false;
+    }
+
+    internal static uint HashSourcePropertyName(string value) =>
+        HashString(value);
+
     private static uint HashString(string value)
     {
         uint hash = 0;
