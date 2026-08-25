@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
@@ -618,11 +619,15 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             int unsupportedRowCount = rows.Length - supportedRowCount;
             AppliedAssetDefinitionsCapture capture = session.CaptureCurrentTargetAssets(
                 SourceAssetDumpOperation.SupportedAssetTypes);
+            IReadOnlyList<MaterialShaderAsset> targetShaderProviders =
+                session.CaptureCurrentTargetShaderProviders();
+            int supportedAssetCount = checked(
+                supportedRowCount + targetShaderProviders.Count);
 
             ConsoleOutput.Append(
                 ConsoleOutputLevel.Information,
                 "Source Dump",
-                $"Dumping {supportedRowCount:N0} supported target assets from " +
+                $"Dumping {supportedAssetCount:N0} supported target assets from " +
                 $"revision {capture.Revision:N0} to '{sourceDirectory}'.");
 
             CancellationToken cancellationToken = session.CancellationToken;
@@ -631,6 +636,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     sourceDirectory,
                     Workspace,
                     capture,
+                    targetShaderProviders,
                     supportedRowCount,
                     unsupportedRowCount,
                     cancellationToken),
@@ -652,7 +658,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     ConsoleOutputLevel.Warning,
                     "Source Dump",
                     $"Skipped {result.UnavailableSupportedAssetCount:N0} supported target " +
-                    "assets whose linked definitions are unavailable.");
+                    "rows without owned source definitions to dump (for example, external references).");
             }
             if (result.UnsupportedAssetCount != 0)
             {

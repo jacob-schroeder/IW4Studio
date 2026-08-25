@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 
@@ -228,6 +229,29 @@ public sealed class FastFileEditingSession : IDisposable
                 })
                 .ToArray();
             return new AppliedAssetDefinitionsCapture(_revision.Revision, definitions);
+        }
+    }
+
+    /// <summary>
+    /// Captures active full shader providers owned by the selected target that
+    /// are not represented by serialized target rows.
+    /// </summary>
+    public IReadOnlyList<MaterialShaderAsset> CaptureCurrentTargetShaderProviders()
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            MaterialShaderAsset[] shaders = Workspace.AssetCatalog.DependencyEntries
+                .Where(entry =>
+                    entry.Origin == WorkspaceAssetOrigin.DependencyOnly &&
+                    entry.Access == WorkspaceAssetAccess.ReadOnly &&
+                    entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
+                    entry.ProviderZone?.IsTarget == true &&
+                    entry.AssetType is XAssetType.PixelShader or XAssetType.VertexShader &&
+                    entry.Definition is MaterialShaderAsset)
+                .Select(entry => (MaterialShaderAsset)entry.Definition!)
+                .ToArray();
+            return Array.AsReadOnly(shaders);
         }
     }
 

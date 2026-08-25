@@ -10,9 +10,11 @@ using IW4.AssetExchange.SourceFormat.Menu;
 using IW4.AssetExchange.SourceFormat.PhysCollmap;
 using IW4.AssetExchange.SourceFormat.PhysPreset;
 using IW4.AssetExchange.SourceFormat.RawFile;
+using IW4.AssetExchange.SourceFormat.Shader;
 using IW4.AssetExchange.SourceFormat.Sound;
 using IW4.AssetExchange.SourceFormat.StringTable;
 using IW4.AssetExchange.SourceFormat.StructuredData;
+using IW4.AssetExchange.SourceFormat.Techset;
 using IW4.AssetExchange.SourceFormat.Tracer;
 using IW4.AssetExchange.SourceFormat.Vehicle;
 using IW4.AssetExchange.SourceFormat.Weapon;
@@ -32,6 +34,7 @@ using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.Sound;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.StructuredData;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.Tracer;
 using IW4.Assets.Assets.Vehicle;
 using IW4.Assets.Assets.Weapon;
@@ -55,6 +58,9 @@ internal static class SourceAssetDumpOperation
             XAssetType.XAnim,
             XAssetType.XModel,
             XAssetType.Material,
+            XAssetType.Techset,
+            XAssetType.PixelShader,
+            XAssetType.VertexShader,
             XAssetType.Image,
             XAssetType.SndCurve,
             XAssetType.MapEnts,
@@ -77,6 +83,7 @@ internal static class SourceAssetDumpOperation
         string sourceDirectory,
         FastFileWorkspace workspace,
         AppliedAssetDefinitionsCapture capture,
+        IReadOnlyList<MaterialShaderAsset> targetShaderProviders,
         int supportedRowCount,
         int unsupportedRowCount,
         CancellationToken cancellationToken)
@@ -84,6 +91,7 @@ internal static class SourceAssetDumpOperation
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(capture);
+        ArgumentNullException.ThrowIfNull(targetShaderProviders);
         ArgumentOutOfRangeException.ThrowIfNegative(supportedRowCount);
         ArgumentOutOfRangeException.ThrowIfNegative(unsupportedRowCount);
 
@@ -148,13 +156,15 @@ internal static class SourceAssetDumpOperation
             }
         }
 
-        foreach (AppliedAssetDefinition definition in definitions
+        IEnumerable<BaseAsset> orderedAssets = definitions
             .Where(value => value.Definition is not LocalizeAsset)
             .OrderBy(value => value.Definition is MenuFileAsset ? 0 : 1)
-            .ThenBy(value => value.RowIdentity.SerializedIndex))
+            .ThenBy(value => value.RowIdentity.SerializedIndex)
+            .Select(value => value.Definition)
+            .Concat(targetShaderProviders);
+        foreach (BaseAsset asset in orderedAssets)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            BaseAsset asset = definition.Definition;
             try
             {
                 IReadOnlyList<string> writtenFiles = asset switch
@@ -178,6 +188,14 @@ internal static class SourceAssetDumpOperation
                         new MaterialExchange().Unlink(
                             sourceDirectory,
                             material),
+                    MaterialTechniqueSetAsset techniqueSet =>
+                        new TechsetExchange().Unlink(
+                            sourceDirectory,
+                            techniqueSet),
+                    MaterialShaderAsset shader =>
+                        new ShaderExchange().Unlink(
+                            sourceDirectory,
+                            shader),
                     GfxImageAsset image => DumpImage(
                         sourceDirectory,
                         image,
