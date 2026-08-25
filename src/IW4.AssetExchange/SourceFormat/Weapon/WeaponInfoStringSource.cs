@@ -8,7 +8,7 @@ namespace IW4.AssetExchange.SourceFormat.Weapon;
 internal static partial class WeaponInfoStringSource
 {
     private static readonly string[] WeaponTypeNames =
-        ["bullet", "grenade", "projectile"];
+        ["bullet", "grenade", "projectile", "riotshield"];
     private static readonly string[] WeaponClassNames =
         ["rifle", "sniper", "mg", "smg", "spread", "pistol", "grenade",
             "rocketlauncher", "turret", "throwingknife", "non-player", "item"];

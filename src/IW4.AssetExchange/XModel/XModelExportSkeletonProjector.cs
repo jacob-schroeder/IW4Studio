@@ -77,7 +77,7 @@ public static class XModelExportSkeletonProjector
     }
 
     private static bool IsExportString(string? value) =>
-        !string.IsNullOrEmpty(value) && !value.Any(char.IsControl);
+        value is not null && !value.Any(char.IsControl);
 
     private static bool IsFinite(DObjQuat value) =>
         float.IsFinite(value.X) &&

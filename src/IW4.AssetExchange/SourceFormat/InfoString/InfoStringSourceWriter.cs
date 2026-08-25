@@ -103,19 +103,6 @@ internal sealed class InfoStringSourceWriter(string prefix)
         Set(key, names[value]);
     }
 
-    public void AddIntegralFloat(string key, float value, string field)
-    {
-        RequireFinite(value, field);
-        if ((double)value < int.MinValue || (double)value > int.MaxValue ||
-            value != MathF.Truncate(value))
-        {
-            throw new InvalidDataException(
-                $"{field} value {FormatFloat(value, field)} cannot be represented by the integer IW4 source field '{key}'.");
-        }
-
-        AddInt(key, checked((int)value));
-    }
-
     public void Write(TextWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);

@@ -80,8 +80,8 @@ public sealed class VehicleDefAsset : BaseAsset
     public MaterialAsset? CompassFriendlyIcon { get; init; }
     public XPointer<MaterialAsset> CompassEnemyIconPointer { get; init; }
     public MaterialAsset? CompassEnemyIcon { get; init; }
-    public float CompassIconWidth { get; init; }
-    public float CompassIconHeight { get; init; }
+    public int CompassIconWidth { get; init; }
+    public int CompassIconHeight { get; init; }
     public VehicleEngineSoundFields EngineSounds { get; init; } = new();
     public VehicleSuspensionSoundFields SuspensionSounds { get; init; } = new();
     public VehicleSoundAliasField CollisionSound { get; init; } = VehicleSoundAliasField.Empty;

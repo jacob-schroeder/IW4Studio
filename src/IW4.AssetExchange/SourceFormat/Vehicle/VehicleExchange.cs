@@ -168,10 +168,8 @@ public sealed class VehicleExchange
             asset.CompassEnemyIconPointer.Raw,
             asset.CompassEnemyIcon?.SerializedAssetName,
             $"Vehicle '{assetName}' enemy compass icon"));
-        source.AddIntegralFloat("compassIconWidth", asset.CompassIconWidth,
-            $"Vehicle '{assetName}' compass icon width");
-        source.AddIntegralFloat("compassIconHeight", asset.CompassIconHeight,
-            $"Vehicle '{assetName}' compass icon height");
+        source.AddInt("compassIconWidth", asset.CompassIconWidth);
+        source.AddInt("compassIconHeight", asset.CompassIconHeight);
         source.AddString("lowIdleSnd", SoundName(engine.IdleLowSound,
             $"Vehicle '{assetName}' low idle sound"));
         source.AddString("highIdleSnd", SoundName(engine.IdleHighSound,

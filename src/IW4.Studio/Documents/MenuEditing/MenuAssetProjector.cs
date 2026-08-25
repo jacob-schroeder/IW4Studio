@@ -1,5 +1,4 @@
 using IW4.Assets.Assets.Menu;
-using IW4.FastFiles.Pointers;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -51,13 +50,21 @@ internal static class MenuAssetProjector
         Name = definition.Name,
         MenuCount = definition.MenuCount,
         MenusPointer = definition.MenusPointer,
-        Menus = definition.Menus.Select(reference => new MenuDefReference(
+        Menus = definition.Menus.Select(CloneRegistration).ToArray()
+    };
+
+    internal static MenuDefReference CloneRegistration(MenuDefReference reference)
+    {
+        MenuDefAsset? source = reference.Pointer.ConsumesSource
+            ? reference.SourceMenu ?? reference.CanonicalMenu
+            : reference.CanonicalMenu;
+        return new MenuDefReference(
             reference.Index,
             reference.Pointer,
-            reference.CanonicalMenu is null
+            source is null
                 ? null
-                : new MenuGraphClone(false).CloneMenu(reference.CanonicalMenu))).ToArray()
-    };
+                : new MenuGraphClone(false).CloneMenu(source));
+    }
 
     public static bool SemanticallyEquals(MenuDefAsset left, MenuDefAsset right)
     {

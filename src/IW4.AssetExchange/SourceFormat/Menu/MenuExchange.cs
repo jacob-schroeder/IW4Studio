@@ -151,7 +151,7 @@ public sealed class MenuExchange
         string parentPath = ParentPath(menuFilePath);
         foreach (MenuDefReference reference in menuFile.Menus)
         {
-            MenuDefAsset? menu = reference.CanonicalMenu;
+            MenuDefAsset? menu = SourceDefinition(reference);
             if (menu is null)
                 continue;
 
@@ -178,12 +178,18 @@ public sealed class MenuExchange
                 continue;
             }
 
-            if (!MenuSourceWriter.SupportingDataEquivalent(
+            bool existingMaterializes =
+                existing.MaterializingMenuFilePath is not null;
+            bool candidateMaterializes =
+                materializingMenuFilePath is not null;
+            if (existingMaterializes &&
+                candidateMaterializes &&
+                !MenuSourceWriter.SupportingDataEquivalent(
                     existing.ExpressionData,
                     menu.ExpressionDataValue))
             {
                 throw new InvalidDataException(
-                    $"Duplicate Menu '{menuName}' registrations have " +
+                    $"Duplicate source Menu '{menuName}' registrations have " +
                     "non-equivalent expression-supporting data.");
             }
 
@@ -201,6 +207,10 @@ public sealed class MenuExchange
 
             string? selectedMaterializingMenuFilePath =
                 existing.MaterializingMenuFilePath ?? materializingMenuFilePath;
+            ExpressionSupportingData? selectedExpressionData =
+                !existingMaterializes && candidateMaterializes
+                    ? menu.ExpressionDataValue
+                    : existing.ExpressionData;
 
             // OpenAssetTools keeps the first parent-derived path, except that
             // an exact source-consuming MenuFile-name match wins so the Menu
@@ -212,7 +222,7 @@ public sealed class MenuExchange
                     derivedPath,
                     embeddedMenuFilePath,
                     selectedMaterializingMenuFilePath,
-                    existing.ExpressionData);
+                    selectedExpressionData);
             }
             else if (existing.EmbeddedMenuFilePath is not null &&
                      embeddedMenuFilePath is not null &&
@@ -224,12 +234,12 @@ public sealed class MenuExchange
                     $"Menu '{menuName}' is embedded by both " +
                     $"'{existing.EmbeddedMenuFilePath}' and '{embeddedMenuFilePath}'.");
             }
-            else if (existing.MaterializingMenuFilePath is null &&
-                     selectedMaterializingMenuFilePath is not null)
+            else if (!existingMaterializes && candidateMaterializes)
             {
                 _menuStates[menuIdentity] = existing with
                 {
-                    MaterializingMenuFilePath = selectedMaterializingMenuFilePath
+                    MaterializingMenuFilePath = selectedMaterializingMenuFilePath,
+                    ExpressionData = selectedExpressionData
                 };
             }
         }
@@ -362,7 +372,7 @@ public sealed class MenuExchange
             menuFile.Menus.Count);
         foreach (MenuDefReference reference in menuFile.Menus)
         {
-            MenuDefAsset? menu = reference.CanonicalMenu;
+            MenuDefAsset? menu = SourceDefinition(reference);
             if (menu is null)
                 continue;
 
@@ -376,7 +386,8 @@ public sealed class MenuExchange
                     $"Menu '{menuName}' has no path in the MenuExchange context.");
             }
 
-            if (!MenuSourceWriter.SupportingDataEquivalent(
+            if (reference.Pointer.ConsumesSource &&
+                !MenuSourceWriter.SupportingDataEquivalent(
                     state.ExpressionData,
                     menu.ExpressionDataValue))
             {
@@ -405,6 +416,11 @@ public sealed class MenuExchange
         return registrations.AsReadOnly();
     }
 
+    private static MenuDefAsset? SourceDefinition(MenuDefReference reference) =>
+        reference.Pointer.ConsumesSource
+            ? reference.SourceMenu ?? reference.CanonicalMenu
+            : reference.CanonicalMenu;
+
     private static void WriteMenuFileSource(
         TextWriter textWriter,
         IReadOnlyList<ResolvedMenuRegistration> registrations,
@@ -413,7 +429,9 @@ public sealed class MenuExchange
         var writer = new MenuSourceWriter(textWriter);
         writer.Start();
         writer.WriteSharedFunctionDefinitions(
-            registrations.Select(registration => registration.Menu));
+            registrations
+                .Where(registration => registration.Reference.Pointer.ConsumesSource)
+                .Select(registration => registration.Menu));
 
         foreach (ResolvedMenuRegistration registration in registrations)
         {

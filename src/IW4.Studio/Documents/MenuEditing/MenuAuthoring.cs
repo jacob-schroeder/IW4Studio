@@ -52,13 +52,8 @@ public sealed class MenuFileDraft
         {
             Name = value.Name,
             MenuCount = value.MenuCount,
-            Menus = value.Menus.Select(menu => new MenuDefReference(
-                menu.Index,
-                menu.Pointer,
-                menu.CanonicalMenu is null
-                    ? null
-                    : new MenuGraphClone(false).CloneMenu(
-                        menu.CanonicalMenu))).ToArray()
+            Menus = value.Menus.Select(
+                MenuAssetProjector.CloneRegistration).ToArray()
         };
     }
 

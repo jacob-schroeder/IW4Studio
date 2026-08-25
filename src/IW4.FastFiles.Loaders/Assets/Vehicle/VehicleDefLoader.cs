@@ -144,8 +144,8 @@ public sealed class VehicleDefLoader
         XBlockAddress scriptStringsAddress = rootAddress.Add(VehicleDefAsset.ScriptStringOffset);
         XPointer<MaterialAsset> compassFriendlyIconPointer = ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
         XPointer<MaterialAsset> compassEnemyIconPointer = ReadPointer<MaterialAsset>(rootCursor, context, XPointerResolutionMode.AliasCell);
-        float compassIconWidth = rootCursor.ReadSingle();
-        float compassIconHeight = rootCursor.ReadSingle();
+        int compassIconWidth = rootCursor.ReadInt32();
+        int compassIconHeight = rootCursor.ReadInt32();
         VehicleEngineSoundFields engineSoundRoots = ReadEngineSoundRoots(rootCursor, context);
         VehicleSuspensionSoundFields suspensionSoundRoots = ReadSuspensionSoundRoots(rootCursor, context);
         VehicleSoundAliasField collisionSoundRoot = ReadSoundAliasRoot(rootCursor, 0x230, context);
@@ -466,14 +466,14 @@ public sealed class VehicleDefLoader
             EngineHighSound = ReadSoundAliasRoot(cursor, 0x1F4, context),
             EngineSoundSpeed = cursor.ReadSingle(),
             EngineStartUpSound = ReadSoundAliasRoot(cursor, 0x1FC, context),
-            EngineStartUpLength = cursor.ReadSingle(),
+            EngineStartUpLength = cursor.ReadInt32(),
             EngineShutdownSound = ReadSoundAliasRoot(cursor, 0x204, context),
             EngineIdleSound = ReadSoundAliasRoot(cursor, 0x208, context),
             EngineSustainSound = ReadSoundAliasRoot(cursor, 0x20C, context),
             EngineRampUpSound = ReadSoundAliasRoot(cursor, 0x210, context),
-            EngineRampUpLength = cursor.ReadSingle(),
+            EngineRampUpLength = cursor.ReadInt32(),
             EngineRampDownSound = ReadSoundAliasRoot(cursor, 0x218, context),
-            EngineRampDownLength = cursor.ReadSingle()
+            EngineRampDownLength = cursor.ReadInt32()
         };
     }
 

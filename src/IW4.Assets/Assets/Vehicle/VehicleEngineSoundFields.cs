@@ -13,12 +13,12 @@ public sealed class VehicleEngineSoundFields
     public VehicleSoundAliasField EngineHighSound { get; init; } = VehicleSoundAliasField.Empty;
     public float EngineSoundSpeed { get; init; }
     public VehicleSoundAliasField EngineStartUpSound { get; init; } = VehicleSoundAliasField.Empty;
-    public float EngineStartUpLength { get; init; }
+    public int EngineStartUpLength { get; init; }
     public VehicleSoundAliasField EngineShutdownSound { get; init; } = VehicleSoundAliasField.Empty;
     public VehicleSoundAliasField EngineIdleSound { get; init; } = VehicleSoundAliasField.Empty;
     public VehicleSoundAliasField EngineSustainSound { get; init; } = VehicleSoundAliasField.Empty;
     public VehicleSoundAliasField EngineRampUpSound { get; init; } = VehicleSoundAliasField.Empty;
-    public float EngineRampUpLength { get; init; }
+    public int EngineRampUpLength { get; init; }
     public VehicleSoundAliasField EngineRampDownSound { get; init; } = VehicleSoundAliasField.Empty;
-    public float EngineRampDownLength { get; init; }
+    public int EngineRampDownLength { get; init; }
 }

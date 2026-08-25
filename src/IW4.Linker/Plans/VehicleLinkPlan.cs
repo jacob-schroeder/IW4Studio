@@ -451,18 +451,16 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
         writer.WriteSingle(definition.TrophyReloadTime);
         writer.Skip(VehicleDefAsset.ScriptStringCount * sizeof(ushort));
         writer.Skip(2 * sizeof(int));
-        WriteSingles(
-            writer,
-            definition.CompassIconWidth,
-            definition.CompassIconHeight);
+        writer.WriteInt32(definition.CompassIconWidth);
+        writer.WriteInt32(definition.CompassIconHeight);
         writer.Skip(4 * sizeof(int));
         writer.WriteSingle(engine.EngineSoundSpeed);
         writer.Skip(sizeof(int));
-        writer.WriteSingle(engine.EngineStartUpLength);
+        writer.WriteInt32(engine.EngineStartUpLength);
         writer.Skip(4 * sizeof(int));
-        writer.WriteSingle(engine.EngineRampUpLength);
+        writer.WriteInt32(engine.EngineRampUpLength);
         writer.Skip(sizeof(int));
-        writer.WriteSingle(engine.EngineRampDownLength);
+        writer.WriteInt32(engine.EngineRampDownLength);
         writer.Skip(sizeof(int));
         writer.WriteSingle(suspension.SuspensionSoftCompression);
         writer.Skip(sizeof(int));

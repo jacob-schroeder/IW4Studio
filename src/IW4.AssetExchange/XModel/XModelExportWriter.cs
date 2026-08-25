@@ -151,7 +151,7 @@ public static class XModelExportWriter
         for (int index = 0; index < document.Bones.Count; index++)
         {
             XModelExportBone bone = document.Bones[index] ?? throw new InvalidDataException($"XMODEL_EXPORT bone {index} is null.");
-            ValidateString(bone.Name, $"bone {index} name");
+            ValidateString(bone.Name, $"bone {index} name", allowEmpty: true);
             if (bone.ParentIndex < -1 || bone.ParentIndex >= index)
                 throw new InvalidDataException($"XMODEL_EXPORT bone {index} has an invalid parent.");
             RequireFinite(bone.GlobalOffset, $"bone {index} offset");

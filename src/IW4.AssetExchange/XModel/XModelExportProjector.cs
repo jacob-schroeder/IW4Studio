@@ -227,16 +227,6 @@ public static class XModelExportProjector
                         triangleFailure = true;
                         break;
                     }
-                    if (IsDegenerate(
-                            vertices[vertexBase + first].Position,
-                            vertices[vertexBase + second].Position,
-                            vertices[vertexBase + third].Position))
-                    {
-                        failures.Add($"{prefix} triangle {triangleIndex}: degenerate topology cannot be exported without dropping geometry.");
-                        triangleFailure = true;
-                        break;
-                    }
-
                     triangles.Add(new XModelExportTriangle(
                         objectIndex,
                         materialIndex,
@@ -469,9 +459,6 @@ public static class XModelExportProjector
         boneIndex = encodedOffset / DObjSkelMatSize;
         return boneIndex >= 0 && boneIndex < boneCount;
     }
-
-    private static bool IsDegenerate(Vector3 first, Vector3 second, Vector3 third) =>
-        Vector3.Cross(second - first, third - first) == Vector3.Zero;
 
     private static bool IsExportString(string? value) =>
         !string.IsNullOrEmpty(value) && !value.Any(char.IsControl);

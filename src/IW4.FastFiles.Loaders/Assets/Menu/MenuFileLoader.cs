@@ -27,7 +27,7 @@ public sealed class MenuFileLoader
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        return ReadMenuDefPointer(cursor, pointer, context)
+        return ReadMenuDefPointer(cursor, pointer, context, out _)
             ?? throw new InvalidDataException("Top-level Menu pointer resolved to null.");
     }
 
@@ -175,11 +175,18 @@ public sealed class MenuFileLoader
                 XPointerResolutionMode.AliasCell,
                 XPointerNullability.Required);
             XPointerReference menuPointer = typedMenuPointer.Untyped;
-            MenuDefAsset? menu = ReadMenuDefPointer(cursor, menuPointer, context);
+            MenuDefAsset? menu = ReadMenuDefPointer(
+                cursor,
+                menuPointer,
+                context,
+                out MenuDefAsset? sourceMenu);
             menus[i] = new MenuDefReference(
                 i,
                 typedMenuPointer,
-                menu);
+                menu)
+            {
+                SourceMenu = sourceMenu
+            };
         }
 
         return menus;
@@ -188,8 +195,10 @@ public sealed class MenuFileLoader
     private static MenuDefAsset? ReadMenuDefPointer(
         FastFileCursor cursor,
         XPointerReference pointer,
-        DbLoadExecutionContext context)
+        DbLoadExecutionContext context,
+        out MenuDefAsset? sourceMenu)
     {
+        sourceMenu = null;
         if (pointer.Type == PointerType.Null)
             return null;
 
@@ -230,6 +239,7 @@ public sealed class MenuFileLoader
                 context.Blocks.Pop();
             }
 
+            sourceMenu = menu;
             MenuDefAsset canonical = context.DB_AddXAsset(menu, providerRegistration);
 
             return canonical;
