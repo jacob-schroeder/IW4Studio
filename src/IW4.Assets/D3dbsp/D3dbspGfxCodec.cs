@@ -3,10 +3,11 @@ using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
-using IW4.Assets.D3dbsp;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Math;
+using IW4.FastFiles.Pointers;
 
-namespace D3dbspLinker.D3dbsp;
+namespace IW4.Assets.D3dbsp;
 
 internal static class D3dbspGfxCodec
 {
@@ -32,13 +33,23 @@ internal static class D3dbspGfxCodec
         int ps3WorldDrawPayloadCapacity,
         uint checksum,
         GfxLightGrid lightGrid,
-        IReadOnlyList<GfxLightRegion> lightRegions)
+        IReadOnlyList<GfxLightRegion> lightRegions,
+        IReadOnlyList<GfxLightmapArray> lightmaps,
+        IReadOnlyList<GfxImageAsset?> reflectionProbeImages,
+        IReadOnlyList<GfxReflectionProbe> reflectionProbeOrigins,
+        IReadOnlyList<GfxStaticModelInst> staticModelInstances,
+        IReadOnlyList<GfxStaticModelDrawInst> staticModelDrawInstances)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(materials);
         ArgumentNullException.ThrowIfNull(lightGrid);
         ArgumentNullException.ThrowIfNull(lightRegions);
+        ArgumentNullException.ThrowIfNull(lightmaps);
+        ArgumentNullException.ThrowIfNull(reflectionProbeImages);
+        ArgumentNullException.ThrowIfNull(reflectionProbeOrigins);
+        ArgumentNullException.ThrowIfNull(staticModelInstances);
+        ArgumentNullException.ThrowIfNull(staticModelDrawInstances);
         if (primaryLightCount < 0 || sunPrimaryLightIndex < 0 ||
             sunPrimaryLightIndex > primaryLightCount)
         {
@@ -54,19 +65,27 @@ internal static class D3dbspGfxCodec
             throw new InvalidDataException(
                 "The PS3 template GfxWorld has no world-draw payload capacity.");
         }
+        if (reflectionProbeImages.Count == 0 ||
+            reflectionProbeImages.Count != reflectionProbeOrigins.Count ||
+            reflectionProbeImages.Count > byte.MaxValue)
+        {
+            throw new InvalidDataException(
+                "The reflection-probe image and origin tables must contain the default probe and share one byte-sized count.");
+        }
 
-        ReadOnlySpan<byte> triangleBytes = SelectRequiredLump(
-            file,
-            D3dbspLumpType.UnlayeredTriangles,
-            D3dbspLumpType.Triangles);
-        ReadOnlySpan<byte> vertexBytes = SelectRequiredLump(
-            file,
-            D3dbspLumpType.UnlayeredDrawVerts,
-            D3dbspLumpType.DrawVerts);
-        ReadOnlySpan<byte> indexBytes = SelectRequiredLump(
-            file,
-            D3dbspLumpType.UnlayeredDrawIndices,
-            D3dbspLumpType.DrawIndices);
+        bool useUnlayeredGeometry = SelectUnlayeredGeometryFamily(file);
+        ReadOnlySpan<byte> triangleBytes = file.GetRequiredData(
+            useUnlayeredGeometry
+                ? D3dbspLumpType.UnlayeredTriangles
+                : D3dbspLumpType.Triangles);
+        ReadOnlySpan<byte> vertexBytes = file.GetRequiredData(
+            useUnlayeredGeometry
+                ? D3dbspLumpType.UnlayeredDrawVerts
+                : D3dbspLumpType.DrawVerts);
+        ReadOnlySpan<byte> indexBytes = file.GetRequiredData(
+            useUnlayeredGeometry
+                ? D3dbspLumpType.UnlayeredDrawIndices
+                : D3dbspLumpType.DrawIndices);
 
         int surfaceCount = GetElementCount(
             triangleBytes,
@@ -183,16 +202,25 @@ internal static class D3dbspGfxCodec
             byte outputLightmapIndex = sourceLightmapIndex;
             if (sourceLightmapIndex != NoLightmapIndex)
             {
-                // Native BSP loading creates an all-white lightmap when the
-                // light-byte lump is absent. --fullbright uses the same graph
-                // while deliberately discarding any compiled light bytes.
-                outputLightmapIndex = 0;
-                needsFullbrightLightmap = true;
+                if (lightmaps.Count == 0)
+                {
+                    // Native BSP loading creates an all-white lightmap when the
+                    // light-byte lump is absent. --fullbright uses the same graph
+                    // while deliberately discarding any compiled light bytes.
+                    outputLightmapIndex = 0;
+                    needsFullbrightLightmap = true;
+                }
+                else if (sourceLightmapIndex >= lightmaps.Count)
+                {
+                    throw new InvalidDataException(
+                        $"Render surface {surfaceIndex} references lightmap {sourceLightmapIndex}; the table has {lightmaps.Count} rows.");
+                }
             }
-            if (row[3] != 0)
+            byte reflectionProbeIndex = row[3];
+            if (reflectionProbeIndex >= reflectionProbeImages.Count)
             {
-                throw new NotSupportedException(
-                    $"Render surface {surfaceIndex} references authored reflection probe {row[3]}.");
+                throw new InvalidDataException(
+                    $"Render surface {surfaceIndex} references reflection probe {reflectionProbeIndex}; the table has {reflectionProbeImages.Count} rows.");
             }
 
             surfaces[surfaceIndex] = new GfxSurface
@@ -208,7 +236,7 @@ internal static class D3dbspGfxCodec
                 },
                 Material = materials[materialIndex],
                 LightmapIndex = outputLightmapIndex,
-                ReflectionProbeIndex = 0,
+                ReflectionProbeIndex = reflectionProbeIndex,
                 PrimaryLightIndex = primaryLightIndex,
                 Flags = row[5] == 0
                     ? GfxSurfaceFlags.None
@@ -221,11 +249,75 @@ internal static class D3dbspGfxCodec
             };
         }
 
+        int staticModelCount = staticModelInstances.Count;
+        if (staticModelCount != staticModelDrawInstances.Count)
+        {
+            throw new InvalidDataException(
+                $"The render static-model graph has {staticModelCount} instance rows and " +
+                $"{staticModelDrawInstances.Count} draw rows.");
+        }
+        if (staticModelCount > ushort.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"The render static-model count exceeds the IW4 ushort range of {ushort.MaxValue}.");
+        }
+
+        var staticModelIndices = new ushort[staticModelCount];
+        var shadowStaticModelIndices = Enumerable.Range(0, primaryLightCount)
+            .Select(_ => new List<ushort>())
+            .ToArray();
+        for (int index = 0; index < staticModelCount; index++)
+        {
+            GfxStaticModelInst instance = staticModelInstances[index] ??
+                throw new InvalidDataException($"Render static-model instance {index} is null.");
+            GfxStaticModelDrawInst draw = staticModelDrawInstances[index] ??
+                throw new InvalidDataException($"Render static-model draw instance {index} is null.");
+            if (draw.Model is null)
+            {
+                throw new InvalidDataException(
+                    $"Render static-model draw instance {index} has no XModel definition.");
+            }
+
+            worldBounds.Add(BoundsEndpoint(
+                instance.Bounds,
+                maximum: false,
+                $"Render static-model instance {index} bounds"));
+            worldBounds.Add(BoundsEndpoint(
+                instance.Bounds,
+                maximum: true,
+                $"Render static-model instance {index} bounds"));
+            staticModelIndices[index] = checked((ushort)index);
+            if (primaryLightCount == 0)
+            {
+                if (draw.PrimaryLightIndex != 0)
+                {
+                    throw new InvalidDataException(
+                        $"Render static-model draw instance {index} references primary light " +
+                        $"{draw.PrimaryLightIndex}, but the world has no primary lights.");
+                }
+            }
+            else
+            {
+                if (draw.PrimaryLightIndex >= primaryLightCount)
+                {
+                    throw new InvalidDataException(
+                        $"Render static-model draw instance {index} references primary light " +
+                        $"{draw.PrimaryLightIndex}; the table has {primaryLightCount} rows.");
+                }
+                shadowStaticModelIndices[draw.PrimaryLightIndex].Add(checked((ushort)index));
+            }
+        }
+
         Bounds world = worldBounds.ToBounds("Render world");
-        ValidateCanonicalSourceSpatialRows(file, world, surfaceCount);
+        GfxCell canonicalCell =
+            ValidateCanonicalSourceSpatialRows(
+                file,
+                world,
+                surfaceCount,
+                reflectionProbeImages.Count);
         IReadOnlyList<GfxBrushModel> models = DecodeModels(
             file.GetRequiredData(D3dbspLumpType.Models),
-            file.HasLump(D3dbspLumpType.UnlayeredTriangles),
+            useUnlayeredGeometry,
             surfaceCount);
         int staticSurfaceCount = models.Count == 0 ? 0 : models[0].SurfaceCount;
         int staticSurfaceStart = models.Count == 0 ? 0 : models[0].StartSurfIndex;
@@ -237,11 +329,10 @@ internal static class D3dbspGfxCodec
                 staticSurfaceCount)
             .Select(value => checked((ushort)value))
             .ToArray();
-        var defaultProbe = new GfxImageAsset { Name = ",*reflection_probe0" };
-        IReadOnlyList<GfxLightmapArray> lightmaps;
+        IReadOnlyList<GfxLightmapArray> outputLightmaps;
         if (needsFullbrightLightmap)
         {
-            lightmaps =
+            outputLightmaps =
             [
                 new GfxLightmapArray
                 {
@@ -256,12 +347,32 @@ internal static class D3dbspGfxCodec
         }
         else
         {
-            lightmaps = [];
+            outputLightmaps = lightmaps;
         }
         // Native allocates this runtime bitset in 16-byte groups, then clears
         // one byte per authored surface during DPVS initialization.
         uint surfaceVisibilityWordCount = checked((uint)(
             4 * ((staticSurfaceCount + 127) >> 7)));
+        uint staticModelVisibilityWordCount = checked((uint)(
+            4 * ((staticModelCount + 127) >> 7)));
+        var shadowSurfaceIndices = Enumerable.Range(0, primaryLightCount)
+            .Select(_ => new List<ushort>())
+            .ToArray();
+        foreach (ushort surfaceIndex in sortedSurfaceIndices)
+        {
+            GfxSurface surface = surfaces[surfaceIndex];
+            if ((surface.Flags & GfxSurfaceFlags.CastsSunShadow) != 0)
+                shadowSurfaceIndices[surface.PrimaryLightIndex].Add(surfaceIndex);
+        }
+        GfxShadowGeometry[] shadowGeometry = Enumerable.Range(0, primaryLightCount)
+            .Select(index => new GfxShadowGeometry
+            {
+                SurfaceCount = checked((ushort)shadowSurfaceIndices[index].Count),
+                SModelCount = checked((ushort)shadowStaticModelIndices[index].Count),
+                SortedSurfIndex = shadowSurfaceIndices[index].AsReadOnly(),
+                SModelIndex = shadowStaticModelIndices[index].AsReadOnly()
+            })
+            .ToArray();
 
         return new GfxWorldAsset
         {
@@ -295,29 +406,26 @@ internal static class D3dbspGfxCodec
                         {
                             Bounds = world,
                             SurfaceCount = checked((ushort)staticSurfaceCount),
-                            StartSurfIndex = checked((ushort)staticSurfaceStart)
+                            StartSurfIndex = checked((ushort)staticSurfaceStart),
+                            SModelIndexCount = checked((ushort)staticModelCount),
+                            SModelIndexes = Array.AsReadOnly(staticModelIndices)
                         }
                     ]
                 }
             ],
             Cells =
             [
-                new GfxCell
-                {
-                    Bounds = world,
-                    ReflectionProbeCount = 1,
-                    Pad21 = [0, 0, 0],
-                    ReflectionProbes = [0]
-                }
+                canonicalCell
             ],
             WorldDraw = new GfxWorldDraw
             {
-                ReflectionProbeCount = 1,
-                ReflectionProbeImagePointers = [default],
-                ReflectionProbeImages = [defaultProbe],
-                ReflectionProbeOrigins = [new GfxReflectionProbe(0, 0, 0)],
-                LightmapCount = lightmaps.Count,
-                Lightmaps = lightmaps,
+                ReflectionProbeCount = checked((uint)reflectionProbeImages.Count),
+                ReflectionProbeImagePointers =
+                    new XPointer<GfxImageAsset>[reflectionProbeImages.Count],
+                ReflectionProbeImages = reflectionProbeImages,
+                ReflectionProbeOrigins = reflectionProbeOrigins,
+                LightmapCount = outputLightmaps.Count,
+                Lightmaps = outputLightmaps,
                 VertexCount = checked((uint)vertexCount),
                 VertexData = new GfxWorldVertexData
                 {
@@ -339,12 +447,11 @@ internal static class D3dbspGfxCodec
             Checksum = checksum,
             Sun = new Sunflare { SunFxPosition = [0, 0, 0] },
             OutdoorLookupMatrix = new float[16],
-            ShadowGeom = Enumerable.Range(0, primaryLightCount)
-                .Select(_ => new GfxShadowGeometry())
-                .ToArray(),
+            ShadowGeom = shadowGeometry,
             LightRegions = lightRegions,
             Dpvs = new GfxWorldDpvsStatic
             {
+                SModelCount = checked((uint)staticModelCount),
                 StaticSurfaceCount = checked((uint)staticSurfaceCount),
                 LitSurfsBegin = 0,
                 LitSurfsEnd = checked((uint)staticSurfaceCount),
@@ -356,12 +463,14 @@ internal static class D3dbspGfxCodec
                     checked((uint)staticSurfaceCount),
                     checked((uint)staticSurfaceCount),
                     checked((uint)staticSurfaceCount),
-                    0,
+                    staticModelVisibilityWordCount,
                     surfaceVisibilityWordCount
                 ],
                 SortedSurfIndex = sortedSurfaceIndices,
+                SModelInsts = staticModelInstances,
                 Surfaces = surfaces,
-                SurfaceBounds = surfaceBounds
+                SurfaceBounds = surfaceBounds,
+                SModelDrawInsts = staticModelDrawInstances
             },
             DpvsDyn = new GfxWorldDpvsDynamic
             {
@@ -413,188 +522,389 @@ internal static class D3dbspGfxCodec
         };
     }
 
-    public static byte[] EncodeUnlayeredTriangles(
+    public static (
+        byte[] Triangles,
+        byte[] DrawVerts,
+        byte[] DrawIndices) EncodeUnlayeredGeometry(
         GfxWorldAsset world,
-        ClipMapAsset clipMap)
+        ClipMapAsset clipMap,
+        IReadOnlyList<D3dbspLightmapTile> lightmapTiles)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(clipMap);
+        ArgumentNullException.ThrowIfNull(lightmapTiles);
         ValidateDeclaredCount(world.SurfaceCount, world.Dpvs.Surfaces.Count, "render surfaces");
-        var data = new byte[checked(world.Dpvs.Surfaces.Count * DiskTriangleSoupSize)];
-        for (int index = 0; index < world.Dpvs.Surfaces.Count; index++)
-        {
-            GfxSurface surface = world.Dpvs.Surfaces[index] ??
-                throw new InvalidDataException($"Render surface row {index} is null.");
-            SrfTriangles triangles = surface.Triangles ??
-                throw new InvalidDataException($"Render surface row {index} has no triangle range.");
-            if (surface.ReflectionProbeIndex != 0 ||
-                (surface.LightmapIndex != NoLightmapIndex &&
-                 (world.WorldDraw.LightmapCount != 1 || surface.LightmapIndex != 0)))
-            {
-                throw new NotSupportedException(
-                    $"Render surface row {index} uses a noncanonical lightmap or authored reflection probe; strict d3dbsp encoding supports only the generated fullbright lightmap and default probe.");
-            }
-            if ((surface.Flags & ~GfxSurfaceFlags.CastsSunShadow) != 0)
-            {
-                throw new NotSupportedException(
-                    $"Render surface row {index} contains unsupported flags 0x{(byte)surface.Flags:X2}.");
-            }
-            if (triangles.MinVertexIndex != 0 ||
-                triangles.VertexLayerData != checked(triangles.BaseVertex * LayerStride))
-            {
-                throw new NotSupportedException(
-                    $"Render surface row {index} does not use the canonical local-index/full-layer vertex layout.");
-            }
-
-            int indexCount = checked(triangles.TriCount * 3);
-            ValidateSlice(
-                triangles.BaseVertex,
-                triangles.VertexCount,
-                checked((int)world.WorldDraw.VertexCount),
-                $"Render surface row {index} vertex");
-            ValidateSlice(
-                triangles.BaseIndex,
-                indexCount,
-                world.WorldDraw.Indices.Count,
-                $"Render surface row {index} index");
-            for (int localIndex = 0; localIndex < indexCount; localIndex++)
-            {
-                ushort value = world.WorldDraw.Indices[triangles.BaseIndex + localIndex];
-                if (value >= triangles.VertexCount)
-                {
-                    throw new InvalidDataException(
-                        $"Render surface row {index} index {localIndex} references local vertex {value}; the surface has {triangles.VertexCount} vertices.");
-                }
-            }
-
-            int materialIndex = FindMaterialIndex(clipMap.Materials, surface.Material, index);
-            if (materialIndex > ushort.MaxValue)
-                throw new InvalidDataException($"Render surface row {index} material exceeds the v22 ushort range.");
-            Span<byte> row = data.AsSpan(index * DiskTriangleSoupSize, DiskTriangleSoupSize);
-            BinaryPrimitives.WriteUInt16LittleEndian(row, (ushort)materialIndex);
-            row[2] = surface.LightmapIndex;
-            row[3] = 0;
-            row[4] = surface.PrimaryLightIndex;
-            row[5] = (surface.Flags & GfxSurfaceFlags.CastsSunShadow) != 0 ? (byte)1 : (byte)0;
-            BinaryPrimitives.WriteUInt32LittleEndian(row[8..], 0);
-            BinaryPrimitives.WriteUInt32LittleEndian(row[12..], checked((uint)triangles.BaseVertex));
-            BinaryPrimitives.WriteUInt16LittleEndian(row[16..], triangles.VertexCount);
-            BinaryPrimitives.WriteUInt16LittleEndian(row[18..], checked((ushort)indexCount));
-            BinaryPrimitives.WriteInt32LittleEndian(row[20..], triangles.BaseIndex);
-        }
-
-        return data;
-    }
-
-    public static byte[] EncodeUnlayeredDrawVerts(GfxWorldAsset world)
-    {
-        ArgumentNullException.ThrowIfNull(world);
+        ValidateDeclaredCount(world.WorldDraw.IndexCount, world.WorldDraw.Indices.Count, "render indices");
         if (world.WorldDraw.VertexCount > int.MaxValue)
             throw new InvalidDataException("The render vertex count exceeds the process range.");
-        int vertexCount = (int)world.WorldDraw.VertexCount;
-        int expectedPositionBytes = checked(vertexCount * PositionStride);
-        int expectedLayerBytes = checked(vertexCount * LayerStride);
+        int sourceVertexCount = (int)world.WorldDraw.VertexCount;
+        int expectedPositionBytes = checked(sourceVertexCount * PositionStride);
         if (world.WorldDraw.VertexData.PackedVertices.Count != expectedPositionBytes ||
-            world.WorldDraw.VertexLayerData.PackedLayerData.Count != expectedLayerBytes ||
-            world.WorldDraw.VertexLayerDataSize != expectedLayerBytes)
+            world.WorldDraw.VertexLayerData.PackedLayerData.Count !=
+                world.WorldDraw.VertexLayerDataSize)
         {
             throw new InvalidDataException(
                 "The render vertex counts do not match the packed position and layer payloads.");
         }
 
-        var data = new byte[checked(vertexCount * DiskVertexSize)];
-        for (int index = 0; index < vertexCount; index++)
+        int[] runtimeSlotByAuthoredIndex =
+            world.Dpvs.GetRuntimeSlotByAuthoredIndex();
+        int outputVertexCount = 0;
+        int outputIndexCount = 0;
+        foreach (int runtimeSlot in runtimeSlotByAuthoredIndex)
         {
-            ReadOnlySpan<byte> position = world.WorldDraw.VertexData.PackedVertices
-                .Skip(index * PositionStride)
-                .Take(PositionStride)
-                .ToArray();
-            ReadOnlySpan<byte> layer = world.WorldDraw.VertexLayerData.PackedLayerData
-                .Skip(index * LayerStride)
-                .Take(LayerStride)
-                .ToArray();
-            float x = ReadSingleBigEndian(position, 0);
-            float y = ReadSingleBigEndian(position, 4);
-            float z = ReadSingleBigEndian(position, 8);
-            float binormalSign = ReadSingleBigEndian(position, 12);
-            if (binormalSign is not (1.0f or -1.0f))
+            GfxSurface surface = world.Dpvs.Surfaces[runtimeSlot] ??
+                throw new InvalidDataException(
+                    $"Render surface runtime row {runtimeSlot} is null.");
+            outputVertexCount = checked(
+                outputVertexCount + surface.Triangles.VertexCount);
+            outputIndexCount = checked(
+                outputIndexCount + surface.Triangles.TriCount * 3);
+        }
+
+        byte[] packedPositions = world.WorldDraw.VertexData.PackedVertices.ToArray();
+        byte[] packedLayers = world.WorldDraw.VertexLayerData.PackedLayerData.ToArray();
+        var trianglesData = new byte[checked(
+            runtimeSlotByAuthoredIndex.Length * DiskTriangleSoupSize)];
+        var vertexData = new byte[checked(outputVertexCount * DiskVertexSize)];
+        var indexData = new byte[checked(outputIndexCount * sizeof(ushort))];
+        int outputFirstVertex = 0;
+        int outputFirstIndex = 0;
+        for (int authoredIndex = 0;
+             authoredIndex < runtimeSlotByAuthoredIndex.Length;
+             authoredIndex++)
+        {
+            int runtimeSlot = runtimeSlotByAuthoredIndex[authoredIndex];
+            GfxSurface surface = world.Dpvs.Surfaces[runtimeSlot] ??
+                throw new InvalidDataException(
+                    $"Render surface runtime row {runtimeSlot} is null.");
+            SrfTriangles triangles = surface.Triangles ??
+                throw new InvalidDataException(
+                    $"Render surface row {authoredIndex} has no triangle range.");
+            if ((surface.Flags & ~GfxSurfaceFlags.CastsSunShadow) != 0)
             {
                 throw new NotSupportedException(
-                    $"Render vertex {index} binormal sign is {binormalSign}; strict d3dbsp encoding requires +1 or -1.");
+                    $"Render surface row {authoredIndex} contains unsupported flags 0x{(byte)surface.Flags:X2}.");
+            }
+            if (surface.PrimaryLightIndex >= world.PrimaryLightCount)
+            {
+                throw new InvalidDataException(
+                    $"Render surface row {authoredIndex} references primary light {surface.PrimaryLightIndex}; the table has {world.PrimaryLightCount} rows.");
+            }
+            if (surface.ReflectionProbeIndex >= world.WorldDraw.ReflectionProbeCount)
+            {
+                throw new InvalidDataException(
+                    $"Render surface row {authoredIndex} references reflection probe {surface.ReflectionProbeIndex}; the table has {world.WorldDraw.ReflectionProbeCount} rows.");
             }
 
-            Vec3 normal = UnpackSignedNormal(BinaryPrimitives.ReadUInt32BigEndian(layer[20..]));
-            Vec3 tangent = UnpackSignedNormal(BinaryPrimitives.ReadUInt32BigEndian(layer[24..]));
-            Vec3 binormal = new()
+            int indexCount = checked(triangles.TriCount * 3);
+            ValidateSlice(
+                triangles.BaseIndex,
+                indexCount,
+                world.WorldDraw.Indices.Count,
+                $"Render surface row {authoredIndex} index");
+            if (triangles.MinVertexIndex > int.MaxValue)
             {
-                X = (normal.Y * tangent.Z - normal.Z * tangent.Y) * binormalSign,
-                Y = (normal.Z * tangent.X - normal.X * tangent.Z) * binormalSign,
-                Z = (normal.X * tangent.Y - normal.Y * tangent.X) * binormalSign
-            };
+                throw new InvalidDataException(
+                    $"Render surface row {authoredIndex} has an invalid minimum vertex index.");
+            }
+            int firstSourceIndex = (int)triangles.MinVertexIndex;
+            int firstWorldVertex = checked(triangles.BaseVertex + firstSourceIndex);
+            ValidateSlice(
+                firstWorldVertex,
+                triangles.VertexCount,
+                sourceVertexCount,
+                $"Render surface row {authoredIndex} vertex");
 
-            Span<byte> row = data.AsSpan(index * DiskVertexSize, DiskVertexSize);
-            WriteVec3LittleEndian(row, 0, new Vec3 { X = x, Y = y, Z = z });
-            WriteVec3LittleEndian(row, 12, normal);
-            // Packed RSX color is RGBA; DiskGfxVertex stores BGRA.
-            row[24] = layer[2];
-            row[25] = layer[1];
-            row[26] = layer[0];
-            row[27] = layer[3];
-            WriteSingleLittleEndian(row, 28, ReadSingleBigEndian(layer, 4));
-            WriteSingleLittleEndian(row, 32, ReadSingleBigEndian(layer, 8));
-            WriteSingleLittleEndian(row, 36, ReadSingleBigEndian(layer, 12));
-            WriteSingleLittleEndian(row, 40, ReadSingleBigEndian(layer, 16));
-            WriteVec3LittleEndian(row, 44, tangent);
-            WriteVec3LittleEndian(row, 56, binormal);
+            int layerStride = ResolveLayerStride(
+                world,
+                surface,
+                authoredIndex);
+            ValidateLayerSlice(
+                triangles,
+                layerStride,
+                packedLayers.Length,
+                authoredIndex);
+            D3dbspLightmapTile? lightmapTile = ResolveLightmapTile(
+                surface,
+                firstSourceIndex,
+                layerStride,
+                packedLayers,
+                lightmapTiles,
+                authoredIndex);
+
+            int materialIndex = FindMaterialIndex(
+                clipMap.Materials,
+                surface.Material,
+                authoredIndex);
+            if (materialIndex > ushort.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"Render surface row {authoredIndex} material exceeds the v22 ushort range.");
+            }
+
+            Span<byte> row = trianglesData.AsSpan(
+                authoredIndex * DiskTriangleSoupSize,
+                DiskTriangleSoupSize);
+            BinaryPrimitives.WriteUInt16LittleEndian(row, (ushort)materialIndex);
+            row[2] = lightmapTile?.D3dbspLightmapIndex ?? NoLightmapIndex;
+            row[3] = surface.ReflectionProbeIndex;
+            row[4] = surface.PrimaryLightIndex;
+            row[5] = (surface.Flags & GfxSurfaceFlags.CastsSunShadow) != 0
+                ? (byte)1
+                : (byte)0;
+            BinaryPrimitives.WriteUInt32LittleEndian(row[8..], 0);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                row[12..],
+                checked((uint)outputFirstVertex));
+            BinaryPrimitives.WriteUInt16LittleEndian(row[16..], triangles.VertexCount);
+            BinaryPrimitives.WriteUInt16LittleEndian(row[18..], checked((ushort)indexCount));
+            BinaryPrimitives.WriteInt32LittleEndian(row[20..], outputFirstIndex);
+
+            for (int vertexSlot = 0;
+                 vertexSlot < triangles.VertexCount;
+                 vertexSlot++)
+            {
+                int sourceIndex = checked(firstSourceIndex + vertexSlot);
+                int worldVertexIndex = checked(triangles.BaseVertex + sourceIndex);
+                int layerOffset = checked(
+                    triangles.VertexLayerData + sourceIndex * layerStride);
+                WriteDiskVertex(
+                    vertexData.AsSpan(
+                        checked((outputFirstVertex + vertexSlot) * DiskVertexSize),
+                        DiskVertexSize),
+                    packedPositions.AsSpan(
+                        checked(worldVertexIndex * PositionStride),
+                        PositionStride),
+                    packedLayers.AsSpan(layerOffset, LayerStride),
+                    lightmapTile,
+                    authoredIndex,
+                    vertexSlot);
+            }
+
+            for (int indexOffset = 0; indexOffset < indexCount; indexOffset++)
+            {
+                ushort sourceIndex = world.WorldDraw.Indices[
+                    triangles.BaseIndex + indexOffset];
+                int localIndex = sourceIndex - firstSourceIndex;
+                if ((uint)localIndex >= triangles.VertexCount)
+                {
+                    throw new InvalidDataException(
+                        $"Render surface row {authoredIndex} index {indexOffset} references source vertex {sourceIndex}; expected {firstSourceIndex}..{firstSourceIndex + triangles.VertexCount - 1}.");
+                }
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    indexData.AsSpan(
+                        checked((outputFirstIndex + indexOffset) * sizeof(ushort)),
+                        sizeof(ushort)),
+                    checked((ushort)localIndex));
+            }
+
+            outputFirstVertex = checked(
+                outputFirstVertex + triangles.VertexCount);
+            outputFirstIndex = checked(outputFirstIndex + indexCount);
         }
 
-        return data;
+        return (trianglesData, vertexData, indexData);
     }
 
-    public static byte[] EncodeUnlayeredDrawIndices(GfxWorldAsset world)
+    private static int ResolveLayerStride(
+        GfxWorldAsset world,
+        GfxSurface surface,
+        int surfaceIndex)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        ValidateDeclaredCount(world.WorldDraw.IndexCount, world.WorldDraw.Indices.Count, "render indices");
-        var data = new byte[checked(world.WorldDraw.Indices.Count * sizeof(ushort))];
-        for (int index = 0; index < world.WorldDraw.Indices.Count; index++)
+        MaterialWorldVertexFormat? format = surface.Material?
+            .TechniqueSet?
+            .WorldVertexFormat;
+        if (format.HasValue && Enum.IsDefined(format.Value))
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(
-                data.AsSpan(index * sizeof(ushort), sizeof(ushort)),
-                world.WorldDraw.Indices[index]);
+            int backendRow = WorldVertexLayout.ResolveGenericFallbackBackendRow(
+                format.Value);
+            if (WorldVertexLayout.TryGetStreamStride(
+                    backendRow,
+                    streamIndex: 1,
+                    out byte stride) &&
+                stride >= LayerStride)
+            {
+                return stride;
+            }
         }
-        return data;
+
+        if (world.WorldDraw.VertexLayerDataSize ==
+            checked(world.WorldDraw.VertexCount * LayerStride))
+        {
+            return LayerStride;
+        }
+
+        throw new NotSupportedException(
+            $"Render surface row {surfaceIndex} has no resolved PS3 world-vertex layout.");
+    }
+
+    private static void ValidateLayerSlice(
+        SrfTriangles triangles,
+        int layerStride,
+        int layerByteCount,
+        int surfaceIndex)
+    {
+        if (triangles.VertexCount == 0)
+        {
+            throw new InvalidDataException(
+                $"Render surface row {surfaceIndex} has no vertices.");
+        }
+        long firstOffset = triangles.VertexLayerData +
+            (long)triangles.MinVertexIndex * layerStride;
+        long lastEnd = firstOffset +
+            (long)(triangles.VertexCount - 1) * layerStride +
+            LayerStride;
+        if (firstOffset < 0 || lastEnd > layerByteCount)
+        {
+            throw new InvalidDataException(
+                $"Render surface row {surfaceIndex} vertex-layer slice {firstOffset}..{lastEnd} exceeds the {layerByteCount}-byte payload.");
+        }
+    }
+
+    private static D3dbspLightmapTile? ResolveLightmapTile(
+        GfxSurface surface,
+        int firstSourceIndex,
+        int layerStride,
+        ReadOnlySpan<byte> packedLayers,
+        IReadOnlyList<D3dbspLightmapTile> lightmapTiles,
+        int surfaceIndex)
+    {
+        if (surface.LightmapIndex == NoLightmapIndex)
+            return null;
+
+        D3dbspLightmapTile[] candidates = lightmapTiles
+            .Where(tile => tile.RuntimeLightmapIndex == surface.LightmapIndex)
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            throw new InvalidDataException(
+                $"Render surface row {surfaceIndex} references runtime lightmap {surface.LightmapIndex}, which has no d3dbsp tiles.");
+        }
+
+        double sumU = 0;
+        double sumV = 0;
+        for (int vertexSlot = 0;
+             vertexSlot < surface.Triangles.VertexCount;
+             vertexSlot++)
+        {
+            int sourceIndex = checked(firstSourceIndex + vertexSlot);
+            int layerOffset = checked(
+                surface.Triangles.VertexLayerData + sourceIndex * layerStride);
+            sumU += ReadSingleBigEndian(packedLayers[layerOffset..], 12);
+            sumV += ReadSingleBigEndian(packedLayers[layerOffset..], 16);
+        }
+
+        float meanU = checked((float)(sumU / surface.Triangles.VertexCount));
+        float meanV = checked((float)(sumV / surface.Triangles.VertexCount));
+        if (!float.IsFinite(meanU) || !float.IsFinite(meanV))
+        {
+            throw new InvalidDataException(
+                $"Render surface row {surfaceIndex} has non-finite lightmap coordinates.");
+        }
+        D3dbspLightmapTile layout = candidates[0];
+        int tileX = System.Math.Clamp(
+            (int)MathF.Floor(meanU * layout.TilesWide),
+            0,
+            layout.TilesWide - 1);
+        int tileY = System.Math.Clamp(
+            (int)MathF.Floor(meanV * layout.TilesHigh),
+            0,
+            layout.TilesHigh - 1);
+        D3dbspLightmapTile? selected = candidates
+            .Cast<D3dbspLightmapTile?>()
+            .SingleOrDefault(tile =>
+                tile!.Value.TileX == tileX && tile.Value.TileY == tileY);
+        if (!selected.HasValue)
+        {
+            throw new InvalidDataException(
+                $"Render surface row {surfaceIndex} lightmap coordinates resolve to missing tile ({tileX}, {tileY}).");
+        }
+
+        const float tolerance = 1.0f / 4096.0f;
+        D3dbspLightmapTile result = selected.Value;
+        for (int vertexSlot = 0;
+             vertexSlot < surface.Triangles.VertexCount;
+             vertexSlot++)
+        {
+            int sourceIndex = checked(firstSourceIndex + vertexSlot);
+            int layerOffset = checked(
+                surface.Triangles.VertexLayerData + sourceIndex * layerStride);
+            float sourceU = result.ToD3dbspU(
+                ReadSingleBigEndian(packedLayers[layerOffset..], 12));
+            float sourceV = result.ToD3dbspV(
+                ReadSingleBigEndian(packedLayers[layerOffset..], 16));
+            if (!float.IsFinite(sourceU) || !float.IsFinite(sourceV) ||
+                sourceU < -tolerance || sourceU > 1.0f + tolerance ||
+                sourceV < -tolerance || sourceV > 1.0f + tolerance)
+            {
+                throw new NotSupportedException(
+                    $"Render surface row {surfaceIndex} crosses reconstructed lightmap tile {result.D3dbspLightmapIndex}.");
+            }
+        }
+
+        return result;
+    }
+
+    private static void WriteDiskVertex(
+        Span<byte> row,
+        ReadOnlySpan<byte> position,
+        ReadOnlySpan<byte> layer,
+        D3dbspLightmapTile? lightmapTile,
+        int surfaceIndex,
+        int vertexSlot)
+    {
+        float x = ReadSingleBigEndian(position, 0);
+        float y = ReadSingleBigEndian(position, 4);
+        float z = ReadSingleBigEndian(position, 8);
+        float binormalSign = ReadSingleBigEndian(position, 12);
+        if (binormalSign is not (1.0f or -1.0f))
+        {
+            throw new NotSupportedException(
+                $"Render surface row {surfaceIndex} vertex {vertexSlot} has binormal sign {binormalSign}; expected +1 or -1.");
+        }
+
+        Vec3 normal = UnpackSignedNormal(
+            BinaryPrimitives.ReadUInt32BigEndian(layer[20..]));
+        Vec3 tangent = UnpackSignedNormal(
+            BinaryPrimitives.ReadUInt32BigEndian(layer[24..]));
+        Vec3 binormal = new()
+        {
+            X = (normal.Y * tangent.Z - normal.Z * tangent.Y) * binormalSign,
+            Y = (normal.Z * tangent.X - normal.X * tangent.Z) * binormalSign,
+            Z = (normal.X * tangent.Y - normal.Y * tangent.X) * binormalSign
+        };
+
+        WriteVec3LittleEndian(row, 0, new Vec3 { X = x, Y = y, Z = z });
+        WriteVec3LittleEndian(row, 12, normal);
+        // Packed RSX color is RGBA; DiskGfxVertex stores BGRA.
+        row[24] = layer[2];
+        row[25] = layer[1];
+        row[26] = layer[0];
+        row[27] = layer[3];
+        WriteSingleLittleEndian(row, 28, ReadSingleBigEndian(layer, 4));
+        WriteSingleLittleEndian(row, 32, ReadSingleBigEndian(layer, 8));
+        float lightmapU = ReadSingleBigEndian(layer, 12);
+        float lightmapV = ReadSingleBigEndian(layer, 16);
+        if (lightmapTile is { } tile)
+        {
+            lightmapU = tile.ToD3dbspU(lightmapU);
+            lightmapV = tile.ToD3dbspV(lightmapV);
+        }
+        WriteSingleLittleEndian(row, 36, lightmapU);
+        WriteSingleLittleEndian(row, 40, lightmapV);
+        WriteVec3LittleEndian(row, 44, tangent);
+        WriteVec3LittleEndian(row, 56, binormal);
     }
 
     public static byte[] EncodeCanonicalUnlayeredAabbTree(GfxWorldAsset world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        if (world.CellTreeCounts.Count != 1 ||
-            world.CellTreeCounts[0].AabbTreeCount != 1 ||
-            world.CellTrees.Count != 1 ||
-            world.CellTrees[0].AabbTrees.Count != 1)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding requires one cell tree containing one terminal AABB row.");
-        }
-
-        GfxAabbTree tree = world.CellTrees[0].AabbTrees[0] ??
-            throw new InvalidDataException("The render AABB row is null.");
-        if (tree.ChildCount != 0 || tree.SModelIndexCount != 0 || tree.SModelIndexes.Count != 0)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding requires a terminal render AABB with no static-model indices.");
-        }
-        ValidateSlice(
-            tree.StartSurfIndex,
-            tree.SurfaceCount,
-            world.Dpvs.Surfaces.Count,
-            "Render AABB surface");
-
         var data = new byte[12];
+        BinaryPrimitives.WriteUInt32LittleEndian(data, 0);
         BinaryPrimitives.WriteUInt32LittleEndian(
-            data,
-            tree.SurfaceCount == 0 ? 0u : tree.StartSurfIndex);
-        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), tree.SurfaceCount);
+            data.AsSpan(4),
+            checked((uint)world.Dpvs.Surfaces.Count));
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8), 0);
         return data;
     }
@@ -602,27 +912,54 @@ internal static class D3dbspGfxCodec
     public static byte[] EncodeCanonicalCell(GfxWorldAsset world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        if (world.Cells.Count != 1)
-            throw new NotSupportedException("Strict d3dbsp encoding requires exactly one render cell.");
-        GfxCell cell = world.Cells[0] ??
-            throw new InvalidDataException("The render cell is null.");
-        if (cell.PortalCount != 0 || cell.Portals.Count != 0)
-            throw new NotSupportedException("Strict d3dbsp encoding does not support render portals.");
+        Bounds bounds = ReadWorldBounds(world);
+        Vec3 mins = BoundsEndpoint(bounds, maximum: false, "Render world");
+        Vec3 maxs = BoundsEndpoint(bounds, maximum: true, "Render world");
+        if (world.WorldDraw.ReflectionProbeCount == 0 ||
+            world.WorldDraw.ReflectionProbeCount > byte.MaxValue ||
+            world.WorldDraw.ReflectionProbeImages.Count !=
+                world.WorldDraw.ReflectionProbeCount ||
+            world.WorldDraw.ReflectionProbeOrigins.Count !=
+                world.WorldDraw.ReflectionProbeCount)
+        {
+            throw new InvalidDataException(
+                "The render reflection-probe tables must contain the default probe and share one byte-sized count.");
+        }
+        int cellProbeCount = world.WorldDraw.ReflectionProbeCount == 1
+            ? 1
+            : checked((int)world.WorldDraw.ReflectionProbeCount - 1);
+        if (cellProbeCount > 112 - 45)
+        {
+            throw new NotSupportedException(
+                $"The canonical v22 cell can hold at most {112 - 45} reflection-probe indices.");
+        }
 
-        Vec3 mins = BoundsEndpoint(cell.Bounds, maximum: false, "Render cell");
-        Vec3 maxs = BoundsEndpoint(cell.Bounds, maximum: true, "Render cell");
         var data = new byte[112];
         WriteVec3LittleEndian(data, 0, mins);
         WriteVec3LittleEndian(data, 12, maxs);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(24), 0);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(26), 0);
+        data[44] = checked((byte)cellProbeCount);
+        if (world.WorldDraw.ReflectionProbeCount == 1)
+        {
+            data[45] = 0;
+        }
+        else
+        {
+            for (int index = 0; index < cellProbeCount; index++)
+                data[45 + index] = checked((byte)(index + 1));
+        }
         return data;
     }
 
-    public static byte[] EncodeModels(GfxWorldAsset world, ClipMapAsset clipMap)
+    public static byte[] EncodeModels(
+        GfxWorldAsset world,
+        ClipMapAsset clipMap,
+        D3dbspTriggerCollisionExport collisionExport)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(clipMap);
+        ArgumentNullException.ThrowIfNull(collisionExport);
         ValidateDeclaredCount(world.ModelCount, world.Models.Count, "render models");
         ValidateDeclaredCount(clipMap.NumSubModels, clipMap.CModels.Count, "collision models");
         if (world.Models.Count == 0 || world.Models.Count != clipMap.CModels.Count)
@@ -631,7 +968,8 @@ internal static class D3dbspGfxCodec
                 "Render and collision model tables must have the same nonzero row count.");
         }
 
-        var data = new byte[checked(world.Models.Count * DiskModelSize)];
+        int modelCount = checked(world.Models.Count + collisionExport.SyntheticModels.Count);
+        var data = new byte[checked(modelCount * DiskModelSize)];
         for (int index = 0; index < world.Models.Count; index++)
         {
             GfxBrushModel model = world.Models[index] ??
@@ -680,6 +1018,44 @@ internal static class D3dbspGfxCodec
             BinaryPrimitives.WriteInt32LittleEndian(row[36..], leaf.CollAabbCount);
             BinaryPrimitives.WriteInt32LittleEndian(row[40..], firstBrush);
             BinaryPrimitives.WriteInt32LittleEndian(row[44..], brushes.Count);
+        }
+
+        for (int syntheticIndex = 0;
+             syntheticIndex < collisionExport.SyntheticModels.Count;
+             syntheticIndex++)
+        {
+            D3dbspSyntheticBrushModel model =
+                collisionExport.SyntheticModels[syntheticIndex] ??
+                throw new InvalidDataException(
+                    $"Synthetic brush model row {syntheticIndex} is null.");
+            ValidateSlice(
+                model.FirstBrush,
+                model.BrushCount,
+                collisionExport.Brushes.Count,
+                $"Synthetic brush model row {syntheticIndex} brush");
+            if (model.BrushCount == 0)
+            {
+                throw new InvalidDataException(
+                    $"Synthetic brush model row {syntheticIndex} has no collision brushes.");
+            }
+
+            Vec3 mins = BoundsEndpoint(
+                model.Bounds,
+                maximum: false,
+                $"Synthetic brush model row {syntheticIndex} bounds");
+            Vec3 maxs = BoundsEndpoint(
+                model.Bounds,
+                maximum: true,
+                $"Synthetic brush model row {syntheticIndex} bounds");
+            Span<byte> row = data.AsSpan(
+                checked((world.Models.Count + syntheticIndex) * DiskModelSize),
+                DiskModelSize);
+            WriteVec3LittleEndian(row, 0, mins);
+            WriteVec3LittleEndian(row, 12, maxs);
+            BinaryPrimitives.WriteInt32LittleEndian(row[32..], 0);
+            BinaryPrimitives.WriteInt32LittleEndian(row[36..], 0);
+            BinaryPrimitives.WriteInt32LittleEndian(row[40..], model.FirstBrush);
+            BinaryPrimitives.WriteInt32LittleEndian(row[44..], model.BrushCount);
         }
 
         return data;
@@ -747,10 +1123,39 @@ internal static class D3dbspGfxCodec
             ? file.GetRequiredData(preferred)
             : file.GetRequiredData(fallback);
 
-    private static void ValidateCanonicalSourceSpatialRows(
+    private static bool SelectUnlayeredGeometryFamily(D3dbspFile file)
+    {
+        int unlayeredCount = new[]
+        {
+            D3dbspLumpType.UnlayeredTriangles,
+            D3dbspLumpType.UnlayeredDrawVerts,
+            D3dbspLumpType.UnlayeredDrawIndices
+        }.Count(file.HasLump);
+        int layeredCount = new[]
+        {
+            D3dbspLumpType.Triangles,
+            D3dbspLumpType.DrawVerts,
+            D3dbspLumpType.DrawIndices
+        }.Count(file.HasLump);
+        if (unlayeredCount is 1 or 2 || layeredCount is 1 or 2)
+        {
+            throw new InvalidDataException(
+                "The d3dbsp contains an incomplete layered or unlayered render-geometry lump family.");
+        }
+        if (unlayeredCount == 0 && layeredCount == 0)
+        {
+            throw new InvalidDataException(
+                "The d3dbsp contains no complete render-geometry lump family.");
+        }
+
+        return unlayeredCount == 3;
+    }
+
+    private static GfxCell ValidateCanonicalSourceSpatialRows(
         D3dbspFile file,
         Bounds worldBounds,
-        int surfaceCount)
+        int surfaceCount,
+        int reflectionProbeCount)
     {
         ReadOnlySpan<byte> aabb = SelectRequiredLump(
             file,
@@ -766,22 +1171,77 @@ internal static class D3dbspGfxCodec
         }
 
         ReadOnlySpan<byte> cell = file.GetRequiredData(D3dbspLumpType.Cells);
-        if (cell.Length != 112 || cell[24..].IndexOfAnyExcept((byte)0) >= 0)
+        if (cell.Length != 112 ||
+            BinaryPrimitives.ReadUInt16LittleEndian(cell[24..]) != 0 ||
+            BinaryPrimitives.ReadUInt16LittleEndian(cell[26..]) != 0 ||
+            cell.Slice(28, 16).IndexOfAnyExcept((byte)0) >= 0)
         {
             throw new NotSupportedException(
                 "Strict fastfile conversion requires one render cell with no portal or auxiliary metadata.");
+        }
+        int cellProbeCount = cell[44];
+        if (cellProbeCount > cell.Length - 45 ||
+            cell[(45 + cellProbeCount)..].IndexOfAnyExcept((byte)0) >= 0)
+        {
+            throw new InvalidDataException(
+                "The canonical render cell has an invalid reflection-probe list.");
+        }
+        // A compiler-produced map with no authored probes leaves the cell list
+        // empty. The fastfile graph still receives native probe zero.
+        byte[] cellProbes = cellProbeCount == 0
+            ? [0]
+            : cell.Slice(45, cellProbeCount).ToArray();
+        if (cellProbes.Any(index => index >= reflectionProbeCount))
+        {
+            throw new InvalidDataException(
+                "The canonical render cell references a reflection probe outside the world table.");
         }
         Vec3 sourceMins = ReadVec3(cell, 0);
         Vec3 sourceMaxs = ReadVec3(cell, 12);
         ValidateBounds(sourceMins, sourceMaxs, "Render cell");
         Vec3 decodedMins = BoundsEndpoint(worldBounds, maximum: false, "Render world");
         Vec3 decodedMaxs = BoundsEndpoint(worldBounds, maximum: true, "Render world");
-        if (!SameVec3Bits(sourceMins, decodedMins) ||
-            !SameVec3Bits(sourceMaxs, decodedMaxs))
+        if (sourceMins.X > decodedMins.X ||
+            sourceMins.Y > decodedMins.Y ||
+            sourceMins.Z > decodedMins.Z ||
+            sourceMaxs.X < decodedMaxs.X ||
+            sourceMaxs.Y < decodedMaxs.Y ||
+            sourceMaxs.Z < decodedMaxs.Z)
         {
             throw new NotSupportedException(
-                "The compiled render-cell bounds do not match the canonical all-surface world bounds.");
+                "The compiled render-cell bounds do not contain the canonical all-surface world bounds.");
         }
+
+        return new GfxCell
+        {
+            Bounds = new Bounds
+            {
+                MidPoint = new Vec3
+                {
+                    X = (float)(((double)sourceMins.X + sourceMaxs.X) * 0.5),
+                    Y = (float)(((double)sourceMins.Y + sourceMaxs.Y) * 0.5),
+                    Z = (float)(((double)sourceMins.Z + sourceMaxs.Z) * 0.5)
+                },
+                HalfSize = new Vec3
+                {
+                    X = (float)(((double)sourceMaxs.X - sourceMins.X) * 0.5),
+                    Y = (float)(((double)sourceMaxs.Y - sourceMins.Y) * 0.5),
+                    Z = (float)(((double)sourceMaxs.Z - sourceMins.Z) * 0.5)
+                }
+            },
+            ReflectionProbeCount = checked((byte)cellProbes.Length),
+            Pad21 = [0, 0, 0],
+            ReflectionProbes = Array.AsReadOnly(cellProbes)
+        };
+    }
+
+    private static Bounds ReadWorldBounds(GfxWorldAsset world)
+    {
+        Vec3 midpoint = ReadVec3(world.Mins, "Render world midpoint");
+        Vec3 halfSize = ReadVec3(world.Maxs, "Render world half-size");
+        if (halfSize.X < 0 || halfSize.Y < 0 || halfSize.Z < 0)
+            throw new InvalidDataException("The render world has a negative half-size.");
+        return new Bounds { MidPoint = midpoint, HalfSize = halfSize };
     }
 
     private static uint PackSignedNormal(Vec3 value)
@@ -808,8 +1268,8 @@ internal static class D3dbspGfxCodec
         return dot < 0.0f ? -1.0f : 1.0f;
     }
 
-    private static int QuantizeNormal(float value, int scale) => checked((int)Math.Round(
-        Math.Clamp((double)value, -1.0, 1.0) * scale,
+    private static int QuantizeNormal(float value, int scale) => checked((int)System.Math.Round(
+        System.Math.Clamp((double)value, -1.0, 1.0) * scale,
         MidpointRounding.AwayFromZero));
 
     private static int GetElementCount(
@@ -888,12 +1348,20 @@ internal static class D3dbspGfxCodec
         int exact = FindNamedMaterial(materials, name, StringComparison.Ordinal);
         if (exact >= 0)
             return exact;
-        if (name.StartsWith("w/", StringComparison.Ordinal))
+        int worldPrefixLength = name.StartsWith("wc/", StringComparison.Ordinal)
+            ? 3
+            : name.StartsWith("w/", StringComparison.Ordinal)
+                ? 2
+                : 0;
+        if (worldPrefixLength != 0)
         {
-            exact = FindNamedMaterial(materials, name[2..], StringComparison.Ordinal);
+            exact = FindNamedMaterial(
+                materials,
+                name[worldPrefixLength..],
+                StringComparison.Ordinal);
             if (exact >= 0)
                 return exact;
-            name = name[2..];
+            name = name[worldPrefixLength..];
         }
 
         int caseInsensitive = FindNamedMaterial(
@@ -991,11 +1459,6 @@ internal static class D3dbspGfxCodec
         Y = left.Y - right.Y,
         Z = left.Z - right.Z
     };
-
-    private static bool SameVec3Bits(Vec3 left, Vec3 right) =>
-        BitConverter.SingleToInt32Bits(left.X) == BitConverter.SingleToInt32Bits(right.X) &&
-        BitConverter.SingleToInt32Bits(left.Y) == BitConverter.SingleToInt32Bits(right.Y) &&
-        BitConverter.SingleToInt32Bits(left.Z) == BitConverter.SingleToInt32Bits(right.Z);
 
     private static void ValidateDeclaredCount(long declared, int actual, string description)
     {

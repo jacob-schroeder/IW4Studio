@@ -3,7 +3,7 @@ using System.Text;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Math;
 
-namespace D3dbspLinker.D3dbsp;
+namespace IW4.Assets.D3dbsp;
 
 internal static class D3dbspPrimaryLightCodec
 {

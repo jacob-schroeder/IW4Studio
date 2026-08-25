@@ -1,4 +1,5 @@
 using IW4.FastFiles.Zone;
+using IW4.Assets.D3dbsp;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
 using IW4.Studio.Documents;
@@ -27,6 +28,8 @@ public sealed class WorkbenchAssetSelectionRouter
         _entriesByProvider;
     private readonly IReadOnlyDictionary<(XAssetType Type, string Name), WorkspaceAssetCatalogEntry[]>
         _entriesByCanonicalIdentity;
+    private readonly IReadOnlyDictionary<string, WorkspaceAssetCatalogEntry[]>
+        _d3dbspEntriesByName;
 
     public WorkbenchAssetSelectionRouter(
         WorkspaceAssetCatalog catalog,
@@ -63,6 +66,17 @@ public sealed class WorkbenchAssetSelectionRouter
             .ToDictionary(
                 group => group.Key,
                 group => OrderCandidates(group).ToArray());
+        _d3dbspEntriesByName = catalog.Entries
+            .Where(entry =>
+                D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                D3dbspAssetTypeFacts.IsD3dbspName(
+                    entry.OriginalName ?? entry.NormalizedName) &&
+                !string.IsNullOrWhiteSpace(entry.NormalizedName))
+            .GroupBy(entry => entry.NormalizedName!, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => OrderCandidates(group).ToArray(),
+                StringComparer.Ordinal);
     }
 
     public WorkbenchAssetSelectionRoute Resolve(
@@ -96,13 +110,26 @@ public sealed class WorkbenchAssetSelectionRouter
 
         if (entry is null)
         {
-            _entriesByCanonicalIdentity.TryGetValue(
-                (
-                    CanonicalType(selection.AssetType),
-                    selection.NormalizedName
-                ),
-                out WorkspaceAssetCatalogEntry[]? canonicalEntries);
-            entry = ChooseForPoolSelection(canonicalEntries ?? [], selection);
+            WorkspaceAssetCatalogEntry[] candidates;
+            if (IsD3dbspSelection(selection) &&
+                _d3dbspEntriesByName.TryGetValue(
+                    selection.NormalizedName,
+                    out WorkspaceAssetCatalogEntry[]? d3dbspEntries))
+            {
+                candidates = d3dbspEntries;
+            }
+            else
+            {
+                _entriesByCanonicalIdentity.TryGetValue(
+                    (
+                        CanonicalType(selection.AssetType),
+                        selection.NormalizedName
+                    ),
+                    out WorkspaceAssetCatalogEntry[]? canonicalEntries);
+                candidates = canonicalEntries ?? [];
+            }
+
+            entry = ChooseForPoolSelection(candidates, selection);
         }
 
         if (entry is null)
@@ -111,7 +138,9 @@ public sealed class WorkbenchAssetSelectionRouter
                 "This runtime pool slot has no matching catalog entry in the loaded workspace.");
         }
 
-        bool opensEditor = entry.Access != WorkspaceAssetAccess.Editable;
+        bool opensEditor =
+            entry.Access != WorkspaceAssetAccess.Editable ||
+            IsD3dbspSelection(selection);
         return new WorkbenchAssetSelectionRoute(
             entry,
             opensEditor,
@@ -154,4 +183,10 @@ public sealed class WorkbenchAssetSelectionRouter
             out XAssetTypeRuntimeMetadata? metadata)
             ? metadata!.CanonicalType
             : type;
+
+    private static bool IsD3dbspSelection(
+        WorkbenchAssetSelection selection) =>
+        D3dbspAssetTypeFacts.IsMultiplayerType(selection.AssetType) &&
+        D3dbspAssetTypeFacts.IsD3dbspName(selection.DisplayName) &&
+        !string.IsNullOrWhiteSpace(selection.NormalizedName);
 }

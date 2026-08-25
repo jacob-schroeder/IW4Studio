@@ -37,14 +37,14 @@ internal readonly record struct VertexSource(
 
         int streamBase = BaseMode switch
         {
-            UvBaseMode.Stream0BaseVertexGfxStride => checked(triangles.BaseVertex * VertexElementDecoder.WorldVertexStride),
+            UvBaseMode.Stream0BaseVertexGfxStride => checked(triangles.BaseVertex * WorldVertexLayout.WorldVertexStride),
             UvBaseMode.Stream0BaseVertexSourceStride => checked(triangles.BaseVertex * Stride),
             UvBaseMode.Stream0LocalIndexOnly => 0,
             UvBaseMode.Stream1VertexLayerData => triangles.VertexLayerData,
             UvBaseMode.Stream1ZeroBase => 0,
             _ => StreamIndex switch
             {
-                0 => checked(triangles.BaseVertex * VertexElementDecoder.WorldVertexStride),
+                0 => checked(triangles.BaseVertex * WorldVertexLayout.WorldVertexStride),
                 1 => triangles.VertexLayerData,
                 _ => -1
             }

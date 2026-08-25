@@ -149,7 +149,7 @@ internal static class PreparedWorldSurfaceGeometryFactory
         out Vector3 position)
     {
         position = default;
-        int offset = vertexIndex * VertexElementDecoder.WorldVertexStride;
+        int offset = vertexIndex * WorldVertexLayout.WorldVertexStride;
         if (vertexIndex < 0 ||
             offset < 0 ||
             offset + 12 > vertexBytes.Length)

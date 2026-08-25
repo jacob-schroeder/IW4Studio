@@ -34,22 +34,45 @@ public sealed class TargetZoneDocument
     internal WorkspaceAssetCatalogEntry AppendDefinition(
         IW4.Assets.Assets.BaseAsset definition)
     {
-        ArgumentNullException.ThrowIfNull(definition);
-        string name = definition.SerializedAssetName ?? throw new ArgumentException(
-            "A new asset requires a serialized name.",
-            nameof(definition));
-        var identity = new TargetZoneRowIdentity(DocumentId, _rows.Count);
-        var entry = new WorkspaceAssetCatalogEntry(
-            identity,
-            WorkspaceAssetOrigin.TargetOwnedDefinition,
-            WorkspaceAssetAccess.Editable,
-            WorkspaceAssetContentSource.TargetAuthoredBaseline,
-            definition.SerializedAssetType,
-            name,
-            IW4.Linker.Contracts.AssetKey.FromDefinition(definition).NormalizedName,
-            definition);
-        _rows.Add(entry);
-        _byIdentity.Add(identity, entry);
-        return entry;
+        return AppendDefinitions([definition])[0];
+    }
+
+    internal IReadOnlyList<WorkspaceAssetCatalogEntry> AppendDefinitions(
+        IEnumerable<IW4.Assets.Assets.BaseAsset> definitions)
+    {
+        ArgumentNullException.ThrowIfNull(definitions);
+        IW4.Assets.Assets.BaseAsset[] requested = definitions
+            .Select(definition => definition ?? throw new ArgumentException(
+                "New asset definitions cannot contain null.",
+                nameof(definitions)))
+            .ToArray();
+        var entries = new WorkspaceAssetCatalogEntry[requested.Length];
+        for (int index = 0; index < requested.Length; index++)
+        {
+            IW4.Assets.Assets.BaseAsset definition = requested[index];
+            string name = definition.SerializedAssetName ?? throw new ArgumentException(
+                "A new asset requires a serialized name.",
+                nameof(definitions));
+            var identity = new TargetZoneRowIdentity(
+                DocumentId,
+                checked(_rows.Count + index));
+            entries[index] = new WorkspaceAssetCatalogEntry(
+                identity,
+                WorkspaceAssetOrigin.TargetOwnedDefinition,
+                WorkspaceAssetAccess.Editable,
+                WorkspaceAssetContentSource.TargetAuthoredBaseline,
+                definition.SerializedAssetType,
+                name,
+                IW4.Linker.Contracts.AssetKey.FromDefinition(definition).NormalizedName,
+                definition);
+        }
+
+        foreach (WorkspaceAssetCatalogEntry entry in entries)
+        {
+            _rows.Add(entry);
+            _byIdentity.Add(entry.TargetRowIdentity!.Value, entry);
+        }
+
+        return Array.AsReadOnly(entries);
     }
 }

@@ -561,7 +561,7 @@ public sealed partial class MapSceneBuilder
 
             int streamBase = binding.StreamIndex switch
             {
-                0 => checked(surface.Triangles.BaseVertex * VertexElementDecoder.WorldVertexStride),
+                0 => checked(surface.Triangles.BaseVertex * WorldVertexLayout.WorldVertexStride),
                 1 => surface.Triangles.VertexLayerData,
                 _ => -1
             };

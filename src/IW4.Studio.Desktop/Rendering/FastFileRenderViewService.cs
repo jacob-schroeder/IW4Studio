@@ -43,6 +43,14 @@ public sealed class FastFileRenderViewService : IDisposable
         _sceneBuilder = sceneBuilder;
     }
 
+    internal static bool CanRenderTargetMap(FastFileWorkspace workspace)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        WorkspaceZone targetZone = workspace.LoadedZones.Single(zone => zone.IsTarget);
+        return targetZone.IsActive &&
+               HasRenderableMapAssets(targetZone.LoadResult);
+    }
+
     private static RenderSceneSnapshot CreateInteractiveSnapshot(
         MapRenderScene scene,
         long revision) =>
@@ -83,6 +91,14 @@ public sealed class FastFileRenderViewService : IDisposable
                 loadedZone,
                 InactiveTargetReason);
         }
+        if (!HasRenderableMapAssets(loadedZone))
+        {
+            return RenderViewSceneBuildResult.NoRenderableMapAssets(
+                workspace.Document.DocumentId,
+                loadedZone,
+                NoRenderableMapAssetsReason);
+        }
+
         GfxWorldAsset? gfxWorld = loadedZone.LoadedAssets
             .Select(asset => asset.Asset)
             .OfType<GfxWorldAsset>()
@@ -91,14 +107,6 @@ public sealed class FastFileRenderViewService : IDisposable
             .Select(asset => asset.Asset)
             .OfType<ClipMapAsset>()
             .SingleOrDefault();
-
-        if (gfxWorld is null && clipMap is null)
-        {
-            return RenderViewSceneBuildResult.NoRenderableMapAssets(
-                workspace.Document.DocumentId,
-                loadedZone,
-                NoRenderableMapAssetsReason);
-        }
 
         var assetSource = new RenderAssetSource(
             loadedZone.Context.Blocks,
@@ -147,6 +155,10 @@ public sealed class FastFileRenderViewService : IDisposable
             "scene resources are ready for native renderer initialization");
         return result;
     }
+
+    private static bool HasRenderableMapAssets(LoadedXZone loadedZone) =>
+        loadedZone.LoadedAssets.Any(asset =>
+            asset.Asset is GfxWorldAsset or ClipMapAsset);
 
     /// <summary>
     /// Coalesces concurrent Live Preview callers for one immutable

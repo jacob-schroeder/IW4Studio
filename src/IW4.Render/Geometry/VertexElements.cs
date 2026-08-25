@@ -1,12 +1,11 @@
 using System.Buffers.Binary;
+using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Geometry;
 
 internal static class VertexElementDecoder
 {
-    internal const int WorldVertexStride = 0x10;
-
     internal static bool TryReadBackendTexCoord(
         IReadOnlyList<byte> bytes,
         int offset,

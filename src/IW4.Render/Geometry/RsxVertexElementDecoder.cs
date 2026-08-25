@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Math;
 

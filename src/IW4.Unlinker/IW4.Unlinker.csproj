@@ -1,11 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\IW4.AssetExchange\IW4.AssetExchange.csproj" />
     <ProjectReference Include="..\IW4.FastFiles\IW4.FastFiles.csproj" />
-    <ProjectReference Include="..\IW4.FastFiles.Loaders\IW4.FastFiles.Loaders.csproj" />
-    <ProjectReference Include="..\IW4.Linker\IW4.Linker.csproj" />
-    <ProjectReference Include="..\IW4.Unlinker\IW4.Unlinker.csproj" />
+    <ProjectReference Include="..\IW4.Assets\IW4.Assets.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

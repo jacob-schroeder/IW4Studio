@@ -34,6 +34,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{F659F56D
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.AssetExchange", "src\IW4.AssetExchange\IW4.AssetExchange.csproj", "{4B05E50B-8933-4929-8E04-4064EFA29140}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Unlinker", "src\IW4.Unlinker\IW4.Unlinker.csproj", "{8306EE0D-A6C1-4C63-8CEB-F157BADAB792}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Studio", "Studio", "{214C7A4F-D2BA-4896-A7F5-872CA01C5D02}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Rendering", "Rendering", "{700AC5D8-90E7-41DC-BBDA-9C39A52C49B7}"
@@ -104,6 +106,10 @@ Global
 		{4B05E50B-8933-4929-8E04-4064EFA29140}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4B05E50B-8933-4929-8E04-4064EFA29140}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4B05E50B-8933-4929-8E04-4064EFA29140}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8306EE0D-A6C1-4C63-8CEB-F157BADAB792}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8306EE0D-A6C1-4C63-8CEB-F157BADAB792}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8306EE0D-A6C1-4C63-8CEB-F157BADAB792}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8306EE0D-A6C1-4C63-8CEB-F157BADAB792}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

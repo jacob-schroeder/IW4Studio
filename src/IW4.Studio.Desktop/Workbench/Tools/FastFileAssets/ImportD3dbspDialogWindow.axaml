@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.ImportD3dbspDialogWindow"
+        Title="Import D3DBSP"
+        Width="540"
+        Height="500"
+        MinWidth="540"
+        MinHeight="500"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Border Padding="28,24"
+          Background="{DynamicResource StudioBackgroundBrush}">
+    <Grid RowDefinitions="Auto,18,Auto,14,Auto,14,Auto,*,Auto">
+      <StackPanel Grid.Row="0" Spacing="5">
+        <TextBlock Text="Import compiled D3DBSP"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock x:Name="SourceTextBlock"
+                   FontSize="11"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="2" Spacing="6">
+        <TextBlock Text="Internal map asset name"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBox x:Name="NameTextBox"
+                 MinHeight="34"
+                 PlaceholderText="maps/mp/mp_example.d3dbsp"
+                 TextChanged="Input_TextChanged" />
+        <TextBlock Text="The six generated assets use this same owned .d3dbsp wire name. Import replaces an existing same-name target group or creates one."
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="4" Spacing="6">
+        <TextBlock Text="PS3 world-draw upload capacity (bytes)"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBox x:Name="CapacityTextBox"
+                 MinHeight="34"
+                 PlaceholderText="Decimal or hexadecimal, for example 0x001A0000"
+                 TextChanged="Input_TextChanged" />
+        <TextBlock Text="This serialized GfxWorld value is not derivable from the D3DBSP. Studio fills it only when the workspace has one unambiguous existing value; a blank workspace needs the value from its intended PS3 template or target profile."
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="6" Spacing="5">
+        <CheckBox x:Name="ForceFullbrightCheckBox"
+                  Content="Force fullbright (lossy workaround)"
+                  FontWeight="SemiBold" />
+        <TextBlock Margin="24,0,0,0"
+                   Text="Use only when compiled lightmap bytes block import. Those bytes are discarded and cannot be recovered from the imported group."
+                   FontSize="9"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+
+      <TextBlock x:Name="ValidationTextBlock"
+                 Grid.Row="7"
+                 Margin="0,12,0,10"
+                 FontSize="9"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioErrorBrush}" />
+
+      <StackPanel Grid.Row="8"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="10">
+        <Button x:Name="CancelButton"
+                MinWidth="92"
+                Content="Cancel"
+                IsCancel="True"
+                Click="CancelButton_Click" />
+        <Button x:Name="ImportButton"
+                Classes="primary"
+                MinWidth="92"
+                Content="Import"
+                IsDefault="True"
+                IsEnabled="False"
+                Click="ImportButton_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

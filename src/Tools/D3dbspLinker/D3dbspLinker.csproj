@@ -10,7 +10,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\IW4.Assets\IW4.Assets.csproj" />
+    <ProjectReference Include="..\..\IW4.Linker\IW4.Linker.csproj" />
     <ProjectReference Include="..\..\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\..\IW4.Unlinker\IW4.Unlinker.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,16 +1,20 @@
 using System.Globalization;
+using System.Text;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
+using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
+using IW4.Linker.D3dbsp;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
 using IW4.Studio.Documents;
+using IW4.Unlinker.D3dbsp;
 using D3dbspLinker.Inspection;
 
 namespace D3dbspLinker.Conversion;
@@ -88,7 +92,20 @@ internal static class FastFileConverter
             throw new IOException($"Output file '{outputPath}' already exists.");
 
         using FastFileWorkspace workspace = FastFileInspector.Open(inputPath);
-        D3dbspFile file = FastFileD3dbspEncoder.Encode(workspace);
+        BaseAsset[] assets = workspace.LoadedZone.LoadedAssets
+            .Select(result => result.Asset)
+            .OfType<BaseAsset>()
+            .ToArray();
+        D3dbspFile file = D3dbspUnlinker.Unlink(assets);
+        string assetName = assets
+            .OfType<GfxWorldAsset>()
+            .Single()
+            .Name!;
+        Console.WriteLine($"map-asset: {assetName}");
+        Console.WriteLine("encoding-profile: reconstructed-editable-one-cell-v22");
+        Console.WriteLine("preserved: render geometry, collision, static models, entities, stages, baked lighting, reflection probes");
+        Console.WriteLine("canonicalized: surface order, vertex streams, lightmap atlases, leaf-brush slices, all-visible PVS, one render cell");
+        Console.WriteLine("unrecoverable: original portal/cull/PVS layout, compiler-only entity rows, node tails, lightmap packing metadata, probe color-correction source");
         file.Write(outputPath);
         Console.WriteLine($"wrote: {outputPath}");
         Console.WriteLine($"d3dbsp-chunks: {file.Lumps.Count}");
@@ -134,11 +151,23 @@ internal static class FastFileConverter
             FastFileInspector.GetSingle<GfxWorldAsset>(template) ??
             throw new InvalidDataException(
                 $"The template fastfile '{templatePath}' does not contain exactly one GfxWorld asset.");
-        D3dbspAssetGraph graph = D3dbspAssetGraphBuilder.Build(
-            inputPath,
-            assetName,
-            forceFullbright,
-            templateWorld.UmbraGateCount);
+        XModelAsset[] availableXModels = CaptureActiveXModels(template)
+            .Concat(dependencyPaths.SelectMany(LoadActiveXModels))
+            .DistinctBy(AssetKey.FromDefinition)
+            .ToArray();
+        D3dbspLinkResult graph = D3dbspAssetLinker.Link(
+            new D3dbspLinkRequest(
+                inputPath,
+                assetName,
+                forceFullbright,
+                templateWorld.UmbraGateCount,
+                availableXModels));
+        BaseAsset[] fastFileMapRoots =
+        [
+            .. graph.Roots,
+            CreateMapScript(assetName),
+            CreateMapMarker(assetName)
+        ];
         HashSet<AssetKey> mapMaterialKeys = graph.DependencyReferences
             .Where(asset => asset.SerializedAssetType == XAssetType.Material)
             .Select(AssetKey.FromDefinition)
@@ -176,10 +205,10 @@ internal static class FastFileConverter
         existingKeys.ExceptWith(bootstrapExternalProviderKeys);
 
         var newSources = new List<LinkAssetProviderSource>(
-            graph.Roots.Count + graph.NestedAssets.Count +
+            fastFileMapRoots.Length + graph.NestedAssets.Count +
             bootstrapModelProviders.Count + 1);
         var externalFallbackNames = new List<string>();
-        foreach (BaseAsset root in graph.Roots)
+        foreach (BaseAsset root in fastFileMapRoots)
             newSources.Add(new LinkAssetProviderSource(root).AsAuthoredDetached());
         foreach (BaseAsset nestedAsset in graph.NestedAssets)
         {
@@ -208,8 +237,8 @@ internal static class FastFileConverter
         LinkAssetPool assets = baseAssets
             .WithHighestPrecedenceProviders(newSources);
         var roots = new List<LinkRoot>(
-            graph.Roots.Count + bootstrapXModels.Count + 1);
-        roots.AddRange(graph.Roots.Select(CreateOwnedRoot));
+            fastFileMapRoots.Length + bootstrapXModels.Count + 1);
+        roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
         roots.Add(CreateBootstrapRoot(
             "d3dbsplinker:bootstrap:stringtable:dm",
             bootstrapStringTable));
@@ -251,7 +280,7 @@ internal static class FastFileConverter
 
         Console.WriteLine($"wrote: {outputPath}");
         Console.WriteLine($"map-asset: {assetName}");
-        Console.WriteLine($"owned-map-roots: {graph.Roots.Count}");
+        Console.WriteLine($"owned-map-roots: {fastFileMapRoots.Length}");
         Console.WriteLine($"nested-map-assets: {graph.NestedAssets.Count}");
         Console.WriteLine($"owned-bootstrap-roots: {bootstrapXModels.Count + 1}");
         Console.WriteLine($"owned-roots: {roots.Count}");
@@ -289,6 +318,37 @@ internal static class FastFileConverter
             name,
             opaqueHeader: null);
     }
+
+    private static RawFileAsset CreateMapScript(string assetName)
+    {
+        string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        // These factions own the player-model closure selected below.
+        const string script =
+            "main()\r\n" +
+            "{\r\n" +
+            "\tmaps\\mp\\_load::main();\r\n" +
+            "\tgame[\"allies\"] = \"us_army\";\r\n" +
+            "\tgame[\"axis\"] = \"opforce_airborne\";\r\n" +
+            "\tgame[\"attackers\"] = \"allies\";\r\n" +
+            "\tgame[\"defenders\"] = \"axis\";\r\n" +
+            "}\r\n";
+        byte[] content = Encoding.ASCII.GetBytes(script);
+        return new RawFileAsset
+        {
+            Name = scriptName,
+            CompressedLen = 0,
+            Len = content.Length,
+            Buffer = [.. content, 0]
+        };
+    }
+
+    private static RawFileAsset CreateMapMarker(string assetName) => new()
+    {
+        Name = Path.GetFileNameWithoutExtension(assetName.Replace('\\', '/')),
+        CompressedLen = 0,
+        Len = 0,
+        Buffer = [0]
+    };
 
     private static LinkRoot CreateBootstrapRoot(string entryId, BaseAsset asset)
     {
@@ -520,6 +580,22 @@ internal static class FastFileConverter
             String = value,
             Hash = CalculateStringTableHash(value)
         };
+
+    private static IReadOnlyList<XModelAsset> LoadActiveXModels(string path)
+    {
+        using FastFileWorkspace workspace = FastFileInspector.Open(path);
+        return CaptureActiveXModels(workspace);
+    }
+
+    private static IReadOnlyList<XModelAsset> CaptureActiveXModels(
+        FastFileWorkspace workspace) =>
+        Array.AsReadOnly(workspace.LoadedZone.Context.AssetPool.Slots
+            .Where(slot =>
+                slot.AssetType == XAssetType.XModel &&
+                !slot.ActiveProvider.IsReferencePlaceholder)
+            .Select(slot => slot.ActiveProvider.Asset)
+            .OfType<XModelAsset>()
+            .ToArray());
 
     private static int CalculateStringTableHash(string value)
     {

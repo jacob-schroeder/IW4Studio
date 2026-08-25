@@ -6,7 +6,6 @@ using IW4.Assets.Assets.Physics;
 using IW4.Assets.D3dbsp;
 using IW4.Assets.Math;
 using IW4.Studio.Documents;
-using D3dbspLinker.D3dbsp;
 
 namespace D3dbspLinker.Inspection;
 

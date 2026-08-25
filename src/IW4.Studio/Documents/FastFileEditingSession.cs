@@ -1,7 +1,12 @@
+using IW4.Assets.Assets;
+using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
+using IW4.Assets.Assets.XModel;
+using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
+using IW4.Linker.D3dbsp;
 
 namespace IW4.Studio.Documents;
 
@@ -19,6 +24,11 @@ public sealed class FastFileEditingSession : IDisposable
         new HashSet<AssetKey>();
     private readonly Dictionary<TargetZoneRowIdentity, DraftState> _drafts = [];
     private readonly Dictionary<TargetZoneRowIdentity, long> _addedRows = [];
+    // Each group records every provider it requires; the authored subset lets
+    // the last consumer withdraw providers managed by the D3DBSP lifecycle.
+    private readonly Dictionary<string, IReadOnlySet<AssetKey>>
+        _d3dbspProviderKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<AssetKey> _d3dbspAuthoredProviderKeys = [];
     // Generated dependency closures are providers, not document rows. Their
     // ownership is revision workflow state so a later compiled root can
     // withdraw only its own prior auxiliaries.
@@ -106,6 +116,252 @@ public sealed class FastFileEditingSession : IDisposable
         NotifyTargetRowsChanged();
         AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
         return entry;
+    }
+
+    /// <summary>
+    /// Publishes all assets compiled from one D3DBSP in one revision. Existing
+    /// same-name map rows are replaced in place and missing top-level map rows
+    /// are appended; MapEnts remains a nested provider unless the document
+    /// already exposes it as a row.
+    /// </summary>
+    public async Task<D3dbspWorkspaceImportResult> ImportD3dbspAsync(
+        string inputPath,
+        string assetName,
+        bool forceFullbright,
+        int worldDrawPayloadCapacity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
+        IReadOnlyList<XModelAsset> availableXModels =
+            CaptureAvailableD3dbspXModels();
+        D3dbspLinkResult linked = await Task.Run(() =>
+            D3dbspAssetLinker.Link(new D3dbspLinkRequest(
+                inputPath,
+                assetName,
+                forceFullbright,
+                worldDrawPayloadCapacity,
+                availableXModels)));
+        return ImportD3dbsp(linked);
+    }
+
+    private IReadOnlyList<XModelAsset> CaptureAvailableD3dbspXModels()
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            var modelsByKey = new Dictionary<AssetKey, XModelAsset>();
+            foreach (WorkspaceAssetCatalogEntry entry in Document.Rows.Where(entry =>
+                         entry.AssetType == XAssetType.XModel &&
+                         entry.Definition is XModelAsset))
+            {
+                if (CurrentDefinitionForEntry(entry) is XModelAsset model)
+                    modelsByKey.TryAdd(AssetKey.FromDefinition(model), model);
+            }
+
+            foreach (var slot in Workspace.LoadedZone.Context.AssetPool.Slots.Where(slot =>
+                         slot.AssetType == XAssetType.XModel &&
+                         !slot.ActiveProvider.IsReferencePlaceholder))
+            {
+                if (slot.ActiveProvider.Asset is XModelAsset model)
+                    modelsByKey.TryAdd(AssetKey.FromDefinition(model), model);
+            }
+
+            return Array.AsReadOnly(modelsByKey.Values.ToArray());
+        }
+    }
+
+    private D3dbspWorkspaceImportResult ImportD3dbsp(
+        D3dbspLinkResult linked)
+    {
+        ArgumentNullException.ThrowIfNull(linked);
+        Dictionary<XAssetType, BaseAsset> definitionsByType =
+            RequireD3dbspDefinitions(linked);
+        string assetName = definitionsByType[XAssetType.GfxMap]
+            .SerializedAssetName!;
+        string normalizedName = AssetKey.FromDefinition(
+            definitionsByType[XAssetType.GfxMap]).NormalizedName;
+
+        WorkspaceAssetCatalogEntry[] importedRows;
+        int addedRowCount;
+        int replacedRowCount;
+        long revision;
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            WorkspaceAssetCatalogEntry[] existingRows = Document.Rows
+                .Where(entry =>
+                    D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                    string.Equals(
+                        entry.NormalizedName,
+                        normalizedName,
+                        StringComparison.Ordinal))
+                .ToArray();
+            if (existingRows.Any(entry =>
+                    entry.Origin != WorkspaceAssetOrigin.TargetOwnedDefinition ||
+                    entry.Access != WorkspaceAssetAccess.Editable ||
+                    entry.Definition is null))
+            {
+                throw new InvalidOperationException(
+                    $"The D3DBSP group '{assetName}' collides with a target row that is not an editable owned definition.");
+            }
+            IGrouping<XAssetType, WorkspaceAssetCatalogEntry>? duplicateRows =
+                existingRows.GroupBy(entry => entry.AssetType)
+                    .FirstOrDefault(group => group.Count() != 1);
+            if (duplicateRows is not null)
+            {
+                throw new InvalidDataException(
+                    $"The D3DBSP group '{assetName}' has multiple {duplicateRows.Key} target rows.");
+            }
+            WorkspaceAssetCatalogEntry? spellingMismatch = existingRows
+                .FirstOrDefault(entry => !string.Equals(
+                    entry.OriginalName,
+                    assetName,
+                    StringComparison.Ordinal));
+            if (spellingMismatch is not null)
+            {
+                throw new InvalidOperationException(
+                    $"The existing group uses wire name '{spellingMismatch.OriginalName}'. Import with that exact spelling to replace it.");
+            }
+
+            Dictionary<XAssetType, WorkspaceAssetCatalogEntry> existingByType =
+                existingRows.ToDictionary(entry => entry.AssetType);
+            BaseAsset[] addedDefinitions = D3dbspAssetTypeFacts.MultiplayerTypes
+                .Where(assetType =>
+                    assetType != XAssetType.MapEnts &&
+                    !existingByType.ContainsKey(assetType))
+                .Select(assetType => definitionsByType[assetType])
+                .ToArray();
+            var pending = new List<(DraftState State, object Candidate)>();
+            foreach ((XAssetType assetType, WorkspaceAssetCatalogEntry entry) in
+                     existingByType)
+            {
+                DraftState state = RequireDraft(entry.TargetRowIdentity!.Value);
+                pending.Add((
+                    state,
+                    state.Adapter.CreateDraft(definitionsByType[assetType])));
+            }
+
+            IReadOnlySet<AssetKey> priorProviderKeys =
+                _d3dbspProviderKeys.TryGetValue(
+                    normalizedName,
+                    out IReadOnlySet<AssetKey>? prior)
+                    ? prior
+                    : new HashSet<AssetKey>();
+            BaseAsset[] ownedProviders = definitionsByType.Values
+                .Concat(linked.NestedAssets.Where(asset =>
+                    !D3dbspAssetTypeFacts.IsMultiplayerType(
+                        asset.SerializedAssetType)))
+                .GroupBy(AssetKey.FromDefinition)
+                .Select(group => group.First())
+                .ToArray();
+            AssetKey[] groupProviderKeys = ownedProviders
+                .Select(AssetKey.FromDefinition)
+                .Concat(linked.DependencyReferences.Select(
+                    AssetKey.FromDefinition))
+                .Distinct()
+                .ToArray();
+            HashSet<AssetKey> otherGroupProviderKeys = _d3dbspProviderKeys
+                .Where(pair => !string.Equals(
+                    pair.Key,
+                    normalizedName,
+                    StringComparison.Ordinal))
+                .SelectMany(pair => pair.Value)
+                .ToHashSet();
+            AssetKey[] withdrawablePriorKeys = priorProviderKeys
+                .Where(key =>
+                    _d3dbspAuthoredProviderKeys.Contains(key) &&
+                    !groupProviderKeys.Contains(key) &&
+                    !otherGroupProviderKeys.Contains(key) &&
+                    !IsCompiledProviderOwned(key))
+                .ToArray();
+            var availableKeys = _revision.LinkRequest.Assets.Providers
+                .Select(provider => provider.Key)
+                .Where(key => !withdrawablePriorKeys.Contains(key))
+                .ToHashSet();
+            availableKeys.UnionWith(
+                ownedProviders.Select(AssetKey.FromDefinition));
+            BaseAsset[] dependencyFallbacks = linked.DependencyReferences
+                .Where(asset => availableKeys.Add(AssetKey.FromDefinition(asset)))
+                .ToArray();
+            BaseAsset[] publishedDefinitions = ownedProviders
+                .Concat(dependencyFallbacks)
+                .GroupBy(AssetKey.FromDefinition)
+                .Select(group => group.First())
+                .ToArray();
+            AssetKey[] publishedKeys = publishedDefinitions
+                .Select(AssetKey.FromDefinition)
+                .ToArray();
+            AssetKey[] replacedProviderKeys = withdrawablePriorKeys
+                .Concat(ownedProviders.Select(AssetKey.FromDefinition))
+                .Distinct()
+                .ToArray();
+            LinkAssetPool authoredAssets = _authoredAssets
+                .WithoutProviders(replacedProviderKeys)
+                .WithHighestPrecedenceProviders(publishedDefinitions.Select(
+                    definition => new LinkAssetProviderSource(definition)
+                        .AsAuthoredDetached()));
+            LinkRoot[] roots =
+            [
+                .. _revision.LinkRequest.Roots,
+                .. addedDefinitions.Select(definition => new LinkRoot(
+                    $"d3dbsp:{Guid.NewGuid():N}:{definition.SerializedAssetType}",
+                    definition.SerializedAssetType,
+                    LinkRootIntent.Owned,
+                    AssetKey.FromDefinition(definition),
+                    definition.SerializedAssetName,
+                    opaqueHeader: null))
+            ];
+
+            Publish(
+                authoredAssets,
+                roots,
+                publishedProviderKeys: publishedKeys);
+            foreach ((DraftState state, object candidate) in pending)
+                state.SetCurrent(candidate, _revision.Revision);
+
+            IReadOnlyList<WorkspaceAssetCatalogEntry> addedEntries =
+                Document.AppendDefinitions(addedDefinitions);
+            foreach (WorkspaceAssetCatalogEntry entry in addedEntries)
+            {
+                IAssetAuthoringAdapter adapter = RequireHostedAdapter(
+                    entry.Definition!);
+                _drafts.Add(
+                    entry.TargetRowIdentity!.Value,
+                    new DraftState(entry, adapter));
+                _addedRows.Add(
+                    entry.TargetRowIdentity.Value,
+                    _revision.Revision);
+            }
+
+            _d3dbspProviderKeys[normalizedName] =
+                new HashSet<AssetKey>(groupProviderKeys);
+            _d3dbspAuthoredProviderKeys.ExceptWith(withdrawablePriorKeys);
+            _d3dbspAuthoredProviderKeys.UnionWith(publishedKeys);
+            HashSet<AssetKey> requiredD3dbspProviderKeys = _d3dbspProviderKeys
+                .SelectMany(pair => pair.Value)
+                .ToHashSet();
+            _d3dbspAuthoredProviderKeys.IntersectWith(
+                requiredD3dbspProviderKeys);
+            RebuildChangeSet();
+            importedRows = existingRows
+                .Concat(addedEntries)
+                .OrderBy(entry => entry.TargetRowIdentity!.Value.SerializedIndex)
+                .ToArray();
+            addedRowCount = addedEntries.Count;
+            replacedRowCount = existingRows.Length;
+            revision = _revision.Revision;
+        }
+
+        if (addedRowCount != 0)
+            NotifyTargetRowsChanged();
+        AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return new D3dbspWorkspaceImportResult(
+            revision,
+            assetName,
+            importedRows,
+            addedRowCount,
+            replacedRowCount,
+            linked.DiscardedLightByteCount);
     }
 
     public void SelectRow(TargetZoneRowIdentity? identity)
@@ -222,14 +478,78 @@ public sealed class FastFileEditingSession : IDisposable
                 .Select(entry =>
                 {
                     TargetZoneRowIdentity identity = entry.TargetRowIdentity!.Value;
-                    IW4.Assets.Assets.BaseAsset definition =
-                        _drafts.TryGetValue(identity, out DraftState? draft)
-                            ? draft.CreateCurrentDefinition()
-                            : entry.Definition!;
-                    return new AppliedAssetDefinition(identity, definition);
+                    return new AppliedAssetDefinition(
+                        identity,
+                        CurrentDefinitionForEntry(entry));
                 })
                 .ToArray();
             return new AppliedAssetDefinitionsCapture(_revision.Revision, definitions);
+        }
+    }
+
+    /// <summary>
+    /// Captures the synchronized assets represented by one owned D3DBSP wire
+    /// name. MapEnts may be supplied by the ClipMap instead of a target row.
+    /// </summary>
+    public D3dbspWorkspaceAssetGroup CaptureD3dbspGroup(string assetName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
+        if (!D3dbspAssetTypeFacts.IsOwnedD3dbspGroupName(assetName))
+        {
+            throw new ArgumentException(
+                "A D3DBSP group requires an owned wire name containing .d3dbsp.",
+                nameof(assetName));
+        }
+
+        string normalizedName = AssetKey.FromWireName(
+            CanonicalAssetFamily.FromSerializedType(XAssetType.GfxMap),
+            assetName).NormalizedName;
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            var definitions = new List<BaseAsset>();
+            foreach (WorkspaceAssetCatalogEntry entry in Document.Rows.Where(entry =>
+                         entry.TargetRowIdentity is not null &&
+                         D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                         string.Equals(
+                             entry.NormalizedName,
+                             normalizedName,
+                             StringComparison.Ordinal) &&
+                         entry.Definition is not null))
+            {
+                definitions.Add(CurrentDefinitionForEntry(entry));
+            }
+
+            HashSet<XAssetType> capturedTypes = definitions
+                .Select(definition => definition.SerializedAssetType)
+                .ToHashSet();
+            ClipMapAsset[] clipMaps = definitions
+                .OfType<ClipMapAsset>()
+                .Where(clipMap =>
+                    clipMap.SerializedAssetType == XAssetType.ColMapMp)
+                .ToArray();
+            if (!capturedTypes.Contains(XAssetType.MapEnts) &&
+                clipMaps.Length == 1 &&
+                clipMaps[0].MapEnts is { } nestedMapEnts)
+            {
+                definitions.Add(nestedMapEnts);
+                capturedTypes.Add(XAssetType.MapEnts);
+            }
+            definitions.AddRange(Workspace.AssetCatalog.DependencyEntries
+                .Where(entry =>
+                    D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                    !capturedTypes.Contains(entry.AssetType) &&
+                    string.Equals(
+                        entry.NormalizedName,
+                        normalizedName,
+                        StringComparison.Ordinal) &&
+                    entry.Definition is not null)
+                .Select(entry => entry.Definition!));
+
+            return new D3dbspWorkspaceAssetGroup(
+                _revision.Revision,
+                assetName,
+                definitions);
         }
     }
 
@@ -277,6 +597,61 @@ public sealed class FastFileEditingSession : IDisposable
                 .ToArray();
             return Array.AsReadOnly(images);
         }
+    }
+
+    private static Dictionary<XAssetType, BaseAsset> RequireD3dbspDefinitions(
+        D3dbspLinkResult linked)
+    {
+        BaseAsset[] definitions = linked.Roots
+            .Concat(linked.NestedAssets)
+            .Where(definition => D3dbspAssetTypeFacts.IsMultiplayerType(
+                definition.SerializedAssetType))
+            .ToArray();
+        var byType = new Dictionary<XAssetType, BaseAsset>();
+        foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
+        {
+            BaseAsset[] matches = definitions
+                .Where(definition => definition.SerializedAssetType == assetType)
+                .ToArray();
+            if (matches.Length != 1)
+            {
+                throw new InvalidDataException(
+                    $"A linked D3DBSP must contain exactly one {assetType} definition; found {matches.Length}.");
+            }
+
+            byType.Add(assetType, matches[0]);
+        }
+
+        string? assetName = byType[XAssetType.GfxMap].SerializedAssetName;
+        if (!D3dbspAssetTypeFacts.IsOwnedD3dbspName(assetName))
+        {
+            throw new InvalidDataException(
+                "A linked D3DBSP must use one owned .d3dbsp wire name.");
+        }
+        BaseAsset? mismatched = byType.Values.FirstOrDefault(definition =>
+            !string.Equals(
+                definition.SerializedAssetName,
+                assetName,
+                StringComparison.Ordinal));
+        if (mismatched is not null)
+        {
+            throw new InvalidDataException(
+                $"The linked {mismatched.SerializedAssetType} definition does not use the D3DBSP wire name '{assetName}'.");
+        }
+
+        return byType;
+    }
+
+    private BaseAsset CurrentDefinitionForEntry(
+        WorkspaceAssetCatalogEntry entry)
+    {
+        TargetZoneRowIdentity identity = entry.TargetRowIdentity ??
+            throw new InvalidDataException(
+                "A current target definition requires a target-row identity.");
+        return _drafts.TryGetValue(identity, out DraftState? draft)
+            ? draft.CreateCurrentDefinition()
+            : entry.Definition ?? throw new InvalidDataException(
+                "A current target definition requires semantic content.");
     }
 
     private static HashSet<XAssetType> ValidateCapturedAssetTypes(
@@ -368,11 +743,19 @@ public sealed class FastFileEditingSession : IDisposable
             throw new InvalidDataException(
                 "A synchronized publication cannot contain the same target row twice.");
         }
-        AssetKey[] withdrawnKeys = withdrawnProviderKeys.Distinct().ToArray();
+        AssetKey[] requestedWithdrawnKeys = withdrawnProviderKeys
+            .Distinct()
+            .ToArray();
 
         lock (_gate)
         {
             ThrowIfDisposedCore();
+            AssetKey[] withdrawnKeys = requestedWithdrawnKeys
+                .Where(key => !IsD3dbspProviderRequired(key))
+                .ToArray();
+            AssetKey[] transferredD3dbspKeys = requestedWithdrawnKeys
+                .Where(IsD3dbspProviderRequired)
+                .ToArray();
             var pending = new List<(DraftState State, object Candidate)>();
             foreach ((TargetZoneRowIdentity identity,
                 IW4.Assets.Assets.BaseAsset definition,
@@ -439,6 +822,7 @@ public sealed class FastFileEditingSession : IDisposable
                     .Select(provider => AssetKey.FromDefinition(provider.Definition)));
             foreach ((DraftState state, object candidate) in pending)
                 state.SetCurrent(candidate, _revision.Revision);
+            _d3dbspAuthoredProviderKeys.UnionWith(transferredD3dbspKeys);
             RebuildChangeSet();
         }
 
@@ -559,6 +943,12 @@ public sealed class FastFileEditingSession : IDisposable
         AssetKey key) =>
         _compiledAuxiliaryProviders.Any(pair =>
             pair.Key != identity && pair.Value.ContainsKey(key));
+
+    private bool IsCompiledProviderOwned(AssetKey key) =>
+        _compiledAuxiliaryProviders.Values.Any(owned => owned.ContainsKey(key));
+
+    private bool IsD3dbspProviderRequired(AssetKey key) =>
+        _d3dbspProviderKeys.Values.Any(required => required.Contains(key));
 
     internal object CloneCurrentDraft(
         TargetZoneRowIdentity identity,
@@ -860,8 +1250,13 @@ public sealed class FastFileEditingSession : IDisposable
         {
             _compiledAuxiliaryProviders[identity] = retained;
         }
-        AssetKey[] keys = previouslyOwned.Except(
-            _compiledAuxiliaryProviders.Values.SelectMany(owned => owned.Keys))
+        AssetKey[] releasedKeys = previouslyOwned.Except(
+                _compiledAuxiliaryProviders.Values.SelectMany(owned => owned.Keys))
+            .ToArray();
+        _d3dbspAuthoredProviderKeys.UnionWith(
+            releasedKeys.Where(IsD3dbspProviderRequired));
+        AssetKey[] keys = releasedKeys
+            .Where(key => !IsD3dbspProviderRequired(key))
             .ToArray();
         if (keys.Length == 0)
             return;

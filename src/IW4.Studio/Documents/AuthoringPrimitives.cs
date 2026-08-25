@@ -126,3 +126,51 @@ public sealed class AppliedAssetDefinitionsCapture
     public long Revision { get; }
     public IReadOnlyList<AppliedAssetDefinition> Definitions { get; }
 }
+
+/// <summary>
+/// Result of publishing one compiled D3DBSP asset group into the target
+/// document as a single editing-session revision.
+/// </summary>
+public sealed class D3dbspWorkspaceImportResult
+{
+    internal D3dbspWorkspaceImportResult(
+        long revision,
+        string assetName,
+        IEnumerable<WorkspaceAssetCatalogEntry> targetRows,
+        int addedRowCount,
+        int replacedRowCount,
+        int discardedLightByteCount)
+    {
+        Revision = revision;
+        AssetName = assetName;
+        TargetRows = Array.AsReadOnly(targetRows.ToArray());
+        AddedRowCount = addedRowCount;
+        ReplacedRowCount = replacedRowCount;
+        DiscardedLightByteCount = discardedLightByteCount;
+    }
+
+    public long Revision { get; }
+    public string AssetName { get; }
+    public IReadOnlyList<WorkspaceAssetCatalogEntry> TargetRows { get; }
+    public int AddedRowCount { get; }
+    public int ReplacedRowCount { get; }
+    public int DiscardedLightByteCount { get; }
+}
+
+/// <summary>A detached, revision-consistent D3DBSP asset group.</summary>
+public sealed class D3dbspWorkspaceAssetGroup
+{
+    internal D3dbspWorkspaceAssetGroup(
+        long revision,
+        string assetName,
+        IEnumerable<IW4.Assets.Assets.BaseAsset> assets)
+    {
+        Revision = revision;
+        AssetName = assetName;
+        Assets = Array.AsReadOnly(assets.ToArray());
+    }
+
+    public long Revision { get; }
+    public string AssetName { get; }
+    public IReadOnlyList<IW4.Assets.Assets.BaseAsset> Assets { get; }
+}

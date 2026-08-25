@@ -91,6 +91,10 @@ public sealed class GfxWorldAsset : BaseAsset
     // 0x278: allowed fog-type flags.
     public FogTypesAllowed FogTypesAllowed { get; init; }
     public IReadOnlyList<byte> Pad279To27B { get; init; } = [];
+    /// <summary>
+    /// PS3 GfxWorld +0x27C: usable bytes in each alternating fragment-program
+    /// upload arena. The legacy member name predates recovery of its purpose.
+    /// </summary>
     public int UmbraGateCount { get; init; }
     public XPointer<byte[]> UmbraGateDataPointer { get; init; }
     public IReadOnlyList<byte> UmbraGateData { get; init; } = [];

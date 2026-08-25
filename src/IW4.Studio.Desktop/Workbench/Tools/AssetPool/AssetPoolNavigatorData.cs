@@ -203,7 +203,7 @@ public sealed class AssetPoolNavigatorSnapshot
 
     public static AssetPoolNavigatorSnapshot Capture(
         FastFileWorkspace workspace,
-        Func<XAssetType, bool> hasDesktopEditor)
+        Func<XAssetType, string?, bool> hasDesktopEditor)
     {
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(hasDesktopEditor);
@@ -233,7 +233,7 @@ public sealed class AssetPoolNavigatorSnapshot
                 provider.RegistrationSequence,
                 provider.IsReferencePlaceholder,
                 zoneName,
-                hasDesktopEditor(slot.AssetType));
+                hasDesktopEditor(slot.AssetType, slot.Name));
         }).ToArray();
 
         if (pool.Revision != revision)

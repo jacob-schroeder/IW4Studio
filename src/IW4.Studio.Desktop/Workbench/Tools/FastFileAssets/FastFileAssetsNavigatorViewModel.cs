@@ -1,3 +1,5 @@
+using IW4.Assets.Assets.GfxMap;
+using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Documents;
@@ -12,7 +14,8 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
 {
     private readonly IWorkbenchSelectionContext _selectionContext;
     private readonly EditorViewModel _editor;
-    private readonly Func<IW4.FastFiles.Zone.XAssetType, bool> _hasDesktopEditor;
+    private readonly Func<XAssetType, string?, bool>
+        _hasDesktopEditor;
     private IReadOnlyList<FastFileAssetNavigatorRow> _allRows;
     private string _searchText = string.Empty;
     private IReadOnlyList<FastFileAssetNavigatorRow> _visibleRows;
@@ -20,12 +23,13 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     private IReadOnlyList<FastFileAssetNavigatorNode> _nodes;
     private FastFileAssetNavigatorRow? _selectedRow;
     private FastFileAssetNavigatorNode? _selectedNode;
+    private string _d3dbspImportStatusMessage = string.Empty;
     private bool _disposed;
 
     public FastFileAssetsNavigatorViewModel(
         EditorViewModel editor,
         IWorkbenchSelectionContext selectionContext,
-        Func<IW4.FastFiles.Zone.XAssetType, bool> hasDesktopEditor)
+        Func<XAssetType, string?, bool> hasDesktopEditor)
     {
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
         _selectionContext = selectionContext
@@ -118,17 +122,32 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
 
     public int TotalCount => _allRows.Count;
 
+    public string D3dbspImportStatusMessage
+    {
+        get => _d3dbspImportStatusMessage;
+        private set
+        {
+            if (!SetProperty(ref _d3dbspImportStatusMessage, value))
+                return;
+
+            OnPropertyChanged(nameof(HasD3dbspImportStatus));
+        }
+    }
+
+    public bool HasD3dbspImportStatus =>
+        !string.IsNullOrWhiteSpace(D3dbspImportStatusMessage);
+
     public bool CanAddAssets => AddableAssetTypes.Count != 0;
 
-    public IReadOnlyList<IW4.FastFiles.Zone.XAssetType> AddableAssetTypes =>
+    public IReadOnlyList<XAssetType> AddableAssetTypes =>
         _editor.AddableAssetTypes;
 
     public string? ValidateNewAssetName(
-        IW4.FastFiles.Zone.XAssetType assetType,
+        XAssetType assetType,
         string name) => _editor.ValidateNewAssetName(assetType, name);
 
     public void AddAsset(
-        IW4.FastFiles.Zone.XAssetType assetType,
+        XAssetType assetType,
         string name)
     {
         WorkspaceAssetCatalogEntry entry =
@@ -142,6 +161,68 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
                 "The fastfile asset navigator did not project the newly added row.");
 
         SelectedRow = addedRow;
+    }
+
+    public int? SuggestedD3dbspWorldDrawPayloadCapacity
+    {
+        get
+        {
+            int[] capacities = _editor.EditingSession
+                .CaptureCurrentTargetAssets([XAssetType.GfxMap])
+                .Definitions
+                .Select(definition => definition.Definition)
+                .OfType<GfxWorldAsset>()
+                .Select(world => world.UmbraGateCount)
+                .Where(capacity => capacity > 0)
+                .Distinct()
+                .Take(2)
+                .ToArray();
+            return capacities.Length == 1 ? capacities[0] : null;
+        }
+    }
+
+    public async Task<D3dbspWorkspaceImportResult> ImportD3dbspAsync(
+        string inputPath,
+        string assetName,
+        bool forceFullbright,
+        int worldDrawPayloadCapacity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(FastFileAssetsNavigatorViewModel));
+
+        D3dbspWorkspaceImportResult imported =
+            await _editor.EditingSession.ImportD3dbspAsync(
+                inputPath,
+                assetName,
+                forceFullbright,
+                worldDrawPayloadCapacity);
+        TargetZoneRowIdentity anchorIdentity = imported.TargetRows
+            .FirstOrDefault(entry => entry.AssetType == XAssetType.GfxMap)
+            ?.TargetRowIdentity ??
+            imported.TargetRows.FirstOrDefault()?.TargetRowIdentity ??
+            throw new InvalidDataException(
+                "The imported D3DBSP did not create a selectable target row.");
+        FastFileAssetNavigatorRow anchor = _allRows
+            .SingleOrDefault(row => row.Identity == anchorIdentity)
+            ?? throw new InvalidDataException(
+                "The fastfile asset navigator did not project the imported D3DBSP group.");
+        SelectedRow = anchor;
+        string discardedLighting = imported.DiscardedLightByteCount == 0
+            ? string.Empty
+            : $" Discarded {imported.DiscardedLightByteCount:N0} compiled light bytes using the lossy fullbright workaround.";
+        D3dbspImportStatusMessage =
+            $"Imported {Path.GetFileName(inputPath)} as {imported.AssetName}; " +
+            $"replaced {imported.ReplacedRowCount} and added {imported.AddedRowCount} target rows." +
+            discardedLighting;
+        return imported;
+    }
+
+    public void ReportD3dbspImportFailure(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        D3dbspImportStatusMessage = $"D3DBSP import failed: {message}";
     }
 
     public int VisibleCount => VisibleRows.Count;

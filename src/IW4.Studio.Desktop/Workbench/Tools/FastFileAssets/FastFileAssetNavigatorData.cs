@@ -167,7 +167,7 @@ public sealed class FastFileAssetsNavigatorSnapshot
 
     public static FastFileAssetsNavigatorSnapshot Capture(
         TargetZoneDocument document,
-        Func<XAssetType, bool> hasDesktopEditor)
+        Func<XAssetType, string?, bool> hasDesktopEditor)
     {
         ArgumentNullException.ThrowIfNull(document);
         return Capture(document.Rows, hasDesktopEditor);
@@ -175,7 +175,7 @@ public sealed class FastFileAssetsNavigatorSnapshot
 
     private static FastFileAssetsNavigatorSnapshot Capture(
         IEnumerable<WorkspaceAssetCatalogEntry> entries,
-        Func<XAssetType, bool> hasDesktopEditor)
+        Func<XAssetType, string?, bool> hasDesktopEditor)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(hasDesktopEditor);
@@ -190,7 +190,7 @@ public sealed class FastFileAssetsNavigatorSnapshot
     private static FastFileAssetNavigatorRow Project(
         WorkspaceAssetCatalogEntry entry,
         int sourceIndex,
-        Func<XAssetType, bool> hasDesktopEditor)
+        Func<XAssetType, string?, bool> hasDesktopEditor)
     {
         TargetZoneRowIdentity identity = entry.TargetRowIdentity
             ?? throw new InvalidDataException(
@@ -210,7 +210,9 @@ public sealed class FastFileAssetsNavigatorSnapshot
             entry.HeaderKind,
             entry.RawHeader,
             providerZone,
-            hasDesktopEditor(entry.AssetType) &&
+            hasDesktopEditor(
+                entry.AssetType,
+                entry.OriginalName ?? entry.NormalizedName) &&
             entry.ContentSource != WorkspaceAssetContentSource.Unavailable &&
             entry.Origin is not WorkspaceAssetOrigin.NullRow and
                 not WorkspaceAssetOrigin.OpaqueRow);

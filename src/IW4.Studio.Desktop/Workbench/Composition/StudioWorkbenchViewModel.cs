@@ -3,9 +3,11 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
+using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
+using IW4.Studio.Desktop.Editors.D3dbsp;
 using IW4.Studio.Desktop.Editors.Font;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Menu;
@@ -115,6 +117,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 assetReferencePicker,
                 menuMaterialResolver,
                 _menuTextResourceResolver));
+            editorViewRegistry.Register(
+                new D3dbspViewFactory(),
+                D3dbspAssetTypeFacts.MultiplayerTypes,
+                D3dbspAssetTypeFacts.IsD3dbspName);
             Editor = new EditorViewModel(
                 workspace,
                 editingSession,
@@ -124,8 +130,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             _selectionRouter = new WorkbenchAssetSelectionRouter(
                 workspace.AssetCatalog,
                 Editor.EditingSession.Document);
-            Func<XAssetType, bool> hasDesktopEditor = assetType =>
-                editorViewRegistry.TryGetFactory(assetType, out _);
+            Func<XAssetType, string?, bool> hasDesktopEditor =
+                (assetType, assetName) =>
+                    editorViewRegistry.TryGetFactory(
+                        assetType,
+                        assetName,
+                        out _);
 
             FastFileAssets = new FastFileAssetsNavigatorViewModel(
                 Editor,
@@ -535,7 +545,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _editorTabsByKey.Remove(tab.Key);
         _openEditorTabs.RemoveAt(closingIndex);
         if (tab.CatalogEditor is { } catalogEditor)
-            Editor.CloseEditor(catalogEditor.Entry.Identity);
+            Editor.CloseEditor(catalogEditor);
         tab.Dispose();
         OnPropertyChanged(nameof(HasOpenEditorTabs));
         OnPropertyChanged(nameof(HasNoOpenEditorTabs));
@@ -926,7 +936,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
         else
         {
-            tab.UpdateSelection(selection, route);
+            tab.UpdateSelection(selection, route, catalogEditor);
         }
 
         SetSelectedEditorTab(tab);
@@ -1024,13 +1034,56 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             .ToHashSet();
         WorkbenchEditorTabViewModel[] removedRowTabs = _openEditorTabs
             .Where(tab =>
-                tab.Selection.Identity.TargetRowIdentity is { } identity &&
-                identity.DocumentId == Editor.EditingSession.Document.DocumentId &&
-                !liveRows.Contains(identity))
+                IsRemovedTargetRow(
+                    tab.Selection.Identity.TargetRowIdentity,
+                    liveRows) ||
+                IsRemovedTargetRow(
+                    tab.CatalogEditor?.Entry.Identity.TargetRowIdentity,
+                    liveRows))
             .ToArray();
         foreach (WorkbenchEditorTabViewModel tab in removedRowTabs)
             CloseEditorTab(tab);
+
+        ReanchorSelectedD3dbspTab();
     }
+
+    private void ReanchorSelectedD3dbspTab()
+    {
+        WorkbenchEditorTabViewModel? tab = SelectedEditorTab;
+        AssetEditorHostViewModel? currentHost = Editor.SelectedEditorHost;
+        AssetEditorHostViewModel? tabHost = tab?.CatalogEditor;
+        if (tab is null || currentHost is null || tabHost is null ||
+            ReferenceEquals(currentHost, tabHost) ||
+            !RepresentsSameD3dbspGroup(tabHost.Entry, currentHost.Entry) ||
+            currentHost.Entry.Identity.TargetRowIdentity is not { } targetIdentity)
+        {
+            return;
+        }
+
+        FastFileAssetNavigatorRow? targetRow = FastFileAssets.AllRows
+            .SingleOrDefault(row => row.Identity == targetIdentity);
+        if (targetRow is not null)
+            FastFileAssets.SelectedRow = targetRow;
+    }
+
+    private static bool RepresentsSameD3dbspGroup(
+        AssetExplorerEntryViewModel left,
+        AssetExplorerEntryViewModel right) =>
+        D3dbspAssetTypeFacts.IsMultiplayerType(left.AssetType) &&
+        D3dbspAssetTypeFacts.IsMultiplayerType(right.AssetType) &&
+        D3dbspAssetTypeFacts.IsD3dbspName(left.Name) &&
+        D3dbspAssetTypeFacts.IsD3dbspName(right.Name) &&
+        string.Equals(
+            left.NormalizedName,
+            right.NormalizedName,
+            StringComparison.Ordinal);
+
+    private bool IsRemovedTargetRow(
+        TargetZoneRowIdentity? identity,
+        IReadOnlySet<TargetZoneRowIdentity> liveRows) =>
+        identity is { } targetIdentity &&
+        targetIdentity.DocumentId == Editor.EditingSession.Document.DocumentId &&
+        !liveRows.Contains(targetIdentity);
 
     private void NotifyCenterSelectionChanged()
     {

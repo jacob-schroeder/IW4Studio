@@ -1,6 +1,6 @@
 using IW4.Assets.Assets.TechniqueSet;
 
-namespace IW4.Render.Geometry;
+namespace IW4.Assets.Assets.GfxMap;
 
 /// <summary>
 /// PS3 backend world-vertex source table. Event20 selects row 4 by default and
@@ -9,6 +9,7 @@ namespace IW4.Render.Geometry;
 /// </summary>
 internal static class WorldVertexLayout
 {
+    internal const int WorldVertexStride = 0x10;
     internal const int DefaultBackendRow =
         (int)MaterialVertexDeclarationType.WorldPositionOnly;
     internal const int WorldFormatBackendRowBase =
@@ -40,8 +41,7 @@ internal static class WorldVertexLayout
 
     static WorldVertexLayout()
     {
-        if (SourceRows.Length !=
-            (int)MaterialVertexDeclarationType.Count)
+        if (SourceRows.Length != (int)MaterialVertexDeclarationType.Count)
         {
             throw new InvalidDataException(
                 "PS3 world-vertex source table has an unexpected row count.");
@@ -107,8 +107,8 @@ internal static class WorldVertexLayout
 
     /// <summary>
     /// Event20 world-stream selection. Row 4 is the one-stream default; rows
-    /// 5..16 are the twelve flagged
-    /// world-format rows and bind their second row stride as vertex-layer data.
+    /// 5..16 are the twelve flagged world-format rows and bind their second
+    /// row stride as vertex-layer data.
     /// </summary>
     internal static bool TryGetEvent20StreamStrides(
         int backendRow,
@@ -127,7 +127,7 @@ internal static class WorldVertexLayout
 
         worldVertexStride = SourceRows[backendRow][0];
         vertexLayerStride = isDefaultRow ? (byte)0 : SourceRows[backendRow][1];
-        return worldVertexStride == VertexElementDecoder.WorldVertexStride &&
+        return worldVertexStride == WorldVertexStride &&
             (isDefaultRow || vertexLayerStride != 0);
     }
 

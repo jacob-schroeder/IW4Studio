@@ -8,10 +8,12 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Weapon;
+using IW4.Assets.D3dbsp;
 using IW4.AssetExchange.XModel;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Studio.Documents.MenuEditing;
+using IW4.Unlinker.D3dbsp;
 
 namespace IW4.Studio.Documents;
 
@@ -99,6 +101,8 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new FontAdapter());
         registry.Register(new WeaponAdapter());
         registry.Register(new StructuredDataAdapter());
+        foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
+            registry.Register(new D3dbspAssetAdapter(assetType));
         return registry;
     }
     public void Register(IAssetAuthoringAdapter adapter)
@@ -141,6 +145,53 @@ public sealed class AssetAuthoringAdapterRegistry
         if (!TryGetAdapter(type, out _))
             throw new NotSupportedException($"New {type} authoring is not implemented.");
         return session.AddAsset(definition);
+    }
+}
+
+/// <summary>
+/// D3DBSP assets are replaced only as a synchronized compiled group. The
+/// editor never mutates an individual schema object, so its draft is the
+/// detached definition produced by the D3DBSP linker.
+/// </summary>
+internal sealed class D3dbspAssetAdapter : IAssetAuthoringAdapter
+{
+    public D3dbspAssetAdapter(XAssetType assetType)
+    {
+        if (!D3dbspAssetTypeFacts.IsMultiplayerType(assetType))
+            throw new ArgumentOutOfRangeException(nameof(assetType));
+
+        AssetType = assetType;
+    }
+
+    public XAssetType AssetType { get; }
+
+    public Type DraftType => typeof(BaseAsset);
+
+    public object CreateDraft(BaseAsset definition) => RequireDefinition(definition);
+
+    public object CloneDraft(object draft) => RequireDefinition(draft);
+
+    public BaseAsset CreateDefinition(object draft) => RequireDefinition(draft);
+
+    public bool SemanticallyEquals(object left, object right) =>
+        ReferenceEquals(RequireDefinition(left), RequireDefinition(right));
+
+    public IReadOnlyList<AssetValidationIssue> Validate(object draft)
+    {
+        _ = RequireDefinition(draft);
+        return [];
+    }
+
+    private BaseAsset RequireDefinition(object value)
+    {
+        if (value is not BaseAsset definition ||
+            definition.SerializedAssetType != AssetType)
+        {
+            throw new InvalidDataException(
+                $"The {AssetType} D3DBSP adapter received a different asset type.");
+        }
+
+        return definition;
     }
 }
 
@@ -250,6 +301,56 @@ public sealed class AssetEditorSession : AssetEditorSurface
         if (_adapter.AssetType != XAssetType.Weapon || _rowIdentity is not { } identity)
             return [];
         return _session.CaptureAppliedWeaponProviders(identity);
+    }
+
+    /// <summary>Captures every asset represented by this D3DBSP group.</summary>
+    public D3dbspWorkspaceAssetGroup CaptureD3dbspGroup()
+    {
+        ThrowIfClosed();
+        return _session.CaptureD3dbspGroup(RequireD3dbspGroupName());
+    }
+
+    /// <summary>Replaces this D3DBSP group from one compiled file.</summary>
+    public Task<D3dbspWorkspaceImportResult> ImportD3dbspAsync(
+        string inputPath,
+        bool forceFullbright,
+        int worldDrawPayloadCapacity)
+    {
+        ThrowIfClosed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
+        return _session.ImportD3dbspAsync(
+            inputPath,
+            RequireD3dbspGroupName(),
+            forceFullbright,
+            worldDrawPayloadCapacity);
+    }
+
+    /// <summary>Reconstructs one compiled file from this D3DBSP group.</summary>
+    public D3dbspFile CreateD3dbspFile()
+    {
+        ThrowIfClosed();
+        return D3dbspUnlinker.Unlink(CaptureD3dbspGroup().Assets);
+    }
+
+    private string RequireD3dbspGroupName()
+    {
+        string? semanticName = Entry.Definition?.SerializedAssetName;
+        string? groupName = semanticName;
+        if (!D3dbspAssetTypeFacts.IsOwnedD3dbspGroupName(groupName))
+        {
+            groupName = Entry.OriginalName;
+            if (groupName is { Length: > 1 } && groupName[0] == ',')
+                groupName = groupName[1..];
+        }
+        if (!D3dbspAssetTypeFacts.IsMultiplayerType(_adapter.AssetType) ||
+            !D3dbspAssetTypeFacts.IsD3dbspName(Entry.OriginalName) ||
+            !D3dbspAssetTypeFacts.IsOwnedD3dbspGroupName(groupName))
+        {
+            throw new InvalidOperationException(
+                "This editor does not represent a usable D3DBSP asset group.");
+        }
+
+        return groupName!;
     }
 
     private XModelMaterialMapping[] ResolveWorkspaceXModelMaterialUsages(string? requestedName)

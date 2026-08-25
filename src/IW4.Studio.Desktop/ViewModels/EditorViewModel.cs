@@ -1,5 +1,6 @@
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
+using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
 
 namespace IW4.Studio.Desktop.ViewModels;
@@ -15,7 +16,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     private readonly AssetEditorViewRegistry _viewRegistry;
     private AssetExplorerEntryViewModel[] _allEntries = [];
     private Dictionary<AssetExplorerItemIdentity, AssetExplorerEntryViewModel> _entriesByIdentity = [];
-    private readonly Dictionary<AssetExplorerItemIdentity, AssetEditorHostViewModel> _editorHosts = [];
+    private readonly Dictionary<EditorHostKey, AssetEditorHostViewModel> _editorHosts = [];
     private string _searchText = string.Empty;
     private IReadOnlyList<AssetTreeNode> _assetGroups = Array.Empty<AssetTreeNode>();
     private AssetTreeNode? _selectedNode;
@@ -201,13 +202,18 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         SetSelectedNode(null);
     }
 
-    public void CloseEditor(AssetExplorerItemIdentity identity)
+    public void CloseEditor(AssetEditorHostViewModel editorHost)
     {
-        if (!_editorHosts.Remove(identity, out AssetEditorHostViewModel? editorHost))
+        ArgumentNullException.ThrowIfNull(editorHost);
+        EditorHostKey? cachedKey = _editorHosts
+            .Where(pair => ReferenceEquals(pair.Value, editorHost))
+            .Select(pair => (EditorHostKey?)pair.Key)
+            .FirstOrDefault();
+        if (cachedKey is not { } key || !_editorHosts.Remove(key))
             return;
 
         editorHost.Dispose();
-        if (_selectedIdentity == identity)
+        if (ReferenceEquals(SelectedEditorHost, editorHost))
         {
             _selectedIdentity = null;
             SelectedEditorHost = null;
@@ -256,23 +262,34 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
                     : new AssetExplorerEntryViewModel(
                         entry,
                         _authoringRegistry.TryGetAdapter(entry.AssetType, out _),
-                        _viewRegistry.TryGetFactory(entry.AssetType, out _));
+                        _viewRegistry.TryGetFactory(
+                            entry.AssetType,
+                            entry.OriginalName ?? entry.NormalizedName,
+                            out _));
             })
             .ToArray();
         var rebuiltByIdentity = rebuilt.ToDictionary(entry => entry.Identity);
 
-        AssetExplorerItemIdentity[] removedIdentities = previous.Keys
-            .Where(identity => !rebuiltByIdentity.ContainsKey(identity))
+        HashSet<EditorHostKey> liveHostKeys = rebuilt
+            .Select(EditorHostKey.From)
+            .ToHashSet();
+        EditorHostKey[] removedHostKeys = _editorHosts
+            .Where(pair =>
+                !liveHostKeys.Contains(pair.Key) ||
+                !rebuiltByIdentity.ContainsKey(pair.Value.Entry.Identity))
+            .Select(pair => pair.Key)
             .ToArray();
-        foreach (AssetExplorerItemIdentity identity in removedIdentities)
+        foreach (EditorHostKey key in removedHostKeys)
         {
-            if (_editorHosts.Remove(identity, out AssetEditorHostViewModel? host))
+            if (_editorHosts.Remove(key, out AssetEditorHostViewModel? host))
                 host.Dispose();
-            if (_selectedIdentity == identity)
-            {
-                _selectedIdentity = null;
-                SelectedEditorHost = null;
-            }
+        }
+
+        if (_selectedIdentity is { } selectedIdentity &&
+            !rebuiltByIdentity.ContainsKey(selectedIdentity))
+        {
+            _selectedIdentity = null;
+            SelectedEditorHost = null;
         }
 
         _allEntries = rebuilt;
@@ -285,6 +302,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             .Select(entry => entry.AssetType)
             .Distinct()
             .Count();
+        if (_selectedIdentity is { } liveSelectedIdentity)
+            _ = SelectEntry(liveSelectedIdentity, synchronizeTree: false);
         RebuildAssetGroups();
 
         if (!notify)
@@ -318,10 +337,20 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         else
             EditingSession.SelectRow(null);
 
-        if (!_editorHosts.TryGetValue(identity, out AssetEditorHostViewModel? editorHost))
+        EditorHostKey editorHostKey = EditorHostKey.From(entry);
+        AssetExplorerEntryViewModel hostEntry = ResolveEditorHostEntry(entry);
+        if (!_editorHosts.TryGetValue(editorHostKey, out AssetEditorHostViewModel? editorHost))
         {
-            editorHost = CreateEditorHost(entry);
-            _editorHosts.Add(identity, editorHost);
+            editorHost = CreateEditorHost(hostEntry);
+            _editorHosts.Add(editorHostKey, editorHost);
+        }
+        else if (hostEntry.HasUsableEditor &&
+                 (editorHost.StructuralInspector is not null ||
+                  editorHost.Entry.Identity != hostEntry.Identity))
+        {
+            editorHost.Dispose();
+            editorHost = CreateEditorHost(hostEntry);
+            _editorHosts[editorHostKey] = editorHost;
         }
 
         SelectedEditorHost = editorHost;
@@ -344,7 +373,10 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         }
 
         AssetEditorSurface surface = _authoringRegistry.CreateSurface(EditingSession, entry.Entry);
-        if (_viewRegistry.TryGetFactory(entry.AssetType, out _))
+        if (_viewRegistry.TryGetFactory(
+                entry.AssetType,
+                entry.Entry.OriginalName ?? entry.Entry.NormalizedName,
+                out _))
         {
             return new AssetEditorHostViewModel(
                 entry,
@@ -358,6 +390,23 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
                 entry.Entry,
                 $"A backend adapter is registered for '{entry.AssetType}', but no Desktop editor view factory is registered."),
             viewHost: null);
+    }
+
+    private AssetExplorerEntryViewModel ResolveEditorHostEntry(
+        AssetExplorerEntryViewModel selectedEntry)
+    {
+        if (!EditorHostKey.TryGetD3dbspName(selectedEntry, out string? normalizedName))
+            return selectedEntry;
+
+        return _allEntries
+            .Where(entry =>
+                EditorHostKey.TryGetD3dbspName(entry, out string? candidateName) &&
+                string.Equals(candidateName, normalizedName, StringComparison.Ordinal))
+            .OrderBy(entry => entry.HasUsableEditor ? 0 : 1)
+            .ThenBy(entry => entry.IsTargetRow ? 0 : 1)
+            .ThenBy(entry => entry.AssetType == XAssetType.GfxMap ? 0 : 1)
+            .ThenBy(entry => entry.AssetType)
+            .First();
     }
 
     private void RebuildAssetGroups()
@@ -460,5 +509,26 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(EditorViewModel));
+    }
+
+    private readonly record struct EditorHostKey(
+        AssetExplorerItemIdentity? Identity,
+        string? D3dbspNormalizedName)
+    {
+        public static EditorHostKey From(AssetExplorerEntryViewModel entry) =>
+            TryGetD3dbspName(entry, out string? normalizedName)
+                ? new EditorHostKey(Identity: null, normalizedName)
+                : new EditorHostKey(entry.Identity, D3dbspNormalizedName: null);
+
+        public static bool TryGetD3dbspName(
+            AssetExplorerEntryViewModel entry,
+            out string? normalizedName)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+            normalizedName = entry.NormalizedName;
+            return D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                   D3dbspAssetTypeFacts.IsD3dbspName(entry.Name) &&
+                   !string.IsNullOrWhiteSpace(normalizedName);
+        }
     }
 }

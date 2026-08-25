@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Avalonia.Controls;
+using IW4.Assets.D3dbsp;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
@@ -48,7 +49,7 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
 
     public WorkbenchAssetSelection Selection => _selection;
 
-    public AssetEditorHostViewModel? CatalogEditor { get; }
+    public AssetEditorHostViewModel? CatalogEditor { get; private set; }
 
     public Control? StandaloneView { get; }
 
@@ -97,14 +98,34 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
 
     internal void UpdateSelection(
         WorkbenchAssetSelection selection,
-        WorkbenchAssetSelectionRoute? route)
+        WorkbenchAssetSelectionRoute? route,
+        AssetEditorHostViewModel? catalogEditor)
     {
         ArgumentNullException.ThrowIfNull(selection);
-        if (Equals(_selection, selection) && Equals(_route, route))
+        bool editorChanged = !ReferenceEquals(CatalogEditor, catalogEditor);
+        if (Equals(_selection, selection) &&
+            Equals(_route, route) &&
+            !editorChanged)
             return;
+
+        if (editorChanged)
+        {
+            if (CatalogEditor is not null)
+                CatalogEditor.PropertyChanged -= CatalogEditor_PropertyChanged;
+            CatalogEditor = catalogEditor;
+            if (CatalogEditor is not null)
+                CatalogEditor.PropertyChanged += CatalogEditor_PropertyChanged;
+        }
 
         _selection = selection;
         _route = route;
+        if (editorChanged)
+        {
+            OnPropertyChanged(nameof(CatalogEditor));
+            OnPropertyChanged(nameof(HostedView));
+            OnPropertyChanged(nameof(UsesWorkbenchScrollViewer));
+            OnPropertyChanged(nameof(IsDirty));
+        }
         OnPropertyChanged(nameof(Selection));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(Kind));
@@ -136,7 +157,8 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
 
 internal readonly record struct WorkbenchEditorTabKey(
     AssetExplorerItemIdentity? CatalogIdentity,
-    WorkbenchAssetSelectionIdentity? SelectionIdentity)
+    WorkbenchAssetSelectionIdentity? SelectionIdentity,
+    string? D3dbspNormalizedName)
 {
     public static WorkbenchEditorTabKey Create(
         WorkbenchAssetSelection selection,
@@ -145,14 +167,27 @@ internal readonly record struct WorkbenchEditorTabKey(
         ArgumentNullException.ThrowIfNull(selection);
         if (route is { OpensCatalogEditor: true, CatalogEntry: { } entry })
         {
+            if (D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                D3dbspAssetTypeFacts.IsD3dbspName(
+                    entry.OriginalName ?? entry.NormalizedName) &&
+                !string.IsNullOrWhiteSpace(entry.NormalizedName))
+            {
+                return new WorkbenchEditorTabKey(
+                    CatalogIdentity: null,
+                    SelectionIdentity: null,
+                    entry.NormalizedName);
+            }
+
             return new WorkbenchEditorTabKey(
                 AssetExplorerItemIdentity.From(entry),
-                SelectionIdentity: null);
+                SelectionIdentity: null,
+                D3dbspNormalizedName: null);
         }
 
         return new WorkbenchEditorTabKey(
             CatalogIdentity: null,
-            selection.Identity);
+            selection.Identity,
+            D3dbspNormalizedName: null);
     }
 }
 

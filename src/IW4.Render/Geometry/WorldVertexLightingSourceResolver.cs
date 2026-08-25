@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Geometry;

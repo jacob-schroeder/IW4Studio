@@ -1,0 +1,145 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d3dbsp="using:IW4.Studio.Desktop.Editors.D3dbsp"
+             x:Class="IW4.Studio.Desktop.Editors.D3dbsp.D3dbspEditorView"
+             x:DataType="d3dbsp:D3dbspEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="900"
+             d:DesignHeight="680">
+  <Grid RowDefinitions="Auto,12,Auto,12,Auto,12,Auto">
+    <Border Padding="16,13"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding AssetName}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding SelectedAssetType, StringFormat='Selected through {0}'}"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    VerticalAlignment="Center"
+                    Spacing="8">
+          <Button Classes="ghost"
+                  MinHeight="32"
+                  Padding="12,5"
+                  IsEnabled="{Binding CanExport}"
+                  Click="ExportButton_Click">
+            <TextBlock Text="Export .d3dbsp" />
+          </Button>
+          <Button Classes="primary"
+                  MinHeight="32"
+                  Padding="12,5"
+                  IsEnabled="{Binding CanImport}"
+                  Click="ImportButton_Click">
+            <TextBlock Text="Import .d3dbsp" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Padding="16"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <StackPanel Spacing="7">
+        <TextBlock Text="COMPILED MAP CONTAINER"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.8"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="An IW4 version 22 .d3dbsp is a compiled multiplayer map container, not one independently editable asset. Studio converts it to or from six synchronized assets that share one wire name. Import atomically creates or replaces that group; export writes a reconstructed, editable BSP containing the recoverable geometry, collision, static models, entities, stages, baked lighting, and reflection probes."
+                   TextWrapping="Wrap"
+                   LineHeight="21"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+        <TextBlock Text="The original compiler-only portal, cull, and PVS layout is no longer present in a fastfile, so export regenerates one all-visible render cell. Original lightmap packing metadata, discarded source entities, node tails, and reflection-probe color-correction source names cannot be recovered."
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="4"
+            Padding="16"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <StackPanel Spacing="12">
+        <TextBlock Text="SYNCHRONIZED GENERATED ASSETS"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   LetterSpacing="0.8"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <ItemsControl ItemsSource="{Binding GeneratedAssetTypes}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="d3dbsp:D3dbspGeneratedAssetTypeItem">
+              <Border Width="250"
+                      MinHeight="64"
+                      Margin="0,0,10,10"
+                      Padding="11,9"
+                      CornerRadius="5"
+                      Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                      BorderBrush="{DynamicResource StudioBorderBrush}"
+                      BorderThickness="1">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="{Binding Name}"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource StudioTextBrush}" />
+                  <TextBlock Text="{Binding Role}"
+                             FontSize="10"
+                             TextWrapping="Wrap"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="6"
+            Padding="16,13"
+            CornerRadius="7"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,9,Auto" ColumnDefinitions="*">
+        <StackPanel>
+          <CheckBox Content="Force fullbright (lossy workaround)"
+                    IsEnabled="{Binding CanImport}"
+                    IsChecked="{Binding ForceFullbright, Mode=TwoWay}"
+                    FontWeight="SemiBold" />
+          <TextBlock Margin="24,4,0,0"
+                     Text="Explicitly discard compiled lightmaps and replace them with the native white fallback. Leave this off to preserve baked lighting."
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </StackPanel>
+
+        <Border Grid.Row="2"
+                Padding="10,7"
+                CornerRadius="4"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}">
+          <TextBlock Text="{Binding StatusMessage}"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

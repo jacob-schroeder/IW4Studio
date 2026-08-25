@@ -39,7 +39,10 @@ internal static class StudioMenu
             "Tools",
             Items:
             [
-                new("Live Preview", StudioMenuAction.LivePreview),
+                new(
+                    "Live Preview",
+                    StudioMenuAction.LivePreview,
+                    IsVisibleBinding: "LivePreview.CanLaunch"),
                 new(
                     "Dump Source Assets",
                     StudioMenuAction.DumpSourceAssets,
@@ -150,6 +153,10 @@ internal static class StudioMenu
             item.Bind(
                 NativeMenuItem.IsEnabledProperty,
                 CreateEnabledBinding(owner!, entry.IsEnabledBinding));
+        if (entry.IsVisibleBinding is not null)
+            item.Bind(
+                NativeMenuItem.IsVisibleProperty,
+                CreateBinding(owner!, entry.IsVisibleBinding));
         if (entry.Action is { } action)
             item.Click += (_, _) => execute(action);
         if (entry.Items is { } children)
@@ -184,6 +191,10 @@ internal static class StudioMenu
             item.Bind(
                 MenuItem.IsEnabledProperty,
                 CreateEnabledBinding(owner, entry.IsEnabledBinding));
+        if (entry.IsVisibleBinding is not null)
+            item.Bind(
+                MenuItem.IsVisibleProperty,
+                CreateBinding(owner, entry.IsVisibleBinding));
         if (entry.Action is { } action)
             item.Click += (_, _) => execute(action);
         if (entry.Items is { } children)
@@ -196,12 +207,16 @@ internal static class StudioMenu
     }
 
     private static Binding CreateEnabledBinding(Window owner, string propertyName) =>
+        CreateBinding(owner, propertyName);
+
+    private static Binding CreateBinding(Window owner, string propertyName) =>
         new($"DataContext.{propertyName}") { Source = owner };
 
     private sealed record MenuEntry(
         string? Header = null,
         StudioMenuAction? Action = null,
         string? IsEnabledBinding = null,
+        string? IsVisibleBinding = null,
         ThemeMode? Theme = null,
         IReadOnlyList<MenuEntry>? Items = null,
         bool IsEnabled = true,

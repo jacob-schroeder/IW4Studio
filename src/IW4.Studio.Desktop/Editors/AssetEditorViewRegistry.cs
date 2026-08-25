@@ -61,7 +61,7 @@ public interface IAssetEditorViewFactory
 /// </summary>
 public sealed class AssetEditorViewRegistry
 {
-    private readonly Dictionary<XAssetType, IAssetEditorViewFactory> _factories = [];
+    private readonly Dictionary<XAssetType, FactoryRegistration> _factories = [];
 
     /// <summary>Production Desktop factories available in this Studio step.</summary>
     public static AssetEditorViewRegistry CreateDefault(
@@ -86,35 +86,86 @@ public sealed class AssetEditorViewRegistry
     }
 
     public void Register(IAssetEditorViewFactory factory)
+        => Register(factory, [factory.AssetType], _ => true);
+
+    public void Register(
+        IAssetEditorViewFactory factory,
+        IEnumerable<XAssetType> assetTypes,
+        Func<string?, bool> acceptsName)
     {
         ArgumentNullException.ThrowIfNull(factory);
-        if (!Enum.IsDefined(factory.AssetType))
+        ArgumentNullException.ThrowIfNull(assetTypes);
+        ArgumentNullException.ThrowIfNull(acceptsName);
+        XAssetType[] registeredTypes = assetTypes.Distinct().ToArray();
+        if (registeredTypes.Length == 0)
+        {
+            throw new ArgumentException(
+                "An editor view factory must register at least one serialized asset type.",
+                nameof(assetTypes));
+        }
+
+        XAssetType? undefinedType = registeredTypes
+            .Cast<XAssetType?>()
+            .FirstOrDefault(assetType => !Enum.IsDefined(assetType!.Value));
+        if (undefinedType is not null)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(factory),
-                $"Editor view factory type '{factory.AssetType}' is not a defined serialized XAssetType.");
+                nameof(assetTypes),
+                $"Editor view factory type '{undefinedType}' is not a defined serialized XAssetType.");
         }
-        if (!_factories.TryAdd(factory.AssetType, factory))
+
+        XAssetType? duplicateType = registeredTypes
+            .Cast<XAssetType?>()
+            .FirstOrDefault(assetType => _factories.ContainsKey(assetType!.Value));
+        if (duplicateType is not null)
         {
             throw new InvalidOperationException(
-                $"An editor view factory is already registered for serialized type '{factory.AssetType}'.");
+                $"An editor view factory is already registered for serialized type '{duplicateType}'.");
         }
+
+        var registration = new FactoryRegistration(factory, acceptsName);
+        foreach (XAssetType assetType in registeredTypes)
+            _factories.Add(assetType, registration);
     }
 
-    public bool TryGetFactory(XAssetType assetType, out IAssetEditorViewFactory? factory) =>
-        _factories.TryGetValue(assetType, out factory);
+    public bool TryGetFactory(
+        XAssetType assetType,
+        string? assetName,
+        out IAssetEditorViewFactory? factory)
+    {
+        if (_factories.TryGetValue(
+                assetType,
+                out FactoryRegistration? registration) &&
+            registration.AcceptsName(assetName))
+        {
+            factory = registration.Factory;
+            return true;
+        }
 
-    public IAssetEditorViewFactory RequireFactory(XAssetType assetType) =>
-        TryGetFactory(assetType, out IAssetEditorViewFactory? factory)
+        factory = null;
+        return false;
+    }
+
+    public IAssetEditorViewFactory RequireFactory(
+        XAssetType assetType,
+        string? assetName) =>
+        TryGetFactory(assetType, assetName, out IAssetEditorViewFactory? factory)
             ? factory!
             : throw new KeyNotFoundException(
-                $"No Desktop editor view factory is registered for serialized type '{assetType}'.");
+                $"No Desktop editor view factory is registered for serialized type '{assetType}' and name '{assetName}'.");
 
     public AssetEditorViewHost Create(AssetEditorSurface surface)
     {
         ArgumentNullException.ThrowIfNull(surface);
-        return RequireFactory(surface.Entry.AssetType).Create(surface)
+        return RequireFactory(
+                surface.Entry.AssetType,
+                surface.Entry.OriginalName ?? surface.Entry.NormalizedName)
+            .Create(surface)
             ?? throw new InvalidDataException(
                 $"Desktop editor view factory for '{surface.Entry.AssetType}' returned no view host.");
     }
+
+    private sealed record FactoryRegistration(
+        IAssetEditorViewFactory Factory,
+        Func<string?, bool> AcceptsName);
 }

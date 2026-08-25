@@ -42,4 +42,33 @@ public sealed class GfxWorldDpvsStatic
     public XBlockAddress? SurfaceCastsSunShadowAddress { get; init; }
     public IReadOnlyList<uint> SurfaceCastsSunShadow { get; set; } = [];
     public uint UsageCount { get; init; }
+
+    internal int[] GetRuntimeSlotByAuthoredIndex()
+    {
+        int surfaceCount = Surfaces.Count;
+        if (AuthoredSurfaceIndexByRuntimeSlot.Count == 0)
+            return Enumerable.Range(0, surfaceCount).ToArray();
+        if (AuthoredSurfaceIndexByRuntimeSlot.Count != surfaceCount)
+        {
+            throw new InvalidDataException(
+                $"The authored-surface mapping has {AuthoredSurfaceIndexByRuntimeSlot.Count} rows for {surfaceCount} surfaces.");
+        }
+
+        var runtimeSlotByAuthoredIndex = new int[surfaceCount];
+        var seen = new bool[surfaceCount];
+        for (int runtimeSlot = 0; runtimeSlot < surfaceCount; runtimeSlot++)
+        {
+            int authoredIndex = AuthoredSurfaceIndexByRuntimeSlot[runtimeSlot];
+            if ((uint)authoredIndex >= (uint)surfaceCount || seen[authoredIndex])
+            {
+                throw new InvalidDataException(
+                    $"The authored-surface mapping has invalid index {authoredIndex} at runtime slot {runtimeSlot}.");
+            }
+
+            seen[authoredIndex] = true;
+            runtimeSlotByAuthoredIndex[authoredIndex] = runtimeSlot;
+        }
+
+        return runtimeSlotByAuthoredIndex;
+    }
 }

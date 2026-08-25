@@ -1,6 +1,6 @@
 using IW4.Assets.Assets.TechniqueSet;
 
-namespace IW4.Render.Geometry;
+namespace IW4.Assets.Assets.GfxMap;
 
 internal readonly record struct WorldVertexSource(
     byte StreamIndex,

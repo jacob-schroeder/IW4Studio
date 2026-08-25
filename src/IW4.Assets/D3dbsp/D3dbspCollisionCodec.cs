@@ -4,7 +4,7 @@ using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 
-namespace D3dbspLinker.D3dbsp;
+namespace IW4.Assets.D3dbsp;
 
 internal static class D3dbspCollisionCodec
 {
@@ -829,6 +829,28 @@ internal static class D3dbspCollisionCodec
         return (sideData, brushData);
     }
 
+    public static (byte[] BrushSides, byte[] Brushes) EncodeBrushGraph(
+        D3dbspTriggerCollisionExport collisionExport)
+    {
+        ArgumentNullException.ThrowIfNull(collisionExport);
+        var encodingMap = new ClipMapAsset
+        {
+            PlaneCount = collisionExport.Planes.Count,
+            Planes = collisionExport.Planes,
+            NumMaterials = collisionExport.Materials.Count,
+            Materials = collisionExport.Materials,
+            NumBrushSides = collisionExport.BrushSides.Count,
+            BrushSides = collisionExport.BrushSides,
+            NumBrushEdges = collisionExport.BrushEdges.Count,
+            BrushEdges = collisionExport.BrushEdges,
+            NumBrushes = checked((ushort)collisionExport.Brushes.Count),
+            Brushes = collisionExport.Brushes,
+            BrushBounds = collisionExport.BrushBounds,
+            BrushContents = collisionExport.BrushContents
+        };
+        return EncodeBrushGraph(encodingMap);
+    }
+
     public static byte[] EncodeNodes(
         IReadOnlyList<CNode> nodes,
         IReadOnlyList<CPlane> planes)
@@ -879,7 +901,7 @@ internal static class D3dbspCollisionCodec
                 leaf.CollAabbCount,
                 clipMap.AabbTrees.Count,
                 $"Collision leaf row {index} AABB");
-            IReadOnlyList<ushort> brushes = GetTerminalBrushes(
+            IReadOnlyList<ushort> brushes = GetLeafBrushes(
                 clipMap,
                 leaf,
                 $"Collision leaf row {index}");
@@ -903,13 +925,18 @@ internal static class D3dbspCollisionCodec
             BinaryPrimitives.WriteInt32LittleEndian(row[20..], 0);
         }
 
-        if (!flatBrushes.SequenceEqual(clipMap.LeafBrushes))
-        {
-            throw new NotSupportedException(
-                "Canonical leaf terminal nodes do not reproduce the flattened collision leaf-brush table.");
-        }
-
         return (data, EncodeLeafBrushes(flatBrushes));
+    }
+
+    public static byte[] EncodeCanonicalVisibility()
+    {
+        const int clusterCount = 1;
+        const int clusterBytes = 8;
+        var data = new byte[8 + clusterBytes];
+        BinaryPrimitives.WriteInt32LittleEndian(data, clusterCount);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), clusterBytes);
+        data.AsSpan(8).Fill(byte.MaxValue);
+        return data;
     }
 
     public static byte[] EncodeBrushEdges(IReadOnlyList<byte> brushEdges) =>
@@ -1146,9 +1173,9 @@ internal static class D3dbspCollisionCodec
         ClipMapAsset clipMap,
         CLeaf leaf,
         string description) =>
-        GetTerminalBrushes(clipMap, leaf, description);
+        GetLeafBrushes(clipMap, leaf, description);
 
-    private static IReadOnlyList<ushort> GetTerminalBrushes(
+    private static IReadOnlyList<ushort> GetLeafBrushes(
         ClipMapAsset clipMap,
         CLeaf leaf,
         string description)
@@ -1164,23 +1191,112 @@ internal static class D3dbspCollisionCodec
         CLeafBrushNode node = clipMap.LeafBrushNodes[leaf.LeafBrushNode] ??
             throw new InvalidDataException(
                 $"{description} references a null leaf-brush node.");
-        if (node.LeafBrushCount <= 0 || node.Data.Children is not null)
-        {
-            throw new NotSupportedException(
-                $"{description} uses a non-terminal leaf-brush tree; strict d3dbsp encoding supports terminal nodes only.");
-        }
-        if (node.Data.Brushes.Count != node.LeafBrushCount)
-        {
-            throw new InvalidDataException(
-                $"{description} leaf-brush node declares {node.LeafBrushCount} brushes but materializes {node.Data.Brushes.Count}.");
-        }
         if (node.Contents != leaf.BrushContents)
         {
-            throw new NotSupportedException(
-                $"{description} leaf-brush contents differ from the leaf contents.");
+            throw new InvalidDataException(
+                $"{description} leaf-brush contents differ from the root node contents.");
         }
 
-        return node.Data.Brushes;
+        var brushes = new List<ushort>();
+        var visitedNodes = new HashSet<int>();
+        var visitedBrushes = new HashSet<ushort>();
+        CollectLeafBrushes(
+            clipMap.LeafBrushNodes,
+            leaf.LeafBrushNode,
+            clipMap.Brushes.Count,
+            description,
+            visitedNodes,
+            visitedBrushes,
+            brushes);
+        return brushes.AsReadOnly();
+    }
+
+    private static void CollectLeafBrushes(
+        IReadOnlyList<CLeafBrushNode> nodes,
+        int nodeIndex,
+        int brushCount,
+        string description,
+        ISet<int> visitedNodes,
+        ISet<ushort> visitedBrushes,
+        ICollection<ushort> brushes)
+    {
+        if ((uint)nodeIndex >= (uint)nodes.Count)
+        {
+            throw new InvalidDataException(
+                $"{description} traverses leaf-brush node {nodeIndex}; the table has {nodes.Count} rows.");
+        }
+        if (!visitedNodes.Add(nodeIndex))
+        {
+            throw new InvalidDataException(
+                $"{description} contains a cycle or shared branch at leaf-brush node {nodeIndex}.");
+        }
+
+        CLeafBrushNode node = nodes[nodeIndex] ??
+            throw new InvalidDataException(
+                $"{description} traverses a null leaf-brush node at {nodeIndex}.");
+        if (node.LeafBrushCount > 0)
+        {
+            if (node.Data.Children is not null ||
+                node.Data.Brushes.Count != node.LeafBrushCount)
+            {
+                throw new InvalidDataException(
+                    $"{description} terminal leaf-brush node {nodeIndex} has an invalid union arm or count.");
+            }
+
+            foreach (ushort brushIndex in node.Data.Brushes)
+            {
+                if (brushIndex >= brushCount)
+                {
+                    throw new InvalidDataException(
+                        $"{description} references brush {brushIndex}; the table has {brushCount} rows.");
+                }
+                if (!visitedBrushes.Add(brushIndex))
+                {
+                    throw new InvalidDataException(
+                        $"{description} references brush {brushIndex} through more than one leaf-brush branch.");
+                }
+                brushes.Add(brushIndex);
+            }
+            return;
+        }
+
+        if (node.LeafBrushCount is not (0 or -1) || node.Data.Brushes.Count != 0)
+        {
+            throw new InvalidDataException(
+                $"{description} internal leaf-brush node {nodeIndex} has unsupported count {node.LeafBrushCount}.");
+        }
+        CLeafBrushNodeChildren children = node.Data.Children ??
+            throw new InvalidDataException(
+                $"{description} internal leaf-brush node {nodeIndex} has no child union arm.");
+        if (children.ChildOffsets.Count != 2 ||
+            children.ChildOffsets[0] == 0 || children.ChildOffsets[1] == 0)
+        {
+            throw new InvalidDataException(
+                $"{description} internal leaf-brush node {nodeIndex} has invalid child offsets.");
+        }
+
+        if (node.LeafBrushCount == -1)
+        {
+            CollectLeafBrushes(
+                nodes,
+                checked(nodeIndex + 1),
+                brushCount,
+                description,
+                visitedNodes,
+                visitedBrushes,
+                brushes);
+        }
+        for (int side = 0; side < 2; side++)
+        {
+            CollectLeafBrushes(
+                nodes,
+                checked(nodeIndex + children.ChildOffsets[side]),
+                brushCount,
+                description,
+                visitedNodes,
+                visitedBrushes,
+                brushes);
+        }
     }
 
     private static int FindBrushMaterial(

@@ -1189,32 +1189,21 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             GfxWorldDpvsStatic value)
         {
             int count = value.Surfaces.Count;
-            if (value.AuthoredSurfaceIndexByRuntimeSlot.Count == 0)
-            {
-                return new DpvsAuthoredView(
-                    value.SortedSurfIndex.ToArray(),
-                    value.Surfaces.ToArray(),
-                    value.SurfaceBounds.ToArray());
-            }
-            if (value.AuthoredSurfaceIndexByRuntimeSlot.Count != count ||
-                value.SurfaceBounds.Count != count)
+            if (value.SurfaceBounds.Count != count)
             {
                 throw new InvalidDataException(
                     "GfxWorld.Dpvs authored-surface mapping does not parallel the surface tables.");
             }
 
-            var seen = new bool[count];
+            int[] runtimeSlotByAuthoredIndex =
+                value.GetRuntimeSlotByAuthoredIndex();
+            var authoredIndexByRuntimeSlot = new int[count];
             var surfaces = new GfxSurface[count];
             var bounds = new GfxSurfaceBounds[count];
-            for (int runtimeSlot = 0; runtimeSlot < count; runtimeSlot++)
+            for (int authoredIndex = 0; authoredIndex < count; authoredIndex++)
             {
-                int authoredIndex = value.AuthoredSurfaceIndexByRuntimeSlot[runtimeSlot];
-                if ((uint)authoredIndex >= (uint)count || seen[authoredIndex])
-                {
-                    throw new InvalidDataException(
-                        $"GfxWorld.Dpvs authored-surface mapping has invalid index {authoredIndex} at runtime slot {runtimeSlot}.");
-                }
-                seen[authoredIndex] = true;
+                int runtimeSlot = runtimeSlotByAuthoredIndex[authoredIndex];
+                authoredIndexByRuntimeSlot[runtimeSlot] = authoredIndex;
                 surfaces[authoredIndex] = value.Surfaces[runtimeSlot];
                 bounds[authoredIndex] = value.SurfaceBounds[runtimeSlot];
             }
@@ -1229,7 +1218,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                         $"GfxWorld.Dpvs.SortedSurfIndex[{index}] references invalid runtime slot {runtimeSlot}.");
                 }
                 sorted[index] = checked((ushort)
-                    value.AuthoredSurfaceIndexByRuntimeSlot[runtimeSlot]);
+                    authoredIndexByRuntimeSlot[runtimeSlot]);
             }
             return new DpvsAuthoredView(sorted, surfaces, bounds);
         }

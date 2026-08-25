@@ -1,3 +1,4 @@
+using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;

@@ -1,3 +1,4 @@
+using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Assets.FxMap;
@@ -5,39 +6,48 @@ using IW4.Assets.Assets.GameMap;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.D3dbsp;
-using IW4.Studio.Documents;
-using D3dbspLinker.D3dbsp;
-using D3dbspLinker.Inspection;
+using IW4.FastFiles.Zone;
 
-namespace D3dbspLinker.Conversion;
+namespace IW4.Unlinker.D3dbsp;
 
-internal static class FastFileD3dbspEncoder
+public static class D3dbspUnlinker
 {
-    public static D3dbspFile Encode(FastFileWorkspace workspace)
+    public static D3dbspFile Unlink(IEnumerable<BaseAsset> assets)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
-        GfxWorldAsset gfx = FastFileInspector.GetSingle<GfxWorldAsset>(workspace) ??
-            throw new InvalidDataException("The fastfile does not contain exactly one GfxWorld asset.");
-        ClipMapAsset clip = FastFileInspector.GetSingle<ClipMapAsset>(workspace) ??
-            throw new InvalidDataException("The fastfile does not contain exactly one ClipMap asset.");
-        ComWorldAsset com = FastFileInspector.GetSingle<ComWorldAsset>(workspace) ??
-            throw new InvalidDataException("The fastfile does not contain exactly one ComWorld asset.");
-        MapEntsAsset ents = FastFileInspector.GetSingle<MapEntsAsset>(workspace) ??
-            clip.MapEnts ??
-            throw new InvalidDataException("The fastfile does not contain a MapEnts asset.");
-        FxWorldAsset fx = FastFileInspector.GetSingle<FxWorldAsset>(workspace) ??
-            throw new InvalidDataException("The fastfile does not contain exactly one FxWorld asset.");
-        GameWorldMpAsset game = FastFileInspector.GetSingle<GameWorldMpAsset>(workspace) ??
-            throw new InvalidDataException("The fastfile does not contain exactly one multiplayer GameWorld asset.");
+        ArgumentNullException.ThrowIfNull(assets);
+        BaseAsset[] detachedAssets = assets.ToArray();
+        GfxWorldAsset gfx = RequireSingleAsset<GfxWorldAsset>(
+            detachedAssets,
+            XAssetType.GfxMap,
+            "GfxWorld");
+        ClipMapAsset clip = RequireSingleAsset<ClipMapAsset>(
+            detachedAssets,
+            XAssetType.ColMapMp,
+            "ClipMap");
+        ComWorldAsset com = RequireSingleAsset<ComWorldAsset>(
+            detachedAssets,
+            XAssetType.ComMap,
+            "ComWorld");
+        MapEntsAsset ents = RequireMapEnts(detachedAssets, clip);
+        FxWorldAsset fx = RequireSingleAsset<FxWorldAsset>(
+            detachedAssets,
+            XAssetType.FxMap,
+            "FxWorld");
+        GameWorldMpAsset game = RequireSingleAsset<GameWorldMpAsset>(
+            detachedAssets,
+            XAssetType.GameMapMp,
+            "multiplayer GameWorld");
 
-        string assetName = RequireMatchingNames(gfx, clip, com, ents, fx, game);
+        RequireMatchingNames(gfx, clip, com, ents, fx, game);
         ValidateCounts(gfx, clip, com, ents);
-        ValidateCanonicalCollisionGraph(clip, ents, com);
+        ValidateCanonicalCollisionGraph(clip, ents);
         ValidateCanonicalRenderGraph(gfx, clip, com);
         ValidateEmptyDerivedGraphs(fx, game);
 
+        D3dbspTriggerCollisionExport collisionExport =
+            D3dbspMapEntsCodec.CreateTriggerCollisionExport(ents, clip);
         (byte[] brushSides, byte[] brushes) =
-            D3dbspCollisionCodec.EncodeBrushGraph(clip);
+            D3dbspCollisionCodec.EncodeBrushGraph(collisionExport);
         (byte[] leafs, byte[] leafBrushes) =
             D3dbspCollisionCodec.EncodeCanonicalLeafGraph(clip);
         byte[] lightGridEntries = D3dbspLightingCodec.EncodeLightGridEntries(gfx.LightGrid);
@@ -55,29 +65,45 @@ internal static class FastFileD3dbspEncoder
         byte[] lightRegionAxes = D3dbspLightingCodec.EncodeLightRegionAxes(
             gfx.LightRegions,
             hasLightRegions);
+        (byte[] lightBytes, IReadOnlyList<D3dbspLightmapTile> lightmapTiles) =
+            D3dbspImageCodec.EncodeLightBytes(gfx.WorldDraw.Lightmaps);
+        byte[] reflectionProbes = D3dbspImageCodec.EncodeReflectionProbes(
+            gfx.WorldDraw.ReflectionProbeImages,
+            gfx.WorldDraw.ReflectionProbeOrigins);
+        (
+            byte[] renderTriangles,
+            byte[] renderVertices,
+            byte[] renderIndices) = D3dbspGfxCodec.EncodeUnlayeredGeometry(
+                gfx,
+                clip,
+                lightmapTiles);
 
         var lumps = new List<(D3dbspLumpType Type, byte[] Data)>
         {
-            (D3dbspLumpType.Materials, D3dbspCollisionCodec.EncodeMaterials(clip.Materials))
+            (D3dbspLumpType.Materials, D3dbspCollisionCodec.EncodeMaterials(collisionExport.Materials))
         };
         AddIfNotEmpty(lumps, D3dbspLumpType.LightGridEntries, lightGridEntries);
         AddIfNotEmpty(lumps, D3dbspLumpType.LightGridColors, lightGridColors);
-        lumps.Add((D3dbspLumpType.Planes, D3dbspCollisionCodec.EncodePlanes(clip.Planes)));
+        AddIfNotEmpty(lumps, D3dbspLumpType.LightBytes, lightBytes);
+        lumps.Add((D3dbspLumpType.Planes, D3dbspCollisionCodec.EncodePlanes(collisionExport.Planes)));
         lumps.Add((D3dbspLumpType.BrushSides, brushSides));
         lumps.Add((
             D3dbspLumpType.BrushSideEdgeCounts,
-            D3dbspCollisionCodec.EncodeBrushSideEdgeCounts(clip.Brushes)));
+            D3dbspCollisionCodec.EncodeBrushSideEdgeCounts(collisionExport.Brushes)));
         AddIfNotEmpty(
             lumps,
             D3dbspLumpType.BrushEdges,
-            D3dbspCollisionCodec.EncodeBrushEdges(clip.BrushEdges));
+            D3dbspCollisionCodec.EncodeBrushEdges(collisionExport.BrushEdges));
         lumps.Add((D3dbspLumpType.Brushes, brushes));
         lumps.Add((
             D3dbspLumpType.UnlayeredAabbTrees,
             D3dbspGfxCodec.EncodeCanonicalUnlayeredAabbTree(gfx)));
         lumps.Add((D3dbspLumpType.Cells, D3dbspGfxCodec.EncodeCanonicalCell(gfx)));
-        lumps.Add((D3dbspLumpType.Nodes, D3dbspCollisionCodec.EncodeNodes(clip.Nodes, clip.Planes)));
+        lumps.Add((D3dbspLumpType.Nodes, D3dbspCollisionCodec.EncodeNodes(clip.Nodes, collisionExport.Planes)));
         lumps.Add((D3dbspLumpType.Leafs, leafs));
+        lumps.Add((
+            D3dbspLumpType.Visibility,
+            D3dbspCollisionCodec.EncodeCanonicalVisibility()));
         AddIfNotEmpty(lumps, D3dbspLumpType.LeafBrushes, leafBrushes);
         AddIfNotEmpty(
             lumps,
@@ -110,33 +136,82 @@ internal static class FastFileD3dbspEncoder
             lumps,
             D3dbspLumpType.CollisionAabbs,
             D3dbspCollisionCodec.EncodeCollisionAabbs(clip.AabbTrees));
-        lumps.Add((D3dbspLumpType.Models, D3dbspGfxCodec.EncodeModels(gfx, clip)));
-        lumps.Add((D3dbspLumpType.Entities, ents.EntityStringBytes.ToArray()));
+        lumps.Add((D3dbspLumpType.Models, D3dbspGfxCodec.EncodeModels(gfx, clip, collisionExport)));
+        lumps.Add((
+            D3dbspLumpType.Entities,
+            D3dbspMapEntsCodec.EncodeEntityString(
+                ents,
+                clip,
+                gfx,
+                collisionExport.CollisionModelsByTrigger)));
+        AddIfNotEmpty(
+            lumps,
+            D3dbspLumpType.ReflectionProbes,
+            reflectionProbes);
         lumps.Add((D3dbspLumpType.PrimaryLights, D3dbspPrimaryLightCodec.Encode(com.PrimaryLights)));
         lumps.Add((D3dbspLumpType.LightGridHeader, D3dbspLightingCodec.EncodeLightGridHeader(gfx.LightGrid)));
         AddIfNotEmpty(lumps, D3dbspLumpType.LightGridRows, lightGridRows);
         lumps.Add((
             D3dbspLumpType.UnlayeredTriangles,
-            D3dbspGfxCodec.EncodeUnlayeredTriangles(gfx, clip)));
+            renderTriangles));
         lumps.Add((
             D3dbspLumpType.UnlayeredDrawVerts,
-            D3dbspGfxCodec.EncodeUnlayeredDrawVerts(gfx)));
+            renderVertices));
         lumps.Add((
             D3dbspLumpType.UnlayeredDrawIndices,
-            D3dbspGfxCodec.EncodeUnlayeredDrawIndices(gfx)));
+            renderIndices));
         if (hasLightRegions)
             lumps.Add((D3dbspLumpType.LightRegions, lightRegions));
         AddIfNotEmpty(lumps, D3dbspLumpType.LightRegionHulls, lightRegionHulls);
         AddIfNotEmpty(lumps, D3dbspLumpType.LightRegionAxes, lightRegionAxes);
 
-        Console.WriteLine($"map-asset: {assetName}");
-        Console.WriteLine("encoding-profile: canonical-one-cell-fullbright-v22");
-        Console.WriteLine("canonicalized: linked render order, leaf-brush slices, brush material selectors, node tails, partition stamps");
-        Console.WriteLine("omitted: light bytes, layered geometry, authored visibility, cull groups, portals, paths, raw reflection probes");
         return D3dbspFile.Create(lumps);
     }
 
-    private static string RequireMatchingNames(
+    private static TAsset RequireSingleAsset<TAsset>(
+        IReadOnlyList<BaseAsset> assets,
+        XAssetType assetType,
+        string description)
+        where TAsset : BaseAsset
+    {
+        BaseAsset[] matches = assets
+            .Where(asset => asset is not null && asset.SerializedAssetType == assetType)
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidDataException(
+                $"The asset collection does not contain exactly one {description} asset.");
+        }
+
+        return matches[0] as TAsset ??
+            throw new InvalidDataException(
+                $"The {assetType} asset is not a {typeof(TAsset).Name}.");
+    }
+
+    private static MapEntsAsset RequireMapEnts(
+        IReadOnlyList<BaseAsset> assets,
+        ClipMapAsset clip)
+    {
+        BaseAsset[] matches = assets
+            .Where(asset => asset is not null && asset.SerializedAssetType == XAssetType.MapEnts)
+            .ToArray();
+        if (matches.Length > 1)
+        {
+            throw new InvalidDataException(
+                "The asset collection contains more than one MapEnts asset.");
+        }
+        if (matches.Length == 0)
+        {
+            return clip.MapEnts ??
+                throw new InvalidDataException("The asset collection does not contain a MapEnts asset.");
+        }
+
+        return matches[0] as MapEntsAsset ??
+            throw new InvalidDataException(
+                $"The {XAssetType.MapEnts} asset is not a {nameof(MapEntsAsset)}.");
+    }
+
+    private static void RequireMatchingNames(
         GfxWorldAsset gfx,
         ClipMapAsset clip,
         ComWorldAsset com,
@@ -145,8 +220,7 @@ internal static class FastFileD3dbspEncoder
         GameWorldMpAsset game)
     {
         string name = gfx.Name ?? throw new InvalidDataException("The GfxWorld asset has no name.");
-        if (name.Length == 0 || name[0] == ',' || name.Contains('\0') ||
-            !name.EndsWith(".d3dbsp", StringComparison.OrdinalIgnoreCase))
+        if (!D3dbspAssetTypeFacts.IsOwnedD3dbspName(name))
         {
             throw new NotSupportedException(
                 "The map roots must use one owned .d3dbsp wire name.");
@@ -168,16 +242,71 @@ internal static class FastFileD3dbspEncoder
             }
         }
         if (clip.MapEnts is null ||
-            !string.Equals(clip.MapEnts.Name, name, StringComparison.Ordinal) ||
-            !clip.MapEnts.EntityStringBytes.SequenceEqual(ents.EntityStringBytes))
+            !MapEntsHaveSameSerializedState(clip.MapEnts, ents))
         {
             throw new NotSupportedException(
                 "The ClipMap MapEnts reference does not match the loaded MapEnts asset.");
         }
         if (clip.Checksum != gfx.Checksum)
             throw new NotSupportedException("The ClipMap and GfxWorld checksums differ.");
-        return name;
     }
+
+    private static bool MapEntsHaveSameSerializedState(
+        MapEntsAsset left,
+        MapEntsAsset right) =>
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        left.NumEntityChars == right.NumEntityChars &&
+        left.EntityStringBytes.SequenceEqual(right.EntityStringBytes) &&
+        TriggersHaveSameSerializedState(left.Trigger, right.Trigger) &&
+        left.StageCount == right.StageCount &&
+        left.Stages.Count == right.Stages.Count &&
+        left.Stages.Zip(right.Stages).All(pair =>
+            string.Equals(pair.First.StageName, pair.Second.StageName, StringComparison.Ordinal) &&
+            SameVec3Bits(pair.First.Origin, pair.Second.Origin) &&
+            pair.First.TriggerIndex == pair.Second.TriggerIndex &&
+            pair.First.SunPrimaryLightIndex == pair.Second.SunPrimaryLightIndex &&
+            pair.First.Pad13 == pair.Second.Pad13) &&
+        left.Pad29To2B.SequenceEqual(right.Pad29To2B);
+
+    private static bool TriggersHaveSameSerializedState(
+        MapTriggers left,
+        MapTriggers right) =>
+        left.Count == right.Count &&
+        left.Models.Count == right.Models.Count &&
+        left.Models.Zip(right.Models).All(pair =>
+            pair.First.Contents == pair.Second.Contents &&
+            pair.First.HullCount == pair.Second.HullCount &&
+            pair.First.FirstHull == pair.Second.FirstHull) &&
+        left.HullCount == right.HullCount &&
+        left.Hulls.Count == right.Hulls.Count &&
+        left.Hulls.Zip(right.Hulls).All(pair =>
+            SameBoundsBits(pair.First.Bounds, pair.Second.Bounds) &&
+            pair.First.Contents == pair.Second.Contents &&
+            pair.First.SlabCount == pair.Second.SlabCount &&
+            pair.First.FirstSlab == pair.Second.FirstSlab) &&
+        left.SlabCount == right.SlabCount &&
+        left.Slabs.Count == right.Slabs.Count &&
+        left.Slabs.Zip(right.Slabs).All(pair =>
+            SameVec3Bits(pair.First.Dir, pair.Second.Dir) &&
+            SameSingleBits(pair.First.MidPoint, pair.Second.MidPoint) &&
+            SameSingleBits(pair.First.HalfSize, pair.Second.HalfSize));
+
+    private static bool SameBoundsBits(
+        IW4.Assets.Math.Bounds left,
+        IW4.Assets.Math.Bounds right) =>
+        SameVec3Bits(left.MidPoint, right.MidPoint) &&
+        SameVec3Bits(left.HalfSize, right.HalfSize);
+
+    private static bool SameVec3Bits(
+        IW4.Assets.Math.Vec3 left,
+        IW4.Assets.Math.Vec3 right) =>
+        SameSingleBits(left.X, right.X) &&
+        SameSingleBits(left.Y, right.Y) &&
+        SameSingleBits(left.Z, right.Z);
+
+    private static bool SameSingleBits(float left, float right) =>
+        BitConverter.SingleToInt32Bits(left) ==
+        BitConverter.SingleToInt32Bits(right);
 
     private static void ValidateCounts(
         GfxWorldAsset gfx,
@@ -187,6 +316,7 @@ internal static class FastFileD3dbspEncoder
     {
         RequireCount(clip.PlaneCount, clip.Planes.Count, "collision planes");
         RequireCount(clip.NumStaticModels, clip.StaticModelList.Count, "collision static models");
+        RequireCount(clip.SModelNodeCount, clip.SModelNodes.Count, "static-model AABB nodes");
         RequireCount(clip.NumMaterials, clip.Materials.Count, "collision materials");
         RequireCount(clip.NumBrushSides, clip.BrushSides.Count, "collision brush sides");
         RequireCount(clip.NumBrushEdges, clip.BrushEdges.Count, "collision brush edges");
@@ -207,6 +337,16 @@ internal static class FastFileD3dbspEncoder
         RequireCount(gfx.SurfaceCount, gfx.Dpvs.Surfaces.Count, "render surfaces");
         RequireCount(gfx.ModelCount, gfx.Models.Count, "render models");
         RequireCount(gfx.WorldDraw.LightmapCount, gfx.WorldDraw.Lightmaps.Count, "render lightmaps");
+        RequireCount(
+            gfx.WorldDraw.ReflectionProbeCount,
+            gfx.WorldDraw.ReflectionProbeImages.Count,
+            "render reflection-probe images");
+        RequireCount(
+            gfx.WorldDraw.ReflectionProbeCount,
+            gfx.WorldDraw.ReflectionProbeOrigins.Count,
+            "render reflection-probe origins");
+        RequireCount(gfx.Dpvs.SModelCount, gfx.Dpvs.SModelInsts.Count, "render static-model instances");
+        RequireCount(gfx.Dpvs.SModelCount, gfx.Dpvs.SModelDrawInsts.Count, "render static-model draw instances");
         RequireCount(gfx.WorldDraw.IndexCount, gfx.WorldDraw.Indices.Count, "render indices");
         RequireCount(ents.NumEntityChars, ents.EntityStringBytes.Count, "entity bytes");
         RequireCount(ents.StageCount, ents.Stages.Count, "map stages");
@@ -214,30 +354,8 @@ internal static class FastFileD3dbspEncoder
 
     private static void ValidateCanonicalCollisionGraph(
         ClipMapAsset clip,
-        MapEntsAsset ents,
-        ComWorldAsset com)
+        MapEntsAsset ents)
     {
-        bool hasNoStaticModelTree =
-            clip.SModelNodeCount == 0 && clip.SModelNodes.Count == 0;
-        if (clip.SModelNodeCount == 1 && clip.SModelNodes.Count == 1)
-        {
-            SModelAabbNode root = clip.SModelNodes[0];
-            hasNoStaticModelTree =
-                root.FirstChild == 0 && root.ChildCount == 0 &&
-                root.Bounds.MidPoint.X == 0.0f &&
-                root.Bounds.MidPoint.Y == 0.0f &&
-                root.Bounds.MidPoint.Z == 0.0f &&
-                root.Bounds.HalfSize.X == 0.0f &&
-                root.Bounds.HalfSize.Y == 0.0f &&
-                root.Bounds.HalfSize.Z == 0.0f;
-        }
-
-        if (clip.NumStaticModels != 0 || clip.StaticModelList.Count != 0 ||
-            !hasNoStaticModelTree)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support collision static models.");
-        }
         if (clip.DynEntCount.Count != 2 || clip.DynEntCount.Any(count => count != 0) ||
             clip.DynEntDefList.Any(list => list.Count != 0) ||
             clip.DynEntPoseList.Any(list => list.Count != 0) ||
@@ -246,23 +364,6 @@ internal static class FastFileD3dbspEncoder
         {
             throw new NotSupportedException(
                 "Strict d3dbsp encoding does not support dynamic entities.");
-        }
-        MapTriggers trigger = ents.Trigger;
-        if (trigger.Count != 0 || trigger.Models.Count != 0 ||
-            trigger.HullCount != 0 || trigger.Hulls.Count != 0 ||
-            trigger.SlabCount != 0 || trigger.Slabs.Count != 0)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support MapTriggers.");
-        }
-        int sunPrimaryLightIndex =
-            D3dbspPrimaryLightCodec.GetLastSunPrimaryLightIndex(com.PrimaryLights);
-        if (!D3dbspMapEntsCodec.IsCanonicalDefaultStage(
-                ents.Stages,
-                sunPrimaryLightIndex))
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding supports only the generated default map stage.");
         }
 
         if (ents.EntityStringBytes.Count == 0 || ents.EntityStringBytes[^1] != 0 ||
@@ -278,36 +379,6 @@ internal static class FastFileD3dbspEncoder
         ClipMapAsset clip,
         ComWorldAsset com)
     {
-        if (gfx.DpvsPlanes.CellCount != 1 || gfx.Cells.Count != 1 ||
-            gfx.CellTreeCounts.Count != 1 || gfx.CellTrees.Count != 1)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding requires exactly one render cell and cell tree.");
-        }
-        GfxCell cell = gfx.Cells[0];
-        if (cell.PortalCount != 0 || cell.Portals.Count != 0)
-            throw new NotSupportedException("Strict d3dbsp encoding does not support portals.");
-        if (gfx.PlaneCount != 0 || gfx.DpvsPlanes.Planes.Count != 0 ||
-            gfx.NodeCount != 1 || gfx.DpvsPlanes.Nodes.Count != 1 ||
-            gfx.DpvsPlanes.Nodes[0] != 1)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding requires the canonical one-cell DPVS root.");
-        }
-        if (gfx.SkyCount != 0 || gfx.Skies.Count != 0 ||
-            gfx.MaterialMemoryCount != 0 || gfx.MaterialMemory.Count != 0 ||
-            gfx.OutdoorImage is not null)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support skies, material-memory rows, or outdoor images.");
-        }
-        if (gfx.Dpvs.SModelCount != 0 || gfx.Dpvs.SModelInsts.Count != 0 ||
-            gfx.Dpvs.SModelDrawInsts.Count != 0 ||
-            gfx.SceneDynModels.Count != 0 || gfx.SceneDynBrushes.Count != 0)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support render static or dynamic models.");
-        }
         if (gfx.DpvsDyn.DynEntClientCount.Any(value => value != 0) ||
             gfx.DpvsDyn.DynEntClientWordCount.Any(value => value != 0) ||
             gfx.DpvsDyn.DynEntCellBits.Any(bits => bits.Count != 0) ||
@@ -316,56 +387,29 @@ internal static class FastFileD3dbspEncoder
             throw new NotSupportedException(
                 "Strict d3dbsp encoding does not support dynamic-entity visibility data.");
         }
-        if (gfx.HeroOnlyLightCount != 0 || gfx.HeroOnlyLights.Count != 0 ||
-            HasUnsupportedPs3WorldDrawPayload(gfx))
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support hero-only lights or noncanonical " +
-                "PS3 world-draw payload state " +
-                $"(hero {gfx.HeroOnlyLightCount}/{gfx.HeroOnlyLights.Count}, " +
-                $"draw payload {gfx.UmbraGateCount}/{gfx.UmbraGateData.Count}/{gfx.UmbraGateData2.Count}).");
-        }
-
         GfxWorldDraw draw = gfx.WorldDraw;
-        bool hasNoLightmaps = draw.LightmapCount == 0 && draw.Lightmaps.Count == 0;
-        bool hasGeneratedFullbrightLightmap =
-            draw.LightmapCount == 1 && draw.Lightmaps.Count == 1 &&
-            draw.Lightmaps[0].Primary is not null &&
-            draw.Lightmaps[0].Secondary is not null &&
-            NormalizeReferenceName(draw.Lightmaps[0].Primary!.Name)
-                .Equals(
-                    D3dbspGfxCodec.FullbrightPrimaryLightmapImageName,
-                    StringComparison.Ordinal) &&
-            NormalizeReferenceName(draw.Lightmaps[0].Secondary!.Name)
-                .Equals(
-                    D3dbspGfxCodec.FullbrightSecondaryLightmapImageName,
-                    StringComparison.Ordinal);
-        if ((!hasNoLightmaps && !hasGeneratedFullbrightLightmap) ||
-            draw.LightmapOverridePrimary is not null || draw.LightmapOverrideSecondary is not null)
+        if (draw.ReflectionProbeCount == 0 ||
+            draw.ReflectionProbeCount > byte.MaxValue ||
+            draw.ReflectionProbeImages.Any(image => image is null))
         {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding supports only the generated $white fullbright lightmap.");
+            throw new InvalidDataException(
+                "The render world must contain a byte-sized reflection-probe table including the default probe.");
         }
-        if (gfx.Dpvs.Surfaces.Any(surface =>
-                surface.LightmapIndex != 0 && surface.LightmapIndex != 0x1f) ||
-            (hasNoLightmaps && gfx.Dpvs.Surfaces.Any(surface => surface.LightmapIndex != 0x1f)))
+        for (int index = 0; index < gfx.Dpvs.Surfaces.Count; index++)
         {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding supports only lightmap index 0 and no-lightmap index 31.");
-        }
-        if (draw.ReflectionProbeCount != 1 || draw.ReflectionProbeOrigins.Count != 1 ||
-            draw.ReflectionProbeImages.Count != 1 || draw.ReflectionProbeImages[0] is null ||
-            !NormalizeReferenceName(draw.ReflectionProbeImages[0]!.Name)
-                .Equals("*reflection_probe0", StringComparison.Ordinal))
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding requires the single generated default reflection probe.");
-        }
-        if (cell.ReflectionProbeCount != 1 || cell.ReflectionProbes.Count != 1 ||
-            cell.ReflectionProbes[0] != 0)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding requires the cell to reference only the default reflection probe.");
+            GfxSurface surface = gfx.Dpvs.Surfaces[index] ??
+                throw new InvalidDataException($"Render surface row {index} is null.");
+            if (surface.LightmapIndex != 0x1f &&
+                surface.LightmapIndex >= draw.LightmapCount)
+            {
+                throw new InvalidDataException(
+                    $"Render surface row {index} references lightmap {surface.LightmapIndex}; the table has {draw.LightmapCount} rows.");
+            }
+            if (surface.ReflectionProbeIndex >= draw.ReflectionProbeCount)
+            {
+                throw new InvalidDataException(
+                    $"Render surface row {index} references reflection probe {surface.ReflectionProbeIndex}; the table has {draw.ReflectionProbeCount} rows.");
+            }
         }
         if (gfx.Models.Count != clip.CModels.Count || gfx.Models.Count == 0)
             throw new NotSupportedException("Render and collision model counts must match and be nonzero.");
@@ -377,24 +421,6 @@ internal static class FastFileD3dbspEncoder
             throw new NotSupportedException(
                 "The render sun-primary-light index is not canonical for the primary-light table.");
         }
-    }
-
-    private static bool HasUnsupportedPs3WorldDrawPayload(GfxWorldAsset gfx)
-    {
-        if (gfx.UmbraGateCount < 0 || gfx.UmbraGateCount > int.MaxValue - 0x1000)
-            return true;
-
-        int reservationSize = checked(gfx.UmbraGateCount + 0x1000);
-        return !IsEmptyOrZeroReservation(gfx.UmbraGateData, reservationSize) ||
-               !IsEmptyOrZeroReservation(gfx.UmbraGateData2, reservationSize);
-    }
-
-    private static bool IsEmptyOrZeroReservation(
-        IReadOnlyList<byte> data,
-        int reservationSize)
-    {
-        return data.Count == 0 ||
-               (data.Count == reservationSize && !data.Any(value => value != 0));
     }
 
     private static void ValidateEmptyDerivedGraphs(FxWorldAsset fx, GameWorldMpAsset game)
@@ -429,13 +455,6 @@ internal static class FastFileD3dbspEncoder
     {
         if (data.Length != 0)
             lumps.Add((type, data));
-    }
-
-    private static string NormalizeReferenceName(string? name)
-    {
-        if (string.IsNullOrEmpty(name))
-            return string.Empty;
-        return name[0] == ',' ? name[1..] : name;
     }
 
     private static void RequireCount(long declared, int actual, string description)

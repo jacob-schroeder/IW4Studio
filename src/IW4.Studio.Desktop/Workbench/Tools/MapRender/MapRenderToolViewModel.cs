@@ -3,6 +3,7 @@ using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
+using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 
@@ -25,11 +26,15 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(workspace);
         DocumentName = Path.GetFileName(workspace.Document.Request.Path);
         ZoneName = workspace.LoadedZone.Zone.Name;
+        CanLaunch = FastFileRenderViewService.CanRenderTargetMap(workspace);
 
-        LevelBriefingPreviewSource? previewSource =
-            FindLevelBriefingPreviewSource(workspace);
-        if (previewSource is not null)
-            _ = LoadLevelBriefingPreviewAsync(previewSource);
+        if (CanLaunch)
+        {
+            LevelBriefingPreviewSource? previewSource =
+                FindLevelBriefingPreviewSource(workspace);
+            if (previewSource is not null)
+                _ = LoadLevelBriefingPreviewAsync(previewSource);
+        }
     }
 
     public event EventHandler? LaunchRequested;
@@ -62,7 +67,7 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
     public string StatusMessage =>
         "Open the native preview to prepare this map's render scene.";
 
-    public bool CanLaunch => true;
+    public bool CanLaunch { get; }
 
     public void RequestLaunch()
         => LaunchRequested?.Invoke(this, EventArgs.Empty);

@@ -126,20 +126,7 @@ public static class StudioToolRegistry
                     DataContext = context.GscUsages
                 },
                 context.GscUsages),
-            Implemented(
-                Descriptor(
-                    StudioToolIds.LivePreview,
-                    "Live Preview",
-                    "MapOutline",
-                    10,
-                    defaultOpen: false,
-                    DockRegion.Right,
-                    DockRailGroup.Right),
-                new MapRenderToolView
-                {
-                    DataContext = context.LivePreview
-                },
-                context.LivePreview),
+            .. CreateLivePreview(context),
             Implemented(
                 Descriptor(
                     StudioToolIds.Properties,
@@ -197,6 +184,28 @@ public static class StudioToolRegistry
                 },
                 context.DependencyGraph)
         ]);
+    }
+
+    private static IEnumerable<StudioToolRegistration> CreateLivePreview(
+        StudioToolContext context)
+    {
+        if (!context.LivePreview.CanLaunch)
+            yield break;
+
+        yield return Implemented(
+            Descriptor(
+                StudioToolIds.LivePreview,
+                "Live Preview",
+                "MapOutline",
+                10,
+                defaultOpen: false,
+                DockRegion.Right,
+                DockRailGroup.Right),
+            new MapRenderToolView
+            {
+                DataContext = context.LivePreview
+            },
+            context.LivePreview);
     }
 
     private static StudioToolRegistration Implemented(
