@@ -450,6 +450,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public bool CanDumpSourceAssets =>
         !_disposed && Volatile.Read(ref _sourceDumpInProgress) == 0;
 
+    public WorkbenchActivityStatusViewModel ActivityStatus { get; } = new();
+
     public DockActivationResult ActivateTool(string toolId)
     {
         DockActivationResult result = DockLayout.ActivateTool(toolId);
@@ -604,12 +606,13 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             return;
         }
 
-        OnPropertyChanged(nameof(CanDumpSourceAssets));
-        if (DockLayout.State.Bottom.ActiveToolId != StudioToolIds.ConsoleOutput)
-            _ = ActivateTool(StudioToolIds.ConsoleOutput);
-
         try
         {
+            ActivityStatus.Begin("Dumping source assets...");
+            OnPropertyChanged(nameof(CanDumpSourceAssets));
+            if (DockLayout.State.Bottom.ActiveToolId != StudioToolIds.ConsoleOutput)
+                _ = ActivateTool(StudioToolIds.ConsoleOutput);
+
             ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
             sourceDirectory = Path.GetFullPath(sourceDirectory);
             FastFileEditingSession session = Editor.EditingSession;
@@ -709,6 +712,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         finally
         {
             Interlocked.Exchange(ref _sourceDumpInProgress, 0);
+            ActivityStatus.Clear();
             if (!_disposed)
                 OnPropertyChanged(nameof(CanDumpSourceAssets));
         }

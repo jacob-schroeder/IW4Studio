@@ -117,6 +117,12 @@
                      FontSize="10"
                      Foreground="{DynamicResource StudioSuccessBrush}" />
         </StackPanel>
+        <composition:WorkbenchActivityIndicator
+            Grid.Column="1"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            IsActive="{Binding ActivityStatus.IsActive}"
+            Label="{Binding ActivityStatus.Label}" />
         <TextBlock Grid.Column="2"
                    Text="{Binding ModeName}"
                    VerticalAlignment="Center"

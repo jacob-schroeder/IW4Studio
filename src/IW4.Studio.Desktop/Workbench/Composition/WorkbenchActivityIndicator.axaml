@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Workbench.Composition.WorkbenchActivityIndicator"
+             x:Name="Indicator"
+             mc:Ignorable="d"
+             d:DesignWidth="190"
+             d:DesignHeight="25">
+  <StackPanel Orientation="Horizontal"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Spacing="6"
+              IsVisible="{Binding #Indicator.IsActive}">
+    <materialIcons:MaterialIcon Kind="Loading"
+                                Animation="Spin"
+                                Width="13"
+                                Height="13"
+                                Foreground="{DynamicResource StudioAccentBrush}" />
+    <TextBlock Text="{Binding #Indicator.Label}"
+               VerticalAlignment="Center"
+               FontSize="10"
+               Foreground="{DynamicResource StudioTextMutedBrush}" />
+  </StackPanel>
+</UserControl>
