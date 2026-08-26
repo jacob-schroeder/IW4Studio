@@ -8,6 +8,7 @@ public sealed partial class AddAssetDialogWindow : Window
 {
     private readonly Func<XAssetType, string, string?> _validateName;
     private readonly Action<XAssetType, string> _addAsset;
+    private bool _showAllAssetTypes;
 
     public AddAssetDialogWindow()
         : this(
@@ -33,24 +34,23 @@ public sealed partial class AddAssetDialogWindow : Window
 
         InitializeComponent();
         Icon = AppIcon.Create();
-        AssetTypeComboBox.ItemsSource = assetTypes;
-        int preferredIndex = -1;
+        XAssetType[] orderedAssetTypes = assetTypes
+            .OrderBy(
+                static assetType => assetType.ToString(),
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        AssetTypeAutoCompleteBox.ItemFilter = AssetTypeMatchesSearch;
+        AssetTypeAutoCompleteBox.ItemsSource = orderedAssetTypes;
+        XAssetType? selectedAssetType = null;
         if (preferredAssetType is { } preferred)
         {
-            for (int index = 0; index < assetTypes.Count; index++)
-            {
-                if (assetTypes[index] != preferred)
-                    continue;
-
-                preferredIndex = index;
-                break;
-            }
+            if (orderedAssetTypes.Contains(preferred))
+                selectedAssetType = preferred;
         }
-        AssetTypeComboBox.SelectedIndex = preferredIndex >= 0
-            ? preferredIndex
-            : assetTypes.Count == 0
-                ? -1
-                : 0;
+        if (selectedAssetType is null && orderedAssetTypes.Length > 0)
+            selectedAssetType = orderedAssetTypes[0];
+
+        AssetTypeAutoCompleteBox.SelectedItem = selectedAssetType;
         Opened += (_, _) => NameTextBox.Focus();
         RefreshValidation();
     }
@@ -60,16 +60,44 @@ public sealed partial class AddAssetDialogWindow : Window
         TextChangedEventArgs e) =>
         RefreshValidation();
 
-    private void AssetTypeComboBox_SelectionChanged(
+    private void AssetTypeAutoCompleteBox_TextChanged(
+        object? sender,
+        TextChangedEventArgs e) =>
+        _showAllAssetTypes = false;
+
+    private void AssetTypeAutoCompleteBox_DropDownClosed(
+        object? sender,
+        EventArgs e) =>
+        _showAllAssetTypes = false;
+
+    private void AssetTypeAutoCompleteBox_SelectionChanged(
         object? sender,
         SelectionChangedEventArgs e) => RefreshValidation();
+
+    private void AssetTypeDropDownButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (AssetTypeAutoCompleteBox.IsDropDownOpen)
+        {
+            AssetTypeAutoCompleteBox.IsDropDownOpen = false;
+        }
+        else
+        {
+            _showAllAssetTypes = true;
+            AssetTypeAutoCompleteBox.Focus();
+            AssetTypeAutoCompleteBox.IsDropDownOpen = true;
+        }
+
+        e.Handled = true;
+    }
 
     private void AddButton_Click(
         object? sender,
         RoutedEventArgs e)
     {
         string name = NameTextBox.Text ?? string.Empty;
-        if (AssetTypeComboBox.SelectedItem is not XAssetType assetType)
+        if (AssetTypeAutoCompleteBox.SelectedItem is not XAssetType assetType)
         {
             RefreshValidation();
             return;
@@ -108,7 +136,7 @@ public sealed partial class AddAssetDialogWindow : Window
             return;
 
         string name = NameTextBox.Text ?? string.Empty;
-        XAssetType? assetType = AssetTypeComboBox.SelectedItem is XAssetType selectedType
+        XAssetType? assetType = AssetTypeAutoCompleteBox.SelectedItem is XAssetType selectedType
             ? selectedType
             : null;
         string? validationMessage = assetType is { } selectedAssetType
@@ -124,4 +152,11 @@ public sealed partial class AddAssetDialogWindow : Window
         string.IsNullOrWhiteSpace(name)
             ? "Name is required."
             : _validateName(assetType, name);
+
+    private bool AssetTypeMatchesSearch(string? search, object? item) =>
+        _showAllAssetTypes ||
+        item is XAssetType assetType &&
+        assetType.ToString().StartsWith(
+            search ?? string.Empty,
+            StringComparison.OrdinalIgnoreCase);
 }

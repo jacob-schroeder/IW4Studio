@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.AddAssetDialogWindow"
         Title="Add Asset"
         Width="430"
@@ -27,10 +28,30 @@
                    FontSize="10"
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource StudioTextBrush}" />
-        <ComboBox x:Name="AssetTypeComboBox"
-                  MinHeight="34"
-                  HorizontalAlignment="Stretch"
-                  SelectionChanged="AssetTypeComboBox_SelectionChanged" />
+        <AutoCompleteBox x:Name="AssetTypeAutoCompleteBox"
+                         MinHeight="34"
+                         HorizontalAlignment="Stretch"
+                         MinimumPrefixLength="0"
+                         PlaceholderText="Type to filter asset types"
+                         TextChanged="AssetTypeAutoCompleteBox_TextChanged"
+                         DropDownClosed="AssetTypeAutoCompleteBox_DropDownClosed"
+                         SelectionChanged="AssetTypeAutoCompleteBox_SelectionChanged">
+          <AutoCompleteBox.InnerRightContent>
+            <Button Width="30"
+                    Height="30"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Focusable="False"
+                    ToolTip.Tip="Show all asset types"
+                    Click="AssetTypeDropDownButton_Click">
+              <materialIcons:MaterialIcon Kind="ChevronDown"
+                                          Width="14"
+                                          Height="14"
+                                          IsHitTestVisible="False" />
+            </Button>
+          </AutoCompleteBox.InnerRightContent>
+        </AutoCompleteBox>
       </StackPanel>
 
       <StackPanel Grid.Row="4" Spacing="6">
