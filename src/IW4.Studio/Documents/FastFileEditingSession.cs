@@ -1,6 +1,7 @@
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.D3dbsp;
@@ -164,12 +165,15 @@ public sealed class FastFileEditingSession : IDisposable
                     modelsByKey.TryAdd(AssetKey.FromDefinition(model), model);
             }
 
-            foreach (var slot in Workspace.LoadedZone.Context.AssetPool.Slots.Where(slot =>
-                         slot.AssetType == XAssetType.XModel &&
-                         !slot.ActiveProvider.IsReferencePlaceholder))
+            if (!Workspace.IsBlank)
             {
-                if (slot.ActiveProvider.Asset is XModelAsset model)
-                    modelsByKey.TryAdd(AssetKey.FromDefinition(model), model);
+                foreach (var slot in Workspace.LoadedZone.Context.AssetPool.Slots.Where(slot =>
+                             slot.AssetType == XAssetType.XModel &&
+                             !slot.ActiveProvider.IsReferencePlaceholder))
+                {
+                    if (slot.ActiveProvider.Asset is XModelAsset model)
+                        modelsByKey.TryAdd(AssetKey.FromDefinition(model), model);
+                }
             }
 
             return Array.AsReadOnly(modelsByKey.Values.ToArray());
@@ -186,6 +190,12 @@ public sealed class FastFileEditingSession : IDisposable
             .SerializedAssetName!;
         string normalizedName = AssetKey.FromDefinition(
             definitionsByType[XAssetType.GfxMap]).NormalizedName;
+        StringTableAsset generatedConfigStringBaseline =
+            D3dbspAssetLinker.CreatePs3DmConfigStringBaseline(
+                assetName,
+                linked.Checksum);
+        AssetKey configStringKey = AssetKey.FromDefinition(
+            generatedConfigStringBaseline);
 
         WorkspaceAssetCatalogEntry[] importedRows;
         int addedRowCount;
@@ -229,9 +239,33 @@ public sealed class FastFileEditingSession : IDisposable
                     $"The existing group uses wire name '{spellingMismatch.OriginalName}'. Import with that exact spelling to replace it.");
             }
 
+            WorkspaceAssetCatalogEntry[] configStringRows = Document.Rows
+                .Where(entry =>
+                    entry.AssetType == XAssetType.StringTable &&
+                    string.Equals(
+                        entry.NormalizedName,
+                        configStringKey.NormalizedName,
+                        StringComparison.Ordinal))
+                .ToArray();
+            if (configStringRows.Length > 1)
+            {
+                throw new InvalidDataException(
+                    $"The D3DBSP group '{assetName}' has multiple PS3 deathmatch configstring baseline rows.");
+            }
+            WorkspaceAssetCatalogEntry? configStringRow =
+                configStringRows.SingleOrDefault();
+            if (configStringRow is not null &&
+                (configStringRow.Origin != WorkspaceAssetOrigin.TargetOwnedDefinition ||
+                 configStringRow.Access != WorkspaceAssetAccess.Editable ||
+                 configStringRow.Definition is null))
+            {
+                throw new InvalidOperationException(
+                    $"The PS3 deathmatch configstring baseline for '{assetName}' collides with a target row that is not an editable owned definition.");
+            }
+
             Dictionary<XAssetType, WorkspaceAssetCatalogEntry> existingByType =
                 existingRows.ToDictionary(entry => entry.AssetType);
-            BaseAsset[] addedDefinitions = D3dbspAssetTypeFacts.MultiplayerTypes
+            BaseAsset[] addedMapDefinitions = D3dbspAssetTypeFacts.MultiplayerTypes
                 .Where(assetType =>
                     assetType != XAssetType.MapEnts &&
                     !existingByType.ContainsKey(assetType))
@@ -246,6 +280,31 @@ public sealed class FastFileEditingSession : IDisposable
                     state,
                     state.Adapter.CreateDraft(definitionsByType[assetType])));
             }
+            StringTableAsset configStringDefinition;
+            if (configStringRow is null)
+            {
+                configStringDefinition = generatedConfigStringBaseline;
+            }
+            else
+            {
+                StringTableAsset currentConfigString =
+                    CurrentDefinitionForEntry(configStringRow) as StringTableAsset
+                    ?? throw new InvalidDataException(
+                        $"The configstring row for '{assetName}' is not a StringTable definition.");
+                configStringDefinition =
+                    D3dbspAssetLinker.RefreshPs3DmConfigStringBaseline(
+                        currentConfigString,
+                        assetName,
+                        linked.Checksum);
+                DraftState state = RequireDraft(
+                    configStringRow.TargetRowIdentity!.Value);
+                pending.Add((
+                    state,
+                    state.Adapter.CreateDraft(configStringDefinition)));
+            }
+            BaseAsset[] addedDefinitions = configStringRow is null
+                ? [.. addedMapDefinitions, configStringDefinition]
+                : addedMapDefinitions;
 
             IReadOnlySet<AssetKey> priorProviderKeys =
                 _d3dbspProviderKeys.TryGetValue(
@@ -257,6 +316,7 @@ public sealed class FastFileEditingSession : IDisposable
                 .Concat(linked.NestedAssets.Where(asset =>
                     !D3dbspAssetTypeFacts.IsMultiplayerType(
                         asset.SerializedAssetType)))
+                .Append(configStringDefinition)
                 .GroupBy(AssetKey.FromDefinition)
                 .Select(group => group.First())
                 .ToArray();
@@ -350,11 +410,15 @@ public sealed class FastFileEditingSession : IDisposable
                 requiredD3dbspProviderKeys);
             RebuildChangeSet();
             importedRows = existingRows
+                .Concat(configStringRow is null
+                    ? []
+                    : [configStringRow])
                 .Concat(addedEntries)
                 .OrderBy(entry => entry.TargetRowIdentity!.Value.SerializedIndex)
                 .ToArray();
             addedRowCount = addedEntries.Count;
-            replacedRowCount = existingRows.Length;
+            replacedRowCount = existingRows.Length +
+                (configStringRow is null ? 0 : 1);
             revision = _revision.Revision;
         }
 

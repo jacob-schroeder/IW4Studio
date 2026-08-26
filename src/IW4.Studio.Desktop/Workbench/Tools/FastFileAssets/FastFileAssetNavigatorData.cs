@@ -203,6 +203,11 @@ public sealed class FastFileAssetsNavigatorSnapshot
                 "The target asset navigator received a dependency-only catalog entry.");
         string displayName = entry.OriginalName ?? StructuralRowName(entry.Origin);
         string? providerZone = entry.ResolvedProviderZone?.LogicalZoneName;
+        WorkspaceAssetAccess presentedAccess =
+            entry.IsGeneratedConfigStringBaseline &&
+            entry.Access == WorkspaceAssetAccess.Editable
+                ? WorkspaceAssetAccess.ReadOnly
+                : entry.Access;
 
         return new FastFileAssetNavigatorRow(
             identity,
@@ -211,7 +216,7 @@ public sealed class FastFileAssetsNavigatorSnapshot
             displayName,
             entry.NormalizedName ?? string.Empty,
             entry.Origin,
-            entry.Access,
+            presentedAccess,
             entry.ContentSource,
             entry.HeaderKind,
             entry.RawHeader,

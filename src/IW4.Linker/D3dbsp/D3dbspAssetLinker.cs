@@ -1,3 +1,4 @@
+using System.Globalization;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.ComWorld;
@@ -8,6 +9,7 @@ using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
+using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.D3dbsp;
 using IW4.Assets.Math;
@@ -328,6 +330,161 @@ public static class D3dbspAssetLinker
             Array.AsReadOnly(dependencies),
             checksum,
             discardedLightByteCount);
+    }
+
+    /// <summary>
+    /// Creates the sparse PS3 deathmatch configstring baseline that can be
+    /// proven from a compiled map alone. Runtime gamestate initialization fills
+    /// the remaining configstrings.
+    /// </summary>
+    public static StringTableAsset CreatePs3DmConfigStringBaseline(
+        string assetName,
+        uint checksum)
+    {
+        ValidateAssetName(assetName);
+        string mapName = Path.GetFileNameWithoutExtension(
+            assetName.Replace('\\', '/'));
+        if (mapName.Length == 0)
+        {
+            throw new InvalidDataException(
+                $"Map asset name '{assetName}' has no basename for its PS3 configstring table.");
+        }
+
+        string signedChecksum = unchecked((int)checksum).ToString(
+            CultureInfo.InvariantCulture);
+        return new StringTableAsset
+        {
+            Name = $"mp/configstrings/configstrings_ps3_{mapName}_dm.csv",
+            ColumnCount = 2,
+            RowCount = 2,
+            Cells =
+            [
+                CreateStringTableCell("111"),
+                CreateStringTableCell("mapcrc"),
+                CreateStringTableCell("311"),
+                CreateStringTableCell(signedChecksum)
+            ]
+        };
+    }
+
+    /// <summary>
+    /// Refreshes only the two map-derived rows in an existing PS3 deathmatch
+    /// configstring baseline. All other rows and their stored hashes are kept.
+    /// </summary>
+    public static StringTableAsset RefreshPs3DmConfigStringBaseline(
+        StringTableAsset source,
+        string assetName,
+        uint checksum)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        StringTableAsset generated = CreatePs3DmConfigStringBaseline(
+            assetName,
+            checksum);
+        if (AssetKey.FromDefinition(source) != AssetKey.FromDefinition(generated))
+        {
+            throw new InvalidDataException(
+                $"StringTable '{source.Name}' is not the PS3 deathmatch configstring baseline for '{assetName}'.");
+        }
+        if (source.ColumnCount != 2 || source.RowCount < 0)
+        {
+            throw new InvalidDataException(
+                $"Configstring StringTable '{source.Name}' must have two columns and a non-negative row count.");
+        }
+
+        long expectedCellCount = (long)source.RowCount * source.ColumnCount;
+        if (expectedCellCount != source.Cells.Count)
+        {
+            throw new InvalidDataException(
+                $"Configstring StringTable '{source.Name}' declares {source.RowCount} rows but contains {source.Cells.Count} cells.");
+        }
+
+        var rows = new SortedDictionary<int, (StringTableCell Index, StringTableCell Value)>();
+        int previousIndex = -1;
+        for (int row = 0; row < source.RowCount; row++)
+        {
+            int offset = checked(row * source.ColumnCount);
+            StringTableCell indexCell = source.Cells[offset]
+                ?? throw new InvalidDataException(
+                    $"Configstring StringTable '{source.Name}' row {row} has no index cell.");
+            StringTableCell valueCell = source.Cells[offset + 1]
+                ?? throw new InvalidDataException(
+                    $"Configstring StringTable '{source.Name}' row {row} has no value cell.");
+            if (!int.TryParse(
+                    indexCell.String,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int configStringIndex) ||
+                configStringIndex < 0 ||
+                configStringIndex <= previousIndex)
+            {
+                throw new InvalidDataException(
+                    $"Configstring StringTable '{source.Name}' row {row} does not contain a strictly increasing non-negative index.");
+            }
+
+            rows.Add(configStringIndex, (indexCell, valueCell));
+            previousIndex = configStringIndex;
+        }
+
+        if (rows.TryGetValue(111, out var mapCrcName) &&
+            !string.Equals(
+                mapCrcName.Value.String,
+                "mapcrc",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"Configstring StringTable '{source.Name}' assigns index 111 to '{mapCrcName.Value.String}', not mapcrc.");
+        }
+
+        rows[111] = (generated.Cells[0], generated.Cells[1]);
+        rows[311] = (generated.Cells[2], generated.Cells[3]);
+        StringTableCell[] cells = rows.Values
+            .SelectMany(row => new[]
+            {
+                CloneStringTableCell(row.Index),
+                CloneStringTableCell(row.Value)
+            })
+            .ToArray();
+        return new StringTableAsset
+        {
+            Name = source.Name,
+            ColumnCount = 2,
+            RowCount = rows.Count,
+            Cells = Array.AsReadOnly(cells)
+        };
+    }
+
+    private static StringTableCell CreateStringTableCell(string value) =>
+        new()
+        {
+            String = value,
+            Hash = CalculateStringTableHash(value)
+        };
+
+    private static StringTableCell CloneStringTableCell(StringTableCell source) =>
+        new()
+        {
+            String = source.String,
+            Hash = source.Hash
+        };
+
+    private static int CalculateStringTableHash(string value)
+    {
+        uint hash = 0;
+        foreach (char character in value)
+        {
+            if (character > 0x7f)
+            {
+                throw new InvalidDataException(
+                    $"PS3 configstring value '{value}' contains a non-ASCII character.");
+            }
+
+            byte current = (byte)character;
+            if (current is >= (byte)'A' and <= (byte)'Z')
+                current += (byte)('a' - 'A');
+            hash = unchecked(hash * 31 + current);
+        }
+
+        return unchecked((int)hash);
     }
 
     private static IReadOnlyList<IReadOnlyList<T>> EmptyDynamicLists<T>() =>

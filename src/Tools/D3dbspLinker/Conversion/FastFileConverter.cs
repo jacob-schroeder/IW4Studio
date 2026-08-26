@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.GfxMap;
@@ -183,10 +182,13 @@ internal static class FastFileConverter
                 template,
                 templatePath,
                 mapMaterialKeys);
-        StringTableAsset bootstrapStringTable = CreateBootstrapStringTable(
-            assetName,
-            graph.Checksum,
-            out string signedChecksum);
+        StringTableAsset bootstrapStringTable =
+            D3dbspAssetLinker.CreatePs3DmConfigStringBaseline(
+                assetName,
+                graph.Checksum);
+        string signedChecksum = bootstrapStringTable.Cells[3].String
+            ?? throw new InvalidDataException(
+                "The generated PS3 deathmatch configstring baseline has no mapcrc value.");
 
         LinkAssetPool baseAssets = template.InitialLinkRequest.Assets;
         var existingKeys = baseAssets.Providers
@@ -543,44 +545,6 @@ internal static class FastFileConverter
         return name[0] == ',' ? name : "," + name;
     }
 
-    private static StringTableAsset CreateBootstrapStringTable(
-        string assetName,
-        uint checksum,
-        out string signedChecksum)
-    {
-        string mapName = Path.GetFileNameWithoutExtension(
-            assetName.Replace('\\', '/'));
-        if (mapName.Length == 0)
-        {
-            throw new InvalidDataException(
-                $"Map asset name '{assetName}' has no basename for its PS3 configstring table.");
-        }
-
-        signedChecksum = unchecked((int)checksum).ToString(CultureInfo.InvariantCulture);
-        string tableName =
-            $"mp/configstrings/configstrings_ps3_{mapName}_dm.csv";
-        return new StringTableAsset
-        {
-            Name = tableName,
-            ColumnCount = 2,
-            RowCount = 2,
-            Cells =
-            [
-                CreateStringTableCell("111"),
-                CreateStringTableCell("mapcrc"),
-                CreateStringTableCell("311"),
-                CreateStringTableCell(signedChecksum)
-            ]
-        };
-    }
-
-    private static StringTableCell CreateStringTableCell(string value) =>
-        new()
-        {
-            String = value,
-            Hash = CalculateStringTableHash(value)
-        };
-
     private static IReadOnlyList<XModelAsset> LoadActiveXModels(string path)
     {
         using FastFileWorkspace workspace = FastFileInspector.Open(path);
@@ -596,26 +560,6 @@ internal static class FastFileConverter
             .Select(slot => slot.ActiveProvider.Asset)
             .OfType<XModelAsset>()
             .ToArray());
-
-    private static int CalculateStringTableHash(string value)
-    {
-        uint hash = 0;
-        foreach (char character in value)
-        {
-            if (character > 0x7f)
-            {
-                throw new InvalidDataException(
-                    $"PS3 configstring value '{value}' contains a non-ASCII character.");
-            }
-
-            byte current = (byte)character;
-            if (current is >= (byte)'A' and <= (byte)'Z')
-                current += (byte)('a' - 'A');
-            hash = unchecked(hash * 31 + current);
-        }
-
-        return unchecked((int)hash);
-    }
 
     private static void RequireDifferentPath(
         string source,

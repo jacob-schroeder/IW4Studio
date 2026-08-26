@@ -299,7 +299,8 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
 
 /// <summary>
 /// Row-major StringTable editor. Cell values are mutable for target-owned
-/// definitions, while stored hashes and table dimensions remain preserved.
+/// definitions except generated configstring baselines, while stored hashes
+/// and table dimensions remain preserved.
 /// </summary>
 public sealed class StringTableEditorViewModel
     : ObservableObject,
@@ -334,8 +335,9 @@ public sealed class StringTableEditorViewModel
             case WorkspaceAssetAccess.Editable:
                 _draft = editorSession.OpenDraft<StringTableDraft>();
                 _diagnostics = editorSession.Validation.Issues;
-                _statusMessage =
-                    "Cell edits are staged until Apply. Stored hashes are preserved.";
+                _statusMessage = IsGeneratedConfigStringBaseline
+                    ? "Generated PS3 configstring transport baseline. Edit the owning map, scripts, or assets; ordinary saves preserve this table."
+                    : "Cell edits are staged until Apply. Stored hashes are preserved.";
                 break;
 
             case WorkspaceAssetAccess.ReadOnly:
@@ -344,8 +346,9 @@ public sealed class StringTableEditorViewModel
                     _readOnlySnapshot =
                         StringTableReadOnlySnapshot.CaptureResolvedProvider(
                             editorSession);
-                    _statusMessage =
-                        "Detached read-only copy of the catalog-resolved provider.";
+                    _statusMessage = IsGeneratedConfigStringBaseline
+                        ? "Generated PS3 configstring transport baseline. Edit the owning map, scripts, or assets; ordinary saves preserve this table."
+                        : "Detached read-only copy of the catalog-resolved provider.";
                 }
                 catch (InvalidDataException exception)
                 {
@@ -374,7 +377,11 @@ public sealed class StringTableEditorViewModel
     }
 
     public WorkspaceAssetAccess Mode => _editorSession.Mode;
-    public bool IsEditable => Mode == WorkspaceAssetAccess.Editable;
+    public bool IsGeneratedConfigStringBaseline =>
+        _editorSession.Entry.IsGeneratedConfigStringBaseline;
+    public bool IsEditable =>
+        Mode == WorkspaceAssetAccess.Editable &&
+        !IsGeneratedConfigStringBaseline;
     public bool CanApply =>
         IsEditable && _draft is not null && _pendingOriginalValues.Count != 0;
     public bool HasUnappliedChanges => CanApply;
@@ -392,14 +399,18 @@ public sealed class StringTableEditorViewModel
         _draft?.Cells.Count ?? _readOnlySnapshot?.Cells.Count ?? 0;
     public string DimensionText =>
         $"{RowCount:N0} rows × {ColumnCount:N0} columns · {CellCount:N0} cells";
-    public string ModeText => Mode switch
-    {
-        WorkspaceAssetAccess.Editable => "EDITABLE TARGET DEFINITION",
-        WorkspaceAssetAccess.ReadOnly => "READ-ONLY RESOLVED PROVIDER",
-        WorkspaceAssetAccess.ContentUnavailable => "CONTENT UNAVAILABLE",
-        _ => throw new InvalidDataException(
-            $"Unknown StringTable editor mode '{Mode}'.")
-    };
+    public string ModeText =>
+        IsGeneratedConfigStringBaseline &&
+        Mode != WorkspaceAssetAccess.ContentUnavailable
+        ? "GENERATED - READ ONLY"
+        : Mode switch
+        {
+            WorkspaceAssetAccess.Editable => "EDITABLE TARGET DEFINITION",
+            WorkspaceAssetAccess.ReadOnly => "READ-ONLY RESOLVED PROVIDER",
+            WorkspaceAssetAccess.ContentUnavailable => "CONTENT UNAVAILABLE",
+            _ => throw new InvalidDataException(
+                $"Unknown StringTable editor mode '{Mode}'.")
+        };
 
     public IReadOnlyList<StringTableColumnHeaderViewModel> Columns
     {
@@ -453,9 +464,11 @@ public sealed class StringTableEditorViewModel
     {
         if (!CanApply || _draft is null)
         {
-            StatusMessage = IsEditable
-                ? "There are no staged StringTable changes to apply."
-                : "This StringTable is read-only or its content is unavailable.";
+            StatusMessage = IsGeneratedConfigStringBaseline
+                ? "Generated configstring baselines cannot be edited directly; edit the owning map, scripts, or assets instead."
+                : IsEditable
+                    ? "There are no staged StringTable changes to apply."
+                    : "This StringTable is read-only or its content is unavailable.";
             return;
         }
 
@@ -503,8 +516,9 @@ public sealed class StringTableEditorViewModel
     {
         if (!CanRevert)
         {
-            StatusMessage =
-                "Read-only StringTable content cannot be reverted because it has no target-owned draft.";
+            StatusMessage = IsGeneratedConfigStringBaseline
+                ? "Generated configstring baselines cannot be reverted directly."
+                : "Read-only StringTable content cannot be reverted because it has no target-owned draft.";
             return;
         }
 
@@ -521,8 +535,9 @@ public sealed class StringTableEditorViewModel
     {
         if (!IsEditable || _draft is null)
         {
-            StatusMessage =
-                "This StringTable is read-only or its content is unavailable.";
+            StatusMessage = IsGeneratedConfigStringBaseline
+                ? "Generated configstring baselines cannot be edited directly; edit the owning map, scripts, or assets instead."
+                : "This StringTable is read-only or its content is unavailable.";
             return;
         }
 
@@ -600,8 +615,7 @@ public sealed class StringTableEditorViewModel
                     column.ToString()))
                 .ToArray());
 
-        bool hasConfigStringFooters =
-            OriginalName.Contains("configstrings", StringComparison.OrdinalIgnoreCase);
+        bool hasConfigStringFooters = IsGeneratedConfigStringBaseline;
         IReadOnlyDictionary<int, string?>? configStringValues =
             hasConfigStringFooters
                 ? CreateConfigStringValues(cells)
