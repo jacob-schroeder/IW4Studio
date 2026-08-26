@@ -39,15 +39,15 @@
       </StackPanel>
 
       <StackPanel Grid.Row="4" Spacing="6">
-        <TextBlock Text="PS3 world-draw upload capacity (bytes)"
+        <TextBlock Text="PS3 fragment-program upload capacity per arena (bytes)"
                    FontSize="10"
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource StudioTextBrush}" />
         <TextBox x:Name="CapacityTextBox"
                  MinHeight="34"
-                 PlaceholderText="Decimal or hexadecimal, for example 0x001A0000"
+                 PlaceholderText="Decimal or 0x-prefixed hexadecimal"
                  TextChanged="Input_TextChanged" />
-        <TextBlock Text="This serialized GfxWorld value is not derivable from the D3DBSP. Studio fills it only when the workspace has one unambiguous existing value; a blank workspace needs the value from its intended PS3 template or target profile."
+        <TextBlock Text="The renderer resets one of two alternating arenas each frame and fills it with 64-byte-aligned fragment programs. This serialized GfxWorld value is not derivable from map geometry or the D3DBSP. Studio fills it only when the workspace has one unambiguous existing value; a blank workspace needs the value from its intended PS3 template or target profile."
                    FontSize="9"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />

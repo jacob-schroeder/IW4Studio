@@ -134,7 +134,7 @@ public sealed class FastFileEditingSession : IDisposable
         string inputPath,
         string assetName,
         bool forceFullbright,
-        int worldDrawPayloadCapacity)
+        int fragmentProgramUploadCapacity)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
@@ -145,7 +145,7 @@ public sealed class FastFileEditingSession : IDisposable
                 inputPath,
                 assetName,
                 forceFullbright,
-                worldDrawPayloadCapacity,
+                fragmentProgramUploadCapacity,
                 availableXModels)));
         return ImportD3dbsp(linked);
     }

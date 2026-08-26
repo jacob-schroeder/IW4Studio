@@ -93,11 +93,11 @@ public sealed class GfxWorldAsset : BaseAsset
     public IReadOnlyList<byte> Pad279To27B { get; init; } = [];
     /// <summary>
     /// PS3 GfxWorld +0x27C: usable bytes in each alternating fragment-program
-    /// upload arena. The legacy member name predates recovery of its purpose.
+    /// upload arena. Each serialized arena reserves an additional 0x1000 bytes.
     /// </summary>
-    public int UmbraGateCount { get; init; }
-    public XPointer<byte[]> UmbraGateDataPointer { get; init; }
-    public IReadOnlyList<byte> UmbraGateData { get; init; } = [];
-    public XPointer<byte[]> UmbraGateData2Pointer { get; init; }
-    public IReadOnlyList<byte> UmbraGateData2 { get; init; } = [];
+    public int FragmentProgramUploadCapacity { get; init; }
+    public XPointer<byte[]> FragmentProgramUploadArenaAPointer { get; init; }
+    public IReadOnlyList<byte> FragmentProgramUploadArenaA { get; init; } = [];
+    public XPointer<byte[]> FragmentProgramUploadArenaBPointer { get; init; }
+    public IReadOnlyList<byte> FragmentProgramUploadArenaB { get; init; } = [];
 }

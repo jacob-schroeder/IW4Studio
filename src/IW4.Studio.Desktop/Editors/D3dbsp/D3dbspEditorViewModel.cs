@@ -112,16 +112,16 @@ public sealed class D3dbspEditorViewModel
         try
         {
             D3dbspWorkspaceAssetGroup current = _session.CaptureD3dbspGroup();
-            int worldDrawPayloadCapacity = current.Assets
+            int fragmentProgramUploadCapacity = current.Assets
                 .OfType<GfxWorldAsset>()
                 .Single()
-                .UmbraGateCount;
+                .FragmentProgramUploadCapacity;
             bool forceFullbright = ForceFullbright;
             D3dbspWorkspaceImportResult imported =
                 await _session.ImportD3dbspAsync(
                     path,
                     forceFullbright,
-                    worldDrawPayloadCapacity);
+                    fragmentProgramUploadCapacity);
             string discardedLighting = imported.DiscardedLightByteCount == 0
                 ? string.Empty
                 : $" Discarded {imported.DiscardedLightByteCount:N0} compiled light bytes via the lossy fullbright workaround.";

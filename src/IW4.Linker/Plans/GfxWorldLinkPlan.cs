@@ -106,7 +106,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             definition.HeroOnlyLightCount != 0 ||
             definition.HeroOnlyLights.Count != 0 ||
             definition.FogTypesAllowed != FogTypesAllowed.None ||
-            definition.UmbraGateCount != 0 ||
+            definition.FragmentProgramUploadCapacity != 0 ||
             HasNonzeroValues(definition.Mins) ||
             HasNonzeroValues(definition.Maxs) ||
             definition.Checksum != 0 ||
@@ -341,14 +341,14 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 XFileBlockType.LARGE,
                 WriteHeroOnlyLight,
                 "GfxWorld.HeroOnlyLights");
-            LinkStorageSymbol umbraGateData = LinkStorageSymbol.SourceFree(
+            LinkStorageSymbol fragmentProgramUploadArenaA = LinkStorageSymbol.SourceFree(
                 XFileBlockType.VIRTUAL,
-                checked(value.UmbraGateCount + 0x1000),
+                checked(value.FragmentProgramUploadCapacity + 0x1000),
                 0x1000,
                 LinkMaterializationKind.VirtualReservation);
-            LinkStorageSymbol umbraGateData2 = LinkStorageSymbol.SourceFree(
+            LinkStorageSymbol fragmentProgramUploadArenaB = LinkStorageSymbol.SourceFree(
                 XFileBlockType.VIRTUAL,
-                checked(value.UmbraGateCount + 0x1000),
+                checked(value.FragmentProgramUploadCapacity + 0x1000),
                 0x1000,
                 LinkMaterializationKind.VirtualReservation);
 
@@ -392,7 +392,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             writer.WriteBytes(value.Pad279To27B.Count == 0
                 ? new byte[3]
                 : value.Pad279To27B.ToArray());
-            writer.WriteInt32(value.UmbraGateCount);
+            writer.WriteInt32(value.FragmentProgramUploadCapacity);
             writer.Skip(2 * sizeof(int));
 
             LinkStorageSymbol root = LinkStorageSymbol.CreateSourceBytes(
@@ -430,8 +430,8 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 dpvs,
                 dpvsDyn,
                 heroOnlyLights,
-                umbraGateData,
-                umbraGateData2));
+                fragmentProgramUploadArenaA,
+                fragmentProgramUploadArenaB));
             return root;
         }
 
@@ -466,8 +466,8 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             DpvsStaticTargets dpvs,
             DpvsDynamicTargets dpvsDyn,
             LinkStorageTarget? heroOnlyLights,
-            LinkStorageSymbol umbraGateData,
-            LinkStorageSymbol umbraGateData2)
+            LinkStorageSymbol fragmentProgramUploadArenaA,
+            LinkStorageSymbol fragmentProgramUploadArenaB)
         {
             yield return XString(root, 0x00, name, "Asset.Name");
             if (baseName is not null)
@@ -528,8 +528,8 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 yield return operation;
             if (heroOnlyLights is { } lightsValue)
                 yield return Direct(root, 0x274, lightsValue, "GfxWorld.HeroOnlyLights");
-            yield return Presence(root, 0x280, umbraGateData, "GfxWorld.UmbraGateData");
-            yield return Presence(root, 0x284, umbraGateData2, "GfxWorld.UmbraGateData2");
+            yield return Presence(root, 0x280, fragmentProgramUploadArenaA, "GfxWorld.FragmentProgramUploadArenaA");
+            yield return Presence(root, 0x284, fragmentProgramUploadArenaB, "GfxWorld.FragmentProgramUploadArenaB");
         }
 
         private WorldDrawTargets FreezeWorldDraw(GfxWorldDraw value)
@@ -1571,8 +1571,8 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                 throw new InvalidDataException("GfxWorld.Pad279To27B must be absent or exactly three bytes.");
             if (value.PrimaryLightCount < 0 || value.SunPrimaryLightIndex < 0 || value.SunPrimaryLightIndex > value.PrimaryLightCount)
                 throw new InvalidDataException("GfxWorld primary-light counts are invalid.");
-            if (value.UmbraGateCount < 0)
-                throw new InvalidDataException("GfxWorld.UmbraGateCount cannot be negative.");
+            if (value.FragmentProgramUploadCapacity < 0)
+                throw new InvalidDataException("GfxWorld.FragmentProgramUploadCapacity cannot be negative.");
 
             for (int index = 0; index < value.CellTrees.Count; index++)
             {

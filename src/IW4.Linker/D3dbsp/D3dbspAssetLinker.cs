@@ -21,7 +21,7 @@ public sealed record D3dbspLinkRequest(
     string InputPath,
     string AssetName,
     bool ForceFullbright,
-    int WorldDrawPayloadCapacity,
+    int FragmentProgramUploadCapacity,
     IReadOnlyList<XModelAsset> AvailableXModels);
 
 public sealed class D3dbspLinkResult
@@ -59,13 +59,13 @@ public static class D3dbspAssetLinker
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ValidateAssetName(assetName);
         ArgumentNullException.ThrowIfNull(request.AvailableXModels);
-        if (request.WorldDrawPayloadCapacity <= 0 ||
-            request.WorldDrawPayloadCapacity > int.MaxValue - 0x1000)
+        if (request.FragmentProgramUploadCapacity <= 0 ||
+            request.FragmentProgramUploadCapacity > int.MaxValue - 0x1000)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(request.WorldDrawPayloadCapacity),
-                request.WorldDrawPayloadCapacity,
-                "World-draw payload capacity must be positive and leave room for the 0x1000-byte page guard.");
+                nameof(request.FragmentProgramUploadCapacity),
+                request.FragmentProgramUploadCapacity,
+                "Fragment-program upload capacity must be positive and leave room for the additional 0x1000-byte arena reservation.");
         }
 
         string path = Path.GetFullPath(inputPath);
@@ -271,7 +271,7 @@ public static class D3dbspAssetLinker
             renderMaterials,
             comWorld.PrimaryLightCount,
             sunPrimaryLightIndex,
-            request.WorldDrawPayloadCapacity,
+            request.FragmentProgramUploadCapacity,
             checksum,
             lightGrid,
             lightRegions,

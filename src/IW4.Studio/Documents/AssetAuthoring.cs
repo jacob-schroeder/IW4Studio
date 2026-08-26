@@ -360,7 +360,7 @@ public sealed class AssetEditorSession : AssetEditorSurface
     public Task<D3dbspWorkspaceImportResult> ImportD3dbspAsync(
         string inputPath,
         bool forceFullbright,
-        int worldDrawPayloadCapacity)
+        int fragmentProgramUploadCapacity)
     {
         ThrowIfClosed();
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
@@ -368,7 +368,7 @@ public sealed class AssetEditorSession : AssetEditorSurface
             inputPath,
             RequireD3dbspGroupName(),
             forceFullbright,
-            worldDrawPayloadCapacity);
+            fragmentProgramUploadCapacity);
     }
 
     /// <summary>Reconstructs one compiled file from this D3DBSP group.</summary>

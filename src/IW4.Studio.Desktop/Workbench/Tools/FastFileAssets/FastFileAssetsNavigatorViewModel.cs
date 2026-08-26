@@ -163,7 +163,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         SelectedRow = addedRow;
     }
 
-    public int? SuggestedD3dbspWorldDrawPayloadCapacity
+    public int? SuggestedD3dbspFragmentProgramUploadCapacity
     {
         get
         {
@@ -172,7 +172,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
                 .Definitions
                 .Select(definition => definition.Definition)
                 .OfType<GfxWorldAsset>()
-                .Select(world => world.UmbraGateCount)
+                .Select(world => world.FragmentProgramUploadCapacity)
                 .Where(capacity => capacity > 0)
                 .Distinct()
                 .Take(2)
@@ -185,7 +185,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         string inputPath,
         string assetName,
         bool forceFullbright,
-        int worldDrawPayloadCapacity)
+        int fragmentProgramUploadCapacity)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
@@ -197,7 +197,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
                 inputPath,
                 assetName,
                 forceFullbright,
-                worldDrawPayloadCapacity);
+                fragmentProgramUploadCapacity);
         TargetZoneRowIdentity anchorIdentity = imported.TargetRows
             .FirstOrDefault(entry => entry.AssetType == XAssetType.GfxMap)
             ?.TargetRowIdentity ??

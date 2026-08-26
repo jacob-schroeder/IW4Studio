@@ -103,7 +103,7 @@ public sealed partial class FastFileAssetsNavigatorView : UserControl
             var dialog = new ImportD3dbspDialogWindow(
                 inputPath,
                 suggestedAssetName,
-                viewModel.SuggestedD3dbspWorldDrawPayloadCapacity,
+                viewModel.SuggestedD3dbspFragmentProgramUploadCapacity,
                 viewModel.ImportD3dbspAsync);
             _ = await dialog.ShowDialog<bool>(owner);
         }

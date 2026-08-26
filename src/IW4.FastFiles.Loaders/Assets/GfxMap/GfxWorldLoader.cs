@@ -113,8 +113,8 @@ public sealed class GfxWorldLoader
         GfxWorldDpvsStatic dpvs;
         GfxWorldDpvsDynamic dpvsDyn;
         IReadOnlyList<GfxHeroOnlyLight> heroOnlyLights;
-        IReadOnlyList<byte> umbraGateData;
-        IReadOnlyList<byte> umbraGateData2;
+        IReadOnlyList<byte> fragmentProgramUploadArenaA;
+        IReadOnlyList<byte> fragmentProgramUploadArenaB;
 
         context.Blocks.Push(XFileBlockType.LARGE);
         try
@@ -167,8 +167,8 @@ public sealed class GfxWorldLoader
             dpvs = ReadDpvsStaticPayloads(cursor, root.Dpvs, root.SurfaceCount, context);
             dpvsDyn = ReadDpvsDynamicPayloads(cursor, root.DpvsDyn, cellCount, context);
             heroOnlyLights = ReadHeroOnlyLights(cursor, root.HeroOnlyLightsPointer.Untyped, Count(root.HeroOnlyLightCount, "heroOnlyLightCount"), context);
-            umbraGateData = ReadPushed(context, XFileBlockType.VIRTUAL, () => ReadByteArray(cursor, root.UmbraGateDataPointer.Untyped, checked(root.UmbraGateCount + 0x1000), 4096, context, "GfxWorld.umbraGateData"));
-            umbraGateData2 = ReadPushed(context, XFileBlockType.VIRTUAL, () => ReadByteArray(cursor, root.UmbraGateData2Pointer.Untyped, checked(root.UmbraGateCount + 0x1000), 4096, context, "GfxWorld.umbraGateData2"));
+            fragmentProgramUploadArenaA = ReadPushed(context, XFileBlockType.VIRTUAL, () => ReadByteArray(cursor, root.FragmentProgramUploadArenaAPointer.Untyped, checked(root.FragmentProgramUploadCapacity + 0x1000), 4096, context, "GfxWorld.fragmentProgramUploadArenaA"));
+            fragmentProgramUploadArenaB = ReadPushed(context, XFileBlockType.VIRTUAL, () => ReadByteArray(cursor, root.FragmentProgramUploadArenaBPointer.Untyped, checked(root.FragmentProgramUploadCapacity + 0x1000), 4096, context, "GfxWorld.fragmentProgramUploadArenaB"));
         }
         finally
         {
@@ -246,11 +246,11 @@ public sealed class GfxWorldLoader
             HeroOnlyLights = heroOnlyLights,
             FogTypesAllowed = root.FogTypesAllowed,
             Pad279To27B = root.Pad279To27B,
-            UmbraGateCount = root.UmbraGateCount,
-            UmbraGateDataPointer = root.UmbraGateDataPointer,
-            UmbraGateData = umbraGateData,
-            UmbraGateData2Pointer = root.UmbraGateData2Pointer,
-            UmbraGateData2 = umbraGateData2
+            FragmentProgramUploadCapacity = root.FragmentProgramUploadCapacity,
+            FragmentProgramUploadArenaAPointer = root.FragmentProgramUploadArenaAPointer,
+            FragmentProgramUploadArenaA = fragmentProgramUploadArenaA,
+            FragmentProgramUploadArenaBPointer = root.FragmentProgramUploadArenaBPointer,
+            FragmentProgramUploadArenaB = fragmentProgramUploadArenaB
         };
     }
 
@@ -308,9 +308,9 @@ public sealed class GfxWorldLoader
             HeroOnlyLightsPointer = context.PointerReader.ReadPointer<GfxHeroOnlyLight[]>(cursor, XPointerResolutionMode.Direct),
             FogTypesAllowed = (FogTypesAllowed)cursor.ReadByte(),
             Pad279To27B = cursor.ReadBytes(3),
-            UmbraGateCount = cursor.ReadInt32(),
-            UmbraGateDataPointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct),
-            UmbraGateData2Pointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct)
+            FragmentProgramUploadCapacity = cursor.ReadInt32(),
+            FragmentProgramUploadArenaAPointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct),
+            FragmentProgramUploadArenaBPointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct)
         };
 
         EnsureConsumed(cursor, GfxWorldAsset.SerializedSize, "GfxWorld");

@@ -160,7 +160,7 @@ internal static class FastFileConverter
                 inputPath,
                 assetName,
                 forceFullbright,
-                templateWorld.UmbraGateCount,
+                templateWorld.FragmentProgramUploadCapacity,
                 availableXModels));
         BaseAsset[] fastFileMapRoots =
         [

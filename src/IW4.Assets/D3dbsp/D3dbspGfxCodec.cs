@@ -30,7 +30,7 @@ internal static class D3dbspGfxCodec
         IReadOnlyList<MaterialAsset> materials,
         int primaryLightCount,
         int sunPrimaryLightIndex,
-        int ps3WorldDrawPayloadCapacity,
+        int ps3FragmentProgramUploadCapacity,
         uint checksum,
         GfxLightGrid lightGrid,
         IReadOnlyList<GfxLightRegion> lightRegions,
@@ -60,10 +60,10 @@ internal static class D3dbspGfxCodec
             throw new InvalidDataException(
                 $"The light-region table has {lightRegions.Count} rows; expected {primaryLightCount}.");
         }
-        if (ps3WorldDrawPayloadCapacity <= 0)
+        if (ps3FragmentProgramUploadCapacity <= 0)
         {
             throw new InvalidDataException(
-                "The PS3 template GfxWorld has no world-draw payload capacity.");
+                "The PS3 template GfxWorld has no fragment-program upload capacity.");
         }
         if (reflectionProbeImages.Count == 0 ||
             reflectionProbeImages.Count != reflectionProbeOrigins.Count ||
@@ -482,7 +482,7 @@ internal static class D3dbspGfxCodec
             Pad279To27B = [0, 0, 0],
             // PS3 extends GfxWorld with two alternating fragment-program upload arenas.
             // Native rejects draw-route publication when this byte capacity is zero.
-            UmbraGateCount = ps3WorldDrawPayloadCapacity
+            FragmentProgramUploadCapacity = ps3FragmentProgramUploadCapacity
         };
     }
 

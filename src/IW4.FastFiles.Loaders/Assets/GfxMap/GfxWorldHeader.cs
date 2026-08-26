@@ -52,7 +52,7 @@ internal sealed class GfxWorldHeader
     public XPointer<GfxHeroOnlyLight[]> HeroOnlyLightsPointer { get; init; }
     public FogTypesAllowed FogTypesAllowed { get; init; }
     public IReadOnlyList<byte> Pad279To27B { get; init; } = [];
-    public int UmbraGateCount { get; init; }
-    public XPointer<byte[]> UmbraGateDataPointer { get; init; }
-    public XPointer<byte[]> UmbraGateData2Pointer { get; init; }
+    public int FragmentProgramUploadCapacity { get; init; }
+    public XPointer<byte[]> FragmentProgramUploadArenaAPointer { get; init; }
+    public XPointer<byte[]> FragmentProgramUploadArenaBPointer { get; init; }
 }
