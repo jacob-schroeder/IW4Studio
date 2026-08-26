@@ -92,6 +92,7 @@
               <ListBox Grid.Row="2"
                        ItemsSource="{Binding Registrations}"
                        SelectedItem="{Binding SelectedRegistration, Mode=TwoWay}"
+                       AutoScrollToSelectedItem="True"
                        Background="Transparent"
                        BorderThickness="0"
                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"

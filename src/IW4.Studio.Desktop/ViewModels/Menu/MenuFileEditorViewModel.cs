@@ -44,6 +44,7 @@ public sealed class MenuFileEditorViewModel
     private string _statusMessage = string.Empty;
     private bool _canRevertWithoutSplittingAuthority;
     private bool _pendingCoordinatorRefresh;
+    private bool _isReplacingRegistrations;
     private int _coordinatorMutationDepth;
     private bool _disposed;
 
@@ -127,7 +128,8 @@ public sealed class MenuFileEditorViewModel
         get => _selectedRegistration;
         set
         {
-            if (ReferenceEquals(value, _selectedRegistration) ||
+            if (_isReplacingRegistrations ||
+                ReferenceEquals(value, _selectedRegistration) ||
                 Designer.HasStagedInput)
             {
                 if (Designer.HasStagedInput)
@@ -459,10 +461,20 @@ public sealed class MenuFileEditorViewModel
 
     private void RebuildRegistrations(MenuRegistrationId? selectedId)
     {
-        Registrations = Array.AsReadOnly(
-            (_snapshot?.Registrations ?? [])
-            .Select(value => new MenuFileRegistrationViewModel(value))
-            .ToArray());
+        IReadOnlyList<MenuFileRegistrationViewModel> registrations =
+            Array.AsReadOnly(
+                (_snapshot?.Registrations ?? [])
+                .Select(value => new MenuFileRegistrationViewModel(value))
+                .ToArray());
+        _isReplacingRegistrations = true;
+        try
+        {
+            Registrations = registrations;
+        }
+        finally
+        {
+            _isReplacingRegistrations = false;
+        }
         SelectedRegistration = selectedId is { } id
             ? Registrations.FirstOrDefault(value => value.Id == id)
                 ?? Registrations.FirstOrDefault()
@@ -486,6 +498,9 @@ public sealed class MenuFileEditorViewModel
             : null;
         int? selectedItemIndex = preserveSelection
             ? Designer.SelectedNode?.ItemIndex
+            : null;
+        IReadOnlySet<string>? expandedNodeKeys = preserveSelection
+            ? Designer.CaptureExpandedNodeKeys()
             : null;
         Designer.PropertyChanged -= Designer_PropertyChanged;
         Designer.PropertiesRevealRequested -= Designer_PropertiesRevealRequested;
@@ -511,7 +526,7 @@ public sealed class MenuFileEditorViewModel
             menu = registration?.Snapshot.Menu;
         }
 
-        Designer = new MenuDesignerViewModel(
+        var designer = new MenuDesignerViewModel(
             menu,
             apply,
             _canSelectAssetReferences && apply is not null
@@ -525,10 +540,13 @@ public sealed class MenuFileEditorViewModel
             _isAssetReferenceResolved,
             RequestItemBehaviorEdit,
             RequestMenuBehaviorEdit);
-        Designer.RestoreSelection(
+        if (expandedNodeKeys is not null)
+            designer.RestoreExpandedNodeKeys(expandedNodeKeys);
+        designer.RestoreSelection(
             selectedNodeId,
             selectedKind,
             selectedItemIndex);
+        Designer = designer;
         Designer.PropertyChanged += Designer_PropertyChanged;
         Designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
         RefreshValidation();

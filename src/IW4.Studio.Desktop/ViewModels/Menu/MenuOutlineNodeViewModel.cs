@@ -22,7 +22,8 @@ public sealed class MenuOutlineNodeViewModel
         MenuOutlineNodeKind kind,
         MenuNodeId? nodeId = null,
         int? itemIndex = null,
-        IEnumerable<MenuOutlineNodeViewModel>? children = null)
+        IEnumerable<MenuOutlineNodeViewModel>? children = null,
+        bool isExpanded = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -33,6 +34,7 @@ public sealed class MenuOutlineNodeViewModel
         NodeId = nodeId;
         ItemIndex = itemIndex;
         Children = Array.AsReadOnly(children?.ToArray() ?? []);
+        IsExpanded = isExpanded;
     }
 
     public string Key { get; }
@@ -48,4 +50,6 @@ public sealed class MenuOutlineNodeViewModel
     public int? ItemIndex { get; }
 
     public IReadOnlyList<MenuOutlineNodeViewModel> Children { get; }
+
+    public bool IsExpanded { get; set; }
 }

@@ -364,12 +364,13 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     public void ReplaceDocument(MenuEditorSnapshot? snapshot)
     {
         SetDirectManipulationError(null);
+        IReadOnlySet<string> expandedNodeKeys = CaptureExpandedNodeKeys();
         MenuOutlineNodeKind? selectedKind = _selectedNode?.Kind;
         int? selectedItemIndex = _selectedNode?.ItemIndex;
         _snapshot = snapshot;
         PreviewDebug.ReplaceDocument(snapshot);
         string? selectedKey = _selectedNode?.Key;
-        OutlineRoots = BuildOutline(snapshot);
+        OutlineRoots = BuildOutline(snapshot, expandedNodeKeys);
         _selectedNode = FindNode(selectedKey) ??
             Flatten(OutlineRoots).FirstOrDefault(node =>
                 node.Kind == selectedKind &&
@@ -450,6 +451,22 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                  candidate.ItemIndex == itemIndex));
         if (node is not null)
             SelectedNode = node;
+    }
+
+    internal IReadOnlySet<string> CaptureExpandedNodeKeys() =>
+        Flatten(OutlineRoots)
+            .Where(node => node.IsExpanded)
+            .Select(node => node.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+    internal void RestoreExpandedNodeKeys(
+        IEnumerable<string> expandedNodeKeys)
+    {
+        ArgumentNullException.ThrowIfNull(expandedNodeKeys);
+        HashSet<string> keys = expandedNodeKeys.ToHashSet(
+            StringComparer.Ordinal);
+        foreach (MenuOutlineNodeViewModel node in Flatten(OutlineRoots))
+            node.IsExpanded = keys.Contains(node.Key);
     }
 
     /// <summary>
@@ -719,12 +736,13 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     /// </summary>
     private void RefreshValueDocument(MenuEditorSnapshot snapshot)
     {
+        IReadOnlySet<string> expandedNodeKeys = CaptureExpandedNodeKeys();
         MenuNodeId? selectedNodeId = _selectedNode?.NodeId;
         MenuOutlineNodeKind? selectedKind = _selectedNode?.Kind;
         int? selectedItemIndex = _selectedNode?.ItemIndex;
         _snapshot = snapshot;
         PreviewDebug.ReplaceDocument(snapshot);
-        OutlineRoots = BuildOutline(snapshot);
+        OutlineRoots = BuildOutline(snapshot, expandedNodeKeys);
         _selectedNode = Flatten(OutlineRoots).FirstOrDefault(candidate =>
                 selectedNodeId is not null &&
                 candidate.NodeId == selectedNodeId) ??
@@ -954,7 +972,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     }
 
     private static IReadOnlyList<MenuOutlineNodeViewModel> BuildOutline(
-        MenuEditorSnapshot? snapshot)
+        MenuEditorSnapshot? snapshot,
+        IReadOnlySet<string>? expandedNodeKeys = null)
     {
         if (snapshot is not { IsComplete: true })
             return [];
@@ -973,8 +992,10 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             })
             .ToArray();
 
+        const string itemsKey = "items";
+        string rootKey = $"menu:{snapshot.Id}";
         var root = new MenuOutlineNodeViewModel(
-            $"menu:{snapshot.Id}",
+            rootKey,
             MenuPresentationText.MenuTitle(snapshot.Name),
             MenuOutlineNodeKind.Menu,
             snapshot.Id,
@@ -986,11 +1007,13 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                     MenuOutlineNodeKind.Window,
                     snapshot.Window.Id),
                 new MenuOutlineNodeViewModel(
-                    "items",
+                    itemsKey,
                     $"Items ({items.Length:N0})",
                     MenuOutlineNodeKind.Items,
-                    children: items)
-            ]);
+                    children: items,
+                    isExpanded: expandedNodeKeys?.Contains(itemsKey) == true)
+            ],
+            isExpanded: expandedNodeKeys?.Contains(rootKey) == true);
         return Array.AsReadOnly([root]);
     }
 
