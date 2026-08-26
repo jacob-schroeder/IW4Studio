@@ -143,23 +143,37 @@ internal static class MenuFileDocumentCompiler
         List<MenuFileRegistrationIdentity> identities,
         DuplicateMenuFileRegistrationEdit edit)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(edit.NewMenuName);
         int sourceIndex = RegistrationIndex(identities, edit.RegistrationId);
+        if (!identities[sourceIndex].MaterializesDefinition)
+        {
+            throw new InvalidOperationException(
+                "A reference-only MenuFile registration cannot be duplicated as a new Menu.");
+        }
+
         int destinationIndex = InsertIndex(
             edit.InsertIndex ?? sourceIndex + 1,
             registrations.Count);
         MenuDefReference source = registrations[sourceIndex];
-        MenuDefAsset? clone = source.CanonicalMenu is null
-            ? null
-            : new MenuGraphClone(false).CloneMenu(source.CanonicalMenu);
+        if (!source.Pointer.ConsumesSource)
+        {
+            throw new InvalidDataException(
+                "The selected MenuFile registration is not an inline Menu definition.");
+        }
+        MenuDefAsset sourceMenu = source.CanonicalMenu ?? throw new InvalidOperationException(
+            "The selected MenuFile registration has no inline Menu definition.");
+        MenuDefAsset clone = new MenuGraphClone(false).CloneMenuWithAuthoredIdentity(
+            sourceMenu,
+            edit.NewMenuName);
         registrations.Insert(destinationIndex, new MenuDefReference(
-            destinationIndex, source.Pointer, clone));
+            destinationIndex,
+            new XPointer<MenuDefAsset>(-1, XPointerResolutionMode.AliasCell),
+            clone));
         identities.Insert(destinationIndex, new MenuFileRegistrationIdentity(
             MenuRegistrationId.New(),
-            identities[sourceIndex].MaterializesDefinition && clone is not null
-                ? MenuDocumentIdentity.Create(clone)
-                : null,
-            identities[sourceIndex].Name,
-            identities[sourceIndex].MaterializesDefinition));
+            MenuDocumentIdentity.Create(clone),
+            edit.NewMenuName,
+            MaterializesDefinition: true));
     }
 
     private static void EditInline(

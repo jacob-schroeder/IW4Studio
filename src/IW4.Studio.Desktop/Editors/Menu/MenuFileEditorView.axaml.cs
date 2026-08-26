@@ -118,4 +118,28 @@ public sealed partial class MenuFileEditorView : UserControl
 
         viewModel.RetargetSelectedRegistration(name);
     }
+
+    private async void DuplicateRegistration_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (DataContext is not MenuFileEditorViewModel
+            {
+                SelectedRegistration:
+                {
+                    IsEditableDefinition: true
+                } selected
+            } viewModel ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+
+        string? name = await MenuDuplicateDefinitionDialog.ShowAsync(
+            owner,
+            selected.Name,
+            viewModel.ValidateNewMenuName);
+        if (!string.IsNullOrWhiteSpace(name))
+            viewModel.DuplicateSelectedRegistration(name);
+    }
 }

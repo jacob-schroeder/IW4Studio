@@ -46,12 +46,25 @@ internal sealed class MenuGraphClone
     }
 
     public MenuDefAsset CloneMenu(MenuDefAsset value)
+        => CloneMenu(value, authoredIdentityName: null);
+
+    public MenuDefAsset CloneMenuWithAuthoredIdentity(
+        MenuDefAsset value,
+        string authoredIdentityName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(authoredIdentityName);
+        return CloneMenu(value, authoredIdentityName);
+    }
+
+    private MenuDefAsset CloneMenu(
+        MenuDefAsset value,
+        string? authoredIdentityName)
     {
         ProvenanceToken provenance = CloneProvenanceOf(value);
         if (_menuDefinitions.TryGetValue(provenance, out MenuDefAsset? existing)) return existing;
         var clone = new MenuDefAsset
         {
-            Window = CloneWindow(value.Window), FontPointer = Ptr(value.FontPointer), Font = value.Font,
+            Window = CloneWindow(value.Window, authoredIdentityName), FontPointer = Ptr(value.FontPointer), Font = value.Font,
             Fullscreen = value.Fullscreen, ItemCount = value.ItemCount, FontIndex = value.FontIndex,
             CursorItems = value.CursorItems.ToArray(), FadeCycle = value.FadeCycle, FadeClamp = value.FadeClamp,
             FadeAmount = value.FadeAmount, FadeInAmount = value.FadeInAmount, BlurRadius = value.BlurRadius,
@@ -283,9 +296,14 @@ internal sealed class MenuGraphClone
         return clone;
     }
 
-    private static WindowDef CloneWindow(WindowDef value) => new()
+    private static WindowDef CloneWindow(
+        WindowDef value,
+        string? authoredIdentityName = null) => new()
     {
-        NamePointer = Ptr(value.NamePointer), Name = value.Name, Rect = Rect(value.Rect), RectClient = Rect(value.RectClient), GroupPointer = Ptr(value.GroupPointer), Group = value.Group,
+        NamePointer = authoredIdentityName is null
+            ? Ptr(value.NamePointer)
+            : new XPointer<string>(-1),
+        Name = authoredIdentityName ?? value.Name, Rect = Rect(value.Rect), RectClient = Rect(value.RectClient), GroupPointer = Ptr(value.GroupPointer), Group = value.Group,
         Style = value.Style, Border = value.Border, OwnerDraw = value.OwnerDraw, OwnerDrawFlags = value.OwnerDrawFlags, BorderSize = value.BorderSize,
         StaticFlags = value.StaticFlags, DynamicFlags = value.DynamicFlags.ToArray(), NextTime = 0, ForeColor = Vec(value.ForeColor),
         BackColor = Vec(value.BackColor), BorderColor = Vec(value.BorderColor), OutlineColor = Vec(value.OutlineColor), DisableColor = Vec(value.DisableColor),

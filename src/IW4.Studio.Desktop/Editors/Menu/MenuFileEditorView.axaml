@@ -96,6 +96,13 @@
                        BorderThickness="0"
                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                        ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.ContextMenu>
+                  <ContextMenu Placement="Pointer">
+                    <MenuItem Header="Add existing Menu registration…"
+                              IsEnabled="{Binding CanAddRegistration}"
+                              Click="AddExistingMenu_Click" />
+                  </ContextMenu>
+                </ListBox.ContextMenu>
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="menuVm:MenuFileRegistrationViewModel">
                     <Grid ColumnDefinitions="*,Auto"
@@ -147,8 +154,9 @@
                   <TextBlock Text="Retarget" FontSize="9" />
                 </Button>
                 <Button Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
-                        Command="{Binding DuplicateRegistrationCommand}"
-                        ToolTip.Tip="Duplicate selected registration">
+                        IsEnabled="{Binding CanDuplicateRegistration}"
+                        Click="DuplicateRegistration_Click"
+                        ToolTip.Tip="Duplicate the inline definition as a new Menu asset">
                   <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14" />
                 </Button>
                 <Button Grid.Row="2" Classes="ghost" MinHeight="29" Padding="5"

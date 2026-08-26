@@ -1,4 +1,5 @@
 using IW4.Assets.Assets.Menu;
+using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Studio.Documents.MenuEditing.Behavior;
 using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
@@ -7,6 +8,12 @@ namespace IW4.Studio.Documents.MenuEditing;
 
 public sealed partial class MenuEditingCoordinator
 {
+    public string? ValidateNewMenuName(string? menuName)
+    {
+        ThrowIfDisposed();
+        return _session.ValidateNewAssetName(XAssetType.Menu, menuName);
+    }
+
     public MenuAuthorityEditResult ApplyTopLevelMenuEdit(
         TargetZoneRowIdentity rowIdentity,
         MenuAuthorityResolutionSnapshot expectedResolution,
@@ -67,6 +74,12 @@ public sealed partial class MenuEditingCoordinator
         {
             throw new InvalidOperationException(
                 "Nested Menu edits must use ApplyMenuFileRegistrationEdit.");
+        }
+        if (edit is DuplicateMenuFileRegistrationEdit duplicate)
+        {
+            string? nameError = ValidateNewMenuName(duplicate.NewMenuName);
+            if (nameError is not null)
+                throw new ArgumentException(nameError, nameof(edit));
         }
 
         MenuFileRow row = RequireMenuFile(rowIdentity);

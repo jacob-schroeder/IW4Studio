@@ -78,6 +78,7 @@ public sealed record MoveMenuFileRegistrationEdit(
 
 public sealed record DuplicateMenuFileRegistrationEdit(
     MenuRegistrationId RegistrationId,
+    string NewMenuName,
     int? InsertIndex = null) : MenuFileEdit;
 
 public sealed record EditMenuFileRegistrationMenuEdit(

@@ -88,9 +88,6 @@ public sealed class MenuFileEditorViewModel
             _coordinator.Changed += Coordinator_Changed;
 
         RevertCommand = new ViewModelCommand(RevertDraft, CanRevert);
-        DuplicateRegistrationCommand = new ViewModelCommand(
-            DuplicateSelectedRegistration,
-            CanEditSelectedRegistration);
         RemoveRegistrationCommand = new ViewModelCommand(
             RemoveSelectedRegistration,
             CanEditSelectedRegistration);
@@ -108,6 +105,9 @@ public sealed class MenuFileEditorViewModel
     public bool CanAddRegistration => IsEditable && !Designer.HasStagedInput;
     public bool CanRetargetRegistration =>
         CanAddRegistration && SelectedRegistration is not null;
+    public bool CanDuplicateRegistration =>
+        CanAddRegistration &&
+        SelectedRegistration is { IsEditableDefinition: true };
 
     public string Name =>
         _snapshot?.Name
@@ -143,6 +143,7 @@ public sealed class MenuFileEditorViewModel
                 preserveSelection: previous?.Id == value?.Id);
             OnPropertyChanged(nameof(HasSelectedRegistration));
             OnPropertyChanged(nameof(CanRetargetRegistration));
+            OnPropertyChanged(nameof(CanDuplicateRegistration));
             OnPropertyChanged(nameof(EditorProperties));
             NotifyCommandsChanged();
         }
@@ -163,7 +164,6 @@ public sealed class MenuFileEditorViewModel
     }
 
     public ViewModelCommand RevertCommand { get; }
-    public ViewModelCommand DuplicateRegistrationCommand { get; }
     public ViewModelCommand RemoveRegistrationCommand { get; }
     public ViewModelCommand MoveRegistrationUpCommand { get; }
     public ViewModelCommand MoveRegistrationDownCommand { get; }
@@ -263,6 +263,31 @@ public sealed class MenuFileEditorViewModel
             } && !SameLogicalName(currentName, menuName);
     }
 
+    public string? ValidateNewMenuName(string menuName) =>
+        _coordinator.ValidateNewMenuName(menuName);
+
+    public void DuplicateSelectedRegistration(string menuName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(menuName);
+        if (SelectedRegistration is not
+            {
+                IsEditableDefinition: true
+            } selected)
+        {
+            throw new InvalidOperationException(
+                "Select an inline Menu definition to duplicate.");
+        }
+
+        ApplyStructuralEdit(
+            new DuplicateMenuFileRegistrationEdit(
+                selected.Id,
+                menuName,
+                selected.Index + 1),
+            selectNewRegistration: true);
+        StatusMessage =
+            $"Duplicated Menu '{selected.Name}' as '{menuName}'.";
+    }
+
     public void RevertDraft()
     {
         if (!CanRevert() || _rowIdentity is not { } rowIdentity)
@@ -359,29 +384,34 @@ public sealed class MenuFileEditorViewModel
                 "The selected Menu authority returned no snapshot.");
     }
 
-    private void ApplyStructuralEdit(MenuFileEdit edit)
+    private void ApplyStructuralEdit(
+        MenuFileEdit edit,
+        bool selectNewRegistration = false)
     {
         if (!IsEditable || _rowIdentity is not { } rowIdentity)
             throw new InvalidOperationException("This MenuFile is read-only.");
+        HashSet<MenuRegistrationId>? previousIds = selectNewRegistration
+            ? (_snapshot?.Registrations ?? [])
+                .Select(value => value.Id)
+                .ToHashSet()
+            : null;
         MenuRegistrationId? selectedId = SelectedRegistration?.Id;
         MenuFileEditResult result = RunCoordinator(() =>
             _coordinator.ApplyMenuFileEdit(rowIdentity, edit));
         _snapshot = result.MenuFile;
+        if (previousIds is not null)
+        {
+            selectedId = _snapshot.Registrations
+                .Where(value => !previousIds.Contains(value.Id))
+                .Select(value => (MenuRegistrationId?)value.Id)
+                .FirstOrDefault() ?? selectedId;
+        }
         RefreshValidation();
         RebuildRegistrations(selectedId);
         StatusMessage = result.Changed
             ? "Applied the MenuFile registration change."
             : "The MenuFile already contained that registration state.";
         NotifyEditorStateChanged();
-    }
-
-    private void DuplicateSelectedRegistration()
-    {
-        if (SelectedRegistration is not { } selected)
-            return;
-        ApplyStructuralEdit(new DuplicateMenuFileRegistrationEdit(
-            selected.Id,
-            selected.Index + 1));
     }
 
     private void RemoveSelectedRegistration()
@@ -440,6 +470,7 @@ public sealed class MenuFileEditorViewModel
         OnPropertyChanged(nameof(MenuCount));
         OnPropertyChanged(nameof(CanAddRegistration));
         OnPropertyChanged(nameof(CanRetargetRegistration));
+        OnPropertyChanged(nameof(CanDuplicateRegistration));
         OnPropertyChanged(nameof(EditorProperties));
     }
 
@@ -592,6 +623,7 @@ public sealed class MenuFileEditorViewModel
             OnPropertyChanged(nameof(HasUnappliedChanges));
             OnPropertyChanged(nameof(CanAddRegistration));
             OnPropertyChanged(nameof(CanRetargetRegistration));
+            OnPropertyChanged(nameof(CanDuplicateRegistration));
             NotifyCommandsChanged();
             if (!Designer.HasStagedInput && _pendingCoordinatorRefresh)
                 RefreshFromCoordinator();
@@ -642,6 +674,7 @@ public sealed class MenuFileEditorViewModel
         OnPropertyChanged(nameof(MenuCount));
         OnPropertyChanged(nameof(CanAddRegistration));
         OnPropertyChanged(nameof(CanRetargetRegistration));
+        OnPropertyChanged(nameof(CanDuplicateRegistration));
         OnPropertyChanged(nameof(EditorProperties));
         OnPropertyChanged(nameof(InspectorSelection));
         NotifyCommandsChanged();
@@ -650,7 +683,6 @@ public sealed class MenuFileEditorViewModel
     private void NotifyCommandsChanged()
     {
         RevertCommand.RaiseCanExecuteChanged();
-        DuplicateRegistrationCommand.RaiseCanExecuteChanged();
         RemoveRegistrationCommand.RaiseCanExecuteChanged();
         MoveRegistrationUpCommand.RaiseCanExecuteChanged();
         MoveRegistrationDownCommand.RaiseCanExecuteChanged();
