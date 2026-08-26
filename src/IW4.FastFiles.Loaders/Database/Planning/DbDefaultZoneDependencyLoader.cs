@@ -1,5 +1,6 @@
-using IW4.Runtime.Database.Planning;
+using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
+using IW4.Runtime.Database.Planning;
 
 namespace IW4.FastFiles.Loaders.Database.Planning;
 
@@ -8,6 +9,7 @@ public static class DbDefaultZoneDependencyLoader
 {
     public const string DefaultMpProfile = "default_mp";
     public const string DefaultSpProfile = "default_sp";
+    private const int Ps3VertexShaderAssetLimit = 1024;
 
     public static string ResolveProfile(string targetNameOrPath)
     {
@@ -94,6 +96,62 @@ public static class DbDefaultZoneDependencyLoader
                                 "A completed dependency plan contains a missing required request."),
                     request.IsTarget))
                 .ToArray()));
+    }
+
+    /// <summary>
+    /// Fresh-loads a staged multiplayer candidate through the engine's stable
+    /// default lifecycle while enforcing the native PS3 vertex-shader pool at
+    /// every completed zone-load boundary.
+    /// </summary>
+    public static LoadedXZone LoadDefaultMpCandidateForValidation(
+        DbLoadSession session,
+        string targetZoneName,
+        string candidatePath,
+        string dependencyDirectory,
+        IEnumerable<string> additionalDependencyDirectories)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetZoneName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidatePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyDirectory);
+        ArgumentNullException.ThrowIfNull(additionalDependencyDirectories);
+
+        var catalog = new DbZoneCatalog(
+            dependencyDirectory,
+            additionalDependencyDirectories);
+        DbZoneLoadPlan plan = new DefaultMpZoneLoadPlanner(catalog)
+            .BuildWithTargetOverride(
+                targetZoneName,
+                candidatePath,
+                DbZonePlanScope.StableRuntime);
+        DbZonePlanExecutionResult execution = DbLoadPlanExecutor.Execute(
+            plan,
+            session,
+            (_, loaded) => ValidatePs3VertexShaderCapacity(
+                session,
+                loaded.Zone.Name));
+        return execution.Target;
+    }
+
+    public static void ValidatePs3VertexShaderCapacity(
+        DbLoadSession session,
+        string loadedZoneName)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(loadedZoneName);
+
+        int fullVertexShaderCount = session.AssetPool.Slots
+            .SelectMany(slot => slot.Providers)
+            .Count(provider =>
+                provider.AssetType == XAssetType.VertexShader &&
+                !provider.IsReferencePlaceholder);
+        if (fullVertexShaderCount <= Ps3VertexShaderAssetLimit)
+            return;
+
+        throw new InvalidDataException(
+            $"PS3 vertex-shader asset capacity was exceeded after loading zone " +
+            $"'{loadedZoneName}': {fullVertexShaderCount} full providers are resident; " +
+            $"the limit is {Ps3VertexShaderAssetLimit}.");
     }
 }
 

@@ -117,7 +117,7 @@ public sealed class FastFileDocumentService
 
     private static readonly string[] AdditionalDependencyDirectoryNames = ["mappack1", "mappack2"];
 
-    private static string ResolveDependencyDirectory(string targetPath)
+    internal static string ResolveDependencyDirectory(string targetPath)
     {
         string containingDirectory = Path.GetDirectoryName(Path.GetFullPath(targetPath))
             ?? throw new InvalidDataException($"Fastfile path '{targetPath}' has no containing directory.");
@@ -127,7 +127,7 @@ public sealed class FastFileDocumentService
             : containingDirectory;
     }
 
-    private static IEnumerable<string> ResolveAdditionalDependencyDirectories(string directory) =>
+    internal static IEnumerable<string> ResolveAdditionalDependencyDirectories(string directory) =>
         AdditionalDependencyDirectoryNames
             .Select(name => Path.Combine(directory, name))
             .Where(Directory.Exists);

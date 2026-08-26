@@ -1,5 +1,6 @@
 using IW4.FastFiles.Database;
 using IW4.FastFiles.Loaders.Database;
+using IW4.FastFiles.Loaders.Database.Planning;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
@@ -459,6 +460,8 @@ public sealed class TransactionalSaveAsService
                 SaveAsStage.VerifyingCandidate,
                 "Fresh-loading the flushed canonical candidate."));
             ValidateFreshCandidate(
+                session.Workspace,
+                destinationPath,
                 temporaryFastFile.Path,
                 cancellationToken);
 
@@ -546,14 +549,44 @@ public sealed class TransactionalSaveAsService
     }
 
     private static void ValidateFreshCandidate(
+        FastFileWorkspace workspace,
+        string destinationPath,
         string candidatePath,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidatePath);
+
         cancellationToken.ThrowIfCancellationRequested();
         using var loadSession = new DbLoadSession();
-        LoadedXZone loadedZone = loadSession.DB_LoadXZone(
-            candidatePath,
-            XZoneFlags.DB_ZONE_DEV);
+        string targetZoneName = Path.GetFileNameWithoutExtension(destinationPath);
+        bool validateDefaultMpLifecycle =
+            !workspace.IsBlank &&
+            targetZoneName.StartsWith("mp_", StringComparison.OrdinalIgnoreCase);
+        LoadedXZone loadedZone;
+        if (validateDefaultMpLifecycle)
+        {
+            string dependencyDirectory =
+                FastFileDocumentService.ResolveDependencyDirectory(workspace.SourcePath);
+            loadedZone = DbDefaultZoneDependencyLoader.LoadDefaultMpCandidateForValidation(
+                loadSession,
+                targetZoneName,
+                candidatePath,
+                dependencyDirectory,
+                FastFileDocumentService.ResolveAdditionalDependencyDirectories(
+                    dependencyDirectory));
+        }
+        else
+        {
+            loadedZone = loadSession.DB_LoadXZone(
+                candidatePath,
+                XZoneFlags.DB_ZONE_DEV);
+            DbDefaultZoneDependencyLoader.ValidatePs3VertexShaderCapacity(
+                loadSession,
+                targetZoneName);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         _ = loadSession.FreezeLinkAssetPool();
         cancellationToken.ThrowIfCancellationRequested();
