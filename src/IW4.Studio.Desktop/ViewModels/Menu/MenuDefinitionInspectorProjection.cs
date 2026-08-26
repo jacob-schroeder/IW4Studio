@@ -3,6 +3,7 @@ using IW4.Assets.Assets.Menu;
 using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents.MenuEditing;
+using IW4.Studio.Documents.MenuEditing.Behavior;
 
 namespace IW4.Studio.Desktop.ViewModels.Menu;
 
@@ -188,23 +189,54 @@ internal static partial class MenuInspectorProjection
                             "menu.yTransitions",
                             settings.YTransitions.Count.ToString("N0"))
                     ]),
-                Behavior(snapshot.Behavior)
+                Behavior(designer, snapshot)
             ],
             "Select the Window or an Item in the outline for its authored fields.");
     }
 
-
-
-    private static InspectorSectionViewModel Behavior(MenuBehaviorSummary value) =>
-        new(
+    private static InspectorSectionViewModel Behavior(
+        MenuDesignerViewModel designer,
+        MenuEditorSnapshot snapshot)
+    {
+        MenuBehaviorSummary value = snapshot.Behavior;
+        return new InspectorSectionViewModel(
             "BEHAVIOR",
             [
-                ReadOnly("On open", "menu.onOpen", Bool(value.HasOnOpen)),
-                ReadOnly("Close request", "menu.onCloseRequest", Bool(value.HasOnCloseRequest)),
-                ReadOnly("On close", "menu.onClose", Bool(value.HasOnClose)),
-                ReadOnly("On escape", "menu.onEsc", Bool(value.HasOnEscape)),
-                ReadOnly("Key handlers", "menu.execKeys", Bool(value.HasKeyHandlers)),
-                ReadOnly("Visibility", "menu.visibleExpression", Bool(value.HasVisibleExpression)),
+                new InspectorActionPropertyRowViewModel(
+                    "Builder",
+                    "menu.behavior",
+                    BehaviorSummary(snapshot.DefinitionBehavior),
+                    designer.IsEditable && !designer.HasStagedInput
+                        ? designer.RequestMenuBehaviorEdit
+                        : null,
+                    "Open the Menu behavior builder",
+                    "Open Menu behavior builder",
+                    "Edit MenuDef event hooks and key handlers in one " +
+                    "atomic modal."),
+                ReadOnly(
+                    "On open",
+                    "menu.onOpen",
+                    Bool(value.HasOnOpen)),
+                ReadOnly(
+                    "Close request",
+                    "menu.onCloseRequest",
+                    Bool(value.HasOnCloseRequest)),
+                ReadOnly(
+                    "On close",
+                    "menu.onClose",
+                    Bool(value.HasOnClose)),
+                ReadOnly(
+                    "On escape",
+                    "menu.onEsc",
+                    Bool(value.HasOnEscape)),
+                ReadOnly(
+                    "Key handlers",
+                    "menu.execKeys",
+                    Bool(value.HasKeyHandlers)),
+                ReadOnly(
+                    "Visibility",
+                    "menu.visibleExpression",
+                    Bool(value.HasVisibleExpression)),
                 ReadOnly(
                     "Rect expressions",
                     "menu.rectExpressions",
@@ -218,4 +250,21 @@ internal static partial class MenuInspectorProjection
                     "menu.expressionData",
                     Bool(value.HasExpressionSupportingData))
             ]);
+    }
+
+    private static string BehaviorSummary(
+        MenuDefinitionBehaviorBindings value)
+    {
+        int eventSets = new[]
+        {
+            value.OnOpen,
+            value.OnCloseRequest,
+            value.OnClose,
+            value.OnEscape
+        }.Count(binding => binding.Handlers is not null);
+
+        int keys = value.KeyHandlers.Handlers.Length;
+        return $"{eventSets} event{(eventSets == 1 ? string.Empty : "s")} · " +
+            $"{keys} key{(keys == 1 ? string.Empty : "s")}";
+    }
 }

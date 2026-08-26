@@ -57,6 +57,16 @@ public sealed partial class MenuFileEditorView : UserControl
                         args);
                 }
             };
+        viewModel.MenuBehaviorEditRequested +=
+            async (_, args) =>
+            {
+                if (TopLevel.GetTopLevel(this) is Window owner)
+                {
+                    await MenuItemBehaviorBuilderService.ShowAsync(
+                        owner,
+                        args);
+                }
+            };
     }
 
     private async void AddExistingMenu_Click(

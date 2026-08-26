@@ -161,19 +161,22 @@ public sealed class MenuDebugDiagnosticTraceEntry : MenuDebugDispatchTraceEntry
         MenuDebugDiagnosticKind kind,
         MenuEvaluationStatus status,
         string code,
-        string message)
+        string message,
+        MenuDebugDependency? dependency)
         : base(sequence, handlerPath)
     {
         Kind = kind;
         Status = status;
         Code = code;
         Message = message;
+        Dependency = dependency;
     }
 
     public MenuDebugDiagnosticKind Kind { get; }
     public MenuEvaluationStatus Status { get; }
     public string Code { get; }
     public string Message { get; }
+    public MenuDebugDependency? Dependency { get; }
 }
 
 /// <summary>

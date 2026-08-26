@@ -99,6 +99,9 @@ internal sealed record DebugMenuDefinition(
 internal sealed record DebugItemDefinition(
     bool IsResolved,
     bool CanAcceptFocus,
+    string? DvarTest,
+    string? EnableDvar,
+    ItemDvarFlags DvarFlags,
     DebugRectangleDefinition Rectangle,
     bool AuthoredVisible,
     DebugColorDefinition ForeColor,
@@ -187,6 +190,15 @@ internal static class MenuDebugProgramFactory
         IEnumerable<MenuDebugDependency> dependencies = Expressions(menu, items, menuHooks)
             .SelectMany(expression => expression.Dependencies)
             .Concat(items
+                .Where(item =>
+                    (item.Definition.DvarFlags & ItemDvarFlags.Focus) != 0 &&
+                    !string.IsNullOrWhiteSpace(item.Definition.DvarTest) &&
+                    !string.IsNullOrEmpty(item.Definition.EnableDvar))
+                .Select(item => new MenuDebugDependency(
+                    MenuDebugDependencyKind.Dvar,
+                    item.Definition.DvarTest!,
+                    MenuDebugValueKind.String)))
+            .Concat(items
                 .Select(item => item.Definition.AuthoredText)
                 .Where(text => text?.StartsWith('@') == true)
                 .Select(text => new MenuDebugDependency(
@@ -223,6 +235,9 @@ internal static class MenuDebugProgramFactory
             true,
             (item.Window.StaticFlags &
              WindowStaticFlags.WINDOW_STATIC_DECORATION) == 0,
+            item.DvarTestString,
+            item.EnableDvarString,
+            item.DvarFlags,
             // Item_SetScreenCoords starts with the client rectangle and
             // composes the Menu origin exactly once at projection time.
             Rectangle(item.Window.RectClient),
@@ -278,6 +293,9 @@ internal static class MenuDebugProgramFactory
             new DebugItemDefinition(
                 false,
                 false,
+                null,
+                null,
+                ItemDvarFlags.None,
                 new DebugRectangleDefinition(
                     0,
                     0,

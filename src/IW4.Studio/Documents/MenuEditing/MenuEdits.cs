@@ -10,6 +10,13 @@ public sealed record ReplaceMenuSettingsEdit(MenuSettingsValue Value) : MenuEdit
 
 public sealed record ReplaceRootWindowEdit(MenuWindowValue Value) : MenuEdit;
 
+/// <summary>
+/// Atomically replaces the MenuDef event hooks and ordered key handlers.
+/// Window and scalar MenuDef fields deliberately use separate edits.
+/// </summary>
+public sealed record ReplaceMenuBehaviorEdit(
+    MenuDefinitionBehaviorBindings Value) : MenuEdit;
+
 public sealed record ReplaceItemEdit(
     MenuNodeId ItemId,
     MenuItemValue Value) : MenuEdit;

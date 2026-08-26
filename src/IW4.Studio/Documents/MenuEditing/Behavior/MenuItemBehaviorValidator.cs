@@ -3,9 +3,10 @@ using IW4.Assets.Assets.Menu;
 namespace IW4.Studio.Documents.MenuEditing.Behavior;
 
 /// <summary>
-/// The single validation boundary for authored ItemDef behavior. Imported
-/// malformed or opaque graph shapes remain representable and are reported as
-/// warnings; authoring uses the same rules as errors before a graph is lowered.
+/// The single validation boundary for authored MenuDef and ItemDef behavior.
+/// Imported malformed or opaque graph shapes remain representable and are
+/// reported as warnings; authoring uses the same rules as errors before a
+/// graph is lowered.
 /// </summary>
 public sealed class MenuItemBehaviorValidator
 {
@@ -34,8 +35,42 @@ public sealed class MenuItemBehaviorValidator
         ValidateEventBinding(value.OnFocus, "item.onFocus", mode, issues, activeSets);
         ValidateEventBinding(value.LeaveFocus, "item.leaveFocus", mode, issues, activeSets);
         ValidateEventBinding(value.ListBoxDoubleClick, "item.listBox.doubleClick", mode, issues, activeSets);
-        ValidateKeyHandlers(value.KeyHandlers, mode, issues, activeSets);
+        ValidateKeyHandlers(
+            value.KeyHandlers,
+            "item.keyHandlers",
+            mode,
+            issues,
+            activeSets);
         ValidateExpressions(value.Expressions, mode, issues);
+
+        return issues.AsReadOnly();
+    }
+
+    public IReadOnlyList<MenuBehaviorValidationIssue> Validate(
+        MenuDefinitionBehaviorBindings value,
+        MenuBehaviorValidationMode mode = MenuBehaviorValidationMode.Imported)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        List<MenuBehaviorValidationIssue> issues = [];
+        var activeSets = new HashSet<MenuBehaviorEventHandlerSet>(
+            ReferenceEqualityComparer.Instance);
+
+        ValidateEventBinding(value.OnOpen, "menu.onOpen", mode, issues, activeSets);
+        ValidateEventBinding(
+            value.OnCloseRequest,
+            "menu.onCloseRequest",
+            mode,
+            issues,
+            activeSets);
+        ValidateEventBinding(value.OnClose, "menu.onClose", mode, issues, activeSets);
+        ValidateEventBinding(value.OnEscape, "menu.onEscape", mode, issues, activeSets);
+        ValidateKeyHandlers(
+            value.KeyHandlers,
+            "menu.keyHandlers",
+            mode,
+            issues,
+            activeSets);
 
         return issues.AsReadOnly();
     }
@@ -190,13 +225,14 @@ public sealed class MenuItemBehaviorValidator
 
     private void ValidateKeyHandlers(
         MenuBehaviorKeyHandlerBindings bindings,
+        string path,
         MenuBehaviorValidationMode mode,
         List<MenuBehaviorValidationIssue> issues,
         HashSet<MenuBehaviorEventHandlerSet> activeSets)
     {
         if (bindings is null)
         {
-            Add(issues, "item.keyHandlers", "The key-handler binding list is missing.", mode);
+            Add(issues, path, "The key-handler binding list is missing.", mode);
             return;
         }
 
@@ -204,7 +240,7 @@ public sealed class MenuItemBehaviorValidator
         {
             Add(
                 issues,
-                "item.keyHandlers",
+                path,
                 "The imported key-handler chain has a cyclic or unresolved tail.",
                 mode);
         }
@@ -217,7 +253,7 @@ public sealed class MenuItemBehaviorValidator
             {
                 Add(
                     issues,
-                    $"item.keyHandlers[{index}].key",
+                    $"{path}[{index}].key",
                     $"Key code {binding.Key} appears more than once.",
                     mode);
             }
@@ -226,7 +262,7 @@ public sealed class MenuItemBehaviorValidator
             {
                 Add(
                     issues,
-                    $"item.keyHandlers[{index}].action",
+                    $"{path}[{index}].action",
                     "A key handler requires an action handler set.",
                     mode);
                 continue;
@@ -234,7 +270,7 @@ public sealed class MenuItemBehaviorValidator
 
             ValidateEventSet(
                 binding.Action,
-                $"item.keyHandlers[{index}].action",
+                $"{path}[{index}].action",
                 mode,
                 issues,
                 activeSets);

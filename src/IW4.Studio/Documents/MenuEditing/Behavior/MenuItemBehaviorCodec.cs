@@ -5,10 +5,10 @@ using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 namespace IW4.Studio.Documents.MenuEditing.Behavior;
 
 /// <summary>
-/// Translates the native ItemDef behavior graph to and from the immutable
-/// behavior domain. It deliberately does not mutate an ItemDef; compiler
-/// integration composes <see cref="MenuItemBehaviorAssetBindings"/> into a
-/// cloned asset at the document boundary.
+/// Translates native MenuDef and ItemDef behavior graphs to and from the
+/// immutable behavior domain. It deliberately does not mutate an asset;
+/// compiler integration composes the native values into a cloned asset at the
+/// document boundary.
 /// </summary>
 public sealed class MenuItemBehaviorCodec
 {
@@ -44,6 +44,18 @@ public sealed class MenuItemBehaviorCodec
                 ReadExpression(source.MaterialStatement, source.MaterialExpression,
                     new(MenuBehaviorExpressionSiteKind.ItemMaterial)),
                 ReadFloatExpressions(source)));
+    }
+
+    public MenuDefinitionBehaviorBindings Import(MenuDefAsset source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        return new MenuDefinitionBehaviorBindings(
+            ReadEventBinding(source.OnOpenSet, source.OnOpen),
+            ReadEventBinding(source.OnCloseRequestSet, source.OnCloseRequest),
+            ReadEventBinding(source.OnCloseSet, source.OnClose),
+            ReadEventBinding(source.OnEscSet, source.OnEsc),
+            ReadKeyHandlers(source.ExecKeyHandler, source.ExecKeys));
     }
 
     public MenuItemBehaviorAssetBindings Export(MenuItemBehaviorBindings bindings)
@@ -84,6 +96,21 @@ public sealed class MenuItemBehaviorCodec
             WriteExpression(expressions.Material, new(MenuBehaviorExpressionSiteKind.ItemMaterial)),
             PointerFor(expressions.FloatExpressions.SourcePointer, floatExpressions.Count != 0),
             floatExpressions);
+    }
+
+    public MenuDefinitionBehaviorAssetBindings Export(
+        MenuDefinitionBehaviorBindings bindings)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+
+        return new MenuDefinitionBehaviorAssetBindings(
+            WriteEventBinding(bindings.OnOpen),
+            WriteEventBinding(bindings.OnCloseRequest),
+            WriteEventBinding(bindings.OnClose),
+            WriteEventBinding(bindings.OnEscape),
+            PointerFor(bindings.KeyHandlers.RootPointer,
+                bindings.KeyHandlers.Handlers.Length != 0),
+            WriteKeyHandlers(bindings.KeyHandlers));
     }
 
     private MenuBehaviorEventBinding ReadEventBinding(

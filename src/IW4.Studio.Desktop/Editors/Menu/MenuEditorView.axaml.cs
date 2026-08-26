@@ -40,5 +40,15 @@ public sealed partial class MenuEditorView : UserControl
                         args);
                 }
             };
+        viewModel.MenuBehaviorEditRequested +=
+            async (_, args) =>
+            {
+                if (TopLevel.GetTopLevel(this) is Window owner)
+                {
+                    await MenuItemBehaviorBuilderService.ShowAsync(
+                        owner,
+                        args);
+                }
+            };
     }
 }

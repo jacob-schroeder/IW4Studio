@@ -11,7 +11,8 @@ namespace IW4.Studio.Desktop.Editors.Menu.Behavior;
 /// </summary>
 public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
 {
-    private readonly MenuItemBehaviorBindings _source;
+    private readonly MenuItemBehaviorBindings _itemSource;
+    private readonly MenuDefinitionBehaviorBindings _menuSource;
     private readonly MenuItemBehaviorValidator _behaviorValidator;
     private MenuItemBehaviorBuilderNavigationItemViewModel _selectedNavigationItem;
     private bool _hasUnsavedChanges;
@@ -27,11 +28,48 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         string? scopeText = null,
         BehaviorExpressionSupport? expressionSupport = null,
         bool supportsListBoxDoubleClick = true)
+        : this(
+            bindings ?? MenuItemBehaviorBindings.Empty,
+            menuBindings: null,
+            scopeText,
+            expressionSupport,
+            supportsListBoxDoubleClick)
     {
-        _source = bindings ?? MenuItemBehaviorBindings.Empty;
+    }
+
+    internal MenuItemBehaviorBuilderSessionViewModel(
+        MenuDefinitionBehaviorBindings bindings,
+        string? scopeText = null,
+        BehaviorExpressionSupport? expressionSupport = null)
+        : this(
+            itemBindings: null,
+            bindings ?? throw new ArgumentNullException(nameof(bindings)),
+            scopeText,
+            expressionSupport,
+            supportsListBoxDoubleClick: false)
+    {
+    }
+
+    private MenuItemBehaviorBuilderSessionViewModel(
+        MenuItemBehaviorBindings? itemBindings,
+        MenuDefinitionBehaviorBindings? menuBindings,
+        string? scopeText,
+        BehaviorExpressionSupport? expressionSupport,
+        bool supportsListBoxDoubleClick)
+    {
+        _itemSource = itemBindings ?? MenuItemBehaviorBindings.Empty;
+        _menuSource = menuBindings ?? MenuDefinitionBehaviorBindings.Empty;
+        IsMenuDefinition = menuBindings is not null;
         ScopeText = string.IsNullOrWhiteSpace(scopeText)
-            ? "Selected ItemDef"
+            ? (IsMenuDefinition ? "Selected MenuDef" : "Selected ItemDef")
             : scopeText;
+        WindowTitle = IsMenuDefinition ? "Menu Behavior" : "Item Behavior";
+        Heading = IsMenuDefinition ? "Menu behavior" : "Item behavior";
+        Description = IsMenuDefinition
+            ? "Build MenuDef event hooks and key handlers before applying " +
+              "one menu-level change."
+            : "Build event hooks, key handlers, and dynamic bindings before " +
+              "applying one item-level change.";
         BehaviorExpressionSupport support = expressionSupport ??
             BehaviorExpressionSupport.Empty;
         ExpressionSupport = new BehaviorExpressionSupportDraftViewModel(
@@ -39,18 +77,30 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
             ChildChanged);
         _behaviorValidator = new MenuItemBehaviorValidator(
             new MenuBehaviorExpressionCodec(null));
-        Events = new BehaviorEventHooksViewModel(
-            _source,
-            ExpressionSupport,
-            supportsListBoxDoubleClick,
-            ChildChanged);
+        Events = IsMenuDefinition
+            ? new BehaviorEventHooksViewModel(
+                _menuSource,
+                ExpressionSupport,
+                ChildChanged)
+            : new BehaviorEventHooksViewModel(
+                _itemSource,
+                ExpressionSupport,
+                supportsListBoxDoubleClick,
+                ChildChanged);
         Keys = new BehaviorKeyHandlersViewModel(
-            _source.KeyHandlers, ExpressionSupport, ChildChanged);
+            IsMenuDefinition
+                ? _menuSource.KeyHandlers
+                : _itemSource.KeyHandlers,
+            ExpressionSupport,
+            ChildChanged);
         Bindings = new BehaviorBindingsViewModel(
-            _source.Expressions, ExpressionSupport, ChildChanged);
+            _itemSource.Expressions,
+            ExpressionSupport,
+            ChildChanged);
 
-        NavigationItems = Array.AsReadOnly(
-        [
+        var navigationItems =
+            new List<MenuItemBehaviorBuilderNavigationItemViewModel>
+        {
             new MenuItemBehaviorBuilderNavigationItemViewModel(
                 MenuItemBehaviorBuilderSection.Events,
                 "Events",
@@ -60,19 +110,33 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
                 MenuItemBehaviorBuilderSection.Keys,
                 "Keys",
                 "Ordered key handlers and their action sets.",
-                Keys.Summary),
-            new MenuItemBehaviorBuilderNavigationItemViewModel(
+                Keys.Summary)
+        };
+        if (!IsMenuDefinition)
+        {
+            navigationItems.Add(new MenuItemBehaviorBuilderNavigationItemViewModel(
                 MenuItemBehaviorBuilderSection.Bindings,
                 "Bindings",
                 "Fixed statements and float-expression bindings.",
-                Bindings.Summary)
-        ]);
+                Bindings.Summary));
+        }
+        NavigationItems = navigationItems.AsReadOnly();
         _selectedNavigationItem = NavigationItems[0];
         _selectedNavigationItem.IsSelected = true;
         RefreshValidation();
     }
 
     public string ScopeText { get; }
+
+    public string WindowTitle { get; }
+
+    public string Heading { get; }
+
+    public string Description { get; }
+
+    internal bool IsMenuDefinition { get; }
+
+    public bool HasBindings => !IsMenuDefinition;
 
     public BehaviorEventHooksViewModel Events { get; }
 
@@ -223,13 +287,28 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
     public bool TryGetResult(out MenuItemBehaviorBindings? result)
     {
         RefreshValidation();
-        if (HasValidationError)
+        if (IsMenuDefinition || HasValidationError)
         {
             result = null;
             return false;
         }
 
-        result = BuildResult();
+        result = BuildItemResult();
+        return true;
+    }
+
+    /// <summary>Creates a complete immutable MenuDef behavior value.</summary>
+    internal bool TryGetMenuResult(
+        out MenuDefinitionBehaviorBindings? result)
+    {
+        RefreshValidation();
+        if (!IsMenuDefinition || HasValidationError)
+        {
+            result = null;
+            return false;
+        }
+
+        result = BuildMenuResult();
         return true;
     }
 
@@ -273,11 +352,27 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         var messages = new List<string>();
         messages.AddRange(Events.Validate());
         messages.AddRange(Keys.Validate());
-        messages.AddRange(Bindings.Validate());
-        messages.AddRange(_behaviorValidator
-            .Validate(BuildResult(), MenuBehaviorValidationMode.Authored)
-            .Where(issue => issue.Severity == MenuBehaviorValidationSeverity.Error)
-            .Select(issue => $"{issue.Path}: {issue.Message}"));
+        if (IsMenuDefinition)
+        {
+            messages.AddRange(_behaviorValidator
+                .Validate(
+                    BuildMenuResult(),
+                    MenuBehaviorValidationMode.Authored)
+                .Where(issue => issue.Severity ==
+                    MenuBehaviorValidationSeverity.Error)
+                .Select(issue => $"{issue.Path}: {issue.Message}"));
+        }
+        else
+        {
+            messages.AddRange(Bindings.Validate());
+            messages.AddRange(_behaviorValidator
+                .Validate(
+                    BuildItemResult(),
+                    MenuBehaviorValidationMode.Authored)
+                .Where(issue => issue.Severity ==
+                    MenuBehaviorValidationSeverity.Error)
+                .Select(issue => $"{issue.Path}: {issue.Message}"));
+        }
         bool hasLocalValidationError = messages.Count != 0;
         if (SetProperty(
                 ref _hasLocalValidationError,
@@ -308,13 +403,24 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         }
     }
 
-    private MenuItemBehaviorBindings BuildResult()
+    private MenuItemBehaviorBindings BuildItemResult()
     {
-        MenuItemBehaviorBindings withEvents = Events.ApplyTo(_source);
+        MenuItemBehaviorBindings withEvents = Events.ApplyTo(_itemSource);
         return withEvents with
         {
             KeyHandlers = Keys.ToDomain(),
             Expressions = Bindings.ToDomain(),
+            ExpressionSupportDelta = ExpressionSupport.ToDelta()
+        };
+    }
+
+    private MenuDefinitionBehaviorBindings BuildMenuResult()
+    {
+        MenuDefinitionBehaviorBindings withEvents = Events.ApplyTo(
+            _menuSource);
+        return withEvents with
+        {
+            KeyHandlers = Keys.ToDomain(),
             ExpressionSupportDelta = ExpressionSupport.ToDelta()
         };
     }

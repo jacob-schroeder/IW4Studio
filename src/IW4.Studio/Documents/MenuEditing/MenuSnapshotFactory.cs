@@ -44,6 +44,7 @@ internal static class MenuSnapshotFactory
             Settings(definition),
             new MenuWindowSnapshot(identity.WindowId, Window(definition.Window)),
             items,
+            behaviorCodec.Import(definition),
             new MenuBehaviorSummary(
                 definition.OnOpenSet is not null,
                 definition.OnCloseRequestSet is not null,

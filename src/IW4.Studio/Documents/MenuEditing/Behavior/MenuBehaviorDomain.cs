@@ -436,6 +436,29 @@ public sealed record MenuItemBehaviorExpressionBindings(
         MenuBehaviorFloatExpressionBindings.Empty);
 }
 
+/// <summary>Immutable MenuDef event hooks and ordered key handlers.</summary>
+public sealed record MenuDefinitionBehaviorBindings(
+    MenuBehaviorEventBinding OnOpen,
+    MenuBehaviorEventBinding OnCloseRequest,
+    MenuBehaviorEventBinding OnClose,
+    MenuBehaviorEventBinding OnEscape,
+    MenuBehaviorKeyHandlerBindings KeyHandlers)
+{
+    /// <summary>
+    /// Modal-local additions to the Menu-wide expression support graph. Native
+    /// table construction belongs exclusively to document compilation.
+    /// </summary>
+    public MenuBehaviorExpressionSupportDelta ExpressionSupportDelta
+        { get; init; } = MenuBehaviorExpressionSupportDelta.Empty;
+
+    public static MenuDefinitionBehaviorBindings Empty { get; } = new(
+        MenuBehaviorEventBinding.Empty,
+        MenuBehaviorEventBinding.Empty,
+        MenuBehaviorEventBinding.Empty,
+        MenuBehaviorEventBinding.Empty,
+        MenuBehaviorKeyHandlerBindings.Empty);
+}
+
 /// <summary>
 /// Immutable fixed ItemDef behavior surface. ListBoxDoubleClick is present for
 /// every item but only meaningful when its payload is a ListBoxDef.
@@ -510,6 +533,15 @@ public sealed record MenuItemBehaviorAssetBindings(
     MenuBehaviorNativeExpressionBinding Material,
     XPointer<ItemFloatExpression[]> FloatExpressionsPointer,
     IReadOnlyList<ItemFloatExpression> FloatExpressions);
+
+/// <summary>Native MenuDef behavior values produced at the document boundary.</summary>
+public sealed record MenuDefinitionBehaviorAssetBindings(
+    MenuBehaviorNativeEventBinding OnOpen,
+    MenuBehaviorNativeEventBinding OnCloseRequest,
+    MenuBehaviorNativeEventBinding OnClose,
+    MenuBehaviorNativeEventBinding OnEscape,
+    XPointer<ItemKeyHandler> ExecKeysPointer,
+    ItemKeyHandler? ExecKeyHandler);
 
 /// <summary>One native event-set result to be composed into an ItemDef clone.</summary>
 public sealed record MenuBehaviorNativeEventBinding(

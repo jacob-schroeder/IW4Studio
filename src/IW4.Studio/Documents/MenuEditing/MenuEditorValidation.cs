@@ -24,6 +24,22 @@ internal static class MenuEditorValidation
         ValidateWindow(menu.Window.Value, $"{menuPath}.window", issues);
         var behaviorValidator = new MenuItemBehaviorValidator(
             new MenuBehaviorExpressionCodec(menu.ExpressionSupport.Source));
+        foreach (MenuBehaviorValidationIssue issue in behaviorValidator.Validate(
+                     menu.DefinitionBehavior,
+                     MenuBehaviorValidationMode.Imported))
+        {
+            string behaviorPath = issue.Path.StartsWith(
+                "menu",
+                StringComparison.Ordinal)
+                    ? menuPath + issue.Path[4..]
+                    : $"{menuPath}.behavior.{issue.Path}";
+            issues.Add(new AssetValidationIssue(
+                behaviorPath,
+                issue.Message,
+                issue.Severity == MenuBehaviorValidationSeverity.Error
+                    ? AssetValidationSeverity.Error
+                    : AssetValidationSeverity.Warning));
+        }
         for (int index = 0; index < menu.Items.Count; index++)
         {
             MenuItemSnapshot item = menu.Items[index];

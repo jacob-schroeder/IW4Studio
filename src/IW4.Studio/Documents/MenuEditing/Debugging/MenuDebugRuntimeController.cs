@@ -73,6 +73,12 @@ internal sealed class MenuDebugRuntimeController
                 ? _focus.FocusNamed(command.Tokens[1], path)
                 : Reject(path, name, "setFocus requires one Item name.");
         }
+        if (name.Equals("setFocusByDvar", StringComparison.OrdinalIgnoreCase))
+        {
+            return command.Tokens.Count == 2
+                ? _focus.FocusByDvar(command.Tokens[1], path)
+                : Reject(path, name, "setFocusByDvar requires one dvar name.");
+        }
         if (name.Equals("setItemColor", StringComparison.OrdinalIgnoreCase))
         {
             return command.Tokens.Count == 7

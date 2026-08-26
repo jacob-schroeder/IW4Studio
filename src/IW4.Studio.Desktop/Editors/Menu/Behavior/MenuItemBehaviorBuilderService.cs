@@ -27,4 +27,21 @@ internal static class MenuItemBehaviorBuilderService
             request.Apply);
         _ = await window.ShowDialog<bool>(owner);
     }
+
+    public static async Task ShowAsync(
+        Window owner,
+        MenuDefinitionBehaviorEditRequestedEventArgs request)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var session = new MenuItemBehaviorBuilderSessionViewModel(
+            request.Value,
+            request.MenuTitle,
+            request.ExpressionSupport);
+        var window = new MenuItemBehaviorBuilderWindow(
+            session,
+            request.Apply);
+        _ = await window.ShowDialog<bool>(owner);
+    }
 }

@@ -172,12 +172,14 @@ internal sealed class MenuDebugDispatchTraceBuilder
         MenuDebugDiagnosticKind kind,
         MenuEvaluationStatus status,
         string code,
-        string message) => _entries.Add(
+        string message,
+        MenuDebugDependency? dependency = null) => _entries.Add(
         new MenuDebugDiagnosticTraceEntry(
             _entries.Count,
             path,
             kind,
             status,
             code,
-            message));
+            message,
+            dependency));
 }

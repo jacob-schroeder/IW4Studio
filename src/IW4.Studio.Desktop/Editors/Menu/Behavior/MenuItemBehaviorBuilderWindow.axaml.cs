@@ -6,27 +6,49 @@ using IW4.Studio.Documents.MenuEditing.Behavior;
 namespace IW4.Studio.Desktop.Editors.Menu.Behavior;
 
 /// <summary>
-/// Modal host for one isolated ItemDef behavior draft. Acceptance exposes the
-/// resulting immutable behavior value; document mutation remains the caller's
-/// responsibility.
+/// Modal host for one isolated MenuDef or ItemDef behavior draft. Acceptance
+/// exposes the resulting immutable behavior value; document mutation remains
+/// the caller's responsibility.
 /// </summary>
 public sealed partial class MenuItemBehaviorBuilderWindow : Window
 {
     private readonly MenuItemBehaviorBuilderSessionViewModel _session;
-    private readonly Action<MenuItemBehaviorBindings>? _applyResult;
+    private readonly Action<MenuItemBehaviorBindings>? _applyItemResult;
+    private readonly Action<MenuDefinitionBehaviorBindings>? _applyMenuResult;
     private bool _closeApproved;
 
     public MenuItemBehaviorBuilderWindow()
-        : this(new MenuItemBehaviorBuilderSessionViewModel(), null)
+        : this(
+            new MenuItemBehaviorBuilderSessionViewModel(),
+            (Action<MenuItemBehaviorBindings>?)null)
     {
     }
 
     public MenuItemBehaviorBuilderWindow(
         MenuItemBehaviorBuilderSessionViewModel session,
         Action<MenuItemBehaviorBindings>? applyResult = null)
+        : this(session, applyResult, applyMenuResult: null)
+    {
+    }
+
+    internal MenuItemBehaviorBuilderWindow(
+        MenuItemBehaviorBuilderSessionViewModel session,
+        Action<MenuDefinitionBehaviorBindings>? applyResult)
+        : this(
+            session,
+            applyItemResult: null,
+            applyMenuResult: applyResult)
+    {
+    }
+
+    private MenuItemBehaviorBuilderWindow(
+        MenuItemBehaviorBuilderSessionViewModel session,
+        Action<MenuItemBehaviorBindings>? applyItemResult,
+        Action<MenuDefinitionBehaviorBindings>? applyMenuResult)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        _applyResult = applyResult;
+        _applyItemResult = applyItemResult;
+        _applyMenuResult = applyMenuResult;
         InitializeComponent();
         Icon = AppIcon.Create();
         DataContext = _session;
@@ -42,16 +64,35 @@ public sealed partial class MenuItemBehaviorBuilderWindow : Window
         if (!_session.TryBeginApply())
             return;
 
-        if (!_session.TryGetResult(out MenuItemBehaviorBindings? result))
-        {
-            _session.CompleteApplyFailure(
-                "The behavior draft could not be validated.");
-            return;
-        }
-
         try
         {
-            _applyResult?.Invoke(result!);
+            if (_session.IsMenuDefinition)
+            {
+                if (!_session.TryGetMenuResult(
+                        out MenuDefinitionBehaviorBindings? result) ||
+                    result is null)
+                {
+                    _session.CompleteApplyFailure(
+                        "The behavior draft could not be validated.");
+                    return;
+                }
+
+                _applyMenuResult?.Invoke(result);
+            }
+            else
+            {
+                if (!_session.TryGetResult(
+                        out MenuItemBehaviorBindings? result) ||
+                    result is null)
+                {
+                    _session.CompleteApplyFailure(
+                        "The behavior draft could not be validated.");
+                    return;
+                }
+
+                _applyItemResult?.Invoke(result);
+                Result = result;
+            }
         }
         catch (Exception exception) when (exception is
                    ArgumentException or
@@ -65,7 +106,6 @@ public sealed partial class MenuItemBehaviorBuilderWindow : Window
         }
 
         _session.CompleteApplySuccess();
-        Result = result;
         _closeApproved = true;
         Close(true);
     }

@@ -1,3 +1,6 @@
+using System.Globalization;
+using IW4.Assets.Assets.Menu;
+
 namespace IW4.Studio.Documents.MenuEditing.Debugging;
 
 /// <summary>
@@ -100,6 +103,96 @@ internal sealed class MenuDebugFocusController
         }
 
         return Transition(item.Id, path, validateTarget: true);
+    }
+
+    public bool FocusByDvar(string name, string path)
+    {
+        MenuDebugScenario scenario = _state.ToScenario();
+        string? dvarValue = null;
+        IReadOnlyDictionary<MenuNodeId, MenuEvaluatedItemState>? states = null;
+        foreach (MenuDebugItemProgram item in _program.Items)
+        {
+            DebugItemDefinition definition = item.Definition;
+            // PS3 Script_SetFocusByDvar filters the Focus bit before it
+            // compares dvarTest or invokes Item_EnableShowViaDvar.
+            if ((definition.DvarFlags & ItemDvarFlags.Focus) == 0 ||
+                !string.Equals(
+                    definition.DvarTest,
+                    name,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(definition.DvarTest) &&
+                !string.IsNullOrEmpty(definition.EnableDvar) &&
+                dvarValue is null)
+            {
+                if (!scenario.Dvars.TryGetValue(name, out MenuDebugValue value))
+                {
+                    var dependency = new MenuDebugDependency(
+                        MenuDebugDependencyKind.Dvar,
+                        name,
+                        MenuDebugValueKind.String);
+                    _trace.AddDiagnostic(
+                        path,
+                        MenuDebugDiagnosticKind.Blocker,
+                        MenuEvaluationStatus.Unknown,
+                        "focus-dvar-value-unavailable",
+                        $"setFocusByDvar requires scenario dvar '{name}', but no value was supplied.",
+                        dependency);
+                    return true;
+                }
+                dvarValue = DvarVariantString(value);
+            }
+
+            string currentValue = dvarValue ?? string.Empty;
+            if (!TryMatchDvarValue(
+                    definition,
+                    scenario,
+                    currentValue,
+                    path,
+                    out bool bypassPredicate,
+                    out bool matches))
+            {
+                return true;
+            }
+            bool enabledViaDvar =
+                bypassPredicate ||
+                (definition.DvarFlags &
+                 (ItemDvarFlags.Enable | ItemDvarFlags.Disable)) == 0 ||
+                SelectDvarFlag(definition, ItemDvarFlags.Enable, matches);
+            bool visibleViaDvar =
+                bypassPredicate ||
+                (definition.DvarFlags &
+                 (ItemDvarFlags.Show | ItemDvarFlags.Hide)) == 0 ||
+                SelectDvarFlag(definition, ItemDvarFlags.Show, matches);
+            bool focusViaDvar = bypassPredicate ||
+                SelectDvarFlag(definition, ItemDvarFlags.Focus, matches);
+            if (!focusViaDvar ||
+                !enabledViaDvar ||
+                !visibleViaDvar ||
+                !definition.IsResolved ||
+                !definition.CanAcceptFocus)
+            {
+                continue;
+            }
+
+            states ??= _program.Evaluate(scenario).Items
+                .ToDictionary(value => value.Id);
+            if (!TryResolveEligibility(
+                    item,
+                    states[item.Id],
+                    path,
+                    out bool eligible))
+            {
+                return true;
+            }
+            if (eligible)
+                return Transition(item.Id, path, validateTarget: false);
+        }
+
+        return true;
     }
 
     private bool Transition(
@@ -240,6 +333,119 @@ internal sealed class MenuDebugFocusController
 
     private MenuDebugItemProgram? FindItem(MenuNodeId id) =>
         _program.Items.FirstOrDefault(value => value.Id == id);
+
+    private bool TryMatchDvarValue(
+        DebugItemDefinition definition,
+        MenuDebugScenario scenario,
+        string dvarValue,
+        string path,
+        out bool bypassPredicate,
+        out bool matches)
+    {
+        bypassPredicate = false;
+        matches = false;
+        if (string.IsNullOrEmpty(definition.EnableDvar) ||
+            string.IsNullOrEmpty(definition.DvarTest))
+        {
+            bypassPredicate = true;
+            return true;
+        }
+
+        MenuDebugScriptParseResult parsed = MenuDebugScriptParser.Parse(
+            FirstLine(definition.EnableDvar));
+        if (!parsed.IsValid)
+            return true;
+
+        var unresolvedLocalizations = new List<(
+            MenuDebugDependency Dependency,
+            string Message)>();
+        foreach (string parsedToken in parsed.Commands
+                     .SelectMany(command => command.Tokens))
+        {
+            if (parsedToken == ";")
+                continue;
+
+            string token = parsedToken;
+            if (token.StartsWith('@'))
+            {
+                string key = token[1..];
+                var dependency = new MenuDebugDependency(
+                    MenuDebugDependencyKind.Localization,
+                    key,
+                    MenuDebugValueKind.String);
+                string? localized = scenario.LocalizationResolver?.Invoke(key);
+                if (localized is null)
+                {
+                    unresolvedLocalizations.Add((
+                        dependency,
+                        scenario.LocalizationResolver is null
+                            ? $"setFocusByDvar cannot localize '@{key}' because no localization resolver is configured."
+                            : $"setFocusByDvar could not resolve localization reference '@{key}'."));
+                    continue;
+                }
+
+                token = localized;
+            }
+
+            if (string.Equals(
+                    token,
+                    dvarValue,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                matches = true;
+                break;
+            }
+        }
+
+        if (matches)
+            return true;
+
+        foreach ((MenuDebugDependency dependency, string message) in
+                 unresolvedLocalizations)
+        {
+            _trace.AddDiagnostic(
+                path,
+                MenuDebugDiagnosticKind.Blocker,
+                MenuEvaluationStatus.Unknown,
+                "focus-dvar-localization-unavailable",
+                message,
+                dependency);
+        }
+
+        return unresolvedLocalizations.Count == 0;
+    }
+
+    private static bool SelectDvarFlag(
+        DebugItemDefinition definition,
+        ItemDvarFlags requestedFlag,
+        bool matches)
+    {
+        bool positive = (definition.DvarFlags & requestedFlag) != 0;
+        return matches ? positive : !positive;
+    }
+
+    private static string FirstLine(string value)
+    {
+        int carriageReturn = value.IndexOf('\r');
+        int lineFeed = value.IndexOf('\n');
+        int lineEnd = carriageReturn < 0
+            ? lineFeed
+            : lineFeed < 0
+                ? carriageReturn
+                : Math.Min(carriageReturn, lineFeed);
+        return lineEnd < 0 ? value : value[..lineEnd];
+    }
+
+    private static string DvarVariantString(MenuDebugValue value)
+    {
+        if (value.Kind == MenuDebugValueKind.Float &&
+            value.TryGetFloat(out float floatingPoint))
+        {
+            return floatingPoint.ToString("G6", CultureInfo.InvariantCulture);
+        }
+
+        return value.AsString();
+    }
 
     private static string DisplayName(MenuDebugItemProgram item) =>
         string.IsNullOrWhiteSpace(item.Name) ? item.Id.ToString() : item.Name;

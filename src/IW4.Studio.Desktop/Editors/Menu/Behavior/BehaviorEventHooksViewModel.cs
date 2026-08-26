@@ -4,7 +4,10 @@ using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 
 namespace IW4.Studio.Desktop.Editors.Menu.Behavior;
 
-/// <summary>All ItemDef event roots, hydrated from one immutable behavior value.</summary>
+/// <summary>
+/// The event roots for one MenuDef or ItemDef, hydrated from one immutable
+/// behavior value.
+/// </summary>
 public sealed class BehaviorEventHooksViewModel : ObservableObject
 {
     private readonly Action _changed;
@@ -35,6 +38,49 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
             binding: bindings.ListBoxDoubleClick,
             expressionSupport);
         SupportsListBoxDoubleClick = supportsListBoxDoubleClick;
+    }
+
+    internal BehaviorEventHooksViewModel(
+        MenuDefinitionBehaviorBindings bindings,
+        BehaviorExpressionSupportDraftViewModel expressionSupport,
+        Action changed)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+        _changed = changed ?? throw new ArgumentNullException(nameof(changed));
+        Slots = Array.AsReadOnly(
+        [
+            CreateSlot(
+                null,
+                "On open",
+                "Runs when this menu opens.",
+                bindings.OnOpen,
+                expressionSupport),
+            CreateSlot(
+                null,
+                "Close request",
+                "Runs when this menu receives a close request.",
+                bindings.OnCloseRequest,
+                expressionSupport),
+            CreateSlot(
+                null,
+                "On close",
+                "Runs when this menu closes.",
+                bindings.OnClose,
+                expressionSupport),
+            CreateSlot(
+                null,
+                "On escape",
+                "Runs when escape is invoked for this menu.",
+                bindings.OnEscape,
+                expressionSupport)
+        ]);
+        ListBoxDoubleClick = CreateSlot(
+            hook: null,
+            title: "List box double click",
+            description: "Runs when a list-box item is double-clicked.",
+            binding: MenuBehaviorEventBinding.Empty,
+            expressionSupport);
+        SupportsListBoxDoubleClick = false;
     }
 
     public IReadOnlyList<BehaviorEventSlotViewModel> Slots { get; }
@@ -72,6 +118,16 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
             ListBoxDoubleClick = SupportsListBoxDoubleClick
                 ? ListBoxDoubleClick.ToBinding()
                 : source.ListBoxDoubleClick
+        };
+
+    internal MenuDefinitionBehaviorBindings ApplyTo(
+        MenuDefinitionBehaviorBindings source) =>
+        source with
+        {
+            OnOpen = Slots[0].ToBinding(),
+            OnCloseRequest = Slots[1].ToBinding(),
+            OnClose = Slots[2].ToBinding(),
+            OnEscape = Slots[3].ToBinding()
         };
 
     internal IReadOnlyList<string> Validate()
@@ -139,7 +195,9 @@ public sealed class BehaviorEventSlotViewModel : ObservableObject
 
     internal MenuBehaviorEventBinding ToBinding() => _source with
     {
-        Handlers = Handlers.ToDomain()
+        Handlers = Handlers.HasChanges && !Handlers.HasHandlers
+            ? null
+            : Handlers.ToDomain()
     };
 
     internal IReadOnlyList<string> Validate() => Handlers.Validate(Title);

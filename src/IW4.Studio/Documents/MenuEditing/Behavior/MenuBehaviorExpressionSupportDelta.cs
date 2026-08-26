@@ -4,7 +4,7 @@ namespace IW4.Studio.Documents.MenuEditing.Behavior;
 
 /// <summary>
 /// Immutable, document-owned changes to the Menu expression support graph.
-/// The ItemDef builder currently owns only appending named static-dvar rows.
+/// Behavior builders currently own only appending named static-dvar rows.
 /// It intentionally cannot create a reusable UI-function row: defining one
 /// needs a separate expression-definition authority, not an empty Statement.
 /// </summary>

@@ -438,6 +438,10 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             MenuDebugLocalVariableTraceEntry local when
                 local.Status == MenuEvaluationStatus.Unknown =>
                 local.Dependencies,
+            MenuDebugDiagnosticTraceEntry diagnostic when
+                diagnostic.Status == MenuEvaluationStatus.Unknown &&
+                diagnostic.Dependency is not null =>
+                [diagnostic.Dependency],
             _ => []
         })
         .Distinct()

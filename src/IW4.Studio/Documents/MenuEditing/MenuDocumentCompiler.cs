@@ -69,6 +69,37 @@ internal static partial class MenuDocumentCompiler
                     window: BuildWindow(definition.Window, replace.Value));
                 break;
 
+            case ReplaceMenuBehaviorEdit replace:
+            {
+                ArgumentNullException.ThrowIfNull(replace.Value);
+                ApplyExpressionSupportDelta(
+                    definition.ExpressionDataValue,
+                    replace.Value.ExpressionSupportDelta);
+                var expressionCodec = new MenuBehaviorExpressionCodec(
+                    definition.ExpressionDataValue);
+                var behaviorCodec = new MenuItemBehaviorCodec(expressionCodec);
+                var validator = new MenuItemBehaviorValidator(expressionCodec);
+                MenuDefinitionBehaviorBindings currentBaseline =
+                    behaviorCodec.Import(definition);
+                expressionCodec.UseCurrentBaseline(currentBaseline);
+                MenuBehaviorValidationIssue[] errors = validator
+                    .Validate(replace.Value, MenuBehaviorValidationMode.Authored)
+                    .Where(issue =>
+                        issue.Severity == MenuBehaviorValidationSeverity.Error)
+                    .ToArray();
+                if (errors.Length != 0)
+                {
+                    throw new InvalidDataException(string.Join(
+                        Environment.NewLine,
+                        errors.Select(error => $"{error.Path}: {error.Message}")));
+                }
+
+                definition = BuildMenu(
+                    definition,
+                    behavior: behaviorCodec.Export(replace.Value));
+                break;
+            }
+
             case ReplaceItemEdit replace:
             {
                 ArgumentNullException.ThrowIfNull(replace.Value);
@@ -320,7 +351,7 @@ internal static partial class MenuDocumentCompiler
 
     /// <summary>
     /// Materializes the one support-table mutation currently owned by the
-    /// ItemDef behavior builder. This runs only on the compiler's detached
+    /// Menu behavior builders. This runs only on the compiler's detached
     /// graph clone: Desktop carries names and an expected row count, never
     /// native pointers, table cells, or runtime dvar handles.
     /// </summary>

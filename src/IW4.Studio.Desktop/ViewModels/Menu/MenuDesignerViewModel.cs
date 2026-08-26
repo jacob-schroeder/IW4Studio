@@ -28,6 +28,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         _requestAssetReferenceSelection;
     private readonly Action<MenuItemBehaviorEditRequestedEventArgs>?
         _requestItemBehaviorEdit;
+    private readonly Action<MenuDefinitionBehaviorEditRequestedEventArgs>?
+        _requestMenuBehaviorEdit;
     private readonly IMenuPreviewMaterialResolver? _materialResolver;
     private readonly IMenuTextResourceResolver? _textResourceResolver;
     private readonly MenuPreviewDebugViewModel _previewDebug;
@@ -58,12 +60,15 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         Func<bool>? isEditAllowed = null,
         Func<XAssetType, string?, bool>? isAssetReferenceResolved = null,
         Action<MenuItemBehaviorEditRequestedEventArgs>?
-            requestItemBehaviorEdit = null)
+            requestItemBehaviorEdit = null,
+        Action<MenuDefinitionBehaviorEditRequestedEventArgs>?
+            requestMenuBehaviorEdit = null)
     {
         _applyEdit = applyEdit;
         _isEditAllowed = isEditAllowed;
         _requestAssetReferenceSelection = requestAssetReferenceSelection;
         _requestItemBehaviorEdit = requestItemBehaviorEdit;
+        _requestMenuBehaviorEdit = requestMenuBehaviorEdit;
         _materialResolver = materialResolver;
         _textResourceResolver = textResourceResolver;
         _previewDebug = new MenuPreviewDebugViewModel(textResourceResolver);
@@ -325,6 +330,24 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             item.Value.Type == ItemDefType.ListBox,
             value => ApplyStructuralEdit(
                 new ReplaceItemBehaviorEdit(item.Id, value))));
+    }
+
+    internal void RequestMenuBehaviorEdit()
+    {
+        if (!IsEditable || HasStagedInput ||
+            _requestMenuBehaviorEdit is null ||
+            _snapshot is not { } snapshot)
+        {
+            return;
+        }
+
+        _requestMenuBehaviorEdit(
+            new MenuDefinitionBehaviorEditRequestedEventArgs(
+                MenuPresentationText.MenuTitle(snapshot.Name),
+                snapshot.DefinitionBehavior,
+                snapshot.ExpressionSupport,
+                value => ApplyStructuralEdit(
+                    new ReplaceMenuBehaviorEdit(value))));
     }
 
     internal bool IsAssetReferenceMissing(

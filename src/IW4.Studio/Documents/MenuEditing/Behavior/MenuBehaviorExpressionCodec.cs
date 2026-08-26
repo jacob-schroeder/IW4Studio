@@ -7,9 +7,10 @@ using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 namespace IW4.Studio.Documents.MenuEditing.Behavior;
 
 /// <summary>
-/// Connects the shared expression authoring subsystem to ItemDef behavior.
-/// Imported roots are associated with their lossless Statement wrapper by
-/// identity; a newly parsed root is lowered as a new copy-on-write Statement.
+/// Connects the shared expression authoring subsystem to MenuDef and ItemDef
+/// behavior. Imported roots are associated with their lossless Statement
+/// wrapper by identity; a newly parsed root is lowered as a new copy-on-write
+/// Statement.
 /// </summary>
 public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
 {
@@ -43,10 +44,7 @@ public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
     internal void UseCurrentBaseline(MenuItemBehaviorBindings value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        _currentStatements.Clear();
-        _currentSupportTables.Clear();
-        if (SupportingData is not null)
-            IndexSupport(SupportingData);
+        BeginCurrentBaseline();
 
         Index(value.Expressions.Visible);
         Index(value.Expressions.Disabled);
@@ -65,6 +63,29 @@ public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
         foreach (MenuBehaviorKeyHandlerBinding key in value.KeyHandlers.Handlers)
             Index(key.Action, visited);
         _hasCurrentBaseline = true;
+    }
+
+    internal void UseCurrentBaseline(MenuDefinitionBehaviorBindings value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        BeginCurrentBaseline();
+
+        var visited = new HashSet<MenuBehaviorEventHandlerSet>(
+            ReferenceEqualityComparer.Instance);
+        foreach (MenuBehaviorEventBinding binding in EventBindings(value))
+            Index(binding.Handlers, visited);
+        foreach (MenuBehaviorKeyHandlerBinding key in value.KeyHandlers.Handlers)
+            Index(key.Action, visited);
+        _hasCurrentBaseline = true;
+    }
+
+    private void BeginCurrentBaseline()
+    {
+        _hasCurrentBaseline = false;
+        _currentStatements.Clear();
+        _currentSupportTables.Clear();
+        if (SupportingData is not null)
+            IndexSupport(SupportingData);
     }
 
     public BehaviorExpression? Import(
@@ -209,6 +230,15 @@ public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
         yield return value.OnFocus;
         yield return value.LeaveFocus;
         yield return value.ListBoxDoubleClick;
+    }
+
+    private static IEnumerable<MenuBehaviorEventBinding> EventBindings(
+        MenuDefinitionBehaviorBindings value)
+    {
+        yield return value.OnOpen;
+        yield return value.OnCloseRequest;
+        yield return value.OnClose;
+        yield return value.OnEscape;
     }
 
     public IReadOnlyList<MenuBehaviorValidationIssue> Validate(

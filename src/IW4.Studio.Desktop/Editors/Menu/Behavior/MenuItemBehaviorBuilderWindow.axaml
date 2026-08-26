@@ -5,7 +5,7 @@
         xmlns:behavior="using:IW4.Studio.Desktop.Editors.Menu.Behavior"
         x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.MenuItemBehaviorBuilderWindow"
         x:DataType="behavior:MenuItemBehaviorBuilderSessionViewModel"
-        Title="Item Behavior"
+        Title="{Binding WindowTitle}"
         Width="1060"
         Height="760"
         MinWidth="860"
@@ -22,14 +22,14 @@
       <Grid ColumnDefinitions="*,Auto"
             ColumnSpacing="12">
         <StackPanel Spacing="3">
-          <TextBlock Text="Item behavior"
+          <TextBlock Text="{Binding Heading}"
                      FontSize="19"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextBrush}" />
           <TextBlock Text="{Binding ScopeText}"
                      FontSize="10"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
-          <TextBlock Text="Build event hooks, key handlers, and dynamic bindings before applying one item-level change."
+          <TextBlock Text="{Binding Description}"
                      FontSize="10"
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
@@ -38,6 +38,7 @@
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Text="Static dvars select existing rows or append a named static-dvar row in Bindings. expressionRef(index) always selects an existing reusable definition."
+                     IsVisible="{Binding HasBindings}"
                      FontSize="9"
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />

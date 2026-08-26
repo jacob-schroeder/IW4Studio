@@ -64,7 +64,8 @@ internal static partial class MenuDocumentCompiler
         MenuDefAsset source,
         MenuSettingsValue? settings = null,
         WindowDef? window = null,
-        IReadOnlyList<ItemDefReference>? items = null)
+        IReadOnlyList<ItemDefReference>? items = null,
+        MenuDefinitionBehaviorAssetBindings? behavior = null)
     {
         IReadOnlyList<ItemDefReference> effectiveItems = items ?? source.Items;
         return new MenuDefAsset
@@ -85,16 +86,30 @@ internal static partial class MenuDocumentCompiler
             FadeAmount = settings?.FadeAmount ?? source.FadeAmount,
             FadeInAmount = settings?.FadeInAmount ?? source.FadeInAmount,
             BlurRadius = settings?.BlurRadius ?? source.BlurRadius,
-            OnOpen = source.OnOpen,
-            OnOpenSet = source.OnOpenSet,
-            OnCloseRequest = source.OnCloseRequest,
-            OnCloseRequestSet = source.OnCloseRequestSet,
-            OnClose = source.OnClose,
-            OnCloseSet = source.OnCloseSet,
-            OnEsc = source.OnEsc,
-            OnEscSet = source.OnEscSet,
-            ExecKeys = source.ExecKeys,
-            ExecKeyHandler = source.ExecKeyHandler,
+            OnOpen = behavior is null ? source.OnOpen : behavior.OnOpen.Pointer,
+            OnOpenSet = behavior is null
+                ? source.OnOpenSet
+                : behavior.OnOpen.Handlers,
+            OnCloseRequest = behavior is null
+                ? source.OnCloseRequest
+                : behavior.OnCloseRequest.Pointer,
+            OnCloseRequestSet = behavior is null
+                ? source.OnCloseRequestSet
+                : behavior.OnCloseRequest.Handlers,
+            OnClose = behavior is null ? source.OnClose : behavior.OnClose.Pointer,
+            OnCloseSet = behavior is null
+                ? source.OnCloseSet
+                : behavior.OnClose.Handlers,
+            OnEsc = behavior is null ? source.OnEsc : behavior.OnEscape.Pointer,
+            OnEscSet = behavior is null
+                ? source.OnEscSet
+                : behavior.OnEscape.Handlers,
+            ExecKeys = behavior is null
+                ? source.ExecKeys
+                : behavior.ExecKeysPointer,
+            ExecKeyHandler = behavior is null
+                ? source.ExecKeyHandler
+                : behavior.ExecKeyHandler,
             VisibleExpression = source.VisibleExpression,
             VisibleStatement = source.VisibleStatement,
             AllowedBinding = settings is null

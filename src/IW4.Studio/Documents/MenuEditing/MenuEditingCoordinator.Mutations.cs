@@ -1,5 +1,7 @@
 using IW4.Assets.Assets.Menu;
 using IW4.Linker.Contracts;
+using IW4.Studio.Documents.MenuEditing.Behavior;
+using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
@@ -421,6 +423,12 @@ public sealed partial class MenuEditingCoordinator
 
         return edit switch
         {
+            ReplaceMenuBehaviorEdit value => source.Id == target.Id
+                ? value
+                : value with
+                {
+                    Value = DetachMenuBehavior(value.Value)
+                },
             ReplaceItemEdit value => value with { ItemId = Rebind(value.ItemId) },
             ReplaceItemPayloadEdit value => value with { ItemId = Rebind(value.ItemId) },
             ReplaceItemWindowEdit value => value with { ItemId = Rebind(value.ItemId) },
@@ -432,6 +440,189 @@ public sealed partial class MenuEditingCoordinator
             _ => edit
         };
     }
+
+    private static MenuDefinitionBehaviorBindings DetachMenuBehavior(
+        MenuDefinitionBehaviorBindings value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return new MenuDefinitionBehaviorBindings(
+            DetachEventBinding(value.OnOpen, "onOpen"),
+            DetachEventBinding(value.OnCloseRequest, "onCloseRequest"),
+            DetachEventBinding(value.OnClose, "onClose"),
+            DetachEventBinding(value.OnEscape, "onEscape"),
+            DetachKeyHandlers(value.KeyHandlers))
+        {
+            ExpressionSupportDelta = value.ExpressionSupportDelta
+        };
+    }
+
+    private static MenuBehaviorEventBinding DetachEventBinding(
+        MenuBehaviorEventBinding value,
+        string path)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return new MenuBehaviorEventBinding(
+            DetachEventSet(value.Handlers, path),
+            default);
+    }
+
+    private static MenuBehaviorEventHandlerSet? DetachEventSet(
+        MenuBehaviorEventHandlerSet? value,
+        string path)
+    {
+        if (value is null)
+            return null;
+
+        var handlers = new MenuBehaviorEventHandlerEntry[value.Handlers.Length];
+        MenuBehaviorEventHandler? previous = null;
+        for (int index = 0; index < value.Handlers.Length; index++)
+        {
+            MenuBehaviorEventHandler? handler = value.Handlers[index].Handler;
+            if (handler is null)
+            {
+                throw new InvalidOperationException(
+                    $"Menu behavior '{path}' contains an unresolved handler " +
+                    "that cannot be copied to a synchronized definition.");
+            }
+            if (handler is MenuBehaviorElseEventHandler &&
+                previous is not MenuBehaviorConditionalEventHandler)
+            {
+                throw new InvalidOperationException(
+                    $"Menu behavior '{path}' contains an orphan else handler " +
+                    "that cannot be copied to a synchronized definition.");
+            }
+
+            handlers[index] = MenuBehaviorEventHandlerEntry.Create(
+                DetachEventHandler(handler, $"{path}.handlers[{index}]"));
+            previous = handler;
+        }
+
+        return new MenuBehaviorEventHandlerSet(handlers);
+    }
+
+    private static MenuBehaviorEventHandler DetachEventHandler(
+        MenuBehaviorEventHandler value,
+        string path) => value switch
+        {
+            MenuBehaviorScriptEventHandler script when script.Script is not null =>
+                MenuBehaviorScriptEventHandler.Create(script.Script),
+            MenuBehaviorScriptEventHandler => throw new InvalidOperationException(
+                $"Menu behavior '{path}' contains a script without text and " +
+                "cannot be copied to a synchronized definition."),
+            MenuBehaviorConditionalEventHandler conditional
+                when conditional.Then is not null =>
+                MenuBehaviorConditionalEventHandler.Create(
+                    DetachExpression(conditional.Condition, $"{path}.condition"),
+                    DetachEventSet(conditional.Then, $"{path}.then")!),
+            MenuBehaviorConditionalEventHandler => throw new InvalidOperationException(
+                $"Menu behavior '{path}' contains an incomplete conditional " +
+                "and cannot be copied to a synchronized definition."),
+            MenuBehaviorElseEventHandler otherwise
+                when otherwise.Handlers is not null =>
+                MenuBehaviorElseEventHandler.Create(
+                    DetachEventSet(otherwise.Handlers, $"{path}.handlers")!),
+            MenuBehaviorElseEventHandler => throw new InvalidOperationException(
+                $"Menu behavior '{path}' contains an incomplete else handler " +
+                "and cannot be copied to a synchronized definition."),
+            MenuBehaviorSetLocalVariableEventHandler local
+                when Enum.IsDefined(local.ValueType) &&
+                     !string.IsNullOrWhiteSpace(local.Name) =>
+                MenuBehaviorSetLocalVariableEventHandler.Create(
+                    local.ValueType,
+                    local.Name,
+                    DetachExpression(local.Expression, $"{path}.expression")),
+            MenuBehaviorSetLocalVariableEventHandler =>
+                throw new InvalidOperationException(
+                    $"Menu behavior '{path}' contains an incomplete set-local " +
+                    "handler and cannot be copied to a synchronized definition."),
+            MenuBehaviorOpaqueEventHandler => throw new InvalidOperationException(
+                $"Menu behavior '{path}' contains an opaque handler that " +
+                "cannot be copied to a synchronized definition."),
+            _ => throw new InvalidOperationException(
+                $"Menu behavior '{path}' contains an unsupported handler that " +
+                "cannot be copied to a synchronized definition.")
+        };
+
+    private static MenuBehaviorKeyHandlerBindings DetachKeyHandlers(
+        MenuBehaviorKeyHandlerBindings value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.HasTruncatedImportedTail)
+        {
+            throw new InvalidOperationException(
+                "Menu key handlers contain an unresolved or cyclic tail and " +
+                "cannot be copied to a synchronized definition.");
+        }
+
+        return new MenuBehaviorKeyHandlerBindings(
+            value.Handlers.Select((handler, index) =>
+            {
+                if (handler.Action is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Menu key handler {index} has no action and cannot be " +
+                        "copied to a synchronized definition.");
+                }
+
+                return MenuBehaviorKeyHandlerBinding.Create(
+                    handler.Key,
+                    DetachEventSet(
+                        handler.Action,
+                        $"keyHandlers[{index}].action")!);
+            }));
+    }
+
+    private static BehaviorExpression DetachExpression(
+        MenuBehaviorExpressionBinding value,
+        string path)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Value is null)
+        {
+            throw new InvalidOperationException(
+                $"Menu behavior expression '{path}' is missing and cannot be " +
+                "copied to a synchronized definition.");
+        }
+
+        return CloneExpression(value.Value, path);
+    }
+
+    private static BehaviorExpression CloneExpression(
+        BehaviorExpression value,
+        string path) => value switch
+        {
+            BehaviorIntegerExpression integer =>
+                new BehaviorIntegerExpression(integer.Value),
+            BehaviorFloatExpression number =>
+                new BehaviorFloatExpression(number.Value),
+            BehaviorStringExpression text =>
+                new BehaviorStringExpression(text.Value),
+            BehaviorUnaryExpression unary => new BehaviorUnaryExpression(
+                unary.Operation,
+                CloneExpression(unary.Operand, path)),
+            BehaviorBinaryExpression binary => new BehaviorBinaryExpression(
+                binary.Operation,
+                CloneExpression(binary.Left, path),
+                CloneExpression(binary.Right, path)),
+            BehaviorCallExpression call => new BehaviorCallExpression(
+                call.Operation,
+                call.Arguments.Select(argument => CloneExpression(argument, path))),
+            BehaviorReusableExpressionReferenceExpression reusable =>
+                new BehaviorReusableExpressionReferenceExpression(
+                    reusable.ReferenceId),
+            BehaviorStaticDvarExpression dvar =>
+                new BehaviorStaticDvarExpression(
+                    dvar.Operation,
+                    new BehaviorStaticDvarReference(
+                        dvar.Dvar.Index,
+                        dvar.Dvar.Name)),
+            BehaviorOpaqueExpression => throw new InvalidOperationException(
+                $"Menu behavior expression '{path}' is opaque and cannot be " +
+                "copied to a synchronized definition."),
+            _ => throw new InvalidOperationException(
+                $"Menu behavior expression '{path}' is unsupported and cannot " +
+                "be copied to a synchronized definition.")
+        };
 
     private sealed record MirroredMenuRowUpdate(
         TargetZoneRowIdentity RowIdentity,

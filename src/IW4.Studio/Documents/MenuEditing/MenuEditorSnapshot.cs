@@ -23,6 +23,7 @@ public sealed class MenuEditorSnapshot
         MenuSettingsValue settings,
         MenuWindowSnapshot window,
         IEnumerable<MenuItemSnapshot> items,
+        MenuDefinitionBehaviorBindings definitionBehavior,
         MenuBehaviorSummary behavior,
         BehaviorExpressionSupport expressionSupport,
         MenuDebugProgram debugProgram,
@@ -31,6 +32,7 @@ public sealed class MenuEditorSnapshot
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(definitionBehavior);
         ArgumentNullException.ThrowIfNull(behavior);
         ArgumentNullException.ThrowIfNull(expressionSupport);
         ArgumentNullException.ThrowIfNull(debugProgram);
@@ -38,6 +40,7 @@ public sealed class MenuEditorSnapshot
         Settings = settings;
         Window = window;
         _items = Array.AsReadOnly(items.ToArray());
+        DefinitionBehavior = definitionBehavior;
         Behavior = behavior;
         ExpressionSupport = expressionSupport;
         DebugProgram = debugProgram;
@@ -50,6 +53,7 @@ public sealed class MenuEditorSnapshot
     public MenuSettingsValue Settings { get; }
     public MenuWindowSnapshot Window { get; }
     public IReadOnlyList<MenuItemSnapshot> Items => _items;
+    public MenuDefinitionBehaviorBindings DefinitionBehavior { get; }
     public MenuBehaviorSummary Behavior { get; }
     public BehaviorExpressionSupport ExpressionSupport { get; }
     public MenuDebugProgram DebugProgram { get; }
