@@ -188,12 +188,13 @@
                               <Grid Grid.Row="1"
                                     ColumnDefinitions="*,Auto"
                                     Margin="2,4,0,0">
-                                <TextBlock Text="{Binding HashText}"
+                                <TextBlock Text="{Binding FooterText}"
                                            VerticalAlignment="Center"
                                            FontFamily="Consolas"
                                            FontSize="9"
                                            Foreground="{DynamicResource StudioTextSubtleBrush}"
-                                           ToolTip.Tip="Preserved serialized hash" />
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding FooterToolTipText}" />
                                 <CheckBox Grid.Column="1"
                                           Content="NULL"
                                           IsChecked="{Binding IsNull, Mode=TwoWay}"
