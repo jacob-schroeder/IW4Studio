@@ -1,15 +1,18 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using Avalonia.Threading;
 using IW4.Assets.Assets.Sound;
 using IW4.Runtime.Assets.Sound;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Sound;
+using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
 public sealed class SoundPreviewViewModel
     : ObservableObject,
       IAssetEditorProperties,
+      IAssetEditorStagingState,
       IDisposable
 {
     internal const int VisualizationBarCount = 120;
@@ -18,12 +21,15 @@ public sealed class SoundPreviewViewModel
 
     private readonly ISoundPayloadResolver _soundPayloadResolver;
     private readonly string? _unavailableStreamReason;
+    private readonly AssetEditorSession? _editorSession;
     private readonly DispatcherTimer _playbackTimer;
     private readonly object _variantLoadGate = new();
     private CancellationTokenSource? _variantLoadCancellation;
     private long _variantLoadRevision;
     private SoundPreviewVariantViewModel? _selectedVariant;
     private SoundPreviewMaterialization? _selectedPreview;
+    private LoadedSound? _editableSelectedPayload;
+    private SoundImportCandidate? _stagedImport;
     private SoundPreviewPlayer? _player;
     private IReadOnlyList<double> _liveLevels = [];
     private TimeSpan _position;
@@ -35,6 +41,7 @@ public sealed class SoundPreviewViewModel
     private bool _playbackFailed;
     private bool _disposed;
     private string? _playbackError;
+    private string _statusMessage = string.Empty;
 
     public SoundPreviewViewModel(SoundAliasListAsset sound)
         : this(
@@ -49,14 +56,16 @@ public sealed class SoundPreviewViewModel
         ISoundPayloadResolver soundPayloadResolver,
         string? unavailableStreamReason = null,
         int? initialAliasIndex = null,
-        int? initialFileIndex = null)
+        int? initialFileIndex = null,
+        AssetEditorSession? editorSession = null)
         : this(
             sound,
             soundPayloadResolver,
             unavailableStreamReason,
             initialAliasIndex,
             initialFileIndex,
-            onlyInitialVariant: false)
+            onlyInitialVariant: false,
+            editorSession: editorSession)
     {
     }
 
@@ -66,12 +75,14 @@ public sealed class SoundPreviewViewModel
         string? unavailableStreamReason,
         int? initialAliasIndex,
         int? initialFileIndex,
-        bool onlyInitialVariant)
+        bool onlyInitialVariant,
+        AssetEditorSession? editorSession = null)
     {
         ArgumentNullException.ThrowIfNull(sound);
         ArgumentNullException.ThrowIfNull(soundPayloadResolver);
         _soundPayloadResolver = soundPayloadResolver;
         _unavailableStreamReason = unavailableStreamReason;
+        _editorSession = editorSession;
         Name = string.IsNullOrWhiteSpace(sound.AliasName)
             ? "<unnamed sound>"
             : sound.AliasName;
@@ -95,6 +106,7 @@ public sealed class SoundPreviewViewModel
         _selectedVariant ??= Variants.FirstOrDefault(
                 variant => variant.CanAttemptPreview)
             ?? Variants.FirstOrDefault();
+        RefreshSelectedEditingState();
         ResetLiveLevels();
 
         _playbackTimer = new DispatcherTimer
@@ -116,7 +128,8 @@ public sealed class SoundPreviewViewModel
             unavailableStreamReason: null,
             aliasIndex,
             fileIndex,
-            onlyInitialVariant: true);
+            onlyInitialVariant: true,
+            editorSession: null);
 
     public string Name { get; }
 
@@ -128,13 +141,57 @@ public sealed class SoundPreviewViewModel
 
     public bool HasVariantSelector => Variants.Count > 1;
 
+    public bool CanSelectVariant => !HasUnappliedChanges;
+
+    public bool HasEditorSession => _editorSession is not null;
+
+    public bool CanEditSelectedPayload =>
+        !_disposed &&
+        _editorSession?.CanEdit == true &&
+        _editableSelectedPayload is not null;
+
+    public bool IsSelectedPayloadReadOnly => !CanEditSelectedPayload;
+
+    public string ReadOnlyBadgeText => HasEditorSession
+        ? "READ ONLY"
+        : "PREVIEW ONLY";
+
+    public bool HasUnappliedChanges => _stagedImport is not null;
+
+    public bool CanImport => CanEditSelectedPayload;
+
+    public bool CanApply => CanEditSelectedPayload && HasUnappliedChanges;
+
+    public bool CanRevert =>
+        _editorSession?.CanEdit == true &&
+        (HasUnappliedChanges || _editorSession.HasUnsavedChanges);
+
+    public bool CanExport =>
+        !_disposed &&
+        !_isLoadingPreview &&
+        _selectedPreview?.PhysicalData is { Length: > 0 };
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set
+        {
+            if (!SetProperty(ref _statusMessage, value))
+                return;
+            OnPropertyChanged(nameof(HasStatusMessage));
+        }
+    }
+
+    public bool HasStatusMessage => !string.IsNullOrWhiteSpace(StatusMessage);
+
     public SoundPreviewVariantViewModel? SelectedVariant
     {
         get => _selectedVariant;
         set
         {
             if (ReferenceEquals(_selectedVariant, value) ||
-                value is not null && !Variants.Contains(value))
+                value is not null && !Variants.Contains(value) ||
+                _stagedImport is not null)
             {
                 return;
             }
@@ -148,6 +205,7 @@ public sealed class SoundPreviewViewModel
             SetPosition(TimeSpan.Zero);
             ResetLiveLevels();
             OnPropertyChanged();
+            RefreshSelectedEditingState();
             NotifySelectedVariantChanged();
             BeginSelectedVariantLoad();
         }
@@ -261,6 +319,182 @@ public sealed class SoundPreviewViewModel
                 new("Stored data", StoredSizeText)
             ]
             : [new("Aliases", AliasCountText)];
+
+    internal bool TryCaptureImportTarget(out SoundImportTarget? target)
+    {
+        target = null;
+        if (!CanImport ||
+            SelectedVariant is not { } variant ||
+            _editableSelectedPayload is not { } payload)
+        {
+            return false;
+        }
+
+        target = new SoundImportTarget(
+            variant.AliasIndex,
+            variant.FileIndex,
+            payload);
+        return true;
+    }
+
+    internal bool TryStageImport(
+        SoundImportCandidate candidate,
+        string source,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        error = null;
+        string reason = "The selected payload is no longer editable.";
+        LoadedSound? current = null;
+        if (_editorSession is null ||
+            SelectedVariant is not { } variant ||
+            variant.AliasIndex != candidate.AliasIndex ||
+            variant.FileIndex != candidate.FileIndex ||
+            !_editorSession.TryCaptureEditableSoundPayload(
+                variant.AliasIndex,
+                variant.FileIndex,
+                out current,
+                out reason) ||
+            current is null ||
+            !string.Equals(
+                current.Name,
+                candidate.Replacement.Name,
+                StringComparison.Ordinal))
+        {
+            error = string.IsNullOrWhiteSpace(reason)
+                ? "The selected payload is no longer editable."
+                : reason;
+            StatusMessage = error;
+            NotifyEditingStateChanged();
+            return false;
+        }
+
+        StopAndReleasePlayer();
+        CancelSelectedVariantLoad();
+        _stagedImport = candidate;
+        _editableSelectedPayload = current;
+        _selectedPreview = candidate.Preview;
+        _playbackFailed = false;
+        _playbackError = null;
+        SetPosition(TimeSpan.Zero);
+        ResetLiveLevels();
+        string displaySource = string.IsNullOrWhiteSpace(source)
+            ? "the selected MP3"
+            : source;
+        StatusMessage =
+            $"Imported {displaySource} for preview. Review it, then Apply to stage the change for the fastfile.";
+        NotifySelectedVariantChanged();
+        NotifyEditingStateChanged();
+        return true;
+    }
+
+    public bool ApplyImportedPayload()
+    {
+        if (!CanApply ||
+            _editorSession is null ||
+            _stagedImport is not { } candidate)
+        {
+            return false;
+        }
+
+        bool applied;
+        IReadOnlyList<AssetValidationIssue> issues;
+        try
+        {
+            applied = _editorSession.ApplyCompiledSound(
+                candidate.AliasIndex,
+                candidate.FileIndex,
+                candidate.Replacement,
+                out issues);
+        }
+        catch (Exception exception) when (exception is
+                   InvalidDataException or
+                   InvalidOperationException or
+                   ArgumentException or
+                   OverflowException)
+        {
+            StatusMessage = $"Sound Apply blocked: {exception.Message}";
+            NotifyEditingStateChanged();
+            return false;
+        }
+
+        AssetValidationIssue? error = issues.FirstOrDefault(issue =>
+            issue.Severity == AssetValidationSeverity.Error);
+        if (!applied && error is not null)
+        {
+            StatusMessage = $"Sound Apply blocked: {error.Message}";
+            NotifyEditingStateChanged();
+            return false;
+        }
+
+        _stagedImport = null;
+        RefreshSelectedEditingState();
+        ReloadSelectedPreview();
+        StatusMessage = applied
+            ? "Applied the embedded MPEG payload. Save the fastfile to persist it."
+            : "The imported MPEG payload already matches the applied Sound.";
+        NotifyEditingStateChanged();
+        return applied;
+    }
+
+    public void RevertSound()
+    {
+        if (!CanRevert)
+            return;
+
+        if (_stagedImport is not null)
+        {
+            _stagedImport = null;
+            RefreshSelectedEditingState();
+            ReloadSelectedPreview();
+            StatusMessage = "Discarded the imported MPEG payload.";
+            NotifyEditingStateChanged();
+            return;
+        }
+
+        bool reverted = _editorSession?.Revert() == true;
+        RefreshSelectedEditingState();
+        ReloadSelectedPreview();
+        StatusMessage = reverted
+            ? "Reverted the Sound and embedded payload to the saved baseline."
+            : "The Sound already matches its saved baseline.";
+        NotifyEditingStateChanged();
+    }
+
+    internal bool TryCaptureExport(out SoundExportPayload? export)
+    {
+        export = null;
+        if (!CanExport ||
+            _selectedPreview?.PhysicalData is not { Length: > 0 } bytes)
+        {
+            return false;
+        }
+
+        string sourceName = _editableSelectedPayload?.Name ??
+            SelectedVariant?.DisplayName ??
+            Name;
+        export = new SoundExportPayload(
+            bytes.ToArray(),
+            BuildSuggestedFileName(sourceName));
+        return true;
+    }
+
+    public void ReportImportFailure(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+        StatusMessage = $"Sound import failed: {message}";
+    }
+
+    public void ReportExportFailure(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+        StatusMessage = $"Sound export failed: {message}";
+    }
+
+    public void ReportExportSuccess(string destination) =>
+        StatusMessage = $"Exported the MPEG payload to {destination}.";
 
     public void TogglePlayback()
     {
@@ -460,7 +694,61 @@ public sealed class SoundPreviewViewModel
         OnPropertyChanged(nameof(PlaybackStatus));
         OnPropertyChanged(nameof(PlayPauseToolTip));
         OnPropertyChanged(nameof(VisualizerCaption));
+        OnPropertyChanged(nameof(CanExport));
         OnPropertyChanged(nameof(EditorProperties));
+    }
+
+    private void RefreshSelectedEditingState()
+    {
+        _editableSelectedPayload = null;
+        string reason;
+        if (_editorSession is null)
+        {
+            reason = "This preview is read-only. Packed payloads can be exported but are not rewritten.";
+        }
+        else if (SelectedVariant is not { } variant)
+        {
+            reason = "This Sound has no selected payload.";
+        }
+        else if (_editorSession.TryCaptureEditableSoundPayload(
+                     variant.AliasIndex,
+                     variant.FileIndex,
+                     out LoadedSound? payload,
+                     out reason) &&
+                 payload is not null)
+        {
+            _editableSelectedPayload = payload;
+            reason = string.Empty;
+        }
+
+        StatusMessage = reason;
+        NotifyEditingStateChanged();
+    }
+
+    private void ReloadSelectedPreview()
+    {
+        StopAndReleasePlayer();
+        CancelSelectedVariantLoad();
+        _selectedPreview = null;
+        _playbackFailed = false;
+        _playbackError = null;
+        SetPosition(TimeSpan.Zero);
+        ResetLiveLevels();
+        NotifySelectedVariantChanged();
+        BeginSelectedVariantLoad();
+    }
+
+    private void NotifyEditingStateChanged()
+    {
+        OnPropertyChanged(nameof(CanSelectVariant));
+        OnPropertyChanged(nameof(CanEditSelectedPayload));
+        OnPropertyChanged(nameof(IsSelectedPayloadReadOnly));
+        OnPropertyChanged(nameof(ReadOnlyBadgeText));
+        OnPropertyChanged(nameof(HasUnappliedChanges));
+        OnPropertyChanged(nameof(CanImport));
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(CanRevert));
+        OnPropertyChanged(nameof(CanExport));
     }
 
     private void BeginSelectedVariantLoad()
@@ -478,11 +766,17 @@ public sealed class SoundPreviewViewModel
         _isLoadingPreview = true;
         NotifySelectedVariantChanged();
         long revision = Interlocked.Increment(ref _variantLoadRevision);
-        _ = LoadSelectedVariantAsync(variant, revision, cancellation);
+        LoadedSound? loadedSoundOverride = _editableSelectedPayload;
+        _ = LoadSelectedVariantAsync(
+            variant,
+            loadedSoundOverride,
+            revision,
+            cancellation);
     }
 
     private async Task LoadSelectedVariantAsync(
         SoundPreviewVariantViewModel variant,
+        LoadedSound? loadedSoundOverride,
         long revision,
         CancellationTokenSource cancellation)
     {
@@ -496,6 +790,7 @@ public sealed class SoundPreviewViewModel
                         () => variant.Materialize(
                             _soundPayloadResolver,
                             _unavailableStreamReason,
+                            loadedSoundOverride,
                             cancellationToken),
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -622,6 +917,28 @@ public sealed class SoundPreviewViewModel
             return $"{(int)duration.TotalHours}:{duration.Minutes:00}:{duration.Seconds:00}";
         return $"{(int)duration.TotalMinutes}:{duration.Seconds:00}.{duration.Milliseconds / 10:00}";
     }
+
+    private static string BuildSuggestedFileName(string value)
+    {
+        string normalized = value.TrimStart(',').Replace('\\', '/');
+        string fileName = Path.GetFileName(normalized);
+        if (string.IsNullOrWhiteSpace(fileName))
+            fileName = "sound";
+        if (string.Equals(
+                Path.GetExtension(fileName),
+                ".mp3",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = Path.GetFileNameWithoutExtension(fileName);
+        }
+
+        HashSet<char> invalid = [.. Path.GetInvalidFileNameChars()];
+        char[] sanitized = fileName
+            .Select(character => invalid.Contains(character) ? '_' : character)
+            .ToArray();
+        string result = new string(sanitized).Trim();
+        return string.IsNullOrWhiteSpace(result) ? "sound" : result;
+    }
 }
 
 public sealed class SoundPreviewVariantViewModel
@@ -706,6 +1023,7 @@ public sealed class SoundPreviewVariantViewModel
     internal SoundPreviewMaterialization Materialize(
         ISoundPayloadResolver soundPayloadResolver,
         string? unavailableStreamReason,
+        LoadedSound? loadedSoundOverride,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -724,7 +1042,7 @@ public sealed class SoundPreviewVariantViewModel
                 "This sound-file variant is marked absent by the asset.");
         }
 
-        if (_soundFile.Loaded?.LoadedSound is { } loaded)
+        if ((loadedSoundOverride ?? _soundFile.Loaded?.LoadedSound) is { } loaded)
         {
             byte[]? bytes = loaded.PhysicalData;
             if (bytes is not { Length: > 0 })
@@ -748,7 +1066,8 @@ public sealed class SoundPreviewVariantViewModel
                     bytes.Length,
                     "This loaded codec is not supported by the sound preview yet.",
                     loaded.SampleRate,
-                    loaded.ChannelCount);
+                    loaded.ChannelCount,
+                    bytes);
         }
 
         if (_soundFile.Streamed is { } streamed)
@@ -769,7 +1088,8 @@ public sealed class SoundPreviewVariantViewModel
                     SoundPreviewMaterialization.Failed(
                         "Unsupported streamed codec",
                         bytes.Length,
-                        "This packed codec is not supported by the sound preview yet.");
+                        "This packed codec is not supported by the sound preview yet.",
+                        physicalData: bytes);
             }
 
             return SoundPreviewMaterialization.Failed(
@@ -874,6 +1194,106 @@ public sealed class SoundPreviewVariantViewModel
 
 }
 
+internal sealed record SoundImportTarget(
+    int AliasIndex,
+    int FileIndex,
+    LoadedSound Template);
+
+internal sealed record SoundImportCandidate(
+    int AliasIndex,
+    int FileIndex,
+    LoadedSound Replacement,
+    SoundPreviewMaterialization Preview)
+{
+    internal static SoundImportCandidate Compile(
+        SoundImportTarget target,
+        ReadOnlyMemory<byte> sourceBytes)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (!MpegAudioPreview.TryAnalyze(
+                sourceBytes.Span,
+                SoundPreviewViewModel.VisualizationBarCount,
+                out MpegAudioPreviewInfo? analysis) ||
+            analysis is null)
+        {
+            throw new InvalidDataException(
+                "The file is not a supported contiguous MPEG Layer III stream.");
+        }
+
+        if (analysis.AudioByteCount <= 0 || analysis.FrameOffsets.Count == 0)
+            throw new InvalidDataException("The MP3 contains no MPEG audio frames.");
+        if (analysis.FrameOffsets.Count > ushort.MaxValue)
+        {
+            throw new InvalidDataException(
+                "The MP3 contains too many MPEG frames for an IW4 LoadedSound.");
+        }
+
+        long durationMilliseconds = checked(
+            analysis.TotalSamples * 1000L / analysis.SampleRate);
+        if (durationMilliseconds is <= 0 or > ushort.MaxValue)
+        {
+            throw new InvalidDataException(
+                "Embedded IW4 sounds must be between 1 ms and 65.535 seconds long.");
+        }
+        if (analysis.SampleRate > ushort.MaxValue ||
+            analysis.ChannelCount > ushort.MaxValue)
+        {
+            throw new InvalidDataException(
+                "The MP3 sample layout cannot be represented by an IW4 LoadedSound.");
+        }
+
+        byte[] physicalData = sourceBytes.Slice(
+            analysis.AudioStartOffset,
+            analysis.AudioByteCount).ToArray();
+        byte[] seekTable = new byte[checked(
+            analysis.FrameOffsets.Count * sizeof(uint))];
+        for (int index = 0; index < analysis.FrameOffsets.Count; index++)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(
+                seekTable.AsSpan(index * sizeof(uint), sizeof(uint)),
+                checked((uint)analysis.FrameOffsets[index]));
+        }
+
+        LoadedSound template = target.Template;
+        var replacement = new LoadedSound
+        {
+            Offset = template.Offset,
+            RuntimeAddress = template.RuntimeAddress,
+            NamePointer = template.NamePointer,
+            Name = template.Name,
+            PhysicalDataByteCount = physicalData.Length,
+            FrameCount = checked((ushort)durationMilliseconds),
+            ChannelCount = checked((ushort)analysis.ChannelCount),
+            SampleRate = checked((ushort)analysis.SampleRate),
+            Pad0E = template.Pad0E,
+            Pad10 = template.Pad10,
+            SeekTableCount = checked((ushort)analysis.FrameOffsets.Count),
+            SeekTablePointer = template.SeekTablePointer,
+            SeekTable = seekTable,
+            PhysicalDataPointer = template.PhysicalDataPointer,
+            PhysicalData = physicalData
+        };
+        SoundPreviewMaterialization preview = SoundPreviewMaterialization.Playable(
+            analysis.FormatName,
+            analysis.SampleRate,
+            analysis.ChannelCount,
+            physicalData.Length,
+            analysis.Duration,
+            analysis.Levels,
+            physicalData,
+            "Ready to preview the imported MPEG audio payload.");
+        return new SoundImportCandidate(
+            target.AliasIndex,
+            target.FileIndex,
+            replacement,
+            preview);
+    }
+}
+
+internal sealed record SoundExportPayload(
+    byte[] Bytes,
+    string SuggestedFileName);
+
 internal sealed class SoundPreviewMaterialization
 {
     private SoundPreviewMaterialization(
@@ -954,7 +1374,8 @@ internal sealed class SoundPreviewMaterialization
         int storedByteCount,
         string availabilityMessage,
         int sampleRate = 0,
-        int channelCount = 0) =>
+        int channelCount = 0,
+        byte[]? physicalData = null) =>
         new(
             formatText,
             sampleRate,
@@ -962,7 +1383,7 @@ internal sealed class SoundPreviewMaterialization
             storedByteCount,
             TimeSpan.Zero,
             [],
-            null,
+            physicalData,
             availabilityMessage);
 }
 

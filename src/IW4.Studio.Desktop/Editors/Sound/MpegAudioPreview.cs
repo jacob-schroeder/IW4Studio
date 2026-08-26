@@ -5,7 +5,11 @@ internal sealed record MpegAudioPreviewInfo(
     int SampleRate,
     int ChannelCount,
     TimeSpan Duration,
-    IReadOnlyList<double> Levels);
+    IReadOnlyList<double> Levels,
+    long TotalSamples,
+    int AudioStartOffset,
+    int AudioByteCount,
+    IReadOnlyList<int> FrameOffsets);
 
 internal static class MpegAudioPreview
 {
@@ -35,8 +39,11 @@ internal static class MpegAudioPreview
         if (!TryGetAudioStart(data, out int offset))
             return false;
 
+        int audioStartOffset = offset;
+        int audioEndOffset = offset;
         MpegFrameHeader? streamHeader = null;
         var frameGains = new List<double>();
+        var frameOffsets = new List<int>();
         long totalSamples = 0;
 
         while (offset < data.Length)
@@ -44,6 +51,7 @@ internal static class MpegAudioPreview
             ReadOnlySpan<byte> remaining = data[offset..];
             if (IsId3V1Tag(remaining))
             {
+                audioEndOffset = offset;
                 offset = data.Length;
                 break;
             }
@@ -67,9 +75,11 @@ internal static class MpegAudioPreview
                 return false;
 
             streamHeader ??= header;
+            frameOffsets.Add(offset - audioStartOffset);
             frameGains.Add(averageGain);
             totalSamples += header.SamplesPerFrame;
             offset += header.FrameLength;
+            audioEndOffset = offset;
         }
 
         if (streamHeader is not { } parsedHeader || frameGains.Count == 0)
@@ -84,7 +94,11 @@ internal static class MpegAudioPreview
             parsedHeader.SampleRate,
             parsedHeader.ChannelCount,
             TimeSpan.FromSeconds(durationSeconds),
-            BuildLevels(frameGains, visualizationBarCount));
+            BuildLevels(frameGains, visualizationBarCount),
+            totalSamples,
+            audioStartOffset,
+            audioEndOffset - audioStartOffset,
+            Array.AsReadOnly(frameOffsets.ToArray()));
         return true;
     }
 

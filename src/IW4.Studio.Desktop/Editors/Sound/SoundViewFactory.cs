@@ -34,7 +34,8 @@ public sealed class SoundViewFactory : IAssetEditorViewFactory
         var viewModel = new SoundPreviewViewModel(
             sound,
             resolver,
-            unavailableReason);
+            unavailableReason,
+            editorSession: surface as AssetEditorSession);
         var view = new SoundPreviewView { DataContext = viewModel };
         return new AssetEditorViewHost(
             view,

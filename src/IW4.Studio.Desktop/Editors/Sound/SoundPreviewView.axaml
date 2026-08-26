@@ -36,21 +36,83 @@
                        FontSize="10"
                        Foreground="{DynamicResource StudioTextMutedBrush}" />
           </StackPanel>
+          <TextBlock Text="{Binding StatusMessage}"
+                     IsVisible="{Binding HasStatusMessage}"
+                     MaxWidth="620"
+                     FontSize="9"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
 
-        <Border Grid.Column="1"
-                Padding="9,4"
-                CornerRadius="4"
-                VerticalAlignment="Center"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="1">
-          <TextBlock Text="PREVIEW ONLY"
-                     FontSize="9"
-                     FontWeight="SemiBold"
-                     LetterSpacing="0.5"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
-        </Border>
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Right"
+                    Spacing="7">
+          <Border Padding="9,4"
+                  IsVisible="{Binding IsSelectedPayloadReadOnly}"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="{Binding ReadOnlyBadgeText}"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.5"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="10,4"
+                  IsVisible="{Binding HasEditorSession}"
+                  IsEnabled="{Binding CanRevert}"
+                  ToolTip.Tip="Discard the imported payload or restore the saved Sound"
+                  Click="RevertButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+              <TextBlock Text="Revert" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="10,4"
+                  IsEnabled="{Binding CanExport}"
+                  ToolTip.Tip="Export the selected MPEG payload without changing the Sound"
+                  Click="ExportButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Export" Width="15" Height="15" />
+              <TextBlock Text="Export…" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="10,4"
+                  IsVisible="{Binding HasEditorSession}"
+                  IsEnabled="{Binding CanImport}"
+                  ToolTip.Tip="Import MP3 audio into an embedded payload owned only by this Sound"
+                  Click="ImportButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="FileImport" Width="15" Height="15" />
+              <TextBlock Text="Import…" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="primary"
+                  MinHeight="30"
+                  Padding="12,5"
+                  IsVisible="{Binding HasEditorSession}"
+                  IsEnabled="{Binding CanApply}"
+                  ToolTip.Tip="Apply the imported MPEG payload to this Sound"
+                  Click="ApplyButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
+              <TextBlock Text="Apply" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
       </Grid>
     </Border>
 
@@ -90,6 +152,7 @@
                       MaxWidth="520"
                       HorizontalAlignment="Left"
                       IsVisible="{Binding HasVariantSelector}"
+                      IsEnabled="{Binding CanSelectVariant}"
                       ItemsSource="{Binding Variants}"
                       SelectedItem="{Binding SelectedVariant, Mode=TwoWay}">
               <ComboBox.ItemTemplate>

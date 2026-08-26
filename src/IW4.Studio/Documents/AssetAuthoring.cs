@@ -5,6 +5,7 @@ using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.Menu;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.Assets.Sound;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Weapon;
@@ -105,6 +106,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new FontAdapter());
         registry.Register(new WeaponAdapter());
         registry.Register(new StructuredDataAdapter());
+        registry.Register(new SoundAdapter());
         foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
             registry.Register(new D3dbspAssetAdapter(assetType));
         return registry;
@@ -622,6 +624,71 @@ public sealed class AssetEditorSession : AssetEditorSurface
             return false;
         bool changed = _session.PublishCompiledDefinition(identity, definition, providers);
         Validation = new AssetEditorValidationState(validation);
+        return changed;
+    }
+
+    /// <summary>
+    /// Captures the current detached LoadedSound payload when it belongs to
+    /// the target zone. Shared payloads are isolated on publication.
+    /// </summary>
+    public bool TryCaptureEditableSoundPayload(
+        int aliasIndex,
+        int fileIndex,
+        out LoadedSound? payload,
+        out string reason)
+    {
+        ThrowIfClosed();
+        payload = null;
+        if (_adapter.AssetType != XAssetType.Sound)
+        {
+            reason = "This editor does not host a Sound.";
+            return false;
+        }
+        if (!CanEdit || _rowIdentity is not { } identity)
+        {
+            reason = "Only Sound assets owned by the current fastfile/zone can be modified.";
+            return false;
+        }
+
+        return _session.TryCaptureEditableSoundPayload(
+            identity,
+            aliasIndex,
+            fileIndex,
+            out payload,
+            out reason);
+    }
+
+    /// <summary>
+    /// Publishes a detached LoadedSound replacement and repoints every
+    /// same-key reference within this Sound in one editing-session revision.
+    /// </summary>
+    public bool ApplyCompiledSound(
+        int aliasIndex,
+        int fileIndex,
+        LoadedSound replacement,
+        out IReadOnlyList<AssetValidationIssue> issues)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.Sound)
+            throw new InvalidOperationException("This editor does not host a Sound.");
+        if (!CanEdit || _rowIdentity is not { } identity)
+        {
+            issues = Array.AsReadOnly([new AssetValidationIssue(
+                $"sound.aliases[{aliasIndex}].soundFiles[{fileIndex}]",
+                "Only Sound assets owned by the current fastfile/zone can be modified.",
+                AssetValidationSeverity.Error)]);
+            Validation = new AssetEditorValidationState(issues);
+            return false;
+        }
+
+        bool changed = _session.ApplyCompiledSound(
+            identity,
+            aliasIndex,
+            fileIndex,
+            replacement,
+            out issues);
+        Validation = new AssetEditorValidationState(issues);
         return changed;
     }
 

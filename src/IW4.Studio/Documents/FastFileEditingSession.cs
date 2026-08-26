@@ -1,6 +1,7 @@
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Image;
+using IW4.Assets.Assets.Sound;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
@@ -907,6 +908,173 @@ public sealed class FastFileEditingSession : IDisposable
         IReadOnlyList<IW4.Assets.Assets.BaseAsset> providers) =>
         PublishCompiledDefinition(identity, definition, providers);
 
+    internal bool TryCaptureEditableSoundPayload(
+        TargetZoneRowIdentity identity,
+        int aliasIndex,
+        int fileIndex,
+        out LoadedSound? payload,
+        out string reason)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            if (!TryResolveEditableSoundPayloadCore(
+                    identity,
+                    aliasIndex,
+                    fileIndex,
+                    out _,
+                    out LoadedSound? current,
+                    out _,
+                    out _,
+                    out reason))
+            {
+                payload = null;
+                return false;
+            }
+
+            payload = SoundDraft.Copy(current!);
+            return true;
+        }
+    }
+
+    internal bool ApplyCompiledSound(
+        TargetZoneRowIdentity identity,
+        int aliasIndex,
+        int fileIndex,
+        LoadedSound replacement,
+        out IReadOnlyList<AssetValidationIssue> issues)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        bool changed;
+        AssetValidationIssue[] validation;
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            string fieldPath =
+                $"sound.aliases[{aliasIndex}].soundFiles[{fileIndex}]";
+            if (!TryResolveEditableSoundPayloadCore(
+                    identity,
+                    aliasIndex,
+                    fileIndex,
+                    out SoundAliasListAsset? current,
+                    out _,
+                    out AssetKey loadedSoundKey,
+                    out bool referencedByAnotherTargetSound,
+                    out string reason))
+            {
+                validation = [new AssetValidationIssue(
+                    fieldPath,
+                    reason,
+                    AssetValidationSeverity.Error)];
+                issues = Array.AsReadOnly(validation);
+                return false;
+            }
+
+            var found = new List<AssetValidationIssue>();
+            AssetKey replacementKey = default;
+            try
+            {
+                replacementKey = AssetKey.FromDefinition(replacement);
+                if (replacement.Name?.StartsWith(",", StringComparison.Ordinal) == true)
+                {
+                    found.Add(new AssetValidationIssue(
+                        $"{fieldPath}.loadedSound.name",
+                        "An imported payload must remain a full LoadedSound definition, not a reference placeholder.",
+                        AssetValidationSeverity.Error));
+                }
+                if (replacementKey != loadedSoundKey)
+                {
+                    found.Add(new AssetValidationIssue(
+                        $"{fieldPath}.loadedSound.name",
+                        "An imported payload cannot change the referenced LoadedSound identity.",
+                        AssetValidationSeverity.Error));
+                }
+            }
+            catch (ArgumentException exception)
+            {
+                found.Add(new AssetValidationIssue(
+                    $"{fieldPath}.loadedSound.name",
+                    exception.Message,
+                    AssetValidationSeverity.Error));
+            }
+
+            if (replacement.PhysicalData is null)
+            {
+                found.Add(new AssetValidationIssue(
+                    $"{fieldPath}.loadedSound.physicalData",
+                    "An imported LoadedSound requires materialized MPEG payload bytes.",
+                    AssetValidationSeverity.Error));
+            }
+            else if (replacement.PhysicalDataByteCount !=
+                     replacement.PhysicalData.Length)
+            {
+                found.Add(new AssetValidationIssue(
+                    $"{fieldPath}.loadedSound.physicalDataByteCount",
+                    $"The LoadedSound declares {replacement.PhysicalDataByteCount} byte(s), but the imported payload contains {replacement.PhysicalData.Length}.",
+                    AssetValidationSeverity.Error));
+            }
+
+            int expectedSeekTableByteCount = checked(
+                replacement.SeekTableCount * sizeof(uint));
+            if (replacement.SeekTable is null)
+            {
+                if (replacement.SeekTableCount != 0)
+                {
+                    found.Add(new AssetValidationIssue(
+                        $"{fieldPath}.loadedSound.seekTable",
+                        "The LoadedSound declares seek entries without materialized seek-table bytes.",
+                        AssetValidationSeverity.Error));
+                }
+            }
+            else if (replacement.SeekTable.Length != expectedSeekTableByteCount)
+            {
+                found.Add(new AssetValidationIssue(
+                    $"{fieldPath}.loadedSound.seekTable",
+                    $"The LoadedSound declares {replacement.SeekTableCount} seek entries, but the imported seek table contains {replacement.SeekTable.Length} byte(s).",
+                    AssetValidationSeverity.Error));
+            }
+
+            validation = found.ToArray();
+            issues = Array.AsReadOnly(validation);
+            if (validation.Any(issue =>
+                    issue.Severity == AssetValidationSeverity.Error))
+            {
+                return false;
+            }
+
+            var candidate = new SoundDraft(current!);
+            candidate.ReplaceLoadedSound(loadedSoundKey, replacement);
+            if (candidate.SemanticallyEquals(new SoundDraft(current!)))
+                return false;
+
+            LoadedSound detachedReplacement =
+                referencedByAnotherTargetSound
+                    ? SoundDraft.CopyWithName(
+                        replacement,
+                        CreateCopyOnWriteLoadedSoundName(
+                            identity,
+                            aliasIndex,
+                            fileIndex))
+                    : SoundDraft.Copy(replacement);
+            if (referencedByAnotherTargetSound)
+            {
+                candidate = new SoundDraft(current!);
+                candidate.ReplaceLoadedSound(
+                    loadedSoundKey,
+                    detachedReplacement);
+            }
+            changed = PublishCompiledDefinitionCore(
+                identity,
+                candidate.ToAsset(),
+                [detachedReplacement],
+                allowedTargetProviderCollision: loadedSoundKey);
+        }
+
+        if (changed)
+            AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return changed;
+    }
+
     internal bool PublishCompiledDefinition(
         TargetZoneRowIdentity identity,
         IW4.Assets.Assets.BaseAsset definition,
@@ -918,21 +1086,41 @@ public sealed class FastFileEditingSession : IDisposable
         lock (_gate)
         {
             ThrowIfDisposedCore();
-            DraftState state = RequireDraft(identity);
-            XAssetType assetType = state.Entry.AssetType;
-            if (assetType is not (XAssetType.XModel or XAssetType.Font or XAssetType.Weapon) ||
-                definition.SerializedAssetType != assetType)
-            {
-                throw new InvalidOperationException(
-                    "Only a matching XModel, Font, or Weapon row can publish compiled dependency providers.");
-            }
-            object candidate = state.Adapter.CreateDraft(definition);
-            if (state.SemanticallyEqualsCurrent(candidate))
-                return false;
-            Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> prior =
-                _compiledAuxiliaryProviders.TryGetValue(identity, out Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset>? existing)
-                    ? existing : [];
-            IW4.Assets.Assets.BaseAsset[] suppliedProviders = providers
+            changed = PublishCompiledDefinitionCore(
+                identity,
+                definition,
+                providers,
+                allowedTargetProviderCollision: null);
+        }
+        if (changed)
+            AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return changed;
+    }
+
+    private bool PublishCompiledDefinitionCore(
+        TargetZoneRowIdentity identity,
+        IW4.Assets.Assets.BaseAsset definition,
+        IReadOnlyList<IW4.Assets.Assets.BaseAsset> providers,
+        AssetKey? allowedTargetProviderCollision)
+    {
+        DraftState state = RequireDraft(identity);
+        XAssetType assetType = state.Entry.AssetType;
+        bool supportedSoundPublication = assetType == XAssetType.Sound &&
+            allowedTargetProviderCollision is not null;
+        if ((!supportedSoundPublication &&
+             assetType is not (XAssetType.XModel or XAssetType.Font or XAssetType.Weapon)) ||
+            definition.SerializedAssetType != assetType)
+        {
+            throw new InvalidOperationException(
+                "Only a matching XModel, Font, Weapon, or validated Sound row can publish compiled dependency providers.");
+        }
+        object candidate = state.Adapter.CreateDraft(definition);
+        if (state.SemanticallyEqualsCurrent(candidate))
+            return false;
+        Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> prior =
+            _compiledAuxiliaryProviders.TryGetValue(identity, out Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset>? existing)
+                ? existing : [];
+        IW4.Assets.Assets.BaseAsset[] suppliedProviders = providers
                 .GroupBy(AssetKey.FromDefinition)
                 .Select(group => group.FirstOrDefault(provider =>
                         !IsReferenceProvider(provider)) ?? group.First())
@@ -951,56 +1139,59 @@ public sealed class FastFileEditingSession : IDisposable
                         liveProviders.All(live => live.IsReferencePlaceholder);
                 })
                 .ToArray();
-            AssetKey[] suppliedKeys = suppliedProviders
-                .Select(AssetKey.FromDefinition)
-                .ToArray();
-            var available = prior.ToDictionary(pair => pair.Key, pair => pair.Value);
-            foreach (IW4.Assets.Assets.BaseAsset provider in suppliedProviders)
-                available[AssetKey.FromDefinition(provider)] = provider;
-            AssetKey[] currentKeys = ReferencedAuxiliaryKeys(
-                definition,
-                available);
-            if (suppliedKeys.Any(key => !currentKeys.Contains(key)))
+        AssetKey[] suppliedKeys = suppliedProviders
+            .Select(AssetKey.FromDefinition)
+            .ToArray();
+        var available = prior.ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (IW4.Assets.Assets.BaseAsset provider in suppliedProviders)
+            available[AssetKey.FromDefinition(provider)] = provider;
+        AssetKey[] currentKeys = ReferencedAuxiliaryKeys(
+            definition,
+            available);
+        if (suppliedKeys.Any(key => !currentKeys.Contains(key)))
+        {
+            throw new InvalidDataException(
+                "A compiled dependency closure contains a provider that is not reachable from its root definition.");
+        }
+        AssetKey[] nextKeys = currentKeys
+            .Concat(ReferencedAuxiliaryKeys(
+                RequireDraft(identity).CreateSavedDefinition(),
+                available))
+            .Distinct().ToArray();
+        foreach (IW4.Assets.Assets.BaseAsset provider in suppliedProviders)
+        {
+            AssetKey key = AssetKey.FromDefinition(provider);
+            bool ownedCurrent = prior.ContainsKey(key);
+            bool ownedElsewhere = IsCompiledProviderOwnedByOther(identity, key);
+            bool liveFullCollision = _revision.LinkRequest.Assets.Providers.Any(live =>
+                live.Key == key && !live.IsReferencePlaceholder);
+            if (liveFullCollision &&
+                !ownedCurrent &&
+                !ownedElsewhere &&
+                key != allowedTargetProviderCollision)
             {
                 throw new InvalidDataException(
-                    "A compiled dependency closure contains a provider that is not reachable from its root definition.");
-            }
-            AssetKey[] nextKeys = currentKeys
-                .Concat(ReferencedAuxiliaryKeys(
-                    RequireDraft(identity).CreateSavedDefinition(),
-                    available))
-                .Distinct().ToArray();
-            foreach (IW4.Assets.Assets.BaseAsset provider in suppliedProviders)
-            {
-                AssetKey key = AssetKey.FromDefinition(provider);
-                bool ownedCurrent = prior.ContainsKey(key);
-                bool ownedElsewhere = IsCompiledProviderOwnedByOther(identity, key);
-                bool liveFullCollision = _revision.LinkRequest.Assets.Providers.Any(live =>
-                    live.Key == key && !live.IsReferencePlaceholder);
-                if (liveFullCollision && !ownedCurrent && !ownedElsewhere)
-                    throw new InvalidDataException($"Generated provider key '{key}' collides with an unrelated live provider.");
-            }
-            AssetKey[] withdrawn = prior.Keys
-                .Where(key => !nextKeys.Contains(key) &&
-                    !IsCompiledProviderOwnedByOther(identity, key))
-                .ToArray();
-            changed = PublishAppliedDefinitions(
-                [(identity, definition, suppliedProviders)],
-                withdrawn,
-                raiseAppliedAssetsChanged: false,
-                restoreTargetProvidersOnWithdrawal: true);
-            if (changed)
-            {
-                Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> next = prior
-                    .Where(pair => nextKeys.Contains(pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value);
-                foreach (IW4.Assets.Assets.BaseAsset provider in suppliedProviders)
-                    next[AssetKey.FromDefinition(provider)] = provider;
-                _compiledAuxiliaryProviders[identity] = next;
+                    $"Generated provider key '{key}' collides with an unrelated live provider.");
             }
         }
+        AssetKey[] withdrawn = prior.Keys
+            .Where(key => !nextKeys.Contains(key) &&
+                !IsCompiledProviderOwnedByOther(identity, key))
+            .ToArray();
+        bool changed = PublishAppliedDefinitions(
+            [(identity, definition, suppliedProviders)],
+            withdrawn,
+            raiseAppliedAssetsChanged: false,
+            restoreTargetProvidersOnWithdrawal: true);
         if (changed)
-            AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        {
+            Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> next = prior
+                .Where(pair => nextKeys.Contains(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (IW4.Assets.Assets.BaseAsset provider in suppliedProviders)
+                next[AssetKey.FromDefinition(provider)] = provider;
+            _compiledAuxiliaryProviders[identity] = next;
+        }
         return changed;
     }
 
@@ -1019,6 +1210,186 @@ public sealed class FastFileEditingSession : IDisposable
 
     private bool IsD3dbspProviderRequired(AssetKey key) =>
         _d3dbspProviderKeys.Values.Any(required => required.Contains(key));
+
+    private bool TryResolveEditableSoundPayloadCore(
+        TargetZoneRowIdentity identity,
+        int aliasIndex,
+        int fileIndex,
+        out SoundAliasListAsset? sound,
+        out LoadedSound? loadedSound,
+        out AssetKey loadedSoundKey,
+        out bool referencedByAnotherTargetSound,
+        out string reason)
+    {
+        sound = null;
+        loadedSound = null;
+        loadedSoundKey = default;
+        referencedByAnotherTargetSound = false;
+        DraftState state;
+        try
+        {
+            state = RequireDraft(identity);
+        }
+        catch (KeyNotFoundException)
+        {
+            reason = "Only Sound assets owned by the current fastfile/zone can be modified.";
+            return false;
+        }
+
+        if (state.Entry.AssetType != XAssetType.Sound ||
+            state.Entry.Origin != WorkspaceAssetOrigin.TargetOwnedDefinition ||
+            state.Entry.Access != WorkspaceAssetAccess.Editable ||
+            state.Entry.TargetRowIdentity != identity)
+        {
+            reason = "Only Sound assets owned by the current fastfile/zone can be modified.";
+            return false;
+        }
+        if (state.CreateCurrentDefinition() is not SoundAliasListAsset current)
+        {
+            reason = "The hosted target row does not contain a materialized Sound definition.";
+            return false;
+        }
+        sound = current;
+        if ((uint)aliasIndex >= (uint)current.Aliases.Count)
+        {
+            reason = "The selected Sound alias is no longer present.";
+            return false;
+        }
+        SndAlias alias = current.Aliases[aliasIndex];
+        if ((uint)fileIndex >= (uint)alias.SoundFiles.Count)
+        {
+            reason = "The selected SoundFile is no longer present.";
+            return false;
+        }
+        SoundFile file = alias.SoundFiles[fileIndex];
+        if (file.Exists == 0)
+        {
+            reason = "The selected SoundFile is marked as not present.";
+            return false;
+        }
+        if (file.Type != SndAliasType.Loaded)
+        {
+            reason = "Streamed Sound payloads from packfileN.pak are read-only.";
+            return false;
+        }
+        if (file.Payload is not LoadedSoundFile { LoadedSound: { } selected })
+        {
+            reason = "The selected SoundFile has no materialized LoadedSound definition.";
+            return false;
+        }
+        if (selected.PhysicalData is null ||
+            selected.PhysicalData.Length != selected.PhysicalDataByteCount ||
+            (selected.SeekTableCount != 0 && selected.SeekTable is null) ||
+            (selected.SeekTable is not null &&
+             selected.SeekTable.Length != selected.SeekTableByteCount))
+        {
+            reason = "The selected LoadedSound payload is not fully materialized.";
+            return false;
+        }
+
+        try
+        {
+            loadedSoundKey = AssetKey.FromDefinition(selected);
+        }
+        catch (ArgumentException)
+        {
+            reason = "The selected LoadedSound has no usable asset identity.";
+            return false;
+        }
+        AssetKey selectedLoadedSoundKey = loadedSoundKey;
+        bool targetOwned = _targetBaseAssets.Providers.Any(provider =>
+                provider.Key == selectedLoadedSoundKey &&
+                provider.SerializedType == XAssetType.LoadedSound &&
+                !provider.IsReferencePlaceholder);
+        bool authoredForCurrentSound =
+            _compiledAuxiliaryProviders.TryGetValue(
+                identity,
+                out Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset>? owned) &&
+            owned.TryGetValue(
+                selectedLoadedSoundKey,
+                out IW4.Assets.Assets.BaseAsset? ownedProvider) &&
+            ownedProvider is LoadedSound &&
+            !IsReferenceProvider(ownedProvider);
+        if (!targetOwned && !authoredForCurrentSound)
+        {
+            reason = "The selected LoadedSound is not owned by the current fastfile/zone.";
+            return false;
+        }
+
+        var draftedSoundKeys = new HashSet<AssetKey>();
+        foreach (WorkspaceAssetCatalogEntry entry in Document.Rows
+            .Where(entry =>
+                entry.AssetType == XAssetType.Sound &&
+                entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition &&
+                entry.Access == WorkspaceAssetAccess.Editable &&
+                entry.TargetRowIdentity is not null))
+        {
+            if (CurrentDefinitionForEntry(entry) is not SoundAliasListAsset other)
+                continue;
+            draftedSoundKeys.Add(AssetKey.FromDefinition(other));
+            if (entry.TargetRowIdentity == identity)
+                continue;
+            if (!SoundDraft.LoadedSounds(other).Any(candidate =>
+                    AssetKey.FromDefinition(candidate) == selectedLoadedSoundKey))
+            {
+                continue;
+            }
+
+            referencedByAnotherTargetSound = true;
+            break;
+        }
+
+        if (!referencedByAnotherTargetSound && !Workspace.IsBlank)
+        {
+            IW4.Runtime.Database.DbZoneHandle targetOwner =
+                Workspace.LoadedZone.Context.ZoneOwner;
+            foreach (IW4.Runtime.Assets.XAssetProviderContribution provider in
+                     Workspace.LoadedZone.Context.AssetPool.Slots
+                         .Where(slot => slot.AssetType == XAssetType.Sound)
+                         .SelectMany(slot => slot.Providers)
+                         .Where(provider =>
+                             provider.Owner == targetOwner &&
+                             !provider.IsReferencePlaceholder &&
+                             provider.Asset is SoundAliasListAsset))
+            {
+                var other = (SoundAliasListAsset)provider.Asset;
+                AssetKey otherKey = AssetKey.FromDefinition(other);
+                if (draftedSoundKeys.Contains(otherKey) ||
+                    !SoundDraft.LoadedSounds(other).Any(candidate =>
+                        AssetKey.FromDefinition(candidate) ==
+                        selectedLoadedSoundKey))
+                {
+                    continue;
+                }
+
+                referencedByAnotherTargetSound = true;
+                break;
+            }
+        }
+
+        loadedSound = selected;
+        reason = string.Empty;
+        return true;
+    }
+
+    private string CreateCopyOnWriteLoadedSoundName(
+        TargetZoneRowIdentity identity,
+        int aliasIndex,
+        int fileIndex)
+    {
+        string stem = $"iw4studio/sound_{identity.SerializedIndex}_" +
+            $"{aliasIndex}_{fileIndex}";
+        for (int suffix = 0; ; suffix = checked(suffix + 1))
+        {
+            string candidateName = suffix == 0
+                ? stem
+                : $"{stem}_{suffix}";
+            if (ValidateNewAssetName(
+                    XAssetType.LoadedSound,
+                    candidateName) is null)
+                return candidateName;
+        }
+    }
 
     internal object CloneCurrentDraft(
         TargetZoneRowIdentity identity,
@@ -1151,6 +1522,12 @@ public sealed class FastFileEditingSession : IDisposable
 
     private void RevertCompiledDefinitionCore(TargetZoneRowIdentity identity, DraftState state)
     {
+        if (state.Entry.AssetType == XAssetType.Sound)
+        {
+            RevertCompiledSoundDefinitionCore(identity, state);
+            return;
+        }
+
         IW4.Assets.Assets.BaseAsset saved = state.CreateSavedDefinition();
         Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> owned =
             _compiledAuxiliaryProviders.TryGetValue(identity, out Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset>? existing)
@@ -1169,6 +1546,42 @@ public sealed class FastFileEditingSession : IDisposable
             restoreTargetProvidersOnWithdrawal: true);
         _compiledAuxiliaryProviders[identity] = savedKeys
             .ToDictionary(key => key, key => owned[key]);
+    }
+
+    private void RevertCompiledSoundDefinitionCore(
+        TargetZoneRowIdentity identity,
+        DraftState state)
+    {
+        SoundAliasListAsset saved = state.CreateSavedDefinition()
+            as SoundAliasListAsset ?? throw new InvalidDataException(
+                "A Sound editor's saved draft is not a Sound definition.");
+        Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> owned =
+            _compiledAuxiliaryProviders.TryGetValue(
+                identity,
+                out Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset>? existing)
+                ? existing
+                : [];
+        Dictionary<AssetKey, LoadedSound> savedLoadedSounds = SoundDraft
+            .LoadedSounds(saved)
+            .GroupBy(AssetKey.FromDefinition)
+            .ToDictionary(
+                group => group.Key,
+                group => SoundDraft.Copy(group.First()));
+        Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset> restored = owned.Keys
+            .Where(savedLoadedSounds.ContainsKey)
+            .ToDictionary(
+                key => key,
+                key => (IW4.Assets.Assets.BaseAsset)savedLoadedSounds[key]);
+        AssetKey[] withdrawn = owned.Keys
+            .Where(key => !restored.ContainsKey(key) &&
+                !IsCompiledProviderOwnedByOther(identity, key))
+            .ToArray();
+        _ = PublishAppliedDefinitions(
+            [(identity, saved, restored.Values.ToArray())],
+            withdrawn,
+            raiseAppliedAssetsChanged: false,
+            restoreTargetProvidersOnWithdrawal: true);
+        _compiledAuxiliaryProviders[identity] = restored;
     }
 
     private static AssetKey[] ReferencedAuxiliaryKeys(
@@ -1198,6 +1611,13 @@ public sealed class FastFileEditingSession : IDisposable
         {
             switch (provider)
             {
+                case SoundAliasListAsset sound:
+                    foreach (LoadedSound loadedSound in
+                             SoundDraft.LoadedSounds(sound))
+                    {
+                        pending.Enqueue(loadedSound);
+                    }
+                    break;
                 case IW4.Assets.Assets.Weapon.WeaponAsset weapon
                     when weapon.Definition is { } weaponDefinition:
                     foreach (IW4.Assets.Assets.XModel.XModelAsset model in
