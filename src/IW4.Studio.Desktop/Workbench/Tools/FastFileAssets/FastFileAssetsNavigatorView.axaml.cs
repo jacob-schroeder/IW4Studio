@@ -1,7 +1,9 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using IW4.FastFiles.Zone;
 using IW4.Studio.Desktop.Editors.D3dbsp;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
@@ -9,6 +11,7 @@ namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 public sealed partial class FastFileAssetsNavigatorView : UserControl
 {
     private bool _isD3dbspImportInProgress;
+    private XAssetType? _contextAssetType;
 
     public FastFileAssetsNavigatorView() => AvaloniaXamlLoader.Load(this);
 
@@ -26,9 +29,29 @@ public sealed partial class FastFileAssetsNavigatorView : UserControl
         e.Handled = true;
         var dialog = new AddAssetDialogWindow(
             viewModel.AddableAssetTypes,
+            _contextAssetType,
             viewModel.ValidateNewAssetName,
             viewModel.AddAsset);
         _ = await dialog.ShowDialog<bool>(owner);
+    }
+
+    private void AssetsGrid_ContextRequested(
+        object? sender,
+        ContextRequestedEventArgs e)
+    {
+        if (e.Source is Control
+            {
+                DataContext: FastFileAssetNavigatorNode node
+            })
+        {
+            _contextAssetType = node.AssetType;
+            return;
+        }
+
+        _contextAssetType = !e.TryGetPosition(this, out _) &&
+            DataContext is FastFileAssetsNavigatorViewModel viewModel
+                ? viewModel.SelectedNode?.AssetType
+                : null;
     }
 
     private async void ImportD3dbspMenuItem_Click(

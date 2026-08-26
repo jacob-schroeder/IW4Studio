@@ -101,6 +101,7 @@ public sealed record FastFileAssetNavigatorGroup(
 public sealed class FastFileAssetNavigatorNode
 {
     private FastFileAssetNavigatorNode(
+        XAssetType assetType,
         string name,
         string detail,
         string trailingText,
@@ -108,6 +109,7 @@ public sealed class FastFileAssetNavigatorNode
         IReadOnlyList<FastFileAssetNavigatorNode> children,
         FastFileAssetNavigatorRow? row)
     {
+        AssetType = assetType;
         Name = name;
         Detail = detail;
         TrailingText = trailingText;
@@ -115,6 +117,8 @@ public sealed class FastFileAssetNavigatorNode
         Children = children;
         Row = row;
     }
+
+    public XAssetType AssetType { get; }
 
     public string Name { get; }
 
@@ -133,6 +137,7 @@ public sealed class FastFileAssetNavigatorNode
     internal static FastFileAssetNavigatorNode ForGroup(
         FastFileAssetNavigatorGroup group) =>
         new(
+            group.AssetType,
             group.Name,
             string.Empty,
             group.Count.ToString("N0"),
@@ -143,6 +148,7 @@ public sealed class FastFileAssetNavigatorNode
     private static FastFileAssetNavigatorNode ForRow(
         FastFileAssetNavigatorRow row) =>
         new(
+            row.AssetType,
             row.DisplayName,
             row.Access.ToString(),
             string.Empty,

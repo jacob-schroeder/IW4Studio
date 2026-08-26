@@ -12,6 +12,7 @@ public sealed partial class AddAssetDialogWindow : Window
     public AddAssetDialogWindow()
         : this(
             [],
+            preferredAssetType: null,
             (_, _) => "Name is required.",
             (_, _) => throw new InvalidOperationException(
                 "Asset creation is unavailable."))
@@ -20,6 +21,7 @@ public sealed partial class AddAssetDialogWindow : Window
 
     internal AddAssetDialogWindow(
         IReadOnlyList<XAssetType> assetTypes,
+        XAssetType? preferredAssetType,
         Func<XAssetType, string, string?> validateName,
         Action<XAssetType, string> addAsset)
     {
@@ -32,7 +34,23 @@ public sealed partial class AddAssetDialogWindow : Window
         InitializeComponent();
         Icon = AppIcon.Create();
         AssetTypeComboBox.ItemsSource = assetTypes;
-        AssetTypeComboBox.SelectedIndex = assetTypes.Count == 0 ? -1 : 0;
+        int preferredIndex = -1;
+        if (preferredAssetType is { } preferred)
+        {
+            for (int index = 0; index < assetTypes.Count; index++)
+            {
+                if (assetTypes[index] != preferred)
+                    continue;
+
+                preferredIndex = index;
+                break;
+            }
+        }
+        AssetTypeComboBox.SelectedIndex = preferredIndex >= 0
+            ? preferredIndex
+            : assetTypes.Count == 0
+                ? -1
+                : 0;
         Opened += (_, _) => NameTextBox.Focus();
         RefreshValidation();
     }

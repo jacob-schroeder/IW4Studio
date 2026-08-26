@@ -38,7 +38,8 @@
       </Grid>
     </Border>
 
-    <Grid Grid.Row="1">
+    <Grid Grid.Row="1"
+          ContextRequested="AssetsGrid_ContextRequested">
       <Grid.ContextFlyout>
         <MenuFlyout>
           <MenuItem Header="Import .d3dbsp..."

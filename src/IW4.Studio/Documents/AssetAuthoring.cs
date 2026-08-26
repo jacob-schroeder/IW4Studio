@@ -89,6 +89,10 @@ public abstract class AssetAuthoringAdapter<TAsset, TDraft> : IAssetAuthoringAda
 public sealed class AssetAuthoringAdapterRegistry
 {
     private readonly Dictionary<XAssetType, IAssetAuthoringAdapter> _adapters = [];
+
+    public IReadOnlyList<XAssetType> AddableAssetTypes =>
+        NewAssetDefinitionFactory.SupportedAssetTypes;
+
     public static AssetAuthoringAdapterRegistry CreateDefault()
     {
         var registry = new AssetAuthoringAdapterRegistry();
@@ -133,18 +137,60 @@ public sealed class AssetAuthoringAdapterRegistry
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        BaseAsset definition = type switch
+        BaseAsset definition = NewAssetDefinitionFactory.Create(type, name);
+        IAssetAuthoringAdapter adapter =
+            TryGetAdapter(type, out IAssetAuthoringAdapter? registered)
+                ? registered!
+                : new DetachedNewAssetAdapter(definition);
+        return session.AddAsset(definition, adapter);
+    }
+
+    /// <summary>
+    /// Retains a detached new definition in the editing session when no rich
+    /// authoring adapter exists. It is deliberately never registered and has
+    /// no writable surface, so unsupported pre-existing rows remain read-only.
+    /// </summary>
+    private sealed class DetachedNewAssetAdapter : IAssetAuthoringAdapter
+    {
+        private readonly BaseAsset _definition;
+
+        public DetachedNewAssetAdapter(BaseAsset definition)
         {
-            XAssetType.RawFile => new RawFileAsset { Name = name, Buffer = [0], Len = 0 },
-            XAssetType.StringTable => new StringTableAsset { Name = name, RowCount = 0, ColumnCount = 0, Cells = [] },
-            XAssetType.Localize => new LocalizeAsset { Name = name, Value = string.Empty },
-            XAssetType.Menu => MenuAuthoringDefaults.CreateMenu(name),
-            XAssetType.MenuFile => new MenuFileAsset { Name = name, MenuCount = 0, Menus = [] },
-            _ => throw new NotSupportedException($"New {type} authoring is not implemented.")
-        };
-        if (!TryGetAdapter(type, out _))
-            throw new NotSupportedException($"New {type} authoring is not implemented.");
-        return session.AddAsset(definition);
+            _definition = definition ?? throw new ArgumentNullException(
+                nameof(definition));
+            AssetType = definition.SerializedAssetType;
+        }
+
+        public XAssetType AssetType { get; }
+        public Type DraftType => _definition.GetType();
+
+        public object CreateDraft(BaseAsset definition) =>
+            RequireDefinition(definition);
+
+        public object CloneDraft(object draft) => RequireDefinition(draft);
+
+        public BaseAsset CreateDefinition(object draft) =>
+            RequireDefinition(draft);
+
+        public bool SemanticallyEquals(object left, object right) =>
+            ReferenceEquals(RequireDefinition(left), RequireDefinition(right));
+
+        public IReadOnlyList<AssetValidationIssue> Validate(object draft)
+        {
+            _ = RequireDefinition(draft);
+            return [];
+        }
+
+        private BaseAsset RequireDefinition(object value)
+        {
+            if (!ReferenceEquals(value, _definition))
+            {
+                throw new InvalidDataException(
+                    $"The new {AssetType} adapter received another definition.");
+            }
+
+            return _definition;
+        }
     }
 }
 

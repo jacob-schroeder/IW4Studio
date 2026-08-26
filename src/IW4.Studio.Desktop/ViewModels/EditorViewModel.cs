@@ -45,10 +45,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         EditingSession = editingSession;
         _authoringRegistry = authoringRegistry ?? AssetAuthoringAdapterRegistry.CreateDefault();
         _viewRegistry = viewRegistry ?? AssetEditorViewRegistry.CreateDefault();
-        AddableAssetTypes = Array.AsReadOnly(
-            EditingSession.AddableAssetTypes
-                .Where(assetType => _authoringRegistry.TryGetAdapter(assetType, out _))
-                .ToArray());
+        AddableAssetTypes = _authoringRegistry.AddableAssetTypes;
         TargetFileName = Path.GetFileName(workspace.SourcePath);
         TargetPath = Path.GetFullPath(workspace.SourcePath);
         ModeName = workspace.ZonePlanProfileName is null

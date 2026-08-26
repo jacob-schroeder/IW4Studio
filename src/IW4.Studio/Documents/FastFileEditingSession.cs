@@ -61,16 +61,6 @@ public sealed class FastFileEditingSession : IDisposable
     public FastFileWorkspace Workspace { get; }
     public TargetZoneDocument Document { get; }
 
-    public IReadOnlyList<XAssetType> AddableAssetTypes { get; } =
-        Array.AsReadOnly(
-        [
-            XAssetType.RawFile,
-            XAssetType.StringTable,
-            XAssetType.Localize,
-            XAssetType.Menu,
-            XAssetType.MenuFile
-        ]);
-
     public CancellationToken CancellationToken => _cancellation.Token;
 
     public event EventHandler? TargetRowsChanged;
@@ -80,12 +70,28 @@ public sealed class FastFileEditingSession : IDisposable
 
     internal void NotifyTargetRowsChanged() => TargetRowsChanged?.Invoke(this, EventArgs.Empty);
 
-    internal WorkspaceAssetCatalogEntry AddAsset(IW4.Assets.Assets.BaseAsset definition)
+    internal WorkspaceAssetCatalogEntry AddAsset(
+        IW4.Assets.Assets.BaseAsset definition,
+        IAssetAuthoringAdapter adapter)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        IAssetAuthoringAdapter adapter = RequireHostedAdapter(definition);
+        ArgumentNullException.ThrowIfNull(adapter);
+        if (adapter.AssetType != definition.SerializedAssetType)
+        {
+            throw new ArgumentException(
+                $"The supplied adapter handles {adapter.AssetType}, not " +
+                $"{definition.SerializedAssetType}.",
+                nameof(adapter));
+        }
+
         IW4.Assets.Assets.BaseAsset detachedDefinition = adapter.CreateDefinition(
             adapter.CloneDraft(adapter.CreateDraft(definition)));
+        if (detachedDefinition.SerializedAssetType != definition.SerializedAssetType)
+        {
+            throw new InvalidDataException(
+                "The authoring adapter changed the new asset's serialized type.");
+        }
+
         WorkspaceAssetCatalogEntry entry;
         lock (_gate)
         {
