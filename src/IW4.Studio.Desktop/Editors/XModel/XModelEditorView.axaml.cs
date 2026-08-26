@@ -220,7 +220,9 @@ public sealed partial class XModelEditorView : UserControl
                 new FilePickerSaveOptions
                 {
                     Title = "Export XMODEL_EXPORT version 6",
-                    SuggestedFileName = SuggestedExportFileName(modelName, lodIndex),
+                    SuggestedFileName = SaveFilePickerName.WithoutDefaultExtension(
+                        SuggestedExportFileName(modelName, lodIndex),
+                        "XMODEL_EXPORT"),
                     DefaultExtension = "XMODEL_EXPORT",
                     ShowOverwritePrompt = true,
                     FileTypeChoices =
@@ -350,7 +352,9 @@ public sealed partial class XModelEditorView : UserControl
                 new FilePickerSaveOptions
                 {
                     Title = "Export binary glTF 2.0",
-                    SuggestedFileName = SuggestedGlbFileName(modelName, lodIndex),
+                    SuggestedFileName = SaveFilePickerName.WithoutDefaultExtension(
+                        SuggestedGlbFileName(modelName, lodIndex),
+                        "glb"),
                     DefaultExtension = "glb",
                     ShowOverwritePrompt = true,
                     FileTypeChoices =

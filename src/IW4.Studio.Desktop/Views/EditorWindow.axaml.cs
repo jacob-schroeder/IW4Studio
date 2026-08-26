@@ -507,7 +507,9 @@ public sealed partial class EditorWindow : Window
             IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save validated IW4 fastfile as",
-                SuggestedFileName = suggestedFileName,
+                SuggestedFileName = SaveFilePickerName.WithoutDefaultExtension(
+                    suggestedFileName,
+                    "ff"),
                 DefaultExtension = "ff",
                 ShowOverwritePrompt = true,
                 FileTypeChoices =

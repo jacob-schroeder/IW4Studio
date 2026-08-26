@@ -86,8 +86,9 @@ public sealed partial class D3dbspEditorView : UserControl
                 {
                     Title = "Export compiled IW4 D3DBSP",
                     SuggestedStartLocation = downloads,
-                    SuggestedFileName = Path.GetFileName(
-                        viewModel.AssetName.Replace('\\', '/')),
+                    SuggestedFileName = SaveFilePickerName.WithoutDefaultExtension(
+                        Path.GetFileName(viewModel.AssetName.Replace('\\', '/')),
+                        "d3dbsp"),
                     DefaultExtension = "d3dbsp",
                     ShowOverwritePrompt = true,
                     FileTypeChoices =
