@@ -696,6 +696,73 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
         </StackPanel>
+
+        <StackPanel IsVisible="{Binding HasStreamedSoundDetails}"
+                    Spacing="10">
+          <Grid ColumnDefinitions="*,Auto"
+                VerticalAlignment="Center">
+            <TextBlock Text="PACKED STREAM DETAILS"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.8"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Border Grid.Column="1"
+                    Padding="7,3"
+                    CornerRadius="4"
+                    Background="{DynamicResource StudioInfoSurfaceBrush}"
+                    BorderBrush="{DynamicResource StudioInfoBorderBrush}"
+                    BorderThickness="1">
+              <TextBlock Text="READ ONLY"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         Foreground="{DynamicResource StudioInfoBrush}" />
+            </Border>
+          </Grid>
+
+          <Border Padding="12"
+                  CornerRadius="7"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <Grid RowDefinitions="Auto,7,Auto,7,Auto,7,Auto,7,Auto,7,Auto"
+                  ColumnDefinitions="82,*">
+              <TextBlock Text="Package" Classes="propertyLabel" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding StreamedSound.PackageName}"
+                         Classes="propertyValue" />
+              <TextBlock Grid.Row="2" Text="Alias" Classes="propertyLabel" />
+              <TextBlock Grid.Row="2"
+                         Grid.Column="1"
+                         Text="{Binding StreamedSound.AliasName}"
+                         Classes="propertyValue"
+                         TextWrapping="Wrap" />
+              <TextBlock Grid.Row="4" Text="Choice" Classes="propertyLabel" />
+              <TextBlock Grid.Row="4"
+                         Grid.Column="1"
+                         Text="{Binding StreamedSound.ChoiceText}"
+                         Classes="propertyValue"
+                         TextWrapping="Wrap" />
+              <TextBlock Grid.Row="6" Text="Offset" Classes="propertyLabel" />
+              <TextBlock Grid.Row="6"
+                         Grid.Column="1"
+                         Text="{Binding StreamedSound.OffsetText}"
+                         Classes="propertyValue"
+                         FontFamily="Consolas" />
+              <TextBlock Grid.Row="8" Text="Payload" Classes="propertyLabel" />
+              <TextBlock Grid.Row="8"
+                         Grid.Column="1"
+                         Text="{Binding StreamedSound.ByteCountText}"
+                         Classes="propertyValue" />
+              <TextBlock Grid.Row="10" Text="Fastfile" Classes="propertyLabel" />
+              <TextBlock Grid.Row="10"
+                         Grid.Column="1"
+                         Text="{Binding StreamedSound.OwningFastFileName}"
+                         Classes="propertyValue"
+                         TextWrapping="Wrap" />
+            </Grid>
+          </Border>
+        </StackPanel>
       </StackPanel>
     </ScrollViewer>
   </Grid>

@@ -14,7 +14,8 @@ public enum WorkbenchAssetSelectionSource
     None = 0,
     FastFileAssets,
     AssetPool,
-    ImageFilePak
+    ImageFilePak,
+    PackFilePak
 }
 
 /// <summary>
@@ -24,6 +25,30 @@ public enum WorkbenchAssetSelectionSource
 public readonly record struct WorkbenchStreamedImageIdentity
 {
     public WorkbenchStreamedImageIdentity(
+        Guid documentId,
+        int ordinal)
+    {
+        if (documentId == Guid.Empty)
+            throw new ArgumentOutOfRangeException(nameof(documentId));
+        if (ordinal < 0)
+            throw new ArgumentOutOfRangeException(nameof(ordinal));
+
+        DocumentId = documentId;
+        Ordinal = ordinal;
+    }
+
+    public Guid DocumentId { get; }
+
+    public int Ordinal { get; }
+}
+
+/// <summary>
+/// Stable identity for one packed streamed-sound row in the current document
+/// workspace. The ordinal follows dependency load, asset, alias, and row order.
+/// </summary>
+public readonly record struct WorkbenchStreamedSoundIdentity
+{
+    public WorkbenchStreamedSoundIdentity(
         Guid documentId,
         int ordinal)
     {
@@ -53,12 +78,14 @@ public readonly record struct WorkbenchAssetSelectionIdentity
         WorkbenchAssetSelectionSource source,
         TargetZoneRowIdentity? targetRowIdentity,
         XAssetPoolAddress? assetPoolAddress,
-        WorkbenchStreamedImageIdentity? streamedImageIdentity)
+        WorkbenchStreamedImageIdentity? streamedImageIdentity,
+        WorkbenchStreamedSoundIdentity? streamedSoundIdentity)
     {
         int populatedIdentityCount =
             (targetRowIdentity is null ? 0 : 1) +
             (assetPoolAddress is null ? 0 : 1) +
-            (streamedImageIdentity is null ? 0 : 1);
+            (streamedImageIdentity is null ? 0 : 1) +
+            (streamedSoundIdentity is null ? 0 : 1);
         if (source == WorkbenchAssetSelectionSource.None ||
             populatedIdentityCount != 1 ||
             source switch
@@ -69,17 +96,20 @@ public readonly record struct WorkbenchAssetSelectionIdentity
                     assetPoolAddress is null,
                 WorkbenchAssetSelectionSource.ImageFilePak =>
                     streamedImageIdentity is null,
+                WorkbenchAssetSelectionSource.PackFilePak =>
+                    streamedSoundIdentity is null,
                 _ => true
             })
         {
             throw new ArgumentException(
-                "A workbench selection must identify exactly one source-compatible target row, asset-pool slot, or streamed image.");
+                "A workbench selection must identify exactly one source-compatible target row, asset-pool slot, streamed image, or streamed sound.");
         }
 
         Source = source;
         TargetRowIdentity = targetRowIdentity;
         AssetPoolAddress = assetPoolAddress;
         StreamedImageIdentity = streamedImageIdentity;
+        StreamedSoundIdentity = streamedSoundIdentity;
     }
 
     public WorkbenchAssetSelectionSource Source { get; }
@@ -90,6 +120,8 @@ public readonly record struct WorkbenchAssetSelectionIdentity
 
     public WorkbenchStreamedImageIdentity? StreamedImageIdentity { get; }
 
+    public WorkbenchStreamedSoundIdentity? StreamedSoundIdentity { get; }
+
     public bool IsEmpty => Source == WorkbenchAssetSelectionSource.None;
 
     public static WorkbenchAssetSelectionIdentity ForTargetRow(
@@ -98,7 +130,8 @@ public readonly record struct WorkbenchAssetSelectionIdentity
             WorkbenchAssetSelectionSource.FastFileAssets,
             identity,
             assetPoolAddress: null,
-            streamedImageIdentity: null);
+            streamedImageIdentity: null,
+            streamedSoundIdentity: null);
 
     public static WorkbenchAssetSelectionIdentity ForAssetPoolSlot(
         XAssetPoolAddress address) =>
@@ -106,7 +139,8 @@ public readonly record struct WorkbenchAssetSelectionIdentity
             WorkbenchAssetSelectionSource.AssetPool,
             targetRowIdentity: null,
             address,
-            streamedImageIdentity: null);
+            streamedImageIdentity: null,
+            streamedSoundIdentity: null);
 
     public static WorkbenchAssetSelectionIdentity ForStreamedImage(
         WorkbenchStreamedImageIdentity identity) =>
@@ -114,6 +148,16 @@ public readonly record struct WorkbenchAssetSelectionIdentity
             WorkbenchAssetSelectionSource.ImageFilePak,
             targetRowIdentity: null,
             assetPoolAddress: null,
+            identity,
+            streamedSoundIdentity: null);
+
+    public static WorkbenchAssetSelectionIdentity ForStreamedSound(
+        WorkbenchStreamedSoundIdentity identity) =>
+        new(
+            WorkbenchAssetSelectionSource.PackFilePak,
+            targetRowIdentity: null,
+            assetPoolAddress: null,
+            streamedImageIdentity: null,
             identity);
 }
 

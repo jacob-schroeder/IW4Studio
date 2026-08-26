@@ -4,6 +4,7 @@ using IW4.Assets.D3dbsp;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
+using IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Composition;
@@ -18,6 +19,7 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
     private WorkbenchAssetSelection _selection;
     private WorkbenchAssetSelectionRoute? _route;
     private readonly IDisposable? _ownedContent;
+    private readonly bool _standaloneUsesWorkbenchScrollViewer;
 
     internal WorkbenchEditorTabViewModel(
         WorkbenchEditorTabKey key,
@@ -26,7 +28,9 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
         AssetEditorHostViewModel? catalogEditor,
         Control? standaloneView,
         ImageFilePakEntryViewModel? streamedImage,
-        IDisposable? ownedContent)
+        PackFilePakEntryViewModel? streamedSound,
+        IDisposable? ownedContent,
+        bool standaloneUsesWorkbenchScrollViewer = true)
     {
         if (catalogEditor is not null && standaloneView is not null)
         {
@@ -40,7 +44,10 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
         CatalogEditor = catalogEditor;
         StandaloneView = standaloneView;
         StreamedImage = streamedImage;
+        StreamedSound = streamedSound;
         _ownedContent = ownedContent;
+        _standaloneUsesWorkbenchScrollViewer =
+            standaloneUsesWorkbenchScrollViewer;
         if (CatalogEditor is not null)
             CatalogEditor.PropertyChanged += CatalogEditor_PropertyChanged;
     }
@@ -56,9 +63,12 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
     public Control? HostedView => CatalogEditor?.HostedView ?? StandaloneView;
 
     public bool UsesWorkbenchScrollViewer =>
-        CatalogEditor?.UsesWorkbenchScrollViewer != false;
+        CatalogEditor?.UsesWorkbenchScrollViewer ??
+        _standaloneUsesWorkbenchScrollViewer;
 
     public ImageFilePakEntryViewModel? StreamedImage { get; }
+
+    public PackFilePakEntryViewModel? StreamedSound { get; }
 
     public string Title => Selection.DisplayName;
 
@@ -78,6 +88,8 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
     public string IconToken => Selection.Source switch
     {
         WorkbenchAssetSelectionSource.ImageFilePak => "ImageOutline",
+        WorkbenchAssetSelectionSource.PackFilePak =>
+            "MusicBoxMultipleOutline",
         WorkbenchAssetSelectionSource.AssetPool => "DatabaseOutline",
         _ => "FileCodeOutline"
     };

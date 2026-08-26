@@ -4,6 +4,7 @@ using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
+using IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.Properties;
 
@@ -16,23 +17,31 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
 {
     private readonly IWorkbenchSelectionContext _selectionContext;
     private readonly ImageFilePakToolViewModel? _imageFilePak;
+    private readonly PackFilePakToolViewModel? _packFilePak;
     private WorkbenchAssetSelection? _selection;
     private ImageFilePakEntryViewModel? _streamedImage;
+    private PackFilePakEntryViewModel? _streamedSound;
     private IAssetEditorProperties? _editorPropertiesSource;
     private IAssetEditorInspectorSource? _editorInspectorSource;
     private bool _disposed;
 
     public PropertiesToolViewModel(
         IWorkbenchSelectionContext selectionContext,
-        ImageFilePakToolViewModel? imageFilePak = null)
+        ImageFilePakToolViewModel? imageFilePak = null,
+        PackFilePakToolViewModel? packFilePak = null)
     {
         _selectionContext = selectionContext
             ?? throw new ArgumentNullException(nameof(selectionContext));
         _imageFilePak = imageFilePak;
+        _packFilePak = packFilePak;
         _selection = selectionContext.Current;
         _streamedImage = _selection?.Source ==
             WorkbenchAssetSelectionSource.ImageFilePak
                 ? _imageFilePak?.SelectedEntry
+                : null;
+        _streamedSound = _selection?.Source ==
+            WorkbenchAssetSelectionSource.PackFilePak
+                ? _packFilePak?.SelectedEntry
                 : null;
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
     }
@@ -51,6 +60,8 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         WorkbenchAssetSelectionSource.AssetPool => "Asset Pool",
         WorkbenchAssetSelectionSource.ImageFilePak =>
             "Imagefile.pak Viewer",
+        WorkbenchAssetSelectionSource.PackFilePak =>
+            "Packfile.pak Viewer",
         _ => "—"
     };
 
@@ -63,6 +74,7 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
     {
         WorkbenchAssetSelectionSource.AssetPool => "Runtime inspection",
         WorkbenchAssetSelectionSource.ImageFilePak => "Read-only stream",
+        WorkbenchAssetSelectionSource.PackFilePak => "Read-only stream",
         _ => _selection?.Access.ToString() ?? "—"
     };
 
@@ -83,6 +95,8 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
             $"0x{unchecked((uint)address.RawValue):X8}",
         { StreamedImageIdentity: { } streamed } =>
             $"Streamed image #{streamed.Ordinal:N0}",
+        { StreamedSoundIdentity: { } streamed } =>
+            $"Packed sound #{streamed.Ordinal:N0}",
         _ => "—"
     };
 
@@ -91,6 +105,12 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
 
     public bool HasStreamedImageDetails =>
         StreamedImage is not null;
+
+    public PackFilePakEntryViewModel? StreamedSound =>
+        _streamedSound;
+
+    public bool HasStreamedSoundDetails =>
+        StreamedSound is not null;
 
     public bool HasEditorProperties =>
         HasSelection &&
@@ -162,16 +182,19 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
 
     internal void SetDocumentSelection(
         WorkbenchAssetSelection? selection,
-        ImageFilePakEntryViewModel? streamedImage)
+        ImageFilePakEntryViewModel? streamedImage,
+        PackFilePakEntryViewModel? streamedSound = null)
     {
         if (Equals(_selection, selection) &&
-            ReferenceEquals(_streamedImage, streamedImage))
+            ReferenceEquals(_streamedImage, streamedImage) &&
+            ReferenceEquals(_streamedSound, streamedSound))
         {
             return;
         }
 
         _selection = selection;
         _streamedImage = streamedImage;
+        _streamedSound = streamedSound;
         SetEditorPropertiesSource(null);
         SetEditorInspectorSource(null);
         OnPropertyChanged(nameof(HasSelection));
@@ -186,6 +209,8 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(Identity));
         OnPropertyChanged(nameof(StreamedImage));
         OnPropertyChanged(nameof(HasStreamedImageDetails));
+        OnPropertyChanged(nameof(StreamedSound));
+        OnPropertyChanged(nameof(HasStreamedSoundDetails));
     }
 
     public void Dispose()
@@ -217,6 +242,9 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
             args.Current,
             args.Current?.Source == WorkbenchAssetSelectionSource.ImageFilePak
                 ? _imageFilePak?.SelectedEntry
+                : null,
+            args.Current?.Source == WorkbenchAssetSelectionSource.PackFilePak
+                ? _packFilePak?.SelectedEntry
                 : null);
     }
 

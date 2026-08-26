@@ -11,6 +11,7 @@ using IW4.Studio.Desktop.Editors.D3dbsp;
 using IW4.Studio.Desktop.Editors.Font;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Menu;
+using IW4.Studio.Desktop.Editors.Sound;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Docking;
 using IW4.Studio.Desktop.Workbench.Navigation;
@@ -26,6 +27,7 @@ using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.MapRender;
+using IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 using IW4.Studio.Documents;
@@ -104,7 +106,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     _gscWorkspace,
                     _gscSourceNavigation,
                     _gscUsagesPresenter,
-                    assetReferencePicker);
+                    assetReferencePicker,
+                    workspace);
             editorViewRegistry.Register(new FontViewFactory(
                 menuMaterialResolver));
             editorViewRegistry.Register(new MenuEditorViewFactory(
@@ -157,6 +160,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 workspace,
                 _selectionContext);
             constructionResources.Add(ImageFilePak);
+            PackFilePak = new PackFilePakToolViewModel(
+                workspace,
+                _selectionContext);
+            constructionResources.Add(PackFilePak);
             ConsoleOutput = new ConsoleOutputBuffer();
             Diagnostics = new DiagnosticsAggregator();
             constructionResources.Add(Diagnostics);
@@ -171,7 +178,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             constructionResources.Add(LivePreview);
             Properties = new PropertiesToolViewModel(
                 _selectionContext,
-                ImageFilePak);
+                ImageFilePak,
+                PackFilePak);
             constructionResources.Add(Properties);
             FastFileDetails = new FastFileDetailsToolViewModel(workspace);
             ZoneDetails = new ZoneDetailsToolViewModel(workspace);
@@ -181,6 +189,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 FastFileAssets,
                 AssetPool,
                 ImageFilePak,
+                PackFilePak,
                 ConsoleOutput,
                 Diagnostics,
                 GscFindings,
@@ -311,6 +320,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public ImageFilePakToolViewModel ImageFilePak { get; }
 
+    public PackFilePakToolViewModel PackFilePak { get; }
+
     public ConsoleOutputBuffer ConsoleOutput { get; }
 
     public DiagnosticsAggregator Diagnostics { get; }
@@ -418,6 +429,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             WorkbenchAssetSelectionSource.AssetPool =>
                 "RUNTIME INSPECTION",
             WorkbenchAssetSelectionSource.ImageFilePak =>
+                "READ ONLY",
+            WorkbenchAssetSelectionSource.PackFilePak =>
                 "READ ONLY",
             _ => SelectedEditorTab?.AccessBadge ?? string.Empty
         };
@@ -755,6 +768,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         FastFileAssets.Dispose();
         AssetPool.Dispose();
         ImageFilePak.Dispose();
+        PackFilePak.Dispose();
         LivePreview.Dispose();
         SetPropertiesRevealSource(null);
         Properties.Dispose();
@@ -882,7 +896,9 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
 
         WorkbenchAssetSelectionRoute? route =
-            selection.Source == WorkbenchAssetSelectionSource.ImageFilePak
+            selection.Source is
+                WorkbenchAssetSelectionSource.ImageFilePak or
+                WorkbenchAssetSelectionSource.PackFilePak
                 ? null
                 : _selectionRouter.Resolve(selection);
         AssetEditorHostViewModel? catalogEditor = null;
@@ -909,12 +925,24 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         {
             Control? standaloneView = null;
             ImageFilePakEntryViewModel? streamedImage = null;
+            PackFilePakEntryViewModel? streamedSound = null;
             IDisposable? ownedContent = null;
             if (selection.Identity.StreamedImageIdentity is { } imageIdentity)
             {
                 streamedImage = ImageFilePak.RequireEntry(imageIdentity);
                 var preview = new ImageFilePakPreviewViewModel(streamedImage);
                 standaloneView = new ImageFilePakPreviewView
+                {
+                    DataContext = preview
+                };
+                ownedContent = preview;
+            }
+            else if (selection.Identity.StreamedSoundIdentity is
+                     { } soundIdentity)
+            {
+                streamedSound = PackFilePak.RequireEntry(soundIdentity);
+                SoundPreviewViewModel preview = streamedSound.CreatePreview();
+                standaloneView = new SoundPreviewView
                 {
                     DataContext = preview
                 };
@@ -928,7 +956,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 catalogEditor,
                 standaloneView,
                 streamedImage,
-                ownedContent);
+                streamedSound,
+                ownedContent,
+                standaloneUsesWorkbenchScrollViewer:
+                    streamedSound is null);
             _editorTabsByKey.Add(key, tab);
             _openEditorTabs.Add(tab);
             OnPropertyChanged(nameof(HasOpenEditorTabs));
@@ -947,6 +978,13 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 ConsoleOutputLevel.Information,
                 "Imagefile.pak",
                 $"Selected streamed image '{selection.DisplayName}'.");
+        }
+        else if (selection.Source == WorkbenchAssetSelectionSource.PackFilePak)
+        {
+            ConsoleOutput.Append(
+                ConsoleOutputLevel.Information,
+                "Packfile.pak",
+                $"Selected packed sound '{selection.DisplayName}'.");
         }
         else if (route?.OpensCatalogEditor == true)
         {
@@ -1089,9 +1127,11 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     {
         Properties.SetDocumentSelection(
             SelectedEditorTab?.Selection,
-            SelectedEditorTab?.StreamedImage);
+            SelectedEditorTab?.StreamedImage,
+            SelectedEditorTab?.StreamedSound);
         Properties.SetEditorSource(
-            SelectedEditorTab?.CatalogEditor?.HostedViewModel);
+            SelectedEditorTab?.CatalogEditor?.HostedViewModel ??
+            SelectedEditorTab?.StandaloneView?.DataContext);
         SetPropertiesRevealSource(
             SelectedEditorTab?.CatalogEditor?.HostedViewModel as
             IAssetEditorPropertiesRevealSource);

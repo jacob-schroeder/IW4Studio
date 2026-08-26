@@ -5,6 +5,7 @@ public static class StudioToolIds
     public const string FastFileAssets = "fastfile-assets";
     public const string AssetPool = "asset-pool";
     public const string ImageFilePak = "imagefile-pak";
+    public const string PackFilePak = "packfile-pak";
     public const string ConsoleOutput = "console-output";
     public const string Diagnostics = "diagnostics";
     public const string GscFindings = "gsc-findings";

@@ -9,6 +9,7 @@ using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.MapRender;
+using IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 
@@ -70,6 +71,20 @@ public static class StudioToolRegistry
                     DataContext = context.ImageFilePak
                 },
                 context.ImageFilePak),
+            Implemented(
+                Descriptor(
+                    StudioToolIds.PackFilePak,
+                    "Packfile.pak viewer",
+                    "MusicBoxMultipleOutline",
+                    40,
+                    defaultOpen: false,
+                    DockRegion.Left,
+                    DockRailGroup.LeftTop),
+                new PackFilePakToolView
+                {
+                    DataContext = context.PackFilePak
+                },
+                context.PackFilePak),
             Implemented(
                 Descriptor(
                     StudioToolIds.ConsoleOutput,

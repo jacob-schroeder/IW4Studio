@@ -2,6 +2,8 @@ using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Database.Planning;
 using IW4.Linker.Contracts;
 using IW4.Linker.Plans;
+using IW4.Runtime.Assets;
+using IW4.Runtime.Assets.Sound;
 
 namespace IW4.Studio.Documents;
 
@@ -56,6 +58,53 @@ public sealed class FastFileWorkspace : IDisposable
     public IReadOnlyList<WorkspaceZone> ActiveZones { get; }
     public string? ZonePlanProfileName { get; }
     public FastFileDependencyGraph? DependencyGraph { get; }
+
+    public bool TryGetSoundPayloadResolver(
+        WorkspaceAssetCatalogEntry entry,
+        out ISoundPayloadResolver resolver,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        if (entry.Definition is null)
+        {
+            resolver = UnavailableSoundPayloadResolver.Instance;
+            reason = "The selected Sound has no materialized definition.";
+            return false;
+        }
+
+        IEnumerable<XAssetProviderContribution> providers = LoadedZones.Count == 0
+            ? []
+            : LoadedZones[0].LoadResult.Context.AssetPool.Slots
+                .SelectMany(slot => slot.Providers)
+                .Where(provider =>
+                    provider.AssetType == entry.AssetType &&
+                    !provider.IsReferencePlaceholder);
+        XAssetProviderContribution? owningProvider =
+            entry.ContentSource == WorkspaceAssetContentSource.TargetAuthoredBaseline
+                ? providers.FirstOrDefault(provider =>
+                    ReferenceEquals(provider.Asset, entry.Definition))
+                : entry.ResolvedProvider is { } resolved
+                    ? providers.FirstOrDefault(provider =>
+                        provider.Id.Value == resolved.ProviderId)
+                    : providers.FirstOrDefault(provider =>
+                        ReferenceEquals(provider.Asset, entry.Definition));
+        if (owningProvider is not null)
+        {
+            WorkspaceZone? zone = LoadedZones.FirstOrDefault(candidate =>
+                candidate.LoadResult.Context.ZoneOwner == owningProvider.Owner);
+            if (zone is not null)
+            {
+                resolver = zone.LoadResult.SoundPayloadResolver;
+                reason = string.Empty;
+                return true;
+            }
+        }
+
+        resolver = UnavailableSoundPayloadResolver.Instance;
+        reason = $"The provider zone for Sound '{entry.OriginalName ?? entry.NormalizedName ?? "<unnamed>"}' is not available.";
+        return false;
+    }
 
     internal void ThrowIfDisposed()
     {

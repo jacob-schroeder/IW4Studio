@@ -2,6 +2,7 @@ using IW4.FastFiles.Database;
 using IW4.FastFiles.Zone;
 using IW4.FastFiles.Loaders.Streaming.Images;
 using IW4.Runtime.Assets.Images;
+using IW4.Runtime.Assets.Sound;
 using IW4.Runtime.Database;
 using IW4.Linker.Contracts;
 using IW4.Linker.Plans;
@@ -29,6 +30,9 @@ public sealed record LoadedXZone(
 {
     public IGfxImagePayloadResolver ImagePayloadResolver { get; init; } =
         UnavailableGfxImagePayloadResolver.Instance;
+
+    public ISoundPayloadResolver SoundPayloadResolver { get; init; } =
+        UnavailableSoundPayloadResolver.Instance;
 
     internal LinkGfxImageStreamSource? LinkImageStreams { get; init; }
 

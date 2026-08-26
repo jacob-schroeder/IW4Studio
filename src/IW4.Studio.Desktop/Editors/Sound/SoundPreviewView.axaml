@@ -1,0 +1,267 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:sound="using:IW4.Studio.Desktop.Editors.Sound"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.Sound.SoundPreviewView"
+             x:DataType="viewModels:SoundPreviewViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1080"
+             d:DesignHeight="720">
+  <Grid RowDefinitions="Auto,12,*">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock Text="{Binding AliasCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding VariantCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Column="1"
+                Padding="9,4"
+                CornerRadius="4"
+                VerticalAlignment="Center"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <TextBlock Text="PREVIEW ONLY"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     LetterSpacing="0.5"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            MinHeight="430"
+            Padding="24"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,18,Auto,14,*,18,Auto"
+            MaxWidth="960"
+            HorizontalAlignment="Stretch">
+        <Grid ColumnDefinitions="Auto,12,*"
+              VerticalAlignment="Center">
+          <Border Width="42"
+                  Height="42"
+                  CornerRadius="9"
+                  Background="{DynamicResource StudioAccentSurfaceBrush}"
+                  BorderBrush="{DynamicResource StudioAccentSecondaryBrush}"
+                  BorderThickness="1">
+            <materialIcons:MaterialIcon Kind="Waveform"
+                                        Width="22"
+                                        Height="22"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Foreground="{DynamicResource StudioAccentBrush}" />
+          </Border>
+          <StackPanel Grid.Column="2"
+                      Spacing="3">
+            <TextBlock Text="SOUND PREVIEW"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.9"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <ComboBox MinHeight="31"
+                      MaxWidth="520"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding HasVariantSelector}"
+                      ItemsSource="{Binding Variants}"
+                      SelectedItem="{Binding SelectedVariant, Mode=TwoWay}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="viewModels:SoundPreviewVariantViewModel">
+                  <TextBlock Text="{Binding DisplayName}"
+                             TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Text="{Binding SelectedVariant.DisplayName}"
+                       IsVisible="{Binding !HasVariantSelector}"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2"
+              ColumnDefinitions="*,1,*,1,*,1,*">
+          <StackPanel Margin="4,0,14,0"
+                      Spacing="3">
+            <TextBlock Text="CODEC"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding FormatText}"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Border Grid.Column="1"
+                  Background="{DynamicResource StudioBorderBrush}" />
+          <StackPanel Grid.Column="2"
+                      Margin="14,0"
+                      Spacing="3">
+            <TextBlock Text="SAMPLE RATE"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding SampleRateText}"
+                       FontSize="11"
+                       FontWeight="SemiBold" />
+          </StackPanel>
+          <Border Grid.Column="3"
+                  Background="{DynamicResource StudioBorderBrush}" />
+          <StackPanel Grid.Column="4"
+                      Margin="14,0"
+                      Spacing="3">
+            <TextBlock Text="CHANNELS"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding ChannelsText}"
+                       FontSize="11"
+                       FontWeight="SemiBold" />
+          </StackPanel>
+          <Border Grid.Column="5"
+                  Background="{DynamicResource StudioBorderBrush}" />
+          <StackPanel Grid.Column="6"
+                      Margin="14,0,4,0"
+                      Spacing="3">
+            <TextBlock Text="STORED DATA"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding StoredSizeText}"
+                       FontSize="11"
+                       FontWeight="SemiBold" />
+          </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="4"
+                MinHeight="190"
+                Padding="18,14"
+                CornerRadius="8"
+                Background="{DynamicResource StudioSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioBorderStrongBrush}"
+                BorderThickness="1">
+          <Grid RowDefinitions="Auto,8,*">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding VisualizerCaption}"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding SelectedSourceText}"
+                         MaxWidth="440"
+                         FontSize="8"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </Grid>
+
+            <sound:SoundLevelVisualizer Grid.Row="2"
+                                        IsVisible="{Binding HasVisualization}"
+                                        FrameGainProfile="{Binding FrameGainProfile}"
+                                        LiveLevels="{Binding LiveLevels}"
+                                        Progress="{Binding Progress}"
+                                        RestingBrush="{DynamicResource StudioTextDisabledBrush}"
+                                        PlayedBrush="{DynamicResource StudioAccentBrush}" />
+
+            <StackPanel Grid.Row="2"
+                        IsVisible="{Binding !HasVisualization}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+              <materialIcons:MaterialIcon Kind="MusicNoteOffOutline"
+                                          Width="30"
+                                          Height="30"
+                                          HorizontalAlignment="Center"
+                                          Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Text="No playable level data"
+                         FontSize="11"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Grid Grid.Row="6"
+              ColumnDefinitions="Auto,14,*,14,Auto"
+              VerticalAlignment="Center">
+          <Button Width="50"
+                  Height="50"
+                  MinWidth="50"
+                  MinHeight="50"
+                  Padding="0"
+                  CornerRadius="25"
+                  Classes="primary"
+                  IsEnabled="{Binding CanPlay}"
+                  ToolTip.Tip="{Binding PlayPauseToolTip}"
+                  Click="PlayPauseButton_Click">
+            <Grid>
+              <materialIcons:MaterialIcon Kind="PlayCircleOutline"
+                                          Width="26"
+                                          Height="26"
+                                          IsVisible="{Binding ShowPlayIcon}" />
+              <materialIcons:MaterialIcon Kind="PauseCircleOutline"
+                                          Width="26"
+                                          Height="26"
+                                          IsVisible="{Binding ShowPauseIcon}" />
+            </Grid>
+          </Button>
+
+          <TextBlock Grid.Column="2"
+                     Text="{Binding PlaybackStatus}"
+                     VerticalAlignment="Center"
+                     TextWrapping="Wrap"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+          <StackPanel Grid.Column="4"
+                      Orientation="Horizontal"
+                      VerticalAlignment="Center"
+                      Spacing="5">
+            <TextBlock Text="{Binding PositionText}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+            <TextBlock Text="/"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding DurationText}"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

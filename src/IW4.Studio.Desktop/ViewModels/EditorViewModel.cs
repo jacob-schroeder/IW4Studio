@@ -44,7 +44,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         Workspace = workspace;
         EditingSession = editingSession;
         _authoringRegistry = authoringRegistry ?? AssetAuthoringAdapterRegistry.CreateDefault();
-        _viewRegistry = viewRegistry ?? AssetEditorViewRegistry.CreateDefault();
+        _viewRegistry = viewRegistry ?? AssetEditorViewRegistry.CreateDefault(
+            workspace: workspace);
         AddableAssetTypes = _authoringRegistry.AddableAssetTypes;
         TargetFileName = Path.GetFileName(workspace.SourcePath);
         TargetPath = Path.GetFullPath(workspace.SourcePath);

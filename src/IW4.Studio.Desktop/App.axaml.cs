@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using IW4.Studio.Desktop.Editors.Sound;
 using IW4.Studio.Desktop.Lifecycle;
 using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes;
@@ -16,6 +17,7 @@ public sealed partial class App : Application
     private AppSettingsStore? _settingsStore;
     private ThemeService? _themeService;
     private readonly DestructiveNavigationCoordinator _navigationCoordinator = new();
+    private Task<SoundPreviewPlayer?>? _soundPreviewWarmupTask;
     private bool _approvedShutdownRetry;
 
     public override void Initialize()
@@ -36,6 +38,7 @@ public sealed partial class App : Application
             desktop.ShutdownRequested += Desktop_ShutdownRequested;
             desktop.Exit += Desktop_Exit;
             desktop.MainWindow = CreateWelcomeWindow();
+            _soundPreviewWarmupTask = Task.Run(SoundPreviewPlayer.TryCreateWarmup);
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -170,10 +173,19 @@ public sealed partial class App : Application
         _ = RequestShutdownAsync(editorWindow);
     }
 
-    private static void Desktop_Exit(
+    private void Desktop_Exit(
         object? sender,
         ControlledApplicationLifetimeExitEventArgs e)
     {
+        try
+        {
+            ObserveAndDisposeSoundPreviewWarmup();
+        }
+        catch
+        {
+            // Optional sound warm-up must not interfere with application shutdown.
+        }
+
         try
         {
             SilkMapRenderOpenGlShareGroup.Shutdown();
@@ -182,6 +194,50 @@ public sealed partial class App : Application
         {
             LivePreviewDebugDump.Shutdown();
         }
+    }
+
+    private void ObserveAndDisposeSoundPreviewWarmup()
+    {
+        Task<SoundPreviewPlayer?>? warmupTask = Interlocked.Exchange(
+            ref _soundPreviewWarmupTask,
+            null);
+        if (warmupTask is null)
+            return;
+
+        if (warmupTask.IsCompleted)
+        {
+            DisposeCompletedSoundPreviewWarmup(warmupTask);
+            return;
+        }
+
+        _ = warmupTask.ContinueWith(
+            static completedTask =>
+            {
+                try
+                {
+                    DisposeCompletedSoundPreviewWarmup(completedTask);
+                }
+                catch
+                {
+                    // Optional sound warm-up must not outlive shutdown as an error.
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default);
+    }
+
+    private static void DisposeCompletedSoundPreviewWarmup(
+        Task<SoundPreviewPlayer?> warmupTask)
+    {
+        if (warmupTask.IsCompletedSuccessfully)
+        {
+            warmupTask.Result?.Dispose();
+            return;
+        }
+
+        if (warmupTask.IsFaulted)
+            _ = warmupTask.Exception;
     }
 
     private async Task RequestShutdownAsync(EditorWindow editorWindow)

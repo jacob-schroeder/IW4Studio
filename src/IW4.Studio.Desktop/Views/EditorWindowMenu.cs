@@ -43,6 +43,7 @@ internal static class StudioMenu
                     "Live Preview",
                     StudioMenuAction.LivePreview,
                     IsVisibleBinding: "LivePreview.CanLaunch"),
+                new("Extract Zone", StudioMenuAction.ExtractZone),
                 new(
                     "Dump Source Assets",
                     StudioMenuAction.DumpSourceAssets,
@@ -230,6 +231,7 @@ internal enum StudioMenuAction
 {
     ShowAbout,
     SaveAs,
+    ExtractZone,
     DumpSourceAssets,
     OpenAnother,
     Exit,

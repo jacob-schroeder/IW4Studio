@@ -341,6 +341,9 @@ public sealed partial class EditorWindow : Window
             case StudioMenuAction.SaveAs:
                 await RequestSaveAsAsync();
                 break;
+            case StudioMenuAction.ExtractZone:
+                await RequestExtractZoneAsync();
+                break;
             case StudioMenuAction.DumpSourceAssets:
                 await RequestDumpSourceAssetsAsync();
                 break;
@@ -523,6 +526,70 @@ public sealed partial class EditorWindow : Window
         catch
         {
             return null;
+        }
+    }
+
+    private async Task RequestExtractZoneAsync()
+    {
+        if (_disposed || _workbench is not { } workbench)
+            return;
+
+        try
+        {
+            string filePrefix = Path.GetFileNameWithoutExtension(
+                workbench.TargetFileName);
+            IStorageFile? destination = await StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = "Extract decoded IW4 zone",
+                    SuggestedFileName = filePrefix,
+                    DefaultExtension = "zone",
+                    ShowOverwritePrompt = true,
+                    FileTypeChoices =
+                    [
+                        new FilePickerFileType("IW4 zone files")
+                        {
+                            Patterns = ["*.zone"]
+                        },
+                        FilePickerFileTypes.All
+                    ]
+                });
+            if (destination is null || _disposed)
+                return;
+
+            await using Stream output = await destination.OpenWriteAsync();
+            if (!output.CanSeek)
+            {
+                throw new NotSupportedException(
+                    "The selected storage destination does not support a safe replacement write.");
+            }
+
+            output.SetLength(0);
+            output.Position = 0;
+            await output.WriteAsync(workbench.Workspace.LoadedZone.ZoneBytes);
+            await output.FlushAsync();
+            workbench.ConsoleOutput.Append(
+                Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information,
+                "Extract Zone",
+                $"Extracted decoded zone to '{destination.Name}'.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (_disposed)
+                return;
+
+            workbench.ConsoleOutput.Append(
+                Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Error,
+                "Extract Zone",
+                $"Zone extraction failed: {exception.Message}");
+            if (workbench.DockLayout.State.Bottom.ActiveToolId !=
+                StudioToolIds.ConsoleOutput)
+            {
+                _ = workbench.ActivateTool(StudioToolIds.ConsoleOutput);
+            }
         }
     }
 

@@ -2,7 +2,9 @@ using IW4.Assets.Assets;
 using IW4.Assets.Assets.Image;
 using IW4.FastFiles.Loaders.IO;
 using IW4.FastFiles.Loaders.Streaming.Images;
+using IW4.FastFiles.Loaders.Streaming.Sound;
 using IW4.FastFiles.Streaming.Images;
+using IW4.FastFiles.Streaming.Sound;
 using IW4.FastFiles.Streaming.Database.Streaming;
 using IW4.FastFiles.Database;
 using IW4.FastFiles.Database.Streaming;
@@ -31,6 +33,7 @@ public sealed class DbLoadSession : IDisposable
 
     private readonly List<LoadedXZone> _zones = [];
     private readonly List<GfxImageStreamResolver> _imageStreamResolvers = [];
+    private readonly List<StreamedSoundResolver> _soundStreamResolvers = [];
     private readonly IReadOnlyList<LoadedXZone> _zoneView;
     private readonly Action<XAssetLoadProgress>? _assetProgress;
     private uint _selectedLanguageMask;
@@ -238,7 +241,7 @@ public sealed class DbLoadSession : IDisposable
             flags,
             unknown48,
             Runtime);
-        result = BindImageStreams(result, path);
+        result = BindPayloadResolvers(result, path);
         return Register(result);
     }
 
@@ -264,26 +267,30 @@ public sealed class DbLoadSession : IDisposable
             sysFile,
             Path.GetFileNameWithoutExtension(zoneInfo.Name));
         LoadedXZone result = _loader.DB_LoadXZone(file, zoneInfo, context, Runtime);
-        result = BindImageStreams(result, path);
+        result = BindPayloadResolvers(result, path);
         return Register(result);
     }
 
-    private LoadedXZone BindImageStreams(LoadedXZone loaded, string path)
+    private LoadedXZone BindPayloadResolvers(LoadedXZone loaded, string path)
     {
-        var streams = new GfxImageStreamResolver(loaded.Header, path);
+        var imageStreams = new GfxImageStreamResolver(loaded.Header, path);
+        var soundStreams = new StreamedSoundResolver(path);
         try
         {
             LoadedXZone result = loaded with
             {
-                ImagePayloadResolver = new GfxImageStreamPayloadResolver(streams),
+                ImagePayloadResolver = new GfxImageStreamPayloadResolver(imageStreams),
+                SoundPayloadResolver = new StreamedSoundPayloadResolver(soundStreams),
                 LinkImageStreams = new LinkGfxImageStreamSource(loaded.Header)
             };
-            _imageStreamResolvers.Add(streams);
+            _imageStreamResolvers.Add(imageStreams);
+            _soundStreamResolvers.Add(soundStreams);
             return result;
         }
         catch
         {
-            streams.Dispose();
+            soundStreams.Dispose();
+            imageStreams.Dispose();
             throw;
         }
     }
@@ -365,6 +372,9 @@ public sealed class DbLoadSession : IDisposable
         }
         finally
         {
+            foreach (StreamedSoundResolver resolver in _soundStreamResolvers)
+                resolver.Dispose();
+            _soundStreamResolvers.Clear();
             foreach (GfxImageStreamResolver resolver in _imageStreamResolvers)
                 resolver.Dispose();
             _imageStreamResolvers.Clear();

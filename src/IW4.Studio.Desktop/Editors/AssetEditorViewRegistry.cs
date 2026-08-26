@@ -7,6 +7,7 @@ using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.MaterialTechset;
 using IW4.Studio.Desktop.Editors.RawFile;
+using IW4.Studio.Desktop.Editors.Sound;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Editors.StructuredData;
 using IW4.Studio.Desktop.Editors.XModel;
@@ -68,7 +69,8 @@ public sealed class AssetEditorViewRegistry
         GscWorkspaceIndexService? gscWorkspace = null,
         IGscSourceNavigator? gscSourceNavigator = null,
         IGscUsagesPresenter? gscUsagesPresenter = null,
-        AssetReferencePickerService? assetReferencePicker = null)
+        AssetReferencePickerService? assetReferencePicker = null,
+        FastFileWorkspace? workspace = null)
     {
         var registry = new AssetEditorViewRegistry();
         registry.Register(new RawFileViewFactory(
@@ -76,6 +78,7 @@ public sealed class AssetEditorViewRegistry
             gscWorkspace,
             gscSourceNavigator,
             gscUsagesPresenter));
+        registry.Register(new SoundViewFactory(workspace));
         registry.Register(new StringTableViewFactory());
         registry.Register(new StructuredDataDefViewFactory());
         registry.Register(new LocalizeViewFactory());

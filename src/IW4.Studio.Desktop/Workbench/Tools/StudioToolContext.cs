@@ -8,6 +8,7 @@ using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.MapRender;
+using IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.Properties;
 using IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 
@@ -17,6 +18,7 @@ public sealed record StudioToolContext(
     FastFileAssetsNavigatorViewModel FastFileAssets,
     AssetPoolNavigatorViewModel AssetPool,
     ImageFilePakToolViewModel ImageFilePak,
+    PackFilePakToolViewModel PackFilePak,
     ConsoleOutputBuffer ConsoleOutput,
     DiagnosticsAggregator Diagnostics,
     GscFindingsToolViewModel GscFindings,
