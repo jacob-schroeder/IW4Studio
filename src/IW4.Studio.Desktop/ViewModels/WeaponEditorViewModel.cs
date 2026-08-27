@@ -586,6 +586,7 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         {
             clip = _xanimExchange.Decode(animation);
             if (!TryCreateAnimationPreviewComponents(
+                    ShouldIncludeKnifeInAnimationPreview(),
                     out IReadOnlyList<XAnimPreviewModelComponent> components,
                     out string componentFailure))
             {
@@ -654,6 +655,7 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
     }
 
     private bool TryCreateAnimationPreviewComponents(
+        bool includeKnife,
         out IReadOnlyList<XAnimPreviewModelComponent> components,
         out string reason)
     {
@@ -689,12 +691,13 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
                 "Rocket model",
                 "tag_clip",
                 out reason) ||
-            !TryAddOptionalAnimationComponent(
-                result,
-                WeaponIndexedRowKind.KnifeModel,
-                "Knife model",
-                "tag_knife_attach",
-                out reason))
+            (includeKnife &&
+             !TryAddOptionalAnimationComponent(
+                 result,
+                 WeaponIndexedRowKind.KnifeModel,
+                 "Knife model",
+                 "tag_knife_attach",
+                 out reason)))
         {
             return false;
         }
@@ -702,6 +705,22 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         components = Array.AsReadOnly(result.ToArray());
         reason = string.Empty;
         return true;
+    }
+
+    private bool ShouldIncludeKnifeInAnimationPreview()
+    {
+        WeaponIndexedRowItemViewModel? selected = SelectedIndexedRow;
+        if (selected is null ||
+            selected.Kind is not
+                (WeaponIndexedRowKind.VariantAnimation or
+                    WeaponIndexedRowKind.RightAnimation or
+                    WeaponIndexedRowKind.LeftAnimation))
+        {
+            return false;
+        }
+
+        return selected.Index == (int)WeaponAnimationSlot.Melee ||
+            selected.Index == (int)WeaponAnimationSlot.MeleeCharge;
     }
 
     private bool TryAddOptionalAnimationComponent(

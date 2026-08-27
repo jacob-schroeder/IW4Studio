@@ -5,8 +5,8 @@ namespace IW4.AssetExchange.SourceFormat.XAnim;
 /// <summary>
 /// One sampled local XAnim bone transform. Rotation replaces the model-local
 /// rotation for every animation-mapped bone; a missing quaternion stream is
-/// the native identity rotation. Translation is a delta from the model's local
-/// bind offset.
+/// the native identity rotation. Translation is added to the XModel's native
+/// local Trans offset, which can differ from the BaseMat-derived bind offset.
 /// </summary>
 public readonly record struct XAnimLocalBoneTransform(
     Quaternion Rotation,

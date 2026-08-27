@@ -96,6 +96,15 @@ internal sealed class XAnimPreviewComposition
                     $"Component {componentIndex} skeleton could not be projected.";
                 return false;
             }
+            int expectedTranslationComponentCount = checked(
+                (modelBones.Count - component.Model.NumRootBones) * 3);
+            if (component.Model.Trans.Count !=
+                expectedTranslationComponentCount)
+            {
+                reason =
+                    $"The XModel contains {component.Model.Trans.Count} local translation components; expected {expectedTranslationComponentCount}.";
+                return false;
+            }
             var modelBoneNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (XModelExportBone modelBone in modelBones)
             {
@@ -133,9 +142,20 @@ internal sealed class XAnimPreviewComposition
                  boneIndex++)
             {
                 XModelExportBone modelBone = modelBones[boneIndex];
+                Vector3 modelLocalTranslation = Vector3.Zero;
+                if (boneIndex >= component.Model.NumRootBones)
+                {
+                    int translationOffset = checked(
+                        (boneIndex - component.Model.NumRootBones) * 3);
+                    modelLocalTranslation = new Vector3(
+                        component.Model.Trans[translationOffset],
+                        component.Model.Trans[translationOffset + 1],
+                        component.Model.Trans[translationOffset + 2]);
+                }
                 if (!TryProjectBone(
                         modelBone,
                         modelBones,
+                        modelLocalTranslation,
                         attachmentBoneIndex,
                         attachmentBindTransform,
                         boneOffset,
@@ -193,6 +213,7 @@ internal sealed class XAnimPreviewComposition
     private static bool TryProjectBone(
         XModelExportBone modelBone,
         IReadOnlyList<XModelExportBone> modelBones,
+        Vector3 modelLocalTranslation,
         int attachmentBoneIndex,
         Matrix4x4 attachmentBindTransform,
         int boneOffset,
@@ -240,6 +261,7 @@ internal sealed class XAnimPreviewComposition
             Quaternion.CreateFromRotationMatrix(local));
         Matrix4x4 bindGlobal = modelGlobal * attachmentBindTransform;
         if (!IsFinite(localPosition) ||
+            !IsFinite(modelLocalTranslation) ||
             !IsFinite(localRotation) ||
             !IsFinite(bindGlobal))
         {
@@ -252,6 +274,7 @@ internal sealed class XAnimPreviewComposition
             modelBone.Name,
             parentIndex,
             localPosition,
+            modelLocalTranslation,
             localRotation,
             inverseModelBindGlobal,
             bindGlobal);
@@ -331,6 +354,7 @@ internal sealed record XAnimPreviewCompositionBone(
     string Name,
     int ParentIndex,
     Vector3 BindLocalPosition,
+    Vector3 ModelLocalTranslation,
     Quaternion BindLocalRotation,
     Matrix4x4 InverseModelBindGlobalTransform,
     Matrix4x4 BindGlobalTransform);

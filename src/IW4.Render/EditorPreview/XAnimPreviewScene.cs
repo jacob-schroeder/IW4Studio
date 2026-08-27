@@ -162,7 +162,8 @@ public sealed class XAnimPreviewScene
             if (trackIndex >= 0)
             {
                 XAnimLocalBoneTransform sampled = sampledTracks[trackIndex];
-                localPosition += sampled.Translation;
+                localPosition =
+                    bone.ModelLocalTranslation + sampled.Translation;
                 localRotation = sampled.Rotation;
                 isAnimated = true;
             }
