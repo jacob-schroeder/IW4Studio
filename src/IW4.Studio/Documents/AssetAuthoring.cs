@@ -30,12 +30,23 @@ public sealed class AssetEditorValidationState
 
 public abstract class AssetEditorSurface
 {
-    protected AssetEditorSurface(WorkspaceAssetCatalogEntry entry) =>
+    protected AssetEditorSurface(WorkspaceAssetCatalogEntry entry)
+    {
         Entry = entry ?? throw new ArgumentNullException(nameof(entry));
+        Definition = entry.Definition;
+    }
+
+    protected AssetEditorSurface(
+        WorkspaceAssetCatalogEntry entry,
+        BaseAsset definition)
+    {
+        Entry = entry ?? throw new ArgumentNullException(nameof(entry));
+        Definition = definition ?? throw new ArgumentNullException(nameof(definition));
+    }
 
     public WorkspaceAssetCatalogEntry Entry { get; }
 
-    public BaseAsset? Definition => Entry.Definition;
+    public BaseAsset? Definition { get; }
 }
 
 public sealed class StructuralAssetInspector : AssetEditorSurface
@@ -43,12 +54,23 @@ public sealed class StructuralAssetInspector : AssetEditorSurface
     private StructuralAssetInspector(WorkspaceAssetCatalogEntry entry, string reason)
         : base(entry) => Reason = reason;
 
+    private StructuralAssetInspector(
+        WorkspaceAssetCatalogEntry entry,
+        string reason,
+        BaseAsset definition)
+        : base(entry, definition) => Reason = reason;
+
     public string Reason { get; }
     public bool HasWritableEditor => false;
 
     public static StructuralAssetInspector Create(
         WorkspaceAssetCatalogEntry entry,
         string reason) => new(entry, reason);
+
+    internal static StructuralAssetInspector Create(
+        WorkspaceAssetCatalogEntry entry,
+        string reason,
+        BaseAsset definition) => new(entry, reason, definition);
 }
 
 public interface IAssetAuthoringAdapter
@@ -130,12 +152,53 @@ public sealed class AssetAuthoringAdapterRegistry
     public AssetEditorSurface CreateSurface(
         FastFileEditingSession session,
         WorkspaceAssetCatalogEntry entry) =>
-        TryGetAdapter(entry.AssetType, out IAssetAuthoringAdapter? adapter) &&
-        entry.Definition is not null
-            ? new AssetEditorSession(session, entry, adapter!)
-            : StructuralAssetInspector.Create(
+        CreateSurface(session, entry, entry.Definition, entry.Access);
+
+    public AssetEditorSurface CreateReadOnlySurface(
+        FastFileEditingSession session,
+        WorkspaceAssetCatalogEntry entry,
+        BaseAsset? definition = null)
+    {
+        definition ??= entry.Definition;
+        if (definition is not null &&
+            definition.SerializedAssetType != entry.AssetType)
+        {
+            throw new ArgumentException(
+                "The read-only definition must match the catalog entry's asset type.",
+                nameof(definition));
+        }
+
+        return CreateSurface(
+            session,
+            entry,
+            definition,
+            WorkspaceAssetAccess.ReadOnly);
+    }
+
+    private AssetEditorSurface CreateSurface(
+        FastFileEditingSession session,
+        WorkspaceAssetCatalogEntry entry,
+        BaseAsset? definition,
+        WorkspaceAssetAccess mode)
+    {
+        const string reason = "No detached authoring adapter is available.";
+        if (definition is null)
+            return StructuralAssetInspector.Create(entry, reason);
+        if (!TryGetAdapter(entry.AssetType, out IAssetAuthoringAdapter? adapter))
+        {
+            return StructuralAssetInspector.Create(
                 entry,
-                "No detached authoring adapter is available.");
+                reason,
+                definition);
+        }
+
+        return new AssetEditorSession(
+            session,
+            entry,
+            adapter!,
+            definition,
+            mode);
+    }
     public WorkspaceAssetCatalogEntry AddAsset(FastFileEditingSession session, XAssetType type, string name)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -255,19 +318,28 @@ public sealed class AssetEditorSession : AssetEditorSurface
     internal AssetEditorSession(
         FastFileEditingSession session,
         WorkspaceAssetCatalogEntry entry,
-        IAssetAuthoringAdapter adapter)
-        : base(entry)
+        IAssetAuthoringAdapter adapter,
+        BaseAsset definition,
+        WorkspaceAssetAccess mode)
+        : base(entry, definition)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
-        Mode = entry.Access;
+        if (mode != entry.Access && mode != WorkspaceAssetAccess.ReadOnly)
+        {
+            throw new ArgumentException(
+                "Only read-only access can override a catalog entry's access.",
+                nameof(mode));
+        }
+
+        Mode = mode;
         _rowIdentity = Mode == WorkspaceAssetAccess.Editable
             ? entry.TargetRowIdentity ?? throw new InvalidDataException(
                 "An editable editor requires a stable target row.")
             : null;
         object draft = _rowIdentity is { } identity
             ? _session.CloneCurrentDraft(identity, _adapter)
-            : _adapter.CreateDraft(entry.Definition ?? throw new InvalidDataException(
+            : _adapter.CreateDraft(Definition ?? throw new InvalidDataException(
                 "A read-only editor requires a detached definition."));
         _readOnlyDraft = _adapter.CloneDraft(draft);
         Validation = new AssetEditorValidationState(_adapter.Validate(draft));
@@ -356,7 +428,10 @@ public sealed class AssetEditorSession : AssetEditorSurface
     public D3dbspWorkspaceAssetGroup CaptureD3dbspGroup()
     {
         ThrowIfClosed();
-        return _session.CaptureD3dbspGroup(RequireD3dbspGroupName());
+        string assetName = RequireD3dbspGroupName();
+        return CanEdit
+            ? _session.CaptureD3dbspGroup(assetName)
+            : CaptureRuntimeD3dbspGroup(assetName);
     }
 
     /// <summary>Replaces this D3DBSP group from one compiled file.</summary>
@@ -365,6 +440,8 @@ public sealed class AssetEditorSession : AssetEditorSurface
         bool forceFullbright,
         int fragmentProgramUploadCapacity)
     {
+        if (!CanEdit)
+            throw new InvalidOperationException("This asset is not editable.");
         ThrowIfClosed();
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         return _session.ImportD3dbspAsync(
@@ -381,9 +458,40 @@ public sealed class AssetEditorSession : AssetEditorSurface
         return D3dbspUnlinker.Unlink(CaptureD3dbspGroup().Assets);
     }
 
+    private D3dbspWorkspaceAssetGroup CaptureRuntimeD3dbspGroup(
+        string assetName)
+    {
+        _session.ThrowIfDisposed();
+        var pool = Workspace.LoadedZone.Context.AssetPool;
+        long revision = pool.Revision;
+        var assets = new List<BaseAsset>(D3dbspAssetTypeFacts.MultiplayerTypes.Count);
+        foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
+        {
+            if (!pool.TryResolve(
+                    assetType,
+                    assetName,
+                    out BaseAsset? definition) ||
+                definition is null)
+            {
+                throw new InvalidDataException(
+                    $"The runtime asset pool has no current {assetType} for D3DBSP group '{assetName}'.");
+            }
+
+            assets.Add(definition);
+        }
+
+        if (pool.Revision != revision)
+        {
+            throw new InvalidOperationException(
+                "The runtime asset pool changed while the D3DBSP group was being captured.");
+        }
+
+        return new D3dbspWorkspaceAssetGroup(revision, assetName, assets);
+    }
+
     private string RequireD3dbspGroupName()
     {
-        string? semanticName = Entry.Definition?.SerializedAssetName;
+        string? semanticName = Definition?.SerializedAssetName;
         string? groupName = semanticName;
         if (!D3dbspAssetTypeFacts.IsOwnedD3dbspGroupName(groupName))
         {
@@ -835,7 +943,7 @@ public sealed class StringTableReadOnlySnapshot
         AssetEditorSession editorSession)
     {
         ArgumentNullException.ThrowIfNull(editorSession);
-        if (editorSession.Entry.Definition is not StringTableAsset definition)
+        if (editorSession.Definition is not StringTableAsset definition)
             throw new InvalidDataException("The selected provider is not a StringTable definition.");
         return new StringTableReadOnlySnapshot(new StringTableDraft(definition));
     }
@@ -875,7 +983,7 @@ public sealed class LocalizeReadOnlySnapshot
         AssetEditorSession editorSession)
     {
         ArgumentNullException.ThrowIfNull(editorSession);
-        if (editorSession.Entry.Definition is not LocalizeAsset definition)
+        if (editorSession.Definition is not LocalizeAsset definition)
             throw new InvalidDataException("The selected provider is not a Localize definition.");
         return new LocalizeReadOnlySnapshot(new LocalizeDraft(definition));
     }

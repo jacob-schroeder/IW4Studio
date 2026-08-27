@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
+using IW4.Assets.Assets;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
+using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.D3dbsp;
@@ -441,10 +443,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public string EditorFallbackHeading =>
         SelectedEditorTab?.Route is { IsResolved: false }
             ? "No workspace editor target was found"
-            : SelectedEditorTab?.Route is { OpensCatalogEditor: false } &&
-              SelectedEditorTab?.Selection.Source == WorkbenchAssetSelectionSource.AssetPool
-                ? "Runtime preview is not implemented yet"
-                : "No editor exists for this resource yet";
+            : "No editor exists for this resource yet";
 
     public string EditorFallbackMessage =>
         !string.IsNullOrWhiteSpace(SelectedEditorTab?.Route?.UnavailableReason)
@@ -909,8 +908,34 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 OpensCatalogEditor: true
             })
         {
-            catalogEditor = Editor.SelectEntry(
-                AssetExplorerItemIdentity.From(entry));
+            AssetExplorerItemIdentity identity =
+                AssetExplorerItemIdentity.From(entry);
+            if (selection.Source == WorkbenchAssetSelectionSource.AssetPool)
+            {
+                if (TryResolveRuntimePreviewDefinition(
+                        selection,
+                        out BaseAsset? definition,
+                        out string unavailableReason) &&
+                    definition is not null)
+                {
+                    catalogEditor = Editor.SelectReadOnlyEntry(
+                        identity,
+                        definition);
+                }
+                else
+                {
+                    route = route with
+                    {
+                        OpensCatalogEditor = false,
+                        UnavailableReason = unavailableReason
+                    };
+                    Editor.DeactivateSelection();
+                }
+            }
+            else
+            {
+                catalogEditor = Editor.SelectEntry(identity);
+            }
         }
         else
         {
@@ -967,7 +992,13 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
         else
         {
+            AssetEditorHostViewModel? previousEditor = tab.CatalogEditor;
             tab.UpdateSelection(selection, route, catalogEditor);
+            if (previousEditor is not null &&
+                !ReferenceEquals(previousEditor, catalogEditor))
+            {
+                Editor.CloseEditor(previousEditor);
+            }
         }
 
         SetSelectedEditorTab(tab);
@@ -1005,6 +1036,46 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
 
         NotifyCenterSelectionChanged();
+    }
+
+    private bool TryResolveRuntimePreviewDefinition(
+        WorkbenchAssetSelection selection,
+        out BaseAsset? definition,
+        out string unavailableReason)
+    {
+        definition = null;
+        if (selection.Identity.AssetPoolAddress is not { } address ||
+            selection.ProviderId is not { IsNone: false } expectedProvider)
+        {
+            unavailableReason =
+                "The runtime selection does not identify an active asset-pool provider.";
+            return false;
+        }
+
+        XAssetPool pool = Workspace.LoadedZone.Context.AssetPool;
+        if (!pool.TryGetSlot(address, out XAssetSlot? slot) || slot is null)
+        {
+            unavailableReason =
+                "The selected runtime asset-pool slot is no longer available.";
+            return false;
+        }
+        if (slot.AssetType != selection.AssetType ||
+            slot.ActiveProvider.Id != expectedProvider)
+        {
+            unavailableReason =
+                "The selected runtime asset changed after the asset-pool browser was populated.";
+            return false;
+        }
+        if (slot.ActiveProvider.IsReferencePlaceholder)
+        {
+            unavailableReason =
+                "The selected runtime asset is an unresolved reference placeholder.";
+            return false;
+        }
+
+        definition = slot.CanonicalAsset;
+        unavailableReason = string.Empty;
+        return true;
     }
 
     private void SetSelectedEditorTab(WorkbenchEditorTabViewModel tab)

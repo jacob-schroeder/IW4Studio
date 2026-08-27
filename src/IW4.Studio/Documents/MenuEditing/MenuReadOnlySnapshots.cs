@@ -14,7 +14,7 @@ public sealed class MenuReadOnlySnapshot
         AssetEditorSession editorSession)
     {
         ArgumentNullException.ThrowIfNull(editorSession);
-        if (editorSession.Entry.Definition is not MenuDefAsset definition)
+        if (editorSession.Definition is not MenuDefAsset definition)
             throw new InvalidDataException("The selected provider is not a Menu definition.");
         MenuDefAsset detached = new MenuGraphClone(false).CloneMenu(definition);
         return new MenuReadOnlySnapshot(MenuAssetProjector.Project(
@@ -34,7 +34,7 @@ public sealed class MenuFileReadOnlySnapshot
         AssetEditorSession editorSession)
     {
         ArgumentNullException.ThrowIfNull(editorSession);
-        if (editorSession.Entry.Definition is not MenuFileAsset definition)
+        if (editorSession.Definition is not MenuFileAsset definition)
             throw new InvalidDataException("The selected provider is not a MenuFile definition.");
         MenuFileAsset detached = MenuAssetProjector.Clone(definition);
         return new MenuFileReadOnlySnapshot(MenuAssetProjector.Project(

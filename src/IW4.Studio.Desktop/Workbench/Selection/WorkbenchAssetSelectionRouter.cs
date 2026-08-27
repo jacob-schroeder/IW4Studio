@@ -138,15 +138,10 @@ public sealed class WorkbenchAssetSelectionRouter
                 "This runtime pool slot has no matching catalog entry in the loaded workspace.");
         }
 
-        bool opensEditor =
-            entry.Access != WorkspaceAssetAccess.Editable ||
-            IsD3dbspSelection(selection);
         return new WorkbenchAssetSelectionRoute(
             entry,
-            opensEditor,
-            opensEditor
-                ? null
-                : "Runtime pool inspection is read-only. A dedicated runtime preview is not implemented for this target-owned asset yet.");
+            OpensCatalogEditor: true,
+            UnavailableReason: null);
     }
 
     private static WorkbenchAssetSelectionRoute Unavailable(string reason) =>

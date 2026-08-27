@@ -54,7 +54,7 @@ public sealed class D3dbspEditorViewModel
 
     public bool IsEditable => _session.CanEdit;
 
-    public bool CanImport => !IsBusy && _supportsFileRoundTrip;
+    public bool CanImport => IsEditable && !IsBusy && _supportsFileRoundTrip;
 
     public bool CanExport => !IsBusy && _supportsFileRoundTrip;
 

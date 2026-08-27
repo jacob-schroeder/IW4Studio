@@ -170,14 +170,17 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
 internal readonly record struct WorkbenchEditorTabKey(
     AssetExplorerItemIdentity? CatalogIdentity,
     WorkbenchAssetSelectionIdentity? SelectionIdentity,
-    string? D3dbspNormalizedName)
+    string? D3dbspNormalizedName,
+    bool IsRuntimePreview)
 {
     public static WorkbenchEditorTabKey Create(
         WorkbenchAssetSelection selection,
         WorkbenchAssetSelectionRoute? route)
     {
         ArgumentNullException.ThrowIfNull(selection);
-        if (route is { OpensCatalogEditor: true, CatalogEntry: { } entry })
+        bool isRuntimePreview =
+            selection.Source == WorkbenchAssetSelectionSource.AssetPool;
+        if (route is { CatalogEntry: { } entry })
         {
             if (D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
                 D3dbspAssetTypeFacts.IsD3dbspName(
@@ -187,19 +190,22 @@ internal readonly record struct WorkbenchEditorTabKey(
                 return new WorkbenchEditorTabKey(
                     CatalogIdentity: null,
                     SelectionIdentity: null,
-                    entry.NormalizedName);
+                    entry.NormalizedName,
+                    isRuntimePreview);
             }
 
             return new WorkbenchEditorTabKey(
                 AssetExplorerItemIdentity.From(entry),
                 SelectionIdentity: null,
-                D3dbspNormalizedName: null);
+                D3dbspNormalizedName: null,
+                isRuntimePreview);
         }
 
         return new WorkbenchEditorTabKey(
             CatalogIdentity: null,
             selection.Identity,
-            D3dbspNormalizedName: null);
+            D3dbspNormalizedName: null,
+            isRuntimePreview);
     }
 }
 

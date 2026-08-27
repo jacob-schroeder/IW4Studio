@@ -26,7 +26,7 @@ public sealed class SoundViewFactory : IAssetEditorViewFactory
         if (_workspace is not null)
         {
             _workspace.TryGetSoundPayloadResolver(
-                surface.Entry,
+                surface,
                 out resolver,
                 out unavailableReason);
         }

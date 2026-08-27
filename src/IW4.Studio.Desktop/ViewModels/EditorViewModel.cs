@@ -1,5 +1,6 @@
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
+using IW4.Assets.Assets;
 using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Zone;
 
@@ -22,6 +23,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     private AssetTreeNode? _selectedNode;
     private AssetEditorHostViewModel? _selectedEditorHost;
     private AssetExplorerItemIdentity? _selectedIdentity;
+    private WorkspaceAssetAccess? _selectedAccessOverride;
+    private BaseAsset? _selectedDefinitionOverride;
     private int _visibleAssetCount;
     private bool _suppressTreeSelection;
     private bool _disposed;
@@ -196,9 +199,20 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         AssetExplorerItemIdentity identity) =>
         SelectEntry(identity, synchronizeTree: true);
 
+    internal AssetEditorHostViewModel SelectReadOnlyEntry(
+        AssetExplorerItemIdentity identity,
+        BaseAsset definition) =>
+        SelectEntry(
+            identity,
+            synchronizeTree: false,
+            WorkspaceAssetAccess.ReadOnly,
+            definition ?? throw new ArgumentNullException(nameof(definition)));
+
     public void DeactivateSelection()
     {
         _selectedIdentity = null;
+        _selectedAccessOverride = null;
+        _selectedDefinitionOverride = null;
         EditingSession.SelectRow(null);
         SelectedEditorHost = null;
         SetSelectedNode(null);
@@ -218,6 +232,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         if (ReferenceEquals(SelectedEditorHost, editorHost))
         {
             _selectedIdentity = null;
+            _selectedAccessOverride = null;
+            _selectedDefinitionOverride = null;
             SelectedEditorHost = null;
             SetSelectedNode(null);
         }
@@ -273,7 +289,11 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         var rebuiltByIdentity = rebuilt.ToDictionary(entry => entry.Identity);
 
         HashSet<EditorHostKey> liveHostKeys = rebuilt
-            .Select(EditorHostKey.From)
+            .SelectMany(entry => new[]
+            {
+                EditorHostKey.From(entry, isRuntimePreview: false),
+                EditorHostKey.From(entry, isRuntimePreview: true)
+            })
             .ToHashSet();
         EditorHostKey[] removedHostKeys = _editorHosts
             .Where(pair =>
@@ -291,6 +311,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             !rebuiltByIdentity.ContainsKey(selectedIdentity))
         {
             _selectedIdentity = null;
+            _selectedAccessOverride = null;
+            _selectedDefinitionOverride = null;
             SelectedEditorHost = null;
         }
 
@@ -305,7 +327,13 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             .Distinct()
             .Count();
         if (_selectedIdentity is { } liveSelectedIdentity)
-            _ = SelectEntry(liveSelectedIdentity, synchronizeTree: false);
+        {
+            _ = SelectEntry(
+                liveSelectedIdentity,
+                synchronizeTree: false,
+                _selectedAccessOverride,
+                _selectedDefinitionOverride);
+        }
         RebuildAssetGroups();
 
         if (!notify)
@@ -325,33 +353,67 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     private AssetEditorHostViewModel SelectEntry(
         AssetExplorerItemIdentity identity,
-        bool synchronizeTree)
+        bool synchronizeTree,
+        WorkspaceAssetAccess? accessOverride = null,
+        BaseAsset? definitionOverride = null)
     {
         ThrowIfDisposed();
         if (!_entriesByIdentity.TryGetValue(identity, out AssetExplorerEntryViewModel? entry))
         {
             throw new KeyNotFoundException("The selected explorer identity is not part of this workspace catalog.");
         }
+        if (definitionOverride is not null &&
+            accessOverride != WorkspaceAssetAccess.ReadOnly)
+        {
+            throw new ArgumentException(
+                "An alternate definition can be presented only through a read-only editor surface.",
+                nameof(definitionOverride));
+        }
 
-        _selectedIdentity = identity;
-        if (identity.TargetRowIdentity is { } targetRow)
-            EditingSession.SelectRow(targetRow);
-        else
-            EditingSession.SelectRow(null);
-
-        EditorHostKey editorHostKey = EditorHostKey.From(entry);
         AssetExplorerEntryViewModel hostEntry = ResolveEditorHostEntry(entry);
+        WorkspaceAssetAccess surfaceAccess = accessOverride ?? hostEntry.Access;
+        bool isRuntimePreview = accessOverride == WorkspaceAssetAccess.ReadOnly;
+        _selectedIdentity = identity;
+        _selectedAccessOverride = accessOverride;
+        _selectedDefinitionOverride = definitionOverride;
+        if (surfaceAccess == WorkspaceAssetAccess.Editable &&
+            identity.TargetRowIdentity is { } targetRow)
+        {
+            EditingSession.SelectRow(targetRow);
+        }
+        else
+        {
+            EditingSession.SelectRow(null);
+        }
+
+        EditorHostKey editorHostKey = EditorHostKey.From(
+            entry,
+            isRuntimePreview);
+        BaseAsset? surfaceDefinitionOverride =
+            EditorHostKey.TryGetD3dbspName(entry, out _)
+                ? null
+                : definitionOverride;
         if (!_editorHosts.TryGetValue(editorHostKey, out AssetEditorHostViewModel? editorHost))
         {
-            editorHost = CreateEditorHost(hostEntry);
+            editorHost = CreateEditorHost(
+                hostEntry,
+                surfaceAccess,
+                surfaceDefinitionOverride);
             _editorHosts.Add(editorHostKey, editorHost);
         }
         else if (hostEntry.HasUsableEditor &&
                  (editorHost.StructuralInspector is not null ||
-                  editorHost.Entry.Identity != hostEntry.Identity))
+                  editorHost.Entry.Identity != hostEntry.Identity ||
+                  surfaceDefinitionOverride is not null &&
+                  !ReferenceEquals(
+                      editorHost.Surface.Definition,
+                      surfaceDefinitionOverride)))
         {
             editorHost.Dispose();
-            editorHost = CreateEditorHost(hostEntry);
+            editorHost = CreateEditorHost(
+                hostEntry,
+                surfaceAccess,
+                surfaceDefinitionOverride);
             _editorHosts[editorHostKey] = editorHost;
         }
 
@@ -362,7 +424,10 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         return editorHost;
     }
 
-    private AssetEditorHostViewModel CreateEditorHost(AssetExplorerEntryViewModel entry)
+    private AssetEditorHostViewModel CreateEditorHost(
+        AssetExplorerEntryViewModel entry,
+        WorkspaceAssetAccess surfaceAccess,
+        BaseAsset? definitionOverride)
     {
         if (!entry.HasUsableEditor)
         {
@@ -374,7 +439,12 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
                 viewHost: null);
         }
 
-        AssetEditorSurface surface = _authoringRegistry.CreateSurface(EditingSession, entry.Entry);
+        AssetEditorSurface surface = surfaceAccess == WorkspaceAssetAccess.ReadOnly
+            ? _authoringRegistry.CreateReadOnlySurface(
+                EditingSession,
+                entry.Entry,
+                definitionOverride)
+            : _authoringRegistry.CreateSurface(EditingSession, entry.Entry);
         if (_viewRegistry.TryGetFactory(
                 entry.AssetType,
                 entry.Entry.OriginalName ?? entry.Entry.NormalizedName,
@@ -515,12 +585,21 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
     private readonly record struct EditorHostKey(
         AssetExplorerItemIdentity? Identity,
-        string? D3dbspNormalizedName)
+        string? D3dbspNormalizedName,
+        bool IsRuntimePreview)
     {
-        public static EditorHostKey From(AssetExplorerEntryViewModel entry) =>
+        public static EditorHostKey From(
+            AssetExplorerEntryViewModel entry,
+            bool isRuntimePreview) =>
             TryGetD3dbspName(entry, out string? normalizedName)
-                ? new EditorHostKey(Identity: null, normalizedName)
-                : new EditorHostKey(entry.Identity, D3dbspNormalizedName: null);
+                ? new EditorHostKey(
+                    Identity: null,
+                    normalizedName,
+                    isRuntimePreview)
+                : new EditorHostKey(
+                    entry.Identity,
+                    D3dbspNormalizedName: null,
+                    isRuntimePreview);
 
         public static bool TryGetD3dbspName(
             AssetExplorerEntryViewModel entry,

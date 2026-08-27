@@ -60,13 +60,14 @@ public sealed class FastFileWorkspace : IDisposable
     public FastFileDependencyGraph? DependencyGraph { get; }
 
     public bool TryGetSoundPayloadResolver(
-        WorkspaceAssetCatalogEntry entry,
+        AssetEditorSurface surface,
         out ISoundPayloadResolver resolver,
         out string reason)
     {
-        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(surface);
+        WorkspaceAssetCatalogEntry entry = surface.Entry;
 
-        if (entry.Definition is null)
+        if (surface.Definition is null)
         {
             resolver = UnavailableSoundPayloadResolver.Instance;
             reason = "The selected Sound has no materialized definition.";
@@ -81,14 +82,12 @@ public sealed class FastFileWorkspace : IDisposable
                     provider.AssetType == entry.AssetType &&
                     !provider.IsReferencePlaceholder);
         XAssetProviderContribution? owningProvider =
-            entry.ContentSource == WorkspaceAssetContentSource.TargetAuthoredBaseline
+            providers.FirstOrDefault(provider =>
+                ReferenceEquals(provider.Asset, surface.Definition)) ??
+            (entry.ResolvedProvider is { } resolved
                 ? providers.FirstOrDefault(provider =>
-                    ReferenceEquals(provider.Asset, entry.Definition))
-                : entry.ResolvedProvider is { } resolved
-                    ? providers.FirstOrDefault(provider =>
-                        provider.Id.Value == resolved.ProviderId)
-                    : providers.FirstOrDefault(provider =>
-                        ReferenceEquals(provider.Asset, entry.Definition));
+                    provider.Id.Value == resolved.ProviderId)
+                : null);
         if (owningProvider is not null)
         {
             WorkspaceZone? zone = LoadedZones.FirstOrDefault(candidate =>

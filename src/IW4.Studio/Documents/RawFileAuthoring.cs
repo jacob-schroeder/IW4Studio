@@ -142,7 +142,7 @@ public sealed class RawFileReadOnlySnapshot
         AssetEditorSession editorSession)
     {
         ArgumentNullException.ThrowIfNull(editorSession);
-        if (editorSession.Entry.Definition is not RawFileAsset definition)
+        if (editorSession.Definition is not RawFileAsset definition)
             throw new InvalidDataException("The selected provider is not a RawFile definition.");
         return new RawFileReadOnlySnapshot(new RawFileDraft(definition));
     }
