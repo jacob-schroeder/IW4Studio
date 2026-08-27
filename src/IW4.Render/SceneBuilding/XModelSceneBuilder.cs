@@ -5,6 +5,7 @@ using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Render.Assets;
+using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
 using IW4.Render.Geometry;
 using IW4.Render.Geometry.XModel;
@@ -313,6 +314,400 @@ public sealed class XModelSceneBuilder
                     $"start={poolRevision};end={assetSource.AssetPool.Revision}.");
             }
         }
+    }
+
+    public XModelRenderScene BuildComposite(
+        IReadOnlyList<XAnimPreviewModelComponent> components,
+        int preferredLodIndex,
+        RenderAssetSource assetSource,
+        IGfxImagePayloadResolver imagePayloadResolver) =>
+        BuildComposite(
+            components,
+            preferredLodIndex,
+            assetSource,
+            imagePayloadResolver,
+            []);
+
+    /// <summary>
+    /// Builds one renderable LOD for an ordered, attached XModel composition.
+    /// Every component retains its own skinning bind space while its bone
+    /// influences are rebased into the shared animation palette.
+    /// </summary>
+    public XModelRenderScene BuildComposite(
+        IReadOnlyList<XAnimPreviewModelComponent> components,
+        int preferredLodIndex,
+        RenderAssetSource assetSource,
+        IGfxImagePayloadResolver imagePayloadResolver,
+        IReadOnlyList<BaseAsset> stagedAssets)
+    {
+        ArgumentNullException.ThrowIfNull(components);
+        ArgumentNullException.ThrowIfNull(assetSource);
+        ArgumentNullException.ThrowIfNull(imagePayloadResolver);
+        ArgumentNullException.ThrowIfNull(stagedAssets);
+        if (preferredLodIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(preferredLodIndex));
+        if (!XAnimPreviewComposition.TryProject(
+                components,
+                out XAnimPreviewComposition? composition,
+                out string reason) ||
+            composition is null)
+        {
+            throw new InvalidOperationException(reason);
+        }
+
+        var diagnostics = new List<string>();
+        var surfaces = new List<XModelRenderSurface>();
+        var usedGroupIds = new HashSet<int>();
+        int nextGroupId = 0;
+        float distance = 0f;
+        bool hasDistance = false;
+        RenderBounds aggregateBounds = RenderBounds.Empty;
+        foreach (XAnimPreviewCompositionComponent component in
+                 composition.Components)
+        {
+            XModelAsset model = component.Source.Model;
+            string modelName = string.IsNullOrWhiteSpace(model.Name)
+                ? "<unnamed XModel>"
+                : model.Name;
+            XModelRenderScene modelScene = Build(
+                model,
+                assetSource,
+                imagePayloadResolver,
+                stagedAssets);
+            XModelRenderLod selectedLod = SelectCompositeLod(
+                modelScene,
+                preferredLodIndex,
+                diagnostics);
+            if (!selectedLod.HasCompleteSkinning)
+            {
+                throw new InvalidOperationException(
+                    $"LOD {selectedLod.LodIndex} of '{modelName}' does not contain complete skinning for every rendered surface.");
+            }
+            if (!hasDistance)
+            {
+                distance = selectedLod.Distance;
+                hasDistance = true;
+            }
+
+            diagnostics.AddRange(modelScene.Diagnostics.Select(diagnostic =>
+                $"{modelName}: {diagnostic}"));
+            foreach (XModelRenderSurface sourceSurface in
+                     selectedLod.Surfaces)
+            {
+                int geometrySurfaceIndex = surfaces.Count;
+                int groupId = ResolveCompositeGroupId(
+                    sourceSurface.AuthoredPasses,
+                    usedGroupIds,
+                    ref nextGroupId);
+                XModelRenderSurface surface = ComposeSurface(
+                    sourceSurface,
+                    geometrySurfaceIndex,
+                    groupId,
+                    component,
+                    composition.Bones.Count);
+                surfaces.Add(surface);
+                aggregateBounds = IncludeBounds(
+                    aggregateBounds,
+                    surface.Bounds);
+            }
+        }
+
+        if (surfaces.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "The XModel composition contains no renderable surfaces.");
+        }
+
+        IReadOnlyList<XModelRenderBone> bones = Array.AsReadOnly(
+            composition.Bones
+                .Select((bone, boneIndex) => new XModelRenderBone(
+                    boneIndex,
+                    bone.Name,
+                    ToRenderCoordinates(
+                        bone.BindGlobalTransform.Translation)))
+                .ToArray());
+        var lod = new XModelRenderLod(
+            preferredLodIndex,
+            distance,
+            aggregateBounds,
+            surfaces);
+        string name = string.Join(
+            " + ",
+            components.Select(component =>
+                string.IsNullOrWhiteSpace(component.Model.Name)
+                    ? "<unnamed XModel>"
+                    : component.Model.Name));
+        return new XModelRenderScene(
+            name,
+            [lod],
+            preferredLodIndex,
+            aggregateBounds,
+            bones,
+            diagnostics);
+    }
+
+    private static XModelRenderLod SelectCompositeLod(
+        XModelRenderScene scene,
+        int preferredLodIndex,
+        List<string> diagnostics)
+    {
+        XModelRenderLod? selected = scene.Lods.FirstOrDefault(lod =>
+            lod.LodIndex == preferredLodIndex);
+        if (selected is not null)
+            return selected;
+
+        selected = scene.Lods.FirstOrDefault(lod =>
+            lod.LodIndex == scene.DefaultLodIndex) ??
+            scene.Lods.FirstOrDefault();
+        if (selected is null)
+        {
+            throw new InvalidOperationException(
+                $"XModel '{scene.Name}' contains no renderable LOD for the composition.");
+        }
+
+        diagnostics.Add(
+            $"XModel '{scene.Name}' has no LOD {preferredLodIndex}; composed LOD {selected.LodIndex} instead.");
+        return selected;
+    }
+
+    private static int ResolveCompositeGroupId(
+        IReadOnlyList<XModelRenderAuthoredPass> passes,
+        HashSet<int> usedGroupIds,
+        ref int nextGroupId)
+    {
+        if (passes.Count == 0)
+            return -1;
+
+        int sourceGroupId = passes[0].GroupId;
+        if (passes.Any(pass => pass.GroupId != sourceGroupId))
+        {
+            throw new InvalidOperationException(
+                "An authored surface contains passes from more than one draw group.");
+        }
+        if (usedGroupIds.Add(sourceGroupId))
+            return sourceGroupId;
+
+        while (!usedGroupIds.Add(nextGroupId))
+            nextGroupId = checked(nextGroupId + 1);
+        return nextGroupId++;
+    }
+
+    private static XModelRenderSurface ComposeSurface(
+        XModelRenderSurface source,
+        int geometrySurfaceIndex,
+        int groupId,
+        XAnimPreviewCompositionComponent component,
+        int combinedBoneCount)
+    {
+        IReadOnlyList<XModelRenderSkinningVertex>? sourceSkinning =
+            source.SkinningVertices;
+        if (sourceSkinning is null ||
+            sourceSkinning.Count != source.Positions.Count)
+        {
+            throw new InvalidOperationException(
+                $"Surface {source.GeometrySurfaceIndex} of '{component.Source.Model.Name}' has incomplete skinning.");
+        }
+
+        var skinning = new XModelRenderSkinningVertex[
+            sourceSkinning.Count];
+        for (int vertexIndex = 0;
+             vertexIndex < sourceSkinning.Count;
+             vertexIndex++)
+        {
+            XModelRenderSkinningVertex vertex = sourceSkinning[vertexIndex];
+            if (vertex.Influences.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Surface {source.GeometrySurfaceIndex} vertex {vertexIndex} of '{component.Source.Model.Name}' has no skinning influences.");
+            }
+
+            var influences = new XModelRenderBoneInfluence[
+                vertex.Influences.Length];
+            for (int influenceIndex = 0;
+                 influenceIndex < vertex.Influences.Length;
+                 influenceIndex++)
+            {
+                XModelRenderBoneInfluence influence =
+                    vertex.Influences[influenceIndex];
+                if ((uint)influence.BoneIndex >=
+                    (uint)component.Bones.Count)
+                {
+                    throw new InvalidOperationException(
+                        $"Surface {source.GeometrySurfaceIndex} vertex {vertexIndex} of '{component.Source.Model.Name}' references bone {influence.BoneIndex} outside its skeleton.");
+                }
+
+                int combinedBoneIndex = checked(
+                    component.BoneOffset + influence.BoneIndex);
+                if ((uint)combinedBoneIndex >= (uint)combinedBoneCount)
+                {
+                    throw new InvalidOperationException(
+                        "A composed skinning influence exceeds the combined bone palette.");
+                }
+                influences[influenceIndex] = new XModelRenderBoneInfluence(
+                    combinedBoneIndex,
+                    influence.Weight);
+            }
+
+            skinning[vertexIndex] = new XModelRenderSkinningVertex(
+                vertex.BindPosition,
+                vertex.BindNormal,
+                vertex.BindTangent,
+                influences);
+        }
+
+        bool transformBindPayload =
+            component.Source.AttachmentBoneName is not null;
+        Vector3[] positions = source.Positions
+            .Select(position => TransformRenderPosition(
+                position,
+                component.AttachmentBindTransform))
+            .ToArray();
+        var authoredPasses = new XModelRenderAuthoredPass[
+            source.AuthoredPasses.Count];
+        for (int passIndex = 0;
+             passIndex < source.AuthoredPasses.Count;
+             passIndex++)
+        {
+            XModelRenderAuthoredPass pass = source.AuthoredPasses[passIndex];
+            if (!transformBindPayload && pass.GroupId == groupId)
+            {
+                authoredPasses[passIndex] = pass;
+                continue;
+            }
+
+            float[] rsxVertexInputs = pass.RsxVertexInputs.ToArray();
+            if (transformBindPayload && rsxVertexInputs.Length > 0)
+            {
+                TransformRsxVertexInputs(
+                    rsxVertexInputs,
+                    pass.ShaderExecution.VertexInputs,
+                    source.Positions.Count,
+                    component.AttachmentBindTransform);
+            }
+            authoredPasses[passIndex] = new XModelRenderAuthoredPass(
+                groupId,
+                pass.GroupPassIndex,
+                pass.Pass,
+                pass.PrimarySampler,
+                pass.State,
+                pass.ShaderExecution,
+                pass.MaterialSamplers,
+                rsxVertexInputs,
+                pass.Diagnostic);
+        }
+
+        RenderBounds bounds = TransformRenderBounds(
+            source.Bounds,
+            component.AttachmentBindTransform);
+        return new XModelRenderSurface(
+            geometrySurfaceIndex,
+            source.ParentMaterialIndex,
+            source.MaterialName,
+            positions,
+            skinning,
+            source.Indices,
+            source.CollisionIndices,
+            bounds,
+            source.SelectedTechniqueSlot,
+            source.SelectedTechniqueName,
+            authoredPasses,
+            source.AuthoredGroupReady,
+            source.AuthoredMaterialStatus);
+    }
+
+    private static void TransformRsxVertexInputs(
+        float[] values,
+        IReadOnlyList<ShaderVertexInputBinding> bindings,
+        int vertexCount,
+        Matrix4x4 transform)
+    {
+        const int componentCount =
+            XSurfaceVertexDecoder.RsxVertexInputComponentCount;
+        int vertexStride = checked(
+            XSurfaceVertexDecoder.RsxVertexInputCount * componentCount);
+        if (values.Length != checked(vertexCount * vertexStride))
+        {
+            throw new InvalidOperationException(
+                "An authored-pass vertex payload does not cover the composed surface.");
+        }
+
+        foreach (ShaderVertexInputBinding binding in bindings)
+        {
+            if (binding.IsDisabledDefaultAttribute ||
+                binding.Source is not (
+                    MaterialStreamSource.Position or
+                    MaterialStreamSource.Normal or
+                    MaterialStreamSource.Tangent))
+            {
+                continue;
+            }
+
+            int destination = (byte)binding.Destination;
+            for (int vertexIndex = 0;
+                 vertexIndex < vertexCount;
+                 vertexIndex++)
+            {
+                int offset = checked(
+                    vertexIndex * vertexStride +
+                    destination * componentCount);
+                var value = new Vector3(
+                    values[offset],
+                    values[offset + 1],
+                    values[offset + 2]);
+                value = binding.Source == MaterialStreamSource.Position
+                    ? Vector3.Transform(value, transform)
+                    : NormalizeDirection(
+                        Vector3.TransformNormal(value, transform));
+                values[offset] = value.X;
+                values[offset + 1] = value.Y;
+                values[offset + 2] = value.Z;
+            }
+        }
+    }
+
+    private static RenderBounds TransformRenderBounds(
+        RenderBounds bounds,
+        Matrix4x4 transform)
+    {
+        if (!bounds.IsValid)
+            return bounds;
+
+        RenderBounds transformed = RenderBounds.Empty;
+        for (int x = 0; x < 2; x++)
+        {
+            for (int y = 0; y < 2; y++)
+            {
+                for (int z = 0; z < 2; z++)
+                {
+                    var corner = new Vector3(
+                        x == 0 ? bounds.Min.X : bounds.Max.X,
+                        y == 0 ? bounds.Min.Y : bounds.Max.Y,
+                        z == 0 ? bounds.Min.Z : bounds.Max.Z);
+                    transformed = transformed.Include(
+                        TransformRenderPosition(corner, transform));
+                }
+            }
+        }
+        return transformed;
+    }
+
+    private static Vector3 TransformRenderPosition(
+        Vector3 renderPosition,
+        Matrix4x4 gameTransform)
+    {
+        Vector3 gamePosition =
+            RenderCoordinateConverter.RenderToGamePosition(renderPosition);
+        return ToRenderCoordinates(
+            Vector3.Transform(gamePosition, gameTransform));
+    }
+
+    private static Vector3 NormalizeDirection(Vector3 value)
+    {
+        float lengthSquared = value.LengthSquared();
+        return !float.IsFinite(lengthSquared) ||
+               lengthSquared <= float.Epsilon
+            ? Vector3.Zero
+            : value / MathF.Sqrt(lengthSquared);
     }
 
     private static XModelRenderSurface BuildAuthoredSurface(

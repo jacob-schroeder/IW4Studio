@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using Avalonia.Threading;
 using IW4.AssetExchange.SourceFormat.XAnim;
-using IW4.Assets.Assets.XAnim;
 using IW4.Render.EditorPreview;
 
 namespace IW4.Studio.Desktop.ViewModels;
@@ -23,18 +22,17 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
     private bool _disposed;
 
     public XAnimPreviewViewModel(
-        XAnimPartsAsset animation,
+        string? animationName,
         XAnimPlaybackClip? clip,
         IReadOnlyList<XAnimPreviewScene> scenes,
         string? previewUnavailableReason = null)
     {
-        ArgumentNullException.ThrowIfNull(animation);
         ArgumentNullException.ThrowIfNull(scenes);
 
         _clip = clip;
-        Name = string.IsNullOrWhiteSpace(animation.Name)
+        Name = string.IsNullOrWhiteSpace(animationName)
             ? "<unnamed XAnim>"
-            : animation.Name;
+            : animationName;
         Scenes = Array.AsReadOnly(scenes
             .OrderByDescending(scene => scene.MatchedTrackCount)
             .ThenBy(scene => scene.UnmatchedTrackCount)

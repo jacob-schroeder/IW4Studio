@@ -89,7 +89,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
     private WeaponCamoItemViewModel? _selectedCamo;
     private bool _isReplacingProjection;
     private bool _isCommittingRows;
-    private XAnimPreviewViewModel? _animationPreview;
     private bool _disposed;
 
     public WeaponEditorViewModel(AssetEditorSession session, AssetReferencePickerService? assetReferencePicker = null)
@@ -126,8 +125,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
     public string AccessText => Mode switch { WorkspaceAssetAccess.Editable => "Editable target", WorkspaceAssetAccess.ReadOnly => "Read-only provider", WorkspaceAssetAccess.ContentUnavailable => "Content unavailable", _ => "Unknown access" };
     public bool HasDefinition => _workingDraft.HasDefinition;
     public XModelRenderScene? Scene { get => _scene; private set => SetProperty(ref _scene, value); }
-    public XAnimPreviewViewModel? AnimationPreview => _animationPreview;
-    public bool HasAnimationPreview => AnimationPreview is not null;
     public string PreviewStatus { get => _previewStatus; private set => SetProperty(ref _previewStatus, value); }
     public string PreviewMessage { get => _previewMessage; private set => SetProperty(ref _previewMessage, value); }
     public WeaponPreviewState PreviewState { get => _previewState; private set => SetProperty(ref _previewState, value); }
@@ -146,8 +143,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
             if (value is not null && !Lods.Contains(value)) throw new ArgumentOutOfRangeException(nameof(value));
             if (ReferenceEquals(value, _selectedLod)) return;
             if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
-            if (AnimationPreview is not null || _animationDiagnostics.Count > 0)
-                ClearAnimationPreview(restoreStaticStatus: false);
             _selectedLod = value; OnPropertyChanged(); OnPropertyChanged(nameof(SelectedLodIndex)); ResetRendererStatus();
             if (Scene is not null && SelectedModelSlot?.ResolvedModel is { } model)
             {
@@ -419,8 +414,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
             ArgumentNullException.ThrowIfNull(value);
             if (_isReplacingProjection || !Categories.Contains(value) || ReferenceEquals(value, _selectedCategory)) return;
             if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
-            if (AnimationPreview is not null || _animationDiagnostics.Count > 0)
-                ClearAnimationPreview(restoreStaticStatus: true);
             _selectedCategory = value; OnPropertyChanged(); NotifyCategoryPresentation();
             RebuildIndexedRows(null); RefreshInspector();
         }
@@ -442,8 +435,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
             if ((value is not null && !IndexedRows.Contains(value)) ||
                 ReferenceEquals(value, _selectedIndexedRow)) return;
             if (!TryCommitInspectorRows()) { OnPropertyChanged(); return; }
-            if (AnimationPreview is not null || _animationDiagnostics.Count > 0)
-                ClearAnimationPreview(restoreStaticStatus: true);
             _selectedIndexedRow = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedIndexedRow)); SyncSelectedSemanticTab(); SyncSelectedModelSlot(); RefreshInspector();
         }
     }
@@ -564,67 +555,87 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
                 default)));
     }
 
-    internal void PreviewAnimation(
-        InspectorAssetReferencePropertyRowViewModel row)
+    internal XAnimPreviewViewModel? CreateAnimationPreview(
+        InspectorAssetReferencePropertyRowViewModel row,
+        out XModelRenderScene? scene,
+        out int selectedLodIndex,
+        out bool isMaterialAnimationEnabled)
     {
         ArgumentNullException.ThrowIfNull(row);
+        scene = null;
+        selectedLodIndex = -1;
+        isMaterialAnimationEnabled = false;
         if (row.AssetType != XAssetType.XAnim ||
             string.IsNullOrWhiteSpace(row.AssetName))
         {
-            return;
+            return null;
         }
 
-        string animationName = row.AssetName!;
-        if (SelectedModelSlot?.ResolvedModel is not { } model ||
-            Scene is null ||
-            SelectedLod is null)
-        {
-            CompleteAnimationPreviewFailure(
-                "Select a resolved XModel in the preview before starting this XAnim.");
-            return;
-        }
-
-        if (!SelectedLod.Lod.HasCompleteSkinning)
-        {
-            CompleteAnimationPreviewFailure(
-                $"LOD {SelectedLod.LodIndex} of '{model.Name}' does not contain a complete native skinning payload.");
-            return;
-        }
-
+        string animationName = row.AssetName;
         if (!TryResolveAnimation(animationName, out XAnimPartsAsset? animation) ||
             animation is null)
         {
-            CompleteAnimationPreviewFailure(
+            return CreateUnavailableAnimationPreview(
+                animationName,
+                null,
                 $"XAnim '{animationName}' is unresolved in the current workspace.");
-            return;
         }
 
+        XAnimPlaybackClip? clip = null;
         try
         {
-            XAnimPlaybackClip clip = _xanimExchange.Decode(animation);
+            clip = _xanimExchange.Decode(animation);
+            if (!TryCreateAnimationPreviewComponents(
+                    out IReadOnlyList<XAnimPreviewModelComponent> components,
+                    out string componentFailure))
+            {
+                return CreateUnavailableAnimationPreview(
+                    animation.Name,
+                    clip,
+                    componentFailure);
+            }
             if (!XAnimPreviewScene.TryCreate(
                     clip,
-                    model,
+                    components,
                     out XAnimPreviewScene? previewScene,
                     out string reason) ||
                 previewScene is null)
             {
-                CompleteAnimationPreviewFailure(
-                    $"XAnim '{animationName}' cannot animate '{model.Name}': {reason}");
-                return;
+                return CreateUnavailableAnimationPreview(
+                    animation.Name,
+                    clip,
+                    $"XAnim '{animationName}' cannot animate the weapon assembly: {reason}");
             }
 
-            var preview = new XAnimPreviewViewModel(
-                animation,
+            const int preferredLodIndex = 0;
+            long poolRevision =
+                _session.Workspace.LoadedZone.Context.AssetPool.Revision;
+            XModelRenderScene compositeScene = _sceneBuilder.BuildComposite(
+                components,
+                preferredLodIndex,
+                WorkspaceRenderAssetSource.Create(
+                    _session.Workspace,
+                    "Weapon XAnim preview material assets"),
+                _imagePayloads,
+                CaptureCamoPreviewProviders());
+            if (_session.Workspace.LoadedZone.Context.AssetPool.Revision !=
+                poolRevision)
+            {
+                throw new InvalidOperationException(
+                    "The asset pool changed while the Weapon XAnim preview assembly was being built.");
+            }
+
+            scene = compositeScene;
+            selectedLodIndex = compositeScene.DefaultLodIndex;
+            isMaterialAnimationEnabled = components.Any(component =>
+                component.Model.Materials
+                    .OfType<MaterialAsset>()
+                    .Any(IsAnimatedCamoMaterial));
+            SetAnimationPreviewDiagnostic(null);
+            return new XAnimPreviewViewModel(
+                animation.Name,
                 clip,
                 [previewScene]);
-            ReplaceAnimationPreview(preview);
-            _animationDiagnostics = [];
-            PreviewMessage = string.Empty;
-            PreviewStatus = CreateAnimationPreviewStatus(model.Name, preview);
-            RebuildDiagnostics();
-            NotifyState();
-            preview.TogglePlayback();
         }
         catch (Exception exception) when (exception is
                    InvalidOperationException or
@@ -632,28 +643,127 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
                    ArgumentException or
                    OverflowException)
         {
-            CompleteAnimationPreviewFailure(
+            scene = null;
+            selectedLodIndex = -1;
+            isMaterialAnimationEnabled = false;
+            return CreateUnavailableAnimationPreview(
+                animation.Name,
+                clip,
                 $"XAnim '{animationName}' preview failed: {exception.Message}");
         }
     }
 
-    internal void ToggleAnimationPreview() =>
-        AnimationPreview?.TogglePlayback();
+    private bool TryCreateAnimationPreviewComponents(
+        out IReadOnlyList<XAnimPreviewModelComponent> components,
+        out string reason)
+    {
+        components = [];
+        int gunModelIndex = SelectedCamo?.Index ?? 0;
+        WeaponModelSlotItemViewModel? handSlot = ModelSlots.FirstOrDefault(
+            slot => slot.Kind == WeaponIndexedRowKind.HandModel &&
+                    slot.Index == 0);
+        if (handSlot?.ResolvedModel is not { } handModel)
+        {
+            reason = "The first-person hand/arms model is unresolved.";
+            return false;
+        }
 
-    internal void RestartAnimationPreview() =>
-        AnimationPreview?.RestartPlayback();
+        WeaponModelSlotItemViewModel? gunSlot = ModelSlots.FirstOrDefault(
+            slot => slot.Kind == WeaponIndexedRowKind.GunModel &&
+                    slot.Index == gunModelIndex);
+        if (gunSlot?.ResolvedModel is not { } gunModel)
+        {
+            reason =
+                $"View model index {gunModelIndex} is empty or unresolved.";
+            return false;
+        }
 
-    internal void PauseAnimationPreview() =>
-        AnimationPreview?.PausePlayback();
+        var result = new List<XAnimPreviewModelComponent>
+        {
+            new(handModel),
+            new(gunModel, "tag_weapon")
+        };
+        if (!TryAddOptionalAnimationComponent(
+                result,
+                WeaponIndexedRowKind.RocketModel,
+                "Rocket model",
+                "tag_clip",
+                out reason) ||
+            !TryAddOptionalAnimationComponent(
+                result,
+                WeaponIndexedRowKind.KnifeModel,
+                "Knife model",
+                "tag_knife_attach",
+                out reason))
+        {
+            return false;
+        }
 
-    internal void StopAnimationPreview() =>
-        ClearAnimationPreview(restoreStaticStatus: true);
+        components = Array.AsReadOnly(result.ToArray());
+        reason = string.Empty;
+        return true;
+    }
+
+    private bool TryAddOptionalAnimationComponent(
+        List<XAnimPreviewModelComponent> components,
+        WeaponIndexedRowKind kind,
+        string role,
+        string attachmentBoneName,
+        out string reason)
+    {
+        WeaponModelSlotItemViewModel? slot = ModelSlots.FirstOrDefault(
+            candidate => candidate.Kind == kind && candidate.Index == 0);
+        if (slot?.ResolvedModel is { } model)
+        {
+            components.Add(new XAnimPreviewModelComponent(
+                model,
+                attachmentBoneName));
+            reason = string.Empty;
+            return true;
+        }
+        if (slot is null || slot.State is
+            WeaponModelSlotState.Empty or
+            WeaponModelSlotState.TableAbsent)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = $"{role} is present but {slot.StateText.ToLowerInvariant()}.";
+        return false;
+    }
+
+    private XAnimPreviewViewModel CreateUnavailableAnimationPreview(
+        string? animationName,
+        XAnimPlaybackClip? clip,
+        string message)
+    {
+        SetAnimationPreviewDiagnostic(message);
+        return new XAnimPreviewViewModel(
+            animationName,
+            clip,
+            [],
+            message);
+    }
+
+    private void SetAnimationPreviewDiagnostic(string? message)
+    {
+        _animationDiagnostics = string.IsNullOrWhiteSpace(message)
+            ? []
+            :
+            [
+                new AssetValidationIssue(
+                    "weapon.preview.animation",
+                    message,
+                    AssetValidationSeverity.Warning)
+            ];
+        RebuildDiagnostics();
+        NotifyState();
+    }
 
     internal void Mutate(Action mutation, bool rebuildInspector = true)
     {
         ArgumentNullException.ThrowIfNull(mutation);
-        if (SelectedCategory.Id == WeaponPropertyCategory.AnimationNames)
-            ClearAnimationPreview(restoreStaticStatus: true);
         mutation(); RefreshValidation(); RebuildModelSlots();
         if (!_isCommittingRows)
         {
@@ -713,22 +823,13 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         else if (SelectedModelSlot?.ResolvedModel is { } model && Scene is not null)
         {
             PreviewMessage = string.Empty;
-            if (AnimationPreview is { } animationPreview)
-            {
-                PreviewStatus = CreateAnimationPreviewStatus(
-                    model.Name,
-                    animationPreview);
-            }
-            else
-            {
-                int totalGroups =
-                    (uploadResult?.ExecutableGroupCount ?? 0) +
-                    (uploadResult?.BlockedGroupCount ?? 0);
-                PreviewStatus = uploadResult is null
-                    ? $"{model.Name} · LOD {SelectedLodIndex} · " +
-                        $"{(IsCamoAnimationPreviewEnabled ? "animated camo" : "static selected-model")} preview"
-                    : $"{model.Name} · LOD {SelectedLodIndex} · {uploadResult.ExecutableGroupCount}/{totalGroups} render groups executable";
-            }
+            int totalGroups =
+                (uploadResult?.ExecutableGroupCount ?? 0) +
+                (uploadResult?.BlockedGroupCount ?? 0);
+            PreviewStatus = uploadResult is null
+                ? $"{model.Name} · LOD {SelectedLodIndex} · " +
+                    $"{(IsCamoAnimationPreviewEnabled ? "animated camo" : "static selected-model")} preview"
+                : $"{model.Name} · LOD {SelectedLodIndex} · {uploadResult.ExecutableGroupCount}/{totalGroups} render groups executable";
         }
         _rendererDiagnostics = Array.AsReadOnly(issues.ToArray()); RebuildDiagnostics(); NotifyState();
     }
@@ -916,70 +1017,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
 
         resolved = current;
         return true;
-    }
-
-    private void ReplaceAnimationPreview(
-        XAnimPreviewViewModel? preview)
-    {
-        if (ReferenceEquals(_animationPreview, preview))
-            return;
-
-        XAnimPreviewViewModel? previous = _animationPreview;
-        _animationPreview = preview;
-        previous?.Dispose();
-        OnPropertyChanged(nameof(AnimationPreview));
-        OnPropertyChanged(nameof(HasAnimationPreview));
-    }
-
-    private static string CreateAnimationPreviewStatus(
-        string? modelName,
-        XAnimPreviewViewModel preview)
-    {
-        string displayModelName = string.IsNullOrWhiteSpace(modelName)
-            ? "<unnamed XModel>"
-            : modelName;
-        XAnimPreviewScene? scene = preview.SelectedScene;
-        return scene is null
-            ? Bounded($"{displayModelName} · {preview.Name}")
-            : Bounded(
-                $"{displayModelName} · {preview.Name} · " +
-                $"{scene.MatchedTrackCount}/{preview.BoneCount} bone tracks matched");
-    }
-
-    private void CompleteAnimationPreviewFailure(string message)
-    {
-        ReplaceAnimationPreview(null);
-        _animationDiagnostics =
-        [
-            new AssetValidationIssue(
-                "weapon.preview.animation",
-                message,
-                AssetValidationSeverity.Warning)
-        ];
-        if (Scene is not null)
-        {
-            PreviewMessage = "Animation preview unavailable";
-            PreviewStatus = Bounded(message);
-        }
-        RebuildDiagnostics();
-        NotifyState();
-    }
-
-    private void ClearAnimationPreview(bool restoreStaticStatus)
-    {
-        ReplaceAnimationPreview(null);
-        _animationDiagnostics = [];
-        if (restoreStaticStatus &&
-            SelectedModelSlot?.ResolvedModel is { } model &&
-            Scene is not null)
-        {
-            PreviewMessage = string.Empty;
-            PreviewStatus =
-                $"{model.Name} · LOD {SelectedLodIndex} · " +
-                $"{(IsCamoAnimationPreviewEnabled ? "animated camo" : "static selected-model")} preview";
-        }
-        RebuildDiagnostics();
-        NotifyState();
     }
 
     private void RebuildIndexedRows(string? preferredKey)
@@ -1188,8 +1225,6 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
     }
     private void RebuildSelectedModelPreview()
     {
-        if (AnimationPreview is not null || _animationDiagnostics.Count > 0)
-            ClearAnimationPreview(restoreStaticStatus: false);
         int? previousLodIndex = SelectedLod?.LodIndex;
         string? selectedKey = SelectedModelSlot?.StableKey;
         long poolRevision = _session.Workspace.LoadedZone.Context.AssetPool.Revision;
@@ -1878,7 +1913,7 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; ReplaceAnimationPreview(null); DisposeCamoAppearance(); foreach (INotifyPropertyChanged row in _stagedRows) row.PropertyChanged -= StagedRow_PropertyChanged; _stagedRows.Clear(); _sceneCache.Clear(); _scene = null; _lods = []; _selectedLod = null; AssetReferenceSelectionRequested = null; PropertiesRevealRequested = null;
+        if (_disposed) return; _disposed = true; DisposeCamoAppearance(); foreach (INotifyPropertyChanged row in _stagedRows) row.PropertyChanged -= StagedRow_PropertyChanged; _stagedRows.Clear(); _sceneCache.Clear(); _scene = null; _lods = []; _selectedLod = null; AssetReferenceSelectionRequested = null; PropertiesRevealRequested = null;
     }
 }
 

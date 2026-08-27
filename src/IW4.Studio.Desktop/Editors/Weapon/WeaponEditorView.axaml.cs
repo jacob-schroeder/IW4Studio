@@ -76,7 +76,6 @@ public sealed partial class WeaponEditorView : UserControl
             if (DataContext is WeaponEditorViewModel vm)
             {
                 vm.AssetReferenceSelectionRequested -= ViewModel_AssetReferenceSelectionRequested;
-                vm.PauseAnimationPreview();
             }
             _isAttached = false;
         }
@@ -99,26 +98,28 @@ public sealed partial class WeaponEditorView : UserControl
             {
                 DataContext: InspectorAssetReferencePropertyRowViewModel row
             } &&
-            DataContext is WeaponEditorViewModel viewModel)
+            DataContext is WeaponEditorViewModel viewModel &&
+            TopLevel.GetTopLevel(this) is Window owner)
         {
-            viewModel.PreviewAnimation(row);
+            XAnimPreviewViewModel? preview =
+                viewModel.CreateAnimationPreview(
+                    row,
+                    out XModelRenderScene? scene,
+                    out int selectedLodIndex,
+                    out bool isMaterialAnimationEnabled);
+            if (preview is null)
+                return;
+
+            var window = new WeaponAnimationPreviewWindow(
+                preview,
+                scene,
+                selectedLodIndex,
+                scene?.Name ?? "Weapon assembly unavailable",
+                $"View model / camo · {viewModel.SelectedCamo?.ToString() ?? "Default / index 00"}",
+                isMaterialAnimationEnabled);
+            window.Show(owner);
         }
     }
-
-    private void AnimationPlayPauseButton_Click(
-        object? sender,
-        RoutedEventArgs e) =>
-        (DataContext as WeaponEditorViewModel)?.ToggleAnimationPreview();
-
-    private void AnimationRestartButton_Click(
-        object? sender,
-        RoutedEventArgs e) =>
-        (DataContext as WeaponEditorViewModel)?.RestartAnimationPreview();
-
-    private void AnimationStopButton_Click(
-        object? sender,
-        RoutedEventArgs e) =>
-        (DataContext as WeaponEditorViewModel)?.StopAnimationPreview();
 
     private void ToggleCamoEditorButton_Click(
         object? sender,

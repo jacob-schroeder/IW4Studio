@@ -206,7 +206,7 @@
           <Button Grid.Column="1" MinWidth="30" MinHeight="30" Padding="5"
                   IsVisible="{Binding CanPreviewAnimation}"
                   Click="PreviewAnimationButton_Click"
-                  ToolTip.Tip="Preview this XAnim on the selected model">
+                  ToolTip.Tip="Open this XAnim in a weapon assembly preview window">
             <materialIcons:MaterialIcon Kind="AnimationPlayOutline" Width="15" Height="15" />
           </Button>
           <Button Grid.Column="2" MinWidth="30" MinHeight="30" Padding="5"
@@ -355,7 +355,6 @@
           <Grid Grid.Row="1">
             <xmodel:XModelPreviewControl x:Name="Preview" Scene="{Binding Scene}"
                                         SelectedLodIndex="{Binding SelectedLodIndex}"
-                                        AnimationPose="{Binding AnimationPreview.Pose}"
                                         UseStudioEnvironment="{Binding IsStudioEnvironmentEnabled}"
                                         ShowWireframe="{Binding IsWireframeEnabled}"
                                         ShowCollision="{Binding IsCollisionEnabled}"
@@ -380,43 +379,6 @@
                     CornerRadius="4" Background="#C816191F" IsHitTestVisible="False">
               <TextBlock Text="{Binding PreviewStatus}" FontSize="8" MaxWidth="540"
                          TextTrimming="CharacterEllipsis" Foreground="#CDD5DF" />
-            </Border>
-
-            <Border Width="330" Margin="12" Padding="10,8"
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                    CornerRadius="6" Background="#E616191F"
-                    BorderBrush="{DynamicResource StudioBorderStrongBrush}" BorderThickness="1"
-                    IsVisible="{Binding HasAnimationPreview}">
-              <Grid ColumnDefinitions="*,8,Auto,5,Auto,5,Auto" VerticalAlignment="Center">
-                <StackPanel Spacing="3">
-                  <TextBlock Text="{Binding AnimationPreview.Name}" FontSize="9" FontWeight="SemiBold"
-                             TextTrimming="CharacterEllipsis" />
-                  <ProgressBar Height="4" Minimum="0" Maximum="1"
-                               Value="{Binding AnimationPreview.Progress}" />
-                  <TextBlock Text="{Binding AnimationPreview.CurrentFrameText}" FontSize="8"
-                             Foreground="{DynamicResource StudioTextMutedBrush}" />
-                </StackPanel>
-                <Button Grid.Column="2" Classes="ghost" MinWidth="30" MinHeight="30" Padding="5"
-                        IsEnabled="{Binding AnimationPreview.CanPlay}"
-                        Click="AnimationPlayPauseButton_Click"
-                        ToolTip.Tip="{Binding AnimationPreview.PlayPauseToolTip}">
-                  <Grid>
-                    <materialIcons:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"
-                                                IsVisible="{Binding AnimationPreview.ShowPlayIcon}" />
-                    <materialIcons:MaterialIcon Kind="PauseCircleOutline" Width="16" Height="16"
-                                                IsVisible="{Binding AnimationPreview.ShowPauseIcon}" />
-                  </Grid>
-                </Button>
-                <Button Grid.Column="4" Classes="ghost" MinWidth="30" MinHeight="30" Padding="5"
-                        IsEnabled="{Binding AnimationPreview.CanRestart}"
-                        Click="AnimationRestartButton_Click" ToolTip.Tip="Restart animation preview">
-                  <materialIcons:MaterialIcon Kind="Restart" Width="16" Height="16" />
-                </Button>
-                <Button Grid.Column="6" Classes="ghost" MinWidth="30" MinHeight="30" Padding="5"
-                        Click="AnimationStopButton_Click" ToolTip.Tip="Stop animation preview">
-                  <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
-                </Button>
-              </Grid>
             </Border>
 
             <Border Width="350" Margin="10" Padding="13" HorizontalAlignment="Right"

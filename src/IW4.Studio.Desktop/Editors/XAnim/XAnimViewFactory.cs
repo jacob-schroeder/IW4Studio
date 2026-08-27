@@ -42,7 +42,7 @@ public sealed class XAnimViewFactory : IAssetEditorViewFactory
             ? []
             : CreateScenes(clip, ref unavailableReason);
         var viewModel = new XAnimPreviewViewModel(
-            animation,
+            animation.Name,
             clip,
             scenes,
             unavailableReason);

@@ -1,0 +1,245 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+        xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
+        x:Class="IW4.Studio.Desktop.Editors.Weapon.WeaponAnimationPreviewWindow"
+        x:DataType="viewModels:XAnimPreviewViewModel"
+        Title="Weapon Animation Preview — IW4 Studio"
+        Width="1120"
+        Height="760"
+        MinWidth="800"
+        MinHeight="520"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        mc:Ignorable="d"
+        d:DesignWidth="1120"
+        d:DesignHeight="760">
+  <Grid Margin="14"
+        RowDefinitions="Auto,12,*,12,Auto">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,20,Auto"
+            VerticalAlignment="Center">
+        <StackPanel Spacing="4">
+          <TextBlock x:Name="AnimationNameText"
+                     Text="Weapon animation"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock Text="{Binding BoneCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding FrameCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding FramerateText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding LoopText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Column="2"
+                    HorizontalAlignment="Right"
+                    Spacing="3">
+          <TextBlock x:Name="AssemblyDisplayText"
+                     HorizontalAlignment="Right"
+                     MaxWidth="460"
+                     FontSize="10"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock x:Name="CamoDisplayText"
+                     HorizontalAlignment="Right"
+                     MaxWidth="460"
+                     FontSize="9"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            MinHeight="340"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid>
+        <xmodel:XModelPreviewControl x:Name="Preview"
+                                    AnimationPose="{Binding Pose}"
+                                    UseStudioEnvironment="True" />
+
+        <Border x:Name="PreviewInputSurface"
+                Background="Transparent"
+                AutomationProperties.Name="Weapon animation viewport input surface"
+                ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
+
+        <Border x:Name="PreviewUnavailableOverlay"
+                MaxWidth="560"
+                Margin="24"
+                Padding="18,14"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                CornerRadius="7"
+                IsHitTestVisible="False"
+                Background="#E6262A31"
+                BorderBrush="#506D7683"
+                BorderThickness="1">
+          <StackPanel Spacing="7">
+            <materialIcons:MaterialIcon Kind="AnimationPlayOutline"
+                                        Width="28"
+                                        Height="28"
+                                        HorizontalAlignment="Center"
+                                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock x:Name="PreviewUnavailableTitleText"
+                       Text="{Binding PreviewUnavailableTitle}"
+                       HorizontalAlignment="Center"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+            <TextBlock x:Name="PreviewUnavailableReasonText"
+                       Text="{Binding PreviewUnavailableReason}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Border>
+
+        <Button Margin="12"
+                Padding="8,5"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Classes="ghost"
+                Click="FitButton_Click"
+                ToolTip.Tip="Fit the complete weapon assembly in view">
+          <Grid Classes="iconTextRow"
+                ColumnDefinitions="Auto,5,Auto">
+            <materialIcons:MaterialIcon Kind="FitToPageOutline"
+                                        Width="15"
+                                        Height="15" />
+            <TextBlock Grid.Column="2"
+                       Text="Fit"
+                       FontSize="9" />
+          </Grid>
+        </Button>
+
+        <Border Margin="12"
+                Padding="8,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                IsHitTestVisible="False"
+                CornerRadius="4"
+                Background="#C816191F"
+                BorderBrush="#506D7683"
+                BorderThickness="1">
+          <TextBlock Text="LEFT DRAG · ORBIT   RIGHT/MIDDLE DRAG · PAN   SCROLL · ZOOM"
+                     FontSize="8"
+                     FontWeight="SemiBold"
+                     LetterSpacing="0.35"
+                     Foreground="#CDD5DF" />
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="4"
+            Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="Auto,8,Auto,16,*,16,Auto"
+            VerticalAlignment="Center">
+        <Button Width="38"
+                Height="38"
+                MinWidth="38"
+                MinHeight="38"
+                Padding="0"
+                CornerRadius="19"
+                Classes="primary"
+                IsEnabled="{Binding CanPlay}"
+                ToolTip.Tip="{Binding PlayPauseToolTip}"
+                Click="PlayPauseButton_Click">
+          <Grid>
+            <materialIcons:MaterialIcon Kind="PlayCircleOutline"
+                                        Width="21"
+                                        Height="21"
+                                        IsVisible="{Binding ShowPlayIcon}" />
+            <materialIcons:MaterialIcon Kind="PauseCircleOutline"
+                                        Width="21"
+                                        Height="21"
+                                        IsVisible="{Binding ShowPauseIcon}" />
+          </Grid>
+        </Button>
+
+        <Button Grid.Column="2"
+                Width="38"
+                Height="38"
+                MinWidth="38"
+                MinHeight="38"
+                Padding="0"
+                CornerRadius="19"
+                Classes="ghost"
+                IsEnabled="{Binding CanRestart}"
+                ToolTip.Tip="Restart animation preview"
+                Click="RestartButton_Click">
+          <materialIcons:MaterialIcon Kind="Restart"
+                                      Width="19"
+                                      Height="19" />
+        </Button>
+
+        <Grid Grid.Column="4"
+              RowDefinitions="Auto,7,Auto">
+          <ProgressBar Height="5"
+                       Minimum="0"
+                       Maximum="1"
+                       Value="{Binding Progress}" />
+          <TextBlock Grid.Row="2"
+                     Text="{Binding PlaybackStatus}"
+                     FontSize="9"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Grid>
+
+        <StackPanel Grid.Column="6"
+                    MinWidth="160"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Right"
+                    Spacing="2">
+          <TextBlock Text="{Binding CurrentFrameText}"
+                     HorizontalAlignment="Right"
+                     FontFamily="Consolas"
+                     FontSize="10"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="{Binding TimeText}"
+                     HorizontalAlignment="Right"
+                     FontFamily="Consolas"
+                     FontSize="9"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
