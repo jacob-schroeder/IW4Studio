@@ -1108,11 +1108,11 @@ public sealed class FastFileEditingSession : IDisposable
         bool supportedSoundPublication = assetType == XAssetType.Sound &&
             allowedTargetProviderCollision is not null;
         if ((!supportedSoundPublication &&
-             assetType is not (XAssetType.XModel or XAssetType.Font or XAssetType.Weapon)) ||
+             assetType is not (XAssetType.XModel or XAssetType.Font or XAssetType.Material or XAssetType.Weapon)) ||
             definition.SerializedAssetType != assetType)
         {
             throw new InvalidOperationException(
-                "Only a matching XModel, Font, Weapon, or validated Sound row can publish compiled dependency providers.");
+                "Only a matching XModel, Font, Material, Weapon, or validated Sound row can publish compiled dependency providers.");
         }
         object candidate = state.Adapter.CreateDraft(definition);
         if (state.SemanticallyEqualsCurrent(candidate))

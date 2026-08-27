@@ -102,6 +102,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new LocalizeAdapter());
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
+        registry.Register(new MaterialAdapter());
         registry.Register(new XModelAdapter());
         registry.Register(new FontAdapter());
         registry.Register(new WeaponAdapter());
@@ -623,6 +624,36 @@ public sealed class AssetEditorSession : AssetEditorSurface
         if (validation.Any(issue => issue.Severity == AssetValidationSeverity.Error))
             return false;
         bool changed = _session.PublishCompiledDefinition(identity, definition, providers);
+        Validation = new AssetEditorValidationState(validation);
+        return changed;
+    }
+
+    /// <summary>Publishes a compiled Material and its owned Image closure in one revision.</summary>
+    public bool ApplyCompiledMaterial(
+        MaterialDraft candidate,
+        IReadOnlyList<BaseAsset> providers,
+        out IReadOnlyList<AssetValidationIssue> issues)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(providers);
+        if (!CanEdit)
+            throw new InvalidOperationException("This asset is not editable.");
+        ThrowIfClosed();
+        if (_adapter.AssetType != XAssetType.Material)
+            throw new InvalidOperationException("This editor does not host a Material.");
+        TargetZoneRowIdentity identity = _rowIdentity ?? throw new InvalidOperationException(
+            "An editable editor requires a stable target row.");
+        AssetValidationIssue[] validation = _adapter.Validate(candidate)
+            .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))
+            .Select(group => group.First())
+            .ToArray();
+        issues = Array.AsReadOnly(validation);
+        if (validation.Any(issue => issue.Severity == AssetValidationSeverity.Error))
+            return false;
+        bool changed = _session.PublishCompiledDefinition(
+            identity,
+            candidate.ToAsset(),
+            providers);
         Validation = new AssetEditorValidationState(validation);
         return changed;
     }

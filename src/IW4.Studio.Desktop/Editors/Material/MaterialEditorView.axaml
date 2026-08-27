@@ -1,0 +1,259 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.Material.MaterialEditorView"
+             x:DataType="viewModels:MaterialEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1080"
+             d:DesignHeight="720">
+  <Grid RowDefinitions="Auto,10,*">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock Text="{Binding TextureCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding SelectedTextureText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding TechniqueSetName, StringFormat='Technique set: {0}'}"
+                       MaxWidth="330"
+                       FontSize="10"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+          <TextBlock Text="{Binding StatusMessage}"
+                     IsVisible="{Binding HasStatusMessage}"
+                     MaxWidth="620"
+                     FontSize="9"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Right"
+                    Spacing="7">
+          <Border Padding="9,4"
+                  IsVisible="{Binding IsReadOnly}"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="READ ONLY"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.5"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="10,4"
+                  IsVisible="{Binding IsEditable}"
+                  IsEnabled="{Binding CanRevert}"
+                  ToolTip.Tip="Discard the staged image or restore the saved Material"
+                  Click="RevertButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+              <TextBlock Text="Revert" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="10,4"
+                  IsVisible="{Binding IsEditable}"
+                  IsEnabled="{Binding CanImport}"
+                  ToolTip.Tip="Replace the selected preview texture from an IW4 IWI or DDS file"
+                  Click="ImportButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="FileImport" Width="15" Height="15" />
+              <TextBlock Text="Import…" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="ghost"
+                  MinHeight="30"
+                  Padding="10,4"
+                  IsEnabled="{Binding CanExport}"
+                  ToolTip.Tip="Export the selected Material preview texture">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight">
+                <MenuItem Header="IW4 IWI (.iwi)"
+                          ToolTip.Tip="Export an IW4 version 8 IWI"
+                          Click="ExportIwiMenuItem_Click" />
+                <MenuItem Header="DDS (.dds)"
+                          ToolTip.Tip="Export an RGBA8 DirectDraw Surface"
+                          Click="ExportDdsMenuItem_Click" />
+              </MenuFlyout>
+            </Button.Flyout>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Export" Width="15" Height="15" />
+              <TextBlock Text="Export" />
+              <materialIcons:MaterialIcon Kind="ChevronDown" Width="13" Height="13" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="primary"
+                  MinHeight="30"
+                  Padding="12,5"
+                  IsVisible="{Binding IsEditable}"
+                  IsEnabled="{Binding CanApply}"
+                  ToolTip.Tip="Apply the imported image to this Material"
+                  Click="ApplyButton_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
+              <TextBlock Text="Apply Changes" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="38,*,Auto">
+        <Border Padding="11,0"
+                Background="{DynamicResource StudioSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="Auto,10,*,Auto"
+                VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="ImageOutline"
+                                        Width="16"
+                                        Height="16"
+                                        Foreground="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Grid.Column="2"
+                       Text="MATERIAL PREVIEW"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <StackPanel Grid.Column="3"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Spacing="7">
+              <TextBlock Text="{Binding SelectedImageName}"
+                         MaxWidth="320"
+                         FontSize="9"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Text="·"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Text="{Binding ImageDimensionsText}"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         FontFamily="Consolas"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Text="·"
+                         IsVisible="{Binding HasMipSelector}"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Text="MIP"
+                         IsVisible="{Binding HasMipSelector}"
+                         VerticalAlignment="Center"
+                         FontSize="8"
+                         FontWeight="Bold"
+                         LetterSpacing="0.5"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <ComboBox Width="180"
+                        Height="27"
+                        Padding="7,2"
+                        IsVisible="{Binding HasMipSelector}"
+                        ItemsSource="{Binding PreviewMips}"
+                        SelectedItem="{Binding SelectedPreviewMip, Mode=TwoWay}"
+                        AutomationProperties.Name="Material preview mip level">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:MaterialPreviewMipViewModel">
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontSize="9" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="18">
+          <Image Source="{Binding Preview}"
+                 IsVisible="{Binding HasPreview}"
+                 Stretch="Uniform" />
+          <StackPanel IsVisible="{Binding !HasPreview}"
+                      MaxWidth="390"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Spacing="9">
+            <materialIcons:MaterialIcon Kind="ImageOutline"
+                                        Width="46"
+                                        Height="46"
+                                        HorizontalAlignment="Center"
+                                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding PreviewMessage}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Padding="11,8"
+                Background="{DynamicResource StudioSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,1,0,0">
+          <Grid RowDefinitions="Auto,Auto"
+                ColumnDefinitions="*,Auto"
+                ColumnSpacing="12">
+            <TextBlock Text="{Binding PreviewMessage}"
+                       ToolTip.Tip="{Binding PreviewDetails}"
+                       TextWrapping="Wrap"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding MipCountText}"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <ProgressBar Grid.Row="1"
+                         Grid.ColumnSpan="2"
+                         Height="2"
+                         Margin="0,7,0,0"
+                         IsIndeterminate="True"
+                         IsVisible="{Binding IsPreviewLoading}"
+                         Foreground="{DynamicResource StudioAccentBrush}" />
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

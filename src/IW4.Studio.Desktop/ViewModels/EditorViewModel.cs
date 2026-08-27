@@ -179,7 +179,11 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(CanSaveAs));
         foreach (AssetEditorHostViewModel editorHost in _editorHosts.Values)
+        {
             editorHost.RefreshState();
+            if (editorHost.HostedViewModel is MaterialEditorViewModel material)
+                material.RefreshSessionState();
+        }
     }
 
     /// <summary>
