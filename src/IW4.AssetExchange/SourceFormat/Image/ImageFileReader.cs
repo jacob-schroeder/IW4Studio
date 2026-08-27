@@ -25,10 +25,13 @@ internal static class ImageFileReader
     private const uint DdsVolumeCaps = 0x00200000;
     private const uint DdsResourceMiscTextureCube = 0x00000004;
     private const uint DdsTexture2DResourceDimension = 3;
+    private const uint DdsTexture3DResourceDimension = 4;
 
     private const uint Iwi8NoMipMaps = 1u << 1;
     private const uint Iwi8GammaSrgb = 1u << 8;
     private const uint Iwi8GammaPwl = 1u << 9;
+    private const uint Iwi8MapTypeCube = 1u << 16;
+    private const uint Iwi8MapType3D = 1u << 17;
     private const uint Iwi8MapTypeMask = 3u << 16;
     private const uint Iwi8KnownFlags = 0x000003ffu | 0x000f0000u |
                                         0x07000000u;
@@ -71,7 +74,7 @@ internal static class ImageFileReader
         int height = ReadDimension(reader.ReadUInt32("height"), "DDS height");
         int width = ReadDimension(reader.ReadUInt32("width"), "DDS width");
         uint pitchOrLinearSize = reader.ReadUInt32("pitch or linear size");
-        uint depth = reader.ReadUInt32("depth");
+        uint storedDepth = reader.ReadUInt32("depth");
         uint storedMipCount = reader.ReadUInt32("mip count");
         for (int index = 0; index < 11; index++)
             _ = reader.ReadUInt32($"reserved header word {index}");
@@ -93,25 +96,16 @@ internal static class ImageFileReader
 
         if ((caps & DdsTextureCaps) == 0)
             throw new InvalidDataException("The DDS is not marked as a texture.");
-        if ((caps2 & DdsCubeCaps) != 0)
-        {
-            throw new NotSupportedException(
-                "Cubemap DDS import is not supported by the Material editor.");
-        }
-        if ((caps2 & DdsVolumeCaps) != 0 ||
-            (headerFlags & DdsDepthFlag) != 0 ||
-            depth > 1)
-        {
-            throw new NotSupportedException(
-                "Volume DDS import is not supported by the Material editor.");
-        }
 
-        int mipCount = ValidateDdsMipCount(
-            storedMipCount,
+        ImageFileShape headerShape = ReadDdsHeaderShape(
             headerFlags,
+            storedDepth,
             caps,
+            caps2,
             width,
             height);
+        ImageFileShape shape = headerShape;
+        bool usesFaceMajorCubeLayout = false;
         PixelEncoding encoding;
         bool? usesSrgbReads;
         uint alphaMode = 0;
@@ -119,7 +113,19 @@ internal static class ImageFileReader
         {
             if (fourCc == MakeFourCc('D', 'X', '1', '0'))
             {
-                (encoding, usesSrgbReads, alphaMode) = ReadDdsDx10(reader);
+                DdsDx10Format dx10 = ReadDdsDx10(reader);
+                encoding = dx10.Encoding;
+                usesSrgbReads = dx10.UsesSrgbReads;
+                alphaMode = dx10.AlphaMode;
+                usesFaceMajorCubeLayout = dx10.UsesFaceMajorCubeLayout;
+                if (headerShape != ImageFileShape.TwoDimensional &&
+                    headerShape != dx10.Shape)
+                {
+                    throw new InvalidDataException(
+                        $"The DDS legacy header declares {headerShape}, but " +
+                        $"its DX10 header declares {dx10.Shape}.");
+                }
+                shape = dx10.Shape;
             }
             else
             {
@@ -131,9 +137,12 @@ internal static class ImageFileReader
                         PixelEncoding.Bc2,
                     var value when value == MakeFourCc('D', 'X', 'T', '5') =>
                         PixelEncoding.Bc3,
+                    var value when value == MakeFourCc('A', 'T', 'I', '2') ||
+                                       value == MakeFourCc('B', 'C', '5', 'U') =>
+                        PixelEncoding.Bc5,
                     _ => throw new NotSupportedException(
                         $"DDS FourCC 0x{fourCc:X8} is not supported; expected " +
-                        "DXT1, DXT3, DXT5, or DX10.")
+                        "DXT1, DXT3, DXT5, ATI2, BC5U, or DX10.")
                 };
                 usesSrgbReads = null;
             }
@@ -147,7 +156,7 @@ internal static class ImageFileReader
             {
                 throw new NotSupportedException(
                     "Classic DDS import supports only 32-bit RGBA/BGRA or " +
-                    "DXT1/DXT3/DXT5 data.");
+                    "DXT1/DXT3/DXT5/BC5 data.");
             }
 
             encoding = (redMask, greenMask, blueMask, alphaMask) switch
@@ -164,6 +173,7 @@ internal static class ImageFileReader
             usesSrgbReads = null;
         }
 
+        ValidateDdsShape(shape, storedDepth, caps, width, height);
         if (alphaMode is 2 or 4)
         {
             throw new NotSupportedException(
@@ -174,61 +184,203 @@ internal static class ImageFileReader
         if (alphaMode > 4)
             throw new InvalidDataException("The DX10 DDS alpha mode is invalid.");
 
-        MipLayout[] layouts = CreateMipLayouts(width, height, mipCount, encoding);
+        int depth = shape == ImageFileShape.Volume
+            ? ReadDimension(storedDepth, "DDS depth")
+            : 1;
+        int mipCount = ValidateDdsMipCount(
+            storedMipCount,
+            headerFlags,
+            caps,
+            width,
+            height,
+            depth,
+            shape);
+        MipLayout[] layouts = CreateMipLayouts(
+            width,
+            height,
+            depth,
+            mipCount,
+            encoding,
+            shape);
         ValidateDdsPitch(
             headerFlags,
             pitchOrLinearSize,
             layouts[0],
             encoding);
-        ImageSourceMipLevel[] levels = ReadMipLevelsTopDown(
+        ImageSourceMipLevel[] levels = ReadDdsMipLevels(
             reader,
             layouts,
             encoding,
+            shape,
+            usesFaceMajorCubeLayout,
             forceOpaqueAlpha: alphaMode == 3);
         reader.RequireEnd();
-        return new ImageFileDocument(levels, usesSrgbReads);
+        return new ImageFileDocument(levels, shape, usesSrgbReads);
     }
 
-    private static (PixelEncoding Encoding, bool UsesSrgbReads, uint AlphaMode)
-        ReadDdsDx10(ImageStreamReader reader)
+    private static ImageFileShape ReadDdsHeaderShape(
+        uint headerFlags,
+        uint storedDepth,
+        uint caps,
+        uint caps2,
+        int width,
+        int height)
+    {
+        uint cubeCaps = caps2 & DdsCubeCaps;
+        bool hasCube = cubeCaps != 0;
+        bool hasVolume = (caps2 & DdsVolumeCaps) != 0 ||
+                         (headerFlags & DdsDepthFlag) != 0 ||
+                         storedDepth > 1;
+        if (hasCube && hasVolume)
+        {
+            throw new InvalidDataException(
+                "The DDS cannot be both a cubemap and a volume texture.");
+        }
+        if (hasCube)
+        {
+            if (cubeCaps != DdsCubeCaps)
+            {
+                throw new NotSupportedException(
+                    "A cubemap DDS must contain all six faces.");
+            }
+            if (width != height)
+            {
+                throw new InvalidDataException(
+                    $"A cubemap DDS must be square, found {width}x{height}.");
+            }
+            if ((caps & DdsComplexCaps) == 0)
+            {
+                throw new InvalidDataException(
+                    "A cubemap DDS must declare the complex texture cap.");
+            }
+            return ImageFileShape.Cube;
+        }
+        if (hasVolume)
+        {
+            if (storedDepth == 0)
+            {
+                throw new InvalidDataException(
+                    "A volume DDS must declare a nonzero depth.");
+            }
+            return ImageFileShape.Volume;
+        }
+        return ImageFileShape.TwoDimensional;
+    }
+
+    private static void ValidateDdsShape(
+        ImageFileShape shape,
+        uint storedDepth,
+        uint caps,
+        int width,
+        int height)
+    {
+        if (shape == ImageFileShape.Cube && width != height)
+        {
+            throw new InvalidDataException(
+                $"A cubemap DDS must be square, found {width}x{height}.");
+        }
+        if (shape != ImageFileShape.Volume && storedDepth > 1)
+        {
+            throw new InvalidDataException(
+                $"A {shape} DDS cannot declare depth {storedDepth}.");
+        }
+        if (shape == ImageFileShape.Cube &&
+            (caps & DdsComplexCaps) == 0)
+        {
+            throw new InvalidDataException(
+                "A cubemap DDS must declare the complex texture cap.");
+        }
+    }
+
+    private static DdsDx10Format ReadDdsDx10(ImageStreamReader reader)
     {
         uint dxgiFormat = reader.ReadUInt32("DX10 format");
         uint resourceDimension = reader.ReadUInt32("DX10 resource dimension");
         uint miscellaneousFlags = reader.ReadUInt32("DX10 miscellaneous flags");
         uint arraySize = reader.ReadUInt32("DX10 array size");
         uint alphaMode = reader.ReadUInt32("DX10 alpha mode");
-        if (resourceDimension != DdsTexture2DResourceDimension)
+        if (arraySize == 0)
+            throw new InvalidDataException("The DX10 DDS array size is zero.");
+
+        ImageFileShape shape;
+        bool usesFaceMajorCubeLayout = false;
+        if (resourceDimension == DdsTexture3DResourceDimension)
         {
-            throw new NotSupportedException(
-                "Only two-dimensional DX10 DDS resources can be imported.");
+            if ((miscellaneousFlags & DdsResourceMiscTextureCube) != 0)
+            {
+                throw new InvalidDataException(
+                    "A DX10 DDS volume cannot also declare the cubemap flag.");
+            }
+            if (arraySize != 1)
+            {
+                throw new NotSupportedException(
+                    $"DX10 DDS volume arrays are not supported (array size {arraySize}).");
+            }
+            shape = ImageFileShape.Volume;
         }
-        if ((miscellaneousFlags & DdsResourceMiscTextureCube) != 0 ||
-            arraySize == 6)
+        else if (resourceDimension == DdsTexture2DResourceDimension)
         {
-            throw new NotSupportedException(
-                "Cubemap DX10 DDS import is not supported by the Material editor.");
+            bool isCube =
+                (miscellaneousFlags & DdsResourceMiscTextureCube) != 0;
+            if (isCube)
+            {
+                // The DDS specification counts cubes (one), while the
+                // OpenAssetTools source dialect stores the six flat faces.
+                if (arraySize is not (1 or 6))
+                {
+                    throw new NotSupportedException(
+                        $"DX10 DDS cubemap arrays are not supported (array size {arraySize}).");
+                }
+                shape = ImageFileShape.Cube;
+                usesFaceMajorCubeLayout = arraySize == 1;
+            }
+            else
+            {
+                if (arraySize != 1)
+                {
+                    throw new NotSupportedException(
+                        $"DX10 DDS texture arrays are not supported (array size {arraySize}).");
+                }
+                shape = ImageFileShape.TwoDimensional;
+            }
         }
-        if (arraySize != 1)
+        else
         {
             throw new NotSupportedException(
-                $"DX10 DDS texture arrays are not supported (array size {arraySize}).");
+                $"DX10 DDS resource dimension {resourceDimension} is not " +
+                "a two- or three-dimensional texture.");
         }
 
         return dxgiFormat switch
         {
-            28 => (PixelEncoding.Rgba32, false, alphaMode),
-            29 => (PixelEncoding.Rgba32, true, alphaMode),
-            71 => (PixelEncoding.Bc1, false, alphaMode),
-            72 => (PixelEncoding.Bc1, true, alphaMode),
-            74 => (PixelEncoding.Bc2, false, alphaMode),
-            75 => (PixelEncoding.Bc2, true, alphaMode),
-            77 => (PixelEncoding.Bc3, false, alphaMode),
-            78 => (PixelEncoding.Bc3, true, alphaMode),
-            87 => (PixelEncoding.Bgra32, false, alphaMode),
-            91 => (PixelEncoding.Bgra32, true, alphaMode),
+            28 => new(PixelEncoding.Rgba32, false, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            29 => new(PixelEncoding.Rgba32, true, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            71 => new(PixelEncoding.Bc1, false, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            72 => new(PixelEncoding.Bc1, true, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            74 => new(PixelEncoding.Bc2, false, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            75 => new(PixelEncoding.Bc2, true, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            77 => new(PixelEncoding.Bc3, false, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            78 => new(PixelEncoding.Bc3, true, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            83 => new(PixelEncoding.Bc5, false, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            84 => throw new NotSupportedException(
+                "DXGI BC5_SNORM import is not supported because its signed " +
+                "channel semantics cannot be preserved in RGBA8."),
+            87 => new(PixelEncoding.Bgra32, false, alphaMode, shape,
+                usesFaceMajorCubeLayout),
+            91 => new(PixelEncoding.Bgra32, true, alphaMode, shape,
+                usesFaceMajorCubeLayout),
             _ => throw new NotSupportedException(
                 $"DX10 DDS format {dxgiFormat} is not supported; expected " +
-                "RGBA8, BGRA8, BC1, BC2, or BC3.")
+                "RGBA8, BGRA8, BC1, BC2, BC3, or BC5_UNORM.")
         };
     }
 
@@ -259,7 +411,7 @@ internal static class ImageFileReader
             throw new InvalidDataException("The IWI8 unused header byte is not zero.");
         int width = ReadDimension(reader.ReadUInt16("width"), "IWI8 width");
         int height = ReadDimension(reader.ReadUInt16("height"), "IWI8 height");
-        ushort depth = reader.ReadUInt16("depth");
+        int depth = ReadDimension(reader.ReadUInt16("depth"), "IWI8 depth");
         var fileSizeForPicmip = new uint[4];
         for (int index = 0; index < fileSizeForPicmip.Length; index++)
         {
@@ -267,16 +419,23 @@ internal static class ImageFileReader
                 $"picmip file size {index}");
         }
 
-        if ((flags & Iwi8MapTypeMask) != 0)
+        ImageFileShape shape = (flags & Iwi8MapTypeMask) switch
         {
-            throw new NotSupportedException(
-                "Cubemap, volume, and one-dimensional IWI8 imports are not " +
-                "supported by the Material editor.");
-        }
-        if (depth != 1)
+            0 => ImageFileShape.TwoDimensional,
+            Iwi8MapTypeCube => ImageFileShape.Cube,
+            Iwi8MapType3D => ImageFileShape.Volume,
+            _ => throw new NotSupportedException(
+                "One-dimensional IWI8 imports are not supported.")
+        };
+        if (shape != ImageFileShape.Volume && depth != 1)
         {
             throw new InvalidDataException(
-                $"A two-dimensional IWI8 must have depth 1, found {depth}.");
+                $"A {shape} IWI8 must have depth 1, found {depth}.");
+        }
+        if (shape == ImageFileShape.Cube && width != height)
+        {
+            throw new InvalidDataException(
+                $"A cubemap IWI8 must be square, found {width}x{height}.");
         }
 
         uint gamma = flags & (Iwi8GammaSrgb | Iwi8GammaPwl);
@@ -297,21 +456,32 @@ internal static class ImageFileReader
             0x0b => PixelEncoding.Bc1,
             0x0c => PixelEncoding.Bc2,
             0x0d => PixelEncoding.Bc3,
+            0x0e => PixelEncoding.Bc5,
             _ => throw new NotSupportedException(
                 $"IWI8 format 0x{storedFormat:X2} is not supported; expected " +
-                "bitmap RGBA/RGB/luminance-alpha/luminance/alpha or DXT1/DXT3/DXT5.")
+                "bitmap RGBA/RGB/luminance-alpha/luminance/alpha, " +
+                "DXT1/DXT3/DXT5, or DXN.")
         };
         int mipCount = (flags & Iwi8NoMipMaps) != 0
             ? 1
-            : ComputeFullMipCount(width, height);
-        MipLayout[] layouts = CreateMipLayouts(width, height, mipCount, encoding);
+            : ComputeFullMipCount(
+                width,
+                height,
+                shape == ImageFileShape.Volume ? depth : 1);
+        MipLayout[] layouts = CreateMipLayouts(
+            width,
+            height,
+            depth,
+            mipCount,
+            encoding,
+            shape);
         ImageSourceMipLevel[] levels = new ImageSourceMipLevel[mipCount];
         uint currentFileSize = Iwi8FileHeaderSize;
         for (int mipLevel = mipCount - 1; mipLevel >= 0; mipLevel--)
         {
             MipLayout layout = layouts[mipLevel];
             currentFileSize = checked(
-                currentFileSize + checked((uint)layout.EncodedByteCount));
+                currentFileSize + checked((uint)layout.TotalEncodedByteCount));
             if (mipLevel < fileSizeForPicmip.Length &&
                 fileSizeForPicmip[mipLevel] != currentFileSize)
             {
@@ -321,13 +491,12 @@ internal static class ImageFileReader
             }
 
             byte[] encoded = reader.ReadBytes(
-                layout.EncodedByteCount,
+                layout.TotalEncodedByteCount,
                 $"mip {mipLevel} payload");
-            levels[mipLevel] = new ImageSourceMipLevel(
-                layout.Width,
-                layout.Height,
-                1,
-                Decode(encoded, layout, encoding));
+            levels[mipLevel] = CreateMipLevel(
+                layout,
+                DecodeSurfaces(encoded, layout, encoding),
+                shape);
         }
         for (int index = mipCount; index < fileSizeForPicmip.Length; index++)
         {
@@ -340,13 +509,68 @@ internal static class ImageFileReader
 
         reader.RequireEnd();
         bool usesSrgbReads = gamma == Iwi8GammaSrgb;
-        return new ImageFileDocument(levels, usesSrgbReads);
+        return new ImageFileDocument(levels, shape, usesSrgbReads);
+    }
+
+    private static ImageSourceMipLevel[] ReadDdsMipLevels(
+        ImageStreamReader reader,
+        IReadOnlyList<MipLayout> layouts,
+        PixelEncoding encoding,
+        ImageFileShape shape,
+        bool usesFaceMajorCubeLayout,
+        bool forceOpaqueAlpha)
+    {
+        if (shape != ImageFileShape.Cube || !usesFaceMajorCubeLayout)
+        {
+            return ReadMipLevelsTopDown(
+                reader,
+                layouts,
+                encoding,
+                shape,
+                forceOpaqueAlpha);
+        }
+
+        var decodedByMip = new byte[layouts.Count][];
+        for (int mipLevel = 0; mipLevel < layouts.Count; mipLevel++)
+        {
+            decodedByMip[mipLevel] =
+                new byte[layouts[mipLevel].TotalDecodedByteCount];
+        }
+
+        for (int face = 0; face < 6; face++)
+        {
+            for (int mipLevel = 0; mipLevel < layouts.Count; mipLevel++)
+            {
+                MipLayout layout = layouts[mipLevel];
+                byte[] encoded = reader.ReadBytes(
+                    layout.SurfaceEncodedByteCount,
+                    $"face {face} mip {mipLevel} payload");
+                byte[] decoded = DecodeSurface(encoded, layout, encoding);
+                decoded.CopyTo(
+                    decodedByMip[mipLevel],
+                    checked(face * layout.SurfaceDecodedByteCount));
+            }
+        }
+
+        var levels = new ImageSourceMipLevel[layouts.Count];
+        for (int mipLevel = 0; mipLevel < layouts.Count; mipLevel++)
+        {
+            byte[] rgba = decodedByMip[mipLevel];
+            if (forceOpaqueAlpha)
+                ForceOpaqueAlpha(rgba);
+            levels[mipLevel] = CreateMipLevel(
+                layouts[mipLevel],
+                rgba,
+                shape);
+        }
+        return levels;
     }
 
     private static ImageSourceMipLevel[] ReadMipLevelsTopDown(
         ImageStreamReader reader,
         IReadOnlyList<MipLayout> layouts,
         PixelEncoding encoding,
+        ImageFileShape shape,
         bool forceOpaqueAlpha)
     {
         var levels = new ImageSourceMipLevel[layouts.Count];
@@ -354,19 +578,25 @@ internal static class ImageFileReader
         {
             MipLayout layout = layouts[mipLevel];
             byte[] encoded = reader.ReadBytes(
-                layout.EncodedByteCount,
+                layout.TotalEncodedByteCount,
                 $"mip {mipLevel} payload");
-            byte[] rgba = Decode(encoded, layout, encoding);
+            byte[] rgba = DecodeSurfaces(encoded, layout, encoding);
             if (forceOpaqueAlpha)
                 ForceOpaqueAlpha(rgba);
-            levels[mipLevel] = new ImageSourceMipLevel(
-                layout.Width,
-                layout.Height,
-                1,
-                rgba);
+            levels[mipLevel] = CreateMipLevel(layout, rgba, shape);
         }
         return levels;
     }
+
+    private static ImageSourceMipLevel CreateMipLevel(
+        MipLayout layout,
+        byte[] rgba,
+        ImageFileShape shape) =>
+        new(
+            layout.Width,
+            layout.Height,
+            shape == ImageFileShape.Volume ? layout.Depth : 1,
+            rgba);
 
     private static void ForceOpaqueAlpha(Span<byte> rgba)
     {
@@ -374,7 +604,36 @@ internal static class ImageFileReader
             rgba[alpha] = byte.MaxValue;
     }
 
-    private static byte[] Decode(
+    private static byte[] DecodeSurfaces(
+        ReadOnlySpan<byte> encoded,
+        MipLayout layout,
+        PixelEncoding encoding)
+    {
+        if (encoded.Length != layout.TotalEncodedByteCount)
+        {
+            throw new InvalidDataException(
+                $"Image mip contains {encoded.Length} encoded bytes; expected " +
+                $"{layout.TotalEncodedByteCount}.");
+        }
+
+        byte[] rgba = new byte[layout.TotalDecodedByteCount];
+        for (int surface = 0; surface < layout.SurfaceCount; surface++)
+        {
+            ReadOnlySpan<byte> encodedSurface = encoded.Slice(
+                surface * layout.SurfaceEncodedByteCount,
+                layout.SurfaceEncodedByteCount);
+            byte[] decodedSurface = DecodeSurface(
+                encodedSurface,
+                layout,
+                encoding);
+            decodedSurface.CopyTo(
+                rgba,
+                surface * layout.SurfaceDecodedByteCount);
+        }
+        return rgba;
+    }
+
+    private static byte[] DecodeSurface(
         ReadOnlySpan<byte> encoded,
         MipLayout layout,
         PixelEncoding encoding)
@@ -385,7 +644,7 @@ internal static class ImageFileReader
                 return encoded.ToArray();
             case PixelEncoding.Bgra32:
             {
-                byte[] rgba = new byte[layout.DecodedByteCount];
+                byte[] rgba = new byte[layout.SurfaceDecodedByteCount];
                 for (int offset = 0; offset < rgba.Length; offset += 4)
                 {
                     rgba[offset] = encoded[offset + 2];
@@ -397,8 +656,8 @@ internal static class ImageFileReader
             }
             case PixelEncoding.Bgr24:
             {
-                byte[] rgba = new byte[layout.DecodedByteCount];
-                for (int pixel = 0; pixel < layout.PixelCount; pixel++)
+                byte[] rgba = new byte[layout.SurfaceDecodedByteCount];
+                for (int pixel = 0; pixel < layout.SurfacePixelCount; pixel++)
                 {
                     int source = pixel * 3;
                     int destination = pixel * 4;
@@ -411,8 +670,8 @@ internal static class ImageFileReader
             }
             case PixelEncoding.LuminanceAlpha:
             {
-                byte[] rgba = new byte[layout.DecodedByteCount];
-                for (int pixel = 0; pixel < layout.PixelCount; pixel++)
+                byte[] rgba = new byte[layout.SurfaceDecodedByteCount];
+                for (int pixel = 0; pixel < layout.SurfacePixelCount; pixel++)
                 {
                     byte luminance = encoded[pixel * 2];
                     int destination = pixel * 4;
@@ -425,8 +684,8 @@ internal static class ImageFileReader
             }
             case PixelEncoding.Luminance:
             {
-                byte[] rgba = new byte[layout.DecodedByteCount];
-                for (int pixel = 0; pixel < layout.PixelCount; pixel++)
+                byte[] rgba = new byte[layout.SurfaceDecodedByteCount];
+                for (int pixel = 0; pixel < layout.SurfacePixelCount; pixel++)
                 {
                     byte luminance = encoded[pixel];
                     int destination = pixel * 4;
@@ -439,8 +698,8 @@ internal static class ImageFileReader
             }
             case PixelEncoding.Alpha:
             {
-                byte[] rgba = new byte[layout.DecodedByteCount];
-                for (int pixel = 0; pixel < layout.PixelCount; pixel++)
+                byte[] rgba = new byte[layout.SurfaceDecodedByteCount];
+                for (int pixel = 0; pixel < layout.SurfacePixelCount; pixel++)
                 {
                     int destination = pixel * 4;
                     rgba[destination] = byte.MaxValue;
@@ -465,6 +724,11 @@ internal static class ImageFileReader
                     encoded,
                     layout.Width,
                     layout.Height);
+            case PixelEncoding.Bc5:
+                return ImageBlockCompressionDecoder.DecodeBc5(
+                    encoded,
+                    layout.Width,
+                    layout.Height);
             default:
                 throw new ArgumentOutOfRangeException(nameof(encoding));
         }
@@ -473,15 +737,18 @@ internal static class ImageFileReader
     private static MipLayout[] CreateMipLayouts(
         int width,
         int height,
+        int depth,
         int mipCount,
-        PixelEncoding encoding)
+        PixelEncoding encoding,
+        ImageFileShape shape)
     {
-        int maximumMipCount = ComputeFullMipCount(width, height);
+        int mipDepth = shape == ImageFileShape.Volume ? depth : 1;
+        int maximumMipCount = ComputeFullMipCount(width, height, mipDepth);
         if (mipCount <= 0 || mipCount > maximumMipCount)
         {
             throw new InvalidDataException(
                 $"The image declares {mipCount} mip levels; dimensions " +
-                $"{width}x{height} permit 1 through {maximumMipCount}.");
+                $"{width}x{height}x{mipDepth} permit 1 through {maximumMipCount}.");
         }
 
         var layouts = new MipLayout[mipCount];
@@ -490,30 +757,44 @@ internal static class ImageFileReader
         {
             int mipWidth = Math.Max(1, width >> mipLevel);
             int mipHeight = Math.Max(1, height >> mipLevel);
-            int pixelCount;
-            int decodedByteCount;
-            int encodedByteCount;
+            int currentDepth = shape == ImageFileShape.Volume
+                ? Math.Max(1, depth >> mipLevel)
+                : 1;
+            int surfaceCount = shape == ImageFileShape.Cube
+                ? 6
+                : currentDepth;
+            int surfacePixelCount;
+            int surfaceDecodedByteCount;
+            int surfaceEncodedByteCount;
+            int totalEncodedByteCount;
+            int totalLevelDecodedByteCount;
             try
             {
-                pixelCount = checked(mipWidth * mipHeight);
-                decodedByteCount = checked(pixelCount * 4);
-                encodedByteCount = encoding switch
+                surfacePixelCount = checked(mipWidth * mipHeight);
+                surfaceDecodedByteCount = checked(surfacePixelCount * 4);
+                surfaceEncodedByteCount = encoding switch
                 {
                     PixelEncoding.Rgba32 or PixelEncoding.Bgra32 =>
-                        decodedByteCount,
-                    PixelEncoding.Bgr24 => checked(pixelCount * 3),
-                    PixelEncoding.LuminanceAlpha => checked(pixelCount * 2),
-                    PixelEncoding.Luminance or PixelEncoding.Alpha => pixelCount,
+                        surfaceDecodedByteCount,
+                    PixelEncoding.Bgr24 => checked(surfacePixelCount * 3),
+                    PixelEncoding.LuminanceAlpha => checked(surfacePixelCount * 2),
+                    PixelEncoding.Luminance or PixelEncoding.Alpha =>
+                        surfacePixelCount,
                     PixelEncoding.Bc1 => checked(
                         Math.Max(1, (mipWidth + 3) / 4) *
                         Math.Max(1, (mipHeight + 3) / 4) * 8),
-                    PixelEncoding.Bc2 or PixelEncoding.Bc3 => checked(
-                        Math.Max(1, (mipWidth + 3) / 4) *
-                        Math.Max(1, (mipHeight + 3) / 4) * 16),
+                    PixelEncoding.Bc2 or PixelEncoding.Bc3 or PixelEncoding.Bc5 =>
+                        checked(
+                            Math.Max(1, (mipWidth + 3) / 4) *
+                            Math.Max(1, (mipHeight + 3) / 4) * 16),
                     _ => throw new ArgumentOutOfRangeException(nameof(encoding))
                 };
+                totalEncodedByteCount = checked(
+                    surfaceEncodedByteCount * surfaceCount);
+                totalLevelDecodedByteCount = checked(
+                    surfaceDecodedByteCount * surfaceCount);
                 totalDecodedBytes = checked(
-                    totalDecodedBytes + decodedByteCount);
+                    totalDecodedBytes + totalLevelDecodedByteCount);
             }
             catch (OverflowException exception)
             {
@@ -530,9 +811,13 @@ internal static class ImageFileReader
             layouts[mipLevel] = new MipLayout(
                 mipWidth,
                 mipHeight,
-                pixelCount,
-                encodedByteCount,
-                decodedByteCount);
+                currentDepth,
+                surfaceCount,
+                surfacePixelCount,
+                surfaceEncodedByteCount,
+                surfaceDecodedByteCount,
+                totalEncodedByteCount,
+                totalLevelDecodedByteCount);
         }
         return layouts;
     }
@@ -542,14 +827,19 @@ internal static class ImageFileReader
         uint headerFlags,
         uint caps,
         int width,
-        int height)
+        int height,
+        int depth,
+        ImageFileShape shape)
     {
-        int maximumMipCount = ComputeFullMipCount(width, height);
+        int maximumMipCount = ComputeFullMipCount(
+            width,
+            height,
+            shape == ImageFileShape.Volume ? depth : 1);
         if (storedMipCount > maximumMipCount)
         {
             throw new InvalidDataException(
                 $"The DDS declares {storedMipCount} mip levels; dimensions " +
-                $"{width}x{height} permit at most {maximumMipCount}.");
+                $"{width}x{height}x{depth} permit at most {maximumMipCount}.");
         }
         int mipCount = storedMipCount == 0
             ? 1
@@ -579,7 +869,7 @@ internal static class ImageFileReader
         PixelEncoding encoding)
     {
         bool blockCompressed = encoding is PixelEncoding.Bc1 or
-            PixelEncoding.Bc2 or PixelEncoding.Bc3;
+            PixelEncoding.Bc2 or PixelEncoding.Bc3 or PixelEncoding.Bc5;
         if (blockCompressed)
         {
             if ((headerFlags & DdsPitchFlag) != 0)
@@ -591,12 +881,14 @@ internal static class ImageFileReader
             uint encodedRowByteCount = checked((uint)(
                 Math.Max(1, (topLevel.Width + 3) / 4) * blockByteCount));
             if ((headerFlags & DdsLinearSizeFlag) == 0 ||
-                (pitchOrLinearSize != topLevel.EncodedByteCount &&
+                (pitchOrLinearSize != topLevel.TotalEncodedByteCount &&
+                 pitchOrLinearSize != topLevel.SurfaceEncodedByteCount &&
                  pitchOrLinearSize != encodedRowByteCount))
             {
                 throw new InvalidDataException(
                     $"DDS top-level compressed size is {pitchOrLinearSize}; " +
-                    $"expected linear size {topLevel.EncodedByteCount} or the " +
+                    $"expected total size {topLevel.TotalEncodedByteCount}, " +
+                    $"surface size {topLevel.SurfaceEncodedByteCount}, or the " +
                     $"OpenAssetTools row size {encodedRowByteCount}.");
             }
             return;
@@ -628,13 +920,14 @@ internal static class ImageFileReader
         return checked((int)value);
     }
 
-    private static int ComputeFullMipCount(int width, int height)
+    private static int ComputeFullMipCount(int width, int height, int depth)
     {
         int count = 1;
-        while (width > 1 || height > 1)
+        while (width > 1 || height > 1 || depth > 1)
         {
             width = Math.Max(1, width / 2);
             height = Math.Max(1, height / 2);
+            depth = Math.Max(1, depth / 2);
             count++;
         }
         return count;
@@ -656,15 +949,27 @@ internal static class ImageFileReader
         Alpha,
         Bc1,
         Bc2,
-        Bc3
+        Bc3,
+        Bc5
     }
+
+    private readonly record struct DdsDx10Format(
+        PixelEncoding Encoding,
+        bool UsesSrgbReads,
+        uint AlphaMode,
+        ImageFileShape Shape,
+        bool UsesFaceMajorCubeLayout);
 
     private readonly record struct MipLayout(
         int Width,
         int Height,
-        int PixelCount,
-        int EncodedByteCount,
-        int DecodedByteCount);
+        int Depth,
+        int SurfaceCount,
+        int SurfacePixelCount,
+        int SurfaceEncodedByteCount,
+        int SurfaceDecodedByteCount,
+        int TotalEncodedByteCount,
+        int TotalDecodedByteCount);
 
     private sealed class ImageStreamReader(Stream stream, string formatName)
     {

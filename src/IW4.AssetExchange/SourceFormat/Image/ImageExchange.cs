@@ -107,8 +107,8 @@ public sealed class ImageExchange
     }
 
     /// <summary>
-    /// Reads one supported two-dimensional DDS or IW4 IWI8 image without
-    /// closing the source stream.
+    /// Reads one supported two-dimensional, cubemap, or volume DDS or IW4
+    /// IWI8 image without closing the source stream.
     /// </summary>
     public ImageFileDocument Read(Stream source, ImageFileFormat format) =>
         ImageFileReader.Read(source, format);

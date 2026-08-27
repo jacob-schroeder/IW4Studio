@@ -4,17 +4,107 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using IW4.AssetExchange.SourceFormat.Image;
+using IW4.Render.OpenGl.XModel;
+using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.ViewModels;
 
 namespace IW4.Studio.Desktop.Editors.Material;
 
 public sealed partial class MaterialEditorView : UserControl
 {
+    private readonly XModelPreviewControl? _materialPreview;
+    private readonly MaterialTexturePreviewControl? _texturePreview;
     private bool _isImportInProgress;
     private bool _isExportInProgress;
+    private bool _isAttached;
 
-    public MaterialEditorView() => AvaloniaXamlLoader.Load(this);
+    public MaterialEditorView()
+    {
+        AvaloniaXamlLoader.Load(this);
+        _materialPreview =
+            this.FindControl<XModelPreviewControl>("MaterialPreview");
+        _texturePreview =
+            this.FindControl<MaterialTexturePreviewControl>("TexturePreview");
+    }
+
+    protected override void OnAttachedToVisualTree(
+        VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (_isAttached)
+            return;
+
+        _isAttached = true;
+        if (_materialPreview is not null)
+        {
+            _materialPreview.RendererStatusChanged +=
+                MaterialPreview_RendererStatusChanged;
+        }
+        if (_texturePreview is not null)
+        {
+            _texturePreview.RendererStatusChanged +=
+                TexturePreview_RendererStatusChanged;
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(
+        VisualTreeAttachmentEventArgs e)
+    {
+        if (_isAttached)
+        {
+            if (_materialPreview is not null)
+            {
+                _materialPreview.RendererStatusChanged -=
+                    MaterialPreview_RendererStatusChanged;
+            }
+            if (_texturePreview is not null)
+            {
+                _texturePreview.RendererStatusChanged -=
+                    TexturePreview_RendererStatusChanged;
+            }
+            _isAttached = false;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void MaterialPreview_RendererStatusChanged(
+        object? sender,
+        EventArgs e)
+    {
+        if (DataContext is not MaterialEditorViewModel viewModel ||
+            _materialPreview is null)
+        {
+            return;
+        }
+
+        string? message = _materialPreview.RendererFailure is { } failure
+            ? $"Authored Material preview failed: {failure}"
+            : _materialPreview.UploadResult is
+                { ExecutableGroupCount: 0 } upload
+                ? "The authored Material could not execute on the preview " +
+                  $"sphere: {upload.Diagnostics.FirstOrDefault() ?? "no executable pass was produced"}"
+                : null;
+        viewModel.ReportMaterialRendererStatus(message);
+    }
+
+    private void TexturePreview_RendererStatusChanged(
+        object? sender,
+        EventArgs e)
+    {
+        if (DataContext is not MaterialEditorViewModel viewModel ||
+            _texturePreview is null)
+        {
+            return;
+        }
+
+        viewModel.ReportTextureRendererStatus(
+            _texturePreview.RendererFailure is { } failure
+                ? $"Texture-shape OpenGL preview failed: {failure}"
+                : null);
+    }
 
     private async void ImportButton_Click(object? sender, RoutedEventArgs e)
     {

@@ -22,6 +22,12 @@ internal static class ImageBlockCompressionDecoder
         int height) =>
         DecodeBlocks(encoded, width, height, BlockFormat.Bc3);
 
+    internal static byte[] DecodeBc5(
+        ReadOnlySpan<byte> encoded,
+        int width,
+        int height) =>
+        DecodeBlocks(encoded, width, height, BlockFormat.Bc5);
+
     private static byte[] DecodeBlocks(
         ReadOnlySpan<byte> encoded,
         int width,
@@ -71,6 +77,15 @@ internal static class ImageBlockCompressionDecoder
                         break;
                     case BlockFormat.Bc3:
                         DecodeBc3Block(
+                            block,
+                            pixels,
+                            width,
+                            height,
+                            blockX * 4,
+                            blockY * 4);
+                        break;
+                    case BlockFormat.Bc5:
+                        DecodeBc5Block(
                             block,
                             pixels,
                             width,
@@ -161,30 +176,8 @@ internal static class ImageBlockCompressionDecoder
         int startY)
     {
         Span<byte> alphas = stackalloc byte[8];
-        alphas[0] = block[0];
-        alphas[1] = block[1];
-        if (alphas[0] > alphas[1])
-        {
-            for (int index = 1; index < 7; index++)
-            {
-                alphas[index + 1] = (byte)(
-                    ((7 - index) * alphas[0] + index * alphas[1]) / 7);
-            }
-        }
-        else
-        {
-            for (int index = 1; index < 5; index++)
-            {
-                alphas[index + 1] = (byte)(
-                    ((5 - index) * alphas[0] + index * alphas[1]) / 5);
-            }
-            alphas[6] = 0;
-            alphas[7] = byte.MaxValue;
-        }
-
-        ulong alphaBits = 0;
-        for (int index = 0; index < 6; index++)
-            alphaBits |= (ulong)block[2 + index] << (8 * index);
+        BuildBc4Palette(block[..8], alphas);
+        ulong alphaBits = ReadBc4Indices(block[..8]);
 
         DecodeColors(
             block[8..],
@@ -208,6 +201,77 @@ internal static class ImageBlockCompressionDecoder
             BlockAlphaMode.Interpolated3Bit,
             alphaBits,
             alphas);
+    }
+
+    private static void DecodeBc5Block(
+        ReadOnlySpan<byte> block,
+        byte[] pixels,
+        int imageWidth,
+        int imageHeight,
+        int startX,
+        int startY)
+    {
+        Span<byte> redPalette = stackalloc byte[8];
+        Span<byte> greenPalette = stackalloc byte[8];
+        BuildBc4Palette(block[..8], redPalette);
+        BuildBc4Palette(block[8..16], greenPalette);
+        ulong redBits = ReadBc4Indices(block[..8]);
+        ulong greenBits = ReadBc4Indices(block[8..16]);
+
+        for (int pixelY = 0; pixelY < 4; pixelY++)
+        {
+            int y = startY + pixelY;
+            if (y >= imageHeight)
+                continue;
+            for (int pixelX = 0; pixelX < 4; pixelX++)
+            {
+                int x = startX + pixelX;
+                if (x >= imageWidth)
+                    continue;
+
+                int pixelInBlock = pixelY * 4 + pixelX;
+                int shift = pixelInBlock * 3;
+                int output = checked((y * imageWidth + x) * 4);
+                pixels[output] = redPalette[(int)((redBits >> shift) & 0x07)];
+                pixels[output + 1] = greenPalette[(int)((greenBits >> shift) & 0x07)];
+                pixels[output + 2] = 0;
+                pixels[output + 3] = byte.MaxValue;
+            }
+        }
+    }
+
+    private static void BuildBc4Palette(
+        ReadOnlySpan<byte> block,
+        Span<byte> palette)
+    {
+        palette[0] = block[0];
+        palette[1] = block[1];
+        if (palette[0] > palette[1])
+        {
+            for (int index = 1; index < 7; index++)
+            {
+                palette[index + 1] = (byte)(
+                    ((7 - index) * palette[0] + index * palette[1]) / 7);
+            }
+        }
+        else
+        {
+            for (int index = 1; index < 5; index++)
+            {
+                palette[index + 1] = (byte)(
+                    ((5 - index) * palette[0] + index * palette[1]) / 5);
+            }
+            palette[6] = 0;
+            palette[7] = byte.MaxValue;
+        }
+    }
+
+    private static ulong ReadBc4Indices(ReadOnlySpan<byte> block)
+    {
+        ulong indices = 0;
+        for (int index = 0; index < 6; index++)
+            indices |= (ulong)block[2 + index] << (8 * index);
+        return indices;
     }
 
     private static void DecodeColors(
@@ -316,7 +380,8 @@ internal static class ImageBlockCompressionDecoder
     {
         Bc1,
         Bc2,
-        Bc3
+        Bc3,
+        Bc5
     }
 
     private enum BlockAlphaMode

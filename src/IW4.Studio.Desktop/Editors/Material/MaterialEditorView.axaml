@@ -3,6 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:materialEditor="using:IW4.Studio.Desktop.Editors.Material"
+             xmlns:xmodelEditor="using:IW4.Studio.Desktop.Editors.XModel"
              xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
              x:Class="IW4.Studio.Desktop.Editors.Material.MaterialEditorView"
              x:DataType="viewModels:MaterialEditorViewModel"
@@ -152,6 +154,7 @@
                                         Foreground="{DynamicResource StudioAccentBrush}" />
             <TextBlock Grid.Column="2"
                        Text="MATERIAL PREVIEW"
+                       VerticalAlignment="Center"
                        FontSize="9"
                        FontWeight="Bold"
                        LetterSpacing="0.7"
@@ -160,12 +163,27 @@
                         Orientation="Horizontal"
                         VerticalAlignment="Center"
                         Spacing="7">
+              <ComboBox Width="160"
+                        Height="27"
+                        Padding="7,2"
+                        ItemsSource="{Binding PreviewModes}"
+                        SelectedItem="{Binding SelectedPreviewMode, Mode=TwoWay}"
+                        AutomationProperties.Name="Material preview mode">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:MaterialPreviewModeViewModel">
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontSize="9" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
               <TextBlock Text="{Binding SelectedImageName}"
                          MaxWidth="320"
+                         VerticalAlignment="Center"
                          FontSize="9"
                          TextTrimming="CharacterEllipsis"
                          Foreground="{DynamicResource StudioTextMutedBrush}" />
               <TextBlock Text="·"
+                         VerticalAlignment="Center"
                          FontSize="9"
                          Foreground="{DynamicResource StudioTextSubtleBrush}" />
               <TextBlock Text="{Binding ImageDimensionsText}"
@@ -174,12 +192,12 @@
                          FontFamily="Consolas"
                          Foreground="{DynamicResource StudioTextMutedBrush}" />
               <TextBlock Text="·"
-                         IsVisible="{Binding HasMipSelector}"
+                         IsVisible="{Binding ShowsMipSelector}"
                          VerticalAlignment="Center"
                          FontSize="9"
                          Foreground="{DynamicResource StudioTextSubtleBrush}" />
               <TextBlock Text="MIP"
-                         IsVisible="{Binding HasMipSelector}"
+                         IsVisible="{Binding ShowsMipSelector}"
                          VerticalAlignment="Center"
                          FontSize="8"
                          FontWeight="Bold"
@@ -188,7 +206,7 @@
               <ComboBox Width="180"
                         Height="27"
                         Padding="7,2"
-                        IsVisible="{Binding HasMipSelector}"
+                        IsVisible="{Binding ShowsMipSelector}"
                         ItemsSource="{Binding PreviewMips}"
                         SelectedItem="{Binding SelectedPreviewMip, Mode=TwoWay}"
                         AutomationProperties.Name="Material preview mip level">
@@ -207,8 +225,38 @@
               Margin="18">
           <Image Source="{Binding Preview}"
                  IsVisible="{Binding HasPreview}"
+                 IsHitTestVisible="False"
                  Stretch="Uniform" />
-          <StackPanel IsVisible="{Binding !HasPreview}"
+          <xmodelEditor:XModelPreviewControl x:Name="MaterialPreview"
+                                                 IsVisible="{Binding IsMaterialPreviewMode}"
+                                                 Scene="{Binding MaterialPreviewScene}"
+                                                 SelectedLodIndex="{Binding MaterialPreviewLodIndex}"
+                                                 UseStudioEnvironment="True"
+                                                 IsMaterialAnimationEnabled="True"
+                                                 ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
+          <materialEditor:MaterialTexturePreviewControl x:Name="TexturePreview"
+                                                       IsVisible="{Binding IsTexturePreviewMode}"
+                                                       Texture="{Binding TexturePreview}"
+                                                       SelectedMipLevel="{Binding SelectedPreviewMip.Level}"
+                                                       UseSrgbReads="{Binding TexturePreviewUsesSrgbReads}"
+                                                       ToolTip.Tip="Drag to orbit cube and volume previews; scroll to zoom" />
+          <Border IsVisible="{Binding HasRendererPreviewMessage}"
+                  MaxWidth="520"
+                  Padding="14,10"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  IsHitTestVisible="False"
+                  CornerRadius="6"
+                  Background="#E016191F"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="{Binding RendererPreviewMessage}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+          <StackPanel IsVisible="{Binding ShowsPreviewEmptyState}"
                       MaxWidth="390"
                       HorizontalAlignment="Center"
                       VerticalAlignment="Center"

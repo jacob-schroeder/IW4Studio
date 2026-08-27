@@ -1,9 +1,15 @@
 using Avalonia.Media.Imaging;
 using IW4.AssetExchange.Image;
 using IW4.AssetExchange.SourceFormat.Image;
+using IW4.Assets.Assets;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.FastFiles.Zone;
+using IW4.Render;
+using IW4.Render.Assets;
+using IW4.Render.Resources;
+using IW4.Render.SceneBuilding;
+using IW4.Render.Scheduling.FramePlans;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Studio.Desktop.Editors;
@@ -23,15 +29,22 @@ public sealed class MaterialEditorViewModel
 {
     private readonly AssetEditorSession _session;
     private readonly WorkspaceGfxImagePayloadResolver _payloadResolver;
+    private readonly XModelSceneBuilder _sceneBuilder = new();
     private CancellationTokenSource? _previewCancellation;
     private long _previewRevision;
     private MaterialDraft _currentDraft;
     private MaterialImageImportCandidate? _stagedImport;
     private UiMaterialPreviewPlan _previewPlan;
     private Bitmap? _preview;
+    private XModelRenderScene? _materialPreviewScene;
+    private RenderTextureDescriptor? _texturePreview;
     private IReadOnlyList<MaterialPreviewMipViewModel> _previewMips = [];
     private MaterialPreviewMipViewModel? _selectedPreviewMip;
+    private MaterialPreviewModeViewModel _selectedPreviewMode;
     private string _previewSummary = string.Empty;
+    private string _materialPreviewDetails = string.Empty;
+    private string _materialRendererMessage = string.Empty;
+    private string _textureRendererMessage = string.Empty;
     private IReadOnlyList<AssetValidationIssue> _diagnostics = [];
     private string _previewMessage = "Preparing Material preview…";
     private string _previewDetails = string.Empty;
@@ -49,9 +62,21 @@ public sealed class MaterialEditorViewModel
         }
 
         _payloadResolver = new WorkspaceGfxImagePayloadResolver(session.Workspace);
+        PreviewModes =
+        [
+            new MaterialPreviewModeViewModel(
+                MaterialPreviewMode.Material,
+                "Material on sphere"),
+            new MaterialPreviewModeViewModel(
+                MaterialPreviewMode.Texture,
+                "Texture by shape")
+        ];
+        _selectedPreviewMode = PreviewModes[1];
         _currentDraft = session.OpenDraft<MaterialDraft>();
         _previewPlan = UiMaterialPreviewPlanner.Plan(_currentDraft.Material);
         BeginPreviewLoad();
+        if (CanDefaultToMaterialPreview(_materialPreviewScene))
+            SelectedPreviewMode = PreviewModes[0];
     }
 
     public WorkspaceAssetAccess Mode => _session.Mode;
@@ -149,15 +174,72 @@ public sealed class MaterialEditorViewModel
 
             previous?.Dispose();
             OnPropertyChanged(nameof(HasPreview));
+            OnPropertyChanged(nameof(ShowsPreviewEmptyState));
         }
     }
 
     public bool HasPreview => Preview is not null;
 
+    public XModelRenderScene? MaterialPreviewScene => _materialPreviewScene;
+
+    public int MaterialPreviewLodIndex =>
+        MaterialPreviewScene?.DefaultLodIndex ?? -1;
+
+    public bool HasMaterialPreviewScene => MaterialPreviewScene is not null;
+
+    public RenderTextureDescriptor? TexturePreview => _texturePreview;
+
+    public bool HasTexturePreview => TexturePreview is not null;
+
+    public bool TexturePreviewUsesSrgbReads =>
+        SelectedImage?.UsesSrgbReads ?? false;
+
+    public IReadOnlyList<MaterialPreviewModeViewModel> PreviewModes { get; }
+
+    public MaterialPreviewModeViewModel SelectedPreviewMode
+    {
+        get => _selectedPreviewMode;
+        set
+        {
+            if (value is null || !PreviewModes.Contains(value) ||
+                !SetProperty(ref _selectedPreviewMode, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(IsMaterialPreviewMode));
+            OnPropertyChanged(nameof(IsTexturePreviewMode));
+            OnPropertyChanged(nameof(ShowsMipSelector));
+            OnPropertyChanged(nameof(ShowsPreviewEmptyState));
+            OnPropertyChanged(nameof(RendererPreviewMessage));
+            OnPropertyChanged(nameof(HasRendererPreviewMessage));
+        }
+    }
+
+    public bool IsMaterialPreviewMode =>
+        SelectedPreviewMode.Mode == MaterialPreviewMode.Material;
+
+    public bool IsTexturePreviewMode =>
+        SelectedPreviewMode.Mode == MaterialPreviewMode.Texture;
+
+    public bool ShowsPreviewEmptyState => IsMaterialPreviewMode
+        ? !HasMaterialPreviewScene && !HasPreview
+        : !HasTexturePreview && !HasPreview;
+
+    public string RendererPreviewMessage => IsMaterialPreviewMode
+        ? _materialRendererMessage
+        : _textureRendererMessage;
+
+    public bool HasRendererPreviewMessage =>
+        !string.IsNullOrWhiteSpace(RendererPreviewMessage);
+
     public IReadOnlyList<MaterialPreviewMipViewModel> PreviewMips =>
         _previewMips;
 
     public bool HasMipSelector => PreviewMips.Count > 1;
+
+    public bool ShowsMipSelector =>
+        IsTexturePreviewMode && HasMipSelector;
 
     public MaterialPreviewMipViewModel? SelectedPreviewMip
     {
@@ -288,7 +370,7 @@ public sealed class MaterialEditorViewModel
             ? "the imported image"
             : source;
         StatusMessage =
-            $"Staged {sourceName} as {candidate.Width:N0} × {candidate.Height:N0} " +
+            $"Staged {sourceName} as {FormatImportedDimensions(candidate)} " +
             $"with {candidate.MipCount:N0} {(candidate.MipCount == 1 ? "mip" : "mips")}; " +
             "review the preview, then Apply Changes.";
         UseCurrentMaterial();
@@ -418,6 +500,44 @@ public sealed class MaterialEditorViewModel
             : $"Exported the selected Material texture as {label} to {destination}.";
     }
 
+    internal void ReportMaterialRendererStatus(string? message)
+    {
+        string value = message ?? string.Empty;
+        if (string.Equals(
+                _materialRendererMessage,
+                value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _materialRendererMessage = value;
+        if (IsMaterialPreviewMode)
+        {
+            OnPropertyChanged(nameof(RendererPreviewMessage));
+            OnPropertyChanged(nameof(HasRendererPreviewMessage));
+        }
+    }
+
+    internal void ReportTextureRendererStatus(string? message)
+    {
+        string value = message ?? string.Empty;
+        if (string.Equals(
+                _textureRendererMessage,
+                value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _textureRendererMessage = value;
+        if (IsTexturePreviewMode)
+        {
+            OnPropertyChanged(nameof(RendererPreviewMessage));
+            OnPropertyChanged(nameof(HasRendererPreviewMessage));
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -450,6 +570,7 @@ public sealed class MaterialEditorViewModel
         OnPropertyChanged(nameof(ImageFormatText));
         OnPropertyChanged(nameof(MipCountText));
         OnPropertyChanged(nameof(AtlasText));
+        OnPropertyChanged(nameof(TexturePreviewUsesSrgbReads));
         OnPropertyChanged(nameof(EditorProperties));
         OnPropertyChanged(nameof(CanImport));
         OnPropertyChanged(nameof(CanExport));
@@ -460,15 +581,27 @@ public sealed class MaterialEditorViewModel
     {
         CancelPreviewLoad();
         Preview = null;
+        _texturePreview = null;
         _previewMips = [];
         _selectedPreviewMip = null;
         _previewSummary = string.Empty;
+        _materialRendererMessage = string.Empty;
+        _textureRendererMessage = string.Empty;
+        OnPropertyChanged(nameof(TexturePreview));
+        OnPropertyChanged(nameof(HasTexturePreview));
+        OnPropertyChanged(nameof(ShowsPreviewEmptyState));
         OnPropertyChanged(nameof(PreviewMips));
         OnPropertyChanged(nameof(SelectedPreviewMip));
         OnPropertyChanged(nameof(HasMipSelector));
+        OnPropertyChanged(nameof(ShowsMipSelector));
+        OnPropertyChanged(nameof(RendererPreviewMessage));
+        OnPropertyChanged(nameof(HasRendererPreviewMessage));
+        BuildMaterialPreviewScene();
         IsPreviewLoading = true;
         PreviewMessage = "Loading Material texture preview…";
-        PreviewDetails = BuildPreviewDetails(_previewPlan);
+        PreviewDetails = JoinPreviewDetails(
+            BuildPreviewDetails(_previewPlan),
+            _materialPreviewDetails);
         var cancellation = new CancellationTokenSource();
         _previewCancellation = cancellation;
         long revision = Interlocked.Increment(ref _previewRevision);
@@ -510,7 +643,13 @@ public sealed class MaterialEditorViewModel
 
         IsPreviewLoading = false;
         PreviewMessage = result.Message;
-        PreviewDetails = result.Details;
+        PreviewDetails = JoinPreviewDetails(
+            result.Details,
+            _materialPreviewDetails);
+        _texturePreview = result.Texture;
+        OnPropertyChanged(nameof(TexturePreview));
+        OnPropertyChanged(nameof(HasTexturePreview));
+        OnPropertyChanged(nameof(ShowsPreviewEmptyState));
         if (result.Mips.Count == 0)
             return;
 
@@ -525,7 +664,52 @@ public sealed class MaterialEditorViewModel
         _previewSummary = result.Message;
         OnPropertyChanged(nameof(PreviewMips));
         OnPropertyChanged(nameof(HasMipSelector));
+        OnPropertyChanged(nameof(ShowsMipSelector));
         SelectedPreviewMip = _previewMips[0];
+    }
+
+    private void BuildMaterialPreviewScene()
+    {
+        _materialPreviewScene = null;
+        _materialPreviewDetails = string.Empty;
+        try
+        {
+            var staged = new List<BaseAsset>();
+            foreach (MaterialTextureDef texture in ActiveMaterial.Textures)
+            {
+                GfxImageAsset? image = texture.Water?.Image ?? texture.Image;
+                if (image is not null &&
+                    image.RuntimeAddress?.AssetPoolAddress is null)
+                {
+                    staged.Add(image);
+                }
+            }
+
+            RenderAssetSource source = WorkspaceRenderAssetSource.Create(
+                _session.Workspace,
+                "Material preview assets");
+            _materialPreviewScene = _sceneBuilder.BuildMaterialPreview(
+                ActiveMaterial,
+                source,
+                _payloadResolver,
+                staged);
+            _materialPreviewDetails = string.Join(
+                Environment.NewLine,
+                _materialPreviewScene.Diagnostics);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            _materialPreviewDetails =
+                $"Authored Material preview is unavailable: {exception.Message}";
+            _materialRendererMessage = _materialPreviewDetails;
+        }
+
+        OnPropertyChanged(nameof(MaterialPreviewScene));
+        OnPropertyChanged(nameof(MaterialPreviewLodIndex));
+        OnPropertyChanged(nameof(HasMaterialPreviewScene));
+        OnPropertyChanged(nameof(ShowsPreviewEmptyState));
+        OnPropertyChanged(nameof(RendererPreviewMessage));
+        OnPropertyChanged(nameof(HasRendererPreviewMessage));
     }
 
     private void CancelPreviewLoad()
@@ -571,6 +755,25 @@ public sealed class MaterialEditorViewModel
                 .Select(diagnostic => diagnostic.Message));
     }
 
+    private static string JoinPreviewDetails(params string[] details) =>
+        string.Join(
+            Environment.NewLine,
+            details.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private static bool CanDefaultToMaterialPreview(
+        XModelRenderScene? scene)
+    {
+        if (scene is null)
+            return false;
+
+        XModelRenderLod? lod = scene.Lods.FirstOrDefault(candidate =>
+            candidate.LodIndex == scene.DefaultLodIndex);
+        return lod is { Surfaces.Count: > 0 } &&
+               lod.Surfaces.All(surface =>
+                   surface.AuthoredGroupReady &&
+                   surface.AuthoredPassCount > 0);
+    }
+
     private static string FormatImageDimensions(GfxImageAsset image)
     {
         if (IsCube(image))
@@ -579,6 +782,16 @@ public sealed class MaterialEditorViewModel
             return $"{image.Width:N0} × {image.Height:N0} × {image.Depth:N0}";
         return $"{image.Width:N0} × {image.Height:N0}";
     }
+
+    private static string FormatImportedDimensions(
+        MaterialImageImportCandidate candidate) => candidate.Shape switch
+    {
+        ImageFileShape.Cube =>
+            $"{candidate.Width:N0} × {candidate.Height:N0} × 6 faces",
+        ImageFileShape.Volume =>
+            $"{candidate.Width:N0} × {candidate.Height:N0} × {candidate.Depth:N0}",
+        _ => $"{candidate.Width:N0} × {candidate.Height:N0}"
+    };
 
     private static bool IsTwoDimensional(GfxImageAsset image) =>
         image.MapType == MapType.TwoDimensional &&
@@ -656,6 +869,7 @@ public sealed class MaterialEditorViewModel
 
     private sealed record MaterialPreviewLoadResult(
         IReadOnlyList<MaterialPreviewMipData> Mips,
+        RenderTextureDescriptor? Texture,
         string Message,
         string Details)
     {
@@ -731,16 +945,21 @@ public sealed class MaterialEditorViewModel
                         ? "complete chain"
                         : "partial chain";
                 string shape = isCube
-                    ? "6-face cubemap sheet"
+                    ? "cubemap"
                     : isVolume
-                        ? "volume slice sheet"
+                        ? "3D volume texture"
                         : "2D texture";
                 return new MaterialPreviewLoadResult(
                     Array.AsReadOnly(mips),
+                    CreateTextureDescriptor(
+                        image,
+                        levels,
+                        isCube,
+                        isVolume),
                     $"{role} · {image.Name ?? "<unnamed image>"} · " +
                     $"{shape} · {levels.Count:N0} " +
                     $"{(levels.Count == 1 ? "mip" : "mips")} · " +
-                    $"{chainStatus} · texture approximation",
+                    $"{chainStatus}",
                     details);
             }
             catch (Exception chainException) when (chainException is not
@@ -781,6 +1000,7 @@ public sealed class MaterialEditorViewModel
                     preview.GetPngBytesCopy());
                 return new MaterialPreviewLoadResult(
                     Array.AsReadOnly([available]),
+                    null,
                     $"{role} · {preview.Name} · available level only",
                     string.Join(
                         Environment.NewLine,
@@ -794,7 +1014,87 @@ public sealed class MaterialEditorViewModel
 
         internal static MaterialPreviewLoadResult Failed(
             string message,
-            string details) => new([], message, details);
+            string details) => new([], null, message, details);
+
+        private static RenderTextureDescriptor CreateTextureDescriptor(
+            GfxImageAsset image,
+            IReadOnlyList<ImageSourceMipLevel> levels,
+            bool isCube,
+            bool isVolume)
+        {
+            ImageSourceMipLevel top = levels[0];
+            int faceCount = isCube ? 6 : 1;
+            var subresources = new List<RenderTextureSubresourceDescriptor>(
+                checked(levels.Count * faceCount));
+            for (int face = 0; face < faceCount; face++)
+            {
+                for (int mip = 0; mip < levels.Count; mip++)
+                {
+                    ImageSourceMipLevel level = levels[mip];
+                    int slicePitch = checked(level.Width * level.Height * 4);
+                    int depth = isVolume ? level.Depth : 1;
+                    ReadOnlyMemory<byte> rgba = isCube
+                        ? level.RgbaBytes.Slice(
+                            checked(face * slicePitch),
+                            slicePitch)
+                        : level.RgbaBytes;
+                    var payload = new RenderTexturePayloadDescriptor(
+                        RenderTexturePayloadKind.DecodedRgba8,
+                        "RGBA8",
+                        checked(level.Width * 4),
+                        slicePitch,
+                        depth,
+                        rgba.ToArray(),
+                        isDirectUploadLayoutProven: true);
+                    subresources.Add(new RenderTextureSubresourceDescriptor(
+                        mip,
+                        face,
+                        level.Width,
+                        level.Height,
+                        depth,
+                        [payload]));
+                }
+            }
+
+            RenderTextureDimension dimension = isCube
+                ? RenderTextureDimension.TextureCube
+                : isVolume
+                    ? RenderTextureDimension.Texture3D
+                    : RenderTextureDimension.Texture2D;
+            return new RenderTextureDescriptor(
+                new RenderSemanticIdentity(
+                    RenderSemanticResourceKind.Texture,
+                    "studio.material-editor.texture-preview"),
+                image.Name ?? "<unnamed material image>",
+                image.FormatEncoding.BaseFormat.ToString(),
+                dimension,
+                top.Width,
+                top.Height,
+                isVolume ? top.Depth : 1,
+                levels.Count,
+                faceCount,
+                faceCount,
+                HasTransparency(levels),
+                new RenderTextureSourceDescriptor(
+                    RsxTextureCommandBuilder.FromImage(image)),
+                subresources);
+        }
+
+        private static bool HasTransparency(
+            IReadOnlyList<ImageSourceMipLevel> levels)
+        {
+            foreach (ImageSourceMipLevel level in levels)
+            {
+                ReadOnlySpan<byte> rgba = level.RgbaBytes.Span;
+                for (int offset = 3; offset < rgba.Length; offset += 4)
+                {
+                    if (rgba[offset] != byte.MaxValue)
+                        return true;
+                }
+            }
+
+            return false;
+        }
 
         private static MaterialPreviewMipData CreatePreviewMip(
             ImageSourceMipLevel level,
@@ -942,6 +1242,16 @@ public sealed class MaterialEditorViewModel
         string Label,
         byte[] PngBytes);
 }
+
+public enum MaterialPreviewMode
+{
+    Material,
+    Texture
+}
+
+public sealed record MaterialPreviewModeViewModel(
+    MaterialPreviewMode Mode,
+    string DisplayName);
 
 public sealed class MaterialPreviewMipViewModel
 {

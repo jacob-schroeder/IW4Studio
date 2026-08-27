@@ -21,6 +21,103 @@ namespace IW4.Render.SceneBuilding;
 /// </summary>
 public sealed class XModelSceneBuilder
 {
+    public XModelRenderScene BuildMaterialPreview(
+        MaterialAsset material,
+        RenderAssetSource assetSource,
+        IGfxImagePayloadResolver imagePayloadResolver,
+        IReadOnlyList<BaseAsset> stagedAssets)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        ArgumentNullException.ThrowIfNull(assetSource);
+        ArgumentNullException.ThrowIfNull(imagePayloadResolver);
+        ArgumentNullException.ThrowIfNull(stagedAssets);
+        string materialName = !string.IsNullOrWhiteSpace(material.Info.Name)
+            ? material.Info.Name
+            : throw new InvalidOperationException(
+                "The material preview requires a loaded material name.");
+        XSurface sphere = CreateMaterialPreviewSphere();
+        var diagnostics = new List<string>();
+        long poolRevision = assetSource.AssetPool.Revision;
+        var lookup = new RenderAssetLookup(
+            assetSource,
+            imagePayloadResolver,
+            stagedAssets);
+        var textureCache = new RenderTextureCache(
+            preferProvenAuthoredPayloads: false);
+        var failedTextureCacheKeys =
+            new HashSet<RenderTextureCacheKey>();
+        var shaderTranslationCache = new ShaderTranslationCache();
+
+        XModelRenderSurface surface;
+        if (!lookup.TryResolveCanonicalMaterialTechniqueBinding(
+                materialName,
+                poolRevision,
+                out MaterialTechniqueBinding? canonicalBinding) ||
+            canonicalBinding is null)
+        {
+            string blockedStatus =
+                $"material={materialName};canonicalGraph=unresolved@revision{poolRevision}";
+            diagnostics.Add($"LOD 0 surface 0: {blockedStatus}.");
+            surface = ProjectSurface(
+                materialName,
+                lodIndex: 0,
+                geometrySurfaceIndex: 0,
+                parentMaterialIndex: 0,
+                materialName,
+                sphere,
+                selectedTechniqueSlot: -1,
+                selectedTechniqueName: string.Empty,
+                [],
+                authoredGroupReady: false,
+                blockedStatus,
+                diagnostics);
+        }
+        else
+        {
+            AuthoredCameraColorTechniqueSelection selectedTechnique =
+                AuthoredCameraColorTechniqueSelector.Select(
+                    material,
+                    canonicalBinding.TechniqueSet,
+                    lookup);
+            surface = BuildAuthoredSurface(
+                materialName,
+                lodIndex: 0,
+                geometrySurfaceIndex: 0,
+                parentMaterialIndex: 0,
+                materialName,
+                sphere,
+                material,
+                canonicalBinding.TechniqueSet,
+                selectedTechnique,
+                lookup,
+                imagePayloadResolver,
+                textureCache,
+                failedTextureCacheKeys,
+                shaderTranslationCache,
+                diagnostics);
+        }
+
+        if (!lookup.HasCanonicalAssetPoolRevision(poolRevision))
+        {
+            throw new InvalidOperationException(
+                $"The canonical asset-pool revision changed while building material preview '{materialName}': " +
+                $"start={poolRevision};end={assetSource.AssetPool.Revision}.");
+        }
+
+        var lod = new XModelRenderLod(
+            lodIndex: 0,
+            distance: 0f,
+            surface.Bounds,
+            [surface]);
+        return new XModelRenderScene(
+            materialName,
+            [lod],
+            defaultLodIndex: 0,
+            surface.Bounds,
+            bones: [],
+            diagnostics);
+    }
+
     public XModelRenderScene Build(
         XModelAsset model,
         RenderAssetSource assetSource,
@@ -562,6 +659,143 @@ public sealed class XModelSceneBuilder
             retained.Add(i2);
         }
         return retained.ToArray();
+    }
+
+    private static XSurface CreateMaterialPreviewSphere()
+    {
+        const int longitudeSegments = 32;
+        const int latitudeSegments = 16;
+        int ringCount = latitudeSegments - 1;
+        int ringStride = longitudeSegments + 1;
+        int topStart = 0;
+        int ringStart = longitudeSegments;
+        int bottomStart = checked(
+            ringStart + ringCount * ringStride);
+        int vertexCount = checked(bottomStart + longitudeSegments);
+        int triangleCount = checked(
+            2 * longitudeSegments * (latitudeSegments - 1));
+        byte[] verts0 = new byte[checked(
+            vertexCount * XSurfaceVertexCodec.StreamStride)];
+        byte[] verts1 = new byte[verts0.Length];
+        ushort[] indices = new ushort[checked(triangleCount * 3)];
+
+        for (int longitude = 0;
+             longitude < longitudeSegments;
+             longitude++)
+        {
+            float u = (longitude + 0.5f) / longitudeSegments;
+            float phi = u * MathF.Tau;
+            Vector3 tangent = new(-MathF.Sin(phi), MathF.Cos(phi), 0f);
+            XSurfaceVertexCodec.WriteVertex(
+                verts0,
+                verts1,
+                topStart + longitude,
+                Vector3.UnitZ,
+                new Vector2(u, 0f),
+                Vector4.One,
+                Vector3.UnitZ,
+                tangent);
+            XSurfaceVertexCodec.WriteVertex(
+                verts0,
+                verts1,
+                bottomStart + longitude,
+                -Vector3.UnitZ,
+                new Vector2(u, 1f),
+                Vector4.One,
+                -Vector3.UnitZ,
+                tangent);
+        }
+
+        for (int latitude = 1;
+             latitude < latitudeSegments;
+             latitude++)
+        {
+            float v = latitude / (float)latitudeSegments;
+            float theta = v * MathF.PI;
+            float radial = MathF.Sin(theta);
+            float z = MathF.Cos(theta);
+            int currentRingStart = checked(
+                ringStart + (latitude - 1) * ringStride);
+            for (int longitude = 0;
+                 longitude <= longitudeSegments;
+                 longitude++)
+            {
+                float u = longitude / (float)longitudeSegments;
+                float phi = u * MathF.Tau;
+                var normal = new Vector3(
+                    radial * MathF.Cos(phi),
+                    radial * MathF.Sin(phi),
+                    z);
+                var tangent = new Vector3(
+                    -MathF.Sin(phi),
+                    MathF.Cos(phi),
+                    0f);
+                XSurfaceVertexCodec.WriteVertex(
+                    verts0,
+                    verts1,
+                    currentRingStart + longitude,
+                    normal,
+                    new Vector2(u, v),
+                    Vector4.One,
+                    normal,
+                    tangent);
+            }
+        }
+
+        int nextIndex = 0;
+        for (int longitude = 0;
+             longitude < longitudeSegments;
+             longitude++)
+        {
+            AddTriangle(
+                topStart + longitude,
+                ringStart + longitude,
+                ringStart + longitude + 1);
+        }
+        for (int ring = 0; ring < ringCount - 1; ring++)
+        {
+            int firstRing = checked(ringStart + ring * ringStride);
+            int secondRing = checked(firstRing + ringStride);
+            for (int longitude = 0;
+                 longitude < longitudeSegments;
+                 longitude++)
+            {
+                int first = firstRing + longitude;
+                int second = secondRing + longitude;
+                AddTriangle(first, second, second + 1);
+                AddTriangle(first, second + 1, first + 1);
+            }
+        }
+        int lastRing = checked(
+            ringStart + (ringCount - 1) * ringStride);
+        for (int longitude = 0;
+             longitude < longitudeSegments;
+             longitude++)
+        {
+            AddTriangle(
+                lastRing + longitude,
+                bottomStart + longitude,
+                lastRing + longitude + 1);
+        }
+
+        return new XSurface
+        {
+            DeformedRaw = 0,
+            StreamFlags = XSurfaceStreamFlags.None,
+            VertCount = checked((ushort)vertexCount),
+            TriCount = checked((ushort)triangleCount),
+            TriIndices = Array.AsReadOnly(indices),
+            VertexInfo = new XSurfaceVertexInfo(),
+            Verts0 = Array.AsReadOnly(verts0),
+            Verts1 = Array.AsReadOnly(verts1)
+        };
+
+        void AddTriangle(int first, int second, int third)
+        {
+            indices[nextIndex++] = checked((ushort)first);
+            indices[nextIndex++] = checked((ushort)second);
+            indices[nextIndex++] = checked((ushort)third);
+        }
     }
 
     private static bool TryBuildRsxVertexInputs(
