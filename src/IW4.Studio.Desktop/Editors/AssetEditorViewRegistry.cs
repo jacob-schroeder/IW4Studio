@@ -11,6 +11,7 @@ using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.Sound;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Editors.StructuredData;
+using IW4.Studio.Desktop.Editors.XAnim;
 using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.Editors.Weapon;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
@@ -85,6 +86,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new LocalizeViewFactory());
         registry.Register(new MaterialViewFactory());
         registry.Register(new MaterialTechsetViewFactory());
+        registry.Register(new XAnimViewFactory(workspace));
         registry.Register(new XModelViewFactory(assetReferencePicker));
         registry.Register(new WeaponViewFactory(assetReferencePicker));
         return registry;

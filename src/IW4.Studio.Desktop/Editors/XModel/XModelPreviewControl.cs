@@ -9,6 +9,7 @@ using Avalonia.OpenGL.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using IW4.Render;
+using IW4.Render.EditorPreview;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.Persistence;
 using Silk.NET.OpenGL;
@@ -29,6 +30,12 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         AvaloniaProperty.Register<XModelPreviewControl, int>(
             nameof(SelectedLodIndex),
             -1);
+
+    public static readonly StyledProperty<XAnimPreviewPose?>
+        AnimationPoseProperty =
+            AvaloniaProperty.Register<
+                XModelPreviewControl,
+                XAnimPreviewPose?>(nameof(AnimationPose));
 
     public static readonly StyledProperty<bool> ShowWireframeProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
@@ -117,6 +124,12 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     {
         get => GetValue(SelectedLodIndexProperty);
         set => SetValue(SelectedLodIndexProperty, value);
+    }
+
+    public XAnimPreviewPose? AnimationPose
+    {
+        get => GetValue(AnimationPoseProperty);
+        set => SetValue(AnimationPoseProperty, value);
     }
 
     public bool ShowWireframe
@@ -300,6 +313,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             : CreateEmptyCamera();
         try
         {
+            renderer.UpdateAnimationPose(AnimationPose);
             renderer.Render(
                 framebuffer,
                 pixelSize.Width,
@@ -349,6 +363,11 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         else if (change.Property == ShowWireframeProperty || change.Property == ShowCollisionProperty ||
                  change.Property == UseStudioEnvironmentProperty)
         {
+            RequestNextFrameRendering();
+        }
+        else if (change.Property == AnimationPoseProperty)
+        {
+            RefreshProjectedBoneTags();
             RequestNextFrameRendering();
         }
         else if (change.Property == ShowBoneTagsProperty)
@@ -674,16 +693,25 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         double logicalWidth = pixelSize.Width / scaling;
         double logicalHeight = pixelSize.Height / scaling;
         var projected = new List<ProjectedBoneTag>(scene.Bones.Count);
-        foreach (XModelRenderBone bone in scene.Bones)
+        XAnimPreviewPose? animationPose = AnimationPose;
+        bool hasAnimatedBones =
+            animationPose?.Bones.Count == scene.Bones.Count;
+        for (int boneIndex = 0;
+             boneIndex < scene.Bones.Count;
+             boneIndex++)
         {
+            XModelRenderBone bone = scene.Bones[boneIndex];
+            Vector3 bonePosition = hasAnimatedBones
+                ? animationPose!.Bones[boneIndex].Position
+                : bone.Position;
             if (string.IsNullOrWhiteSpace(bone.Name) ||
-                !IsFinite(bone.Position))
+                !IsFinite(bonePosition))
             {
                 continue;
             }
 
             Vector4 clip = Vector4.Transform(
-                new Vector4(bone.Position, 1f),
+                new Vector4(bonePosition, 1f),
                 viewProjection);
             if (!float.IsFinite(clip.X) ||
                 !float.IsFinite(clip.Y) ||

@@ -60,6 +60,9 @@ public sealed class XModelRenderLod
         CollisionTriangleCount = checked(Surfaces.Sum(surface => surface.CollisionIndices.Count / 3));
         VertexCount = checked(Surfaces.Sum(surface =>
             surface.Positions.Count));
+        HasCompleteSkinning =
+            Surfaces.Count > 0 &&
+            Surfaces.All(surface => surface.HasCompleteSkinning);
     }
 
     public int LodIndex { get; }
@@ -74,6 +77,8 @@ public sealed class XModelRenderLod
 
     public int VertexCount { get; }
     public int CollisionTriangleCount { get; }
+
+    internal bool HasCompleteSkinning { get; }
 }
 
 public sealed class XModelRenderSurface
@@ -83,6 +88,7 @@ public sealed class XModelRenderSurface
         int parentMaterialIndex,
         string materialName,
         IReadOnlyList<Vector3> positions,
+        IReadOnlyList<XModelRenderSkinningVertex>? skinningVertices,
         IReadOnlyList<uint> indices,
         IReadOnlyList<uint> collisionIndices,
         RenderBounds bounds,
@@ -104,6 +110,13 @@ public sealed class XModelRenderSurface
                 "XModel surface indices must contain complete triangles.",
                 nameof(indices));
         }
+        if (skinningVertices is not null &&
+            skinningVertices.Count != positions.Count)
+        {
+            throw new ArgumentException(
+                "XModel surface skinning must cover every projected vertex.",
+                nameof(skinningVertices));
+        }
         int exactRsxPayloadLength = checked(
             positions.Count *
             Geometry.XSurfaceVertexDecoder.RsxVertexInputCount *
@@ -121,6 +134,9 @@ public sealed class XModelRenderSurface
         ParentMaterialIndex = parentMaterialIndex;
         MaterialName = materialName;
         Positions = Array.AsReadOnly(positions.ToArray());
+        SkinningVertices = skinningVertices is null
+            ? null
+            : Array.AsReadOnly(skinningVertices.ToArray());
         Indices = Array.AsReadOnly(indices.ToArray());
         CollisionIndices = Array.AsReadOnly(collisionIndices.ToArray());
         Bounds = bounds;
@@ -139,6 +155,8 @@ public sealed class XModelRenderSurface
 
     public IReadOnlyList<Vector3> Positions { get; }
 
+    internal bool HasCompleteSkinning => SkinningVertices is not null;
+
     public IReadOnlyList<uint> Indices { get; }
     public IReadOnlyList<uint> CollisionIndices { get; }
 
@@ -155,7 +173,20 @@ public sealed class XModelRenderSurface
     public string AuthoredMaterialStatus { get; }
 
     internal IReadOnlyList<XModelRenderAuthoredPass> AuthoredPasses { get; }
+
+    internal IReadOnlyList<XModelRenderSkinningVertex>?
+        SkinningVertices { get; }
 }
+
+internal readonly record struct XModelRenderBoneInfluence(
+    int BoneIndex,
+    float Weight);
+
+internal sealed record XModelRenderSkinningVertex(
+    Vector3 BindPosition,
+    Vector3 BindNormal,
+    Vector3 BindTangent,
+    XModelRenderBoneInfluence[] Influences);
 
 internal sealed class XModelRenderAuthoredPass
 {

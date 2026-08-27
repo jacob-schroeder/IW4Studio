@@ -9,6 +9,7 @@ using IW4.Render.Materials;
 using IW4.Render.OpenGl.Programs;
 using IW4.Render.Shaders;
 using IW4.Render.Textures;
+using IW4.Render.Transforms;
 using Texture = IW4.Render.Textures.Texture;
 using TextureTarget = Silk.NET.OpenGL.TextureTarget;
 using RenderTextureTarget = IW4.Render.Textures.TextureTarget;
@@ -79,8 +80,14 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private readonly int _wireframeColorLocation;
     private readonly List<MapRenderEditorDrawGroup<AuthoredDraw>>
         _drawGroups = [];
+    private readonly Dictionary<
+        XModelRenderSurface,
+        SurfaceSkinningRuntime> _skinningBySurface =
+            new(ReferenceEqualityComparer.Instance);
     private WireframeGeometry _wireframe;
     private WireframeGeometry _collisionWireframe;
+    private XAnimPreviewPose? _appliedAnimationPose;
+    private bool _hasAppliedAnimationPose;
     private uint _neutralModelLightingAtlas;
     private uint _viewerReflectionEnvironment;
     private bool? _viewerReflectionEnvironmentStudioEnabled;
@@ -140,6 +147,18 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         DeleteUploadedResources();
         if (lod is null || lod.Surfaces.Count == 0)
             return new XModelViewerUploadResult(0, 0, []);
+
+        foreach (XModelRenderSurface surface in lod.Surfaces)
+        {
+            if (surface.SkinningVertices is { } skinning)
+            {
+                _skinningBySurface.Add(
+                    surface,
+                    new SurfaceSkinningRuntime(
+                        surface,
+                        new SkinnedVertex[skinning.Count]));
+            }
+        }
 
         var diagnostics = new List<string>();
         int executableGroups = 0;
@@ -245,10 +264,47 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             throw;
         }
 
+        _appliedAnimationPose = null;
+        _hasAppliedAnimationPose = true;
         return new XModelViewerUploadResult(
             executableGroups,
             blockedGroups,
             diagnostics);
+    }
+
+    /// <summary>
+    /// Applies one game-space XAnim skinning palette to the retained preview
+    /// buffers. A null or incompatible pose restores the bind-pose payload.
+    /// </summary>
+    public void UpdateAnimationPose(XAnimPreviewPose? pose)
+    {
+        ThrowIfDisposed();
+        if (_hasAppliedAnimationPose &&
+            ReferenceEquals(_appliedAnimationPose, pose))
+        {
+            return;
+        }
+
+        UpdateDeformedVertices(pose);
+        foreach (MapRenderEditorDrawGroup<AuthoredDraw> group in _drawGroups)
+        {
+            foreach (AuthoredDraw draw in group.AuthoredPasses)
+            {
+                _skinningBySurface.TryGetValue(
+                    draw.Surface,
+                    out SurfaceSkinningRuntime? skinning);
+                UpdateAuthoredDraw(
+                    draw,
+                    skinning is { IsDeformed: true }
+                        ? skinning.DeformedVertices
+                        : null);
+            }
+        }
+
+        UpdateWireframe(_wireframe);
+        UpdateWireframe(_collisionWireframe);
+        _appliedAnimationPose = pose;
+        _hasAppliedAnimationPose = true;
     }
 
     /// <summary>
@@ -775,11 +831,14 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         XModelRenderSurface surface,
         PreparedPass prepared)
     {
+        float[] bindRsxVertexInputs =
+            prepared.Packet.RsxVertexInputs.ToArray();
+        float[] rsxVertexInputs = bindRsxVertexInputs.ToArray();
         float[] packed = new float[
             prepared.Layout.PackedFloatCount(
-                prepared.Packet.RsxVertexInputs.Length)];
+                rsxVertexInputs.Length)];
         prepared.Layout.Pack(
-            prepared.Packet.RsxVertexInputs,
+            rsxVertexInputs,
             packed);
         uint vertexArray = 0;
         uint vertexBuffer = 0;
@@ -797,7 +856,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     BufferTargetARB.ArrayBuffer,
                     checked((nuint)(packed.Length * sizeof(float))),
                     vertexPointer,
-                    BufferUsageARB.StaticDraw);
+                    surface.HasCompleteSkinning
+                        ? BufferUsageARB.DynamicDraw
+                        : BufferUsageARB.StaticDraw);
             }
             _gl.BindBuffer(
                 BufferTargetARB.ElementArrayBuffer,
@@ -835,6 +896,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 
             return new AuthoredDraw(
                 prepared.Packet.GroupId,
+                surface,
+                prepared.Layout,
+                prepared.Packet.ShaderExecution.VertexInputs.ToArray(),
+                bindRsxVertexInputs,
+                rsxVertexInputs,
+                packed,
                 vertexArray,
                 vertexBuffer,
                 indexBuffer,
@@ -867,6 +934,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             (collisionOnly ? surface.CollisionIndices : surface.Indices).Count));
         if (vertexCount == 0 || triangleIndexCount == 0)
             return default;
+
+        bool hasSkinnedSurfaces =
+            surfaces.Any(surface => surface.HasCompleteSkinning);
 
         var positions = new float[checked(vertexCount * 3)];
         var edges = new uint[checked(triangleIndexCount * 2)];
@@ -919,7 +989,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                     BufferTargetARB.ArrayBuffer,
                     checked((nuint)(positions.Length * sizeof(float))),
                     vertexPointer,
-                    BufferUsageARB.StaticDraw);
+                    hasSkinnedSurfaces
+                        ? BufferUsageARB.DynamicDraw
+                        : BufferUsageARB.StaticDraw);
             }
             _gl.BindBuffer(
                 BufferTargetARB.ElementArrayBuffer,
@@ -946,7 +1018,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 vertexArray,
                 vertexBuffer,
                 indexBuffer,
-                checked((uint)edges.Length));
+                checked((uint)edges.Length),
+                positions,
+                surfaces.ToArray(),
+                hasSkinnedSurfaces);
         }
         catch
         {
@@ -959,6 +1034,211 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             throw;
         }
     }
+
+    private void UpdateDeformedVertices(XAnimPreviewPose? pose)
+    {
+        foreach (SurfaceSkinningRuntime runtime in
+                 _skinningBySurface.Values)
+        {
+            IReadOnlyList<XModelRenderSkinningVertex>? skinning =
+                runtime.Surface.SkinningVertices;
+            runtime.IsDeformed = false;
+            if (pose is null ||
+                pose.SkinningPalette.Count == 0 ||
+                skinning is null)
+            {
+                continue;
+            }
+
+            bool complete = true;
+            for (int vertexIndex = 0;
+                 vertexIndex < skinning.Count;
+                 vertexIndex++)
+            {
+                if (!TrySkinVertex(
+                        skinning[vertexIndex],
+                        pose.SkinningPalette,
+                        out runtime.DeformedVertices[vertexIndex]))
+                {
+                    complete = false;
+                    break;
+                }
+            }
+
+            runtime.IsDeformed = complete;
+        }
+    }
+
+    private static bool TrySkinVertex(
+        XModelRenderSkinningVertex source,
+        IReadOnlyList<Matrix4x4> palette,
+        out SkinnedVertex deformed)
+    {
+        deformed = default;
+        if (source.Influences.Length == 0)
+            return false;
+
+        Vector3 position = Vector3.Zero;
+        Vector3 normal = Vector3.Zero;
+        Vector3 tangent = Vector3.Zero;
+        foreach (XModelRenderBoneInfluence influence in source.Influences)
+        {
+            if ((uint)influence.BoneIndex >= (uint)palette.Count ||
+                !float.IsFinite(influence.Weight) ||
+                influence.Weight < 0f)
+            {
+                return false;
+            }
+
+            Matrix4x4 transform = palette[influence.BoneIndex];
+            position += Vector3.Transform(source.BindPosition, transform) *
+                influence.Weight;
+            normal += Vector3.TransformNormal(source.BindNormal, transform) *
+                influence.Weight;
+            tangent += Vector3.TransformNormal(source.BindTangent, transform) *
+                influence.Weight;
+        }
+
+        if (!IsFinite(position) ||
+            !TryNormalize(normal, out normal) ||
+            !TryNormalize(tangent, out tangent))
+        {
+            return false;
+        }
+
+        deformed = new SkinnedVertex(position, normal, tangent);
+        return true;
+    }
+
+    private void UpdateAuthoredDraw(
+        AuthoredDraw draw,
+        SkinnedVertex[]? deformed)
+    {
+        if (!draw.Surface.HasCompleteSkinning)
+            return;
+
+        Array.Copy(
+            draw.BindRsxVertexInputs,
+            draw.RsxVertexInputs,
+            draw.BindRsxVertexInputs.Length);
+        if (deformed is not null)
+        {
+            for (int vertexIndex = 0;
+                 vertexIndex < deformed.Length;
+                 vertexIndex++)
+            {
+                SkinnedVertex vertex = deformed[vertexIndex];
+                foreach (ShaderVertexInputBinding binding in
+                         draw.VertexInputs)
+                {
+                    Vector3 value;
+                    if (binding.IsDisabledDefaultAttribute)
+                        continue;
+                    switch (binding.Source)
+                    {
+                        case MaterialStreamSource.Position:
+                            value = vertex.Position;
+                            break;
+                        case MaterialStreamSource.Normal:
+                            value = vertex.Normal;
+                            break;
+                        case MaterialStreamSource.Tangent:
+                            value = vertex.Tangent;
+                            break;
+                        default:
+                            continue;
+                    }
+
+                    int destination = (byte)binding.Destination;
+                    int offset = checked(
+                        vertexIndex *
+                            OpenGlPackedRsxVertexLayout.SourceFloatStride +
+                        destination *
+                            OpenGlPackedRsxVertexLayout.AttributeFloatCount);
+                    draw.RsxVertexInputs[offset] = value.X;
+                    draw.RsxVertexInputs[offset + 1] = value.Y;
+                    draw.RsxVertexInputs[offset + 2] = value.Z;
+                }
+            }
+        }
+
+        draw.Layout.Pack(draw.RsxVertexInputs, draw.PackedVertexInputs);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, draw.VertexBuffer);
+        fixed (float* vertexPointer = draw.PackedVertexInputs)
+        {
+            _gl.BufferSubData(
+                BufferTargetARB.ArrayBuffer,
+                0,
+                checked((nuint)(
+                    draw.PackedVertexInputs.Length * sizeof(float))),
+                vertexPointer);
+        }
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+    }
+
+    private void UpdateWireframe(
+        WireframeGeometry geometry)
+    {
+        if (geometry.IndexCount == 0 || !geometry.HasSkinnedSurfaces)
+            return;
+
+        int vertexOffset = 0;
+        foreach (XModelRenderSurface surface in geometry.Surfaces)
+        {
+            bool hasDeformed = _skinningBySurface.TryGetValue(
+                surface,
+                out SurfaceSkinningRuntime? skinning) &&
+                skinning.IsDeformed;
+            for (int vertexIndex = 0;
+                 vertexIndex < surface.Positions.Count;
+                 vertexIndex++)
+            {
+                Vector3 position = hasDeformed
+                    ? RenderCoordinateConverter.GameToRenderPosition(
+                        skinning!.DeformedVertices[vertexIndex].Position)
+                    : surface.Positions[vertexIndex];
+                int destination = checked(
+                    (vertexOffset + vertexIndex) * 3);
+                geometry.Positions[destination] = position.X;
+                geometry.Positions[destination + 1] = position.Y;
+                geometry.Positions[destination + 2] = position.Z;
+            }
+            vertexOffset = checked(
+                vertexOffset + surface.Positions.Count);
+        }
+
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, geometry.VertexBuffer);
+        fixed (float* vertexPointer = geometry.Positions)
+        {
+            _gl.BufferSubData(
+                BufferTargetARB.ArrayBuffer,
+                0,
+                checked((nuint)(geometry.Positions.Length * sizeof(float))),
+                vertexPointer);
+        }
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+    }
+
+    private static bool TryNormalize(
+        Vector3 value,
+        out Vector3 normalized)
+    {
+        normalized = default;
+        float lengthSquared = value.LengthSquared();
+        if (!float.IsFinite(lengthSquared) ||
+            lengthSquared <= float.Epsilon)
+        {
+            return false;
+        }
+
+        normalized = value / MathF.Sqrt(lengthSquared);
+        return IsFinite(normalized);
+    }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z);
 
     private void ConfigureRsxVertexAttributes(
         OpenGlPackedRsxVertexLayout layout)
@@ -1656,6 +1936,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 DeleteAuthoredDraw(draw);
         }
         _drawGroups.Clear();
+        _skinningBySurface.Clear();
+        _appliedAnimationPose = null;
+        _hasAppliedAnimationPose = false;
         foreach (uint texture in _textureHandles.Values.Distinct())
             _gl.DeleteTexture(texture);
         _textureHandles.Clear();
@@ -1725,8 +2008,14 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         ShaderRuntimeSamplerRequirement[]
             RuntimeSamplerRequirements);
 
-    private readonly record struct AuthoredDraw(
+    private sealed record AuthoredDraw(
         int GroupId,
+        XModelRenderSurface Surface,
+        OpenGlPackedRsxVertexLayout Layout,
+        ShaderVertexInputBinding[] VertexInputs,
+        float[] BindRsxVertexInputs,
+        float[] RsxVertexInputs,
+        float[] PackedVertexInputs,
         uint VertexArray,
         uint VertexBuffer,
         uint IndexBuffer,
@@ -1738,11 +2027,31 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         ShaderRuntimeSamplerRequirement[]
             RuntimeSamplerRequirements);
 
+    private sealed class SurfaceSkinningRuntime(
+        XModelRenderSurface surface,
+        SkinnedVertex[] deformedVertices)
+    {
+        internal XModelRenderSurface Surface { get; } = surface;
+
+        internal SkinnedVertex[] DeformedVertices { get; } =
+            deformedVertices;
+
+        internal bool IsDeformed { get; set; }
+    }
+
     private readonly record struct WireframeGeometry(
         uint VertexArray,
         uint VertexBuffer,
         uint IndexBuffer,
-        uint IndexCount);
+        uint IndexCount,
+        float[] Positions,
+        XModelRenderSurface[] Surfaces,
+        bool HasSkinnedSurfaces);
+
+    private readonly record struct SkinnedVertex(
+        Vector3 Position,
+        Vector3 Normal,
+        Vector3 Tangent);
 
     private const string CheckerboardVertexShaderSource = """
         #version 330 core

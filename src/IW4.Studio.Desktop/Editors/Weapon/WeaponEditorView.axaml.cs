@@ -73,7 +73,11 @@ public sealed partial class WeaponEditorView : UserControl
         {
             if (_preview is not null) _preview.RendererStatusChanged -= Preview_RendererStatusChanged;
             _boneTagOverlay?.Detach();
-            if (DataContext is WeaponEditorViewModel vm) vm.AssetReferenceSelectionRequested -= ViewModel_AssetReferenceSelectionRequested;
+            if (DataContext is WeaponEditorViewModel vm)
+            {
+                vm.AssetReferenceSelectionRequested -= ViewModel_AssetReferenceSelectionRequested;
+                vm.PauseAnimationPreview();
+            }
             _isAttached = false;
         }
         base.OnDetachedFromVisualTree(e);
@@ -86,6 +90,35 @@ public sealed partial class WeaponEditorView : UserControl
     }
 
     private void FitButton_Click(object? sender, RoutedEventArgs e) => _preview?.Fit();
+
+    private void PreviewAnimationButton_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (sender is Control
+            {
+                DataContext: InspectorAssetReferencePropertyRowViewModel row
+            } &&
+            DataContext is WeaponEditorViewModel viewModel)
+        {
+            viewModel.PreviewAnimation(row);
+        }
+    }
+
+    private void AnimationPlayPauseButton_Click(
+        object? sender,
+        RoutedEventArgs e) =>
+        (DataContext as WeaponEditorViewModel)?.ToggleAnimationPreview();
+
+    private void AnimationRestartButton_Click(
+        object? sender,
+        RoutedEventArgs e) =>
+        (DataContext as WeaponEditorViewModel)?.RestartAnimationPreview();
+
+    private void AnimationStopButton_Click(
+        object? sender,
+        RoutedEventArgs e) =>
+        (DataContext as WeaponEditorViewModel)?.StopAnimationPreview();
 
     private void ToggleCamoEditorButton_Click(
         object? sender,

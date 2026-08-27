@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.AssetExchange.XModel;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
@@ -65,6 +66,7 @@ public sealed class XModelSceneBuilder
                 parentMaterialIndex: 0,
                 materialName,
                 sphere,
+                boneCount: 0,
                 selectedTechniqueSlot: -1,
                 selectedTechniqueName: string.Empty,
                 [],
@@ -86,6 +88,7 @@ public sealed class XModelSceneBuilder
                 parentMaterialIndex: 0,
                 materialName,
                 sphere,
+                boneCount: 0,
                 material,
                 canonicalBinding.TechniqueSet,
                 selectedTechnique,
@@ -232,6 +235,7 @@ public sealed class XModelSceneBuilder
                         parentMaterialIndex,
                         loadedMaterialName,
                         blockedSurface,
+                        model.NumBones,
                         selectedTechniqueSlot: -1,
                         selectedTechniqueName: string.Empty,
                         [],
@@ -262,6 +266,7 @@ public sealed class XModelSceneBuilder
                     parentMaterialIndex,
                     loadedMaterialName,
                     surface,
+                    model.NumBones,
                     material,
                     techniqueSet,
                     selectedTechnique,
@@ -317,6 +322,7 @@ public sealed class XModelSceneBuilder
         int parentMaterialIndex,
         string materialName,
         XSurface surface,
+        int boneCount,
         MaterialAsset material,
         MaterialTechniqueSetAsset techniqueSet,
         AuthoredCameraColorTechniqueSelection selectedTechnique,
@@ -340,6 +346,7 @@ public sealed class XModelSceneBuilder
                 parentMaterialIndex,
                 materialName,
                 surface,
+                boneCount,
                 selectedTechnique.TechniqueSlot,
                 selectedTechnique.TechniqueName,
                 [],
@@ -465,6 +472,7 @@ public sealed class XModelSceneBuilder
             parentMaterialIndex,
             materialName,
             surface,
+            boneCount,
             selectedTechnique.TechniqueSlot,
             selectedTechnique.TechniqueName,
             packets,
@@ -480,6 +488,7 @@ public sealed class XModelSceneBuilder
         int parentMaterialIndex,
         string materialName,
         XSurface surface,
+        int boneCount,
         int selectedTechniqueSlot,
         string selectedTechniqueName,
         IReadOnlyList<XModelRenderAuthoredPass> authoredPasses,
@@ -495,6 +504,7 @@ public sealed class XModelSceneBuilder
                 $"surface {geometrySurfaceIndex} declares no geometry");
         }
 
+        var gamePositions = new Vector3[surface.VertCount];
         var decodedPositions = new Vector3[surface.VertCount];
         var decodedVertices = new bool[surface.VertCount];
         for (int vertexIndex = 0;
@@ -508,6 +518,7 @@ public sealed class XModelSceneBuilder
             {
                 continue;
             }
+            gamePositions[vertexIndex] = gamePosition;
             decodedPositions[vertexIndex] = ToRenderCoordinates(gamePosition);
             decodedVertices[vertexIndex] = true;
         }
@@ -515,6 +526,39 @@ public sealed class XModelSceneBuilder
         IReadOnlyList<int> retainedSourceVertices =
             ResolveRetainedSourceVertices(surface);
         var positions = new List<Vector3>(retainedSourceVertices.Count);
+        List<XModelRenderSkinningVertex>? skinningVertices = null;
+        XSurfaceVertexDecoder? basisDecoder = null;
+        IReadOnlyList<IReadOnlyList<XModelExportBoneWeight>> sourceWeights =
+            [];
+        if (boneCount > 0)
+        {
+            bool weightsReady;
+            try
+            {
+                weightsReady = XModelSurfaceSkinningProjector.TryProject(
+                    surface,
+                    boneCount,
+                    out sourceWeights,
+                    out _);
+            }
+            catch (OverflowException)
+            {
+                weightsReady = false;
+            }
+
+            if (!weightsReady)
+            {
+                sourceWeights = [];
+            }
+            else if (XSurfaceVertexDecoder.TryCreate(
+                         XSurfaceVertexDecoder.DefaultTexCoordSource,
+                         out basisDecoder) &&
+                     basisDecoder is not null)
+            {
+                skinningVertices = new List<XModelRenderSkinningVertex>(
+                    retainedSourceVertices.Count);
+            }
+        }
         var projectedIndexBySource = new int[surface.VertCount];
         Array.Fill(projectedIndexBySource, -1);
         foreach (int sourceIndex in retainedSourceVertices)
@@ -523,6 +567,34 @@ public sealed class XModelSceneBuilder
                 continue;
             projectedIndexBySource[sourceIndex] = positions.Count;
             positions.Add(decodedPositions[sourceIndex]);
+            if (skinningVertices is not null)
+            {
+                if (!basisDecoder!.TryReadNormal(
+                        surface,
+                        sourceIndex,
+                        out Vector3 bindNormal) ||
+                    !basisDecoder.TryReadTangent(
+                        surface,
+                        sourceIndex,
+                        out Vector3 bindTangent) ||
+                    (uint)sourceIndex >= (uint)sourceWeights.Count)
+                {
+                    skinningVertices = null;
+                    continue;
+                }
+
+                XModelRenderBoneInfluence[] influences =
+                    sourceWeights[sourceIndex]
+                        .Select(weight => new XModelRenderBoneInfluence(
+                            weight.BoneIndex,
+                            weight.Weight))
+                        .ToArray();
+                skinningVertices.Add(new XModelRenderSkinningVertex(
+                    gamePositions[sourceIndex],
+                    bindNormal,
+                    bindTangent,
+                    influences));
+            }
         }
 
         var indices = new List<uint>(surface.TriCount * 3);
@@ -611,6 +683,7 @@ public sealed class XModelSceneBuilder
             parentMaterialIndex,
             materialName,
             positions,
+            skinningVertices,
             indices,
             collisionIndices,
             visibleBounds,

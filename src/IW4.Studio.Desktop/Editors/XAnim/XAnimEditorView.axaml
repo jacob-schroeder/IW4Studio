@@ -1,0 +1,253 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:preview="using:IW4.Render.EditorPreview"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             xmlns:xanim="using:IW4.Studio.Desktop.Editors.XAnim"
+             x:Class="IW4.Studio.Desktop.Editors.XAnim.XAnimEditorView"
+             x:DataType="viewModels:XAnimPreviewViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1080"
+             d:DesignHeight="720">
+  <Grid RowDefinitions="Auto,12,*">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock Text="{Binding BoneCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding FrameCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding FramerateText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding LoopText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Column="1"
+                Padding="9,4"
+                VerticalAlignment="Center"
+                CornerRadius="4"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <TextBlock Text="PREVIEW ONLY"
+                     FontSize="9"
+                     FontWeight="SemiBold"
+                     LetterSpacing="0.5"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            MinHeight="430"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="50,1,*,1,78">
+        <Grid Margin="14,0"
+              ColumnDefinitions="Auto,12,260,14,*"
+              VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal"
+                      VerticalAlignment="Center"
+                      Spacing="7">
+            <materialIcons:MaterialIcon Kind="HumanMale"
+                                        Width="16"
+                                        Height="16"
+                                        Foreground="{DynamicResource StudioAccentBrush}" />
+            <TextBlock Text="XANIM PREVIEW"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       FontWeight="Bold"
+                       LetterSpacing="0.8"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </StackPanel>
+
+          <ComboBox Grid.Column="2"
+                    MinHeight="30"
+                    IsVisible="{Binding HasPreviewScene}"
+                    IsEnabled="{Binding HasMultipleScenes}"
+                    ItemsSource="{Binding Scenes}"
+                    SelectedItem="{Binding SelectedScene, Mode=TwoWay}"
+                    ToolTip.Tip="Select the loaded XModel skeleton used for this preview">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="preview:XAnimPreviewScene">
+                <TextBlock Text="{Binding ModelName}"
+                           TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+
+          <TextBlock Grid.Column="4"
+                     Text="{Binding SelectedSceneSummary}"
+                     VerticalAlignment="Center"
+                     HorizontalAlignment="Right"
+                     FontSize="9"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </Grid>
+
+        <Border Grid.Row="1"
+                Background="{DynamicResource StudioBorderBrush}" />
+
+        <Grid Grid.Row="2">
+          <xanim:XAnimSkeletonPreviewControl Scene="{Binding SelectedScene}"
+                                                   Pose="{Binding Pose}" />
+
+          <Border MaxWidth="560"
+                  Margin="24"
+                  Padding="18,14"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  IsVisible="{Binding !HasPreviewScene}"
+                  CornerRadius="7"
+                  Background="#E6262A31"
+                  BorderBrush="#506D7683"
+                  BorderThickness="1">
+            <StackPanel Spacing="7">
+              <materialIcons:MaterialIcon Kind="HumanMale"
+                                          Width="28"
+                                          Height="28"
+                                          HorizontalAlignment="Center"
+                                          Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <TextBlock Text="{Binding PreviewUnavailableTitle}"
+                         HorizontalAlignment="Center"
+                         FontSize="11"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+              <TextBlock Text="{Binding PreviewUnavailableReason}"
+                         HorizontalAlignment="Center"
+                         TextAlignment="Center"
+                         TextWrapping="Wrap"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </StackPanel>
+          </Border>
+
+          <Border Margin="12"
+                  Padding="8,4"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  IsVisible="{Binding HasPreviewScene}"
+                  CornerRadius="4"
+                  IsHitTestVisible="False"
+                  Background="#C816191F"
+                  BorderBrush="#506D7683"
+                  BorderThickness="1">
+            <TextBlock Text="GREEN · ANIMATED TRACK   GRAY · BIND POSE"
+                       FontSize="8"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.35"
+                       Foreground="#CDD5DF" />
+          </Border>
+        </Grid>
+
+        <Border Grid.Row="3"
+                Background="{DynamicResource StudioBorderBrush}" />
+
+        <Grid Grid.Row="4"
+              Margin="14,10"
+              ColumnDefinitions="Auto,8,Auto,16,*,16,Auto"
+              VerticalAlignment="Center">
+          <Button Width="38"
+                  Height="38"
+                  MinWidth="38"
+                  MinHeight="38"
+                  Padding="0"
+                  CornerRadius="19"
+                  Classes="primary"
+                  IsEnabled="{Binding CanPlay}"
+                  ToolTip.Tip="{Binding PlayPauseToolTip}"
+                  Click="PlayPauseButton_Click">
+            <Grid>
+              <materialIcons:MaterialIcon Kind="PlayCircleOutline"
+                                          Width="21"
+                                          Height="21"
+                                          IsVisible="{Binding ShowPlayIcon}" />
+              <materialIcons:MaterialIcon Kind="PauseCircleOutline"
+                                          Width="21"
+                                          Height="21"
+                                          IsVisible="{Binding ShowPauseIcon}" />
+            </Grid>
+          </Button>
+
+          <Button Grid.Column="2"
+                  Width="38"
+                  Height="38"
+                  MinWidth="38"
+                  MinHeight="38"
+                  Padding="0"
+                  CornerRadius="19"
+                  Classes="ghost"
+                  IsEnabled="{Binding CanRestart}"
+                  ToolTip.Tip="Restart animation preview"
+                  Click="RestartButton_Click">
+            <materialIcons:MaterialIcon Kind="Restart"
+                                        Width="19"
+                                        Height="19" />
+          </Button>
+
+          <Grid Grid.Column="4"
+                RowDefinitions="Auto,7,Auto">
+            <ProgressBar Height="5"
+                         Minimum="0"
+                         Maximum="1"
+                         Value="{Binding Progress}" />
+            <TextBlock Grid.Row="2"
+                       Text="{Binding PlaybackStatus}"
+                       FontSize="9"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Grid>
+
+          <StackPanel Grid.Column="6"
+                      MinWidth="150"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Right"
+                      Spacing="2">
+            <TextBlock Text="{Binding CurrentFrameText}"
+                       HorizontalAlignment="Right"
+                       FontFamily="Consolas"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextBrush}" />
+            <TextBlock Text="{Binding TimeText}"
+                       HorizontalAlignment="Right"
+                       FontFamily="Consolas"
+                       FontSize="9"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

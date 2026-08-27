@@ -1056,6 +1056,7 @@ public sealed class InspectorAssetReferencePropertyRowViewModel
 
             OnPropertyChanged(nameof(DisplayName));
             OnPropertyChanged(nameof(CanClear));
+            OnPropertyChanged(nameof(CanPreviewAnimation));
             ClearCommand.RaiseCanExecuteChanged();
         }
     }
@@ -1068,6 +1069,10 @@ public sealed class InspectorAssetReferencePropertyRowViewModel
     public bool CanBrowse => IsEditable && _requestSelection is not null;
 
     public bool CanClear => IsEditable && !string.IsNullOrEmpty(AssetName);
+
+    public bool CanPreviewAnimation =>
+        AssetType == XAssetType.XAnim &&
+        !string.IsNullOrWhiteSpace(AssetName);
 
     public ViewModelCommand BrowseCommand { get; }
 
