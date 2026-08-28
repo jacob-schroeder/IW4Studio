@@ -244,7 +244,9 @@ internal static class MaterialImportedImageCompiler
             BaseHeight = checked((ushort)topLevel.Height),
             BaseDepth = imageDepth,
             BaseLevelCount = levelCount,
-            Cached = GfxImageCached.Auto,
+            // Inline fastfile pixels are zone-owned; cached images enter the
+            // engine's independent card-memory release path during unload.
+            Cached = GfxImageCached.No,
             PayloadByteCount = payload.Length,
             PayloadBytes = payload,
             Name = imageName
