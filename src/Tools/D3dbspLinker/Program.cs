@@ -48,21 +48,141 @@ static int ToFastFile(
     string output,
     IReadOnlyList<string> optionsAndDependencies)
 {
-    int fullbrightOptionCount = optionsAndDependencies.Count(
-        value => string.Equals(value, "--fullbright", StringComparison.Ordinal));
-    if (fullbrightOptionCount > 1)
-        throw new ArgumentException("The --fullbright option may be supplied only once.");
-    string[] dependencies = optionsAndDependencies
-        .Where(value => !string.Equals(value, "--fullbright", StringComparison.Ordinal))
-        .ToArray();
+    bool forceFullbright = false;
+    var dependencies = new List<string>();
+    var providerFastFiles = new List<string>();
+    var distinctProviderFastFiles = new HashSet<string>(StringComparer.Ordinal);
+    var additionalXModelNames = new List<string>();
+    var distinctXModelNames = new HashSet<string>(StringComparer.Ordinal);
+    var additionalMaterialNames = new List<string>();
+    var distinctMaterialNames = new HashSet<string>(StringComparer.Ordinal);
+    var additionalFxNames = new List<string>();
+    var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
+    var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
+    for (int index = 0; index < optionsAndDependencies.Count; index++)
+    {
+        string value = optionsAndDependencies[index];
+        if (string.Equals(value, "--fullbright", StringComparison.Ordinal))
+        {
+            if (forceFullbright)
+                throw new ArgumentException("The --fullbright option may be supplied only once.");
+            forceFullbright = true;
+            continue;
+        }
+        if (string.Equals(value, "--xmodel", StringComparison.Ordinal))
+        {
+            string name = ReadRequiredOptionValue(
+                optionsAndDependencies,
+                ref index,
+                "--xmodel",
+                "an exact XModel name");
+            if (!distinctXModelNames.Add(name))
+            {
+                throw new ArgumentException(
+                    $"The --xmodel option names XModel '{name}' more than once.");
+            }
+            additionalXModelNames.Add(name);
+            continue;
+        }
+        if (string.Equals(value, "--material", StringComparison.Ordinal))
+        {
+            string name = ReadRequiredOptionValue(
+                optionsAndDependencies,
+                ref index,
+                "--material",
+                "an exact Material name");
+            if (!distinctMaterialNames.Add(name))
+            {
+                throw new ArgumentException(
+                    $"The --material option names Material '{name}' more than once.");
+            }
+            additionalMaterialNames.Add(name);
+            continue;
+        }
+        if (string.Equals(value, "--provider-fastfile", StringComparison.Ordinal))
+        {
+            string path = ReadRequiredOptionValue(
+                optionsAndDependencies,
+                ref index,
+                "--provider-fastfile",
+                "a provider-only fastfile path");
+            if (!distinctProviderFastFiles.Add(path))
+            {
+                throw new ArgumentException(
+                    $"The --provider-fastfile option names '{path}' more than once.");
+            }
+            providerFastFiles.Add(path);
+            continue;
+        }
+        if (string.Equals(value, "--fx", StringComparison.Ordinal))
+        {
+            string name = ReadRequiredOptionValue(
+                optionsAndDependencies,
+                ref index,
+                "--fx",
+                "an exact FxEffectDef name");
+            if (!distinctFxNames.Add(name))
+            {
+                throw new ArgumentException(
+                    $"The --fx option names FxEffectDef '{name}' more than once.");
+            }
+            additionalFxNames.Add(name);
+            continue;
+        }
+        if (string.Equals(value, "--rawfile", StringComparison.Ordinal))
+        {
+            string mapping = ReadRequiredOptionValue(
+                optionsAndDependencies,
+                ref index,
+                "--rawfile",
+                "a wire-name=source-path mapping");
+            int separator = mapping.IndexOf('=');
+            if (separator <= 0 || separator == mapping.Length - 1)
+            {
+                throw new ArgumentException(
+                    "The --rawfile option requires a wire-name=source-path mapping.");
+            }
+            string name = mapping[..separator];
+            string path = mapping[(separator + 1)..];
+            if (!rawFilePaths.TryAdd(name, path))
+            {
+                throw new ArgumentException(
+                    $"The --rawfile option maps RawFile '{name}' more than once.");
+            }
+            continue;
+        }
+        dependencies.Add(value);
+    }
+
     FastFileConverter.FromD3dbsp(
         d3dbsp,
         template,
         assetName,
         output,
-        forceFullbright: fullbrightOptionCount == 1,
-        dependencies);
+        forceFullbright,
+        dependencies,
+        providerFastFiles,
+        additionalXModelNames,
+        additionalMaterialNames,
+        additionalFxNames,
+        rawFilePaths);
     return 0;
+}
+
+static string ReadRequiredOptionValue(
+    IReadOnlyList<string> arguments,
+    ref int index,
+    string option,
+    string valueDescription)
+{
+    if (++index >= arguments.Count ||
+        arguments[index].StartsWith("--", StringComparison.Ordinal))
+    {
+        throw new ArgumentException(
+            $"The {option} option requires {valueDescription}.");
+    }
+
+    return arguments[index];
 }
 
 static int ToD3dbsp(string fastFile, string output)
@@ -134,7 +254,7 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [--provider-fastfile <provider-only.ff>]... [--xmodel <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
     Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
     return 2;
 }

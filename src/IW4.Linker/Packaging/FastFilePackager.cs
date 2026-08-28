@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Numerics;
 using System.Text;
 using IW4.Assets.Assets.Image;
@@ -97,7 +98,8 @@ public sealed class FastFilePackager
         {
             PackedStream packedStream = PackedStreamEncoder.Encode(
                 decodedZone.Span,
-                policy.EmitDoubleTerminator ? 2 : 1);
+                policy.EmitDoubleTerminator ? 2 : 1,
+                CompressionLevel.SmallestSize);
             int headerLength = ComputeHeaderLength(envelope);
             int trailingPhysicalBytes = policy.EmitDoubleTerminator ? sizeof(ushort) : 0;
             uint fileSize = checked((uint)(

@@ -25,12 +25,24 @@ internal static class PackageFormat
 
 internal sealed class PackedStream
 {
-    public PackedStream(byte[] bytes)
+    public PackedStream(
+        byte[] bytes,
+        IEnumerable<PackedStreamPage> pages)
     {
         Bytes = bytes ?? throw new ArgumentNullException(nameof(bytes));
+        Pages = Array.AsReadOnly((pages ?? throw new ArgumentNullException(nameof(pages)))
+            .ToArray());
     }
 
     public byte[] Bytes { get; }
+    public IReadOnlyList<PackedStreamPage> Pages { get; }
+}
+
+internal readonly record struct PackedStreamPage(
+    int EncodedOffset,
+    int EncodedByteCount)
+{
+    public int EncodedEnd => checked(EncodedOffset + EncodedByteCount);
 }
 
 /// <summary>
@@ -46,33 +58,41 @@ internal static class PackedStreamEncoder
 
     public static PackedStream Encode(
         ReadOnlySpan<byte> logicalBytes,
-        int terminatorCount)
+        int terminatorCount,
+        CompressionLevel compressionLevel)
     {
         if (terminatorCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(terminatorCount));
 
         using var output = new MemoryStream();
+        var pages = new List<PackedStreamPage>();
         int offset = 0;
         while (offset < logicalBytes.Length)
         {
             ReadOnlySpan<byte> page = logicalBytes.Slice(
                 offset,
                 Math.Min(LogicalPageSize, logicalBytes.Length - offset));
-            WriteLogicalPage(output, page);
+            int encodedOffset = checked((int)output.Position);
+            WriteLogicalPage(output, page, compressionLevel);
+            int encodedEnd = checked((int)output.Position);
+            pages.Add(new PackedStreamPage(
+                encodedOffset,
+                checked(encodedEnd - encodedOffset)));
             offset = checked(offset + page.Length);
         }
 
         for (int index = 0; index < terminatorCount; index++)
             WriteUInt16(output, TerminatorWord);
 
-        return new PackedStream(output.ToArray());
+        return new PackedStream(output.ToArray(), pages);
     }
 
     private static void WriteLogicalPage(
         Stream output,
-        ReadOnlySpan<byte> page)
+        ReadOnlySpan<byte> page,
+        CompressionLevel compressionLevel)
     {
-        byte[] compressed = EncodeHeaderlessZlib(page);
+        byte[] compressed = EncodeHeaderlessZlib(page, compressionLevel);
         if (compressed.Length is > 1 and <= ushort.MaxValue)
         {
             WriteUInt16(output, checked((ushort)compressed.Length));
@@ -89,12 +109,14 @@ internal static class PackedStreamEncoder
             "A partial decoded page cannot be represented by one PS3 packed frame.");
     }
 
-    private static byte[] EncodeHeaderlessZlib(ReadOnlySpan<byte> input)
+    private static byte[] EncodeHeaderlessZlib(
+        ReadOnlySpan<byte> input,
+        CompressionLevel compressionLevel)
     {
         using var buffer = new MemoryStream();
         using (var compressor = new ZLibStream(
                    buffer,
-                   CompressionLevel.SmallestSize,
+                   compressionLevel,
                    leaveOpen: true))
         {
             compressor.Write(input);

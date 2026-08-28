@@ -1,5 +1,6 @@
 using System.Text;
 using IW4.Assets.Assets;
+using IW4.Assets.Assets.Fx;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
@@ -117,18 +118,44 @@ internal static class FastFileConverter
         string assetName,
         string output,
         bool forceFullbright,
-        IReadOnlyList<string> dependencyFastFiles)
+        IReadOnlyList<string> dependencyFastFiles,
+        IReadOnlyList<string> providerFastFiles,
+        IReadOnlyList<string> additionalXModelNames,
+        IReadOnlyList<string> additionalMaterialNames,
+        IReadOnlyList<string> additionalFxNames,
+        IReadOnlyDictionary<string, string> rawFilePaths)
     {
         ArgumentNullException.ThrowIfNull(dependencyFastFiles);
+        ArgumentNullException.ThrowIfNull(providerFastFiles);
+        ArgumentNullException.ThrowIfNull(additionalXModelNames);
+        ArgumentNullException.ThrowIfNull(additionalMaterialNames);
+        ArgumentNullException.ThrowIfNull(additionalFxNames);
+        ArgumentNullException.ThrowIfNull(rawFilePaths);
         string inputPath = Path.GetFullPath(input);
         string templatePath = Path.GetFullPath(templateFastFile);
         string outputPath = Path.GetFullPath(output);
+        RawFileAsset[] rawFileOverrides = rawFilePaths
+            .Select(mapping => CreateRawFile(mapping.Key, mapping.Value))
+            .ToArray();
         RequireDifferentPath(inputPath, outputPath, "d3dbsp input");
         RequireDifferentPath(templatePath, outputPath, "template fastfile");
         string[] dependencyPaths = dependencyFastFiles
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        string[] providerPaths = providerFastFiles
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        string? duplicateDependencyPath = dependencyPaths
+            .Intersect(providerPaths, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (duplicateDependencyPath is not null)
+        {
+            throw new ArgumentException(
+                $"Fastfile '{duplicateDependencyPath}' cannot be both an asset " +
+                "dependency and a provider-only fastfile.");
+        }
         foreach (string dependencyPath in dependencyPaths)
         {
             RequireDifferentPath(dependencyPath, outputPath, "dependency fastfile");
@@ -136,6 +163,16 @@ internal static class FastFileConverter
             {
                 throw new ArgumentException(
                     $"The template fastfile '{templatePath}' cannot also be a dependency fastfile.");
+            }
+        }
+        foreach (string providerPath in providerPaths)
+        {
+            RequireDifferentPath(providerPath, outputPath, "provider-only fastfile");
+            if (string.Equals(providerPath, templatePath, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"The template fastfile '{templatePath}' cannot also be a " +
+                    "provider-only fastfile.");
             }
         }
         string outputDirectory = Path.GetDirectoryName(outputPath) ??
@@ -161,27 +198,82 @@ internal static class FastFileConverter
                 forceFullbright,
                 templateWorld.FragmentProgramUploadCapacity,
                 availableXModels));
+        string mapScriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
+                string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
+            CreateMapScript(assetName);
         BaseAsset[] fastFileMapRoots =
         [
             .. graph.Roots,
-            CreateMapScript(assetName),
-            CreateMapMarker(assetName)
+            mapScript,
+            CreateMapMarker(assetName),
+            .. rawFileOverrides.Where(rawFile =>
+                !string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal))
         ];
         HashSet<AssetKey> mapMaterialKeys = graph.DependencyReferences
             .Where(asset => asset.SerializedAssetType == XAssetType.Material)
             .Select(AssetKey.FromDefinition)
             .ToHashSet();
-        (
-            IReadOnlyList<XModelAsset> bootstrapXModels,
-            IReadOnlyList<BaseAsset> bootstrapModelProviders,
-            IReadOnlySet<AssetKey> bootstrapExternalProviderKeys,
-            int bootstrapXModelSurfsCount,
-            int bootstrapMaterialReferenceCount,
-            int bootstrapPhysPresetReferenceCount) =
-            ResolveBootstrapXModelGraph(
-                template,
-                templatePath,
-                mapMaterialKeys);
+        var bootstrapXModelGraph = ResolveXModelGraph(
+            template,
+            templatePath,
+            BootstrapXModelNames,
+            mapMaterialKeys,
+            "required PS3 FFA bootstrap",
+            externalizeOnlyDependencyProvidedReferences: false);
+        ValidateBootstrapXModelGraph(
+            templatePath,
+            bootstrapXModelGraph.XModelSurfsCount,
+            bootstrapXModelGraph.MaterialReferenceCount,
+            bootstrapXModelGraph.PhysPresetReferenceCount);
+        string[] staticXModelNames = graph.DependencyReferences
+            .Where(asset => asset.SerializedAssetType == XAssetType.XModel)
+            .Select(asset => asset.SerializedAssetName ??
+                throw new InvalidDataException(
+                    "A map static-model dependency has no serialized name."))
+            .Select(name => name.StartsWith(',') ? name[1..] : name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        var staticXModelGraph = ResolveXModelGraphAcrossFastFiles(
+            template,
+            templatePath,
+            dependencyPaths,
+            staticXModelNames,
+            mapMaterialKeys,
+            "map static");
+        var additionalXModelGraph = ResolveXModelGraphAcrossFastFiles(
+            template,
+            templatePath,
+            dependencyPaths,
+            additionalXModelNames,
+            mapMaterialKeys,
+            "requested additional");
+        MaterialAsset[] additionalMaterials = ResolveOwnedAssetsAcrossFastFiles<MaterialAsset>(
+            template,
+            templatePath,
+            dependencyPaths,
+            additionalMaterialNames,
+            XAssetType.Material,
+            "requested Material");
+        FxEffectDefAsset[] additionalFx = ResolveOwnedAssetsAcrossFastFiles<FxEffectDefAsset>(
+            template,
+            templatePath,
+            dependencyPaths,
+            additionalFxNames,
+            XAssetType.Fx,
+            "requested FxEffectDef");
+        BaseAsset[] xModelGraphProviders = bootstrapXModelGraph.Providers
+            .Concat(staticXModelGraph.Providers)
+            .Concat(additionalXModelGraph.Providers)
+            .DistinctBy(AssetKey.FromDefinition)
+            .ToArray();
+        HashSet<AssetKey> xModelExternalProviderKeys =
+        [
+            .. bootstrapXModelGraph.ExternalProviderKeys,
+            .. staticXModelGraph.ExternalProviderKeys,
+            .. additionalXModelGraph.ExternalProviderKeys
+        ];
         StringTableAsset bootstrapStringTable =
             D3dbspAssetLinker.CreatePs3DmConfigStringBaseline(
                 assetName,
@@ -194,21 +286,32 @@ internal static class FastFileConverter
         var existingKeys = baseAssets.Providers
             .Select(provider => provider.Key)
             .ToHashSet();
-        foreach (string dependencyPath in dependencyPaths)
+        var existingFullProviderKeys = baseAssets.Providers
+            .Where(provider => !provider.IsReferencePlaceholder)
+            .Select(provider => provider.Key)
+            .ToHashSet();
+        foreach (string dependencyPath in dependencyPaths.Concat(providerPaths))
         {
             using FastFileWorkspace dependency = FastFileInspector.Open(dependencyPath);
             LinkAssetPool missingAssets = dependency.InitialLinkRequest.Assets
-                .WithoutProviders(existingKeys);
+                .WithoutProviders(existingFullProviderKeys);
             baseAssets = baseAssets.WithHighestPrecedencePool(missingAssets);
             foreach (LinkAssetProvider provider in missingAssets.Providers)
+            {
                 existingKeys.Add(provider.Key);
+                if (!provider.IsReferencePlaceholder)
+                    existingFullProviderKeys.Add(provider.Key);
+            }
         }
-        baseAssets = baseAssets.WithoutProviders(bootstrapExternalProviderKeys);
-        existingKeys.ExceptWith(bootstrapExternalProviderKeys);
+        baseAssets = baseAssets.WithoutProviders(xModelExternalProviderKeys);
+        existingKeys.ExceptWith(xModelExternalProviderKeys);
+        existingFullProviderKeys.ExceptWith(xModelExternalProviderKeys);
 
         var newSources = new List<LinkAssetProviderSource>(
             fastFileMapRoots.Length + graph.NestedAssets.Count +
-            bootstrapModelProviders.Count + 1);
+            xModelGraphProviders.Length + 1 +
+            additionalMaterials.Length +
+            additionalFx.Length);
         var externalFallbackNames = new List<string>();
         foreach (BaseAsset root in fastFileMapRoots)
             newSources.Add(new LinkAssetProviderSource(root).AsAuthoredDetached());
@@ -219,12 +322,21 @@ internal static class FastFileConverter
         }
         newSources.Add(
             new LinkAssetProviderSource(bootstrapStringTable).AsAuthoredDetached());
-        foreach (BaseAsset provider in bootstrapModelProviders)
+        foreach (BaseAsset provider in xModelGraphProviders)
         {
             newSources.Add(
                 new LinkAssetProviderSource(provider).AsAuthoredDetached());
         }
-
+        foreach (MaterialAsset material in additionalMaterials)
+        {
+            newSources.Add(
+                new LinkAssetProviderSource(material).AsAuthoredDetached());
+        }
+        foreach (FxEffectDefAsset effect in additionalFx)
+        {
+            newSources.Add(
+                new LinkAssetProviderSource(effect).AsAuthoredDetached());
+        }
         foreach (BaseAsset dependency in graph.DependencyReferences)
         {
             AssetKey key = AssetKey.FromDefinition(dependency);
@@ -239,16 +351,36 @@ internal static class FastFileConverter
         LinkAssetPool assets = baseAssets
             .WithHighestPrecedenceProviders(newSources);
         var roots = new List<LinkRoot>(
-            fastFileMapRoots.Length + bootstrapXModels.Count + 1);
+            fastFileMapRoots.Length + bootstrapXModelGraph.Models.Count +
+            additionalXModelGraph.Models.Count + additionalMaterials.Length +
+            additionalFx.Length + 1);
         roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
-        roots.Add(CreateBootstrapRoot(
+        roots.Add(CreateNamedOwnedRoot(
             "d3dbsplinker:bootstrap:stringtable:dm",
             bootstrapStringTable));
-        for (int index = 0; index < bootstrapXModels.Count; index++)
+        for (int index = 0; index < additionalMaterials.Length; index++)
         {
-            roots.Add(CreateBootstrapRoot(
+            roots.Add(CreateNamedOwnedRoot(
+                $"d3dbsplinker:additional:material:{index}:{additionalMaterialNames[index]}",
+                additionalMaterials[index]));
+        }
+        for (int index = 0; index < bootstrapXModelGraph.Models.Count; index++)
+        {
+            roots.Add(CreateNamedOwnedRoot(
                 $"d3dbsplinker:bootstrap:xmodel:{index}:{BootstrapXModelNames[index]}",
-                bootstrapXModels[index]));
+                bootstrapXModelGraph.Models[index]));
+        }
+        for (int index = 0; index < additionalXModelGraph.Models.Count; index++)
+        {
+            roots.Add(CreateNamedOwnedRoot(
+                $"d3dbsplinker:additional:xmodel:{index}:{additionalXModelNames[index]}",
+                additionalXModelGraph.Models[index]));
+        }
+        for (int index = 0; index < additionalFx.Length; index++)
+        {
+            roots.Add(CreateNamedOwnedRoot(
+                $"d3dbsplinker:additional:fx:{index}:{additionalFxNames[index]}",
+                additionalFx[index]));
         }
         var request = new ZoneLinkRequest(
             assets,
@@ -284,22 +416,44 @@ internal static class FastFileConverter
         Console.WriteLine($"map-asset: {assetName}");
         Console.WriteLine($"owned-map-roots: {fastFileMapRoots.Length}");
         Console.WriteLine($"nested-map-assets: {graph.NestedAssets.Count}");
-        Console.WriteLine($"owned-bootstrap-roots: {bootstrapXModels.Count + 1}");
+        Console.WriteLine($"owned-bootstrap-roots: {bootstrapXModelGraph.Models.Count + 1}");
+        Console.WriteLine($"owned-additional-xmodel-roots: {additionalXModelGraph.Models.Count}");
+        Console.WriteLine($"owned-additional-material-roots: {additionalMaterials.Length}");
+        Console.WriteLine($"owned-additional-fx-roots: {additionalFx.Length}");
+        Console.WriteLine($"owned-rawfile-overrides: {rawFileOverrides.Length}");
         Console.WriteLine($"owned-roots: {roots.Count}");
         Console.WriteLine($"bootstrap-stringtable: {bootstrapStringTable.Name}");
         Console.WriteLine($"bootstrap-mapcrc: {signedChecksum}");
-        Console.WriteLine($"bootstrap-xmodels: {bootstrapXModels.Count}");
-        Console.WriteLine($"bootstrap-xmodelsurfs: {bootstrapXModelSurfsCount}");
+        Console.WriteLine($"bootstrap-xmodels: {bootstrapXModelGraph.Models.Count}");
+        Console.WriteLine($"bootstrap-xmodelsurfs: {bootstrapXModelGraph.XModelSurfsCount}");
         Console.WriteLine(
-            $"bootstrap-material-references: {bootstrapMaterialReferenceCount}");
+            $"bootstrap-material-references: {bootstrapXModelGraph.MaterialReferenceCount}");
         Console.WriteLine(
-            $"bootstrap-physpreset-references: {bootstrapPhysPresetReferenceCount}");
+            $"bootstrap-physpreset-references: {bootstrapXModelGraph.PhysPresetReferenceCount}");
+        Console.WriteLine($"map-static-xmodels: {staticXModelGraph.Models.Count}");
+        Console.WriteLine($"map-static-xmodelsurfs: {staticXModelGraph.XModelSurfsCount}");
+        Console.WriteLine(
+            $"map-static-material-references: {staticXModelGraph.MaterialReferenceCount}");
+        Console.WriteLine(
+            $"map-static-physpreset-references: {staticXModelGraph.PhysPresetReferenceCount}");
+        Console.WriteLine($"additional-xmodels: {additionalXModelGraph.Models.Count}");
+        Console.WriteLine($"additional-xmodelsurfs: {additionalXModelGraph.XModelSurfsCount}");
+        Console.WriteLine($"additional-materials: {additionalMaterials.Length}");
+        Console.WriteLine(
+            $"additional-material-references: {additionalXModelGraph.MaterialReferenceCount}");
+        Console.WriteLine(
+            $"additional-physpreset-references: {additionalXModelGraph.PhysPresetReferenceCount}");
         Console.WriteLine($"template-providers: {template.InitialLinkRequest.Assets.Providers.Count}");
         Console.WriteLine($"dependency-fastfiles: {dependencyPaths.Length}");
-        Console.WriteLine(
-            graph.DiscardedLightByteCount == 0
-                ? "lighting-mode: source has no compiled lightmaps"
-                : $"lighting-mode: forced fullbright; discarded {graph.DiscardedLightByteCount} compiled light bytes");
+        Console.WriteLine($"provider-fastfiles: {providerPaths.Length}");
+        int linkedLightmapCount = graph.Roots
+            .OfType<GfxWorldAsset>()
+            .Single()
+            .WorldDraw
+            .LightmapCount;
+        Console.WriteLine(forceFullbright
+            ? $"lighting-mode: forced fullbright; discarded {graph.DiscardedLightByteCount} compiled light bytes"
+            : $"lighting-mode: authored; linked {linkedLightmapCount} lightmap arrays");
         Console.WriteLine($"available-providers: {baseAssets.Providers.Count}");
         Console.WriteLine($"external-reference-fallbacks: {externalFallbackNames.Count}");
         foreach (string referenceName in externalFallbackNames)
@@ -352,11 +506,35 @@ internal static class FastFileConverter
         Buffer = [0]
     };
 
-    private static LinkRoot CreateBootstrapRoot(string entryId, BaseAsset asset)
+    private static RawFileAsset CreateRawFile(string name, string sourcePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (name[0] == ',')
+        {
+            throw new ArgumentException(
+                $"RawFile override '{name}' cannot use an external-reference name.");
+        }
+        string path = Path.GetFullPath(sourcePath);
+        byte[] content = File.ReadAllBytes(path);
+        if (content.AsSpan().IndexOf((byte)0) >= 0)
+        {
+            throw new InvalidDataException(
+                $"RawFile source '{path}' contains an embedded null byte.");
+        }
+        return new RawFileAsset
+        {
+            Name = name,
+            CompressedLen = 0,
+            Len = content.Length,
+            Buffer = [.. content, 0]
+        };
+    }
+
+    private static LinkRoot CreateNamedOwnedRoot(string entryId, BaseAsset asset)
     {
         string name = asset.SerializedAssetName ??
             throw new InvalidDataException(
-                $"{asset.SerializedAssetType} bootstrap root has no serialized name.");
+                $"{asset.SerializedAssetType} owned root has no serialized name.");
         return new LinkRoot(
             entryId,
             asset.SerializedAssetType,
@@ -372,13 +550,18 @@ internal static class FastFileConverter
         IReadOnlySet<AssetKey> ExternalProviderKeys,
         int XModelSurfsCount,
         int MaterialReferenceCount,
-        int PhysPresetReferenceCount) ResolveBootstrapXModelGraph(
+        int PhysPresetReferenceCount) ResolveXModelGraph(
         FastFileWorkspace template,
         string templatePath,
-        IReadOnlySet<AssetKey> mapMaterialKeys)
+        IReadOnlyList<string> modelNames,
+        IReadOnlySet<AssetKey> mapMaterialKeys,
+        string graphDescription,
+        bool externalizeOnlyDependencyProvidedReferences)
     {
+        ArgumentNullException.ThrowIfNull(modelNames);
         ArgumentNullException.ThrowIfNull(mapMaterialKeys);
-        var models = new XModelAsset[BootstrapXModelNames.Length];
+        ArgumentException.ThrowIfNullOrEmpty(graphDescription);
+        var models = new XModelAsset[modelNames.Count];
         var missingNames = new List<string>();
         var fullProviders = template.LoadedZone.Context.AssetPool.Slots
             .SelectMany(slot => slot.Providers)
@@ -387,9 +570,21 @@ internal static class FastFileConverter
                 provider.Owner == template.LoadedZone.Context.ZoneOwner)
             .ThenBy(provider => provider.RegistrationSequence)
             .ToArray();
-        for (int index = 0; index < BootstrapXModelNames.Length; index++)
+        HashSet<AssetKey>? dependencyProviderKeys =
+            externalizeOnlyDependencyProvidedReferences
+                ? fullProviders
+                    .Where(provider =>
+                        (provider.AssetType == XAssetType.Material ||
+                         provider.AssetType == XAssetType.PhysPreset) &&
+                        provider.Owner != template.LoadedZone.Context.ZoneOwner)
+                    .Select(provider => provider.Asset)
+                    .OfType<BaseAsset>()
+                    .Select(AssetKey.FromDefinition)
+                    .ToHashSet()
+                : null;
+        for (int index = 0; index < modelNames.Count; index++)
         {
-            string name = BootstrapXModelNames[index];
+            string name = modelNames[index];
             XModelAsset? model = fullProviders.FirstOrDefault(
                 candidate =>
                     candidate.Owner == template.LoadedZone.Context.ZoneOwner &&
@@ -412,7 +607,7 @@ internal static class FastFileConverter
         {
             throw new InvalidDataException(
                 $"Template fastfile '{templatePath}' does not contain full XModel " +
-                $"providers for the {missingNames.Count} required PS3 FFA bootstrap " +
+                $"providers for the {missingNames.Count} {graphDescription} " +
                 $"asset(s): {string.Join(", ", missingNames)}.");
         }
 
@@ -459,15 +654,8 @@ internal static class FastFileConverter
         {
             throw new InvalidDataException(
                 $"Template workspace for '{templatePath}' does not contain full " +
-                $"XModelSurfs providers for the required PS3 FFA bootstrap model graph: " +
+                $"XModelSurfs providers for the {graphDescription} model graph: " +
                 $"{string.Join(", ", missingModelSurfs)}.");
-        }
-        if (modelSurfsCount != 105)
-        {
-            throw new InvalidDataException(
-                $"Template fastfile '{templatePath}' PS3 FFA bootstrap graph contains " +
-                $"{modelSurfsCount} unique full XModelSurfs provider key(s); " +
-                "the hardware-proven closure requires exactly 105.");
         }
 
         MaterialAsset[] materialDependencies = models
@@ -476,20 +664,16 @@ internal static class FastFileConverter
             .DistinctBy(AssetKey.FromDefinition)
             .Where(material => !mapMaterialKeys.Contains(
                 AssetKey.FromDefinition(material)))
+            .Where(material => dependencyProviderKeys is null ||
+                dependencyProviderKeys.Contains(AssetKey.FromDefinition(material)))
             .ToArray();
         PhysPresetAsset[] physPresetDependencies = models
             .Select(model => model.PhysPreset)
             .OfType<PhysPresetAsset>()
             .DistinctBy(AssetKey.FromDefinition)
+            .Where(physPreset => dependencyProviderKeys is null ||
+                dependencyProviderKeys.Contains(AssetKey.FromDefinition(physPreset)))
             .ToArray();
-        if (materialDependencies.Length != 98 || physPresetDependencies.Length != 1)
-        {
-            throw new InvalidDataException(
-                $"Template fastfile '{templatePath}' PS3 FFA bootstrap dependency " +
-                $"closure contains {materialDependencies.Length} externalizable Material " +
-                $"and {physPresetDependencies.Length} PhysPreset provider key(s); " +
-                "the hardware-proven closure requires exactly 98 and 1.");
-        }
 
         var externalProviderKeys = new HashSet<AssetKey>();
         foreach (MaterialAsset material in materialDependencies)
@@ -516,6 +700,195 @@ internal static class FastFileConverter
             physPresetDependencies.Length);
     }
 
+    private static (
+        IReadOnlyList<XModelAsset> Models,
+        IReadOnlyList<BaseAsset> Providers,
+        IReadOnlySet<AssetKey> ExternalProviderKeys,
+        int XModelSurfsCount,
+        int MaterialReferenceCount,
+        int PhysPresetReferenceCount) ResolveXModelGraphAcrossFastFiles(
+        FastFileWorkspace template,
+        string templatePath,
+        IReadOnlyList<string> dependencyPaths,
+        IReadOnlyList<string> modelNames,
+        IReadOnlySet<AssetKey> mapMaterialKeys,
+        string graphDescription)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentNullException.ThrowIfNull(dependencyPaths);
+        ArgumentNullException.ThrowIfNull(modelNames);
+        ArgumentNullException.ThrowIfNull(mapMaterialKeys);
+        ArgumentException.ThrowIfNullOrEmpty(graphDescription);
+        if (modelNames.Count == 0)
+        {
+            return (
+                Array.Empty<XModelAsset>(),
+                Array.Empty<BaseAsset>(),
+                new HashSet<AssetKey>(),
+                0,
+                0,
+                0);
+        }
+
+        var unresolvedNames = new HashSet<string>(
+            modelNames,
+            StringComparer.Ordinal);
+        var modelsByName = new Dictionary<string, XModelAsset>(
+            StringComparer.Ordinal);
+        var providers = new List<BaseAsset>();
+        var externalProviderKeys = new HashSet<AssetKey>();
+
+        ResolveFromWorkspace(template, templatePath);
+        foreach (string dependencyPath in dependencyPaths)
+        {
+            if (unresolvedNames.Count == 0)
+                break;
+            using FastFileWorkspace dependency = FastFileInspector.Open(
+                dependencyPath);
+            ResolveFromWorkspace(dependency, dependencyPath);
+        }
+
+        if (unresolvedNames.Count != 0)
+        {
+            throw new InvalidDataException(
+                $"The template and dependency fastfiles do not contain full XModel " +
+                $"providers for the {unresolvedNames.Count} {graphDescription} " +
+                $"asset(s): {string.Join(", ", unresolvedNames.OrderBy(name => name, StringComparer.Ordinal))}.");
+        }
+
+        BaseAsset[] distinctProviders = providers
+            .DistinctBy(AssetKey.FromDefinition)
+            .ToArray();
+        XModelAsset[] orderedModels = modelNames
+            .Select(name => modelsByName[name])
+            .ToArray();
+        return (
+            Array.AsReadOnly(orderedModels),
+            Array.AsReadOnly(distinctProviders),
+            externalProviderKeys,
+            distinctProviders.OfType<XModelSurfsAsset>().Count(),
+            distinctProviders.OfType<MaterialAsset>().Count(),
+            distinctProviders.OfType<PhysPresetAsset>().Count());
+
+        void ResolveFromWorkspace(
+            FastFileWorkspace workspace,
+            string sourcePath)
+        {
+            var zoneOwner = workspace.LoadedZone.Context.ZoneOwner;
+            string[] ownedNames = workspace.LoadedZone.Context.AssetPool.Slots
+                .SelectMany(slot => slot.Providers)
+                .Where(provider =>
+                    provider.Owner == zoneOwner &&
+                    !provider.IsReferencePlaceholder &&
+                    provider.AssetType == XAssetType.XModel &&
+                    provider.Asset is XModelAsset &&
+                    provider.Name is not null &&
+                    unresolvedNames.Contains(provider.Name))
+                .Select(provider => provider.Name!)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+            if (ownedNames.Length == 0)
+                return;
+
+            var resolved = ResolveXModelGraph(
+                workspace,
+                sourcePath,
+                ownedNames,
+                mapMaterialKeys,
+                graphDescription,
+                externalizeOnlyDependencyProvidedReferences: true);
+            for (int index = 0; index < ownedNames.Length; index++)
+            {
+                modelsByName.Add(ownedNames[index], resolved.Models[index]);
+                unresolvedNames.Remove(ownedNames[index]);
+            }
+            providers.AddRange(resolved.Providers);
+            externalProviderKeys.UnionWith(resolved.ExternalProviderKeys);
+        }
+    }
+
+    private static TAsset[] ResolveOwnedAssetsAcrossFastFiles<TAsset>(
+        FastFileWorkspace template,
+        string templatePath,
+        IReadOnlyList<string> dependencyPaths,
+        IReadOnlyList<string> assetNames,
+        XAssetType assetType,
+        string assetDescription)
+        where TAsset : BaseAsset
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentNullException.ThrowIfNull(dependencyPaths);
+        ArgumentNullException.ThrowIfNull(assetNames);
+        ArgumentException.ThrowIfNullOrEmpty(assetDescription);
+        if (assetNames.Count == 0)
+            return [];
+
+        var unresolvedNames = new HashSet<string>(assetNames, StringComparer.Ordinal);
+        var assetsByName = new Dictionary<string, TAsset>(StringComparer.Ordinal);
+        ResolveFromWorkspace(template);
+        foreach (string dependencyPath in dependencyPaths)
+        {
+            if (unresolvedNames.Count == 0)
+                break;
+            using FastFileWorkspace dependency = FastFileInspector.Open(dependencyPath);
+            ResolveFromWorkspace(dependency);
+        }
+        if (unresolvedNames.Count != 0)
+        {
+            throw new InvalidDataException(
+                $"The template fastfile '{templatePath}' and its dependencies do not contain " +
+                $"full providers for the {unresolvedNames.Count} {assetDescription} asset(s): " +
+                string.Join(", ", unresolvedNames.OrderBy(name => name, StringComparer.Ordinal)) +
+                ".");
+        }
+        return assetNames.Select(name => assetsByName[name]).ToArray();
+
+        void ResolveFromWorkspace(FastFileWorkspace workspace)
+        {
+            var zoneOwner = workspace.LoadedZone.Context.ZoneOwner;
+            foreach (var provider in workspace.LoadedZone.Context.AssetPool.Slots
+                .SelectMany(slot => slot.Providers)
+                .Where(provider =>
+                    provider.Owner == zoneOwner &&
+                    !provider.IsReferencePlaceholder &&
+                    provider.AssetType == assetType &&
+                    provider.Name is not null &&
+                    unresolvedNames.Contains(provider.Name) &&
+                    provider.Asset is TAsset)
+                .OrderBy(provider => provider.RegistrationSequence))
+            {
+                string name = provider.Name!;
+                if (!assetsByName.TryAdd(name, (TAsset)provider.Asset!))
+                    continue;
+                unresolvedNames.Remove(name);
+            }
+        }
+    }
+
+    private static void ValidateBootstrapXModelGraph(
+        string templatePath,
+        int modelSurfsCount,
+        int materialReferenceCount,
+        int physPresetReferenceCount)
+    {
+        if (modelSurfsCount != 105)
+        {
+            throw new InvalidDataException(
+                $"Template fastfile '{templatePath}' PS3 FFA bootstrap graph contains " +
+                $"{modelSurfsCount} unique full XModelSurfs provider key(s); " +
+                "the hardware-proven closure requires exactly 105.");
+        }
+        if (materialReferenceCount != 98 || physPresetReferenceCount != 1)
+        {
+            throw new InvalidDataException(
+                $"Template fastfile '{templatePath}' PS3 FFA bootstrap dependency " +
+                $"closure contains {materialReferenceCount} externalizable Material " +
+                $"and {physPresetReferenceCount} PhysPreset provider key(s); " +
+                "the hardware-proven closure requires exactly 98 and 1.");
+        }
+    }
+
     private static MaterialAsset CreateMaterialReference(MaterialAsset source) =>
         new()
         {
@@ -535,11 +908,11 @@ internal static class FastFileConverter
     private static string CreateExternalReferenceName(BaseAsset source)
     {
         string name = source.SerializedAssetName ?? throw new InvalidDataException(
-            $"{source.SerializedAssetType} bootstrap dependency has no serialized name.");
+            $"{source.SerializedAssetType} XModel graph dependency has no serialized name.");
         if (name.Length == 0 || name.Contains('\0'))
         {
             throw new InvalidDataException(
-                $"{source.SerializedAssetType} bootstrap dependency has invalid name '{name}'.");
+                $"{source.SerializedAssetType} XModel graph dependency has invalid name '{name}'.");
         }
 
         return name[0] == ',' ? name : "," + name;
