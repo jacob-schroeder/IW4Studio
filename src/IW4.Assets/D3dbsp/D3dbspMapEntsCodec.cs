@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
@@ -339,6 +340,36 @@ internal static class D3dbspMapEntsCodec
                 $"Brush model reference '{value}' must contain a positive decimal collision-model index.");
         }
         return index;
+    }
+
+    public static IReadOnlyDictionary<int, Vector3> DecodeBrushModelOrigins(
+        MapEntsAsset mapEnts)
+    {
+        ArgumentNullException.ThrowIfNull(mapEnts);
+        var (_, entities) = ReadRetainedEntityPayload(mapEnts);
+        var origins = new Dictionary<int, Vector3>();
+        foreach (ParsedEntity entity in entities)
+        {
+            if (!entity.TryGetValue("model", out string modelReference) ||
+                !modelReference.StartsWith('*'))
+            {
+                continue;
+            }
+
+            int modelIndex = ParseBrushModelReference(modelReference);
+            if (origins.ContainsKey(modelIndex))
+            {
+                throw new InvalidDataException(
+                    $"Brush model '*{modelIndex}' does not have one unambiguous entity owner.");
+            }
+
+            Vec3 origin = entity.TryGetValue("origin", out string authoredOrigin)
+                ? ParseVec3(authoredOrigin, $"brush model '*{modelIndex}' origin")
+                : default;
+            origins.Add(modelIndex, new Vector3(origin.X, origin.Y, origin.Z));
+        }
+
+        return new ReadOnlyDictionary<int, Vector3>(origins);
     }
 
     private static int ParseMapTriggerReference(string value)

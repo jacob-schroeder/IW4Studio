@@ -74,6 +74,7 @@ public sealed partial class MapSceneBuilder
         BuildWorldSunShadowCasterBatches(
             GfxWorldAsset world,
             IReadOnlyList<PreparedWorldSurfaceGeometry> preparedSurfaces,
+            int staticSurfaceCount,
             RenderAssetLookup lookup,
             IGfxImagePayloadResolver imageStreams,
             RenderTextureCache
@@ -93,12 +94,18 @@ public sealed partial class MapSceneBuilder
                 "Prepared world geometry must remain index-parallel with GfxWorld.dpvs.surfaces.",
                 nameof(preparedSurfaces));
         }
+        if (staticSurfaceCount < 0 ||
+            staticSurfaceCount > world.Dpvs.Surfaces.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(staticSurfaceCount));
+        }
 
         var result = new List<MapRenderWorldSunShadowCasterBatch>();
         var rejected = new List<
             MapRenderSunShadowWorldCasterRejection>();
         for (int surfaceIndex = 0;
-             surfaceIndex < world.Dpvs.Surfaces.Count;
+             surfaceIndex < staticSurfaceCount;
              surfaceIndex++)
         {
             GfxSurface surface = world.Dpvs.Surfaces[surfaceIndex];

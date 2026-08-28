@@ -14,11 +14,24 @@ public static class MapRenderSceneTechniqueVariantCatalogPlanner
         ArgumentNullException.ThrowIfNull(drawMethod);
         ArgumentNullException.ThrowIfNull(sceneLights);
 
+        int staticSurfaceCount = world.Models.Count == 0
+            ? 0
+            : world.Models[0].SurfaceCount;
+        if (staticSurfaceCount > world.Dpvs.Surfaces.Count)
+        {
+            throw new InvalidDataException(
+                $"GfxWorld '{world.Name}' brush model zero owns " +
+                $"{staticSurfaceCount} of only {world.Dpvs.Surfaces.Count} surfaces.");
+        }
+
         MapRenderTechniqueVariantSet?[] worldSurfaces = world.Dpvs.Surfaces
-            .Select(surface => TryPlan(
-                drawMethod,
-                sceneLights,
-                surface.PrimaryLightIndex))
+            .Select((surface, surfaceIndex) =>
+                surfaceIndex < staticSurfaceCount
+                    ? TryPlan(
+                        drawMethod,
+                        sceneLights,
+                        surface.PrimaryLightIndex)
+                    : null)
             .ToArray();
         MapRenderTechniqueVariantSet?[] staticDrawInstances =
             world.Dpvs.SModelDrawInsts

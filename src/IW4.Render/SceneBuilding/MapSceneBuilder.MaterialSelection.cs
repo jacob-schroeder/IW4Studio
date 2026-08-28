@@ -8,6 +8,7 @@ using IW4.FastFiles.Pointers;
 using IW4.Render.Assets;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;
+using IW4.Render.Execution.FixedFunction;
 using IW4.Render.Geometry;
 using IW4.Render.Materials;
 using IW4.Render.Scheduling;
@@ -526,8 +527,9 @@ public sealed partial class MapSceneBuilder
         }
 
         // The preview texture and UV stay on the completed material-table
-        // route. A ranked authored pass contributes only a canonical alpha
-        // test tuple below; it does not make this an authored-program draw.
+        // route. A ranked authored pass contributes only fixed-function and
+        // output state implemented by the generic path below; it does not
+        // make this an authored-program draw.
         // World backend source 0x02 is the primary color UV row for every
         // eligible mp_boneyard surface.
         const MaterialStreamSource texCoordSource =
@@ -540,11 +542,6 @@ public sealed partial class MapSceneBuilder
                 lookup,
                 out SelectedColorPass rankedAuthoredPass))
         {
-            // The generic preview is not the authored program, but alpha test
-            // is independent fixed-function state already emulated by the
-            // generic shader. Retain only its canonical PS3 tuple; importing
-            // blend, cull, depth, or stencil state here would turn the preview
-            // into a partial authored-pass execution.
             fallbackState = rankedAuthoredPass.State;
         }
         var primarySampler = new MaterialSamplerIdentity(
@@ -662,32 +659,56 @@ public sealed partial class MapSceneBuilder
     }
 
     /// <summary>
-    /// Retains the canonical PS3 fixed-function alpha-test tuple on the
-    /// editor's generic material without importing any other authored render
-    /// state. The generic fragment shader implements these exact tuples.
+    /// Retains the camera-color state implemented by the editor's generic
+    /// material without importing authored cull, stencil, polygon-offset, or
+    /// program behavior.
     /// </summary>
     internal static RenderState CreateGenericMaterialFallbackState(
         RenderState authoredState)
     {
-        if (!authoredState.AlphaTestEnabled ||
-            AlphaTest.Resolve(authoredState) is null)
+        RenderState result = GenericMaterialState with
         {
-            return GenericMaterialState;
+            ShaderPackerSrgbEnabled =
+                authoredState.ShaderPackerSrgbEnabled
+        };
+
+        if (authoredState.AlphaTestEnabled &&
+            AlphaTest.Resolve(authoredState) is not null)
+        {
+            result = result with
+            {
+                AlphaTestEnabled = true,
+                AlphaFunc = authoredState.AlphaFunc,
+                AlphaRef = authoredState.AlphaRef
+            };
         }
 
-        return GenericMaterialState with
+        if (authoredState.BlendEnabled &&
+            RenderBlendDecoder.TryResolve(authoredState, out _))
         {
-            AlphaTestEnabled = true,
-            AlphaFunc = authoredState.AlphaFunc,
-            AlphaRef = authoredState.AlphaRef
-        };
+            result = result with
+            {
+                BlendEnabled = true,
+                BlendEquationRgb = authoredState.BlendEquationRgb,
+                BlendEquationAlpha = authoredState.BlendEquationAlpha,
+                BlendSourceRgb = authoredState.BlendSourceRgb,
+                BlendSourceAlpha = authoredState.BlendSourceAlpha,
+                BlendDestinationRgb =
+                    authoredState.BlendDestinationRgb,
+                BlendDestinationAlpha =
+                    authoredState.BlendDestinationAlpha,
+                DepthWriteEnabled = authoredState.DepthWriteEnabled
+            };
+        }
+
+        return result;
     }
 
     /// <summary>
-    /// Applies the one authored fixed-function state component that the static
-    /// model generic shader implements.  This is deliberately a copy of the
-    /// selected fallback pass with a new state value: LOD selection, texture
-    /// identity, UV routing, and authored-program eligibility stay unchanged.
+    /// Applies the authored camera-color state that the static-model generic
+    /// shader implements. This is deliberately a copy of the selected fallback
+    /// pass with a new state value: LOD selection, texture identity, UV routing,
+    /// and authored-program eligibility stay unchanged.
     /// </summary>
     internal static SelectedColorPass ApplyStaticModelGenericFallbackState(
         SelectedColorPass selectedPass,
@@ -733,8 +754,7 @@ public sealed partial class MapSceneBuilder
 
         // The base-surface preview is synthetic and therefore has no source
         // pass ordinal. Reuse the ranked routed color pass solely as the
-        // alpha-test state authority. TrySelectRoutedBaseSurfaceTexturePass
-        // already strips all non-alpha state from its result.
+        // supported camera-color state authority.
         bool isSyntheticPass =
             selectedPass.Pass.TechniquePass.TechniqueSlot < 0 ||
             selectedPass.Pass.TechniquePass.PassIndex < 0;
@@ -765,7 +785,7 @@ public sealed partial class MapSceneBuilder
             // Static material selection itself is already cached per
             // material/selector. This second, material-only cache prevents
             // different primary-light selector buckets from rescanning the
-            // same 37-slot technique graph just to recover one alpha tuple.
+            // same 37-slot technique graph to recover the supported state.
             syntheticFallbackStateCache.Add(material, authoredState);
         }
 

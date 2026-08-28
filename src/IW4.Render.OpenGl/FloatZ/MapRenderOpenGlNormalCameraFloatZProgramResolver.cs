@@ -4,7 +4,6 @@ using IW4.Render.OpenGl.Presentation;
 using IW4.Render.OpenGl.Shaders;
 using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.Lifecycle;
-using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl.FloatZ;
 
@@ -22,10 +21,8 @@ internal sealed record MapRenderOpenGlNormalCameraFloatZProgramSources(
 internal static class MapRenderOpenGlNormalCameraFloatZProgramResolver
 {
     public static MapRenderOpenGlNormalCameraFloatZProgramSources Resolve(
-        GL gl,
         MapRenderWorldSceneSource source)
     {
-        ArgumentNullException.ThrowIfNull(gl);
         ArgumentNullException.ThrowIfNull(source);
 
         long revision = source.AssetPoolRevisionAtConstruction;
@@ -39,7 +36,7 @@ internal static class MapRenderOpenGlNormalCameraFloatZProgramResolver
         MapRenderNormalCameraFloatZRecipe recipe =
             MapRenderNormalCameraFloatZRecipe.Current;
         var vertexPrograms = new RsxVertexGlsl330ProgramResolver();
-        var fragmentPrograms = new RsxFragmentGlsl330ProgramResolver(gl);
+        var fragmentPrograms = new RsxFragmentGlsl330ProgramResolver();
 
         MapRenderOpenGlNormalCameraFullscreenProgramResolver
             .ResolvedMaterialProgram floatZ =
