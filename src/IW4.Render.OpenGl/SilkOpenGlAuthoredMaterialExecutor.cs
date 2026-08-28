@@ -52,7 +52,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _resolveLinkedProgram = resolveLinkedProgram ??
             throw new ArgumentNullException(nameof(resolveLinkedProgram));
-        _fragmentResolver = new RsxFragmentGlsl330ProgramResolver(gl);
+        _fragmentResolver = new RsxFragmentGlsl330ProgramResolver();
         _uniformLocations = new OpenGlUniformLocationCache(
             gl.GetUniformLocation);
     }

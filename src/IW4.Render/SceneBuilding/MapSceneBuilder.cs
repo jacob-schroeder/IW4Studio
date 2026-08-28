@@ -88,6 +88,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
             ? new List<uint>(4 * 1024)
             : [];
         var texturedBatchBuilders = new Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder>();
+        var inlineBrushTexturedBatchBuilders =
+            new Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder>();
         var pageZeroUnshadowedTexturedBatchBuilders =
             new Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder>();
         var shadowAllocatedTexturedBatchBuilders =
@@ -653,6 +655,17 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 ? directVertexBytes
                 : gfxMap.WorldDraw.VertexData.PackedVertices.ToArray();
             IReadOnlyList<ushort> sourceIndices = gfxMap.WorldDraw.Indices;
+            WorldSurfacePlacement?[] worldSurfacePlacements =
+                CreateWorldSurfacePlacements(
+                    gfxMap,
+                    input.ClipMap?.MapEnts,
+                    out int staticWorldSurfaceCount);
+            int[] renderableWorldSurfaceIndices = Enumerable.Range(
+                    0,
+                    worldSurfacePlacements.Length)
+                .Where(surfaceIndex =>
+                    worldSurfacePlacements[surfaceIndex].HasValue)
+                .ToArray();
             var worldVertexDecoderCache = new Dictionary<
                 WorldVertexDecoderCacheKey,
                 WorldVertexDecoderSelection>();
@@ -755,48 +768,58 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 new List<RenderTextureDecodeRequest>();
             var plannedWorldPrimaryTextureKeys =
                 new HashSet<RenderTextureCacheKey>();
-            for (int surfaceIndex = 0;
-                 surfaceIndex < gfxMap.Dpvs.Surfaces.Count;
-                 surfaceIndex++)
+            foreach (int surfaceIndex in renderableWorldSurfaceIndices)
             {
                 if (submittedSkySurfaceIndices.Contains(surfaceIndex))
                     continue;
 
                 GfxSurface surface = gfxMap.Dpvs.Surfaces[surfaceIndex];
+                WorldSurfacePlacement placement =
+                    worldSurfacePlacements[surfaceIndex]!.Value;
+                GfxDrawSurfSurfaceType surfaceType =
+                    placement.IsStaticDpvsSurface
+                        ? GfxDrawSurfSurfaceType.Triangles
+                        : GfxDrawSurfSurfaceType.BrushModel;
                 int? selectedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        GfxDrawSurfSurfaceType.Triangles,
+                        surfaceType,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
                         MapRenderTechniqueVariantAllocation.Unshadowed);
                 int? shadowAllocatedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
+                    placement.IsStaticDpvsSurface
+                        ? ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
                         GfxDrawSurfSurfaceType.Triangles,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
                         MapRenderTechniqueVariantAllocation
-                            .ShadowMapAllocated);
+                            .ShadowMapAllocated)
+                        : null;
                 int? pageOneUnshadowedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
+                    placement.IsStaticDpvsSurface
+                        ? ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
                         GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
-                        MapRenderTechniqueVariantAllocation.Unshadowed);
+                        MapRenderTechniqueVariantAllocation.Unshadowed)
+                        : null;
                 int? pageOneShadowAllocatedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
+                    placement.IsStaticDpvsSurface
+                        ? ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
                         GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
                         MapRenderTechniqueVariantAllocation
-                            .ShadowMapAllocated);
+                            .ShadowMapAllocated)
+                        : null;
                 MaterialAsset? material = surface.Material ??
                     lookup.ResolveMaterial(surface.MaterialPointer);
                 MaterialTechniqueSetAsset? techset = material is null
@@ -901,49 +924,70 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     $"{decodeSeconds:0.00}s parallel decode");
             }
 
-            for (int surfaceIndex = 0; surfaceIndex < gfxMap.Dpvs.Surfaces.Count; surfaceIndex++)
+            foreach (int surfaceIndex in renderableWorldSurfaceIndices)
             {
                 long surfaceProfileStart = collectBuildProfiles
                     ? System.Diagnostics.Stopwatch.GetTimestamp()
                     : 0;
                 if (surfaceIndex > 0 && surfaceIndex % 1000 == 0)
-                    reportProgress?.Invoke($"building world surfaces {surfaceIndex}/{gfxMap.Dpvs.Surfaces.Count}");
+                    reportProgress?.Invoke(
+                        $"building world surfaces {surfaceIndex}/{gfxMap.Dpvs.Surfaces.Count}");
 
                 GfxSurface surface = gfxMap.Dpvs.Surfaces[surfaceIndex];
+                WorldSurfacePlacement placement =
+                    worldSurfacePlacements[surfaceIndex]!.Value;
+                GfxDrawSurfSurfaceType surfaceType =
+                    placement.IsStaticDpvsSurface
+                        ? GfxDrawSurfSurfaceType.Triangles
+                        : GfxDrawSurfSurfaceType.BrushModel;
+                MapRenderPickKind surfacePickKind =
+                    placement.IsStaticDpvsSurface
+                        ? MapRenderPickKind.GfxSurface
+                        : MapRenderPickKind.GfxBrushModelSurface;
+                int surfacePickObjectIndex =
+                    placement.IsStaticDpvsSurface
+                        ? surfaceIndex
+                        : placement.BrushModelIndex;
                 int? selectedTechniqueSlot =
                     ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
-                        GfxDrawSurfSurfaceType.Triangles,
+                        surfaceType,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
                         MapRenderTechniqueVariantAllocation.Unshadowed);
                 int? shadowAllocatedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
+                    placement.IsStaticDpvsSurface
+                        ? ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
                         GfxDrawSurfSurfaceType.Triangles,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
                         MapRenderTechniqueVariantAllocation
-                            .ShadowMapAllocated);
+                            .ShadowMapAllocated)
+                        : null;
                 int? pageOneUnshadowedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
+                    placement.IsStaticDpvsSurface
+                        ? ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
                         GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
-                        MapRenderTechniqueVariantAllocation.Unshadowed);
+                        MapRenderTechniqueVariantAllocation.Unshadowed)
+                        : null;
                 int? pageOneShadowAllocatedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
+                    placement.IsStaticDpvsSurface
+                        ? ResolvePreparedEditorTechniqueVariantSlot(
                         surface.PrimaryLightIndex,
                         GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
                         editorPreviewWorldDrawMethod,
                         worldSourceBuildResult.Source?.SceneLights.Source?
                             .SelectorState,
                         MapRenderTechniqueVariantAllocation
-                            .ShadowMapAllocated);
+                            .ShadowMapAllocated)
+                        : null;
                 PreparedWorldSurfaceGeometry surfaceGeometry =
                     preparedWorldSurfaces[surfaceIndex];
                 MaterialAsset? material = surface.Material ?? lookup.ResolveMaterial(surface.MaterialPointer);
@@ -963,7 +1007,13 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 }
 
                 if (!includeDiagnosticGeometry && !isSkyMaterial)
-                    bounds = IncludeBounds(bounds, surfaceGeometry.Bounds);
+                {
+                    bounds = IncludeBounds(
+                        bounds,
+                        TranslateWorldSurfaceBounds(
+                            surfaceGeometry.Bounds,
+                            placement.RenderOrigin));
+                }
                 IReadOnlyList<SelectedColorPass> rendererSelectedPasses =
                     material is not null
                         ? ResolveCachedEditorMaterialPasses(
@@ -1101,7 +1151,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                                 pageOneShadowAllocatedTechniqueSlot)
                             : [];
 
-                if (worldReceiverRequirements is not null)
+                if (placement.IsStaticDpvsSurface &&
+                    worldReceiverRequirements is not null)
                 {
                     MapRenderWorldReceiverVariantRequirement requirement =
                         MapRenderWorldReceiverVariantRequirement.None;
@@ -1217,6 +1268,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     int firstSurfacePickIndex = solidIndices.Count;
                     int surfaceTriangles = AddSolidSurface(
                         surfaceGeometry,
+                        placement.RenderOrigin,
                         solidVertices,
                         solidIndices,
                         color,
@@ -1227,8 +1279,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                         out int surfaceSolidSkyboxTriangles);
                     AddPickRange(
                         solidPickRanges,
-                        MapRenderPickKind.GfxSurface,
-                        surfaceIndex,
+                        surfacePickKind,
+                        surfacePickObjectIndex,
                         surfaceIndex,
                         firstSurfacePickIndex,
                         solidIndices.Count,
@@ -1274,6 +1326,10 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     new List<PreparedWorldTexturedSubmission>(
                         pageOneShadowAllocatedRendererSelectedPasses.Count);
                 var pendingRetainedPreviewSubmissions = new List<PreparedWorldTexturedSubmission>(1);
+                Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder>
+                    baseTexturedBatchBuilders = placement.IsStaticDpvsSurface
+                        ? texturedBatchBuilders
+                        : inlineBrushTexturedBatchBuilders;
                 bool isolateEditorTranslucentPassGroup =
                     rendererSelectedPasses
                         .Concat(shadowAllocatedRendererSelectedPasses)
@@ -1445,6 +1501,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     else if (TryBuildTexturedSurface(
                                  surface,
                                  surfaceGeometry,
+                                 placement.GameOrigin,
+                                 placement.RenderOrigin,
                                  vertexBytes,
                                  preparedColorLayers = Profile(
                                      collectBuildProfiles,
@@ -1592,8 +1650,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             surfaceRsxVertexInputs,
                             surfaceIndices,
                             new MapRenderPickRange(
-                                MapRenderPickKind.GfxSurface,
-                                surfaceIndex,
+                                surfacePickKind,
+                                surfacePickObjectIndex,
                                 surfaceIndex,
                                 0,
                                 0,
@@ -1624,7 +1682,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                         {
                             CommitPreparedSubmission(
                                 preparedSubmission,
-                                texturedBatchBuilders,
+                                baseTexturedBatchBuilders,
                                 updatePreviewDiagnostics: true);
                         }
                     }
@@ -1649,13 +1707,16 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                                     submission.ShaderExecution,
                                     MapRenderTechniqueVariantAllocation
                                         .Unshadowed));
-                    foreach (PreparedWorldTexturedSubmission submission in
-                             authorizedSubmissions)
+                    if (placement.IsStaticDpvsSurface)
                     {
-                        CommitPreparedSubmission(
-                            submission,
-                            pageZeroUnshadowedTexturedBatchBuilders,
-                            updatePreviewDiagnostics: false);
+                        foreach (PreparedWorldTexturedSubmission submission in
+                                 authorizedSubmissions)
+                        {
+                            CommitPreparedSubmission(
+                                submission,
+                                pageZeroUnshadowedTexturedBatchBuilders,
+                                updatePreviewDiagnostics: false);
+                        }
                     }
                     IReadOnlyList<PreparedWorldTexturedSubmission> submissionsToCommit =
                         RetainCompletedStageAfterAtomicAuthorization(
@@ -1665,11 +1726,12 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     {
                         CommitPreparedSubmission(
                             submission,
-                            texturedBatchBuilders,
+                            baseTexturedBatchBuilders,
                             updatePreviewDiagnostics: true);
                     }
                 }
-                if (shadowAllocatedRendererSelectedPasses.Count > 0)
+                if (placement.IsStaticDpvsSurface &&
+                    shadowAllocatedRendererSelectedPasses.Count > 0)
                 {
                     IReadOnlyList<PreparedWorldTexturedSubmission>
                         authorizedShadowSubmissions =
@@ -1690,7 +1752,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             updatePreviewDiagnostics: false);
                     }
                 }
-                if (pageOneUnshadowedRendererSelectedPasses.Count > 0)
+                if (placement.IsStaticDpvsSurface &&
+                    pageOneUnshadowedRendererSelectedPasses.Count > 0)
                 {
                     IReadOnlyList<PreparedWorldTexturedSubmission>
                         authorizedPageOneUnshadowedSubmissions =
@@ -1711,7 +1774,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             updatePreviewDiagnostics: false);
                     }
                 }
-                if (pageOneShadowAllocatedRendererSelectedPasses.Count > 0)
+                if (placement.IsStaticDpvsSurface &&
+                    pageOneShadowAllocatedRendererSelectedPasses.Count > 0)
                 {
                     IReadOnlyList<PreparedWorldTexturedSubmission>
                         authorizedPageOneShadowAllocatedSubmissions =
@@ -1790,11 +1854,17 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 static double ProfileSeconds(long ticks) =>
                     (double)ticks / System.Diagnostics.Stopwatch.Frequency;
                 int compactSolidVertexCount = solidVertices.Count / MapRenderScene.VertexFloatCount;
-                int compactTexturedVertexCount = texturedBatchBuilders.Values.Sum(
-                    batch => batch.Vertices.Count / MapRenderScene.TexturedVertexFloatCount);
-                int compactTexturedIndexCount = texturedBatchBuilders.Values.Sum(batch => batch.Indices.Count);
+                IEnumerable<TexturedBatchBuilder> baseWorldTexturedBuilders =
+                    texturedBatchBuilders.Values.Concat(
+                        inlineBrushTexturedBatchBuilders.Values);
+                int compactTexturedVertexCount = baseWorldTexturedBuilders.Sum(
+                    batch => batch.Vertices.Count /
+                        MapRenderScene.TexturedVertexFloatCount);
+                int compactTexturedIndexCount = baseWorldTexturedBuilders.Sum(
+                    batch => batch.Indices.Count);
                 reportProgress(
-                    $"world surfaces ready: {gfxMap.Dpvs.Surfaces.Count}/{gfxMap.Dpvs.Surfaces.Count}; " +
+                    $"world surfaces ready: {renderableWorldSurfaceIndices.Length}/" +
+                    $"{gfxMap.Dpvs.Surfaces.Count}; " +
                     $"profile setup={ProfileSeconds(worldSetupProfileTicks):0.00}s, " +
                     $"solid={ProfileSeconds(worldSolidGeometryProfileTicks):0.00}s, " +
                     $"textured={ProfileSeconds(worldTexturedPipelineProfileTicks):0.00}s " +
@@ -1810,6 +1880,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
             sunShadowWorldCasterBatches = BuildWorldSunShadowCasterBatches(
                 gfxMap,
                 preparedWorldSurfaces,
+                staticWorldSurfaceCount,
                 lookup,
                 imageStreams,
                 textureCache,
@@ -2606,6 +2677,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
             });
         TexturedBatchBuilder[] sceneWorldTexturedBuilders =
             texturedBatchBuilders.Values
+                .Concat(inlineBrushTexturedBatchBuilders.Values)
                 .Where(batch => batch.Indices.Count > 0)
                 .ToArray();
         MapRenderTexturedBatch[] sceneWorldTexturedBatches =

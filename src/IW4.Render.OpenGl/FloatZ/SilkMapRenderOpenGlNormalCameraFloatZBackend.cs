@@ -102,7 +102,6 @@ internal sealed unsafe class
         _ownerThreadId = Environment.CurrentManagedThreadId;
         _sources =
             MapRenderOpenGlNormalCameraFloatZProgramResolver.Resolve(
-                gl,
                 source);
         if (_sources.AssetPoolRevision !=
                 source.AssetPoolRevisionAtConstruction ||

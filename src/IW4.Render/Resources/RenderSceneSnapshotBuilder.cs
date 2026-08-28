@@ -3096,11 +3096,33 @@ public static class RenderSceneSnapshotBuilder
         MapRenderPickRange[] surfaceRanges = batch.PickRanges
             .Where(range => range.Kind == MapRenderPickKind.GfxSurface)
             .ToArray();
-        return surfaceRanges.Length == 0
+        if (surfaceRanges.Length != 0)
+        {
+            return string.Join(
+                ',',
+                surfaceRanges.Select(range => string.Concat(
+                    range.SurfaceIndex.ToString(
+                        CultureInfo.InvariantCulture),
+                    ":",
+                    range.IndexCount.ToString(
+                        CultureInfo.InvariantCulture))));
+        }
+
+        MapRenderPickRange[] brushModelRanges = batch.PickRanges
+            .Where(range =>
+                range.Kind == MapRenderPickKind.GfxBrushModelSurface)
+            .ToArray();
+        return brushModelRanges.Length == 0
             ? $"<invalid:{collectionOrdinal}>"
             : string.Join(
                 ',',
-                surfaceRanges.Select(range => string.Concat(
+                brushModelRanges.Select(range => string.Concat(
+                    ((int)range.Kind).ToString(
+                        CultureInfo.InvariantCulture),
+                    ":",
+                    range.ObjectIndex.ToString(
+                        CultureInfo.InvariantCulture),
+                    ":",
                     range.SurfaceIndex.ToString(
                         CultureInfo.InvariantCulture),
                     ":",

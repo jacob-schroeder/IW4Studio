@@ -132,6 +132,7 @@ public sealed partial class MapSceneBuilder
 
             int triangleCount = AddSolidSurface(
                 resolvePreparedSurface(surfaceIndex),
+                Vector3.Zero,
                 vertexBuffer,
                 indexBuffer,
                 Vector3.Zero,

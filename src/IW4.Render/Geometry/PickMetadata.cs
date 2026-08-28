@@ -6,7 +6,8 @@ public enum MapRenderPickKind
     StaticModel,
     CollisionTriangle,
     CollisionBrushBounds,
-    CollisionStaticModelBounds
+    CollisionStaticModelBounds,
+    GfxBrushModelSurface
 }
 
 public readonly record struct MapRenderPickRange(

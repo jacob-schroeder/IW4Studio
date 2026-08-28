@@ -6,7 +6,6 @@ using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.Lifecycle;
 using IW4.Render.Shaders;
 using IW4.Render.Techniques;
-using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl.Presentation;
 
@@ -38,13 +37,11 @@ internal static class
     MapRenderOpenGlNormalCameraFullscreenProgramResolver
 {
     public static MapRenderOpenGlNormalCameraFullscreenProgramSources Resolve(
-        GL gl,
         MapRenderWorldSceneSource source,
         bool requireFilmColorManipulation = false,
         bool requireGlow = false,
         bool useGlowSetupColor2 = false)
     {
-        ArgumentNullException.ThrowIfNull(gl);
         ArgumentNullException.ThrowIfNull(source);
         long revision = source.AssetPoolRevisionAtConstruction;
         RenderAssetLookup lookup = source.AssetLookup;
@@ -63,7 +60,7 @@ internal static class
         MapRenderNormalCameraMaterialAssetContract postFxColor2Contract =
             recipe.PostFxColor2;
         var vertexPrograms = new RsxVertexGlsl330ProgramResolver();
-        var fragmentPrograms = new RsxFragmentGlsl330ProgramResolver(gl);
+        var fragmentPrograms = new RsxFragmentGlsl330ProgramResolver();
 
         ResolvedMaterialProgram feedback = ResolveExactMaterialProgram(
             lookup,

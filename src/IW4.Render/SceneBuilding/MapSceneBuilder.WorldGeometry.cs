@@ -2,15 +2,123 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
+using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Math;
+using IW4.Assets.D3dbsp;
 using IW4.Render.Geometry;
 using IW4.Render.Shaders;
+using IW4.Render.Transforms;
 
 namespace IW4.Render.SceneBuilding;
 
 public sealed partial class MapSceneBuilder
 {
+    private readonly record struct WorldSurfacePlacement(
+        int BrushModelIndex,
+        Vector3 GameOrigin,
+        Vector3 RenderOrigin)
+    {
+        internal bool IsStaticDpvsSurface => BrushModelIndex == 0;
+    }
+
+    private static WorldSurfacePlacement?[]
+        CreateWorldSurfacePlacements(
+            GfxWorldAsset world,
+            MapEntsAsset? mapEnts,
+            out int staticSurfaceCount)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+
+        int surfaceCount = world.Dpvs.Surfaces.Count;
+        if (surfaceCount != 0 && world.Models.Count == 0)
+        {
+            throw new InvalidDataException(
+                $"GfxWorld '{world.Name}' has {surfaceCount} surfaces but no brush model zero.");
+        }
+
+        staticSurfaceCount = world.Models.Count == 0
+            ? 0
+            : world.Models[0].SurfaceCount;
+        if (world.Models.Count != 0 &&
+            world.Models[0].StartSurfIndex != 0)
+        {
+            throw new InvalidDataException(
+                $"GfxWorld '{world.Name}' brush model zero starts at surface " +
+                $"{world.Models[0].StartSurfIndex} instead of zero.");
+        }
+        if ((uint)staticSurfaceCount != world.Dpvs.StaticSurfaceCount ||
+            staticSurfaceCount > surfaceCount)
+        {
+            throw new InvalidDataException(
+                $"GfxWorld '{world.Name}' brush model zero owns " +
+                $"{staticSurfaceCount} surfaces, but DPVS declares " +
+                $"{world.Dpvs.StaticSurfaceCount} of {surfaceCount} total surfaces as static.");
+        }
+
+        var placements = new WorldSurfacePlacement?[surfaceCount];
+        var staticPlacement = new WorldSurfacePlacement(
+            BrushModelIndex: 0,
+            GameOrigin: Vector3.Zero,
+            RenderOrigin: Vector3.Zero);
+        for (int surfaceIndex = 0;
+             surfaceIndex < staticSurfaceCount;
+             surfaceIndex++)
+        {
+            placements[surfaceIndex] = staticPlacement;
+        }
+
+        if (mapEnts is null)
+            return placements;
+
+        IReadOnlyDictionary<int, Vector3> brushModelOrigins =
+            D3dbspMapEntsCodec.DecodeBrushModelOrigins(mapEnts);
+        foreach ((int modelIndex, Vector3 gameOrigin) in
+                 brushModelOrigins.OrderBy(entry => entry.Key))
+        {
+            if ((uint)modelIndex >= (uint)world.Models.Count)
+            {
+                throw new InvalidDataException(
+                    $"GfxWorld '{world.Name}' MapEnts references brush model " +
+                    $"*{modelIndex}, but only {world.Models.Count} render brush models exist.");
+            }
+
+            GfxBrushModel model = world.Models[modelIndex];
+            if (model.SurfaceCount == 0)
+                continue;
+
+            int firstSurface = model.StartSurfIndex;
+            int endSurface = checked(firstSurface + model.SurfaceCount);
+            if (firstSurface < staticSurfaceCount ||
+                endSurface > surfaceCount)
+            {
+                throw new InvalidDataException(
+                    $"GfxWorld '{world.Name}' brush model *{modelIndex} owns surface range " +
+                    $"[{firstSurface}, {endSurface}), outside the inline range " +
+                    $"[{staticSurfaceCount}, {surfaceCount}).");
+            }
+
+            var placement = new WorldSurfacePlacement(
+                modelIndex,
+                gameOrigin,
+                RenderCoordinateConverter.GameToRenderPosition(gameOrigin));
+            for (int surfaceIndex = firstSurface;
+                 surfaceIndex < endSurface;
+                 surfaceIndex++)
+            {
+                if (placements[surfaceIndex].HasValue)
+                {
+                    throw new InvalidDataException(
+                        $"GfxWorld '{world.Name}' brush model *{modelIndex} overlaps another " +
+                        $"owner at surface {surfaceIndex}.");
+                }
+                placements[surfaceIndex] = placement;
+            }
+        }
+
+        return placements;
+    }
+
     private static PreparedWorldSurfaceGeometry[] PrepareWorldSurfaceGeometries(
         GfxWorldAsset gfxMap,
         byte[] vertexBytes,
@@ -95,6 +203,7 @@ public sealed partial class MapSceneBuilder
                 sourceIndices);
         return AddSolidSurface(
             prepared,
+            Vector3.Zero,
             vertices,
             indices,
             color,
@@ -107,6 +216,7 @@ public sealed partial class MapSceneBuilder
 
     private static int AddSolidSurface(
         PreparedWorldSurfaceGeometry prepared,
+        Vector3 renderOrigin,
         List<float> vertices,
         List<uint> indices,
         Vector3 color,
@@ -131,9 +241,12 @@ public sealed partial class MapSceneBuilder
 
         foreach (PreparedWorldSurfaceTriangle triangle in prepared.Triangles)
         {
-            Vector3 p0 = prepared.GetPosition(triangle.VertexSlot0);
-            Vector3 p1 = prepared.GetPosition(triangle.VertexSlot1);
-            Vector3 p2 = prepared.GetPosition(triangle.VertexSlot2);
+            Vector3 p0 = prepared.GetPosition(triangle.VertexSlot0) +
+                renderOrigin;
+            Vector3 p1 = prepared.GetPosition(triangle.VertexSlot1) +
+                renderOrigin;
+            Vector3 p2 = prepared.GetPosition(triangle.VertexSlot2) +
+                renderOrigin;
 
             // Edge length is useful for classifying sky-scale geometry, but it
             // does not mean that an authored triangle is invalid. Keep the
@@ -146,7 +259,11 @@ public sealed partial class MapSceneBuilder
         }
 
         if (includeInBounds)
-            bounds = IncludeBounds(bounds, prepared.Bounds);
+            bounds = IncludeBounds(
+                bounds,
+                TranslateWorldSurfaceBounds(
+                    prepared.Bounds,
+                    renderOrigin));
         return prepared.SolidTriangleCount;
 
         uint GetOrAddSolidSurfaceVertex(int sourceVertexSlot, Vector3 position)
@@ -165,6 +282,8 @@ public sealed partial class MapSceneBuilder
     private static bool TryBuildTexturedSurface(
         GfxSurface surface,
         PreparedWorldSurfaceGeometry preparedGeometry,
+        Vector3 gameOrigin,
+        Vector3 renderOrigin,
         ReadOnlySpan<byte> vertexBytes,
         IReadOnlyList<PreparedColorLayer> colorLayers,
         IReadOnlyList<ShaderVertexInputBinding> rsxInputBindings,
@@ -245,6 +364,7 @@ public sealed partial class MapSceneBuilder
                 {
                     continue;
                 }
+                position += renderOrigin;
 
                 Span<Vector4> rsxInputDestination = preparedRsxVertexInputs is null
                     ? Span<Vector4>.Empty
@@ -255,6 +375,7 @@ public sealed partial class MapSceneBuilder
                     surface,
                     preparedGeometry.GetSourceVertexIndex(sourceVertexSlot),
                     position,
+                    gameOrigin,
                     vertexBytes,
                     vertexLayerBytes,
                     colorLayers,
@@ -375,6 +496,7 @@ public sealed partial class MapSceneBuilder
         GfxSurface surface,
         int surfaceVertexIndex,
         Vector3 position,
+        Vector3 gameOrigin,
         ReadOnlySpan<byte> vertexBytes,
         IReadOnlyList<byte> vertexLayerBytes,
         IReadOnlyList<PreparedColorLayer> colorLayers,
@@ -438,6 +560,7 @@ public sealed partial class MapSceneBuilder
                     surface,
                     surfaceVertexIndex,
                     rsxInputBindings,
+                    gameOrigin,
                     rsxInputDestination,
                     out rsxInputBlocker);
             }
@@ -533,6 +656,7 @@ public sealed partial class MapSceneBuilder
         GfxSurface surface,
         int surfaceVertexIndex,
         IReadOnlyList<ShaderVertexInputBinding> bindings,
+        Vector3 gameOrigin,
         Span<Vector4> values,
         out string blocker)
     {
@@ -584,10 +708,27 @@ public sealed partial class MapSceneBuilder
                 blocker = $"dest0x{destination:X2}:{decodeBlocker}:offset0x{offset:X}";
                 return false;
             }
-            values[destination] = value;
+            values[destination] =
+                binding.Source == MaterialStreamSource.Position
+                    ? value with
+                    {
+                        X = value.X + gameOrigin.X,
+                        Y = value.Y + gameOrigin.Y,
+                        Z = value.Z + gameOrigin.Z
+                    }
+                    : value;
         }
         return bindings.Count > 0;
     }
+
+    private static RenderBounds TranslateWorldSurfaceBounds(
+        RenderBounds bounds,
+        Vector3 renderOrigin) =>
+        bounds.IsValid
+            ? new RenderBounds(
+                bounds.Min + renderOrigin,
+                bounds.Max + renderOrigin)
+            : RenderBounds.Empty;
 
     private static bool TryDecodeRsxVertexInput(
         ReadOnlySpan<byte> stream0,

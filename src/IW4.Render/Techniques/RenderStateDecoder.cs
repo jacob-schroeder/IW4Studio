@@ -158,11 +158,11 @@ public static class RenderStateDecoder
         if (blendEnabled)
         {
             blendEquationRgb = DecodeBlendOperation(blendOperationRgb);
-            blendEquationAlpha = DecodeBlendOperation(
+            GfxBlendOperation blendOperationAlpha =
                 ReadField<GfxBlendOperation>(
                     w0,
                     GfxStateBitsEncoding.BlendOperationAlphaMask,
-                    GfxStateBitsEncoding.BlendOperationAlphaShift));
+                    GfxStateBitsEncoding.BlendOperationAlphaShift);
             // Form the 0x0314 source payload from bits 0..3 (RGB) and 16..19
             // (alpha), then the adjacent destination payload from bits 4..7
             // (RGB) and 20..23 (alpha).
@@ -182,6 +182,20 @@ public static class RenderStateDecoder
                     w0,
                     GfxStateBitsEncoding.DestinationBlendAlphaMask,
                     GfxStateBitsEncoding.DestinationBlendAlphaShift));
+            if (blendOperationAlpha == GfxBlendOperation.Disabled)
+            {
+                // IW4 expands the enabled RGB tuple into the alpha fields
+                // before emitting RSX state when no independent alpha
+                // operation is authored.
+                blendEquationAlpha = blendEquationRgb;
+                blendSourceAlpha = blendSourceRgb;
+                blendDestinationAlpha = blendDestinationRgb;
+            }
+            else
+            {
+                blendEquationAlpha =
+                    DecodeBlendOperation(blendOperationAlpha);
+            }
         }
 
         var flags1 = (GfxStateBits1Flags)w1;
