@@ -9,6 +9,8 @@ namespace IW4.Render.OpenGl.Shaders;
 /// </summary>
 internal static class RsxFragmentGlsl330Lowerer
 {
+    private const string HalfQuantizationFunctionName = "rsxHalf";
+
     internal const string FragmentEpilogueInsertionPoint =
         "  /*__MAP_RENDER_OPENGL_FRAGMENT_EPILOGUE__*/";
 
@@ -144,54 +146,56 @@ internal static class RsxFragmentGlsl330Lowerer
         builder.AppendLine("vec4 rsxNormalize(vec3 v) { return length(v) > 0.0 ? normalize(v).xyzz : v.xyzz; }");
         builder.AppendLine("vec4 rsxDivideBySqrt(vec4 a, float b) { vec4 q = a / sqrt(abs(b)); return vec4(abs(a.x) > 0.0 ? q.x : a.x, abs(a.y) > 0.0 ? q.y : a.y, abs(a.z) > 0.0 ? q.z : a.z, abs(a.w) > 0.0 ? q.w : a.w); }");
         builder.AppendLine("vec4 rsxBool4(bvec4 v) { return vec4(v.x ? 1.0 : 0.0, v.y ? 1.0 : 0.0, v.z ? 1.0 : 0.0, v.w ? 1.0 : 0.0); }");
-        // RSX half registers quantize after every write, while GLSL 3.30 only
-        // exposes full-width float arithmetic. Emulate that storage boundary
-        // deterministically instead of allowing later instructions to consume
-        // unrounded values.
-        //
-        // Keep this helper vectorized, loop-free, and free of scalar helper
-        // calls. NVIDIA's GLSL 3.30 Cg compiler inlines it at every FP16 write;
-        // the former scalar float->half->float implementation expanded complex
-        // shaders past the driver's 65K-instruction limit and made each cold
-        // program link take several seconds. Do not restore an extension-based
-        // packHalf2x16/unpackHalf2x16 path: the affected Windows driver produced
-        // value-dependent rendering corruption through that path.
-        builder.AppendLine("vec4 rsxHalf(vec4 value) {");
-        builder.AppendLine("  uvec4 valueBits = floatBitsToUint(value);");
-        builder.AppendLine("  uvec4 sign = valueBits & uvec4(0x80000000u);");
-        builder.AppendLine("  uvec4 magnitude = valueBits ^ sign;");
-        builder.AppendLine("  uvec4 adjusted = magnitude - uvec4(0x38000000u);");
-        builder.AppendLine("  uvec4 halfBits = (adjusted + uvec4(0xfffu) + ((adjusted >> 13u) & uvec4(1u))) >> 13u;");
-        builder.AppendLine("  vec4 normal = uintBitsToFloat(sign | ((halfBits << 13u) + uvec4(0x38000000u)));");
-        builder.AppendLine("  uvec4 exponent = (magnitude >> 23u) & uvec4(0xffu);");
-        // mix evaluates every candidate. Bound shifts for normal and special
-        // lanes too, even though only subnormal lanes select this result.
-        builder.AppendLine("  uvec4 shift = uvec4(126u) - min(exponent, uvec4(126u));");
-        builder.AppendLine("  shift = clamp(shift, uvec4(1u), uvec4(24u));");
-        builder.AppendLine("  uvec4 significand = (magnitude & uvec4(0x7fffffu)) | uvec4(0x800000u);");
-        builder.AppendLine("  uvec4 halfMantissa = significand >> shift;");
-        builder.AppendLine("  uvec4 remainder = significand & ((uvec4(1u) << shift) - uvec4(1u));");
-        builder.AppendLine("  uvec4 halfway = uvec4(1u) << (shift - uvec4(1u));");
-        builder.AppendLine("  halfMantissa += uvec4(greaterThan(remainder, halfway)) |");
-        builder.AppendLine("    (uvec4(equal(remainder, halfway)) & uvec4(notEqual(halfMantissa & uvec4(1u), uvec4(0u))));");
-        builder.AppendLine("  vec4 subnormalMagnitude = vec4(halfMantissa) * 5.9604644775390625e-8;");
-        // 0x33000000 is 2^-25. The exact tie rounds to even zero, so only
-        // magnitudes above it may produce the smallest binary16 subnormal.
-        builder.AppendLine("  subnormalMagnitude = mix(vec4(0.0), subnormalMagnitude, greaterThan(magnitude, uvec4(0x33000000u)));");
-        builder.AppendLine("  vec4 subnormal = uintBitsToFloat(sign | floatBitsToUint(subnormalMagnitude));");
-        builder.AppendLine("  uvec4 payload = (magnitude >> 13u) & uvec4(0x3ffu);");
-        builder.AppendLine("  payload = uvec4(");
-        builder.AppendLine("    magnitude.x > 0x7f800000u ? (payload.x == 0u ? 1u : payload.x) : 0u,");
-        builder.AppendLine("    magnitude.y > 0x7f800000u ? (payload.y == 0u ? 1u : payload.y) : 0u,");
-        builder.AppendLine("    magnitude.z > 0x7f800000u ? (payload.z == 0u ? 1u : payload.z) : 0u,");
-        builder.AppendLine("    magnitude.w > 0x7f800000u ? (payload.w == 0u ? 1u : payload.w) : 0u);");
-        builder.AppendLine("  vec4 special = uintBitsToFloat(sign | uvec4(0x7f800000u) | (payload << 13u));");
-        // 0x38800000 is 2^-14, the smallest normal binary16 value.
-        builder.AppendLine("  vec4 finite = mix(normal, subnormal, lessThan(magnitude, uvec4(0x38800000u)));");
-        // 0x477fefff is the final float encoding below the binary16 overflow
-        // tie at 65520; the tie itself rounds to infinity.
-        builder.AppendLine("  return mix(finite, special, greaterThan(magnitude, uvec4(0x477fefffu)));");
-        builder.AppendLine("}");
+        if (registerUsage.RequiresHalfQuantization)
+        {
+            // RSX half registers quantize after every write, while GLSL 3.30
+            // only exposes full-width float arithmetic. Emulate that storage
+            // boundary deterministically instead of allowing later
+            // instructions to consume unrounded values.
+            //
+            // Keep this helper vectorized, loop-free, and branch-free.
+            // NVIDIA's GLSL 3.30 Cg compiler inlines it at every FP16 write;
+            // the former scalar float->half->float implementation expanded
+            // complex shaders past the driver's 65K-instruction limit and
+            // made each cold program link take several seconds. Do not
+            // restore an extension-based packHalf2x16/unpackHalf2x16 path:
+            // the affected Windows driver produced value-dependent rendering
+            // corruption through that path.
+            builder.AppendLine(
+                $"vec4 {HalfQuantizationFunctionName}(vec4 value) {{");
+            builder.AppendLine("  uvec4 valueBits = floatBitsToUint(value);");
+            builder.AppendLine("  uvec4 sign = valueBits & uvec4(0x80000000u);");
+            builder.AppendLine("  uvec4 magnitude = valueBits ^ sign;");
+            builder.AppendLine("  uvec4 adjusted = magnitude - uvec4(0x38000000u);");
+            builder.AppendLine("  uvec4 halfBits = (adjusted + uvec4(0xfffu) + ((adjusted >> 13u) & uvec4(1u))) >> 13u;");
+            builder.AppendLine("  vec4 normal = uintBitsToFloat(sign | ((halfBits << 13u) + uvec4(0x38000000u)));");
+            builder.AppendLine("  uvec4 exponent = (magnitude >> 23u) & uvec4(0xffu);");
+            // mix evaluates every candidate. Bound shifts for normal and
+            // special lanes too, even though only subnormal lanes select it.
+            builder.AppendLine("  uvec4 shift = uvec4(126u) - min(exponent, uvec4(126u));");
+            builder.AppendLine("  shift = clamp(shift, uvec4(1u), uvec4(24u));");
+            builder.AppendLine("  uvec4 significand = (magnitude & uvec4(0x7fffffu)) | uvec4(0x800000u);");
+            builder.AppendLine("  uvec4 halfMantissa = significand >> shift;");
+            builder.AppendLine("  uvec4 remainder = significand & ((uvec4(1u) << shift) - uvec4(1u));");
+            builder.AppendLine("  uvec4 halfway = uvec4(1u) << (shift - uvec4(1u));");
+            builder.AppendLine("  halfMantissa += uvec4(greaterThan(remainder, halfway)) |");
+            builder.AppendLine("    (uvec4(equal(remainder, halfway)) & uvec4(notEqual(halfMantissa & uvec4(1u), uvec4(0u))));");
+            builder.AppendLine("  vec4 subnormalMagnitude = vec4(halfMantissa) * 5.9604644775390625e-8;");
+            // 0x33000000 is 2^-25. The exact tie rounds to even zero, so only
+            // magnitudes above it may produce the smallest binary16 subnormal.
+            builder.AppendLine("  subnormalMagnitude = mix(vec4(0.0), subnormalMagnitude, greaterThan(magnitude, uvec4(0x33000000u)));");
+            builder.AppendLine("  vec4 subnormal = uintBitsToFloat(sign | floatBitsToUint(subnormalMagnitude));");
+            builder.AppendLine("  uvec4 nanLane = uvec4(greaterThan(magnitude, uvec4(0x7f800000u)));");
+            builder.AppendLine("  uvec4 payload = ((magnitude >> 13u) & uvec4(0x3ffu)) * nanLane;");
+            builder.AppendLine("  payload |= uvec4(equal(payload, uvec4(0u))) * nanLane;");
+            builder.AppendLine("  vec4 special = uintBitsToFloat(sign | uvec4(0x7f800000u) | (payload << 13u));");
+            // 0x38800000 is 2^-14, the smallest normal binary16 value.
+            builder.AppendLine("  vec4 finite = mix(normal, subnormal, lessThan(magnitude, uvec4(0x38800000u)));");
+            // 0x477fefff is the final float encoding below the binary16
+            // overflow tie at 65520; the tie itself rounds to infinity.
+            builder.AppendLine("  return mix(finite, special, greaterThan(magnitude, uvec4(0x477fefffu)));");
+            builder.AppendLine("}");
+        }
         builder.AppendLine("vec4 rsxPrecisionClamp(vec4 value, float minimum, float maximum) { return clamp(vec4(isnan(value.x) ? 0.0 : value.x, isnan(value.y) ? 0.0 : value.y, isnan(value.z) ? 0.0 : value.z, isnan(value.w) ? 0.0 : value.w), vec4(minimum), vec4(maximum)); }");
         builder.AppendLine("bool rsxCcTestFL(float v) { return false; }");
         builder.AppendLine("bool rsxCcTestLT(float v) { return !isnan(v) && v < 0.0; }");
@@ -376,6 +380,7 @@ internal static class RsxFragmentGlsl330Lowerer
     {
         var fullRegisters = new SortedSet<int>();
         var halfRegisters = new SortedSet<int>();
+        bool requiresHalfQuantization = false;
         bool fp32Exports = fragmentProgramControl is { } control &&
             HasControlFlag(
                 control,
@@ -401,10 +406,13 @@ internal static class RsxFragmentGlsl330Lowerer
         {
             if (!FragmentInstructionEmitsExpression(
                     instruction,
-                    samplerProfile))
+                    samplerProfile,
+                    out bool instructionRequiresHalfQuantization))
             {
                 continue;
             }
+            requiresHalfQuantization |=
+                instructionRequiresHalfQuantization;
 
             int operandCount = instruction.OperandCount;
             if (operandCount > 0)
@@ -441,13 +449,16 @@ internal static class RsxFragmentGlsl330Lowerer
 
         return new FragmentRegisterUsage(
             fullRegisters.ToArray(),
-            halfRegisters.ToArray());
+            halfRegisters.ToArray(),
+            requiresHalfQuantization);
     }
 
     private static bool FragmentInstructionEmitsExpression(
         RsxFragmentInstruction instruction,
-        RsxFragmentSamplerFeatureProfile samplerProfile)
+        RsxFragmentSamplerFeatureProfile samplerProfile,
+        out bool requiresHalfQuantization)
     {
+        requiresHalfQuantization = false;
         if (instruction.IsControlFlow ||
             instruction.OpcodeType == RsxFragmentOpcode.Kill)
             return false;
@@ -455,10 +466,27 @@ internal static class RsxFragmentGlsl330Lowerer
             IsFenceNoOp(instruction))
             return false;
 
-        return FragmentExpression(
-                   instruction,
-                   samplerProfile,
-                   new HashSet<string>(StringComparer.Ordinal)) is not null;
+        string? expression = FragmentExpression(
+            instruction,
+            samplerProfile,
+            new HashSet<string>(StringComparer.Ordinal));
+        if (expression is null)
+            return false;
+
+        // Derive helper use from the same expression lowering used by main
+        // rather than duplicating the source-precision rules in a pre-scan.
+        // The write guard mirrors AppendFragmentInstructionWrites, so an
+        // expression that cannot reach GLSL does not pull in the helper.
+        if (FragmentInstructionWritesExpression(instruction))
+        {
+            expression = ApplyFragmentResultModifiers(
+                instruction,
+                expression);
+            requiresHalfQuantization = expression.Contains(
+                $"{HalfQuantizationFunctionName}(",
+                StringComparison.Ordinal);
+        }
+        return true;
     }
 
     private static void AddFragmentSourceRegister(
@@ -481,15 +509,13 @@ internal static class RsxFragmentGlsl330Lowerer
         RsxFragmentInstruction instruction,
         string expression)
     {
-        if (instruction.WriteMask == RsxFragmentWriteMask.None)
+        if (!FragmentInstructionWritesExpression(instruction))
             return;
 
         bool unconditional =
             instruction.ConditionTest == RsxConditionTest.True;
         if (instruction.NoDest)
         {
-            if (!instruction.CondWriteEnabled)
-                return;
             string conditionValue = $"rsxCcValue{instruction.Index}";
             string conditionRegister = instruction.ConditionWriteRegister1
                 ? "rsxCc1"
@@ -546,6 +572,11 @@ internal static class RsxFragmentGlsl330Lowerer
                 $"  {conditionRegister}.{mask} = {destination}.{mask};");
         }
     }
+
+    private static bool FragmentInstructionWritesExpression(
+        RsxFragmentInstruction instruction) =>
+        instruction.WriteMask != RsxFragmentWriteMask.None &&
+        (!instruction.NoDest || instruction.CondWriteEnabled);
 
     private static string FragmentConditionTestName(
         RsxConditionTest test) => test switch
@@ -791,11 +822,7 @@ internal static class RsxFragmentGlsl330Lowerer
         value += $".{FragmentSwizzle(operand)}";
         if (operand.Absolute)
             value = $"abs({value})";
-        if (operand.RegisterKind != RsxFragmentRegisterType.Input ||
-            instruction.SourceAttribute is not
-                (RsxFragmentInputAttribute.Color0 or
-                 RsxFragmentInputAttribute.Color1 or
-                 RsxFragmentInputAttribute.SignedSideArea))
+        if (!FragmentSourcePrecisionIsIgnored(instruction, operand))
         {
             value = ApplyFragmentSourcePrecision(
                 instruction.SourcePrecision(sourceIndex),
@@ -806,6 +833,15 @@ internal static class RsxFragmentGlsl330Lowerer
             value = $"(-{value})";
         return value;
     }
+
+    private static bool FragmentSourcePrecisionIsIgnored(
+        RsxFragmentInstruction instruction,
+        RsxFragmentOperand operand) =>
+        operand.RegisterKind == RsxFragmentRegisterType.Input &&
+        instruction.SourceAttribute is
+            RsxFragmentInputAttribute.Color0 or
+            RsxFragmentInputAttribute.Color1 or
+            RsxFragmentInputAttribute.SignedSideArea;
 
     private static string FragmentConstant(
         RsxFragmentInstruction instruction,
@@ -963,7 +999,7 @@ internal static class RsxFragmentGlsl330Lowerer
             when operand.RegisterKind == RsxFragmentRegisterType.Temporary &&
                  operand.Fp16 => expression,
         RsxFragmentPrecision.Half =>
-            $"rsxHalf({expression})",
+            $"{HalfQuantizationFunctionName}({expression})",
         RsxFragmentPrecision.Fixed12 =>
             $"rsxPrecisionClamp({expression}, -2.0, 2.0)",
         RsxFragmentPrecision.Fixed9 =>
@@ -987,8 +1023,12 @@ internal static class RsxFragmentGlsl330Lowerer
         // This is the RSX FP16 storage boundary, not a cosmetic output clamp.
         // Moving or removing it changes the inputs observed by later authored
         // instructions; keep the rsxHalf implementation compiler-friendly.
-        if (instruction.DestFp16)
-            expression = $"rsxHalf({expression})";
+        if (instruction.DestFp16 &&
+            !FragmentResultIsAlreadyHalf(instruction))
+        {
+            expression =
+                $"{HalfQuantizationFunctionName}({expression})";
+        }
 
         if (instruction.Saturate)
         {
@@ -1006,6 +1046,50 @@ internal static class RsxFragmentGlsl330Lowerer
                 $"rsxPrecisionClamp({expression}, -1.0, 1.0)",
             _ => expression
         };
+    }
+
+    private static bool FragmentResultIsAlreadyHalf(
+        RsxFragmentInstruction instruction)
+    {
+        // Comparison/set results are 0 or 1. Every supported result scale is
+        // a binary power, so the scaled values remain exactly binary16 and do
+        // not need a storage conversion.
+        if (instruction.OpcodeType is
+            RsxFragmentOpcode.SetLessThan or
+            RsxFragmentOpcode.SetGreaterThanOrEqual or
+            RsxFragmentOpcode.SetLessThanOrEqual or
+            RsxFragmentOpcode.SetGreaterThan or
+            RsxFragmentOpcode.SetNotEqual or
+            RsxFragmentOpcode.SetEqual or
+            RsxFragmentOpcode.SetTrue or
+            RsxFragmentOpcode.SetFalse)
+        {
+            return true;
+        }
+
+        if (instruction.OpcodeType != RsxFragmentOpcode.Move ||
+            instruction.Scale != RsxFragmentResultScale.None ||
+            instruction.OperandCount == 0)
+        {
+            return false;
+        }
+
+        RsxFragmentOperand source = instruction.Source0Operand;
+        if (source.RegisterKind == RsxFragmentRegisterType.Temporary &&
+            source.Fp16)
+        {
+            // An H-register value is already binary16. MOV swizzle, absolute,
+            // and negate only rearrange components or sign bits, so an
+            // unscaled result remains exactly representable as binary16.
+            return true;
+        }
+
+        // Half source precision inserts rsxHalf before the optional negate.
+        // The color input classes deliberately bypass source precision, so
+        // they still require destination storage quantization.
+        return instruction.SourcePrecision(0) ==
+                   RsxFragmentPrecision.Half &&
+               !FragmentSourcePrecisionIsIgnored(instruction, source);
     }
 
     private static bool DestinationPrecisionIsIgnored(
@@ -1122,7 +1206,8 @@ internal static class RsxFragmentGlsl330Lowerer
 
     private readonly record struct FragmentRegisterUsage(
         int[] FullRegisters,
-        int[] HalfRegisters);
+        int[] HalfRegisters,
+        bool RequiresHalfQuantization);
 }
 
 internal sealed record RsxFragmentGlsl330LoweringResult(
