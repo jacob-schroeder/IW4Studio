@@ -180,8 +180,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     /// <summary>
     /// Admits only texture storage referenced by this frame's visible draw
-    /// groups. Stable texture objects retain a complete opaque fallback while
-    /// nonvisible full-resolution storage ages out under the byte budget.
+    /// groups. A visible upload deferred by the byte budget receives a complete
+    /// opaque fallback before drawing; nonvisible texture names remain
+    /// uninitialized until first use. Resident full-resolution storage ages out
+    /// under the byte budget.
     /// </summary>
     private void PrepareTextureResidencyForVisibleDraws(
         IReadOnlyList<
@@ -358,6 +360,42 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 residentBytes -
                 eviction.EstimatedResidentBytes);
         }
+
+        // Generic preview passes are allowed to draw while a visible texture is
+        // still behind the transfer budget. Preserve their established opaque
+        // fallback without paying that initialization cost for nonvisible scene
+        // textures during renderer loading.
+        foreach (MapRenderOpenGlTextureResidencyEntry entry in
+                 _textureAdmissionScratch)
+        {
+            if (!entry.IsResident && !entry.HasInitializedStorage)
+                InitializeDeferredTextureFallback(entry);
+        }
+    }
+
+    private void InitializeDeferredTextureFallback(
+        MapRenderOpenGlTextureResidencyEntry entry)
+    {
+        TextureMutationBinding restore = BindTextureForMutation(entry);
+        try
+        {
+            InitializeTextureFallbackStorageBound(
+                entry.Target,
+                entry.FaceCount);
+            ApplyTextureSwizzle(
+                RsxTextureSwizzleDecoder.Decode(
+                    entry.Source.RsxTextureCommandState),
+                entry.Target);
+            ApplyTextureSampler(
+                entry.Source.DecodedSamplerState,
+                maxMipLevel: 0,
+                entry.Target);
+        }
+        finally
+        {
+            RestoreTextureAfterMutation(entry, restore);
+        }
+        entry.MarkFallbackInitialized();
     }
 
     private bool CanReuseTextureResidencyManifest(

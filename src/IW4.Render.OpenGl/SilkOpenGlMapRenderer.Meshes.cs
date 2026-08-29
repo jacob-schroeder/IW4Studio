@@ -403,30 +403,51 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             !CanUploadTexture(batch.Texture))
             return default;
 
-        bool directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
-            batch.ShaderExecution,
-            batch.SceneLightIndex,
-            out TranslatedProgramDirectCodeConstantPlan?
-                directCodePlan);
-        TranslatedProgramVertexConstantBindingPlan?
-            vertexConstantPlan = null;
-        bool vertexConstantPlanReady = directCodePlanReady &&
-            TryCreateEditorVertexConstantBindingPlan(
-                batch.ShaderExecution,
-                directCodePlan!,
-                out vertexConstantPlan);
+        TranslatedProgramDirectCodeConstantPlan? directCodePlan;
+        TranslatedProgramVertexConstantBindingPlan? vertexConstantPlan;
         MapRenderOpenGlStaticModelProgramUniforms?
             compiledStaticModelProgramUniforms = null;
-        GlRsxProgram compiledRsxProgram =
-            authorizedAuthoredProgramGroups is null ||
-            !vertexConstantPlanReady
-                ? default
-                : GetOrCreateRsxProgram(
+        GlRsxProgram compiledRsxProgram = default;
+        bool directCodePlanReady;
+        bool vertexConstantPlanReady;
+        if (authorizedAuthoredProgramGroups is null)
+        {
+            directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
+                batch.ShaderExecution,
+                batch.SceneLightIndex,
+                out directCodePlan);
+            if (directCodePlanReady &&
+                directCodePlan is { } readyDirectCodePlan)
+            {
+                vertexConstantPlanReady =
+                    TryCreateEditorVertexConstantBindingPlan(
+                        batch.ShaderExecution,
+                        readyDirectCodePlan,
+                        out vertexConstantPlan);
+            }
+            else
+            {
+                directCodePlanReady = false;
+                vertexConstantPlan = null;
+                vertexConstantPlanReady = false;
+            }
+        }
+        else
+        {
+            AuthoredProgramPreparation preparation =
+                GetOrCreateAuthoredProgramPreparation(
                     batch.ShaderExecution,
                     batch.State,
-                    vertexConstantPlan!,
-                    usesStaticModelInstancing: true,
-                    out compiledStaticModelProgramUniforms);
+                    batch.SceneLightIndex,
+                    usesStaticModelInstancing: true);
+            directCodePlan = preparation.DirectCodePlan;
+            vertexConstantPlan = preparation.VertexConstantPlan;
+            compiledRsxProgram = preparation.Program;
+            compiledStaticModelProgramUniforms =
+                preparation.StaticModelUniforms;
+            directCodePlanReady = directCodePlan is not null;
+            vertexConstantPlanReady = vertexConstantPlan is not null;
+        }
         int vertexCount = batch.Vertices.Length /
             MapRenderScene.TexturedVertexFloatCount;
         bool useRsxVertexInputs =
@@ -624,26 +645,27 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             if (executeTranslatedAuthored &&
                 batch.EditorDepthPrepass is { } depthPrepass &&
                 batch.DepthPrepassShaderExecution is
-                    { ProgramExecutionReady: true } depthExecution &&
-                TryCreateEditorDirectCodeConstantPlan(
-                    depthExecution,
-                    batch.SceneLightIndex,
-                    out TranslatedProgramDirectCodeConstantPlan?
-                        depthDirectCodePlan) &&
-                TryCreateEditorVertexConstantBindingPlan(
-                    depthExecution,
-                    depthDirectCodePlan!,
-                    out TranslatedProgramVertexConstantBindingPlan?
-                        depthVertexConstantPlan))
+                    { ProgramExecutionReady: true } depthExecution)
             {
-                depthPrepassRsxProgram = GetOrCreateRsxProgram(
-                    depthExecution,
-                    depthPrepass.State,
-                    depthVertexConstantPlan!,
-                    usesStaticModelInstancing: true,
-                    out depthStaticModelProgramUniforms);
-                if (depthPrepassRsxProgram.Handle != 0)
+                AuthoredProgramPreparation depthPreparation =
+                    GetOrCreateAuthoredProgramPreparation(
+                        depthExecution,
+                        depthPrepass.State,
+                        batch.SceneLightIndex,
+                        usesStaticModelInstancing: true);
+                if (depthPreparation.Program.Handle != 0)
                 {
+                    if (depthPreparation.DirectCodePlan is not
+                            { } depthDirectCodePlan ||
+                        depthPreparation.VertexConstantPlan is not
+                            { } depthVertexConstantPlan)
+                    {
+                        throw new InvalidOperationException(
+                            "A ready authored depth program lost its constant plans.");
+                    }
+                    depthPrepassRsxProgram = depthPreparation.Program;
+                    depthStaticModelProgramUniforms =
+                        depthPreparation.StaticModelUniforms;
                     depthPrepassExecution = depthExecution;
                     depthPrepassVertexConstantPlan =
                         depthVertexConstantPlan;
@@ -651,10 +673,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         CreateRsxConstantBindings(
                             depthExecution,
                             depthPrepassRsxProgram,
-                            depthDirectCodePlan!,
-                            depthVertexConstantPlan!,
+                            depthDirectCodePlan,
+                            depthVertexConstantPlan,
                             ResolveAuthoredExternallyBoundVertexConstants(
-                                depthVertexConstantPlan!,
+                                depthVertexConstantPlan,
                                 usesStaticModelInstancing: true));
                 }
             }
@@ -2291,26 +2313,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return default;
         }
 
-        bool directCodePlanReady = TryCreateEditorDirectCodeConstantPlan(
-            batch.ShaderExecution,
-            batch.SceneLightIndex,
-            out TranslatedProgramDirectCodeConstantPlan?
-                directCodePlan);
-        TranslatedProgramVertexConstantBindingPlan?
-            vertexConstantPlan = null;
-        bool vertexConstantPlanReady = directCodePlanReady &&
-            TryCreateEditorVertexConstantBindingPlan(
-                batch.ShaderExecution,
-                directCodePlan!,
-                out vertexConstantPlan);
-        GlRsxProgram compiledRsxProgram = !vertexConstantPlanReady
-            ? default
-            : GetOrCreateRsxProgram(
+        AuthoredProgramPreparation preparation =
+            GetOrCreateAuthoredProgramPreparation(
                 batch.ShaderExecution,
                 batch.State,
-                vertexConstantPlan!,
-                usesStaticModelInstancing: false,
-                out _);
+                batch.SceneLightIndex,
+                usesStaticModelInstancing: false);
+        TranslatedProgramDirectCodeConstantPlan? directCodePlan =
+            preparation.DirectCodePlan;
+        TranslatedProgramVertexConstantBindingPlan? vertexConstantPlan =
+            preparation.VertexConstantPlan;
+        bool directCodePlanReady = directCodePlan is not null;
+        bool vertexConstantPlanReady = vertexConstantPlan is not null;
+        GlRsxProgram compiledRsxProgram = preparation.Program;
         bool useRsxVertexInputs =
                                   authorizedAuthoredProgramGroups.Contains(AuthoredProgramGroup(batch)) &&
                                   batch.ShaderExecution.RendererProgramReady &&
@@ -2444,35 +2459,34 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         if (executeTranslatedAuthored &&
             batch.EditorDepthPrepass is { } depthPrepass &&
             batch.DepthPrepassShaderExecution is
-                { ProgramExecutionReady: true } depthExecution &&
-            TryCreateEditorDirectCodeConstantPlan(
-                depthExecution,
-                batch.SceneLightIndex,
-                out TranslatedProgramDirectCodeConstantPlan?
-                    depthDirectCodePlan) &&
-            TryCreateEditorVertexConstantBindingPlan(
-                depthExecution,
-                depthDirectCodePlan!,
-                out TranslatedProgramVertexConstantBindingPlan?
-                    depthVertexConstantPlan))
+                { ProgramExecutionReady: true } depthExecution)
         {
-            depthPrepassRsxProgram = GetOrCreateRsxProgram(
-                depthExecution,
-                depthPrepass.State,
-                depthVertexConstantPlan!,
-                usesStaticModelInstancing: false,
-                out _);
-            if (depthPrepassRsxProgram.Handle != 0)
+            AuthoredProgramPreparation depthPreparation =
+                GetOrCreateAuthoredProgramPreparation(
+                    depthExecution,
+                    depthPrepass.State,
+                    batch.SceneLightIndex,
+                    usesStaticModelInstancing: false);
+            if (depthPreparation.Program.Handle != 0)
             {
+                if (depthPreparation.DirectCodePlan is not
+                        { } depthDirectCodePlan ||
+                    depthPreparation.VertexConstantPlan is not
+                        { } depthVertexConstantPlan)
+                {
+                    throw new InvalidOperationException(
+                        "A ready authored depth program lost its constant plans.");
+                }
+                depthPrepassRsxProgram = depthPreparation.Program;
                 depthPrepassExecution = depthExecution;
                 depthPrepassVertexConstantPlan = depthVertexConstantPlan;
                 depthPrepassRsxConstantBindings = CreateRsxConstantBindings(
                     depthExecution,
                     depthPrepassRsxProgram,
-                    depthDirectCodePlan!,
-                    depthVertexConstantPlan!,
+                    depthDirectCodePlan,
+                    depthVertexConstantPlan,
                     ResolveAuthoredExternallyBoundVertexConstants(
-                        depthVertexConstantPlan!,
+                        depthVertexConstantPlan,
                         usesStaticModelInstancing: false));
             }
         }

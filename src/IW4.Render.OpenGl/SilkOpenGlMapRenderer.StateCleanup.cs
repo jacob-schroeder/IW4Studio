@@ -14,6 +14,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 {
     private void DeleteLoadedResources()
     {
+        ClearAuthoredProgramPreparationCache();
         ClearPreviewVisibilityPublicationCache();
         ResetSunShadowDpvsPipelineState();
         _sunShadowDpvsWorker?.Dispose();

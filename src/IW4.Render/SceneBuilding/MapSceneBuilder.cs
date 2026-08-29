@@ -2520,51 +2520,100 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             .OwnsNormalCameraColor(
                                 instance.CameraRegion)));
 
-        MapRenderStaticModelRunPlan preparedStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                preparedStaticTexturedBatches);
+        const int PreparedStaticRunPlanOrdinal = 0;
+        const int AllLodStaticRunPlanOrdinal = 1;
+        const int ExactNormalCameraStaticRunPlanOrdinal = 2;
+        const int PageZeroUnshadowedStaticRunPlanOrdinal = 3;
+        const int PageZeroShadowAllocatedStaticRunPlanOrdinal = 4;
+        const int PageOneUnshadowedStaticRunPlanOrdinal = 5;
+        const int PageOneShadowAllocatedStaticRunPlanOrdinal = 6;
+        const int StaticRunPlanCount = 7;
+        var staticRunPlanSources =
+            new IReadOnlyList<MapRenderInstancedTexturedBatch>[
+                StaticRunPlanCount];
+        staticRunPlanSources[PreparedStaticRunPlanOrdinal] =
+            preparedStaticTexturedBatches;
+        staticRunPlanSources[AllLodStaticRunPlanOrdinal] =
+            allStaticLodTexturedBatches;
+        staticRunPlanSources[ExactNormalCameraStaticRunPlanOrdinal] =
+            exactNormalCameraStaticModelTexturedBatches;
+        staticRunPlanSources[PageZeroUnshadowedStaticRunPlanOrdinal] =
+            pageZeroUnshadowedStaticModelReceiverBatches;
+        staticRunPlanSources[PageZeroShadowAllocatedStaticRunPlanOrdinal] =
+            shadowAllocatedStaticModelTexturedBatches;
+        staticRunPlanSources[PageOneUnshadowedStaticRunPlanOrdinal] =
+            pageOneUnshadowedStaticModelReceiverBatches;
+        staticRunPlanSources[
+                PageOneShadowAllocatedStaticRunPlanOrdinal] =
+            pageOneShadowAllocatedStaticModelReceiverBatches;
+
+        var staticRunPlans =
+            new MapRenderStaticModelRunPlan[StaticRunPlanCount];
+        var staticRunPlanFailures =
+            new System.Runtime.ExceptionServices.ExceptionDispatchInfo?[
+                StaticRunPlanCount];
+        Parallel.For(
+            0,
+            StaticRunPlanCount,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(
+                    1,
+                    Math.Min(Environment.ProcessorCount, 4))
+            },
+            channelOrdinal =>
+            {
+                try
+                {
+                    staticRunPlans[channelOrdinal] =
+                        MapRenderStaticModelRunPlanner.Create(
+                            staticRunPlanSources[channelOrdinal]);
+                }
+                catch (Exception exception)
+                {
+                    staticRunPlanFailures[channelOrdinal] =
+                        System.Runtime.ExceptionServices
+                            .ExceptionDispatchInfo
+                            .Capture(exception);
+                }
+            });
+        for (int channelOrdinal = 0;
+             channelOrdinal < staticRunPlanFailures.Length;
+             channelOrdinal++)
+        {
+            // Preserve the former sequential failure contract even when
+            // multiple independently-planned channels reject the same map.
+            staticRunPlanFailures[channelOrdinal]?.Throw();
+        }
+
         preparedStaticTexturedBatches =
-            preparedStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan allLodStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                allStaticLodTexturedBatches);
+            staticRunPlans[PreparedStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         allStaticLodTexturedBatches =
-            allLodStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan exactNormalCameraStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                exactNormalCameraStaticModelTexturedBatches);
+            staticRunPlans[AllLodStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         exactNormalCameraStaticModelTexturedBatches =
-            exactNormalCameraStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan pageZeroUnshadowedStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                pageZeroUnshadowedStaticModelReceiverBatches);
+            staticRunPlans[ExactNormalCameraStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         pageZeroUnshadowedStaticModelReceiverBatches =
-            pageZeroUnshadowedStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan pageZeroShadowAllocatedStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                shadowAllocatedStaticModelTexturedBatches);
+            staticRunPlans[PageZeroUnshadowedStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         shadowAllocatedStaticModelTexturedBatches =
-            pageZeroShadowAllocatedStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan pageOneUnshadowedStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                pageOneUnshadowedStaticModelReceiverBatches);
+            staticRunPlans[PageZeroShadowAllocatedStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         pageOneUnshadowedStaticModelReceiverBatches =
-            pageOneUnshadowedStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan pageOneShadowAllocatedStaticRunPlan =
-            MapRenderStaticModelRunPlanner.Create(
-                pageOneShadowAllocatedStaticModelReceiverBatches);
+            staticRunPlans[PageOneUnshadowedStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         pageOneShadowAllocatedStaticModelReceiverBatches =
-            pageOneShadowAllocatedStaticRunPlan.Batches.ToArray();
-        MapRenderStaticModelRunPlan[] staticRunPlans =
-        [
-            preparedStaticRunPlan,
-            allLodStaticRunPlan,
-            exactNormalCameraStaticRunPlan,
-            pageZeroUnshadowedStaticRunPlan,
-            pageZeroShadowAllocatedStaticRunPlan,
-            pageOneUnshadowedStaticRunPlan,
-            pageOneShadowAllocatedStaticRunPlan
-        ];
+            staticRunPlans[PageOneShadowAllocatedStaticRunPlanOrdinal]
+                .Batches
+                .ToArray();
         reportProgress?.Invoke(
             "native static runs ready: " +
             $"channels={staticRunPlans.Length}, " +

@@ -19,6 +19,12 @@ namespace IW4.Render.OpenGl;
 
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
+    // GL_ARB_parallel_shader_compile guarantees that this status query does
+    // not wait for compilation/linking. Keep the raw token here because the
+    // OpenGL 3.3 binding intentionally does not expose the ARB-only pname.
+    private const ProgramPropertyARB ParallelLinkCompletionStatus =
+        (ProgramPropertyARB)0x91B1;
+    private const int MaximumParallelLinksInFlight = 16;
     private bool _deferNewAuthoredProgramLinkCompletion;
     private readonly List<PreparedAuthoredProgramLink>
         _preparedAuthoredProgramLinks = [];
@@ -26,6 +32,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         OpenGlProgramKey,
         MapRenderOpenGlStaticModelProgramUniforms>
         _staticModelProgramUniforms = [];
+    private Dictionary<
+        AuthoredProgramPreparationKey,
+        AuthoredProgramPreparation>?
+        _activeAuthoredProgramPreparations;
 
     private uint[] CreateEditorRoleTextures(
         IReadOnlyList<MaterialSamplerBinding> bindings,
@@ -136,31 +146,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return false;
         }
 
-        if (!TryCreateEditorDirectCodeConstantPlan(
+        AuthoredProgramPreparation preparation =
+            GetOrCreateAuthoredProgramPreparation(
                 batch.ShaderExecution,
+                batch.State,
                 batch.SceneLightIndex,
-                out TranslatedProgramDirectCodeConstantPlan?
-                    directCodePlan) ||
-            !TryCreateEditorVertexConstantBindingPlan(
-                batch.ShaderExecution,
-                directCodePlan!,
-                out TranslatedProgramVertexConstantBindingPlan?
-                    vertexPlan) ||
-            vertexPlan!.Bindings.Any(binding => binding.Kind is
-                TranslatedProgramVertexConstantBindingKind
-                    .PerInstanceStaticModelBaseLightingCoords or
-                TranslatedProgramVertexConstantBindingKind
-                    .PerInstanceStaticModelLightProbeAmbient))
-        {
-            return false;
-        }
-
-        return GetOrCreateRsxProgram(
-            batch.ShaderExecution,
-            batch.State,
-            vertexPlan!,
-            usesStaticModelInstancing: false,
-            out _).Handle != 0;
+                usesStaticModelInstancing: false);
+        return preparation.Status ==
+            AuthoredProgramPreparationStatus.Ready;
     }
 
     private bool PreflightBaseWorldAuthoredProgram(
@@ -229,26 +222,14 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return false;
         }
 
-        if (!TryCreateEditorDirectCodeConstantPlan(
+        AuthoredProgramPreparation preparation =
+            GetOrCreateAuthoredProgramPreparation(
                 batch.ShaderExecution,
+                batch.State,
                 batch.SceneLightIndex,
-                out TranslatedProgramDirectCodeConstantPlan?
-                    directCodePlan) ||
-            !TryCreateEditorVertexConstantBindingPlan(
-                batch.ShaderExecution,
-                directCodePlan!,
-                out TranslatedProgramVertexConstantBindingPlan?
-                    vertexPlan))
-        {
-            return false;
-        }
-
-        return GetOrCreateRsxProgram(
-            batch.ShaderExecution,
-            batch.State,
-            vertexPlan!,
-            usesStaticModelInstancing: true,
-            out _).Handle != 0;
+                usesStaticModelInstancing: true);
+        return preparation.Status ==
+            AuthoredProgramPreparationStatus.Ready;
     }
 
     /// <summary>
@@ -331,32 +312,94 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
 
     private void SubmitPreparedAuthoredProgramLinks()
     {
+        if (_supportsParallelShaderLinkCompletion)
+        {
+            SubmitPreparedAuthoredProgramLinksInParallelWindow();
+            return;
+        }
+
         foreach (PreparedAuthoredProgramLink prepared in
                  _preparedAuthoredProgramLinks)
         {
-            prepared.Trace?.Invoke(
-                $"driver glLinkProgram started; " +
-                $"program={prepared.Program}");
-            _gl.LinkProgram(prepared.Program);
-            // The load-scoped shader cache retains both objects until every
-            // program has passed LinkStatus. glLinkProgram has captured their
-            // current compiled state, so detaching here prevents each program
-            // from extending shader-object lifetime independently.
-            prepared.Trace?.Invoke(
-                $"driver glDetachShader started; stage=vertex; " +
-                $"program={prepared.Program}");
-            _gl.DetachShader(
-                prepared.Program,
-                prepared.VertexShader);
-            prepared.Trace?.Invoke(
-                $"driver glDetachShader started; stage=fragment; " +
-                $"program={prepared.Program}");
-            _gl.DetachShader(
-                prepared.Program,
-                prepared.FragmentShader);
-            prepared.Trace?.Invoke(
-                $"new link submitted; program={prepared.Program}");
+            SubmitPreparedAuthoredProgramLink(prepared);
         }
+    }
+
+    private void SubmitPreparedAuthoredProgramLinksInParallelWindow()
+    {
+        // Do not submit every cold source program at once. NVIDIA can defer
+        // that unbounded queue until the first LinkStatus query, turning one
+        // ordinary preflight call into a multi-minute driver stall. Every
+        // shader object has already been created before this point; only the
+        // number of concurrently linking programs is bounded here.
+        int windowSize = Math.Clamp(
+            _parallelShaderCompilerThreadLimit,
+            1,
+            MaximumParallelLinksInFlight);
+        var inFlight = new List<PreparedAuthoredProgramLink>(windowSize);
+        int nextPreparedIndex = 0;
+        while (nextPreparedIndex < _preparedAuthoredProgramLinks.Count ||
+               inFlight.Count != 0)
+        {
+            while (nextPreparedIndex < _preparedAuthoredProgramLinks.Count &&
+                   inFlight.Count < windowSize)
+            {
+                PreparedAuthoredProgramLink prepared =
+                    _preparedAuthoredProgramLinks[nextPreparedIndex++];
+                SubmitPreparedAuthoredProgramLink(prepared);
+                inFlight.Add(prepared);
+            }
+
+            bool anyCompleted = false;
+            for (int index = inFlight.Count - 1; index >= 0; index--)
+            {
+                if (!IsParallelProgramLinkComplete(inFlight[index].Program))
+                    continue;
+
+                inFlight.RemoveAt(index);
+                anyCompleted = true;
+            }
+
+            if (!anyCompleted)
+            {
+                // CompletionStatus is explicitly nonblocking, but polling it
+                // in a tight loop can contend on the driver's command lock.
+                // A short backoff leaves the compiler workers runnable while
+                // avoiding the blocking LinkStatus synchronization point.
+                Thread.Sleep(1);
+            }
+        }
+    }
+
+    private void SubmitPreparedAuthoredProgramLink(
+        PreparedAuthoredProgramLink prepared)
+    {
+        prepared.Trace?.Invoke(
+            $"driver glLinkProgram started; program={prepared.Program}");
+        _gl.LinkProgram(prepared.Program);
+        // The load-scoped shader cache retains both objects until every
+        // program has passed LinkStatus. glLinkProgram has captured their
+        // current compiled state, so detaching here prevents each program
+        // from extending shader-object lifetime independently.
+        prepared.Trace?.Invoke(
+            $"driver glDetachShader started; stage=vertex; " +
+            $"program={prepared.Program}");
+        _gl.DetachShader(prepared.Program, prepared.VertexShader);
+        prepared.Trace?.Invoke(
+            $"driver glDetachShader started; stage=fragment; " +
+            $"program={prepared.Program}");
+        _gl.DetachShader(prepared.Program, prepared.FragmentShader);
+        prepared.Trace?.Invoke(
+            $"new link submitted; program={prepared.Program}");
+    }
+
+    private bool IsParallelProgramLinkComplete(uint program)
+    {
+        _gl.GetProgram(
+            program,
+            ParallelLinkCompletionStatus,
+            out int status);
+        return status != 0;
     }
 
     private void SubmitDepthPrepassProgram(MapRenderTexturedBatch batch)
@@ -370,25 +413,16 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 MapRenderScene.TexturedVertexFloatCount) * 16 * 4 ||
             !HasRequiredImmutableSceneSamplers(
                 execution,
-                batch.SceneLightIndex) ||
-            !TryCreateEditorDirectCodeConstantPlan(
-                execution,
-                batch.SceneLightIndex,
-                out TranslatedProgramDirectCodeConstantPlan? directPlan) ||
-            !TryCreateEditorVertexConstantBindingPlan(
-                execution,
-                directPlan!,
-                out TranslatedProgramVertexConstantBindingPlan? vertexPlan))
+                batch.SceneLightIndex))
         {
             return;
         }
 
-        GetOrCreateRsxProgram(
+        GetOrCreateAuthoredProgramPreparation(
             execution,
             depthPrepass.State,
-            vertexPlan!,
-            usesStaticModelInstancing: false,
-            out _);
+            batch.SceneLightIndex,
+            usesStaticModelInstancing: false);
     }
 
     private void SubmitDepthPrepassProgram(
@@ -403,25 +437,16 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 MapRenderScene.TexturedVertexFloatCount) * 16 * 4 ||
             !HasRequiredImmutableSceneSamplers(
                 execution,
-                batch.SceneLightIndex) ||
-            !TryCreateEditorDirectCodeConstantPlan(
-                execution,
-                batch.SceneLightIndex,
-                out TranslatedProgramDirectCodeConstantPlan? directPlan) ||
-            !TryCreateEditorVertexConstantBindingPlan(
-                execution,
-                directPlan!,
-                out TranslatedProgramVertexConstantBindingPlan? vertexPlan))
+                batch.SceneLightIndex))
         {
             return;
         }
 
-        GetOrCreateRsxProgram(
+        GetOrCreateAuthoredProgramPreparation(
             execution,
             depthPrepass.State,
-            vertexPlan!,
-            usesStaticModelInstancing: true,
-            out _);
+            batch.SceneLightIndex,
+            usesStaticModelInstancing: true);
     }
 
     private bool HasRequiredImmutableSceneSamplers(
@@ -523,6 +548,170 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return result.IsReady;
     }
 
+    private void BeginAuthoredProgramPreparationCache()
+    {
+        if (_activeAuthoredProgramPreparations is not null)
+        {
+            throw new InvalidOperationException(
+                "An authored-program preparation cache is already active.");
+        }
+
+        var cache = new Dictionary<
+            AuthoredProgramPreparationKey,
+            AuthoredProgramPreparation>(
+                AuthoredProgramPreparationKeyComparer.Instance);
+        _activeAuthoredProgramPreparations = cache;
+    }
+
+    private void ClearAuthoredProgramPreparationCache() =>
+        _activeAuthoredProgramPreparations = null;
+
+    private AuthoredProgramPreparation
+        GetOrCreateAuthoredProgramPreparation(
+            ShaderExecutionContract execution,
+            RenderState state,
+            byte sceneLightIndex,
+            bool usesStaticModelInstancing)
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        var key = new AuthoredProgramPreparationKey(
+            execution,
+            state,
+            sceneLightIndex,
+            usesStaticModelInstancing);
+        Dictionary<
+            AuthoredProgramPreparationKey,
+            AuthoredProgramPreparation>? cache =
+                _activeAuthoredProgramPreparations;
+        if (cache is not null && cache.TryGetValue(
+                key,
+                out AuthoredProgramPreparation cached))
+        {
+            if (cached.Status !=
+                    AuthoredProgramPreparationStatus.Pending ||
+                _deferNewAuthoredProgramLinkCompletion)
+            {
+                return cached;
+            }
+
+            // Deferred source programs deliberately return no executable
+            // handle during the submission pass. Resolve that one pending
+            // result again after all links have been submitted and validated;
+            // never turn a transient pending result into a permanent blocker.
+            if (cached.DirectCodePlan is not { } cachedDirectCodePlan ||
+                cached.VertexConstantPlan is not
+                    { } cachedVertexConstantPlan)
+            {
+                throw new InvalidOperationException(
+                    "A pending authored-program preparation lost its constant plans.");
+            }
+            AuthoredProgramPreparation resolved = ResolveAuthoredProgram(
+                execution,
+                state,
+                cachedDirectCodePlan,
+                cachedVertexConstantPlan,
+                usesStaticModelInstancing);
+            cache[key] = resolved;
+            return resolved;
+        }
+
+        AuthoredProgramPreparation created =
+            CreateAuthoredProgramPreparation(
+                execution,
+                state,
+                sceneLightIndex,
+                usesStaticModelInstancing);
+        cache?.Add(key, created);
+        return created;
+    }
+
+    private AuthoredProgramPreparation CreateAuthoredProgramPreparation(
+        ShaderExecutionContract execution,
+        RenderState state,
+        byte sceneLightIndex,
+        bool usesStaticModelInstancing)
+    {
+        if (!TryCreateEditorDirectCodeConstantPlan(
+                execution,
+                sceneLightIndex,
+                out TranslatedProgramDirectCodeConstantPlan?
+                    directCodePlan) ||
+            directCodePlan is null)
+        {
+            return new AuthoredProgramPreparation(
+                AuthoredProgramPreparationStatus.Blocked,
+                null,
+                null,
+                default,
+                null);
+        }
+
+        if (!TryCreateEditorVertexConstantBindingPlan(
+                execution,
+                directCodePlan,
+                out TranslatedProgramVertexConstantBindingPlan?
+                    vertexConstantPlan) ||
+            vertexConstantPlan is null)
+        {
+            return new AuthoredProgramPreparation(
+                AuthoredProgramPreparationStatus.Blocked,
+                directCodePlan,
+                null,
+                default,
+                null);
+        }
+
+        if (!usesStaticModelInstancing &&
+            vertexConstantPlan.Bindings.Any(binding => binding.Kind is
+                TranslatedProgramVertexConstantBindingKind
+                    .PerInstanceStaticModelBaseLightingCoords or
+                TranslatedProgramVertexConstantBindingKind
+                    .PerInstanceStaticModelLightProbeAmbient))
+        {
+            return new AuthoredProgramPreparation(
+                AuthoredProgramPreparationStatus.Blocked,
+                directCodePlan,
+                vertexConstantPlan,
+                default,
+                null);
+        }
+
+        return ResolveAuthoredProgram(
+            execution,
+            state,
+            directCodePlan,
+            vertexConstantPlan,
+            usesStaticModelInstancing);
+    }
+
+    private AuthoredProgramPreparation ResolveAuthoredProgram(
+        ShaderExecutionContract execution,
+        RenderState state,
+        TranslatedProgramDirectCodeConstantPlan directCodePlan,
+        TranslatedProgramVertexConstantBindingPlan vertexConstantPlan,
+        bool usesStaticModelInstancing)
+    {
+        GlRsxProgram program = GetOrCreateRsxProgram(
+            execution,
+            state,
+            vertexConstantPlan,
+            usesStaticModelInstancing,
+            out MapRenderOpenGlStaticModelProgramUniforms?
+                staticModelUniforms,
+            out bool resolutionPending);
+        AuthoredProgramPreparationStatus status = program.Handle != 0
+            ? AuthoredProgramPreparationStatus.Ready
+            : resolutionPending
+                ? AuthoredProgramPreparationStatus.Pending
+                : AuthoredProgramPreparationStatus.Blocked;
+        return new AuthoredProgramPreparation(
+            status,
+            directCodePlan,
+            vertexConstantPlan,
+            program,
+            staticModelUniforms);
+    }
+
     private GlRsxConstantBinding[] CreateRsxConstantBindings(
         ShaderExecutionContract execution,
         GlRsxProgram program,
@@ -589,11 +778,13 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         TranslatedProgramVertexConstantBindingPlan vertexConstantPlan,
         bool usesStaticModelInstancing,
         out MapRenderOpenGlStaticModelProgramUniforms?
-            staticModelUniforms)
+            staticModelUniforms,
+        out bool resolutionPending)
     {
         Action<string>? trace =
             CreateLoadDetailReporter("authored program");
         staticModelUniforms = null;
+        resolutionPending = false;
         if (!_authoredMaterials.TryResolveRawProgramSources(
                 execution,
                 state,
@@ -735,6 +926,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             out OpenGlProgramKey programKey,
             out blocker,
             trace);
+        resolutionPending =
+            program.Handle == 0 &&
+            _deferNewAuthoredProgramLinkCompletion &&
+            blocker is null;
         if (program.Handle == 0)
         {
             trace?.Invoke(
@@ -917,6 +1112,35 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         uint previousTexture = 0;
         try
         {
+            if (!isPinned)
+            {
+                // glGenTexture reserves a stable name without creating texture
+                // state. Nonvisible resources do not need a per-object 1x1
+                // fallback yet; the residency pass initializes either the full
+                // payload or the exact fallback before a visible draw can bind
+                // this handle. This keeps scene loading from issuing fallback
+                // storage and sampler calls for every deferred texture.
+                trace?.Invoke(
+                    $"residency cache add started; handle={handle}");
+                _textureHandles.Add(
+                    texture,
+                    handle,
+                    textureTarget,
+                    faceCount,
+                    storageLevelCount,
+                    estimatedResidentBytes,
+                    isPinned,
+                    authoredBcPlan,
+                    usesDirectAuthoredBcUpload);
+                cached = true;
+                trace?.Invoke(
+                    $"residency cache add completed; handle={handle}; " +
+                    $"cacheEntries={_textureHandles.Count}");
+                trace?.Invoke(
+                    $"request completed; path=new-texture; handle={handle}");
+                return handle;
+            }
+
             if (useStateShadow)
             {
                 previousTextureUnit = _state.GetActiveTextureUnit();
@@ -1899,6 +2123,56 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return shader;
         }
     }
+
+    private enum AuthoredProgramPreparationStatus : byte
+    {
+        Blocked,
+        Pending,
+        Ready
+    }
+
+    private readonly record struct AuthoredProgramPreparationKey(
+        ShaderExecutionContract Execution,
+        RenderState State,
+        byte SceneLightIndex,
+        bool UsesStaticModelInstancing);
+
+    // ShaderExecutionContract is immutable and scene-owned. Reference identity
+    // therefore gives an exact, cheap key for the contract reused by preflight
+    // and resource materialization without conflating independently-built
+    // contracts whose IReadOnlyList members may carry different source data.
+    private sealed class AuthoredProgramPreparationKeyComparer :
+        IEqualityComparer<AuthoredProgramPreparationKey>
+    {
+        internal static AuthoredProgramPreparationKeyComparer Instance
+            { get; } = new();
+
+        public bool Equals(
+            AuthoredProgramPreparationKey x,
+            AuthoredProgramPreparationKey y) =>
+            ReferenceEquals(x.Execution, y.Execution) &&
+            x.State.Equals(y.State) &&
+            x.SceneLightIndex == y.SceneLightIndex &&
+            x.UsesStaticModelInstancing == y.UsesStaticModelInstancing;
+
+        public int GetHashCode(AuthoredProgramPreparationKey value) =>
+            HashCode.Combine(
+                System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(
+                    value.Execution),
+                value.State.HasState,
+                value.State.LoadBits0,
+                value.State.LoadBits1,
+                value.State.ShaderPackerSrgbEnabled,
+                value.SceneLightIndex,
+                value.UsesStaticModelInstancing);
+    }
+
+    private readonly record struct AuthoredProgramPreparation(
+        AuthoredProgramPreparationStatus Status,
+        TranslatedProgramDirectCodeConstantPlan? DirectCodePlan,
+        TranslatedProgramVertexConstantBindingPlan? VertexConstantPlan,
+        GlRsxProgram Program,
+        MapRenderOpenGlStaticModelProgramUniforms? StaticModelUniforms);
 
     private readonly record struct PreparedAuthoredProgramLink(
         uint Program,

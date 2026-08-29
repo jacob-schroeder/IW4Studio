@@ -203,6 +203,13 @@ internal sealed class MapRenderOpenGlTextureResidencyEntry
 
     internal bool IsResident { get; private set; }
 
+    /// <summary>
+    /// True after this name has either its complete payload or the 1x1 opaque
+    /// fallback required when a visible upload is deferred. A name returned by
+    /// glGenTexture alone deliberately has no texture state yet.
+    /// </summary>
+    internal bool HasInitializedStorage { get; private set; }
+
     internal long ResidentBytes =>
         IsResident ? EstimatedResidentBytes : 0;
 
@@ -217,8 +224,19 @@ internal sealed class MapRenderOpenGlTextureResidencyEntry
     {
         if (frameIndex < -1)
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
+        HasInitializedStorage = true;
         IsResident = true;
         LastResidentFrame = frameIndex;
+    }
+
+    internal void MarkFallbackInitialized()
+    {
+        if (IsResident)
+        {
+            throw new InvalidOperationException(
+                "A resident texture cannot be replaced by a fallback without eviction.");
+        }
+        HasInitializedStorage = true;
     }
 
     internal void Pin() =>

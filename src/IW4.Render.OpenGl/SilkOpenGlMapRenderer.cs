@@ -65,6 +65,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _sharedProgramUsage;
     private readonly bool _ownsSharedProgramCache;
     private readonly int _parallelShaderCompilerThreadLimit;
+    private readonly bool _supportsParallelShaderLinkCompletion;
     private readonly HashSet<uint> _sceneOwnedProgramHandles = [];
     private readonly Dictionary<
         OpenGlProgramKey,
@@ -751,6 +752,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         {
             _parallelShaderCompilerThreadLimit =
                 ConfigureParallelShaderCompilation(gl);
+            _supportsParallelShaderLinkCompletion = gl.IsExtensionPresent(
+                "GL_ARB_parallel_shader_compile");
             _state = new SilkOpenGlStateShadow(gl);
             _frameVertexConstants =
                 new MapRenderOpenGlFrameVertexConstantBuffer(gl, _state);
@@ -1041,7 +1044,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
                     : 0)
             .ToArray();
         using var loadShaderObjectCache =
-            BeginLoadShaderObjectCache();
+            BeginLoadShaderObjectCache(
+                cacheAuthoredProgramPreparations: true);
         _solidProgram = CreateProgram(VertexShaderSource, FragmentShaderSource);
         _solidViewProjectionLocation = _gl.GetUniformLocation(_solidProgram, "uViewProjection");
         _solidUseInstancingLocation = _gl.GetUniformLocation(_solidProgram, "uUseInstancing");

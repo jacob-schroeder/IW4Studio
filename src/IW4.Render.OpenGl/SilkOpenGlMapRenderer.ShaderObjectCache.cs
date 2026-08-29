@@ -7,7 +7,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     private MapRenderOpenGlLoadShaderObjectCache?
         _activeLoadShaderObjectCache;
 
-    private LoadShaderObjectCacheScope BeginLoadShaderObjectCache()
+    private LoadShaderObjectCacheScope BeginLoadShaderObjectCache(
+        bool cacheAuthoredProgramPreparations = false)
     {
         if (_activeLoadShaderObjectCache is not null)
         {
@@ -19,20 +20,43 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             CompileShader,
             _gl.DeleteShader);
         _activeLoadShaderObjectCache = cache;
-        return new LoadShaderObjectCacheScope(this, cache);
+        try
+        {
+            if (cacheAuthoredProgramPreparations)
+            {
+                // Invocation preparation is valid only during the initial
+                // synchronous Load, while all source-affecting preview state
+                // used to build constant plans is stable.
+                BeginAuthoredProgramPreparationCache();
+            }
+        }
+        catch
+        {
+            _activeLoadShaderObjectCache = null;
+            cache.Dispose();
+            throw;
+        }
+        return new LoadShaderObjectCacheScope(
+            this,
+            cache,
+            cacheAuthoredProgramPreparations);
     }
 
     private sealed class LoadShaderObjectCacheScope : IDisposable
     {
         private SilkOpenGlMapRenderer? _owner;
         private readonly MapRenderOpenGlLoadShaderObjectCache _cache;
+        private readonly bool _ownsAuthoredProgramPreparations;
 
         internal LoadShaderObjectCacheScope(
             SilkOpenGlMapRenderer owner,
-            MapRenderOpenGlLoadShaderObjectCache cache)
+            MapRenderOpenGlLoadShaderObjectCache cache,
+            bool ownsAuthoredProgramPreparations)
         {
             _owner = owner;
             _cache = cache;
+            _ownsAuthoredProgramPreparations =
+                ownsAuthoredProgramPreparations;
         }
 
         internal MapRenderOpenGlShaderObjectCacheTelemetry Telemetry =>
@@ -54,7 +78,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             }
 
             owner._activeLoadShaderObjectCache = null;
-            _cache.Dispose();
+            try
+            {
+                _cache.Dispose();
+            }
+            finally
+            {
+                if (_ownsAuthoredProgramPreparations)
+                    owner.ClearAuthoredProgramPreparationCache();
+            }
         }
     }
 }
