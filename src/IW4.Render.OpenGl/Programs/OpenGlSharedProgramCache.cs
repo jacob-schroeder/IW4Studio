@@ -14,6 +14,7 @@ public sealed class OpenGlSharedProgramCache : IDisposable
     public const string LinkProfileIdentity =
         "silk-opengl-3.3-core";
     public const int DefaultMaximumEntryCount = 2048;
+    private const int DefaultMaximumPersistentBinaryEntryCount = 16384;
 
     private readonly GL _deletionApi;
     private readonly OpenGlLinkedProgramHandleCache _handles;
@@ -45,7 +46,7 @@ public sealed class OpenGlSharedProgramCache : IDisposable
                 : new OpenGlProgramBinaryDiskCache(
                     deletionApi,
                     programBinaryCacheDirectory,
-                    maximumEntryCount);
+                    DefaultMaximumPersistentBinaryEntryCount);
         _handles = new OpenGlLinkedProgramHandleCache(
             LinkProfileIdentity,
             maximumEntryCount,
@@ -149,6 +150,47 @@ public sealed class OpenGlSharedProgramCache : IDisposable
             usageLane);
     }
 
+    private OpenGlLinkedProgramHandleResolution GetOrLinkDeferred(
+        int usageLane,
+        GL currentContextApi,
+        string vertexGlsl,
+        string pixelGlsl,
+        Func<uint> submitLink,
+        Func<uint, uint> completeLink,
+        bool deferNewLinkCompletion)
+    {
+        EnsureUsableOnOwnerThread();
+        if (!_activeUsageLanes.Contains(usageLane))
+        {
+            throw new InvalidOperationException(
+                $"OpenGL program-cache usage lane {usageLane} is not active.");
+        }
+        return _handles.GetOrLinkDeferred(
+            currentContextApi,
+            vertexGlsl,
+            pixelGlsl,
+            submitLink,
+            completeLink,
+            deferNewLinkCompletion,
+            usageLane);
+    }
+
+    private void ReleaseUsageLanePrograms(
+        int usageLane,
+        GL currentContextApi)
+    {
+        EnsureUsableOnOwnerThread();
+        ArgumentNullException.ThrowIfNull(currentContextApi);
+        if (!_activeUsageLanes.Contains(usageLane))
+        {
+            throw new InvalidOperationException(
+                $"OpenGL program-cache usage lane {usageLane} is not active.");
+        }
+        _handles.ReleaseUsageLanePrograms(
+            currentContextApi,
+            usageLane);
+    }
+
     internal OpenGlLinkedProgramHandleCacheTelemetry
         CreateTelemetry()
     {
@@ -186,6 +228,7 @@ public sealed class OpenGlSharedProgramCache : IDisposable
         finally
         {
             _handles.Clear();
+            _handles.CompleteProgramBinaryPersistence();
             _availableUsageLanes.Clear();
             _activeUsageLanes.Clear();
         }
@@ -216,6 +259,7 @@ public sealed class OpenGlSharedProgramCache : IDisposable
 
         _disposed = true;
         _handles.Clear();
+        _handles.CompleteProgramBinaryPersistence();
         _availableUsageLanes.Clear();
         _activeUsageLanes.Clear();
     }
@@ -235,14 +279,21 @@ public sealed class OpenGlSharedProgramCache : IDisposable
         }
     }
 
-    private void ReleaseUsageLane(int usageLane)
+    private void ReleaseUsageLane(
+        GL currentContextApi,
+        int usageLane)
     {
         EnsureUsableOnOwnerThread();
+        ArgumentNullException.ThrowIfNull(currentContextApi);
         if (!_activeUsageLanes.Remove(usageLane))
         {
             throw new InvalidOperationException(
                 $"OpenGL program-cache usage lane {usageLane} was released twice.");
         }
+        // An interrupted map load may leave submitted links that have not yet
+        // reached LinkStatus. They cannot be inherited by a later renderer,
+        // whose synchronous callback does not own their completion contract.
+        _handles.CancelPendingLinks(currentContextApi, usageLane);
         _availableUsageLanes.Add(usageLane);
     }
 
@@ -290,11 +341,49 @@ public sealed class OpenGlSharedProgramCache : IDisposable
                 link);
         }
 
+        internal OpenGlLinkedProgramHandleResolution GetOrLinkDeferred(
+            string vertexGlsl,
+            string pixelGlsl,
+            Func<uint> submitLink,
+            Func<uint, uint> completeLink,
+            bool deferNewLinkCompletion)
+        {
+            OpenGlSharedProgramCache owner =
+                _owner ?? throw new ObjectDisposedException(
+                    nameof(UsageLease));
+            return owner.GetOrLinkDeferred(
+                UsageLane,
+                _currentContextApi,
+                vertexGlsl,
+                pixelGlsl,
+                submitLink,
+                completeLink,
+                deferNewLinkCompletion);
+        }
+
+        /// <summary>
+        /// Releases this renderer's previous scene programs while preserving
+        /// the independently bounded persistent binary cache. A map renderer
+        /// invokes this only after deleting every resource that can reference
+        /// the old handles, preventing sixteen sequential maps from pinning
+        /// the live-handle cache at its ceiling and forcing cold links to
+        /// bypass deferred scheduling.
+        /// </summary>
+        internal void ReleaseScenePrograms()
+        {
+            OpenGlSharedProgramCache owner =
+                _owner ?? throw new ObjectDisposedException(
+                    nameof(UsageLease));
+            owner.ReleaseUsageLanePrograms(
+                UsageLane,
+                _currentContextApi);
+        }
+
         public void Dispose()
         {
             OpenGlSharedProgramCache? owner =
                 Interlocked.Exchange(ref _owner, null);
-            owner?.ReleaseUsageLane(UsageLane);
+            owner?.ReleaseUsageLane(_currentContextApi, UsageLane);
         }
     }
 }

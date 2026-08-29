@@ -120,7 +120,11 @@ internal static class RsxFragmentGlsl330Lowerer
             builder.AppendLine(
                 $"uniform vec4 {OpenGlStaticPixelConstantUniformLayout.ElementName(argumentOrdinal)};");
         }
-        for (int i = 0; i < 16; i++)
+        foreach (int i in instructions
+                     .Where(instruction => instruction.IsTexture)
+                     .Select(instruction => instruction.TextureUnit)
+                     .Distinct()
+                     .Order())
         {
             RsxFragmentSamplerFeatures features =
                 samplerProfile.FeaturesFor(i);
@@ -135,9 +139,26 @@ internal static class RsxFragmentGlsl330Lowerer
                         : "sampler2D";
             builder.AppendLine($"uniform {samplerType} rsxSampler{i};");
         }
-        builder.AppendLine("in vec4 rsxColor0; in vec4 rsxColor1;");
+        RsxFragmentInputAttribute[] fragmentInputs = instructions
+            .Where(HasInputSource)
+            .Select(instruction => instruction.SourceAttribute)
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (fragmentInputs.Contains(RsxFragmentInputAttribute.Color0))
+            builder.AppendLine("in vec4 rsxColor0;");
+        if (fragmentInputs.Contains(RsxFragmentInputAttribute.Color1))
+            builder.AppendLine("in vec4 rsxColor1;");
         for (int i = 0; i < 8; i++)
-            builder.AppendLine($"in vec4 rsxTexcoord{i};");
+        {
+            if (fragmentInputs.Contains(
+                    (RsxFragmentInputAttribute)(
+                        (int)RsxFragmentInputAttribute.TextureCoordinate0 +
+                        i)))
+            {
+                builder.AppendLine($"in vec4 rsxTexcoord{i};");
+            }
+        }
         builder.AppendLine("layout(location = 0) out vec4 FragColor;");
         builder.AppendLine("layout(location = 1) out vec4 rsxMrtColor1;");
         builder.AppendLine("layout(location = 2) out vec4 rsxMrtColor2;");

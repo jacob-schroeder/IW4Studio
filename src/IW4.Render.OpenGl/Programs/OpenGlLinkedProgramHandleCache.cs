@@ -15,7 +15,7 @@ internal sealed class OpenGlLinkedProgramHandleCache
 {
     private readonly Dictionary<
         OpenGlLinkedProgramHandleCacheKey,
-        OpenGlLinkedProgramHandleResolution> _resolutions = [];
+        CachedProgram> _programs = [];
     private readonly HashSet<uint> _ownedHandles = [];
     private readonly OpenGlProgramBinaryDiskCache? _programBinaries;
     private readonly string _linkProfileIdentity;
@@ -31,6 +31,7 @@ internal sealed class OpenGlLinkedProgramHandleCache
     private long _programBinaryLoadAttemptCount;
     private long _programBinaryLoadHitCount;
     private long _programBinaryStoreCount;
+    private long _deferredLinkSubmissionCount;
 
     internal OpenGlLinkedProgramHandleCache(
         string linkProfileIdentity,
@@ -68,15 +69,20 @@ internal sealed class OpenGlLinkedProgramHandleCache
                 vertexGlsl,
                 pixelGlsl,
                 _linkProfileIdentity));
-        if (_resolutions.TryGetValue(
+        if (_programs.TryGetValue(
                 key,
-                out OpenGlLinkedProgramHandleResolution cached))
+                out CachedProgram? cached))
         {
+            if (cached.IsPending)
+            {
+                throw new InvalidOperationException(
+                    "A deferred OpenGL program link must be completed through the deferred-link path before ordinary cache use.");
+            }
             _linkReuseCount = checked(_linkReuseCount + 1);
-            return cached with { IsReuse = true };
+            return cached.Resolution with { IsReuse = true };
         }
 
-        bool cacheResolution = _resolutions.Count < _maximumEntryCount;
+        bool cacheResolution = _programs.Count < _maximumEntryCount;
         if (!cacheResolution)
         {
             _capacityBypassCount =
@@ -160,8 +166,304 @@ internal sealed class OpenGlLinkedProgramHandleCache
         }
 
         if (cacheResolution)
-            _resolutions.Add(key, resolution);
+            _programs.Add(key, new CachedProgram(resolution));
         return resolution;
+    }
+
+    /// <summary>
+    /// Submits a source link without immediately querying LinkStatus, then
+    /// completes that exact submission on a later call. OpenGL drivers are
+    /// allowed to perform linking asynchronously, but querying LinkStatus is
+    /// a synchronization point. Map loading uses the deferred first call for
+    /// every exact program before it begins completion, allowing drivers such
+    /// as NVIDIA's to work on the full queue concurrently. The final result
+    /// still passes through the same cache, binary persistence, and failure
+    /// ownership rules as the synchronous path.
+    /// </summary>
+    internal OpenGlLinkedProgramHandleResolution GetOrLinkDeferred(
+        GL currentContextApi,
+        string vertexGlsl,
+        string pixelGlsl,
+        Func<uint> submitLink,
+        Func<uint, uint> completeLink,
+        bool deferNewLinkCompletion,
+        int usageLane = 0)
+    {
+        EnsureOwnerThread();
+        ArgumentNullException.ThrowIfNull(currentContextApi);
+        ArgumentNullException.ThrowIfNull(vertexGlsl);
+        ArgumentNullException.ThrowIfNull(pixelGlsl);
+        ArgumentNullException.ThrowIfNull(submitLink);
+        ArgumentNullException.ThrowIfNull(completeLink);
+        if (usageLane < 0)
+            throw new ArgumentOutOfRangeException(nameof(usageLane));
+
+        _semanticRequestCount = checked(_semanticRequestCount + 1);
+        var key = new OpenGlLinkedProgramHandleCacheKey(
+            usageLane,
+            OpenGlProgramKey.Create(
+                vertexGlsl,
+                pixelGlsl,
+                _linkProfileIdentity));
+        if (_programs.TryGetValue(key, out CachedProgram? cached))
+        {
+            if (!cached.IsPending)
+            {
+                _linkReuseCount = checked(_linkReuseCount + 1);
+                return cached.Resolution with { IsReuse = true };
+            }
+
+            if (deferNewLinkCompletion)
+                return cached.Resolution with { IsReuse = true };
+
+            return CompleteDeferredLink(
+                currentContextApi,
+                key,
+                cached,
+                vertexGlsl,
+                pixelGlsl,
+                completeLink);
+        }
+
+        // A binary hit is already a validated linked program and never needs
+        // to enter the deferred source-link lane.
+        if (_programBinaries?.IsAvailable == true)
+        {
+            _programBinaryLoadAttemptCount = checked(
+                _programBinaryLoadAttemptCount + 1);
+            if (_programBinaries.TryLoad(
+                    currentContextApi,
+                    key.ProgramKey,
+                    vertexGlsl,
+                    pixelGlsl,
+                    out uint binaryHandle))
+            {
+                _programBinaryLoadHitCount = checked(
+                    _programBinaryLoadHitCount + 1);
+                bool cacheBinary = _programs.Count < _maximumEntryCount;
+                if (!cacheBinary)
+                {
+                    _capacityBypassCount = checked(
+                        _capacityBypassCount + 1);
+                }
+                else
+                {
+                    _ownedHandles.Add(binaryHandle);
+                }
+
+                var binaryResolution = new
+                    OpenGlLinkedProgramHandleResolution(
+                        Handle: binaryHandle,
+                        FailureReason: null,
+                        IsReuse: false,
+                        IsProgramBinaryLoad: true,
+                        CacheOwnsHandle: cacheBinary,
+                        IsCacheResident: cacheBinary,
+                        IsPending: false);
+                if (cacheBinary)
+                    _programs.Add(key, new CachedProgram(binaryResolution));
+                return binaryResolution;
+            }
+        }
+
+        bool cacheSubmission = _programs.Count < _maximumEntryCount;
+        if (!cacheSubmission)
+        {
+            // A pending handle cannot be transferred safely without also
+            // transferring its completion ownership. At the live-handle
+            // ceiling, preserve the established nonresident synchronous path.
+            _capacityBypassCount = checked(_capacityBypassCount + 1);
+            return LinkWithoutCaching(
+                currentContextApi,
+                key.ProgramKey,
+                vertexGlsl,
+                pixelGlsl,
+                submitLink,
+                completeLink);
+        }
+
+        uint pendingHandle = 0;
+        bool pendingHandleOwned = false;
+        try
+        {
+            _uniqueLinkAttemptCount = checked(
+                _uniqueLinkAttemptCount + 1);
+            pendingHandle = submitLink();
+            if (pendingHandle == 0)
+            {
+                throw new InvalidOperationException(
+                    "OpenGL linker returned the reserved zero program handle.");
+            }
+            if (!_ownedHandles.Add(pendingHandle))
+            {
+                throw new InvalidOperationException(
+                    $"OpenGL linker returned already-owned program handle {pendingHandle} for another exact GLSL pair.");
+            }
+            pendingHandleOwned = true;
+
+            _deferredLinkSubmissionCount = checked(
+                _deferredLinkSubmissionCount + 1);
+            var pendingResolution = new
+                OpenGlLinkedProgramHandleResolution(
+                    Handle: 0,
+                    FailureReason: null,
+                    IsReuse: false,
+                    IsProgramBinaryLoad: false,
+                    CacheOwnsHandle: true,
+                    IsCacheResident: true,
+                    IsPending: true);
+            var pending = new CachedProgram(
+                pendingResolution,
+                pendingHandle);
+            _programs.Add(key, pending);
+            if (deferNewLinkCompletion)
+                return pendingResolution;
+
+            return CompleteDeferredLink(
+                currentContextApi,
+                key,
+                pending,
+                vertexGlsl,
+                pixelGlsl,
+                completeLink);
+        }
+        catch (InvalidOperationException exception)
+        {
+            if (pendingHandleOwned)
+            {
+                _ownedHandles.Remove(pendingHandle);
+                SafeDeleteProgram(currentContextApi, pendingHandle);
+            }
+            _failedUniqueLinkCount = checked(
+                _failedUniqueLinkCount + 1);
+            var failure = new OpenGlLinkedProgramHandleResolution(
+                Handle: 0,
+                FailureReason: exception.Message,
+                IsReuse: false,
+                IsProgramBinaryLoad: false,
+                CacheOwnsHandle: false,
+                IsCacheResident: true,
+                IsPending: false);
+            _programs.TryAdd(key, new CachedProgram(failure));
+            return failure;
+        }
+    }
+
+    private OpenGlLinkedProgramHandleResolution CompleteDeferredLink(
+        GL currentContextApi,
+        OpenGlLinkedProgramHandleCacheKey key,
+        CachedProgram pending,
+        string vertexGlsl,
+        string pixelGlsl,
+        Func<uint, uint> completeLink)
+    {
+        try
+        {
+            uint handle = completeLink(pending.PendingHandle);
+            if (handle == 0 || handle != pending.PendingHandle)
+            {
+                throw new InvalidOperationException(
+                    "OpenGL deferred linker completion changed or cleared the submitted program handle.");
+            }
+
+            _successfulUniqueLinkCount = checked(
+                _successfulUniqueLinkCount + 1);
+            if (_programBinaries?.TryStore(
+                    currentContextApi,
+                    key.ProgramKey,
+                    vertexGlsl,
+                    pixelGlsl,
+                    handle) == true)
+            {
+                _programBinaryStoreCount = checked(
+                    _programBinaryStoreCount + 1);
+            }
+            var ready = new OpenGlLinkedProgramHandleResolution(
+                Handle: handle,
+                FailureReason: null,
+                IsReuse: false,
+                IsProgramBinaryLoad: false,
+                CacheOwnsHandle: true,
+                IsCacheResident: true,
+                IsPending: false);
+            pending.Resolve(ready);
+            return ready;
+        }
+        catch (InvalidOperationException exception)
+        {
+            _ownedHandles.Remove(pending.PendingHandle);
+            SafeDeleteProgram(currentContextApi, pending.PendingHandle);
+            _failedUniqueLinkCount = checked(
+                _failedUniqueLinkCount + 1);
+            var failure = new OpenGlLinkedProgramHandleResolution(
+                Handle: 0,
+                FailureReason: exception.Message,
+                IsReuse: false,
+                IsProgramBinaryLoad: false,
+                CacheOwnsHandle: false,
+                IsCacheResident: true,
+                IsPending: false);
+            pending.Resolve(failure);
+            return failure;
+        }
+    }
+
+    private OpenGlLinkedProgramHandleResolution LinkWithoutCaching(
+        GL currentContextApi,
+        OpenGlProgramKey programKey,
+        string vertexGlsl,
+        string pixelGlsl,
+        Func<uint> submitLink,
+        Func<uint, uint> completeLink)
+    {
+        uint handle = 0;
+        try
+        {
+            _uniqueLinkAttemptCount = checked(
+                _uniqueLinkAttemptCount + 1);
+            handle = submitLink();
+            handle = completeLink(handle);
+            if (handle == 0)
+            {
+                throw new InvalidOperationException(
+                    "OpenGL linker returned the reserved zero program handle.");
+            }
+            _successfulUniqueLinkCount = checked(
+                _successfulUniqueLinkCount + 1);
+            if (_programBinaries?.TryStore(
+                    currentContextApi,
+                    programKey,
+                    vertexGlsl,
+                    pixelGlsl,
+                    handle) == true)
+            {
+                _programBinaryStoreCount = checked(
+                    _programBinaryStoreCount + 1);
+            }
+            return new OpenGlLinkedProgramHandleResolution(
+                Handle: handle,
+                FailureReason: null,
+                IsReuse: false,
+                IsProgramBinaryLoad: false,
+                CacheOwnsHandle: false,
+                IsCacheResident: false,
+                IsPending: false);
+        }
+        catch (InvalidOperationException exception)
+        {
+            if (handle != 0)
+                SafeDeleteProgram(currentContextApi, handle);
+            _failedUniqueLinkCount = checked(
+                _failedUniqueLinkCount + 1);
+            return new OpenGlLinkedProgramHandleResolution(
+                Handle: 0,
+                FailureReason: exception.Message,
+                IsReuse: false,
+                IsProgramBinaryLoad: false,
+                CacheOwnsHandle: false,
+                IsCacheResident: false,
+                IsPending: false);
+        }
     }
 
     internal IReadOnlySet<uint> OwnedHandles
@@ -192,15 +494,19 @@ internal sealed class OpenGlLinkedProgramHandleCache
                 _programBinaryLoadHitCount,
             ProgramBinaryStoreCount:
                 _programBinaryStoreCount,
-            CachedEntryCount: _resolutions.Count,
+            CachedEntryCount: _programs.Count,
             CachedHandleCount: _ownedHandles.Count,
-            MaximumEntryCount: _maximumEntryCount);
+            MaximumEntryCount: _maximumEntryCount,
+            DeferredLinkSubmissionCount:
+                _deferredLinkSubmissionCount,
+            PendingLinkCount: _programs.Values.Count(
+                program => program.IsPending));
     }
 
     internal void Clear()
     {
         EnsureOwnerThread();
-        _resolutions.Clear();
+        _programs.Clear();
         _ownedHandles.Clear();
         _semanticRequestCount = 0;
         _uniqueLinkAttemptCount = 0;
@@ -211,6 +517,67 @@ internal sealed class OpenGlLinkedProgramHandleCache
         _programBinaryLoadAttemptCount = 0;
         _programBinaryLoadHitCount = 0;
         _programBinaryStoreCount = 0;
+        _deferredLinkSubmissionCount = 0;
+    }
+
+    internal void CompleteProgramBinaryPersistence() =>
+        _programBinaries?.Dispose();
+
+    internal void CancelPendingLinks(GL gl, int usageLane)
+    {
+        EnsureOwnerThread();
+        ArgumentNullException.ThrowIfNull(gl);
+        if (usageLane < 0)
+            throw new ArgumentOutOfRangeException(nameof(usageLane));
+
+        OpenGlLinkedProgramHandleCacheKey[] pendingKeys = _programs
+            .Where(entry =>
+                entry.Key.UsageLane == usageLane &&
+                entry.Value.IsPending)
+            .Select(entry => entry.Key)
+            .ToArray();
+        foreach (OpenGlLinkedProgramHandleCacheKey key in pendingKeys)
+        {
+            CachedProgram pending = _programs[key];
+            _programs.Remove(key);
+            _ownedHandles.Remove(pending.PendingHandle);
+            SafeDeleteProgram(gl, pending.PendingHandle);
+        }
+    }
+
+    internal void ReleaseUsageLanePrograms(GL gl, int usageLane)
+    {
+        EnsureOwnerThread();
+        ArgumentNullException.ThrowIfNull(gl);
+        if (usageLane < 0)
+            throw new ArgumentOutOfRangeException(nameof(usageLane));
+
+        OpenGlLinkedProgramHandleCacheKey[] keys = _programs.Keys
+            .Where(key => key.UsageLane == usageLane)
+            .ToArray();
+        foreach (OpenGlLinkedProgramHandleCacheKey key in keys)
+        {
+            CachedProgram program = _programs[key];
+            _programs.Remove(key);
+            uint handle = program.IsPending
+                ? program.PendingHandle
+                : program.Resolution.Handle;
+            if (handle == 0 || !_ownedHandles.Remove(handle))
+                continue;
+            SafeDeleteProgram(gl, handle);
+        }
+    }
+
+    private static void SafeDeleteProgram(GL gl, uint handle)
+    {
+        try
+        {
+            gl.DeleteProgram(handle);
+        }
+        catch
+        {
+            // Context loss remains authoritative for driver-owned cleanup.
+        }
     }
 
     private void EnsureOwnerThread()
@@ -220,6 +587,36 @@ internal sealed class OpenGlLinkedProgramHandleCache
             throw new InvalidOperationException(
                 "The OpenGL linked-program cache may only be used on its owning render thread.");
         }
+    }
+}
+
+internal sealed class CachedProgram
+{
+    internal CachedProgram(
+        OpenGlLinkedProgramHandleResolution resolution,
+        uint pendingHandle = 0)
+    {
+        Resolution = resolution;
+        PendingHandle = pendingHandle;
+    }
+
+    internal OpenGlLinkedProgramHandleResolution Resolution
+        { get; private set; }
+
+    internal uint PendingHandle { get; private set; }
+
+    internal bool IsPending => Resolution.IsPending;
+
+    internal void Resolve(
+        OpenGlLinkedProgramHandleResolution resolution)
+    {
+        if (!IsPending || resolution.IsPending)
+        {
+            throw new InvalidOperationException(
+                "Only a pending OpenGL program may publish a terminal resolution.");
+        }
+        Resolution = resolution;
+        PendingHandle = 0;
     }
 }
 
@@ -234,9 +631,11 @@ internal readonly record struct
         bool IsReuse,
         bool IsProgramBinaryLoad,
         bool CacheOwnsHandle,
-        bool IsCacheResident)
+        bool IsCacheResident,
+        bool IsPending = false)
 {
     internal bool IsReady =>
+        !IsPending &&
         Handle != 0 &&
         FailureReason is null;
 }
@@ -255,4 +654,6 @@ internal readonly record struct
         long ProgramBinaryStoreCount,
         int CachedEntryCount,
         int CachedHandleCount,
-        int MaximumEntryCount);
+        int MaximumEntryCount,
+        long DeferredLinkSubmissionCount,
+        int PendingLinkCount);

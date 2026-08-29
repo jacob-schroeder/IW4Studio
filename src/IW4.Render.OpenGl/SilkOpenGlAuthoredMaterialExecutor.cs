@@ -33,6 +33,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         _programs = [];
     private readonly Dictionary<OpenGlProgramKey, string>
         _programFailures = [];
+    private readonly HashSet<OpenGlProgramKey> _pendingPrograms = [];
     private readonly Dictionary<string, string> _failureDiagnostics =
         new(StringComparer.Ordinal);
     private readonly HashSet<RenderState> _validatedStates = [];
@@ -211,6 +212,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             return cached;
         if (_programFailures.TryGetValue(programKey, out blocker))
             return default;
+        if (_pendingPrograms.Contains(programKey))
+            return default;
         trace?.Invoke(
             $"executor unique semantic program started; " +
             $"programKey={programKey}; " +
@@ -235,6 +238,19 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             _linkReuseCount = checked(_linkReuseCount + 1);
         else if (linkResolution.IsReady)
             _uniqueLinkCount = checked(_uniqueLinkCount + 1);
+        if (linkResolution.IsPending)
+        {
+            // Deferred map loading has submitted this exact source pair but
+            // intentionally has not reached the LinkStatus synchronization
+            // point yet. Pending is neither a semantic failure nor an
+            // executable program; the ordinary atomic preflight revisits it
+            // after the complete map queue has been submitted.
+            trace?.Invoke(
+                $"executor link pending; programKey={programKey}");
+            _pendingPrograms.Add(programKey);
+            return default;
+        }
+        _pendingPrograms.Remove(programKey);
         if (!linkResolution.IsReady)
         {
             blocker =
@@ -247,6 +263,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         }
 
         uint handle = linkResolution.Handle;
+        OpenGlRsxUniformLocationLayout uniformLayout =
+            _uniformLocations.GetRsxLayout(handle);
         var samplerLocations = new int[samplerDestinations.Length];
         for (int index = 0; index < samplerDestinations.Length; index++)
         {
@@ -254,9 +272,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             trace?.Invoke(
                 $"executor sampler uniform lookup started; " +
                 $"programKey={programKey}; destination={destination}");
-            samplerLocations[index] = _uniformLocations.Get(
-                handle,
-                $"rsxSampler{destination}");
+            samplerLocations[index] =
+                uniformLayout.GetSampler(destination);
             trace?.Invoke(
                 $"executor sampler uniform lookup completed; " +
                 $"programKey={programKey}; destination={destination}; " +
@@ -303,7 +320,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
         var program = new GlRsxProgram(
             handle,
             samplerDestinations,
-            samplerLocations);
+            samplerLocations,
+            uniformLayout);
         _programs.Add(programKey, program);
         trace?.Invoke(
             $"executor semantic-cache add completed; " +
@@ -313,6 +331,9 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
 
     internal int GetUniformLocation(uint handle, string name) =>
         _uniformLocations.Get(handle, name);
+
+    internal void ResumePendingProgramResolution() =>
+        _pendingPrograms.Clear();
 
     internal void RecordPreparationFailure(string key, string blocker)
     {
@@ -342,6 +363,10 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             blocker = "OPENGL_AUTHORED_PROGRAM_NOT_LINKED";
             return false;
         }
+        OpenGlRsxUniformLocationLayout uniformLayout =
+            program.UniformLocations ??
+            throw new InvalidOperationException(
+                "A linked authored program has no RSX uniform layout.");
 
         var result = new List<GlRsxConstantBinding>();
         foreach (TranslatedProgramVertexConstantBinding
@@ -353,9 +378,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 continue;
             }
 
-            int location = _uniformLocations.Get(
-                program.Handle,
-                $"rsxVertexConst[{constant.Destination}]");
+            int location = uniformLayout.GetVertexConstant(
+                constant.Destination);
             if (vertexConstantOverrides?.TryGetValue(
                     constant.Destination,
                     out Vector4 overrideValue) == true)
@@ -451,10 +475,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                 return false;
             }
 
-            int location = _uniformLocations.Get(
-                program.Handle,
-                OpenGlCodePixelConstantUniformLayout.ElementName(
-                    patchPlan.CodeIndex));
+            int location = uniformLayout.GetCodePixelConstant(
+                patchPlan.CodeIndex);
             if (directCodePlan.IsDynamicSourceRow(patchPlan.CodeIndex))
             {
                 result.Add(new GlRsxConstantBinding(
@@ -511,10 +533,8 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
                     return false;
                 }
 
-                int location = _uniformLocations.Get(
-                    program.Handle,
-                    OpenGlStaticPixelConstantUniformLayout.ElementName(
-                        patch.ArgumentOrdinal));
+                int location = uniformLayout.GetStaticPixelConstant(
+                    patch.ArgumentOrdinal);
                 ShaderConstantValue value = patch.Value;
                 result.Add(new GlRsxConstantBinding(
                     location,
@@ -750,6 +770,7 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
     {
         _programs.Clear();
         _programFailures.Clear();
+        _pendingPrograms.Clear();
         _failureDiagnostics.Clear();
         _validatedStates.Clear();
         _uniformLocations.Clear();

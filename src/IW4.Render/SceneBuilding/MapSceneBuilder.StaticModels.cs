@@ -38,6 +38,113 @@ public sealed partial class MapSceneBuilder
         XModelAsset Model,
         IReadOnlyList<XModelLodGeometry> LodGeometries);
 
+    private sealed record StaticModelTexturedBuildTarget(
+        GfxDrawSurfSurfaceType SurfaceType,
+        MapRenderTechniqueVariantAllocation TechniqueAllocation,
+        bool AllowPreviewFallback,
+        bool ForceGenericPreview,
+        Dictionary<StaticTexturedBatchKey, InstancedTexturedBatchBuilder>
+            Batches);
+
+    private sealed record StaticModelTexturedBuildResult(
+        int GenericFallbackSurfaceCount,
+        int GenericFallbackTriangleCount,
+        int AuthoredCandidateSurfaceCount,
+        int AuthoredCandidateTriangleCount,
+        IReadOnlyDictionary<int, RenderBounds> AllLodBounds,
+        IReadOnlyDictionary<int, uint> RenderableLodMasks);
+
+    private sealed class StaticModelTexturedBuildState(
+        StaticModelTexturedBuildTarget target)
+    {
+        internal StaticModelTexturedBuildTarget Target { get; } = target;
+        internal Dictionary<int, RenderBounds> AllLodBounds { get; } = [];
+        internal Dictionary<int, uint> RenderableLodMasks { get; } = [];
+        internal Dictionary<StaticTexturedDrawGroupKey, int> DrawGroupIds
+            { get; } = [];
+        internal HashSet<StaticTexturedBatchKey> FailedBatchKeys { get; } = [];
+        internal List<(InstancedTexturedBatchBuilder Batch, bool IsFallback)>
+            PreparedPassBatches { get; } = [];
+        internal int NextPreparedBatchOrdinal { get; set; }
+        internal int GenericFallbackSurfaceCount { get; set; }
+        internal int GenericFallbackTriangleCount { get; set; }
+        internal int AuthoredCandidateSurfaceCount { get; set; }
+        internal int AuthoredCandidateTriangleCount { get; set; }
+
+        internal StaticModelTexturedBuildResult CreateResult() => new(
+            GenericFallbackSurfaceCount,
+            GenericFallbackTriangleCount,
+            AuthoredCandidateSurfaceCount,
+            AuthoredCandidateTriangleCount,
+            AllLodBounds,
+            RenderableLodMasks);
+    }
+
+    /// <summary>
+    /// Cached static-XSurface geometry is immutable after construction. The
+    /// layout match uses the actual UV sources and RSX bindings rather than a
+    /// material/pass identity, allowing all camera and receiver variants that
+    /// consume the same vertex representation to share one decode.
+    /// </summary>
+    private sealed class StaticSurfaceGeometryEntry(
+        IReadOnlyList<PreparedStaticColorLayer> colorLayers,
+        IReadOnlyList<ShaderVertexInputBinding> rsxInputBindings,
+        bool useGenericFallback,
+        bool succeeded,
+        List<float> vertices,
+        List<float> rsxVertexInputs,
+        bool rsxVertexInputsReady,
+        string rsxVertexInputBlocker,
+        List<uint> indices,
+        RenderBounds localBounds)
+    {
+        private readonly MaterialStreamSource[] _colorUvSources =
+            colorLayers
+                .Select(layer => layer.Layer.UvRoute.TexCoordSource)
+                .ToArray();
+        private readonly ShaderVertexInputBinding[] _rsxInputBindings =
+            rsxInputBindings.ToArray();
+
+        internal bool Succeeded { get; } = succeeded;
+        internal List<float> Vertices { get; } = vertices;
+        internal List<float> RsxVertexInputs { get; } = rsxVertexInputs;
+        internal bool RsxVertexInputsReady { get; } = rsxVertexInputsReady;
+        internal string RsxVertexInputBlocker { get; } =
+            rsxVertexInputBlocker;
+        internal List<uint> Indices { get; } = indices;
+        internal RenderBounds LocalBounds { get; } = localBounds;
+
+        internal bool Matches(
+            IReadOnlyList<PreparedStaticColorLayer> candidateColorLayers,
+            IReadOnlyList<ShaderVertexInputBinding> candidateRsxBindings,
+            bool candidateUsesGenericFallback)
+        {
+            if (useGenericFallback != candidateUsesGenericFallback ||
+                _colorUvSources.Length != candidateColorLayers.Count ||
+                _rsxInputBindings.Length != candidateRsxBindings.Count)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < _colorUvSources.Length; index++)
+            {
+                if (_colorUvSources[index] !=
+                    candidateColorLayers[index].Layer.UvRoute.TexCoordSource)
+                {
+                    return false;
+                }
+            }
+
+            for (int index = 0; index < _rsxInputBindings.Length; index++)
+            {
+                if (_rsxInputBindings[index] != candidateRsxBindings[index])
+                    return false;
+            }
+
+            return true;
+        }
+    }
+
     private sealed class StaticModelSharedBuildCache
     {
         internal Dictionary<
@@ -58,6 +165,10 @@ public sealed partial class MapSceneBuilder
 
         internal Dictionary<MaterialAsset, EditorMaterialTexturePlan>
             MaterialTexturePlans { get; } =
+                new(ReferenceEqualityComparer.Instance);
+
+        internal Dictionary<XSurface, List<StaticSurfaceGeometryEntry>>
+            SurfaceGeometry { get; } =
                 new(ReferenceEqualityComparer.Instance);
     }
 
@@ -400,7 +511,9 @@ public sealed partial class MapSceneBuilder
         var schedulingRows = new List<MapRenderStaticModelSchedulingInfo>(
             gfxMap.Dpvs.SModelDrawInsts.Count);
 
-        for (int drawInstIndex = 0; drawInstIndex < gfxMap.Dpvs.SModelDrawInsts.Count; drawInstIndex++)
+        for (int drawInstIndex = 0;
+             drawInstIndex < gfxMap.Dpvs.SModelDrawInsts.Count;
+             drawInstIndex++)
         {
             GfxStaticModelDrawInst drawInst = gfxMap.Dpvs.SModelDrawInsts[drawInstIndex];
             if (!TryDecodePackedPlacement(drawInst.Placement, out StaticModelPlacement placement))
@@ -516,101 +629,161 @@ public sealed partial class MapSceneBuilder
         out int readFailureTriangles,
         out RenderBounds localBounds)
     {
-        vertices = new List<float>(surface.TriCount * 3 * MapRenderScene.VertexFloatCount);
+        int sourceVertexCount = surface.VertCount;
+        int retainedVertexCapacity = Math.Min(
+            sourceVertexCount,
+            checked(surface.TriCount * 3));
+        var builtVertices = new List<float>(checked(
+            retainedVertexCapacity * MapRenderScene.VertexFloatCount));
+        vertices = builtVertices;
         indices = new List<uint>(surface.TriCount * 3);
         skippedTriangles = 0;
         readFailureTriangles = 0;
         localBounds = RenderBounds.Empty;
 
-        for (int triangle = 0; triangle < surface.TriCount; triangle++)
+        if (sourceVertexCount <= 0)
+            return false;
+
+        int[] remappedIndices =
+            ArrayPool<int>.Shared.Rent(sourceVertexCount);
+        Vector3[] decodedPositions =
+            ArrayPool<Vector3>.Shared.Rent(sourceVertexCount);
+        remappedIndices.AsSpan(0, sourceVertexCount).Fill(-2);
+        try
         {
-            int indexOffset = triangle * 3;
-            if (indexOffset < 0 || indexOffset + 2 >= surface.TriIndices.Count)
+            for (int triangle = 0; triangle < surface.TriCount; triangle++)
             {
-                skippedTriangles++;
-                readFailureTriangles++;
-                continue;
-            }
+                int indexOffset = triangle * 3;
+                if (indexOffset < 0 ||
+                    indexOffset + 2 >= surface.TriIndices.Count)
+                {
+                    skippedTriangles++;
+                    readFailureTriangles++;
+                    continue;
+                }
 
-            int i0 = surface.TriIndices[indexOffset];
-            int i1 = surface.TriIndices[indexOffset + 1];
-            int i2 = surface.TriIndices[indexOffset + 2];
-            if (i0 >= surface.VertCount || i1 >= surface.VertCount || i2 >= surface.VertCount ||
-                !XSurfaceVertexDecoder.TryReadPosition(surface, i0, out Vector3 p0) ||
-                !XSurfaceVertexDecoder.TryReadPosition(surface, i1, out Vector3 p1) ||
-                !XSurfaceVertexDecoder.TryReadPosition(surface, i2, out Vector3 p2))
-            {
-                skippedTriangles++;
-                readFailureTriangles++;
-                continue;
-            }
+                int i0 = surface.TriIndices[indexOffset];
+                int i1 = surface.TriIndices[indexOffset + 1];
+                int i2 = surface.TriIndices[indexOffset + 2];
+                if (!TryMaterializeVertex(i0, out uint output0, out Vector3 p0) ||
+                    !TryMaterializeVertex(i1, out uint output1, out Vector3 p1) ||
+                    !TryMaterializeVertex(i2, out uint output2, out Vector3 p2))
+                {
+                    skippedTriangles++;
+                    readFailureTriangles++;
+                    continue;
+                }
 
-            AddTriangle(vertices, indices, p0, p1, p2, color);
-            localBounds = localBounds.Include(p0).Include(p1).Include(p2);
+                // Retain the XSurface's index sharing. The previous path
+                // expanded every triangle into three duplicate vertices,
+                // repeating native vertex decode for every adjacency.
+                indices.Add(output0);
+                indices.Add(output1);
+                indices.Add(output2);
+                localBounds = localBounds
+                    .Include(p0)
+                    .Include(p1)
+                    .Include(p2);
+            }
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(remappedIndices);
+            ArrayPool<Vector3>.Shared.Return(decodedPositions);
         }
 
         return indices.Count > 0;
+
+        bool TryMaterializeVertex(
+            int sourceIndex,
+            out uint outputIndex,
+            out Vector3 position)
+        {
+            outputIndex = 0;
+            position = default;
+            if ((uint)sourceIndex >= (uint)sourceVertexCount)
+                return false;
+
+            int remapped = remappedIndices[sourceIndex];
+            if (remapped == -1)
+                return false;
+            if (remapped >= 0)
+            {
+                outputIndex = checked((uint)remapped);
+                position = decodedPositions[sourceIndex];
+                return true;
+            }
+
+            if (!XSurfaceVertexDecoder.TryReadPosition(
+                    surface,
+                    sourceIndex,
+                    out position))
+            {
+                remappedIndices[sourceIndex] = -1;
+                return false;
+            }
+
+            outputIndex = checked((uint)(
+                builtVertices.Count / MapRenderScene.VertexFloatCount));
+            AddVertex(builtVertices, position, color);
+            decodedPositions[sourceIndex] = position;
+            remappedIndices[sourceIndex] = checked((int)outputIndex);
+            return true;
+        }
     }
 
-    private static void AddStaticModelTexturedGeometry(
-        GfxWorldAsset gfxMap,
-        IReadOnlyList<PreparedStaticModelSource?> preparedSources,
-        StaticModelSharedBuildCache sharedCache,
-        MapRenderStaticModelLightingAtlas lightingAtlas,
-        RenderAssetLookup lookup,
-        IMapRenderWorldTextureBindingResolver worldTextureBindings,
-        MapRenderDrawMethod? editorPreviewDrawMethod,
-        MapRenderSceneLightSelectorAssetState? sceneLightSelector,
-        GfxDrawSurfSurfaceType surfaceType,
-        MapRenderTechniqueVariantAllocation techniqueAllocation,
-        bool allowPreviewFallback,
-        bool forceGenericPreview,
-        IGfxImagePayloadResolver imageStreams,
-        Dictionary<StaticTexturedBatchKey, InstancedTexturedBatchBuilder> batches,
-        RenderTextureCache textureCache,
-        MapRenderWorldTextureCache worldTextureCache,
-        HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
-        HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
-        ShaderTranslationCache shaderTranslationCache,
-        string progressLabel,
-        Action<string>? reportProgress,
-        ref int textureDecodedCount,
-        ref int textureDecodeSkippedCount,
-        out int genericFallbackTexturedSurfaceCount,
-        out int genericFallbackTexturedTriangleCount,
-        out int authoredCandidateTexturedSurfaceCount,
-        out int authoredCandidateTexturedTriangleCount,
-        out IReadOnlyDictionary<int, RenderBounds> allLodBounds,
-        out IReadOnlyDictionary<int, uint> renderableLodMasks)
+    private static IReadOnlyList<StaticModelTexturedBuildResult>
+        AddStaticModelTexturedGeometryVariants(
+            GfxWorldAsset gfxMap,
+            IReadOnlyList<PreparedStaticModelSource?> preparedSources,
+            StaticModelSharedBuildCache sharedCache,
+            MapRenderStaticModelLightingAtlas lightingAtlas,
+            RenderAssetLookup lookup,
+            IMapRenderWorldTextureBindingResolver worldTextureBindings,
+            MapRenderDrawMethod? editorPreviewDrawMethod,
+            MapRenderSceneLightSelectorAssetState? sceneLightSelector,
+            IGfxImagePayloadResolver imageStreams,
+            IReadOnlyList<StaticModelTexturedBuildTarget> targets,
+            RenderTextureCache textureCache,
+            MapRenderWorldTextureCache worldTextureCache,
+            HashSet<RenderTextureCacheKey> failedTextureCacheKeys,
+            HashSet<MapRenderWorldTextureCacheKey> failedWorldTextureCacheKeys,
+            ShaderTranslationCache shaderTranslationCache,
+            Action<string>? reportProgress,
+            ref int textureDecodedCount,
+            ref int textureDecodeSkippedCount)
     {
         ArgumentNullException.ThrowIfNull(preparedSources);
         ArgumentNullException.ThrowIfNull(sharedCache);
         ArgumentNullException.ThrowIfNull(shaderTranslationCache);
+        ArgumentNullException.ThrowIfNull(targets);
         if (preparedSources.Count != gfxMap.Dpvs.SModelDrawInsts.Count)
         {
             throw new ArgumentException(
                 "Prepared static-model source count must match the world draw-instance count.",
                 nameof(preparedSources));
         }
+        if (targets.Count == 0)
+            return [];
 
-        genericFallbackTexturedSurfaceCount = 0;
-        genericFallbackTexturedTriangleCount = 0;
-        authoredCandidateTexturedSurfaceCount = 0;
-        authoredCandidateTexturedTriangleCount = 0;
-        var allLodBoundsByObjectIndex =
-            new Dictionary<int, RenderBounds>();
-        var renderableLodMaskByObjectIndex =
-            new Dictionary<int, uint>();
-        var editorDrawGroupIds =
-            new Dictionary<StaticTexturedDrawGroupKey, int>();
-        var failedBatchKeys = new HashSet<StaticTexturedBatchKey>();
-        int nextPreparedBatchOrdinal = 0;
-        for (int drawInstIndex = 0; drawInstIndex < gfxMap.Dpvs.SModelDrawInsts.Count; drawInstIndex++)
+        StaticModelTexturedBuildState[] states = targets
+            .Select(target =>
+            {
+                ArgumentNullException.ThrowIfNull(target);
+                ArgumentNullException.ThrowIfNull(target.Batches);
+                return new StaticModelTexturedBuildState(target);
+            })
+            .ToArray();
+        var pageTechniqueSlots = new int?[states.Length];
+        var renderReadySurfaceCounts = new int[states.Length];
+        for (int drawInstIndex = 0;
+             drawInstIndex < gfxMap.Dpvs.SModelDrawInsts.Count;
+             drawInstIndex++)
         {
             if (drawInstIndex != 0 && (drawInstIndex & 0xff) == 0)
             {
                 reportProgress?.Invoke(
-                    $"{progressLabel}: {drawInstIndex}/{gfxMap.Dpvs.SModelDrawInsts.Count} instances");
+                    $"building static-model variants: {drawInstIndex}/{gfxMap.Dpvs.SModelDrawInsts.Count} instances");
             }
 
             GfxStaticModelDrawInst drawInst = gfxMap.Dpvs.SModelDrawInsts[drawInstIndex];
@@ -618,15 +791,23 @@ public sealed partial class MapSceneBuilder
             // all-clear selector identity through pass fallback and batching;
             // otherwise a shared XModel/material can silently inherit another
             // instance's base-light or directional-sun technique.
-            int? pageTechniqueSlot =
-                ResolvePreparedEditorTechniqueVariantSlot(
-                    drawInst.PrimaryLightIndex,
-                    surfaceType,
-                    editorPreviewDrawMethod,
-                    sceneLightSelector,
-                    techniqueAllocation);
             if (preparedSources[drawInstIndex] is not { } preparedSource)
                 continue;
+
+            for (int stateIndex = 0;
+                 stateIndex < states.Length;
+                 stateIndex++)
+            {
+                StaticModelTexturedBuildTarget target =
+                    states[stateIndex].Target;
+                pageTechniqueSlots[stateIndex] =
+                    ResolvePreparedEditorTechniqueVariantSlot(
+                        drawInst.PrimaryLightIndex,
+                        target.SurfaceType,
+                        editorPreviewDrawMethod,
+                        sceneLightSelector,
+                        target.TechniqueAllocation);
+            }
 
             StaticModelPlacement placement = preparedSource.Placement;
             XModelAsset model = preparedSource.Model;
@@ -640,391 +821,442 @@ public sealed partial class MapSceneBuilder
                 int lodIndex = lodGeometry.LodIndex;
                 bool isPreparedLod = lodIndex == preparedLodIndex;
                 XModelSurfsAsset modelSurfs = lodGeometry.ModelSurfs;
-                int renderReadySurfaceCount = 0;
+                Array.Clear(
+                    renderReadySurfaceCounts,
+                    0,
+                    renderReadySurfaceCounts.Length);
                 for (int surfaceOffset = 0;
                      surfaceOffset < lodGeometry.SurfaceCount;
                      surfaceOffset++)
                 {
-                int materialSurfaceIndex =
-                    lodGeometry.MaterialSurfaceStart + surfaceOffset;
-                XSurface surface = modelSurfs.Surfaces[surfaceOffset];
-                MaterialAsset? material = SelectStaticModelSurfaceMaterial(model, materialSurfaceIndex);
-                if (material is null)
-                    continue;
+                    int materialSurfaceIndex =
+                        lodGeometry.MaterialSurfaceStart + surfaceOffset;
+                    XSurface surface = modelSurfs.Surfaces[surfaceOffset];
+                    MaterialAsset? material =
+                        SelectStaticModelSurfaceMaterial(
+                            model,
+                            materialSurfaceIndex);
+                    if (material is null)
+                        continue;
 
-                int? surfaceTechniqueSlot =
-                    MapRenderOpenGlStaticCameraRegionPolicy
-                        .ResolveNormalCameraTechniqueSlot(
+                    MapRenderStaticModelInstance instance =
+                        CreateStaticModelInstance(
+                            placement,
+                            lightingAtlas,
+                            drawInstIndex,
+                            materialSurfaceIndex,
+                            model.Name ?? $"smodel_{drawInstIndex}",
+                            material.Info.Name ?? string.Empty,
                             material.CameraRegion,
-                            pageTechniqueSlot,
-                            editorPreviewDrawMethod);
-                if (!allowPreviewFallback &&
-                    surfaceTechniqueSlot is null)
-                {
-                    continue;
-                }
+                            drawInst.PrimaryLightIndex,
+                            drawInst.ReflectionProbeIndex,
+                            drawInst.LightingHandle,
+                            drawInst.GroundLighting,
+                            drawInst.Flags);
 
-                IReadOnlyList<StaticMaterialSelection> selections =
-                    ResolveStaticMaterialSelections(
-                        material,
-                        surfaceTechniqueSlot,
-                        allowPreviewFallback,
-                        forceGenericPreview,
-                        lookup,
-                        sharedCache);
-
-                if (selections.Count == 0)
-                    continue;
-
-                // The reflection probe is an authored per-instance custom
-                // sampler, while backend sampler bindings are draw-scoped.
-                // Split the complete multi-pass group only when at least one
-                // selected pass consumes destination 1; non-reflective groups
-                // retain the original instancing density.
-                byte? reflectionProbeBatchIndex = null;
-                for (int selectionIndex = 0;
-                     selectionIndex < selections.Count;
-                     selectionIndex++)
-                {
-                    if (selections[selectionIndex].Pass is { } pass &&
-                        new MaterialCustomSamplerSelection(
-                                pass.Pass.TechniquePass.CustomSamplerFlags)
-                            .BindsReflectionProbe)
+                    for (int stateIndex = 0;
+                         stateIndex < states.Length;
+                         stateIndex++)
                     {
-                        reflectionProbeBatchIndex =
-                            drawInst.ReflectionProbeIndex;
-                        break;
-                    }
-                }
+                        StaticModelTexturedBuildState state =
+                            states[stateIndex];
+                        StaticModelTexturedBuildTarget target =
+                            state.Target;
+                        Dictionary<StaticTexturedBatchKey,
+                            InstancedTexturedBatchBuilder> batches =
+                            target.Batches;
 
-                var editorDrawGroupKey = new StaticTexturedDrawGroupKey(
-                    lodIndex,
-                    surface,
-                    material,
-                    surfaceTechniqueSlot,
-                    reflectionProbeBatchIndex,
-                    drawInst.PrimaryLightIndex);
-                if (!editorDrawGroupIds.TryGetValue(
-                        editorDrawGroupKey,
-                        out int editorDrawGroupId))
-                {
-                    editorDrawGroupId = editorDrawGroupIds.Count;
-                    editorDrawGroupIds.Add(
-                        editorDrawGroupKey,
-                        editorDrawGroupId);
-                }
-
-                var preparedPassBatches =
-                    new List<(InstancedTexturedBatchBuilder Batch, bool IsFallback)>(
-                        selections.Count);
-                bool selectedGroupReady = true;
-                foreach (StaticMaterialSelection selection in selections)
-                {
-                    MaterialTechniqueSetAsset? techset = selection.Techset;
-                    SelectedColorPass? selectedPass = selection.Pass;
-                    XSurfaceVertexDecoder? vertexDecoder = selection.VertexDecoder;
-                    if (selectedPass is null || vertexDecoder is null)
-                    {
-                        selectedGroupReady = false;
-                        break;
-                    }
-
-                    var batchKey = new StaticTexturedBatchKey(
-                        lodIndex,
-                        surface,
-                        material,
-                        surfaceTechniqueSlot,
-                        selectedPass.Pass.TechniquePass.TechniqueSlot,
-                        selectedPass.Pass.TechniquePass.PassIndex,
-                        selectedPass.PrimarySampler.SamplerArgIndex,
-                        selectedPass.PrimarySampler.SamplerHash,
-                        reflectionProbeBatchIndex,
-                        drawInst.PrimaryLightIndex);
-                    if (failedBatchKeys.Contains(batchKey))
-                    {
-                        selectedGroupReady = false;
-                        break;
-                    }
-
-                    if (!batches.TryGetValue(batchKey, out InstancedTexturedBatchBuilder? batch))
-                    {
-                        if (!TryDecodeTexture(
-                                selectedPass.Image,
-                                selectedPass.Texture.SamplerState,
-                                imageStreams,
-                                textureCache,
-                                failedTextureCacheKeys,
-                                true,
-                                ref textureDecodedCount,
-                                ref textureDecodeSkippedCount,
-                                out Texture? texture) ||
-                            texture is null)
+                        int? surfaceTechniqueSlot =
+                            MapRenderOpenGlStaticCameraRegionPolicy
+                                .ResolveNormalCameraTechniqueSlot(
+                                    material.CameraRegion,
+                                    pageTechniqueSlots[stateIndex],
+                                    editorPreviewDrawMethod);
+                        if (!target.AllowPreviewFallback &&
+                            surfaceTechniqueSlot is null)
                         {
-                            failedBatchKeys.Add(batchKey);
-                            selectedGroupReady = false;
-                            break;
+                            continue;
                         }
 
-                        UvRoute uvRoute = BuildStaticModelUvRoute(selectedPass.TexCoordSource);
-                        EditorMaterialTexturePlan? texturePlan = null;
-                        if (!sharedCache.MaterialTexturePlans.TryGetValue(
+                        IReadOnlyList<StaticMaterialSelection> selections =
+                            ResolveStaticMaterialSelections(
                                 material,
-                                out texturePlan))
-                        {
-                            texturePlan = EditorMaterialTexturePlanner.Plan(
-                                material.Textures,
-                                (_, row) =>
-                                    new EditorMaterialTextureResolution(
-                                        row.Image ?? lookup.ResolveImage(row.DataPointer),
-                                        null));
-                            sharedCache.MaterialTexturePlans.Add(
-                                material,
-                                texturePlan);
-                        }
-
-                        IReadOnlyList<PreparedStaticColorLayer>
-                            preparedStaticColorLayers = PrepareStaticColorLayers(
-                                enableEditorMultiTexture: true,
-                                material,
-                                techset,
+                                surfaceTechniqueSlot,
+                                target.AllowPreviewFallback,
+                                target.ForceGenericPreview,
                                 lookup,
-                                texturePlan,
-                                selectedPass,
-                                texture,
-                                uvRoute,
-                                vertexDecoder,
-                                imageStreams,
-                                textureCache,
-                                failedTextureCacheKeys,
-                                ref textureDecodedCount,
-                                ref textureDecodeSkippedCount);
-                        bool hasAuthoredSourcePass =
-                            selectedPass.AuthoredProgramExecutable;
-                        ShaderVertexInputBinding[]
-                            selectedVertexInputs = hasAuthoredSourcePass
-                                ? ResolveSelectedVertexInputs(
-                                    techset,
-                                    lookup,
-                                    selectedPass,
-                                    XSurfaceVertexDecoder.BackendRow)
-                                : [];
-                        SelectedColorPass? depthPrepassSelection =
-                            hasAuthoredSourcePass &&
-                            selection.EditorDepthPrepass is not null
-                                ? CreateStandardDepthPrepassSelection(
-                                    selectedPass,
-                                    selection.EditorDepthPrepass)
-                                : null;
-                        ShaderVertexInputBinding[]
-                            depthPrepassVertexInputs =
-                                depthPrepassSelection is not null
-                                    ? ResolveSelectedVertexInputs(
-                                        techset,
-                                        lookup,
-                                        depthPrepassSelection,
-                                        XSurfaceVertexDecoder.BackendRow)
-                                    : [];
-                        bool depthPrepassVertexInputsCompatible =
-                            TryMergeVertexInputBindings(
-                                selectedVertexInputs,
-                                depthPrepassVertexInputs,
-                                out ShaderVertexInputBinding[]
-                                    materializedVertexInputs,
-                                out string depthPrepassVertexInputBlocker);
-                        if (!TryBuildTexturedStaticXSurfaceLocal(
-                                surface,
-                                preparedStaticColorLayers,
-                                materializedVertexInputs,
-                                out List<float> surfaceVertices,
-                                out List<float> surfaceRsxVertexInputs,
-                                out bool surfaceRsxVertexInputsReady,
-                                out string surfaceRsxVertexInputBlocker,
-                                out List<uint> surfaceIndices,
-                                out RenderBounds localBounds,
-                                useGenericFallback: !hasAuthoredSourcePass))
-                        {
-                            failedBatchKeys.Add(batchKey);
-                            selectedGroupReady = false;
-                            break;
-                        }
+                                sharedCache);
 
-                        IReadOnlyList<MaterialColorLayer> staticColorLayers =
-                            preparedStaticColorLayers
-                                .Select(layer => layer.Layer)
-                                .ToArray();
-                        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> samplerBindings =
-                            PrepareStaticMaterialSamplerBindings(
-                                material,
-                                techset,
-                                lookup,
-                                gfxMap,
-                                worldTextureBindings,
-                                selectedPass,
-                                reflectionProbeBatchIndex,
-                                uvRoute,
-                                staticColorLayers,
-                                imageStreams,
-                                textureCache,
-                                worldTextureCache,
-                                failedTextureCacheKeys,
-                                failedWorldTextureCacheKeys,
-                                ref textureDecodedCount,
-                                ref textureDecodeSkippedCount);
-                        ShaderExecutionContract shaderExecution = BuildShaderExecutionContract(
-                            material,
-                            techset,
-                            lookup,
-                            selectedPass,
-                            samplerBindings,
-                            vertexInputPayloadReady:
-                                surfaceRsxVertexInputsReady,
-                            vertexInputPayloadBlocker:
-                                surfaceRsxVertexInputBlocker,
-                            authoredSourcePassAvailable:
-                                hasAuthoredSourcePass,
-                            shaderTranslationCache:
-                                shaderTranslationCache,
-                            fixedVertexSourceBackendRow:
-                                XSurfaceVertexDecoder.BackendRow);
-                        ShaderExecutionContract?
-                            depthPrepassShaderExecution = null;
-                        if (depthPrepassSelection is not null)
+                        if (selections.Count == 0)
+                            continue;
+
+                        // The reflection probe is an authored per-instance custom
+                        // sampler, while backend sampler bindings are draw-scoped.
+                        // Split the complete multi-pass group only when at least one
+                        // selected pass consumes destination 1; non-reflective groups
+                        // retain the original instancing density.
+                        byte? reflectionProbeBatchIndex = null;
+                        for (int selectionIndex = 0;
+                             selectionIndex < selections.Count;
+                             selectionIndex++)
                         {
-                            bool depthPayloadReady =
-                                depthPrepassVertexInputsCompatible &&
-                                surfaceRsxVertexInputsReady;
-                            string depthPayloadBlocker =
-                                !depthPrepassVertexInputsCompatible
-                                    ? depthPrepassVertexInputBlocker
-                                    : surfaceRsxVertexInputBlocker;
-                            ShaderExecutionContract candidate =
-                                BuildShaderExecutionContract(
-                                    material,
-                                    techset,
-                                    lookup,
-                                depthPrepassSelection,
-                                    Array.Empty<MaterialSamplerBinding>(),
-                                    depthPayloadReady,
-                                    depthPayloadBlocker,
-                                    authoredSourcePassAvailable: true,
-                                    purpose:
-                                        ShaderExecutionPurpose
-                                            .DepthOnly,
-                                    shaderTranslationCache:
-                                        shaderTranslationCache,
-                                    fixedVertexSourceBackendRow:
-                                        XSurfaceVertexDecoder.BackendRow);
-                            if (candidate.ProgramExecutionReady)
+                            if (selections[selectionIndex].Pass is { } pass &&
+                                new MaterialCustomSamplerSelection(
+                                        pass.Pass.TechniquePass.CustomSamplerFlags)
+                                    .BindsReflectionProbe)
                             {
-                                depthPrepassShaderExecution = candidate;
+                                reflectionProbeBatchIndex =
+                                    drawInst.ReflectionProbeIndex;
+                                break;
                             }
                         }
-                        RenderState renderState = selectedPass.State;
-                        batch = new InstancedTexturedBatchBuilder(
+
+                        var editorDrawGroupKey = new StaticTexturedDrawGroupKey(
                             lodIndex,
-                            selectedPass.Pass,
-                            selectedPass.PrimarySampler,
-                            texture,
-                            staticColorLayers,
-                            samplerBindings,
-                            shaderExecution,
-                            uvRoute,
-                            renderState,
-                            selection.EditorDepthPrepass,
-                            depthPrepassShaderExecution,
-                            selectedPass.UnresolvedCodeSamplerCount,
-                            surfaceVertices,
-                            surfaceRsxVertexInputs,
-                            surfaceIndices,
-                            localBounds,
-                            editorDrawGroupId,
-                            selection.IsExactTechniquePass,
+                            surface,
+                            material,
+                            surfaceTechniqueSlot,
+                            reflectionProbeBatchIndex,
                             drawInst.PrimaryLightIndex);
-                        batches.Add(batchKey, batch);
-                    }
-
-                    preparedPassBatches.Add((batch, selection.IsGenericFallback));
-                }
-
-                // A selected authored group is attached atomically. If one pass
-                // cannot be prepared, no partial group is submitted for the instance.
-                if (!selectedGroupReady || preparedPassBatches.Count != selections.Count)
-                    continue;
-
-                MapRenderStaticModelInstance instance = CreateStaticModelInstance(
-                    placement,
-                    lightingAtlas,
-                    drawInstIndex,
-                    materialSurfaceIndex,
-                    model.Name ?? $"smodel_{drawInstIndex}",
-                    material.Info.Name ?? string.Empty,
-                    material.CameraRegion,
-                    drawInst.PrimaryLightIndex,
-                    drawInst.ReflectionProbeIndex,
-                    drawInst.LightingHandle,
-                    drawInst.GroundLighting,
-                    drawInst.Flags);
-                RenderBounds transformedBounds =
-                    TransformStaticInstanceBounds(
-                        preparedPassBatches[0].Batch.LocalBounds,
-                        placement);
-                if (transformedBounds.IsValid)
-                {
-                    bool hasAccumulatedBounds =
-                        allLodBoundsByObjectIndex.TryGetValue(
-                            drawInstIndex,
-                            out RenderBounds accumulatedBounds);
-                    allLodBoundsByObjectIndex[drawInstIndex] =
-                        hasAccumulatedBounds
-                            ? IncludeBounds(
-                                accumulatedBounds,
-                                transformedBounds)
-                            : transformedBounds;
-                }
-                renderReadySurfaceCount++;
-                foreach (var preparedPassBatch in preparedPassBatches)
-                {
-                    preparedPassBatch.Batch.Instances.Add(instance);
-                    if (isPreparedLod)
-                    {
-                        if (preparedPassBatch.Batch.PreparedInstances.Count ==
-                            0)
+                        if (!state.DrawGroupIds.TryGetValue(
+                                editorDrawGroupKey,
+                                out int editorDrawGroupId))
                         {
-                            preparedPassBatch.Batch.PreparedSourceOrdinal =
-                                nextPreparedBatchOrdinal++;
+                            editorDrawGroupId = state.DrawGroupIds.Count;
+                            state.DrawGroupIds.Add(
+                                editorDrawGroupKey,
+                                editorDrawGroupId);
                         }
-                        preparedPassBatch.Batch.PreparedInstances.Add(
-                            instance);
+
+                        List<(InstancedTexturedBatchBuilder Batch, bool IsFallback)>
+                            preparedPassBatches = state.PreparedPassBatches;
+                        preparedPassBatches.Clear();
+                        preparedPassBatches.EnsureCapacity(selections.Count);
+                        bool selectedGroupReady = true;
+                        foreach (StaticMaterialSelection selection in selections)
+                        {
+                            MaterialTechniqueSetAsset? techset = selection.Techset;
+                            SelectedColorPass? selectedPass = selection.Pass;
+                            XSurfaceVertexDecoder? vertexDecoder = selection.VertexDecoder;
+                            if (selectedPass is null || vertexDecoder is null)
+                            {
+                                selectedGroupReady = false;
+                                break;
+                            }
+
+                            var batchKey = new StaticTexturedBatchKey(
+                                lodIndex,
+                                surface,
+                                material,
+                                surfaceTechniqueSlot,
+                                selectedPass.Pass.TechniquePass.TechniqueSlot,
+                                selectedPass.Pass.TechniquePass.PassIndex,
+                                selectedPass.PrimarySampler.SamplerArgIndex,
+                                selectedPass.PrimarySampler.SamplerHash,
+                                reflectionProbeBatchIndex,
+                                drawInst.PrimaryLightIndex);
+                            if (state.FailedBatchKeys.Contains(batchKey))
+                            {
+                                selectedGroupReady = false;
+                                break;
+                            }
+
+                            if (!batches.TryGetValue(
+                                    batchKey,
+                                    out InstancedTexturedBatchBuilder? batch))
+                            {
+                                if (!TryDecodeTexture(
+                                        selectedPass.Image,
+                                        selectedPass.Texture.SamplerState,
+                                        imageStreams,
+                                        textureCache,
+                                        failedTextureCacheKeys,
+                                        true,
+                                        ref textureDecodedCount,
+                                        ref textureDecodeSkippedCount,
+                                        out Texture? texture) ||
+                                    texture is null)
+                                {
+                                    state.FailedBatchKeys.Add(batchKey);
+                                    selectedGroupReady = false;
+                                    break;
+                                }
+
+                                UvRoute uvRoute =
+                                    BuildStaticModelUvRoute(
+                                        selectedPass.TexCoordSource);
+                                EditorMaterialTexturePlan? texturePlan = null;
+                                if (!sharedCache.MaterialTexturePlans.TryGetValue(
+                                        material,
+                                        out texturePlan))
+                                {
+                                    texturePlan = EditorMaterialTexturePlanner.Plan(
+                                        material.Textures,
+                                        (_, row) =>
+                                            new EditorMaterialTextureResolution(
+                                                row.Image ?? lookup.ResolveImage(row.DataPointer),
+                                                null));
+                                    sharedCache.MaterialTexturePlans.Add(
+                                        material,
+                                        texturePlan);
+                                }
+
+                                IReadOnlyList<PreparedStaticColorLayer>
+                                    preparedStaticColorLayers = PrepareStaticColorLayers(
+                                        enableEditorMultiTexture: true,
+                                        material,
+                                        techset,
+                                        lookup,
+                                        texturePlan,
+                                        selectedPass,
+                                        texture,
+                                        uvRoute,
+                                        vertexDecoder,
+                                        imageStreams,
+                                        textureCache,
+                                        failedTextureCacheKeys,
+                                        ref textureDecodedCount,
+                                        ref textureDecodeSkippedCount);
+                                bool hasAuthoredSourcePass =
+                                    selectedPass.AuthoredProgramExecutable;
+                                ShaderVertexInputBinding[]
+                                    selectedVertexInputs = hasAuthoredSourcePass
+                                        ? ResolveSelectedVertexInputs(
+                                            techset,
+                                            lookup,
+                                            selectedPass,
+                                            XSurfaceVertexDecoder.BackendRow)
+                                        : [];
+                                SelectedColorPass? depthPrepassSelection =
+                                    hasAuthoredSourcePass &&
+                                    selection.EditorDepthPrepass is not null
+                                        ? CreateStandardDepthPrepassSelection(
+                                            selectedPass,
+                                            selection.EditorDepthPrepass)
+                                        : null;
+                                ShaderVertexInputBinding[]
+                                    depthPrepassVertexInputs =
+                                        depthPrepassSelection is not null
+                                            ? ResolveSelectedVertexInputs(
+                                                techset,
+                                                lookup,
+                                                depthPrepassSelection,
+                                                XSurfaceVertexDecoder.BackendRow)
+                                            : [];
+                                bool depthPrepassVertexInputsCompatible =
+                                    TryMergeVertexInputBindings(
+                                        selectedVertexInputs,
+                                        depthPrepassVertexInputs,
+                                        out ShaderVertexInputBinding[]
+                                            materializedVertexInputs,
+                                        out string depthPrepassVertexInputBlocker);
+                                StaticSurfaceGeometryEntry surfaceGeometry =
+                                    GetOrBuildTexturedStaticXSurfaceLocal(
+                                        sharedCache,
+                                        surface,
+                                        preparedStaticColorLayers,
+                                        materializedVertexInputs,
+                                        useGenericFallback:
+                                            !hasAuthoredSourcePass);
+                                if (!surfaceGeometry.Succeeded)
+                                {
+                                    state.FailedBatchKeys.Add(batchKey);
+                                    selectedGroupReady = false;
+                                    break;
+                                }
+
+                                List<float> surfaceVertices =
+                                    surfaceGeometry.Vertices;
+                                List<float> surfaceRsxVertexInputs =
+                                    surfaceGeometry.RsxVertexInputs;
+                                bool surfaceRsxVertexInputsReady =
+                                    surfaceGeometry.RsxVertexInputsReady;
+                                string surfaceRsxVertexInputBlocker =
+                                    surfaceGeometry.RsxVertexInputBlocker;
+                                List<uint> surfaceIndices = surfaceGeometry.Indices;
+                                RenderBounds localBounds = surfaceGeometry.LocalBounds;
+
+                                IReadOnlyList<MaterialColorLayer> staticColorLayers =
+                                    preparedStaticColorLayers
+                                        .Select(layer => layer.Layer)
+                                        .ToArray();
+                                IReadOnlyList<
+                                    MapRenderWorldMaterialSamplerBinding>
+                                    samplerBindings =
+                                        PrepareStaticMaterialSamplerBindings(
+                                        material,
+                                        techset,
+                                        lookup,
+                                        gfxMap,
+                                        worldTextureBindings,
+                                        selectedPass,
+                                        reflectionProbeBatchIndex,
+                                        uvRoute,
+                                        staticColorLayers,
+                                        imageStreams,
+                                        textureCache,
+                                        worldTextureCache,
+                                        failedTextureCacheKeys,
+                                        failedWorldTextureCacheKeys,
+                                        ref textureDecodedCount,
+                                        ref textureDecodeSkippedCount);
+                                ShaderExecutionContract shaderExecution =
+                                    BuildShaderExecutionContract(
+                                        material,
+                                        techset,
+                                        lookup,
+                                        selectedPass,
+                                        samplerBindings,
+                                        vertexInputPayloadReady:
+                                            surfaceRsxVertexInputsReady,
+                                        vertexInputPayloadBlocker:
+                                            surfaceRsxVertexInputBlocker,
+                                        authoredSourcePassAvailable:
+                                            hasAuthoredSourcePass,
+                                        shaderTranslationCache:
+                                            shaderTranslationCache,
+                                        fixedVertexSourceBackendRow:
+                                            XSurfaceVertexDecoder.BackendRow);
+                                ShaderExecutionContract?
+                                    depthPrepassShaderExecution = null;
+                                if (depthPrepassSelection is not null)
+                                {
+                                    bool depthPayloadReady =
+                                        depthPrepassVertexInputsCompatible &&
+                                        surfaceRsxVertexInputsReady;
+                                    string depthPayloadBlocker =
+                                        !depthPrepassVertexInputsCompatible
+                                            ? depthPrepassVertexInputBlocker
+                                            : surfaceRsxVertexInputBlocker;
+                                    ShaderExecutionContract candidate =
+                                        BuildShaderExecutionContract(
+                                            material,
+                                            techset,
+                                            lookup,
+                                            depthPrepassSelection,
+                                            Array.Empty<MaterialSamplerBinding>(),
+                                            depthPayloadReady,
+                                            depthPayloadBlocker,
+                                            authoredSourcePassAvailable: true,
+                                            purpose:
+                                                ShaderExecutionPurpose
+                                                    .DepthOnly,
+                                            shaderTranslationCache:
+                                                shaderTranslationCache,
+                                            fixedVertexSourceBackendRow:
+                                                XSurfaceVertexDecoder.BackendRow);
+                                    if (candidate.ProgramExecutionReady)
+                                    {
+                                        depthPrepassShaderExecution = candidate;
+                                    }
+                                }
+                                RenderState renderState = selectedPass.State;
+                                batch = new InstancedTexturedBatchBuilder(
+                                    lodIndex,
+                                    selectedPass.Pass,
+                                    selectedPass.PrimarySampler,
+                                    texture,
+                                    staticColorLayers,
+                                    samplerBindings,
+                                    shaderExecution,
+                                    uvRoute,
+                                    renderState,
+                                    selection.EditorDepthPrepass,
+                                    depthPrepassShaderExecution,
+                                    selectedPass.UnresolvedCodeSamplerCount,
+                                    surfaceVertices,
+                                    surfaceRsxVertexInputs,
+                                    surfaceIndices,
+                                    localBounds,
+                                    editorDrawGroupId,
+                                    selection.IsExactTechniquePass,
+                                    drawInst.PrimaryLightIndex);
+                                batches.Add(batchKey, batch);
+                            }
+
+                            preparedPassBatches.Add((batch, selection.IsGenericFallback));
+                        }
+
+                        // A selected authored group is attached atomically. If one pass
+                        // cannot be prepared, no partial group is submitted for the instance.
+                        if (!selectedGroupReady || preparedPassBatches.Count != selections.Count)
+                            continue;
+
+                        RenderBounds transformedBounds =
+                            TransformStaticInstanceBounds(
+                                preparedPassBatches[0].Batch.LocalBounds,
+                                placement);
+                        if (transformedBounds.IsValid)
+                        {
+                            bool hasAccumulatedBounds =
+                                state.AllLodBounds.TryGetValue(
+                                    drawInstIndex,
+                                    out RenderBounds accumulatedBounds);
+                            state.AllLodBounds[drawInstIndex] =
+                                hasAccumulatedBounds
+                                    ? IncludeBounds(
+                                        accumulatedBounds,
+                                        transformedBounds)
+                                    : transformedBounds;
+                        }
+                        renderReadySurfaceCounts[stateIndex]++;
+                        foreach (var preparedPassBatch in preparedPassBatches)
+                        {
+                            preparedPassBatch.Batch.Instances.Add(instance);
+                            if (isPreparedLod)
+                            {
+                                if (preparedPassBatch.Batch.PreparedInstances.Count ==
+                                    0)
+                                {
+                                    preparedPassBatch.Batch.PreparedSourceOrdinal =
+                                        state.NextPreparedBatchOrdinal++;
+                                }
+                                preparedPassBatch.Batch.PreparedInstances.Add(
+                                    instance);
+                            }
+                        }
+
+                        if (!isPreparedLod)
+                            continue;
+
+                        int surfaceTriangleCount = preparedPassBatches[0].Batch.Indices.Count / 3;
+                        if (preparedPassBatches[0].IsFallback)
+                        {
+                            state.GenericFallbackSurfaceCount++;
+                            state.GenericFallbackTriangleCount +=
+                                surfaceTriangleCount;
+                        }
+                        else
+                        {
+                            state.AuthoredCandidateSurfaceCount++;
+                            state.AuthoredCandidateTriangleCount +=
+                                surfaceTriangleCount;
+                        }
                     }
                 }
 
-                if (!isPreparedLod)
-                    continue;
+                for (int stateIndex = 0;
+                     stateIndex < states.Length;
+                     stateIndex++)
+                {
+                    if (renderReadySurfaceCounts[stateIndex] !=
+                        lodGeometry.SurfaceCount)
+                    {
+                        continue;
+                    }
 
-                int surfaceTriangleCount = preparedPassBatches[0].Batch.Indices.Count / 3;
-                if (preparedPassBatches[0].IsFallback)
-                {
-                    genericFallbackTexturedSurfaceCount++;
-                    genericFallbackTexturedTriangleCount += surfaceTriangleCount;
-                }
-                else
-                {
-                    authoredCandidateTexturedSurfaceCount++;
-                    authoredCandidateTexturedTriangleCount += surfaceTriangleCount;
-                }
-                }
-                if (renderReadySurfaceCount == lodGeometry.SurfaceCount)
-                {
-                    renderableLodMaskByObjectIndex.TryGetValue(
+                    StaticModelTexturedBuildState state =
+                        states[stateIndex];
+                    state.RenderableLodMasks.TryGetValue(
                         drawInstIndex,
                         out uint renderableLodMask);
-                    renderableLodMaskByObjectIndex[drawInstIndex] =
+                    state.RenderableLodMasks[drawInstIndex] =
                         renderableLodMask | (1u << lodIndex);
                 }
             }
         }
-        allLodBounds = allLodBoundsByObjectIndex;
-        renderableLodMasks = renderableLodMaskByObjectIndex;
+
+        return states.Select(state => state.CreateResult()).ToArray();
     }
 
     private static IReadOnlyDictionary<int, RenderBounds>
@@ -1066,6 +1298,59 @@ public sealed partial class MapSceneBuilder
         return merged;
     }
 
+    private static StaticSurfaceGeometryEntry
+        GetOrBuildTexturedStaticXSurfaceLocal(
+            StaticModelSharedBuildCache sharedCache,
+            XSurface surface,
+            IReadOnlyList<PreparedStaticColorLayer> colorLayers,
+            IReadOnlyList<ShaderVertexInputBinding> rsxInputBindings,
+            bool useGenericFallback)
+    {
+        if (!sharedCache.SurfaceGeometry.TryGetValue(
+                surface,
+                out List<StaticSurfaceGeometryEntry>? cachedLayouts))
+        {
+            cachedLayouts = [];
+            sharedCache.SurfaceGeometry.Add(surface, cachedLayouts);
+        }
+
+        foreach (StaticSurfaceGeometryEntry cached in cachedLayouts)
+        {
+            if (cached.Matches(
+                    colorLayers,
+                    rsxInputBindings,
+                    useGenericFallback))
+            {
+                return cached;
+            }
+        }
+
+        bool succeeded = TryBuildTexturedStaticXSurfaceLocal(
+            surface,
+            colorLayers,
+            rsxInputBindings,
+            out List<float> vertices,
+            out List<float> rsxVertexInputs,
+            out bool rsxVertexInputsReady,
+            out string rsxVertexInputBlocker,
+            out List<uint> indices,
+            out RenderBounds localBounds,
+            useGenericFallback);
+        var created = new StaticSurfaceGeometryEntry(
+            colorLayers,
+            rsxInputBindings,
+            useGenericFallback,
+            succeeded,
+            vertices,
+            rsxVertexInputs,
+            rsxVertexInputsReady,
+            rsxVertexInputBlocker,
+            indices,
+            localBounds);
+        cachedLayouts.Add(created);
+        return created;
+    }
+
     private static bool TryBuildTexturedStaticXSurfaceLocal(
         XSurface surface,
         IReadOnlyList<PreparedStaticColorLayer> colorLayers,
@@ -1078,185 +1363,209 @@ public sealed partial class MapSceneBuilder
         out RenderBounds localBounds,
         bool useGenericFallback)
     {
-        vertices = new List<float>(surface.TriCount * 3 * MapRenderScene.TexturedVertexFloatCount);
+        int sourceVertexCount = surface.VertCount;
+        int retainedVertexCapacity = Math.Min(
+            sourceVertexCount,
+            checked(surface.TriCount * 3));
+        var builtVertices = new List<float>(checked(
+            retainedVertexCapacity *
+            MapRenderScene.TexturedVertexFloatCount));
+        vertices = builtVertices;
         bool materializeRsxVertexInputs = rsxInputBindings.Count > 0 ||
             useGenericFallback;
-        rsxVertexInputs = materializeRsxVertexInputs
+        var builtRsxVertexInputs = materializeRsxVertexInputs
             ? new List<float>(checked(
-                surface.TriCount *
-                3 *
+                retainedVertexCapacity *
                 RsxVertexInputCount *
                 RsxVertexInputComponentCount))
             : [];
-        rsxVertexInputsReady = materializeRsxVertexInputs;
-        var rsxVertexInputFailures =
-            new SortedSet<string>(StringComparer.Ordinal);
+        rsxVertexInputs = builtRsxVertexInputs;
+        bool payloadReadyState = materializeRsxVertexInputs;
+        Dictionary<int, string>? rsxVertexFailures = null;
+        SortedSet<string>? rsxVertexInputFailures = null;
+        rsxVertexInputsReady = payloadReadyState;
         rsxVertexInputBlocker = string.Empty;
         indices = new List<uint>(surface.TriCount * 3);
         localBounds = RenderBounds.Empty;
 
-        if (colorLayers.Count == 0)
+        int colorLayerCount = Math.Min(
+            colorLayers.Count,
+            MapRenderScene.MaxColorLayerCount);
+        if (sourceVertexCount <= 0 || colorLayerCount == 0)
             return false;
 
-        byte[] verts0 = surface.Verts0 as byte[] ??
-            surface.Verts0.ToArray();
+        int[] remappedIndices =
+            ArrayPool<int>.Shared.Rent(sourceVertexCount);
+        Vector3[] decodedPositions =
+            ArrayPool<Vector3>.Shared.Rent(sourceVertexCount);
+        remappedIndices.AsSpan(0, sourceVertexCount).Fill(-2);
+        var preparedLayerUvs = new Vector2[colorLayerCount];
         var preparedRsxVertexInputs = materializeRsxVertexInputs
-            ? new Vector4[checked(3 * RsxVertexInputCount)]
+            ? new Vector4[RsxVertexInputCount]
             : [];
-
-        for (int triangle = 0; triangle < surface.TriCount; triangle++)
+        try
         {
-            int indexOffset = triangle * 3;
-            if (indexOffset < 0 || indexOffset + 2 >= surface.TriIndices.Count)
-                continue;
-
-            int i0 = surface.TriIndices[indexOffset];
-            int i1 = surface.TriIndices[indexOffset + 1];
-            int i2 = surface.TriIndices[indexOffset + 2];
-            if (i0 >= surface.VertCount || i1 >= surface.VertCount || i2 >= surface.VertCount ||
-                !XSurfaceVertexDecoder.TryReadPosition(surface, i0, out Vector3 p0) ||
-                !XSurfaceVertexDecoder.TryReadPosition(surface, i1, out Vector3 p1) ||
-                !XSurfaceVertexDecoder.TryReadPosition(surface, i2, out Vector3 p2) ||
-                !TryReadStaticLayerUvs(surface, i0, colorLayers, out Vector2[] layerUvs0) ||
-                !TryReadStaticLayerUvs(surface, i1, colorLayers, out Vector2[] layerUvs1) ||
-                !TryReadStaticLayerUvs(surface, i2, colorLayers, out Vector2[] layerUvs2))
+            for (int triangle = 0; triangle < surface.TriCount; triangle++)
             {
-                continue;
-            }
-
-            colorLayers[0].Decoder.TryReadNormal(surface, i0, out Vector3 normal0);
-            colorLayers[0].Decoder.TryReadNormal(surface, i1, out Vector3 normal1);
-            colorLayers[0].Decoder.TryReadNormal(surface, i2, out Vector3 normal2);
-            bool triangleRsxInputsReady = true;
-            if (materializeRsxVertexInputs)
-            {
-                Span<Vector4> preparedVertex0 = preparedRsxVertexInputs.AsSpan(
-                    0,
-                    RsxVertexInputCount);
-                triangleRsxInputsReady = useGenericFallback
-                    ? TryBuildGenericRsxVertexInputs(
-                        preparedVertex0,
-                        p0,
-                        layerUvs0[0],
-                        out string blocker0)
-                    : TryReadStaticRsxVertexInputs(
-                        verts0,
-                        surface,
-                        i0,
-                        rsxInputBindings,
-                        preparedVertex0,
-                        out blocker0);
-                if (!triangleRsxInputsReady)
+                int indexOffset = triangle * 3;
+                if (indexOffset < 0 ||
+                    indexOffset + 2 >= surface.TriIndices.Count)
                 {
-                    rsxVertexInputFailures.Add(
-                        $"vertex{i0}:{blocker0}");
+                    continue;
                 }
 
-                Span<Vector4> preparedVertex1 = preparedRsxVertexInputs.AsSpan(
-                    RsxVertexInputCount,
-                    RsxVertexInputCount);
-                bool vertex1Ready = useGenericFallback
-                    ? TryBuildGenericRsxVertexInputs(
-                        preparedVertex1,
-                        p1,
-                        layerUvs1[0],
-                        out string blocker1)
-                    : TryReadStaticRsxVertexInputs(
-                        verts0,
-                        surface,
-                        i1,
-                        rsxInputBindings,
-                        preparedVertex1,
-                        out blocker1);
-                if (!vertex1Ready)
-                    rsxVertexInputFailures.Add($"vertex{i1}:{blocker1}");
-
-                Span<Vector4> preparedVertex2 = preparedRsxVertexInputs.AsSpan(
-                    2 * RsxVertexInputCount,
-                    RsxVertexInputCount);
-                bool vertex2Ready = useGenericFallback
-                    ? TryBuildGenericRsxVertexInputs(
-                        preparedVertex2,
-                        p2,
-                        layerUvs2[0],
-                        out string blocker2)
-                    : TryReadStaticRsxVertexInputs(
-                        verts0,
-                        surface,
-                        i2,
-                        rsxInputBindings,
-                        preparedVertex2,
-                        out blocker2);
-                if (!vertex2Ready)
-                    rsxVertexInputFailures.Add($"vertex{i2}:{blocker2}");
-
-                triangleRsxInputsReady &= vertex1Ready && vertex2Ready;
-            }
-            AddTexturedTriangle(
-                vertices,
-                indices,
-                p0,
-                p1,
-                p2,
-                layerUvs0[0],
-                layerUvs1[0],
-                layerUvs2[0],
-                layerUvs0,
-                layerUvs1,
-                layerUvs2,
-                normal0: normal0,
-                normal1: normal1,
-                normal2: normal2);
-            if (materializeRsxVertexInputs)
-            {
-                if (triangleRsxInputsReady)
+                int i0 = surface.TriIndices[indexOffset];
+                int i1 = surface.TriIndices[indexOffset + 1];
+                int i2 = surface.TriIndices[indexOffset + 2];
+                if (!TryMaterializeVertex(i0, out uint output0, out Vector3 p0) ||
+                    !TryMaterializeVertex(i1, out uint output1, out Vector3 p1) ||
+                    !TryMaterializeVertex(i2, out uint output2, out Vector3 p2))
                 {
-                    AddRsxVertexInputs(
-                        rsxVertexInputs,
-                        preparedRsxVertexInputs.AsSpan(
-                            0,
-                            RsxVertexInputCount));
-                    AddRsxVertexInputs(
-                        rsxVertexInputs,
-                        preparedRsxVertexInputs.AsSpan(
-                            RsxVertexInputCount,
-                            RsxVertexInputCount));
-                    AddRsxVertexInputs(
-                        rsxVertexInputs,
-                        preparedRsxVertexInputs.AsSpan(
-                            2 * RsxVertexInputCount,
-                            RsxVertexInputCount));
+                    continue;
                 }
-                else
-                {
-                    rsxVertexInputsReady = false;
-                }
+
+                // Match the former triangle-expanded diagnostic contract:
+                // an RSX payload failure is observable only when all three
+                // geometry vertices are valid and the triangle is retained.
+                RecordRsxVertexFailure(i0);
+                RecordRsxVertexFailure(i1);
+                RecordRsxVertexFailure(i2);
+                indices.Add(output0);
+                indices.Add(output1);
+                indices.Add(output2);
+                localBounds = localBounds
+                    .Include(p0)
+                    .Include(p1)
+                    .Include(p2);
             }
-            localBounds = localBounds
-                .Include(p0)
-                .Include(p1)
-                .Include(p2);
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(remappedIndices);
+            ArrayPool<Vector3>.Shared.Return(decodedPositions);
         }
 
-        if (!rsxVertexInputsReady ||
-            rsxVertexInputs.Count != checked(
-                (vertices.Count /
+        if (!payloadReadyState ||
+            builtRsxVertexInputs.Count != checked(
+                (builtVertices.Count /
                     MapRenderScene.TexturedVertexFloatCount) *
                 RsxVertexInputCount *
                 RsxVertexInputComponentCount))
         {
-            rsxVertexInputsReady = false;
-            rsxVertexInputs.Clear();
+            payloadReadyState = false;
+            builtRsxVertexInputs.Clear();
         }
-        rsxVertexInputBlocker = !materializeRsxVertexInputs
+        string payloadBlocker = !materializeRsxVertexInputs
             ? "RSX_VERTEX_INPUT_PAYLOAD_NOT_AVAILABLE_FOR_GENERIC_FALLBACK"
-            : rsxVertexInputsReady
+            : payloadReadyState
                 ? string.Empty
-                : rsxVertexInputFailures.Count == 0
+                : rsxVertexInputFailures is null
                     ? "STATIC_XSURFACE_RSX_VERTEX_INPUT_PAYLOAD_COUNT_MISMATCH"
                     : string.Join('|', rsxVertexInputFailures);
+        rsxVertexInputsReady = payloadReadyState;
+        rsxVertexInputBlocker = payloadBlocker;
 
         return indices.Count > 0;
+
+        bool TryMaterializeVertex(
+            int sourceIndex,
+            out uint outputIndex,
+            out Vector3 position)
+        {
+            outputIndex = 0;
+            position = default;
+            if ((uint)sourceIndex >= (uint)sourceVertexCount)
+                return false;
+
+            int remapped = remappedIndices[sourceIndex];
+            if (remapped == -1)
+                return false;
+            if (remapped >= 0)
+            {
+                outputIndex = checked((uint)remapped);
+                position = decodedPositions[sourceIndex];
+                return true;
+            }
+
+            if (!XSurfaceVertexDecoder.TryReadPosition(
+                    surface,
+                    sourceIndex,
+                    out position) ||
+                !TryReadStaticLayerUvs(
+                    surface,
+                    sourceIndex,
+                    colorLayers,
+                    preparedLayerUvs))
+            {
+                remappedIndices[sourceIndex] = -1;
+                return false;
+            }
+
+            colorLayers[0].Decoder.TryReadNormal(
+                surface,
+                sourceIndex,
+                out Vector3 normal);
+            outputIndex = checked((uint)(
+                builtVertices.Count /
+                MapRenderScene.TexturedVertexFloatCount));
+            AddTexturedVertex(
+                builtVertices,
+                position,
+                preparedLayerUvs[0],
+                preparedLayerUvs,
+                default,
+                normal);
+            decodedPositions[sourceIndex] = position;
+            remappedIndices[sourceIndex] = checked((int)outputIndex);
+
+            if (!materializeRsxVertexInputs)
+                return true;
+
+            bool payloadReady = useGenericFallback
+                ? TryBuildGenericRsxVertexInputs(
+                    preparedRsxVertexInputs,
+                    position,
+                    preparedLayerUvs[0],
+                    out string blocker)
+                : TryReadStaticRsxVertexInputs(
+                    surface,
+                    sourceIndex,
+                    rsxInputBindings,
+                    preparedRsxVertexInputs,
+                    out blocker);
+            if (!payloadReady)
+            {
+                (rsxVertexFailures ??= []).TryAdd(
+                    sourceIndex,
+                    $"vertex{sourceIndex}:{blocker}");
+            }
+
+            // Keep one row for every compacted geometry vertex. If this
+            // vertex is later referenced by a retained triangle, its recorded
+            // blocker makes the entire payload unavailable and the rows are
+            // cleared after traversal. Failed orphan vertices stay harmlessly
+            // aligned and do not alter the former diagnostic contract.
+            AddRsxVertexInputs(
+                builtRsxVertexInputs,
+                preparedRsxVertexInputs);
+            return true;
+        }
+
+        void RecordRsxVertexFailure(int sourceIndex)
+        {
+            if (rsxVertexFailures is null ||
+                !rsxVertexFailures.TryGetValue(
+                    sourceIndex,
+                    out string? failure) ||
+                failure is null)
+            {
+                return;
+            }
+
+            payloadReadyState = false;
+            (rsxVertexInputFailures ??=
+                new SortedSet<string>(StringComparer.Ordinal)).Add(failure);
+        }
     }
 
     private static bool TryBuildGenericRsxVertexInputs(
@@ -1285,17 +1594,12 @@ public sealed partial class MapSceneBuilder
     }
 
     internal static bool TryReadStaticRsxVertexInputs(
-        ReadOnlySpan<byte> verts0,
         XSurface surface,
         int vertexIndex,
         IReadOnlyList<ShaderVertexInputBinding> bindings,
         Span<Vector4> values,
         out string blocker)
     {
-        // verts0 is retained in this signature because map batching already
-        // materializes it once for its triangle loop. XSurface owns the same
-        // bytes; the centralized decoder is the sole route authority.
-        _ = verts0;
         return XSurfaceVertexDecoder.TryReadRsxVertexInputs(
             surface,
             vertexIndex,
@@ -1308,13 +1612,20 @@ public sealed partial class MapSceneBuilder
         XSurface surface,
         int vertexIndex,
         IReadOnlyList<PreparedStaticColorLayer> colorLayers,
-        out Vector2[] layerUvs)
+        Span<Vector2> layerUvs)
     {
-        layerUvs = new Vector2[Math.Min(
+        int layerCount = Math.Min(
             colorLayers.Count,
-            MapRenderScene.MaxColorLayerCount)];
+            MapRenderScene.MaxColorLayerCount);
+        if (layerUvs.Length < layerCount)
+        {
+            throw new ArgumentException(
+                "Static UV destination is smaller than the prepared color-layer count.",
+                nameof(layerUvs));
+        }
+
         for (int layerIndex = 0;
-             layerIndex < layerUvs.Length;
+             layerIndex < layerCount;
              layerIndex++)
         {
             if (!colorLayers[layerIndex].Decoder.TryReadTexCoord(
@@ -1327,12 +1638,11 @@ public sealed partial class MapSceneBuilder
                     out layerUvs[layerIndex],
                     out _))
             {
-                layerUvs = [];
                 return false;
             }
         }
 
-        return layerUvs.Length > 0;
+        return layerCount > 0;
     }
 
     private static MaterialAsset? SelectStaticModelSurfaceMaterial(XModelAsset model, int lodSurfaceIndex)

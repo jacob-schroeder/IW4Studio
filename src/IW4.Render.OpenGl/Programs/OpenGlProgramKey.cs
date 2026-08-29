@@ -65,6 +65,18 @@ public readonly struct OpenGlProgramKey : IEquatable<OpenGlProgramKey>
         ArgumentNullException.ThrowIfNull(pixelGlsl);
         ArgumentNullException.ThrowIfNull(linkProfileIdentity);
 
+        // Cache callers retain and pass the same immutable generated-source
+        // strings that created the key. Preserve the exact-comparison
+        // contract while avoiding three redundant UTF-8 encodes and SHA-256
+        // passes on every binary-cache load/store request.
+        if (IsValid &&
+            ReferenceEquals(_vertexGlsl, vertexGlsl) &&
+            ReferenceEquals(_pixelGlsl, pixelGlsl) &&
+            ReferenceEquals(LinkProfileIdentity, linkProfileIdentity))
+        {
+            return true;
+        }
+
         return IsValid &&
                ExactTextEquals(
                    LinkProfileSha256,

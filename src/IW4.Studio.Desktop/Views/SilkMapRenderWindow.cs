@@ -270,9 +270,11 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         long reclaimStarted = Stopwatch.GetTimestamp();
         LivePreviewDebugDump.Write(
             "OpenGL settled-startup memory reclaim started");
-        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
+        bool reclaimed = RenderBuildMemoryReclaimer
+            .TryReclaimSettledBuildWorkspace();
         LivePreviewDebugDump.Write(
             $"OpenGL settled-startup memory reclaim completed; " +
+            $"performed={reclaimed}; " +
             $"elapsed={Stopwatch.GetElapsedTime(reclaimStarted).TotalMilliseconds:0}ms");
         _startupWorkingSetReclaimed = true;
     }
@@ -340,13 +342,6 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         LivePreviewDebugDump.Write(
             $"OpenGL map renderer Load completed; " +
             $"elapsed={Stopwatch.GetElapsedTime(rendererLoadStarted).TotalMilliseconds:0}ms");
-        long reclaimStarted = Stopwatch.GetTimestamp();
-        LivePreviewDebugDump.Write(
-            "OpenGL post-load memory reclaim started");
-        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
-        LivePreviewDebugDump.Write(
-            $"OpenGL post-load memory reclaim completed; " +
-            $"elapsed={Stopwatch.GetElapsedTime(reclaimStarted).TotalMilliseconds:0}ms");
         string programReuse =
             $"OpenGL program reuse for '{_scene.Name}': " +
             $"newLinks={shareGroupLease.ProgramCache.SuccessfulLinkCount - successfulLinksBefore}, " +

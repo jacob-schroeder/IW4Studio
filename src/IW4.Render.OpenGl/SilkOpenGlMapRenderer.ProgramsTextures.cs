@@ -19,6 +19,7 @@ namespace IW4.Render.OpenGl;
 
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
+    private bool _deferNewAuthoredProgramLinkCompletion;
     private readonly Dictionary<
         OpenGlProgramKey,
         MapRenderOpenGlStaticModelProgramUniforms>
@@ -248,6 +249,134 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             out _).Handle != 0;
     }
 
+    /// <summary>
+    /// Issues every currently consumable authored map link before any one
+    /// source link is completed. LinkStatus is a driver synchronization
+    /// point; submitting the complete exact-source set first allows capable
+    /// drivers to compile/link concurrently while the normal resource gates
+    /// retain their existing blocking validation and multipass atomicity.
+    /// Warm program-binary hits remain immediately ready and source failures
+    /// still fall back through the established group policies.
+    /// </summary>
+    private void SubmitSceneAuthoredProgramLinks(MapRenderScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (_deferNewAuthoredProgramLinkCompletion)
+        {
+            throw new InvalidOperationException(
+                "Authored OpenGL link submission cannot be nested.");
+        }
+
+        IEnumerable<MapRenderTexturedBatch> worldBatches =
+            scene.TexturedBatches;
+        IEnumerable<MapRenderInstancedTexturedBatch> staticBatches =
+            scene.InstancedTexturedBatches
+                .Concat(scene.StaticModelLodTexturedBatches)
+                .Concat(
+                    scene.ExactNormalCameraStaticModelTexturedBatches)
+                .Concat(
+                    scene.ShadowAllocatedStaticModelTexturedBatches);
+        if (scene.ReceiverVariants is { } receiverVariants)
+        {
+            worldBatches = worldBatches.Concat(
+                receiverVariants.World.Values.SelectMany(
+                    batches => batches));
+            staticBatches = staticBatches.Concat(
+                receiverVariants.StaticModels.Values.SelectMany(
+                    batches => batches));
+        }
+        else
+        {
+            worldBatches = worldBatches.Concat(
+                scene.ShadowAllocatedWorldTexturedBatches);
+        }
+
+        _deferNewAuthoredProgramLinkCompletion = true;
+        try
+        {
+            foreach (MapRenderTexturedBatch batch in worldBatches)
+            {
+                PreflightAuthoredProgram(batch);
+                SubmitDepthPrepassProgram(batch);
+            }
+            foreach (MapRenderInstancedTexturedBatch batch in staticBatches)
+            {
+                PreflightAuthoredProgram(batch);
+                SubmitDepthPrepassProgram(batch);
+            }
+        }
+        finally
+        {
+            _authoredMaterials.ResumePendingProgramResolution();
+            _deferNewAuthoredProgramLinkCompletion = false;
+        }
+    }
+
+    private void SubmitDepthPrepassProgram(MapRenderTexturedBatch batch)
+    {
+        if (batch.EditorDepthPrepass is not { } depthPrepass ||
+            batch.DepthPrepassShaderExecution is not
+                { ProgramExecutionReady: true } execution ||
+            !execution.VertexInputPayloadReady ||
+            batch.RsxVertexInputs.Length !=
+            (batch.Vertices.Length /
+                MapRenderScene.TexturedVertexFloatCount) * 16 * 4 ||
+            !HasRequiredImmutableSceneSamplers(
+                execution,
+                batch.SceneLightIndex) ||
+            !TryCreateEditorDirectCodeConstantPlan(
+                execution,
+                batch.SceneLightIndex,
+                out TranslatedProgramDirectCodeConstantPlan? directPlan) ||
+            !TryCreateEditorVertexConstantBindingPlan(
+                execution,
+                directPlan!,
+                out TranslatedProgramVertexConstantBindingPlan? vertexPlan))
+        {
+            return;
+        }
+
+        GetOrCreateRsxProgram(
+            execution,
+            depthPrepass.State,
+            vertexPlan!,
+            usesStaticModelInstancing: false,
+            out _);
+    }
+
+    private void SubmitDepthPrepassProgram(
+        MapRenderInstancedTexturedBatch batch)
+    {
+        if (batch.EditorDepthPrepass is not { } depthPrepass ||
+            batch.DepthPrepassShaderExecution is not
+                { ProgramExecutionReady: true } execution ||
+            !execution.VertexInputPayloadReady ||
+            batch.RsxVertexInputs.Length !=
+            (batch.Vertices.Length /
+                MapRenderScene.TexturedVertexFloatCount) * 16 * 4 ||
+            !HasRequiredImmutableSceneSamplers(
+                execution,
+                batch.SceneLightIndex) ||
+            !TryCreateEditorDirectCodeConstantPlan(
+                execution,
+                batch.SceneLightIndex,
+                out TranslatedProgramDirectCodeConstantPlan? directPlan) ||
+            !TryCreateEditorVertexConstantBindingPlan(
+                execution,
+                directPlan!,
+                out TranslatedProgramVertexConstantBindingPlan? vertexPlan))
+        {
+            return;
+        }
+
+        GetOrCreateRsxProgram(
+            execution,
+            depthPrepass.State,
+            vertexPlan!,
+            usesStaticModelInstancing: true,
+            out _);
+    }
+
     private bool HasRequiredImmutableSceneSamplers(
         ShaderExecutionContract execution,
         int sceneLightIndex)
@@ -437,6 +566,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 execution.FragmentProgramControl,
                 suppressShaderPackerForDiagnosticOutput:
                     UseRsxVertexPlacementDiagnostic,
+                hostColorOutputIndex:
+                    RsxFragmentOutputDiagnostic ?? 0,
                 out AlphaTestMode alphaTestMode,
                 out OpenGlRsxShaderPackerMode shaderPackerMode,
                 out string fixedFunctionEpilogue))
@@ -1533,18 +1664,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         OpenGlLinkedProgramHandleResolution resolution;
         using (BeginProgramDriverTrace(trace))
         {
-            resolution = _sharedProgramUsage.GetOrLink(
+            resolution = _sharedProgramUsage.GetOrLinkDeferred(
                 vertexSource,
                 fragmentSource,
                 () =>
                 {
                     linkInvoked = true;
-                    trace?.Invoke("shared-resolution miss; new link started");
-                    return LinkProgram(
+                    trace?.Invoke(
+                        "shared-resolution miss; new link submitted");
+                    return SubmitProgramLink(
                         vertexSource,
                         fragmentSource,
                         trace);
-                });
+                },
+                program => CompleteProgramLink(program, trace),
+                _deferNewAuthoredProgramLinkCompletion);
         }
         trace?.Invoke(
             $"shared-resolution lookup completed; " +
@@ -1570,7 +1704,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         return resolution;
     }
 
-    private uint LinkProgram(
+    private uint SubmitProgramLink(
         string vertexSource,
         string fragmentSource,
         Action<string>? trace)
@@ -1611,22 +1745,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         ProgramParameterPName.BinaryRetrievableHint,
                         1);
                 }
-                trace?.Invoke(
-                    $"driver glLinkProgram started; program={program}");
-                _gl.LinkProgram(program);
-                trace?.Invoke(
-                    $"driver link-status query started; program={program}");
-                _gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int status);
-                trace?.Invoke(
-                    $"driver link-status query completed; " +
-                    $"program={program}; status={status}");
-                if (status != 0)
+                try
                 {
+                    trace?.Invoke(
+                        $"driver glLinkProgram started; program={program}");
+                    _gl.LinkProgram(program);
                     if (shaderObjectCache is not null)
                     {
-                        // Linking has copied the executable into the program.
-                        // Detach shared load-scoped objects so deleting the
-                        // cache at the end of Load actually releases them.
+                        // glLinkProgram captures the attached shader objects
+                        // for this link operation. Detaching now lets the
+                        // load-scoped shader cache release them independently
+                        // while the driver completes the submitted program.
                         trace?.Invoke(
                             $"driver glDetachShader started; stage=vertex; " +
                             $"program={program}");
@@ -1636,21 +1765,15 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                             $"program={program}");
                         _gl.DetachShader(program, fragmentShader);
                     }
-
                     trace?.Invoke(
-                        $"new link completed; program={program}");
+                        $"new link submitted; program={program}");
                     return program;
                 }
-
-                trace?.Invoke(
-                    $"driver program-info-log query started; program={program}");
-                string info = _gl.GetProgramInfoLog(program);
-                trace?.Invoke(
-                    $"driver program-info-log query completed; " +
-                    $"program={program}; chars={info.Length}");
-                _gl.DeleteProgram(program);
-                throw new InvalidOperationException(
-                    $"OpenGL program link failed: {info}");
+                catch
+                {
+                    _gl.DeleteProgram(program);
+                    throw;
+                }
             }
             finally
             {
@@ -1695,6 +1818,39 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 $"stage={stage}; path={path}; handle={shader}");
             return shader;
         }
+    }
+
+    private uint CompleteProgramLink(
+        uint program,
+        Action<string>? trace)
+    {
+        if (program == 0)
+            throw new ArgumentOutOfRangeException(nameof(program));
+
+        trace?.Invoke(
+            $"driver link-status query started; program={program}");
+        _gl.GetProgram(
+            program,
+            ProgramPropertyARB.LinkStatus,
+            out int status);
+        trace?.Invoke(
+            $"driver link-status query completed; " +
+            $"program={program}; status={status}");
+        if (status != 0)
+        {
+            trace?.Invoke(
+                $"new link completed; program={program}");
+            return program;
+        }
+
+        trace?.Invoke(
+            $"driver program-info-log query started; program={program}");
+        string info = _gl.GetProgramInfoLog(program);
+        trace?.Invoke(
+            $"driver program-info-log query completed; " +
+            $"program={program}; chars={info.Length}");
+        throw new InvalidOperationException(
+            $"OpenGL program link failed: {info}");
     }
 
     private uint CompileShader(ShaderType type, string source)

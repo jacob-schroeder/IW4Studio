@@ -49,6 +49,37 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
     };
     private static readonly Vector4 DefaultRsxVertexInput = new(0f, 0f, 0f, 1f);
 
+    /// <summary>
+    /// Material selection is immutable for one scene revision. Texture
+    /// preflight and surface construction consume this same plan so technique
+    /// selection, fallback ownership, and vertex routing are not recomputed in
+    /// two full world traversals.
+    /// </summary>
+    private sealed record PreparedWorldSurfaceMaterialPlan(
+        int SurfaceIndex,
+        GfxSurface Surface,
+        WorldSurfacePlacement Placement,
+        int? PageZeroUnshadowedTechniqueSlot,
+        int? PageZeroShadowAllocatedTechniqueSlot,
+        int? PageOneUnshadowedTechniqueSlot,
+        int? PageOneShadowAllocatedTechniqueSlot,
+        MaterialAsset? Material,
+        MaterialTechniqueSetAsset? TechniqueSet,
+        MapRenderEditorDepthPrepassPlan? EditorDepthPrepass,
+        bool IsSkyMaterial,
+        bool HasDedicatedSkySubmission,
+        IReadOnlyList<SelectedColorPass> PageZeroUnshadowedPasses,
+        IReadOnlyList<SelectedColorPass> PageZeroShadowAllocatedPasses,
+        IReadOnlyList<SelectedColorPass> PageOneUnshadowedPasses,
+        IReadOnlyList<SelectedColorPass> PageOneShadowAllocatedPasses,
+        SelectedColorPass? BasePreviewPass,
+        IReadOnlyList<PreparedWorldSurfacePassPlan> PreparedPasses);
+
+    private readonly record struct PreparedWorldSurfacePassPlan(
+        SelectedColorPass SelectedPass,
+        WorldVertexLayoutSelection VertexLayout,
+        WorldVertexDecoderSelection VertexDecoder);
+
     public MapRenderScene Build(MapRenderInput input)
     {
         bool includeDiagnosticGeometry = input.BuildProfile switch
@@ -284,6 +315,10 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
         var worldMaterialSamplerPlanCache = new Dictionary<
             WorldMaterialSamplerPlanCacheKey,
             WorldMaterialSamplerPlan>();
+        var worldMaterialSamplerBindingsCache = new Dictionary<
+            WorldMaterialSamplerPreparationKey,
+            (IReadOnlyList<MapRenderWorldMaterialSamplerBinding> Bindings,
+                MaterialSamplerBindingsIdentity Identity)>();
         var worldCameraColorPhasePlanCache = new Dictionary<
             (MaterialAsset Material,
                 MaterialTechniqueSetAsset? TechniqueSet,
@@ -491,7 +526,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
             string vertexInputPayloadBlocker,
             bool authoredSourcePassAvailable,
             ShaderExecutionPurpose purpose =
-                ShaderExecutionPurpose.CameraColor)
+                ShaderExecutionPurpose.CameraColor,
+            MaterialSamplerBindingsIdentity? samplerBindingsIdentity = null)
         {
             var key = new ShaderExecutionCacheKey(
                 material,
@@ -502,7 +538,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 selectedPass.State,
                 purpose,
                 authoredSourcePassAvailable,
-                new MaterialSamplerBindingsIdentity(materialSamplers),
+                samplerBindingsIdentity ??
+                    MaterialSamplerBindingsIdentity.Create(materialSamplers),
                 vertexInputPayloadReady,
                 vertexInputPayloadBlocker);
             if (!shaderExecutionCache.TryGetValue(key, out ShaderExecutionContract? result))
@@ -697,6 +734,55 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 return selection;
             }
 
+            (IReadOnlyList<MapRenderWorldMaterialSamplerBinding> Bindings,
+                MaterialSamplerBindingsIdentity Identity)
+                ResolveCachedWorldMaterialSamplerBindings(
+                    WorldMaterialSamplerPlan samplerPlan,
+                    SelectedColorPass selectedPass,
+                    WorldVertexLayoutSelection vertexLayout,
+                    GfxSurface surface,
+                    IReadOnlyList<MaterialColorLayer> colorLayers,
+                    ref int decodedTextureCount,
+                    ref int skippedTextureCount)
+            {
+                var key = new WorldMaterialSamplerPreparationKey(
+                    samplerPlan,
+                    selectedPass.Pass.TechniquePass.CustomSamplerFlags,
+                    vertexLayout,
+                    surface.LightmapIndex,
+                    surface.ReflectionProbeIndex,
+                    new MaterialColorLayersIdentity(colorLayers));
+                if (worldMaterialSamplerBindingsCache.TryGetValue(
+                        key,
+                        out var result))
+                {
+                    return result;
+                }
+
+                IReadOnlyList<MapRenderWorldMaterialSamplerBinding> bindings =
+                    PrepareWorldMaterialSamplerBindings(
+                        samplerPlan,
+                        worldTextureBindings,
+                        selectedPass,
+                        vertexLayout,
+                        ResolveCachedWorldVertexDecoder,
+                        gfxMap,
+                        surface,
+                        colorLayers,
+                        imageStreams,
+                        textureCache,
+                        worldTextureCache,
+                        failedTextureCacheKeys,
+                        failedWorldTextureCacheKeys,
+                        ref decodedTextureCount,
+                        ref skippedTextureCount);
+                result = (
+                    bindings,
+                    MaterialSamplerBindingsIdentity.Create(bindings));
+                worldMaterialSamplerBindingsCache.Add(key, result);
+                return result;
+            }
+
             reportProgress?.Invoke($"preparing {surfaceCount} world surface geometry core(s)");
             PreparedWorldSurfaceGeometry[] preparedWorldSurfaces =
                 PrepareWorldSurfaceGeometries(
@@ -768,11 +854,11 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 new List<RenderTextureDecodeRequest>();
             var plannedWorldPrimaryTextureKeys =
                 new HashSet<RenderTextureCacheKey>();
+            var preparedWorldSurfaceMaterialPlans =
+                new List<PreparedWorldSurfaceMaterialPlan>(
+                    renderableWorldSurfaceIndices.Length);
             foreach (int surfaceIndex in renderableWorldSurfaceIndices)
             {
-                if (submittedSkySurfaceIndices.Contains(surfaceIndex))
-                    continue;
-
                 GfxSurface surface = gfxMap.Dpvs.Surfaces[surfaceIndex];
                 WorldSurfacePlacement placement =
                     worldSurfacePlacements[surfaceIndex]!.Value;
@@ -868,18 +954,40 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             techset,
                             selectedTechniqueSlot,
                             rendererPasses.Count > 0);
-                IEnumerable<SelectedColorPass> plannedPasses = rendererPasses
-                    .Concat(shadowAllocatedPasses)
-                    .Concat(pageOneUnshadowedPasses)
-                    .Concat(pageOneShadowAllocatedPasses);
+                bool hasDedicatedSkySubmission =
+                    submittedSkySurfaceIndices.Contains(surfaceIndex);
+                // Preserve the four native selector groups contiguously and in
+                // their original order; later atomic authorization uses these
+                // exact boundaries. The base preview is a separate completed
+                // fallback and a PS3 no-camera-color phase may suppress it.
+                var selectedPasses = new List<SelectedColorPass>(
+                    rendererPasses.Count +
+                    shadowAllocatedPasses.Count +
+                    pageOneUnshadowedPasses.Count +
+                    pageOneShadowAllocatedPasses.Count + 1);
+                selectedPasses.AddRange(rendererPasses);
+                selectedPasses.AddRange(shadowAllocatedPasses);
+                selectedPasses.AddRange(pageOneUnshadowedPasses);
+                selectedPasses.AddRange(pageOneShadowAllocatedPasses);
                 if (basePreviewPass is not null &&
                     cameraColorPhase?.SuppressGenericCameraColorFallback != true)
                 {
-                    plannedPasses = plannedPasses.Append(basePreviewPass);
+                    selectedPasses.Add(basePreviewPass);
                 }
+                // A successfully materialized GfxSky owns its world surface.
+                // The ordinary material path remains available only when sky
+                // package/cubemap resolution failed.
+                if (hasDedicatedSkySubmission)
+                    selectedPasses.Clear();
 
-                foreach (SelectedColorPass selectedPass in plannedPasses)
+                var preparedPasses =
+                    new PreparedWorldSurfacePassPlan[selectedPasses.Count];
+                for (int selectedPassIndex = 0;
+                     selectedPassIndex < selectedPasses.Count;
+                     selectedPassIndex++)
                 {
+                    SelectedColorPass selectedPass =
+                        selectedPasses[selectedPassIndex];
                     WorldVertexLayoutSelection worldVertexLayout =
                         ResolveCachedWorldVertexLayout(
                             techset,
@@ -889,6 +997,10 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                         worldVertexLayout,
                         selectedPass.TexCoordSource,
                         selectedPass.TexCoordSourceIsEngineRouted);
+                    preparedPasses[selectedPassIndex] = new(
+                        selectedPass,
+                        worldVertexLayout,
+                        decoderSelection);
                     WorldVertexDecoder? decoder = decoderSelection.Decoder;
                     if (decoder is null || !decoder.HasTexCoord)
                         continue;
@@ -901,6 +1013,31 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     if (plannedWorldPrimaryTextureKeys.Add(request.Key))
                         worldPrimaryTextureRequests.Add(request);
                 }
+
+                preparedWorldSurfaceMaterialPlans.Add(new(
+                    surfaceIndex,
+                    surface,
+                    placement,
+                    selectedTechniqueSlot,
+                    shadowAllocatedTechniqueSlot,
+                    pageOneUnshadowedTechniqueSlot,
+                    pageOneShadowAllocatedTechniqueSlot,
+                    material,
+                    techset,
+                    material is null
+                        ? null
+                        : ResolveCachedEditorDepthPrepass(material, techset),
+                    string.Equals(
+                        techset?.Name,
+                        "wc_sky",
+                        StringComparison.Ordinal),
+                    hasDedicatedSkySubmission,
+                    rendererPasses,
+                    shadowAllocatedPasses,
+                    pageOneUnshadowedPasses,
+                    pageOneShadowAllocatedPasses,
+                    basePreviewPass,
+                    preparedPasses));
             }
 
             long worldPrimaryTextureBatchStart =
@@ -924,8 +1061,10 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     $"{decodeSeconds:0.00}s parallel decode");
             }
 
-            foreach (int surfaceIndex in renderableWorldSurfaceIndices)
+            foreach (PreparedWorldSurfaceMaterialPlan materialPlan in
+                     preparedWorldSurfaceMaterialPlans)
             {
+                int surfaceIndex = materialPlan.SurfaceIndex;
                 long surfaceProfileStart = collectBuildProfiles
                     ? System.Diagnostics.Stopwatch.GetTimestamp()
                     : 0;
@@ -933,13 +1072,8 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     reportProgress?.Invoke(
                         $"building world surfaces {surfaceIndex}/{gfxMap.Dpvs.Surfaces.Count}");
 
-                GfxSurface surface = gfxMap.Dpvs.Surfaces[surfaceIndex];
-                WorldSurfacePlacement placement =
-                    worldSurfacePlacements[surfaceIndex]!.Value;
-                GfxDrawSurfSurfaceType surfaceType =
-                    placement.IsStaticDpvsSurface
-                        ? GfxDrawSurfSurfaceType.Triangles
-                        : GfxDrawSurfSurfaceType.BrushModel;
+                GfxSurface surface = materialPlan.Surface;
+                WorldSurfacePlacement placement = materialPlan.Placement;
                 MapRenderPickKind surfacePickKind =
                     placement.IsStaticDpvsSurface
                         ? MapRenderPickKind.GfxSurface
@@ -949,57 +1083,23 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                         ? surfaceIndex
                         : placement.BrushModelIndex;
                 int? selectedTechniqueSlot =
-                    ResolvePreparedEditorTechniqueVariantSlot(
-                        surface.PrimaryLightIndex,
-                        surfaceType,
-                        editorPreviewWorldDrawMethod,
-                        worldSourceBuildResult.Source?.SceneLights.Source?
-                            .SelectorState,
-                        MapRenderTechniqueVariantAllocation.Unshadowed);
+                    materialPlan.PageZeroUnshadowedTechniqueSlot;
                 int? shadowAllocatedTechniqueSlot =
-                    placement.IsStaticDpvsSurface
-                        ? ResolvePreparedEditorTechniqueVariantSlot(
-                        surface.PrimaryLightIndex,
-                        GfxDrawSurfSurfaceType.Triangles,
-                        editorPreviewWorldDrawMethod,
-                        worldSourceBuildResult.Source?.SceneLights.Source?
-                            .SelectorState,
-                        MapRenderTechniqueVariantAllocation
-                            .ShadowMapAllocated)
-                        : null;
+                    materialPlan.PageZeroShadowAllocatedTechniqueSlot;
                 int? pageOneUnshadowedTechniqueSlot =
-                    placement.IsStaticDpvsSurface
-                        ? ResolvePreparedEditorTechniqueVariantSlot(
-                        surface.PrimaryLightIndex,
-                        GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
-                        editorPreviewWorldDrawMethod,
-                        worldSourceBuildResult.Source?.SceneLights.Source?
-                            .SelectorState,
-                        MapRenderTechniqueVariantAllocation.Unshadowed)
-                        : null;
+                    materialPlan.PageOneUnshadowedTechniqueSlot;
                 int? pageOneShadowAllocatedTechniqueSlot =
-                    placement.IsStaticDpvsSurface
-                        ? ResolvePreparedEditorTechniqueVariantSlot(
-                        surface.PrimaryLightIndex,
-                        GfxDrawSurfSurfaceType.TrianglesNoSunShadow,
-                        editorPreviewWorldDrawMethod,
-                        worldSourceBuildResult.Source?.SceneLights.Source?
-                            .SelectorState,
-                        MapRenderTechniqueVariantAllocation
-                            .ShadowMapAllocated)
-                        : null;
+                    materialPlan.PageOneShadowAllocatedTechniqueSlot;
                 PreparedWorldSurfaceGeometry surfaceGeometry =
                     preparedWorldSurfaces[surfaceIndex];
-                MaterialAsset? material = surface.Material ?? lookup.ResolveMaterial(surface.MaterialPointer);
-                MaterialTechniqueSetAsset? techset = material is null
-                    ? null
-                    : ResolveCachedTechniqueSet(material);
+                MaterialAsset? material = materialPlan.Material;
+                MaterialTechniqueSetAsset? techset =
+                    materialPlan.TechniqueSet;
                 MapRenderEditorDepthPrepassPlan? editorDepthPrepass =
-                    material is null
-                        ? null
-                        : ResolveCachedEditorDepthPrepass(material, techset);
-                bool isSkyMaterial = string.Equals(techset?.Name, "wc_sky", StringComparison.Ordinal);
-                bool hasDedicatedSkySubmission = submittedSkySurfaceIndices.Contains(surfaceIndex);
+                    materialPlan.EditorDepthPrepass;
+                bool isSkyMaterial = materialPlan.IsSkyMaterial;
+                bool hasDedicatedSkySubmission =
+                    materialPlan.HasDedicatedSkySubmission;
                 if (isSkyMaterial)
                 {
                     skyMaterialSurfaceCount++;
@@ -1015,12 +1115,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             placement.RenderOrigin));
                 }
                 IReadOnlyList<SelectedColorPass> rendererSelectedPasses =
-                    material is not null
-                        ? ResolveCachedEditorMaterialPasses(
-                            material,
-                            techset,
-                            selectedTechniqueSlot)
-                        : [];
+                    materialPlan.PageZeroUnshadowedPasses;
                 if (skyOrdinalsBySurface.TryGetValue(
                         surfaceIndex,
                         out List<int>? owningSkyOrdinals))
@@ -1125,31 +1220,13 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                 }
                 IReadOnlyList<SelectedColorPass>
                     shadowAllocatedRendererSelectedPasses =
-                        material is not null &&
-                        shadowAllocatedTechniqueSlot is not null
-                            ? ResolveCachedEditorMaterialPasses(
-                                material,
-                                techset,
-                                shadowAllocatedTechniqueSlot)
-                            : [];
+                        materialPlan.PageZeroShadowAllocatedPasses;
                 IReadOnlyList<SelectedColorPass>
                     pageOneUnshadowedRendererSelectedPasses =
-                        material is not null &&
-                        pageOneUnshadowedTechniqueSlot is not null
-                            ? ResolveCachedEditorMaterialPasses(
-                                material,
-                                techset,
-                                pageOneUnshadowedTechniqueSlot)
-                            : [];
+                        materialPlan.PageOneUnshadowedPasses;
                 IReadOnlyList<SelectedColorPass>
                     pageOneShadowAllocatedRendererSelectedPasses =
-                        material is not null &&
-                        pageOneShadowAllocatedTechniqueSlot is not null
-                            ? ResolveCachedEditorMaterialPasses(
-                                material,
-                                techset,
-                                pageOneShadowAllocatedTechniqueSlot)
-                            : [];
+                        materialPlan.PageOneShadowAllocatedPasses;
 
                 if (placement.IsStaticDpvsSurface &&
                     worldReceiverRequirements is not null)
@@ -1204,43 +1281,10 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     worldReceiverRequirements[surfaceIndex] = requirement;
                 }
 
-                SelectedColorPass? materialColorUvSelectedPass = material is null
-                    ? null
-                    : ResolveCachedMaterialColorUvPass(material, techset);
-                MapRenderWorldCameraColorPhasePlan? cameraColorPhase =
-                    material is null
-                        ? null
-                        : ResolveCachedWorldCameraColorPhase(
-                            material,
-                            techset,
-                            selectedTechniqueSlot,
-                            rendererSelectedPasses.Count > 0);
-                // The base preview remains a separate completed visualization
-                // channel. A PS3 no-camera-color selection owns the phase,
-                // however, so substituting that preview would turn depth-only
-                // utility geometry into visible camera-color polygons.
-                SelectedColorPass?[] fallbackCandidates =
-                    cameraColorPhase?.SuppressGenericCameraColorFallback == true
-                        ? []
-                        : [materialColorUvSelectedPass];
-                SelectedColorPass[] fallbackPasses = fallbackCandidates
-                    .OfType<SelectedColorPass>()
-                    .ToArray();
-                // A runtime-selected authored group is atomic. The completed base
-                // preview is prepared as a distinct retained channel; it never fills
-                // a missing pass inside that authored group.
-                IReadOnlyList<SelectedColorPass> selectedPasses =
-                    rendererSelectedPasses
-                        .Concat(shadowAllocatedRendererSelectedPasses)
-                        .Concat(pageOneUnshadowedRendererSelectedPasses)
-                        .Concat(pageOneShadowAllocatedRendererSelectedPasses)
-                        .Concat(fallbackPasses)
-                        .ToArray();
-                // A successfully materialized GfxSky owns this surface. Keep the
-                // ordinary material path available when package/cubemap resolution
-                // failed so missing external image data cannot erase the surface.
-                if (hasDedicatedSkySubmission)
-                    selectedPasses = [];
+                SelectedColorPass? materialColorUvSelectedPass =
+                    materialPlan.BasePreviewPass;
+                IReadOnlyList<PreparedWorldSurfacePassPlan> selectedPasses =
+                    materialPlan.PreparedPasses;
 
                 if (!hasDedicatedSkySubmission)
                 {
@@ -1432,15 +1476,23 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                     if (!isSelectorPass && rendererTextureApplied)
                         break;
 
-                    SelectedColorPass selectedPass = selectedPasses[selectedPassIndex];
+                    PreparedWorldSurfacePassPlan preparedPass =
+                        selectedPasses[selectedPassIndex];
+                    SelectedColorPass selectedPass =
+                        preparedPass.SelectedPass;
                     bool isBaseSurfaceSelectedPass = !isSelectorPass &&
                         ReferenceEquals(selectedPass, materialColorUvSelectedPass);
                     bool isFallbackSelectedPass = isBaseSurfaceSelectedPass;
                     bool isRetainedBasePreview = isFallbackSelectedPass && rendererSelectedPasses.Count > 0;
                     WorldVertexLayoutSelection worldVertexLayout =
-                        ResolveCachedWorldVertexLayout(
-                            techset,
-                            selectedPass);
+                        preparedPass.VertexLayout;
+                    WorldMaterialSamplerPlan materialSamplerPlan =
+                        !isRetainedBasePreview
+                            ? ResolveCachedWorldMaterialSamplerPlan(
+                                material,
+                                techset,
+                                selectedPass)
+                            : WorldMaterialSamplerPlan.Empty;
                     IReadOnlyList<PreparedColorLayer> preparedColorLayers = [];
                     Texture? texture = null;
                     // Every authored pass follows the same preparation path. Diagnostic
@@ -1470,10 +1522,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                                 materializedVertexInputs,
                             out string depthPrepassVertexInputBlocker);
                     WorldVertexDecoderSelection materialVertexSelection =
-                        ResolveCachedWorldVertexDecoder(
-                            worldVertexLayout,
-                            selectedPass.TexCoordSource,
-                            selectedPass.TexCoordSourceIsEngineRouted);
+                        preparedPass.VertexDecoder;
                     WorldVertexDecoder? materialVertexDecoder =
                         materialVertexSelection.Decoder;
                     UvRoute uvRoute =
@@ -1512,10 +1561,7 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                                          isSelectorPass,
                                      material,
                                      isSelectorPass
-                                         ? ResolveCachedWorldMaterialSamplerPlan(
-                                             material,
-                                             techset,
-                                             selectedPass)
+                                         ? materialSamplerPlan
                                          : WorldMaterialSamplerPlan.Empty,
                                      material is null
                                          ? null
@@ -1562,29 +1608,36 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             preparedColorLayers
                                 .Select(layer => layer.Layer)
                                 .ToArray();
-                        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> materialSamplers =
-                            !isRetainedBasePreview
-                            ? PrepareWorldMaterialSamplerBindings(
-                                ResolveCachedWorldMaterialSamplerPlan(
-                                    material,
-                                    techset,
-                                    selectedPass),
-                                worldTextureBindings,
-                                selectedPass,
-                                worldVertexLayout,
-                                ResolveCachedWorldVertexDecoder,
-                                gfxMap,
-                                surface,
-                                materialColorLayers,
-                                imageStreams,
-                                textureCache,
-                                worldTextureCache,
-                                failedTextureCacheKeys,
-                                failedWorldTextureCacheKeys,
-                                ref textureDecodedCount,
-                                ref textureDecodeSkippedCount)
-                            : CreateMaterialSamplerBindings(
-                                materialColorLayers);
+                        (IReadOnlyList<MapRenderWorldMaterialSamplerBinding>
+                                Bindings,
+                            MaterialSamplerBindingsIdentity Identity)
+                            preparedMaterialSamplers;
+                        if (!isRetainedBasePreview)
+                        {
+                            preparedMaterialSamplers =
+                                ResolveCachedWorldMaterialSamplerBindings(
+                                    materialSamplerPlan,
+                                    selectedPass,
+                                    worldVertexLayout,
+                                    surface,
+                                    materialColorLayers,
+                                    ref textureDecodedCount,
+                                    ref textureDecodeSkippedCount);
+                        }
+                        else
+                        {
+                            IReadOnlyList<
+                                MapRenderWorldMaterialSamplerBinding> bindings =
+                                CreateMaterialSamplerBindings(
+                                    materialColorLayers);
+                            preparedMaterialSamplers = (
+                                bindings,
+                                MaterialSamplerBindingsIdentity.Create(
+                                    bindings));
+                        }
+                        IReadOnlyList<MapRenderWorldMaterialSamplerBinding>
+                            materialSamplers =
+                                preparedMaterialSamplers.Bindings;
                         if (collectBuildProfiles)
                         {
                             samplerBindingProfileTicks +=
@@ -1603,7 +1656,9 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
                             materialSamplers,
                             surfaceRsxVertexInputsReady,
                             surfaceRsxVertexInputBlocker,
-                            authoredSourcePassAvailable: hasAuthoredSourcePass);
+                            authoredSourcePassAvailable: hasAuthoredSourcePass,
+                            samplerBindingsIdentity:
+                                preparedMaterialSamplers.Identity);
                         ShaderExecutionContract?
                             depthPrepassShaderExecution = null;
                         if (depthPrepassSelection is not null)
@@ -1953,184 +2008,84 @@ public sealed partial class MapSceneBuilder : IMapRenderSceneBuilder
             }
 
             reportProgress?.Invoke(
-                "building static models (1/4: primary, unshadowed)");
-            int staticAuthoredCandidateTexturedSurfaceCount = 0;
-            int staticAuthoredCandidateTexturedTriangleCount = 0;
-            AddStaticModelTexturedGeometry(
-                gfxMap,
-                preparedStaticSources,
-                staticSharedBuildCache,
-                lightingAtlas,
-                lookup,
-                worldTextureBindings,
-                editorPreviewWorldDrawMethod,
-                worldSourceBuildResult.Source?.SceneLights.Source?
-                    .SelectorState,
-                GfxDrawSurfSurfaceType.StaticModelRigid,
-                MapRenderTechniqueVariantAllocation.Unshadowed,
-                allowPreviewFallback: true,
-                forceGenericPreview: false,
-                imageStreams,
-                exactNormalCameraInstancedTexturedBatchBuilders,
-                textureCache,
-                worldTextureCache,
-                failedTextureCacheKeys,
-                failedWorldTextureCacheKeys,
-                shaderTranslationCache,
-                "building static models (1/4: primary, unshadowed)",
-                reportProgress,
-                ref textureDecodedCount,
-                ref textureDecodeSkippedCount,
-                out _,
-                out _,
-                out staticAuthoredCandidateTexturedSurfaceCount,
-                out staticAuthoredCandidateTexturedTriangleCount,
-                out IReadOnlyDictionary<int, RenderBounds>
-                    exactStaticAllLodBounds,
-                out IReadOnlyDictionary<int, uint>
-                    exactStaticRenderableLodMasks);
-            reportProgress?.Invoke(
-                "building static models (generic normal-camera fallback)");
-            AddStaticModelTexturedGeometry(
-                gfxMap,
-                preparedStaticSources,
-                staticSharedBuildCache,
-                lightingAtlas,
-                lookup,
-                worldTextureBindings,
-                editorPreviewWorldDrawMethod,
-                worldSourceBuildResult.Source?.SceneLights.Source?
-                    .SelectorState,
-                GfxDrawSurfSurfaceType.StaticModelRigid,
-                MapRenderTechniqueVariantAllocation.Unshadowed,
-                allowPreviewFallback: true,
-                forceGenericPreview: true,
-                imageStreams,
-                instancedTexturedBatchBuilders,
-                textureCache,
-                worldTextureCache,
-                failedTextureCacheKeys,
-                failedWorldTextureCacheKeys,
-                shaderTranslationCache,
-                "building static models (generic normal-camera fallback)",
-                reportProgress,
-                ref textureDecodedCount,
-                ref textureDecodeSkippedCount,
-                out int staticPreviewFallbackSurfaceCount,
-                out int staticPreviewFallbackTriangleCount,
-                out _,
-                out _,
-                out IReadOnlyDictionary<int, RenderBounds>
-                    staticPreviewAllLodBounds,
-                out IReadOnlyDictionary<int, uint>
-                    staticPreviewRenderableLodMasks);
+                "building static models (all normal-camera variants)");
+            IReadOnlyList<StaticModelTexturedBuildResult>
+                staticTexturedBuildResults =
+                    AddStaticModelTexturedGeometryVariants(
+                        gfxMap,
+                        preparedStaticSources,
+                        staticSharedBuildCache,
+                        lightingAtlas,
+                        lookup,
+                        worldTextureBindings,
+                        editorPreviewWorldDrawMethod,
+                        worldSourceBuildResult.Source?.SceneLights.Source?
+                            .SelectorState,
+                        imageStreams,
+                        [
+                            new StaticModelTexturedBuildTarget(
+                                GfxDrawSurfSurfaceType.StaticModelRigid,
+                                MapRenderTechniqueVariantAllocation.Unshadowed,
+                                AllowPreviewFallback: true,
+                                ForceGenericPreview: false,
+                                exactNormalCameraInstancedTexturedBatchBuilders),
+                            new StaticModelTexturedBuildTarget(
+                                GfxDrawSurfSurfaceType.StaticModelRigid,
+                                MapRenderTechniqueVariantAllocation.Unshadowed,
+                                AllowPreviewFallback: true,
+                                ForceGenericPreview: true,
+                                instancedTexturedBatchBuilders),
+                            new StaticModelTexturedBuildTarget(
+                                GfxDrawSurfSurfaceType.StaticModelRigid,
+                                MapRenderTechniqueVariantAllocation
+                                    .ShadowMapAllocated,
+                                AllowPreviewFallback: false,
+                                ForceGenericPreview: false,
+                                shadowAllocatedInstancedTexturedBatchBuilders),
+                            new StaticModelTexturedBuildTarget(
+                                GfxDrawSurfSurfaceType
+                                    .StaticModelRigidNoSunShadow,
+                                MapRenderTechniqueVariantAllocation.Unshadowed,
+                                AllowPreviewFallback: false,
+                                ForceGenericPreview: false,
+                                pageOneUnshadowedInstancedTexturedBatchBuilders),
+                            new StaticModelTexturedBuildTarget(
+                                GfxDrawSurfSurfaceType
+                                    .StaticModelRigidNoSunShadow,
+                                MapRenderTechniqueVariantAllocation
+                                    .ShadowMapAllocated,
+                                AllowPreviewFallback: false,
+                                ForceGenericPreview: false,
+                                pageOneShadowAllocatedInstancedTexturedBatchBuilders)
+                        ],
+                        textureCache,
+                        worldTextureCache,
+                        failedTextureCacheKeys,
+                        failedWorldTextureCacheKeys,
+                        shaderTranslationCache,
+                        reportProgress,
+                        ref textureDecodedCount,
+                        ref textureDecodeSkippedCount);
+            StaticModelTexturedBuildResult exactStaticBuild =
+                staticTexturedBuildResults[0];
+            StaticModelTexturedBuildResult genericStaticBuild =
+                staticTexturedBuildResults[1];
+            int staticAuthoredCandidateTexturedSurfaceCount =
+                exactStaticBuild.AuthoredCandidateSurfaceCount;
+            int staticAuthoredCandidateTexturedTriangleCount =
+                exactStaticBuild.AuthoredCandidateTriangleCount;
+            int staticPreviewFallbackSurfaceCount =
+                genericStaticBuild.GenericFallbackSurfaceCount;
+            int staticPreviewFallbackTriangleCount =
+                genericStaticBuild.GenericFallbackTriangleCount;
             IReadOnlyDictionary<int, RenderBounds> staticAllLodBounds =
                 MergeStaticModelBounds(
-                    exactStaticAllLodBounds,
-                    staticPreviewAllLodBounds);
+                    exactStaticBuild.AllLodBounds,
+                    genericStaticBuild.AllLodBounds);
             IReadOnlyDictionary<int, uint> staticRenderableLodMasks =
                 MergeStaticModelLodMasks(
-                    exactStaticRenderableLodMasks,
-                    staticPreviewRenderableLodMasks);
-            reportProgress?.Invoke(
-                "building static models (2/4: primary, shadow allocated)");
-            AddStaticModelTexturedGeometry(
-                gfxMap,
-                preparedStaticSources,
-                staticSharedBuildCache,
-                lightingAtlas,
-                lookup,
-                worldTextureBindings,
-                editorPreviewWorldDrawMethod,
-                worldSourceBuildResult.Source?.SceneLights.Source?
-                    .SelectorState,
-                GfxDrawSurfSurfaceType.StaticModelRigid,
-                MapRenderTechniqueVariantAllocation.ShadowMapAllocated,
-                allowPreviewFallback: false,
-                forceGenericPreview: false,
-                imageStreams,
-                shadowAllocatedInstancedTexturedBatchBuilders,
-                textureCache,
-                worldTextureCache,
-                failedTextureCacheKeys,
-                failedWorldTextureCacheKeys,
-                shaderTranslationCache,
-                "building static models (2/4: primary, shadow allocated)",
-                reportProgress,
-                ref textureDecodedCount,
-                ref textureDecodeSkippedCount,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _);
-            reportProgress?.Invoke(
-                "building static models (3/4: page one, unshadowed)");
-            AddStaticModelTexturedGeometry(
-                gfxMap,
-                preparedStaticSources,
-                staticSharedBuildCache,
-                lightingAtlas,
-                lookup,
-                worldTextureBindings,
-                editorPreviewWorldDrawMethod,
-                worldSourceBuildResult.Source?.SceneLights.Source?
-                    .SelectorState,
-                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
-                MapRenderTechniqueVariantAllocation.Unshadowed,
-                allowPreviewFallback: false,
-                forceGenericPreview: false,
-                imageStreams,
-                pageOneUnshadowedInstancedTexturedBatchBuilders,
-                textureCache,
-                worldTextureCache,
-                failedTextureCacheKeys,
-                failedWorldTextureCacheKeys,
-                shaderTranslationCache,
-                "building static models (3/4: page one, unshadowed)",
-                reportProgress,
-                ref textureDecodedCount,
-                ref textureDecodeSkippedCount,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _);
-            reportProgress?.Invoke(
-                "building static models (4/4: page one, shadow allocated)");
-            AddStaticModelTexturedGeometry(
-                gfxMap,
-                preparedStaticSources,
-                staticSharedBuildCache,
-                lightingAtlas,
-                lookup,
-                worldTextureBindings,
-                editorPreviewWorldDrawMethod,
-                worldSourceBuildResult.Source?.SceneLights.Source?
-                    .SelectorState,
-                GfxDrawSurfSurfaceType.StaticModelRigidNoSunShadow,
-                MapRenderTechniqueVariantAllocation.ShadowMapAllocated,
-                allowPreviewFallback: false,
-                forceGenericPreview: false,
-                imageStreams,
-                pageOneShadowAllocatedInstancedTexturedBatchBuilders,
-                textureCache,
-                worldTextureCache,
-                failedTextureCacheKeys,
-                failedWorldTextureCacheKeys,
-                shaderTranslationCache,
-                "building static models (4/4: page one, shadow allocated)",
-                reportProgress,
-                ref textureDecodedCount,
-                ref textureDecodeSkippedCount,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _);
+                    exactStaticBuild.RenderableLodMasks,
+                    genericStaticBuild.RenderableLodMasks);
             if (!includeDiagnosticGeometry)
             {
                 var schedulingRows =

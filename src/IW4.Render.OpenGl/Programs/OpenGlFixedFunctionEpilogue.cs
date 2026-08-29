@@ -17,8 +17,30 @@ internal static class OpenGlFixedFunctionEpilogue
         bool suppressShaderPackerForDiagnosticOutput,
         out AlphaTestMode alphaTestMode,
         out OpenGlRsxShaderPackerMode shaderPackerMode,
+        out string epilogue) =>
+        TryCompose(
+            state,
+            fragmentProgramControl,
+            suppressShaderPackerForDiagnosticOutput,
+            hostColorOutputIndex: 0,
+            out alphaTestMode,
+            out shaderPackerMode,
+            out epilogue);
+
+    internal static bool TryCompose(
+        RenderState state,
+        uint fragmentProgramControl,
+        bool suppressShaderPackerForDiagnosticOutput,
+        int hostColorOutputIndex,
+        out AlphaTestMode alphaTestMode,
+        out OpenGlRsxShaderPackerMode shaderPackerMode,
         out string epilogue)
     {
+        if (hostColorOutputIndex is < 0 or > 3)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(hostColorOutputIndex));
+        }
         if (!TryAlphaTestMode(
                 state,
                 out alphaTestMode,
@@ -45,10 +67,11 @@ internal static class OpenGlFixedFunctionEpilogue
         {
             OpenGlRsxShaderPackerMode
                 .LinearToSrgbProgramEpilogue =>
-                CreateShaderPackerEpilogue(),
+                CreateShaderPackerEpilogue(hostColorOutputIndex),
             OpenGlRsxShaderPackerMode
                 .PremultipliedLinearToSrgbProgramEpilogue =>
-                CreatePremultipliedShaderPackerEpilogue(),
+                CreatePremultipliedShaderPackerEpilogue(
+                    hostColorOutputIndex),
             _ => string.Empty
         };
         epilogue = string.Concat(
@@ -165,10 +188,15 @@ internal static class OpenGlFixedFunctionEpilogue
         state.BlendSourceRgb == RsxBlendFactor.One &&
         state.BlendDestinationRgb == RsxBlendFactor.OneMinusSourceAlpha;
 
-    private static string CreateShaderPackerEpilogue()
+    private static string CreateShaderPackerEpilogue(
+        int hostColorOutputIndex)
     {
-        string[] outputNames =
-            ["FragColor", "rsxMrtColor1", "rsxMrtColor2", "rsxMrtColor3"];
+        // EditorPreview exposes the proven SurfaceA topology through one host
+        // draw buffer. Programs that require another active MRT are rejected
+        // by TranslatedProgramCapability before reaching this backend, so
+        // applying the packer to dormant outputs only multiplies generated
+        // work (notably pow/mix expansion in NVIDIA's GLSL compiler).
+        string[] outputNames = [OutputName(hostColorOutputIndex)];
         var builder = new System.Text.StringBuilder();
         for (int colorTarget = 0;
              colorTarget < outputNames.Length;
@@ -194,7 +222,8 @@ internal static class OpenGlFixedFunctionEpilogue
         return builder.ToString().TrimEnd();
     }
 
-    private static string CreatePremultipliedShaderPackerEpilogue()
+    private static string CreatePremultipliedShaderPackerEpilogue(
+        int hostColorOutputIndex)
     {
         // OpenGL compositing adaptation: the authored ADD + ONE /
         // ONE_MINUS_SRC_ALPHA state requires premultiplied source RGB. The
@@ -203,8 +232,7 @@ internal static class OpenGlFixedFunctionEpilogue
         // already-premultiplied value directly would break RGB <= alpha and
         // inflate fractional-alpha edges. Encode straight RGB, then restore
         // the authored premultiplication before OpenGL blending.
-        string[] outputNames =
-            ["FragColor", "rsxMrtColor1", "rsxMrtColor2", "rsxMrtColor3"];
+        string[] outputNames = [OutputName(hostColorOutputIndex)];
         var builder = new System.Text.StringBuilder();
         for (int colorTarget = 0;
              colorTarget < outputNames.Length;
@@ -247,6 +275,15 @@ internal static class OpenGlFixedFunctionEpilogue
         }
         return builder.ToString().TrimEnd();
     }
+
+    private static string OutputName(int colorTarget) => colorTarget switch
+    {
+        0 => "FragColor",
+        1 => "rsxMrtColor1",
+        2 => "rsxMrtColor2",
+        3 => "rsxMrtColor3",
+        _ => throw new ArgumentOutOfRangeException(nameof(colorTarget))
+    };
 
     /// <summary>
     /// Scalar reference for the generated premultiplied shader-packer

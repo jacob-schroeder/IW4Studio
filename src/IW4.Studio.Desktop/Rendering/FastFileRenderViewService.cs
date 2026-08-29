@@ -149,7 +149,6 @@ public sealed class FastFileRenderViewService : IDisposable
                 scene,
                 sceneSnapshot);
 
-        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
         buildCancellationToken.ThrowIfCancellationRequested();
         buildProgress?.Invoke(
             "scene resources are ready for native renderer initialization");

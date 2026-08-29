@@ -150,7 +150,7 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
             return;
         }
 
-        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
+        RenderBuildMemoryReclaimer.TryReclaimSettledBuildWorkspace();
         _startupWorkingSetReclaimed = true;
     }
 
@@ -188,7 +188,6 @@ internal sealed class SilkMetalMapRenderWindow : INativeMapRenderWindow
             _interaction.Camera,
             Math.Max(1, initialSize.X) /
             (float)Math.Max(1, initialSize.Y));
-        RenderBuildMemoryReclaimer.ReclaimCompletedBuildWorkspace();
         _interaction.Initialize(window);
     }
 

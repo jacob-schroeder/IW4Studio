@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Channels;
 using Silk.NET.OpenGL;
 
 namespace IW4.Render.OpenGl.Programs;
@@ -10,7 +11,7 @@ namespace IW4.Render.OpenGl.Programs;
 /// context profile, and supported binary formats. A rejected or malformed
 /// entry is removed and treated as a normal source-link miss.
 /// </summary>
-internal sealed unsafe class OpenGlProgramBinaryDiskCache
+internal sealed class OpenGlProgramBinaryDiskCache : IDisposable
 {
     private const int SchemaVersion = 1;
     private const int MaximumShaderSourceBytes = 16 * 1024 * 1024;
@@ -19,6 +20,7 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
     private const int MaximumProgramBinaryBytes = 64 * 1024 * 1024;
     private const int ChecksumLength = 32;
     private const long MaximumCacheBytes = 512L * 1024 * 1024;
+    private const long MaximumPendingWriteBytes = 64L * 1024 * 1024;
     private const string EntryExtension = ".glpb";
     private static readonly byte[] FileMagic = "IW4GLPB1"u8.ToArray();
     private static readonly TimeSpan AccessTimestampResolution =
@@ -27,8 +29,13 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
     private readonly byte[] _driverIdentity = [];
     private readonly int _maximumEntryCount;
     private readonly string? _directory;
+    private readonly object _writeGate = new();
+    private readonly Channel<PendingWrite>? _pendingWrites;
+    private readonly Task? _writeWorker;
     private int _knownEntryCount;
     private long _knownByteCount;
+    private long _pendingWriteBytes;
+    private bool _disposed;
 
     internal OpenGlProgramBinaryDiskCache(
         GL gl,
@@ -66,6 +73,14 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
             Directory.CreateDirectory(directory);
             _directory = directory;
             RefreshBoundsAndTrim();
+            _pendingWrites = Channel.CreateUnbounded<PendingWrite>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = true,
+                    AllowSynchronousContinuations = false
+                });
+            _writeWorker = Task.Run(PersistPendingWritesAsync);
         }
         catch (Exception exception) when (IsRecoverable(exception))
         {
@@ -183,10 +198,6 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
             return false;
         }
 
-        string destinationPath = CreateEntryPath(identity);
-        string temporaryPath = Path.Combine(
-            _directory,
-            $".{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
             gl.GetProgram(
@@ -212,42 +223,14 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
                 identity,
                 binaryFormat,
                 binary.AsSpan(0, checked((int)writtenLength)));
-            bool replacing = File.Exists(destinationPath);
-            long replacedLength = replacing
-                ? TryGetFileLength(destinationPath)
-                : 0;
-            using (var stream = new FileStream(
-                       temporaryPath,
-                       FileMode.CreateNew,
-                       FileAccess.Write,
-                       FileShare.None))
-            {
-                stream.Write(entry);
-            }
-            File.Move(
-                temporaryPath,
-                destinationPath,
-                overwrite: true);
-
-            if (!replacing)
-                _knownEntryCount = checked(_knownEntryCount + 1);
-            _knownByteCount = Math.Max(
-                0,
-                _knownByteCount - replacedLength + entry.Length);
-            if (_knownEntryCount > _maximumEntryCount ||
-                _knownByteCount > MaximumCacheBytes)
-            {
-                RefreshBoundsAndTrim();
-            }
-            return true;
+            return TryQueueWrite(
+                new PendingWrite(
+                    CreateEntryPath(identity),
+                    entry));
         }
         catch (Exception exception) when (IsRecoverable(exception))
         {
             return false;
-        }
-        finally
-        {
-            SafeDeleteFile(temporaryPath);
         }
     }
 
@@ -301,7 +284,124 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
         return true;
     }
 
-    private static byte[] CreateDriverIdentity(
+    public void Dispose()
+    {
+        Channel<PendingWrite>? pendingWrites;
+        Task? writeWorker;
+        lock (_writeGate)
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            pendingWrites = _pendingWrites;
+            writeWorker = _writeWorker;
+            pendingWrites?.Writer.TryComplete();
+        }
+
+        if (writeWorker is null)
+            return;
+        try
+        {
+            writeWorker.GetAwaiter().GetResult();
+        }
+        catch (Exception exception) when (IsRecoverable(exception))
+        {
+            // Persistence is best effort and never owns renderer validity.
+        }
+    }
+
+    private bool TryQueueWrite(PendingWrite write)
+    {
+        Channel<PendingWrite>? pendingWrites = _pendingWrites;
+        if (pendingWrites is null)
+            return false;
+        lock (_writeGate)
+        {
+            if (_disposed ||
+                write.Entry.LongLength > MaximumPendingWriteBytes ||
+                _pendingWriteBytes >
+                    MaximumPendingWriteBytes - write.Entry.LongLength)
+            {
+                return false;
+            }
+            _pendingWriteBytes += write.Entry.LongLength;
+            if (pendingWrites.Writer.TryWrite(write))
+                return true;
+            _pendingWriteBytes -= write.Entry.LongLength;
+            return false;
+        }
+    }
+
+    private async Task PersistPendingWritesAsync()
+    {
+        Channel<PendingWrite> pendingWrites = _pendingWrites!;
+        await foreach (PendingWrite write in
+                       pendingWrites.Reader.ReadAllAsync()
+                           .ConfigureAwait(false))
+        {
+            try
+            {
+                PersistEntry(write);
+            }
+            catch (Exception exception) when (IsRecoverable(exception))
+            {
+                // A missed disk entry only causes a later source-link miss.
+            }
+            finally
+            {
+                lock (_writeGate)
+                {
+                    _pendingWriteBytes = Math.Max(
+                        0,
+                        _pendingWriteBytes - write.Entry.LongLength);
+                }
+            }
+        }
+    }
+
+    private void PersistEntry(PendingWrite write)
+    {
+        string temporaryPath = Path.Combine(
+            _directory!,
+            $".{Path.GetFileName(write.DestinationPath)}." +
+            $"{Guid.NewGuid():N}.tmp");
+        try
+        {
+            bool replacing = File.Exists(write.DestinationPath);
+            long replacedLength = replacing
+                ? TryGetFileLength(write.DestinationPath)
+                : 0;
+            using (var stream = new FileStream(
+                       temporaryPath,
+                       FileMode.CreateNew,
+                       FileAccess.Write,
+                       FileShare.None))
+            {
+                stream.Write(write.Entry);
+            }
+            File.Move(
+                temporaryPath,
+                write.DestinationPath,
+                overwrite: true);
+
+            if (!replacing)
+                _knownEntryCount = checked(_knownEntryCount + 1);
+            _knownByteCount = Math.Max(
+                0,
+                _knownByteCount - replacedLength + write.Entry.Length);
+            if (_knownEntryCount > _maximumEntryCount ||
+                _knownByteCount > MaximumCacheBytes)
+            {
+                RefreshBoundsAndTrim();
+            }
+        }
+        finally
+        {
+            SafeDeleteFile(temporaryPath);
+        }
+    }
+
+    private static unsafe byte[] CreateDriverIdentity(
         GL gl,
         int majorVersion,
         int minorVersion,
@@ -583,4 +683,8 @@ internal sealed unsafe class OpenGlProgramBinaryDiskCache
             InvalidOperationException or
             EndOfStreamException or
             OverflowException;
+
+    private readonly record struct PendingWrite(
+        string DestinationPath,
+        byte[] Entry);
 }

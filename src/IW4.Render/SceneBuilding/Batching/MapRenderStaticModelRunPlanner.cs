@@ -67,7 +67,6 @@ internal static class MapRenderStaticModelRunPlanner
             .ToArray();
         IGrouping<SourceDrawGroupKey, SourceBatch>[] sourceGroups = sources
             .GroupBy(source => CreateSourceDrawGroupKey(source))
-            .OrderBy(group => group.Min(source => source.SourceOrdinal))
             .ToArray();
 
         var output = new List<MapRenderInstancedTexturedBatch>();
@@ -94,6 +93,121 @@ internal static class MapRenderStaticModelRunPlanner
             {
                 throw new InvalidDataException(
                     $"Static-model draw group {Describe(sourceGroup.Key)} has LOD {lodIndex}; native Event22 buckets require LOD 0 through {MaximumNativeLodIndex}.");
+            }
+
+            // The interactive host path has no native 128-instance encoding
+            // limit, no auxiliary classifier, and has already split groups
+            // that bind a reflection probe. It therefore produces exactly
+            // one run per non-empty source group. Preserve every validation
+            // below, but avoid materializing bucket rows, re-sorting every
+            // authored pass, and copying the same instance array per pass.
+            if (isAuxiliary is null &&
+                runCapacity == UnboundedHostRunCapacity &&
+                !preserveNativeReflectionProbeIdentity)
+            {
+                IReadOnlyList<MapRenderStaticModelInstance>
+                    representativeSourceInstances =
+                        orderedPasses[0].Batch.Instances;
+                for (int instanceIndex = 0;
+                     instanceIndex < representativeSourceInstances.Count;
+                     instanceIndex++)
+                {
+                    if (representativeSourceInstances[instanceIndex]
+                            .PrimaryLightIndex !=
+                        sourceGroup.Key.SceneLightIndex)
+                    {
+                        throw new InvalidDataException(
+                            $"Static-model draw group {Describe(sourceGroup.Key)} mixes an instance primary-light identity with scene-light bucket {sourceGroup.Key.SceneLightIndex}; the selected authored pass cannot be preserved.");
+                    }
+                }
+
+                bool sourceSequencesAligned = true;
+                for (int passIndex = 1;
+                     passIndex < orderedPasses.Length;
+                     passIndex++)
+                {
+                    if (!HaveSameInstanceSequence(
+                            orderedPasses[passIndex].Batch.Instances,
+                            representativeSourceInstances))
+                    {
+                        sourceSequencesAligned = false;
+                        break;
+                    }
+                }
+
+                IReadOnlyList<MapRenderStaticModelInstance>
+                    sharedOrderedInstances;
+                if (sourceSequencesAligned)
+                {
+                    sharedOrderedInstances = IsCanonicalInstanceOrder(
+                            representativeSourceInstances)
+                        ? representativeSourceInstances
+                        : OrderInstances(representativeSourceInstances)
+                            .Select(row => row.Instance)
+                            .ToArray();
+                }
+                else
+                {
+                    OrderedInstance[][] fastOrderedInstancesByPass =
+                        orderedPasses
+                            .Select(source =>
+                                OrderInstances(source.Batch.Instances))
+                            .ToArray();
+                    OrderedInstance[] fastRepresentativeInstances =
+                        fastOrderedInstancesByPass[0];
+                    for (int passIndex = 1;
+                         passIndex < fastOrderedInstancesByPass.Length;
+                         passIndex++)
+                    {
+                        OrderedInstance[] candidate =
+                            fastOrderedInstancesByPass[passIndex];
+                        if (candidate.Length !=
+                                fastRepresentativeInstances.Length ||
+                            !HaveSameOrderedInstanceSequence(
+                                candidate,
+                                fastRepresentativeInstances))
+                        {
+                            throw new InvalidDataException(
+                                $"Static-model draw group {Describe(sourceGroup.Key)} has misaligned authored pass instances; unbounded host runs cannot preserve multipass ownership.");
+                        }
+                    }
+
+                    sharedOrderedInstances = fastRepresentativeInstances
+                        .Select(row => row.Instance)
+                        .ToArray();
+                }
+
+                int instanceCount = sharedOrderedInstances.Count;
+                selectedInstanceCount = checked(
+                    selectedInstanceCount + instanceCount);
+                if (instanceCount == 0)
+                    continue;
+
+                int outputDrawGroupId = nextOutputDrawGroupId;
+                nextOutputDrawGroupId = checked(
+                    nextOutputDrawGroupId + 1);
+                foreach (SourceBatch source in orderedPasses)
+                {
+                    MapRenderInstancedTexturedBatch batch = source.Batch;
+                    output.Add(
+                        batch.EditorDrawGroupId == outputDrawGroupId &&
+                        ReferenceEquals(
+                            batch.Instances,
+                            sharedOrderedInstances)
+                            ? batch
+                            : batch with
+                            {
+                                Instances = sharedOrderedInstances,
+                                EditorDrawGroupId = outputDrawGroupId
+                            });
+                }
+
+                bucketCount = checked(bucketCount + 1);
+                runCount = checked(runCount + 1);
+                largestRunInstanceCount = Math.Max(
+                    largestRunInstanceCount,
+                    instanceCount);
+                continue;
             }
 
             OrderedInstance[][] orderedInstancesByPass = orderedPasses
@@ -256,6 +370,85 @@ internal static class MapRenderStaticModelRunPlanner
                 StringComparer.Ordinal)
             .ThenBy(row => row.SourceOrdinal)
             .ToArray();
+
+    private static bool HaveSameInstanceSequence(
+        IReadOnlyList<MapRenderStaticModelInstance> candidate,
+        IReadOnlyList<MapRenderStaticModelInstance> expected)
+    {
+        if (candidate.Count != expected.Count)
+            return false;
+
+        for (int index = 0; index < candidate.Count; index++)
+        {
+            if (candidate[index] != expected[index])
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool HaveSameOrderedInstanceSequence(
+        IReadOnlyList<OrderedInstance> candidate,
+        IReadOnlyList<OrderedInstance> expected)
+    {
+        if (candidate.Count != expected.Count)
+            return false;
+
+        for (int index = 0; index < candidate.Count; index++)
+        {
+            if (candidate[index].Instance != expected[index].Instance)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsCanonicalInstanceOrder(
+        IReadOnlyList<MapRenderStaticModelInstance> instances)
+    {
+        for (int index = 1; index < instances.Count; index++)
+        {
+            if (CompareInstanceKeys(
+                    instances[index - 1],
+                    instances[index]) > 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static int CompareInstanceKeys(
+        MapRenderStaticModelInstance first,
+        MapRenderStaticModelInstance second)
+    {
+        int comparison = first.ObjectIndex.CompareTo(second.ObjectIndex);
+        if (comparison != 0)
+            return comparison;
+        comparison = first.SurfaceIndex.CompareTo(second.SurfaceIndex);
+        if (comparison != 0)
+            return comparison;
+        comparison = first.PrimaryLightIndex.CompareTo(
+            second.PrimaryLightIndex);
+        if (comparison != 0)
+            return comparison;
+        comparison = first.ReflectionProbeIndex.CompareTo(
+            second.ReflectionProbeIndex);
+        if (comparison != 0)
+            return comparison;
+        comparison = first.CameraRegion.CompareTo(second.CameraRegion);
+        if (comparison != 0)
+            return comparison;
+        comparison = StringComparer.Ordinal.Compare(
+            first.Name,
+            second.Name);
+        return comparison != 0
+            ? comparison
+            : StringComparer.Ordinal.Compare(
+                first.AuthoredMaterialName,
+                second.AuthoredMaterialName);
+    }
 
     private static string Describe(SourceDrawGroupKey key) =>
         key.HasAuthoredDrawGroup

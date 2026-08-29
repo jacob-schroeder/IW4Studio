@@ -30,34 +30,72 @@ internal readonly record struct ShaderExecutionCacheKey(
 internal sealed class MaterialSamplerBindingsIdentity :
     IEquatable<MaterialSamplerBindingsIdentity>
 {
-    private readonly IReadOnlyList<MapRenderWorldMaterialSamplerBinding>
-        _bindings;
+    private readonly Entry[] _entries;
     private readonly int _hashCode;
 
-    internal MaterialSamplerBindingsIdentity(
+    internal static MaterialSamplerBindingsIdentity Empty { get; } = new([]);
+
+    internal static MaterialSamplerBindingsIdentity Create(
         IReadOnlyList<MapRenderWorldMaterialSamplerBinding> bindings)
     {
         ArgumentNullException.ThrowIfNull(bindings);
-        _bindings = bindings;
+        return bindings.Count == 0 ? Empty : new(bindings);
+    }
+
+    private MaterialSamplerBindingsIdentity(
+        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> bindings)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+
+        // Shader execution treats material sampler order as structural: the
+        // authored argument and destination own a binding, not the order in
+        // which a surface happened to discover it. Canonicalize once so hash
+        // and equality remain linear. The former rank scan recomputed every
+        // entry with nested loops in both operations (O(n^3) per comparison).
+        if (bindings.Count == 0)
+        {
+            _entries = [];
+            _hashCode = new HashCode().ToHashCode();
+            return;
+        }
+
+        if (bindings.Count == 1)
+        {
+            _entries = [Entry.Create(bindings[0])];
+            var singleHash = new HashCode();
+            singleHash.Add(_entries[0]);
+            _hashCode = singleHash.ToHashCode();
+            return;
+        }
+
+        var indexedEntries = new IndexedEntry[bindings.Count];
+        for (int index = 0; index < bindings.Count; index++)
+        {
+            indexedEntries[index] = new IndexedEntry(
+                Entry.Create(bindings[index]),
+                index);
+        }
+        Array.Sort(indexedEntries, IndexedEntryComparer.Instance);
+
+        _entries = new Entry[indexedEntries.Length];
+        for (int index = 0; index < indexedEntries.Length; index++)
+            _entries[index] = indexedEntries[index].Value;
 
         var hash = new HashCode();
-        for (int rank = 0; rank < _bindings.Count; rank++)
-            hash.Add(EntryAtRank(_bindings, rank));
+        foreach (Entry entry in _entries)
+            hash.Add(entry);
         _hashCode = hash.ToHashCode();
     }
 
     public bool Equals(MaterialSamplerBindingsIdentity? other)
     {
-        if (other is null || _bindings.Count != other._bindings.Count)
+        if (other is null || _entries.Length != other._entries.Length)
             return false;
 
-        for (int rank = 0; rank < _bindings.Count; rank++)
+        for (int index = 0; index < _entries.Length; index++)
         {
-            if (EntryAtRank(_bindings, rank) !=
-                EntryAtRank(other._bindings, rank))
-            {
+            if (_entries[index] != other._entries[index])
                 return false;
-            }
         }
 
         return true;
@@ -68,38 +106,28 @@ internal sealed class MaterialSamplerBindingsIdentity :
 
     public override int GetHashCode() => _hashCode;
 
-    private static Entry EntryAtRank(
-        IReadOnlyList<MapRenderWorldMaterialSamplerBinding> bindings,
-        int requestedRank)
+    private readonly record struct IndexedEntry(Entry Value, int SourceIndex);
+
+    private sealed class IndexedEntryComparer : IComparer<IndexedEntry>
     {
-        for (int candidateIndex = 0;
-             candidateIndex < bindings.Count;
-             candidateIndex++)
+        internal static IndexedEntryComparer Instance { get; } = new();
+
+        public int Compare(IndexedEntry left, IndexedEntry right)
         {
-            MapRenderWorldMaterialSamplerBinding candidate =
-                bindings[candidateIndex];
-            int rank = 0;
-            for (int otherIndex = 0;
-                 otherIndex < bindings.Count;
-                 otherIndex++)
+            int order = left.Value.SamplerArgIndex.CompareTo(
+                right.Value.SamplerArgIndex);
+            if (order == 0)
             {
-                MapRenderWorldMaterialSamplerBinding other = bindings[otherIndex];
-                int order = other.Binding.Identity.SamplerArgIndex.CompareTo(
-                    candidate.Binding.Identity.SamplerArgIndex);
-                if (order == 0)
-                {
-                    order = other.Binding.Identity.SamplerDest.CompareTo(
-                        candidate.Binding.Identity.SamplerDest);
-                }
-                if (order < 0 || (order == 0 && otherIndex < candidateIndex))
-                    rank++;
+                order = left.Value.SamplerDest.CompareTo(
+                    right.Value.SamplerDest);
             }
 
-            if (rank == requestedRank)
-                return Entry.Create(candidate);
+            // Preserve discovery order for duplicate authored destinations so
+            // the canonical identity exactly matches the previous rank rules.
+            return order != 0
+                ? order
+                : left.SourceIndex.CompareTo(right.SourceIndex);
         }
-
-        throw new ArgumentOutOfRangeException(nameof(requestedRank));
     }
 
     private readonly record struct Entry(

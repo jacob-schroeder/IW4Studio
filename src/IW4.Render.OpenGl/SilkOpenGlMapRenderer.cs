@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using IW4.Assets.Assets.Material;
 using IW4.Render.Diagnostics;
 using Silk.NET.OpenGL;
@@ -63,6 +64,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
     private readonly OpenGlSharedProgramCache.UsageLease
         _sharedProgramUsage;
     private readonly bool _ownsSharedProgramCache;
+    private readonly int _parallelShaderCompilerThreadLimit;
     private readonly HashSet<uint> _sceneOwnedProgramHandles = [];
     private readonly Dictionary<
         OpenGlProgramKey,
@@ -747,6 +749,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             sharedProgramCache.AcquireUsageLease(gl);
         try
         {
+            _parallelShaderCompilerThreadLimit =
+                ConfigureParallelShaderCompilation(gl);
             _state = new SilkOpenGlStateShadow(gl);
             _frameVertexConstants =
                 new MapRenderOpenGlFrameVertexConstantBuffer(gl, _state);
@@ -790,6 +794,46 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             throw;
         }
     }
+
+    private static int ConfigureParallelShaderCompilation(GL gl)
+    {
+        const string extension = "GL_ARB_parallel_shader_compile";
+        const string entryPoint = "glMaxShaderCompilerThreadsARB";
+        if (!gl.IsExtensionPresent(extension) ||
+            !gl.Context.TryGetProcAddress(entryPoint, out nint address) ||
+            address == 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            // Keep one logical CPU available to the host and cap the hint so
+            // a very wide workstation cannot turn map loading into an
+            // unbounded compiler-memory spike. The driver may use fewer
+            // workers; this only removes the accidental one-link-at-a-time
+            // synchronization pattern.
+            uint workerLimit = checked((uint)Math.Clamp(
+                Environment.ProcessorCount - 1,
+                1,
+                16));
+            Marshal.GetDelegateForFunctionPointer<
+                MaxShaderCompilerThreadsArb>(address)(workerLimit);
+            return checked((int)workerLimit);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            MarshalDirectiveException)
+        {
+            // Extension dispatch is an optimization. Deferred submission is
+            // still valid, and the ordinary LinkStatus completion path stays
+            // authoritative when the optional entry point cannot be called.
+            return 0;
+        }
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void MaxShaderCompilerThreadsArb(uint count);
 
     private static IEnumerable<ShaderExecutionContract?>
         EnumerateStaticModelShaderExecutions(MapRenderScene scene)
@@ -1126,6 +1170,9 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         _skyTextureLocation = _gl.GetUniformLocation(_skyProgram, "uSkyTexture");
         InitializeFixedSamplerUniforms();
         RecordLoadPhase("core-programs");
+        BeginLoadPhase("authored-link-submission");
+        SubmitSceneAuthoredProgramLinks(scene);
+        RecordLoadPhase("authored-link-submission");
         BeginLoadPhase("base-world");
         long baseWorldSubphaseStarted =
             System.Diagnostics.Stopwatch.GetTimestamp();
@@ -1529,6 +1576,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
         int renderCapableBatchCount = scene.TexturedBatches.Count(batch => batch.ShaderExecution.ProgramExecutionReady);
         string pipelineSummary =
             $"Renderer pipeline: RSX GLSL validation: openGlLoweringReady={openGlLoweringReadyProgramCount} " +
+            $"parallelLinkWorkers={_parallelShaderCompilerThreadLimit} " +
             $"semanticPrograms={_authoredMaterials.ProgramCount} " +
             $"sharedUniqueLinks={_sharedProgramCache.CreateTelemetry().SuccessfulUniqueLinkCount} " +
             $"sharedLinkReuses={_sharedProgramCache.CreateTelemetry().LinkReuseCount} " +
@@ -1588,6 +1636,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer : IMapRenderer
             $"binaryHits:{linkedProgramTelemetry.ProgramBinaryLoadHitCount}/" +
             $"binaryAttempts:{linkedProgramTelemetry.ProgramBinaryLoadAttemptCount}/" +
             $"binaryStores:{linkedProgramTelemetry.ProgramBinaryStoreCount}/" +
+            $"deferredSubmissions:{linkedProgramTelemetry.DeferredLinkSubmissionCount}/" +
+            $"pending:{linkedProgramTelemetry.PendingLinkCount}/" +
             $"reused:{linkedProgramTelemetry.LinkReuseCount}/" +
             $"failed:{linkedProgramTelemetry.FailedUniqueLinkCount}/" +
             $"capacityBypass:{linkedProgramTelemetry.CapacityBypassCount}/" +

@@ -316,51 +316,6 @@ public sealed partial class MapSceneBuilder
         return string.Equals(techniqueSetName, "wc_sky", StringComparison.Ordinal);
     }
 
-    private static void AddTriangle(
-        List<float> vertices,
-        List<uint> indices,
-        Vector3 p0,
-        Vector3 p1,
-        Vector3 p2,
-        Vector3 color)
-    {
-        uint baseIndex = checked((uint)(vertices.Count / MapRenderScene.VertexFloatCount));
-        AddVertex(vertices, p0, color);
-        AddVertex(vertices, p1, color);
-        AddVertex(vertices, p2, color);
-        indices.Add(baseIndex);
-        indices.Add(baseIndex + 1);
-        indices.Add(baseIndex + 2);
-    }
-
-    private static void AddTexturedTriangle(
-        List<float> vertices,
-        List<uint> indices,
-        Vector3 p0,
-        Vector3 p1,
-        Vector3 p2,
-        Vector2 uv0,
-        Vector2 uv1,
-        Vector2 uv2,
-        IReadOnlyList<Vector2>? layerUvs0 = null,
-        IReadOnlyList<Vector2>? layerUvs1 = null,
-        IReadOnlyList<Vector2>? layerUvs2 = null,
-        Vector4 blendWeights0 = default,
-        Vector4 blendWeights1 = default,
-        Vector4 blendWeights2 = default,
-        Vector3 normal0 = default,
-        Vector3 normal1 = default,
-        Vector3 normal2 = default)
-    {
-        uint baseIndex = checked((uint)(vertices.Count / MapRenderScene.TexturedVertexFloatCount));
-        AddTexturedVertex(vertices, p0, uv0, layerUvs0, blendWeights0, normal0);
-        AddTexturedVertex(vertices, p1, uv1, layerUvs1, blendWeights1, normal1);
-        AddTexturedVertex(vertices, p2, uv2, layerUvs2, blendWeights2, normal2);
-        indices.Add(baseIndex);
-        indices.Add(baseIndex + 1);
-        indices.Add(baseIndex + 2);
-    }
-
     private static void AddLine(List<float> vertices, List<uint> indices, Vector3 p0, Vector3 p1, Vector3 color)
     {
         uint baseIndex = checked((uint)(vertices.Count / MapRenderScene.VertexFloatCount));
@@ -384,7 +339,7 @@ public sealed partial class MapSceneBuilder
         List<float> vertices,
         Vector3 position,
         Vector2 texCoord,
-        IReadOnlyList<Vector2>? layerUvs,
+        ReadOnlySpan<Vector2> layerUvs,
         Vector4 blendWeights,
         Vector3 normal)
     {
@@ -393,7 +348,7 @@ public sealed partial class MapSceneBuilder
         vertices.Add(position.Z);
         for (int layerIndex = 0; layerIndex < MapRenderScene.MaxColorLayerCount; layerIndex++)
         {
-            Vector2 layerUv = layerUvs is not null && layerIndex < layerUvs.Count
+            Vector2 layerUv = layerIndex < layerUvs.Length
                 ? layerUvs[layerIndex]
                 : texCoord;
             vertices.Add(layerUv.X);

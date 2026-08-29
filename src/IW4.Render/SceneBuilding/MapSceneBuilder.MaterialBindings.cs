@@ -27,6 +27,73 @@ public sealed partial class MapSceneBuilder
         MaterialColorLayer Layer,
         XSurfaceVertexDecoder Decoder);
 
+    /// <summary>
+    /// Exact immutable inputs for material-sampler preparation that vary per
+    /// world surface. The material/pass argument scan is already represented
+    /// by <see cref="WorldMaterialSamplerPlan"/>; runtime custom resources vary
+    /// only by the two native surface indices. Keeping color-layer structure in
+    /// the key makes it safe to reuse the completed binding list across
+    /// surfaces without conflating different decoded textures or UV routes.
+    /// </summary>
+    private readonly record struct WorldMaterialSamplerPreparationKey(
+        WorldMaterialSamplerPlan SamplerPlan,
+        MaterialCustomSamplerFlags CustomSamplerFlags,
+        WorldVertexLayoutSelection VertexLayout,
+        byte LightmapIndex,
+        byte ReflectionProbeIndex,
+        MaterialColorLayersIdentity ColorLayers);
+
+    private sealed class MaterialColorLayersIdentity :
+        IEquatable<MaterialColorLayersIdentity>
+    {
+        private readonly IReadOnlyList<MaterialColorLayer> _layers;
+        private readonly int _hashCode;
+
+        internal MaterialColorLayersIdentity(
+            IReadOnlyList<MaterialColorLayer> layers)
+        {
+            ArgumentNullException.ThrowIfNull(layers);
+            _layers = layers;
+            var hash = new HashCode();
+            foreach (MaterialColorLayer layer in _layers)
+                hash.Add(Entry.Create(layer));
+            _hashCode = hash.ToHashCode();
+        }
+
+        public bool Equals(MaterialColorLayersIdentity? other)
+        {
+            if (other is null || _layers.Count != other._layers.Count)
+                return false;
+
+            for (int index = 0; index < _layers.Count; index++)
+            {
+                if (Entry.Create(_layers[index]) !=
+                    Entry.Create(other._layers[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public override bool Equals(object? obj) =>
+            obj is MaterialColorLayersIdentity other && Equals(other);
+
+        public override int GetHashCode() => _hashCode;
+
+        private readonly record struct Entry(
+            MaterialSamplerIdentity Identity,
+            TextureBindingKey Texture,
+            UvRouteBatchKey UvRoute)
+        {
+            internal static Entry Create(MaterialColorLayer layer) => new(
+                layer.Identity,
+                TextureBindingKey.Create(layer.Texture),
+                UvRouteBatchKey.Create(layer.UvRoute));
+        }
+    }
+
     private static void AppendTexturedSurface(
         Dictionary<WorldTexturedBatchKey, TexturedBatchBuilder> batches,
         MaterialPassIdentity pass,

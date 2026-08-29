@@ -273,6 +273,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         _editorPreviewActiveFog = null;
         _editorPreviewGenericActiveFog = null;
         _state.InvalidateAll();
+        _sharedProgramUsage.ReleaseScenePrograms();
     }
 
     private void DeleteMesh(GlMesh mesh)
