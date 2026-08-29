@@ -1,5 +1,7 @@
+using IW4.Assets.Assets.Sound;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Database.Planning;
+using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Plans;
 using IW4.Runtime.Assets;
@@ -67,26 +69,55 @@ public sealed class FastFileWorkspace : IDisposable
         ArgumentNullException.ThrowIfNull(surface);
         WorkspaceAssetCatalogEntry entry = surface.Entry;
 
-        if (surface.Definition is null)
+        if (surface.Definition is not SoundAliasListAsset sound)
         {
             resolver = UnavailableSoundPayloadResolver.Instance;
             reason = "The selected Sound has no materialized definition.";
             return false;
         }
 
+        return TryGetSoundPayloadResolver(
+            sound,
+            entry.ResolvedProvider?.ProviderId,
+            entry.OriginalName ?? entry.NormalizedName,
+            out resolver,
+            out reason);
+    }
+
+    public bool TryGetSoundPayloadResolver(
+        SoundAliasListAsset sound,
+        out ISoundPayloadResolver resolver,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(sound);
+        return TryGetSoundPayloadResolver(
+            sound,
+            preferredProviderId: null,
+            sound.AliasName,
+            out resolver,
+            out reason);
+    }
+
+    private bool TryGetSoundPayloadResolver(
+        SoundAliasListAsset sound,
+        long? preferredProviderId,
+        string? displayName,
+        out ISoundPayloadResolver resolver,
+        out string reason)
+    {
         IEnumerable<XAssetProviderContribution> providers = LoadedZones.Count == 0
             ? []
             : LoadedZones[0].LoadResult.Context.AssetPool.Slots
                 .SelectMany(slot => slot.Providers)
                 .Where(provider =>
-                    provider.AssetType == entry.AssetType &&
+                    provider.AssetType == XAssetType.Sound &&
                     !provider.IsReferencePlaceholder);
         XAssetProviderContribution? owningProvider =
             providers.FirstOrDefault(provider =>
-                ReferenceEquals(provider.Asset, surface.Definition)) ??
-            (entry.ResolvedProvider is { } resolved
+                ReferenceEquals(provider.Asset, sound)) ??
+            (preferredProviderId is { } providerId
                 ? providers.FirstOrDefault(provider =>
-                    provider.Id.Value == resolved.ProviderId)
+                    provider.Id.Value == providerId)
                 : null);
         if (owningProvider is not null)
         {
@@ -101,7 +132,7 @@ public sealed class FastFileWorkspace : IDisposable
         }
 
         resolver = UnavailableSoundPayloadResolver.Instance;
-        reason = $"The provider zone for Sound '{entry.OriginalName ?? entry.NormalizedName ?? "<unnamed>"}' is not available.";
+        reason = $"The provider zone for Sound '{displayName ?? "<unnamed>"}' is not available.";
         return false;
     }
 

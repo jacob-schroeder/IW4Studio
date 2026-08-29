@@ -3,7 +3,9 @@ using IW4.FastFiles.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Studio.Documents;
 using IW4.Studio.Desktop.Gsc;
+using IW4.Studio.Desktop.Editors.Fx;
 using IW4.Studio.Desktop.Editors.Gsc;
+using IW4.Studio.Desktop.Editors.LightDef;
 using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.Material;
 using IW4.Studio.Desktop.Editors.MaterialTechset;
@@ -84,6 +86,8 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new StringTableViewFactory());
         registry.Register(new StructuredDataDefViewFactory());
         registry.Register(new LocalizeViewFactory());
+        registry.Register(new FxViewFactory(workspace));
+        registry.Register(new LightDefViewFactory(workspace));
         registry.Register(new MaterialViewFactory());
         registry.Register(new MaterialTechsetViewFactory());
         registry.Register(new XAnimViewFactory(workspace));

@@ -1,6 +1,7 @@
 using System.Numerics;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Execution;
+using IW4.Render.Lighting;
 using IW4.Render.Scheduling.Lighting;
 using IW4.Render.Scheduling.Shadows;
 using IW4.Render.Shaders;
@@ -237,9 +238,9 @@ internal static class
         return Value(
             sceneLightIndex,
             FrameDirectCodeConstants.LightFalloffPlacementRowIndex,
-            imageWidth / 512f,
+            imageWidth / (float)LightFalloffLookupLayout.Width,
             0f,
-            definition.LmapLookupStart / 512f,
+            definition.LmapLookupStart / (float)LightFalloffLookupLayout.Width,
             0f);
     }
 

@@ -1,0 +1,694 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:editors="using:IW4.Studio.Desktop.Editors"
+             xmlns:fx="using:IW4.Studio.Desktop.Editors.Fx"
+             xmlns:xmodelEditor="using:IW4.Studio.Desktop.Editors.XModel"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
+             x:Class="IW4.Studio.Desktop.Editors.Fx.FxEditorView"
+             x:DataType="viewModels:FxEditorViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1220"
+             d:DesignHeight="800">
+  <UserControl.Styles>
+    <Style Selector="ListBox.elementRail">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.elementRail > ListBoxItem">
+      <Setter Property="Padding" Value="9,8" />
+      <Setter Property="Margin" Value="0,0,0,3" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.elementRail > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.elementRail > ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,10,*">
+    <Border Padding="14,10"
+            CornerRadius="8"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="3">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}"
+                     TextTrimming="CharacterEllipsis" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <TextBlock Text="{Binding ElementCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding GroupCountText}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="·"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Text="{Binding LoopingLifeText, StringFormat='looping life {0}'}"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    VerticalAlignment="Center"
+                    Spacing="7">
+          <Border Padding="9,4"
+                  CornerRadius="4"
+                  Background="#253F8E63"
+                  BorderBrush="#664FC18A"
+                  BorderThickness="1">
+            <TextBlock Text="LIVE SANDBOX"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.5"
+                       Foreground="#94DDB7" />
+          </Border>
+          <Border Padding="9,4"
+                  CornerRadius="4"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
+                  BorderThickness="1">
+            <TextBlock Text="READ ONLY"
+                       FontSize="9"
+                       FontWeight="SemiBold"
+                       LetterSpacing="0.5"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            MinHeight="560"
+            CornerRadius="8"
+            ClipToBounds="True"
+            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="260,1,*">
+        <Grid Margin="10"
+              RowDefinitions="Auto,8,*">
+          <Grid Margin="7,2,7,0"
+                ColumnDefinitions="*,Auto">
+            <TextBlock Text="ELEMENT BANDS"
+                       FontSize="8"
+                       FontWeight="Bold"
+                       LetterSpacing="0.7"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding ElementCount}"
+                       FontSize="8"
+                       FontFamily="Consolas"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Grid>
+
+          <ListBox Grid.Row="2"
+                   Classes="elementRail"
+                   ItemsSource="{Binding Elements}"
+                   SelectedItem="{Binding SelectedElement, Mode=TwoWay}"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="viewModels:FxElementViewModel">
+                <Grid RowDefinitions="Auto,3,Auto,2,Auto">
+                  <Grid ColumnDefinitions="*,Auto"
+                        ColumnSpacing="8">
+                    <TextBlock Text="{Binding TypeText}"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <Border Grid.Column="1"
+                            Padding="5,2"
+                            CornerRadius="3"
+                            Background="{DynamicResource StudioSurfaceBrush}">
+                      <TextBlock Text="{Binding GroupLabel}"
+                                 FontSize="7"
+                                 FontWeight="Bold"
+                                 LetterSpacing="0.35"
+                                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    </Border>
+                  </Grid>
+                  <TextBlock Grid.Row="2"
+                             Text="{Binding TimingSummary}"
+                             FontSize="8"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <TextBlock Grid.Row="4"
+                             Text="{Binding VisualSummary}"
+                             FontSize="8"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+
+        <Border Grid.Column="1"
+                Background="{DynamicResource StudioBorderBrush}" />
+
+        <Grid Grid.Column="2"
+              RowDefinitions="48,1,*,1,82,1,230">
+          <Grid Margin="14,0"
+                ColumnDefinitions="Auto,10,*,12,Auto,8,Auto"
+                VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="7">
+              <materialIcons:MaterialIcon Kind="Creation"
+                                          Width="16"
+                                          Height="16"
+                                          Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Text="FX PREVIEW"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         FontWeight="Bold"
+                         LetterSpacing="0.8"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </StackPanel>
+
+            <TextBlock Grid.Column="2"
+                       Text="{Binding PreviewRepresentationText}"
+                       VerticalAlignment="Center"
+                       FontSize="9"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+            <CheckBox Grid.Column="4"
+                      Content="Selected only"
+                      IsEnabled="{Binding HasSelectedElement}"
+                      IsChecked="{Binding ShowSelectedOnly, Mode=TwoWay}"
+                      FontSize="9"
+                      ToolTip.Tip="Isolate the selected element in the renderer" />
+
+            <Button Grid.Column="6"
+                    Classes="ghost"
+                    MinHeight="30"
+                    Padding="9,4"
+                    IsEnabled="{Binding HasPreview}"
+                    ToolTip.Tip="Reset the FX preview camera and fit bounds"
+                    Click="FitButton_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="5">
+                <materialIcons:MaterialIcon Kind="FitToPageOutline"
+                                            Width="15"
+                                            Height="15" />
+                <TextBlock Text="Fit" />
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <Border Grid.Row="1"
+                  Background="{DynamicResource StudioBorderBrush}" />
+
+          <TabControl Grid.Row="2"
+                      Padding="0"
+                      Background="Transparent">
+            <TabItem Header="FX SANDBOX">
+              <Grid>
+                <fx:FxPreviewControl x:Name="Preview"
+                                     Frame="{Binding PreviewFrame}"
+                                     SelectedElementIndex="{Binding SelectedElementIndex}" />
+
+                <Border MaxWidth="560"
+                        Margin="24"
+                        Padding="18,14"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        IsVisible="{Binding !HasPreview}"
+                        CornerRadius="7"
+                        Background="#E6262A31"
+                        BorderBrush="#506D7683"
+                        BorderThickness="1">
+                  <StackPanel Spacing="7">
+                    <materialIcons:MaterialIcon Kind="CreationOutline"
+                                                Width="28"
+                                                Height="28"
+                                                HorizontalAlignment="Center"
+                                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    <TextBlock Text="FX preview unavailable"
+                               HorizontalAlignment="Center"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <TextBlock Text="{Binding PreviewStatus}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               FontSize="9"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Border>
+
+                <Border Margin="12"
+                        Padding="8,4"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        IsVisible="{Binding HasPreview}"
+                        CornerRadius="4"
+                        IsHitTestVisible="False"
+                        Background="#C816191F"
+                        BorderBrush="#506D7683"
+                        BorderThickness="1">
+                  <TextBlock Text="DRAG · ORBIT   SCROLL · ZOOM"
+                             FontSize="8"
+                             FontWeight="SemiBold"
+                             LetterSpacing="0.35"
+                             Foreground="#CDD5DF" />
+                </Border>
+              </Grid>
+            </TabItem>
+
+            <TabItem Header="VISUAL / AUDIO">
+              <Grid RowDefinitions="Auto,*">
+                <Border Padding="12,8"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="0,0,0,1">
+                  <Grid ColumnDefinitions="Auto,10,*,16,2*"
+                        VerticalAlignment="Center">
+                    <Border Padding="7,3"
+                            CornerRadius="4"
+                            Background="{DynamicResource StudioAccentSurfaceBrush}"
+                            BorderBrush="{DynamicResource StudioAccentSecondaryBrush}"
+                            BorderThickness="1">
+                      <TextBlock Text="{Binding SelectedVisualKindText}"
+                                 FontSize="8"
+                                 FontWeight="Bold"
+                                 LetterSpacing="0.55"
+                                 Foreground="{DynamicResource StudioAccentBrush}" />
+                    </Border>
+
+                    <ComboBox Grid.Column="2"
+                              MinHeight="28"
+                              MaxWidth="460"
+                              HorizontalAlignment="Stretch"
+                              IsVisible="{Binding HasMultipleVisualDependencies}"
+                              ItemsSource="{Binding SelectedVisualDependencies}"
+                              SelectedItem="{Binding SelectedVisualDependency, Mode=TwoWay}"
+                              AutomationProperties.Name="FX visual dependency">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:FxVisualDependencyViewModel">
+                          <TextBlock Text="{Binding DisplayName}"
+                                     FontSize="9"
+                                     TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding SelectedVisualDependency.DisplayName}"
+                               IsVisible="{Binding !HasMultipleVisualDependencies}"
+                               VerticalAlignment="Center"
+                               FontSize="9"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+
+                    <TextBlock Grid.Column="4"
+                               Text="{Binding SelectedVisualStatus}"
+                               VerticalAlignment="Center"
+                               FontSize="8"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding SelectedVisualStatus}"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </Grid>
+                </Border>
+
+                <Grid Grid.Row="1">
+                  <xmodelEditor:XModelPreviewControl
+                      x:Name="SelectedVisualPreview"
+                      IsVisible="{Binding HasSelectedVisualScene}"
+                      Scene="{Binding SelectedVisualScene}"
+                      SelectedLodIndex="{Binding SelectedVisualLodIndex}"
+                      UseStudioEnvironment="True"
+                      IsMaterialAnimationEnabled="True"
+                      ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
+
+                  <Border IsVisible="{Binding HasSelectedVisualRendererFailure}"
+                          MaxWidth="540"
+                          Margin="24"
+                          Padding="14,10"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          IsHitTestVisible="False"
+                          CornerRadius="6"
+                          Background="#E016191F"
+                          BorderBrush="{DynamicResource StudioBorderBrush}"
+                          BorderThickness="1">
+                    <TextBlock Text="{Binding SelectedVisualStatus}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               FontSize="9"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </Border>
+
+                  <ContentControl IsVisible="{Binding HasSelectedSoundPreview}"
+                                  Content="{Binding SelectedSoundPreview}">
+                    <ContentControl.ContentTemplate>
+                      <DataTemplate x:DataType="viewModels:SoundPreviewViewModel">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                          <Grid Margin="24,18"
+                                RowDefinitions="Auto,14,Auto,14,Auto"
+                                MaxWidth="760"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Center">
+                          <Grid ColumnDefinitions="Auto,12,*">
+                            <Border Width="42"
+                                    Height="42"
+                                    CornerRadius="9"
+                                    Background="{DynamicResource StudioAccentSurfaceBrush}"
+                                    BorderBrush="{DynamicResource StudioAccentSecondaryBrush}"
+                                    BorderThickness="1">
+                              <materialIcons:MaterialIcon Kind="Waveform"
+                                                          Width="22"
+                                                          Height="22"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          Foreground="{DynamicResource StudioAccentBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="2"
+                                        Spacing="3">
+                              <TextBlock Text="MANUAL SOUND ALIAS PREVIEW"
+                                         FontSize="8"
+                                         FontWeight="Bold"
+                                         LetterSpacing="0.7"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              <ComboBox MinHeight="29"
+                                        MaxWidth="540"
+                                        HorizontalAlignment="Left"
+                                        IsVisible="{Binding HasVariantSelector}"
+                                        IsEnabled="{Binding CanSelectVariant}"
+                                        ItemsSource="{Binding Variants}"
+                                        SelectedItem="{Binding SelectedVariant, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                  <DataTemplate x:DataType="viewModels:SoundPreviewVariantViewModel">
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis" />
+                                  </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                              </ComboBox>
+                              <TextBlock Text="{Binding SelectedVariant.DisplayName}"
+                                         IsVisible="{Binding !HasVariantSelector}"
+                                         FontSize="13"
+                                         FontWeight="SemiBold"
+                                         TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                          </Grid>
+
+                          <Grid Grid.Row="2"
+                                ColumnDefinitions="*,1,*,1,*,1,*">
+                            <StackPanel Margin="2,0,12,0" Spacing="2">
+                              <TextBlock Text="CODEC" FontSize="8" FontWeight="Bold"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              <TextBlock Text="{Binding FormatText}" FontSize="10"
+                                         TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <Border Grid.Column="1" Background="{DynamicResource StudioBorderBrush}" />
+                            <StackPanel Grid.Column="2" Margin="12,0" Spacing="2">
+                              <TextBlock Text="SAMPLE RATE" FontSize="8" FontWeight="Bold"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              <TextBlock Text="{Binding SampleRateText}" FontSize="10" />
+                            </StackPanel>
+                            <Border Grid.Column="3" Background="{DynamicResource StudioBorderBrush}" />
+                            <StackPanel Grid.Column="4" Margin="12,0" Spacing="2">
+                              <TextBlock Text="CHANNELS" FontSize="8" FontWeight="Bold"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              <TextBlock Text="{Binding ChannelsText}" FontSize="10" />
+                            </StackPanel>
+                            <Border Grid.Column="5" Background="{DynamicResource StudioBorderBrush}" />
+                            <StackPanel Grid.Column="6" Margin="12,0,2,0" Spacing="2">
+                              <TextBlock Text="SOURCE" FontSize="8" FontWeight="Bold"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              <TextBlock Text="{Binding SelectedSourceText}" FontSize="10"
+                                         TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                          </Grid>
+
+                          <Grid Grid.Row="4"
+                                ColumnDefinitions="Auto,14,*,14,Auto"
+                                VerticalAlignment="Center">
+                            <Button Width="44"
+                                    Height="44"
+                                    MinWidth="44"
+                                    MinHeight="44"
+                                    Padding="0"
+                                    CornerRadius="22"
+                                    Classes="primary"
+                                    IsEnabled="{Binding CanPlay}"
+                                    ToolTip.Tip="{Binding PlayPauseToolTip}"
+                                    Click="SoundPlayPauseButton_Click">
+                              <Grid>
+                                <materialIcons:MaterialIcon Kind="PlayCircleOutline"
+                                                            Width="23"
+                                                            Height="23"
+                                                            IsVisible="{Binding ShowPlayIcon}" />
+                                <materialIcons:MaterialIcon Kind="PauseCircleOutline"
+                                                            Width="23"
+                                                            Height="23"
+                                                            IsVisible="{Binding ShowPauseIcon}" />
+                              </Grid>
+                            </Button>
+                            <StackPanel Grid.Column="2" Spacing="5">
+                              <TextBlock Text="{Binding PlaybackStatus}"
+                                         TextWrapping="Wrap"
+                                         FontSize="9"
+                                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+                              <ProgressBar Minimum="0"
+                                           Maximum="1"
+                                           Value="{Binding Progress}"
+                                           Height="4" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="4"
+                                        Orientation="Horizontal"
+                                        VerticalAlignment="Center"
+                                        Spacing="5">
+                              <TextBlock Text="{Binding PositionText}"
+                                         FontFamily="Consolas"
+                                         FontSize="9" />
+                              <TextBlock Text="/" FontSize="9"
+                                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                              <TextBlock Text="{Binding DurationText}"
+                                         FontFamily="Consolas"
+                                         FontSize="9"
+                                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+                            </StackPanel>
+                          </Grid>
+                          </Grid>
+                        </ScrollViewer>
+                      </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                  </ContentControl>
+
+                  <StackPanel IsVisible="{Binding ShowsSelectedVisualEmptyState}"
+                              MaxWidth="520"
+                              Margin="24"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Spacing="9">
+                    <materialIcons:MaterialIcon Kind="CubeOutline"
+                                                Width="38"
+                                                Height="38"
+                                                HorizontalAlignment="Center"
+                                                Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    <TextBlock Text="{Binding SelectedVisualTitle}"
+                               HorizontalAlignment="Center"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <TextBlock Text="{Binding SelectedVisualStatus}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               FontSize="9"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+
+                  <Border Margin="12"
+                          Padding="8,4"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Bottom"
+                          IsVisible="{Binding HasSelectedVisualScene}"
+                          CornerRadius="4"
+                          IsHitTestVisible="False"
+                          Background="#C816191F"
+                          BorderBrush="#506D7683"
+                          BorderThickness="1">
+                    <TextBlock Text="DEPENDENCY PREVIEW · DRAG TO ORBIT · SCROLL TO ZOOM"
+                               FontSize="8"
+                               FontWeight="SemiBold"
+                               LetterSpacing="0.3"
+                               Foreground="#CDD5DF" />
+                  </Border>
+                </Grid>
+              </Grid>
+            </TabItem>
+          </TabControl>
+
+          <Border Grid.Row="3"
+                  Background="{DynamicResource StudioBorderBrush}" />
+
+          <Grid Grid.Row="4"
+                Margin="14,10"
+                ColumnDefinitions="Auto,8,Auto,16,*,16,Auto"
+                VerticalAlignment="Center">
+            <Button Width="38"
+                    Height="38"
+                    MinWidth="38"
+                    MinHeight="38"
+                    Padding="0"
+                    CornerRadius="19"
+                    Classes="primary"
+                    IsEnabled="{Binding CanPlay}"
+                    ToolTip.Tip="{Binding PlayPauseToolTip}"
+                    Click="PlayPauseButton_Click">
+              <Grid>
+                <materialIcons:MaterialIcon Kind="PlayCircleOutline"
+                                            Width="21"
+                                            Height="21"
+                                            IsVisible="{Binding ShowPlayIcon}" />
+                <materialIcons:MaterialIcon Kind="PauseCircleOutline"
+                                            Width="21"
+                                            Height="21"
+                                            IsVisible="{Binding ShowPauseIcon}" />
+              </Grid>
+            </Button>
+
+            <Button Grid.Column="2"
+                    Width="38"
+                    Height="38"
+                    MinWidth="38"
+                    MinHeight="38"
+                    Padding="0"
+                    CornerRadius="19"
+                    Classes="ghost"
+                    IsEnabled="{Binding CanRestart}"
+                    ToolTip.Tip="Restart FX preview"
+                    Click="RestartButton_Click">
+              <materialIcons:MaterialIcon Kind="Restart"
+                                          Width="19"
+                                          Height="19" />
+            </Button>
+
+            <Grid Grid.Column="4"
+                  RowDefinitions="Auto,5,Auto">
+              <Slider Minimum="0"
+                      Maximum="{Binding PreviewDurationMilliseconds}"
+                      Value="{Binding CurrentMilliseconds, Mode=TwoWay}"
+                      IsEnabled="{Binding HasPreview}"
+                      ToolTip.Tip="Scrub the deterministic preview timeline" />
+              <TextBlock Grid.Row="2"
+                         Text="{Binding PreviewStatus}"
+                         FontSize="8"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </Grid>
+
+            <StackPanel Grid.Column="6"
+                        MinWidth="156"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Right"
+                        Spacing="2">
+              <TextBlock Text="{Binding CurrentTimeText}"
+                         HorizontalAlignment="Right"
+                         FontFamily="Consolas"
+                         FontSize="9"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+              <TextBlock Text="{Binding VisibleInstanceCountText}"
+                         HorizontalAlignment="Right"
+                         FontSize="8"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+            </StackPanel>
+          </Grid>
+
+          <Border Grid.Row="5"
+                  Background="{DynamicResource StudioBorderBrush}" />
+
+          <ScrollViewer Grid.Row="6"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+            <Grid Margin="14,12"
+                  ColumnDefinitions="*,16,360">
+              <StackPanel Spacing="7">
+                <TextBlock Text="{Binding SelectedElementTitle}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource StudioTextBrush}" />
+                <TextBlock Text="{Binding SelectedElementSummary}"
+                           TextWrapping="Wrap"
+                           FontSize="9"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <Border Margin="0,4,0,0"
+                        Padding="10,8"
+                        CornerRadius="5"
+                        Background="{DynamicResource StudioSurfaceBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="1">
+                  <StackPanel Spacing="5">
+                    <TextBlock Text="RENDERER SCOPE"
+                               FontSize="8"
+                               FontWeight="Bold"
+                               LetterSpacing="0.6"
+                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                    <TextBlock Text="{Binding RendererScopeText}"
+                               TextWrapping="Wrap"
+                               FontSize="8"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <StackPanel Grid.Column="2"
+                          Spacing="7">
+                <TextBlock Text="COMPILED ELEMENT DATA"
+                           FontSize="8"
+                           FontWeight="Bold"
+                           LetterSpacing="0.6"
+                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                <ItemsControl ItemsSource="{Binding SelectedProperties}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="editors:AssetEditorProperty">
+                      <Grid Margin="0,0,0,6"
+                            ColumnDefinitions="126,*"
+                            ColumnSpacing="9">
+                        <TextBlock Text="{Binding Name}"
+                                   FontSize="8"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Value}"
+                                   TextWrapping="Wrap"
+                                   FontFamily="Consolas"
+                                   FontSize="8"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Grid>
+          </ScrollViewer>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

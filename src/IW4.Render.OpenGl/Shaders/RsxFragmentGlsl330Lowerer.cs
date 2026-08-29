@@ -144,62 +144,54 @@ internal static class RsxFragmentGlsl330Lowerer
         builder.AppendLine("vec4 rsxNormalize(vec3 v) { return length(v) > 0.0 ? normalize(v).xyzz : v.xyzz; }");
         builder.AppendLine("vec4 rsxDivideBySqrt(vec4 a, float b) { vec4 q = a / sqrt(abs(b)); return vec4(abs(a.x) > 0.0 ? q.x : a.x, abs(a.y) > 0.0 ? q.y : a.y, abs(a.z) > 0.0 ? q.z : a.z, abs(a.w) > 0.0 ? q.w : a.w); }");
         builder.AppendLine("vec4 rsxBool4(bvec4 v) { return vec4(v.x ? 1.0 : 0.0, v.y ? 1.0 : 0.0, v.z ? 1.0 : 0.0, v.w ? 1.0 : 0.0); }");
-        builder.AppendLine("uint rsxFloatToHalfBits(float value) {");
-        builder.AppendLine("  uint bits = floatBitsToUint(value);");
-        builder.AppendLine("  uint sign = (bits >> 16u) & 0x8000u;");
-        builder.AppendLine("  uint exponent = (bits >> 23u) & 0xffu;");
-        builder.AppendLine("  uint mantissa = bits & 0x7fffffu;");
-        builder.AppendLine("  if (exponent == 0xffu) {");
-        builder.AppendLine("    if (mantissa == 0u) return sign | 0x7c00u;");
-        builder.AppendLine("    uint payload = mantissa >> 13u;");
-        builder.AppendLine("    return sign | 0x7c00u | payload | (payload == 0u ? 1u : 0u);");
-        builder.AppendLine("  }");
-        builder.AppendLine("  int unbiased = int(exponent) - 127;");
-        builder.AppendLine("  if (unbiased > 15) return sign | 0x7c00u;");
-        builder.AppendLine("  if (unbiased >= -14) {");
-        builder.AppendLine("    uint halfExponent = uint(unbiased + 15) << 10u;");
-        builder.AppendLine("    uint halfMantissa = mantissa >> 13u;");
-        builder.AppendLine("    uint remainder = mantissa & 0x1fffu;");
-        builder.AppendLine("    if (remainder > 0x1000u || (remainder == 0x1000u && (halfMantissa & 1u) != 0u)) {");
-        builder.AppendLine("      halfMantissa += 1u;");
-        builder.AppendLine("      if (halfMantissa == 0x400u) {");
-        builder.AppendLine("        halfMantissa = 0u;");
-        builder.AppendLine("        halfExponent += 0x400u;");
-        builder.AppendLine("      }");
-        builder.AppendLine("    }");
-        builder.AppendLine("    return sign | halfExponent | halfMantissa;");
-        builder.AppendLine("  }");
-        builder.AppendLine("  if (unbiased < -25) return sign;");
-        builder.AppendLine("  uint significand = mantissa | 0x800000u;");
-        builder.AppendLine("  uint shift = uint(-unbiased - 1);");
-        builder.AppendLine("  uint halfMantissa = significand >> shift;");
-        builder.AppendLine("  uint remainderMask = (1u << shift) - 1u;");
-        builder.AppendLine("  uint remainder = significand & remainderMask;");
-        builder.AppendLine("  uint halfway = 1u << (shift - 1u);");
-        builder.AppendLine("  if (remainder > halfway || (remainder == halfway && (halfMantissa & 1u) != 0u)) halfMantissa += 1u;");
-        builder.AppendLine("  return sign | halfMantissa;");
+        // RSX half registers quantize after every write, while GLSL 3.30 only
+        // exposes full-width float arithmetic. Emulate that storage boundary
+        // deterministically instead of allowing later instructions to consume
+        // unrounded values.
+        //
+        // Keep this helper vectorized, loop-free, and free of scalar helper
+        // calls. NVIDIA's GLSL 3.30 Cg compiler inlines it at every FP16 write;
+        // the former scalar float->half->float implementation expanded complex
+        // shaders past the driver's 65K-instruction limit and made each cold
+        // program link take several seconds. Do not restore an extension-based
+        // packHalf2x16/unpackHalf2x16 path: the affected Windows driver produced
+        // value-dependent rendering corruption through that path.
+        builder.AppendLine("vec4 rsxHalf(vec4 value) {");
+        builder.AppendLine("  uvec4 valueBits = floatBitsToUint(value);");
+        builder.AppendLine("  uvec4 sign = valueBits & uvec4(0x80000000u);");
+        builder.AppendLine("  uvec4 magnitude = valueBits ^ sign;");
+        builder.AppendLine("  uvec4 adjusted = magnitude - uvec4(0x38000000u);");
+        builder.AppendLine("  uvec4 halfBits = (adjusted + uvec4(0xfffu) + ((adjusted >> 13u) & uvec4(1u))) >> 13u;");
+        builder.AppendLine("  vec4 normal = uintBitsToFloat(sign | ((halfBits << 13u) + uvec4(0x38000000u)));");
+        builder.AppendLine("  uvec4 exponent = (magnitude >> 23u) & uvec4(0xffu);");
+        // mix evaluates every candidate. Bound shifts for normal and special
+        // lanes too, even though only subnormal lanes select this result.
+        builder.AppendLine("  uvec4 shift = uvec4(126u) - min(exponent, uvec4(126u));");
+        builder.AppendLine("  shift = clamp(shift, uvec4(1u), uvec4(24u));");
+        builder.AppendLine("  uvec4 significand = (magnitude & uvec4(0x7fffffu)) | uvec4(0x800000u);");
+        builder.AppendLine("  uvec4 halfMantissa = significand >> shift;");
+        builder.AppendLine("  uvec4 remainder = significand & ((uvec4(1u) << shift) - uvec4(1u));");
+        builder.AppendLine("  uvec4 halfway = uvec4(1u) << (shift - uvec4(1u));");
+        builder.AppendLine("  halfMantissa += uvec4(greaterThan(remainder, halfway)) |");
+        builder.AppendLine("    (uvec4(equal(remainder, halfway)) & uvec4(notEqual(halfMantissa & uvec4(1u), uvec4(0u))));");
+        builder.AppendLine("  vec4 subnormalMagnitude = vec4(halfMantissa) * 5.9604644775390625e-8;");
+        // 0x33000000 is 2^-25. The exact tie rounds to even zero, so only
+        // magnitudes above it may produce the smallest binary16 subnormal.
+        builder.AppendLine("  subnormalMagnitude = mix(vec4(0.0), subnormalMagnitude, greaterThan(magnitude, uvec4(0x33000000u)));");
+        builder.AppendLine("  vec4 subnormal = uintBitsToFloat(sign | floatBitsToUint(subnormalMagnitude));");
+        builder.AppendLine("  uvec4 payload = (magnitude >> 13u) & uvec4(0x3ffu);");
+        builder.AppendLine("  payload = uvec4(");
+        builder.AppendLine("    magnitude.x > 0x7f800000u ? (payload.x == 0u ? 1u : payload.x) : 0u,");
+        builder.AppendLine("    magnitude.y > 0x7f800000u ? (payload.y == 0u ? 1u : payload.y) : 0u,");
+        builder.AppendLine("    magnitude.z > 0x7f800000u ? (payload.z == 0u ? 1u : payload.z) : 0u,");
+        builder.AppendLine("    magnitude.w > 0x7f800000u ? (payload.w == 0u ? 1u : payload.w) : 0u);");
+        builder.AppendLine("  vec4 special = uintBitsToFloat(sign | uvec4(0x7f800000u) | (payload << 13u));");
+        // 0x38800000 is 2^-14, the smallest normal binary16 value.
+        builder.AppendLine("  vec4 finite = mix(normal, subnormal, lessThan(magnitude, uvec4(0x38800000u)));");
+        // 0x477fefff is the final float encoding below the binary16 overflow
+        // tie at 65520; the tie itself rounds to infinity.
+        builder.AppendLine("  return mix(finite, special, greaterThan(magnitude, uvec4(0x477fefffu)));");
         builder.AppendLine("}");
-        builder.AppendLine("float rsxHalfBitsToFloat(uint bits) {");
-        builder.AppendLine("  uint sign = (bits & 0x8000u) << 16u;");
-        builder.AppendLine("  uint exponent = (bits >> 10u) & 0x1fu;");
-        builder.AppendLine("  uint mantissa = bits & 0x3ffu;");
-        builder.AppendLine("  if (exponent == 0u) {");
-        builder.AppendLine("    if (mantissa == 0u) return uintBitsToFloat(sign);");
-        builder.AppendLine("    int shift = 0;");
-        builder.AppendLine("    while ((mantissa & 0x400u) == 0u) {");
-        builder.AppendLine("      mantissa <<= 1u;");
-        builder.AppendLine("      shift += 1;");
-        builder.AppendLine("    }");
-        builder.AppendLine("    mantissa &= 0x3ffu;");
-        builder.AppendLine("    uint floatExponent = uint(127 - 14 - shift) << 23u;");
-        builder.AppendLine("    return uintBitsToFloat(sign | floatExponent | (mantissa << 13u));");
-        builder.AppendLine("  }");
-        builder.AppendLine("  if (exponent == 0x1fu) return uintBitsToFloat(sign | 0x7f800000u | (mantissa << 13u));");
-        builder.AppendLine("  uint floatExponent = uint(int(exponent) - 15 + 127) << 23u;");
-        builder.AppendLine("  return uintBitsToFloat(sign | floatExponent | (mantissa << 13u));");
-        builder.AppendLine("}");
-        builder.AppendLine("float rsxHalf(float value) { return rsxHalfBitsToFloat(rsxFloatToHalfBits(value)); }");
-        builder.AppendLine("vec4 rsxHalf(vec4 value) { return vec4(rsxHalf(value.x), rsxHalf(value.y), rsxHalf(value.z), rsxHalf(value.w)); }");
         builder.AppendLine("vec4 rsxPrecisionClamp(vec4 value, float minimum, float maximum) { return clamp(vec4(isnan(value.x) ? 0.0 : value.x, isnan(value.y) ? 0.0 : value.y, isnan(value.z) ? 0.0 : value.z, isnan(value.w) ? 0.0 : value.w), vec4(minimum), vec4(maximum)); }");
         builder.AppendLine("bool rsxCcTestFL(float v) { return false; }");
         builder.AppendLine("bool rsxCcTestLT(float v) { return !isnan(v) && v < 0.0; }");
@@ -955,6 +947,9 @@ internal static class RsxFragmentGlsl330Lowerer
         }
     }
 
+    // FP16 temporaries were already quantized when written. Quantizing their
+    // reads again is semantically redundant and multiplies generated shader
+    // work on drivers that inline rsxHalf.
     private static string ApplyFragmentSourcePrecision(
         RsxFragmentPrecision precision,
         RsxFragmentOperand operand,
@@ -989,6 +984,9 @@ internal static class RsxFragmentGlsl330Lowerer
         if (instruction.NoDest)
             return expression;
 
+        // This is the RSX FP16 storage boundary, not a cosmetic output clamp.
+        // Moving or removing it changes the inputs observed by later authored
+        // instructions; keep the rsxHalf implementation compiler-friendly.
         if (instruction.DestFp16)
             expression = $"rsxHalf({expression})";
 
