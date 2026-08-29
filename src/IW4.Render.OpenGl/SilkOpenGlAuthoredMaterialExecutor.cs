@@ -240,11 +240,11 @@ internal sealed class SilkOpenGlAuthoredMaterialExecutor
             _uniqueLinkCount = checked(_uniqueLinkCount + 1);
         if (linkResolution.IsPending)
         {
-            // Deferred map loading has submitted this exact source pair but
-            // intentionally has not reached the LinkStatus synchronization
-            // point yet. Pending is neither a semantic failure nor an
-            // executable program; the ordinary atomic preflight revisits it
-            // after the complete map queue has been submitted.
+            // Deferred map loading has registered this exact source pair. Its
+            // program is prepared now, every prepared program is submitted as
+            // one contiguous link queue, and only then may an ordinary atomic
+            // preflight reach the LinkStatus synchronization point. Pending is
+            // neither a semantic failure nor an executable program.
             trace?.Invoke(
                 $"executor link pending; programKey={programKey}");
             _pendingPrograms.Add(programKey);

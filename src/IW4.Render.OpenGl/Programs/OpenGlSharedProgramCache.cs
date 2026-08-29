@@ -191,6 +191,20 @@ public sealed class OpenGlSharedProgramCache : IDisposable
             usageLane);
     }
 
+    private void CancelPendingLinks(
+        int usageLane,
+        GL currentContextApi)
+    {
+        EnsureUsableOnOwnerThread();
+        ArgumentNullException.ThrowIfNull(currentContextApi);
+        if (!_activeUsageLanes.Contains(usageLane))
+        {
+            throw new InvalidOperationException(
+                $"OpenGL program-cache usage lane {usageLane} is not active.");
+        }
+        _handles.CancelPendingLinks(currentContextApi, usageLane);
+    }
+
     internal OpenGlLinkedProgramHandleCacheTelemetry
         CreateTelemetry()
     {
@@ -366,8 +380,8 @@ public sealed class OpenGlSharedProgramCache : IDisposable
         /// the independently bounded persistent binary cache. A map renderer
         /// invokes this only after deleting every resource that can reference
         /// the old handles, preventing sixteen sequential maps from pinning
-        /// the live-handle cache at its ceiling and forcing cold links to
-        /// bypass deferred scheduling.
+        /// the resident handle cache at its ceiling and turning every later
+        /// program into a renderer-owned capacity bypass.
         /// </summary>
         internal void ReleaseScenePrograms()
         {
@@ -375,6 +389,16 @@ public sealed class OpenGlSharedProgramCache : IDisposable
                 _owner ?? throw new ObjectDisposedException(
                     nameof(UsageLease));
             owner.ReleaseUsageLanePrograms(
+                UsageLane,
+                _currentContextApi);
+        }
+
+        internal void CancelPendingLinks()
+        {
+            OpenGlSharedProgramCache owner =
+                _owner ?? throw new ObjectDisposedException(
+                    nameof(UsageLease));
+            owner.CancelPendingLinks(
                 UsageLane,
                 _currentContextApi);
         }

@@ -16,6 +16,9 @@ internal sealed class OpenGlLinkedProgramHandleCache
     private readonly Dictionary<
         OpenGlLinkedProgramHandleCacheKey,
         CachedProgram> _programs = [];
+    private readonly Dictionary<
+        OpenGlLinkedProgramHandleCacheKey,
+        CachedProgram> _pendingCapacityBypasses = [];
     private readonly HashSet<uint> _ownedHandles = [];
     private readonly OpenGlProgramBinaryDiskCache? _programBinaries;
     private readonly string _linkProfileIdentity;
@@ -80,6 +83,11 @@ internal sealed class OpenGlLinkedProgramHandleCache
             }
             _linkReuseCount = checked(_linkReuseCount + 1);
             return cached.Resolution with { IsReuse = true };
+        }
+        if (_pendingCapacityBypasses.ContainsKey(key))
+        {
+            throw new InvalidOperationException(
+                "A deferred nonresident OpenGL program link must be completed through the deferred-link path before ordinary cache use.");
         }
 
         bool cacheResolution = _programs.Count < _maximumEntryCount;
@@ -171,14 +179,14 @@ internal sealed class OpenGlLinkedProgramHandleCache
     }
 
     /// <summary>
-    /// Submits a source link without immediately querying LinkStatus, then
-    /// completes that exact submission on a later call. OpenGL drivers are
-    /// allowed to perform linking asynchronously, but querying LinkStatus is
-    /// a synchronization point. Map loading uses the deferred first call for
-    /// every exact program before it begins completion, allowing drivers such
-    /// as NVIDIA's to work on the full queue concurrently. The final result
-    /// still passes through the same cache, binary persistence, and failure
-    /// ownership rules as the synchronous path.
+    /// Registers a source program without immediately querying LinkStatus,
+    /// then completes that exact program on a later call. The creation
+    /// callback may submit the link before returning or arrange submission
+    /// before the completion callback can run. This permits a renderer to
+    /// create every shader object before issuing any program link, avoiding
+    /// driver queue synchronization at a later glCreateShader call. The final
+    /// result still passes through the same binary persistence, validation,
+    /// and ownership rules as the synchronous path.
     /// </summary>
     internal OpenGlLinkedProgramHandleResolution GetOrLinkDeferred(
         GL currentContextApi,
@@ -220,6 +228,24 @@ internal sealed class OpenGlLinkedProgramHandleCache
                 currentContextApi,
                 key,
                 cached,
+                vertexGlsl,
+                pixelGlsl,
+                completeLink);
+        }
+        if (_pendingCapacityBypasses.TryGetValue(
+                key,
+                out CachedProgram? pendingCapacityBypass))
+        {
+            if (deferNewLinkCompletion)
+            {
+                return pendingCapacityBypass.Resolution with
+                    { IsReuse = true };
+            }
+
+            return CompleteDeferredLink(
+                currentContextApi,
+                key,
+                pendingCapacityBypass,
                 vertexGlsl,
                 pixelGlsl,
                 completeLink);
@@ -269,10 +295,19 @@ internal sealed class OpenGlLinkedProgramHandleCache
         bool cacheSubmission = _programs.Count < _maximumEntryCount;
         if (!cacheSubmission)
         {
-            // A pending handle cannot be transferred safely without also
-            // transferring its completion ownership. At the live-handle
-            // ceiling, preserve the established nonresident synchronous path.
             _capacityBypassCount = checked(_capacityBypassCount + 1);
+            if (deferNewLinkCompletion)
+            {
+                // Keep overflow pending handles outside the resident cache.
+                // The cache owns them only until completion transfers the
+                // ready handle to the renderer, preserving both the hard
+                // residency bound and the all-program submission ordering.
+                return SubmitDeferredCapacityBypass(
+                    currentContextApi,
+                    key,
+                    submitLink);
+            }
+
             return LinkWithoutCaching(
                 currentContextApi,
                 key.ProgramKey,
@@ -349,6 +384,67 @@ internal sealed class OpenGlLinkedProgramHandleCache
         }
     }
 
+    private OpenGlLinkedProgramHandleResolution
+        SubmitDeferredCapacityBypass(
+            GL currentContextApi,
+            OpenGlLinkedProgramHandleCacheKey key,
+            Func<uint> submitLink)
+    {
+        uint pendingHandle = 0;
+        bool pendingHandleOwned = false;
+        try
+        {
+            _uniqueLinkAttemptCount = checked(
+                _uniqueLinkAttemptCount + 1);
+            pendingHandle = submitLink();
+            if (pendingHandle == 0)
+            {
+                throw new InvalidOperationException(
+                    "OpenGL linker returned the reserved zero program handle.");
+            }
+            if (!_ownedHandles.Add(pendingHandle))
+            {
+                throw new InvalidOperationException(
+                    $"OpenGL linker returned already-owned program handle {pendingHandle} for another exact GLSL pair.");
+            }
+            pendingHandleOwned = true;
+
+            var pendingResolution = new
+                OpenGlLinkedProgramHandleResolution(
+                    Handle: 0,
+                    FailureReason: null,
+                    IsReuse: false,
+                    IsProgramBinaryLoad: false,
+                    CacheOwnsHandle: true,
+                    IsCacheResident: false,
+                    IsPending: true);
+            _pendingCapacityBypasses.Add(
+                key,
+                new CachedProgram(pendingResolution, pendingHandle));
+            _deferredLinkSubmissionCount = checked(
+                _deferredLinkSubmissionCount + 1);
+            return pendingResolution;
+        }
+        catch (InvalidOperationException exception)
+        {
+            if (pendingHandleOwned)
+            {
+                _ownedHandles.Remove(pendingHandle);
+                SafeDeleteProgram(currentContextApi, pendingHandle);
+            }
+            _failedUniqueLinkCount = checked(
+                _failedUniqueLinkCount + 1);
+            return new OpenGlLinkedProgramHandleResolution(
+                Handle: 0,
+                FailureReason: exception.Message,
+                IsReuse: false,
+                IsProgramBinaryLoad: false,
+                CacheOwnsHandle: false,
+                IsCacheResident: false,
+                IsPending: false);
+        }
+    }
+
     private OpenGlLinkedProgramHandleResolution CompleteDeferredLink(
         GL currentContextApi,
         OpenGlLinkedProgramHandleCacheKey key,
@@ -357,6 +453,7 @@ internal sealed class OpenGlLinkedProgramHandleCache
         string pixelGlsl,
         Func<uint, uint> completeLink)
     {
+        bool cacheResolution = pending.Resolution.IsCacheResident;
         try
         {
             uint handle = completeLink(pending.PendingHandle);
@@ -383,10 +480,18 @@ internal sealed class OpenGlLinkedProgramHandleCache
                 FailureReason: null,
                 IsReuse: false,
                 IsProgramBinaryLoad: false,
-                CacheOwnsHandle: true,
-                IsCacheResident: true,
+                CacheOwnsHandle: cacheResolution,
+                IsCacheResident: cacheResolution,
                 IsPending: false);
-            pending.Resolve(ready);
+            if (cacheResolution)
+            {
+                pending.Resolve(ready);
+            }
+            else
+            {
+                _pendingCapacityBypasses.Remove(key);
+                _ownedHandles.Remove(handle);
+            }
             return ready;
         }
         catch (InvalidOperationException exception)
@@ -401,9 +506,12 @@ internal sealed class OpenGlLinkedProgramHandleCache
                 IsReuse: false,
                 IsProgramBinaryLoad: false,
                 CacheOwnsHandle: false,
-                IsCacheResident: true,
+                IsCacheResident: cacheResolution,
                 IsPending: false);
-            pending.Resolve(failure);
+            if (cacheResolution)
+                pending.Resolve(failure);
+            else
+                _pendingCapacityBypasses.Remove(key);
             return failure;
         }
     }
@@ -499,14 +607,16 @@ internal sealed class OpenGlLinkedProgramHandleCache
             MaximumEntryCount: _maximumEntryCount,
             DeferredLinkSubmissionCount:
                 _deferredLinkSubmissionCount,
-            PendingLinkCount: _programs.Values.Count(
-                program => program.IsPending));
+            PendingLinkCount:
+                _programs.Values.Count(program => program.IsPending) +
+                _pendingCapacityBypasses.Count);
     }
 
     internal void Clear()
     {
         EnsureOwnerThread();
         _programs.Clear();
+        _pendingCapacityBypasses.Clear();
         _ownedHandles.Clear();
         _semanticRequestCount = 0;
         _uniqueLinkAttemptCount = 0;
@@ -543,6 +653,18 @@ internal sealed class OpenGlLinkedProgramHandleCache
             _ownedHandles.Remove(pending.PendingHandle);
             SafeDeleteProgram(gl, pending.PendingHandle);
         }
+
+        OpenGlLinkedProgramHandleCacheKey[] pendingBypassKeys =
+            _pendingCapacityBypasses.Keys
+                .Where(key => key.UsageLane == usageLane)
+                .ToArray();
+        foreach (OpenGlLinkedProgramHandleCacheKey key in pendingBypassKeys)
+        {
+            CachedProgram pending = _pendingCapacityBypasses[key];
+            _pendingCapacityBypasses.Remove(key);
+            _ownedHandles.Remove(pending.PendingHandle);
+            SafeDeleteProgram(gl, pending.PendingHandle);
+        }
     }
 
     internal void ReleaseUsageLanePrograms(GL gl, int usageLane)
@@ -552,6 +674,7 @@ internal sealed class OpenGlLinkedProgramHandleCache
         if (usageLane < 0)
             throw new ArgumentOutOfRangeException(nameof(usageLane));
 
+        CancelPendingLinks(gl, usageLane);
         OpenGlLinkedProgramHandleCacheKey[] keys = _programs.Keys
             .Where(key => key.UsageLane == usageLane)
             .ToArray();

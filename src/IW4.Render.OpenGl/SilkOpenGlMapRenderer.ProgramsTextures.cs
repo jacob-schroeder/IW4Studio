@@ -20,6 +20,8 @@ namespace IW4.Render.OpenGl;
 public sealed unsafe partial class SilkOpenGlMapRenderer
 {
     private bool _deferNewAuthoredProgramLinkCompletion;
+    private readonly List<PreparedAuthoredProgramLink>
+        _preparedAuthoredProgramLinks = [];
     private readonly Dictionary<
         OpenGlProgramKey,
         MapRenderOpenGlStaticModelProgramUniforms>
@@ -250,18 +252,21 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
     }
 
     /// <summary>
-    /// Issues every currently consumable authored map link before any one
-    /// source link is completed. LinkStatus is a driver synchronization
-    /// point; submitting the complete exact-source set first allows capable
-    /// drivers to compile/link concurrently while the normal resource gates
-    /// retain their existing blocking validation and multipass atomicity.
-    /// Warm program-binary hits remain immediately ready and source failures
-    /// still fall back through the established group policies.
+    /// Prepares every currently consumable authored map program before any
+    /// source link is submitted, then issues the prepared links before any one
+    /// link is completed. Some NVIDIA drivers charge outstanding link work to
+    /// the next glCreateShader call; interleaving shader creation and deferred
+    /// links therefore serializes a queue that appears asynchronous. Keeping
+    /// all cold-miss shader/program creation ahead of the first glLinkProgram
+    /// removes that driver synchronization boundary. Warm program binaries
+    /// are still resolved before the source callback, and LinkStatus remains
+    /// the authoritative validation gate before a handle can be consumed.
     /// </summary>
     private void SubmitSceneAuthoredProgramLinks(MapRenderScene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        if (_deferNewAuthoredProgramLinkCompletion)
+        if (_deferNewAuthoredProgramLinkCompletion ||
+            _preparedAuthoredProgramLinks.Count != 0)
         {
             throw new InvalidOperationException(
                 "Authored OpenGL link submission cannot be nested.");
@@ -304,11 +309,53 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 PreflightAuthoredProgram(batch);
                 SubmitDepthPrepassProgram(batch);
             }
+
+            SubmitPreparedAuthoredProgramLinks();
+        }
+        catch
+        {
+            // The prepared list is non-owning after each callback returns.
+            // Roll back every cache-adopted pending handle immediately so an
+            // interrupted load cannot strand either an unsubmitted or a
+            // partially submitted program until renderer disposal.
+            _sharedProgramUsage.CancelPendingLinks();
+            throw;
         }
         finally
         {
             _authoredMaterials.ResumePendingProgramResolution();
+            _preparedAuthoredProgramLinks.Clear();
             _deferNewAuthoredProgramLinkCompletion = false;
+        }
+    }
+
+    private void SubmitPreparedAuthoredProgramLinks()
+    {
+        foreach (PreparedAuthoredProgramLink prepared in
+                 _preparedAuthoredProgramLinks)
+        {
+            prepared.Trace?.Invoke(
+                $"driver glLinkProgram started; " +
+                $"program={prepared.Program}");
+            _gl.LinkProgram(prepared.Program);
+            // The load-scoped shader cache retains both objects until every
+            // program has passed LinkStatus. glLinkProgram has captured their
+            // current compiled state, so detaching here prevents each program
+            // from extending shader-object lifetime independently.
+            prepared.Trace?.Invoke(
+                $"driver glDetachShader started; stage=vertex; " +
+                $"program={prepared.Program}");
+            _gl.DetachShader(
+                prepared.Program,
+                prepared.VertexShader);
+            prepared.Trace?.Invoke(
+                $"driver glDetachShader started; stage=fragment; " +
+                $"program={prepared.Program}");
+            _gl.DetachShader(
+                prepared.Program,
+                prepared.FragmentShader);
+            prepared.Trace?.Invoke(
+                $"new link submitted; program={prepared.Program}");
         }
     }
 
@@ -1664,6 +1711,8 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
         OpenGlLinkedProgramHandleResolution resolution;
         using (BeginProgramDriverTrace(trace))
         {
+            int preparedCountBefore =
+                _preparedAuthoredProgramLinks.Count;
             resolution = _sharedProgramUsage.GetOrLinkDeferred(
                 vertexSource,
                 fragmentSource,
@@ -1671,7 +1720,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 {
                     linkInvoked = true;
                     trace?.Invoke(
-                        "shared-resolution miss; new link submitted");
+                        "shared-resolution miss; source link requested");
                     return SubmitProgramLink(
                         vertexSource,
                         fragmentSource,
@@ -1679,6 +1728,19 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                 },
                 program => CompleteProgramLink(program, trace),
                 _deferNewAuthoredProgramLinkCompletion);
+            if (!resolution.IsPending &&
+                _preparedAuthoredProgramLinks.Count >
+                    preparedCountBefore)
+            {
+                // The cache did not adopt the prepared handle (for example,
+                // because provisional ownership failed). Its failure path is
+                // authoritative for deletion; remove only our non-owning
+                // submission metadata so it cannot be issued afterward.
+                _preparedAuthoredProgramLinks.RemoveRange(
+                    preparedCountBefore,
+                    _preparedAuthoredProgramLinks.Count -
+                        preparedCountBefore);
+            }
         }
         trace?.Invoke(
             $"shared-resolution lookup completed; " +
@@ -1694,7 +1756,7 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             $"handle={resolution.Handle}; " +
             $"failure={QuoteLoadTraceValue(resolution.FailureReason)}; " +
             $"elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0}ms");
-        if (!resolution.IsCacheResident)
+        if (!resolution.IsCacheResident && !resolution.IsPending)
         {
             _sceneProgramResolutions.Add(key, resolution);
             if (resolution.IsReady)
@@ -1726,27 +1788,45 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             {
                 trace?.Invoke("driver glCreateProgram started");
                 uint program = _gl.CreateProgram();
-                trace?.Invoke(
-                    $"driver glAttachShader started; stage=vertex; " +
-                    $"program={program}; shader={vertexShader}");
-                _gl.AttachShader(program, vertexShader);
-                trace?.Invoke(
-                    $"driver glAttachShader started; stage=fragment; " +
-                    $"program={program}; shader={fragmentShader}");
-                _gl.AttachShader(program, fragmentShader);
-                if (_sharedProgramUsage
-                    .ProgramBinaryPersistenceEnabled)
-                {
-                    trace?.Invoke(
-                        $"driver program-binary hint started; " +
-                        $"program={program}");
-                    _gl.ProgramParameter(
-                        program,
-                        ProgramParameterPName.BinaryRetrievableHint,
-                        1);
-                }
                 try
                 {
+                    trace?.Invoke(
+                        $"driver glAttachShader started; stage=vertex; " +
+                        $"program={program}; shader={vertexShader}");
+                    _gl.AttachShader(program, vertexShader);
+                    trace?.Invoke(
+                        $"driver glAttachShader started; stage=fragment; " +
+                        $"program={program}; shader={fragmentShader}");
+                    _gl.AttachShader(program, fragmentShader);
+                    if (_sharedProgramUsage
+                        .ProgramBinaryPersistenceEnabled)
+                    {
+                        trace?.Invoke(
+                            $"driver program-binary hint started; " +
+                            $"program={program}");
+                        _gl.ProgramParameter(
+                            program,
+                            ProgramParameterPName.BinaryRetrievableHint,
+                            1);
+                    }
+
+                    if (_deferNewAuthoredProgramLinkCompletion &&
+                        shaderObjectCache is not null)
+                    {
+                        // Program binaries are attempted by the shared cache
+                        // before this callback. A callback here is therefore a
+                        // proven source miss. Keep the program fully prepared
+                        // but unlinked until every other miss has completed
+                        // shader creation; otherwise NVIDIA may block the next
+                        // glCreateShader on this program's outstanding link.
+                        _preparedAuthoredProgramLinks.Add(new(
+                            program,
+                            vertexShader,
+                            fragmentShader,
+                            trace));
+                        return program;
+                    }
+
                     trace?.Invoke(
                         $"driver glLinkProgram started; program={program}");
                     _gl.LinkProgram(program);
@@ -1819,6 +1899,12 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             return shader;
         }
     }
+
+    private readonly record struct PreparedAuthoredProgramLink(
+        uint Program,
+        uint VertexShader,
+        uint FragmentShader,
+        Action<string>? Trace);
 
     private uint CompleteProgramLink(
         uint program,
