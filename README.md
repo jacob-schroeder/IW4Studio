@@ -15,4 +15,4 @@ This project wouldn't have been possible if it weren't for the help of many amaz
 > https://github.com/SwagSoftware/KisakCOD
 * EpikIzCool - Mapping assistance and resources
 * Fixed Username - Lots of testing and ideas
-* Infinity Ward - Originally COD4 SDK
+* Infinity Ward - Original COD4 SDK
