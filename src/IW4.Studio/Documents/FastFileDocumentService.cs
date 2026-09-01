@@ -1,3 +1,4 @@
+using IW4.FastFiles.Database;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Database.Planning;
 using IW4.FastFiles.Zone;
@@ -24,14 +25,37 @@ public sealed class FastFileDocumentService
 
     public FastFileWorkspace Open(FastFileDocumentOpenRequest request)
     {
+        return OpenCore(request, protectSourceIdentity: true);
+    }
+
+    /// <summary>
+    /// Opens a newly authored output as a real loaded workspace without
+    /// protecting that output as an immutable imported source alias.
+    /// </summary>
+    public FastFileWorkspace OpenAuthoredOutput(FastFileDocumentOpenRequest request)
+    {
+        return OpenCore(request, protectSourceIdentity: false);
+    }
+
+    private FastFileWorkspace OpenCore(
+        FastFileDocumentOpenRequest request,
+        bool protectSourceIdentity)
+    {
         ArgumentNullException.ThrowIfNull(request);
         var loadSession = new DbLoadSession(_assetProgress);
         try
         {
             return request.Mode switch
             {
-                Isolated => OpenIsolated(request, loadSession),
-                ZonePlan plan => OpenDependencies(request, plan, loadSession),
+                Isolated => OpenIsolated(
+                    request,
+                    loadSession,
+                    protectSourceIdentity),
+                ZonePlan plan => OpenDependencies(
+                    request,
+                    plan,
+                    loadSession,
+                    protectSourceIdentity),
                 _ => throw new NotSupportedException("The requested fastfile open mode is not supported.")
             };
         }
@@ -44,7 +68,8 @@ public sealed class FastFileDocumentService
 
     private static FastFileWorkspace OpenIsolated(
         FastFileDocumentOpenRequest request,
-        DbLoadSession session)
+        DbLoadSession session,
+        bool protectSourceIdentity)
     {
         LoadedXZone target = session.DB_LoadXZone(request.Path, XZoneFlags.DB_ZONE_DEV);
         LinkAssetPool targetAssets = session.FreezeLinkAssetPool(target);
@@ -55,13 +80,15 @@ public sealed class FastFileDocumentService
             profileName: null,
             new FastFileDependencyGraph([new FastFileDependencyNode(
                 Path.GetFullPath(request.Path), DbDependencyRequestLoadStatus.Loaded, true)]),
-            targetAssets);
+            targetAssets,
+            protectSourceIdentity);
     }
 
     private static FastFileWorkspace OpenDependencies(
         FastFileDocumentOpenRequest request,
         ZonePlan plan,
-        DbLoadSession session)
+        DbLoadSession session,
+        bool protectSourceIdentity)
     {
         string directory = ResolveDependencyDirectory(request.Path);
         DbDependencyLoadExecution execution = DbDefaultZoneDependencyLoader.Execute(
@@ -85,7 +112,8 @@ public sealed class FastFileDocumentService
             zones,
             plan.ProfileName,
             graph,
-            execution.TargetAssets);
+            execution.TargetAssets,
+            protectSourceIdentity);
     }
 
     private static FastFileWorkspace CreateWorkspace(
@@ -94,7 +122,8 @@ public sealed class FastFileDocumentService
         IReadOnlyList<WorkspaceZone> zones,
         string? profileName,
         FastFileDependencyGraph graph,
-        LinkAssetPool targetAssets)
+        LinkAssetPool targetAssets,
+        bool protectSourceIdentity)
     {
         ArgumentNullException.ThrowIfNull(targetAssets);
         WorkspaceZone target = zones.Single(zone => zone.IsTarget);
@@ -108,7 +137,8 @@ public sealed class FastFileDocumentService
             new FastFileDocument(
                 request,
                 target,
-                linkRequest),
+                linkRequest,
+                protectSourceIdentity),
             session,
             zones,
             profileName,
@@ -137,12 +167,16 @@ public sealed class FastFileDocumentService
         uint languageMask,
         uint selectedLanguageMask)
     {
+        DbHeaderAuthoringMetadata headerMetadata =
+            DbHeaderAuthoringMetadata.Canonical;
         var linkRequest = new ZoneLinkRequest(
             new LinkAssetPool(Array.Empty<LinkAssetProviderSource>()),
             Array.Empty<LinkRoot>(),
             languageMask,
             selectedLanguageMask,
             scriptStrings: []);
-        return new FastFileWorkspace(new FastFileDocument(linkRequest));
+        return new FastFileWorkspace(new FastFileDocument(
+            linkRequest,
+            headerMetadata));
     }
 }

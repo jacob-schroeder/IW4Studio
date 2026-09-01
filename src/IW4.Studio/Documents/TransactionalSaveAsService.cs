@@ -411,7 +411,7 @@ public sealed class TransactionalSaveAsService
             string destinationPath = Path.Combine(
                 physicalDestinationDirectory,
                 Path.GetFileName(requestedDestinationPath));
-            if (revision.SourcePath is { } sourcePath &&
+            if (revision.ProtectedSourcePath is { } sourcePath &&
                 IsSourceDestinationAlias(sourcePath, destinationPath))
             {
                 throw new InvalidOperationException(
@@ -439,7 +439,8 @@ public sealed class TransactionalSaveAsService
                 link.LanguageMask,
                 link.SelectedLanguageMask,
                 link.ImageStreamLanguageTables,
-                request.PackagingPolicy);
+                request.PackagingPolicy,
+                revision.HeaderMetadata);
             diagnostics.AddRange(package.Errors.Select(error => $"{error.Code}: {error.Message}"));
             if (!package.Succeeded || package.Bytes is not { } packageBytes)
                 return new SaveAsResult(false, false, null, diagnostics);

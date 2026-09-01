@@ -403,13 +403,16 @@ public sealed class DestructiveNavigationCoordinator
         Func<SupplementalUnsavedChanges>? supplementalChanges)
     {
         AssetChangeSet sessionChanges = session.ChangeSet;
+        int pendingDocumentChangeCount = session.PendingDocumentChangeCount;
         SupplementalUnsavedChanges supplemental =
             CaptureSupplementalChanges(supplementalChanges);
         int changedItemCount = checked(
             sessionChanges.ChangedRowCount +
+            pendingDocumentChangeCount +
             supplemental.ChangedItemCount);
         bool isDirty =
             !sessionChanges.IsEmpty ||
+            pendingDocumentChangeCount != 0 ||
             supplemental.IsDirty;
         if (isDirty != (changedItemCount != 0))
         {

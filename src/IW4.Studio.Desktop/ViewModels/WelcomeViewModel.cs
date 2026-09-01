@@ -60,12 +60,15 @@ public sealed class WelcomeViewModel : ObservableObject
 
             OnPropertyChanged(nameof(CanLoad));
             OnPropertyChanged(nameof(CanBrowse));
+            OnPropertyChanged(nameof(CanCreate));
         }
     }
 
     public bool CanLoad => HasSelection && !IsBusy;
 
     public bool CanBrowse => !IsBusy;
+
+    public bool CanCreate => !IsBusy;
 
     public bool HasError
     {
@@ -94,6 +97,19 @@ public sealed class WelcomeViewModel : ObservableObject
             : "Preparing the selected fastfile...";
     }
 
+    public void BeginCreate()
+    {
+        ClearError();
+        IsBusy = true;
+        StatusText = "Creating and validating the new fastfile...";
+    }
+
+    public void ReportCreateProgress(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        StatusText = message;
+    }
+
     public void ReportProgress(XAssetLoadProgress progress)
     {
         int completed = Math.Clamp(progress.AssetNumber, 0, progress.AssetCount);
@@ -106,6 +122,17 @@ public sealed class WelcomeViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(exception);
         IsBusy = false;
         StatusText = "The fastfile could not be opened.";
+        ErrorMessage = exception.Message;
+        HasError = true;
+    }
+
+    public void FailCreate(Exception exception, bool wasPublished)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        IsBusy = false;
+        StatusText = wasPublished
+            ? "The new fastfile was written but could not be opened."
+            : "The fastfile could not be created.";
         ErrorMessage = exception.Message;
         HasError = true;
     }

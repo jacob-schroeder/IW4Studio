@@ -7,19 +7,23 @@ namespace IW4.Linker.Packaging;
 
 internal static class PackageFormat
 {
-    public static void WriteUnsignedPrefix(Span<byte> destination)
+    public static void WritePrefix(
+        Span<byte> destination,
+        string magic,
+        XFileVersion version)
     {
         if (destination.Length < DbHeader.UnsignedPrefixLength)
             throw new ArgumentException("PS3 package prefix destination is too small.", nameof(destination));
+        ArgumentNullException.ThrowIfNull(magic);
 
         int written = Encoding.Latin1.GetBytes(
-            DbHeader.UnsignedMagic,
+            magic,
             destination[..DbHeader.MagicByteLength]);
         if (written != DbHeader.MagicByteLength)
             throw new InvalidDataException("PS3 package magic must occupy eight bytes.");
         BinaryPrimitives.WriteUInt32BigEndian(
             destination.Slice(DbHeader.MagicByteLength, sizeof(uint)),
-            (uint)XFileVersion.ModernWarfare2);
+            (uint)version);
     }
 }
 

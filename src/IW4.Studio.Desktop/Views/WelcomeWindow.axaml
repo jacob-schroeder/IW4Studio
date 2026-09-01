@@ -165,7 +165,7 @@
                          FontWeight="SemiBold"
                          Foreground="{DynamicResource StudioTextMutedBrush}" />
               
-              <TextBlock Text="Choose a fastfile, then open it directly or load with game engine dependencies."
+              <TextBlock Text="Create a new fastfile, or choose one to open directly or with game engine dependencies."
                          MaxWidth="650"
                          HorizontalAlignment="Left"
                          TextWrapping="Wrap"
@@ -213,10 +213,63 @@
                 </StackPanel>
               </Border>
 
-              <Grid ColumnDefinitions="1*,1*"
-                    ColumnSpacing="16"
+              <Grid ColumnDefinitions="1*,1*,1*"
+                    ColumnSpacing="12"
                     HorizontalAlignment="Stretch">
                 <Button Grid.Column="0"
+                        Classes="actionCard"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        IsEnabled="{Binding CanCreate}"
+                        Click="CreateNewButton_Click">
+                  <Grid RowDefinitions="Auto,*,Auto">
+                    <Grid Grid.Row="0"
+                          ColumnDefinitions="34,*"
+                          ColumnSpacing="10"
+                          VerticalAlignment="Center">
+                      <Border Grid.Column="0"
+                              Width="34"
+                              Height="34"
+                              CornerRadius="7"
+                              Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
+                        <materialIcons:MaterialIcon Kind="FilePlus"
+                                                     FontSize="18"
+                                                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock Text="Create New"
+                                 Grid.Column="1"
+                                 VerticalAlignment="Center"
+                                 FontSize="15"
+                                 FontWeight="SemiBold"
+                                 TextWrapping="Wrap" />
+                    </Grid>
+                    <TextBlock Grid.Row="1"
+                               Margin="0,12,0,10"
+                               Text="Create an empty IW4 zone, publish it as a validated fastfile, and open it for editing."
+                               HorizontalAlignment="Left"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    <Grid Grid.Row="2"
+                          Classes="iconTextRow"
+                          ColumnDefinitions="Auto,Auto"
+                          ColumnSpacing="4"
+                          HorizontalAlignment="Left">
+                      <TextBlock Text="New fastfile"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource StudioAccentBrush}" />
+                      <materialIcons:MaterialIcon Grid.Column="1"
+                                                   Kind="ArrowRight"
+                                                   FontSize="14"
+                                                   Foreground="{DynamicResource StudioAccentBrush}"
+                                                   VerticalAlignment="Center" />
+                    </Grid>
+                  </Grid>
+                </Button>
+
+                <Button Grid.Column="1"
                         Classes="actionCard"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Stretch"
@@ -242,7 +295,8 @@
                                  Grid.Column="1"
                                  VerticalAlignment="Center"
                                  FontSize="15"
-                                 FontWeight="SemiBold" />
+                                 FontWeight="SemiBold"
+                                 TextWrapping="Wrap" />
                     </Grid>
                     <TextBlock Grid.Row="1"
                                Margin="0,12,0,10"
@@ -268,7 +322,7 @@
                   </Grid>
                 </Button>
 
-                <Button Grid.Column="1"
+                <Button Grid.Column="2"
                         Classes="actionCard primary"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Stretch"
@@ -294,7 +348,8 @@
                                  Grid.Column="1"
                                  VerticalAlignment="Center"
                                  FontSize="15"
-                                 FontWeight="SemiBold" />
+                                 FontWeight="SemiBold"
+                                 TextWrapping="Wrap" />
                     </Grid>
                     <TextBlock Grid.Row="1"
                                Margin="0,12,0,10"

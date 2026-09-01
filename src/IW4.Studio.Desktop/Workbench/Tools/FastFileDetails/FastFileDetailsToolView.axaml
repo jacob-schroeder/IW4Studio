@@ -7,7 +7,7 @@
              x:DataType="fastFileDetails:FastFileDetailsToolViewModel"
              mc:Ignorable="d"
              d:DesignWidth="360"
-             d:DesignHeight="640">
+             d:DesignHeight="760">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="16" Spacing="14">
@@ -17,7 +17,7 @@
                    FontWeight="SemiBold"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="PRESERVED FASTFILE HEADER"
+        <TextBlock Text="AUTHORED FASTFILE HEADER"
                    FontSize="9"
                    FontWeight="Bold"
                    LetterSpacing="0.7"
@@ -29,55 +29,105 @@
               Background="{DynamicResource StudioSurfaceSunkenBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="1">
-        <Grid RowDefinitions="Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto"
-              ColumnDefinitions="116,*">
-          <TextBlock Text="Magic" Classes="propertyLabel" />
-          <TextBlock Grid.Column="1"
-                     Text="{Binding Magic}"
-                     Classes="propertyValue"
+        <StackPanel Spacing="11">
+          <Grid ColumnDefinitions="116,*">
+            <TextBlock Text="Magic" Classes="propertyLabel" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding Magic}"
+                       Classes="propertyValue"
+                       FontFamily="Consolas" />
+          </Grid>
+
+          <Grid ColumnDefinitions="116,*">
+            <TextBlock Text="Magic type" Classes="propertyLabel" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding MagicType}"
+                       Classes="propertyValue" />
+          </Grid>
+
+          <Grid ColumnDefinitions="116,*">
+            <TextBlock Text="Version" Classes="propertyLabel" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding Version}"
+                       Classes="propertyValue"
+                       TextWrapping="Wrap" />
+          </Grid>
+
+          <CheckBox IsChecked="{Binding AllowOnlineUpdate, Mode=TwoWay}"
+                    Content="Allow online update" />
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="File creation time (UTC)" Classes="propertyLabel" />
+            <TextBox Text="{Binding FileCreationTimeUtc, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      FontFamily="Consolas" />
+            <TextBlock Text="yyyy-MM-dd HH:mm:ss[.fffffff] UTC; stored as Windows FILETIME."
+                       FontSize="9"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </StackPanel>
 
-          <TextBlock Grid.Row="2" Text="Magic type" Classes="propertyLabel" />
-          <TextBlock Grid.Row="2"
-                     Grid.Column="1"
-                     Text="{Binding MagicType}"
-                     Classes="propertyValue" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Languages" Classes="propertyLabel" />
+            <ItemsControl ItemsSource="{Binding Languages}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="fastFileDetails:FastFileLanguageOptionViewModel">
+                  <CheckBox Width="150"
+                            Margin="0,0,0,4"
+                            Content="{Binding DisplayName}"
+                            IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <TextBlock Text="Select every language table this fastfile should contain. The current loader/link language remains selected when included."
+                     FontSize="9"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
 
-          <TextBlock Grid.Row="4" Text="Version" Classes="propertyLabel" />
-          <TextBlock Grid.Row="4"
-                     Grid.Column="1"
-                     Text="{Binding Version}"
-                     Classes="propertyValue" />
-
-          <TextBlock Grid.Row="6" Text="Online updatable" Classes="propertyLabel" />
-          <TextBlock Grid.Row="6"
-                     Grid.Column="1"
-                     Text="{Binding OnlineUpdatable}"
-                     Classes="propertyValue" />
-
-          <TextBlock Grid.Row="8" Text="File creation time" Classes="propertyLabel" />
-          <TextBlock Grid.Row="8"
-                     Grid.Column="1"
-                     Text="{Binding FileCreationTime}"
-                     Classes="propertyValue"
-                     TextWrapping="Wrap" />
-
-          <TextBlock Grid.Row="10" Text="Language" Classes="propertyLabel" />
-          <TextBlock Grid.Row="10"
-                     Grid.Column="1"
-                     Text="{Binding Language}"
-                     Classes="propertyValue"
-                     FontFamily="Consolas" />
-
-          <TextBlock Grid.Row="12" Text="Streamed images" Classes="propertyLabel" />
-          <TextBlock Grid.Row="12"
-                     Grid.Column="1"
-                     Text="{Binding StreamedImageCount}"
-                     Classes="propertyValue" />
-        </Grid>
+          <Grid ColumnDefinitions="116,*">
+            <TextBlock Text="Streamed images" Classes="propertyLabel" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding StreamedImageCount}"
+                       Classes="propertyValue" />
+          </Grid>
+        </StackPanel>
       </Border>
 
-      <TextBlock Text="Header values are read-only and belong to the target fastfile."
+      <Border IsVisible="{Binding HasError}"
+              Padding="10,8"
+              CornerRadius="5"
+              Background="{DynamicResource StudioErrorSurfaceBrush}"
+              BorderBrush="{DynamicResource StudioErrorBorderBrush}"
+              BorderThickness="1">
+        <TextBlock Text="{Binding ErrorMessage}"
+                   FontSize="10"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+      </Border>
+
+      <TextBlock IsVisible="{Binding HasStatus}"
+                 Text="{Binding StatusMessage}"
+                 FontSize="10"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioAccentBrush}" />
+
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+        <Button Content="Revert"
+                Command="{Binding RevertCommand}"
+                HorizontalAlignment="Stretch" />
+        <Button Grid.Column="1"
+                Content="Apply"
+                Command="{Binding ApplyCommand}"
+                Classes="primary"
+                HorizontalAlignment="Stretch" />
+      </Grid>
+
+      <TextBlock Text="Applied values become part of the pending document revision and are written by Save As."
                  FontSize="9"
                  TextWrapping="Wrap"
                  Foreground="{DynamicResource StudioTextSubtleBrush}" />

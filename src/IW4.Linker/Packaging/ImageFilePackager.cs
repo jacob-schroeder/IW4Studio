@@ -106,7 +106,10 @@ public sealed class ImageFilePackager
 
         int prefixByteCount = DbHeader.UnsignedPrefixLength;
         var packageBytes = new byte[checked(prefixByteCount + packed.Bytes.Length)];
-        PackageFormat.WriteUnsignedPrefix(packageBytes);
+        PackageFormat.WritePrefix(
+            packageBytes,
+            DbHeader.UnsignedMagic,
+            XFileVersion.ModernWarfare2);
         packed.Bytes.CopyTo(packageBytes, prefixByteCount);
 
         var references = new ImageFileStreamReference[payloads.Count];

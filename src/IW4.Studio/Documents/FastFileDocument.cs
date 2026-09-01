@@ -1,3 +1,4 @@
+using IW4.FastFiles.Database;
 using IW4.FastFiles.Loaders.Database;
 using IW4.Linker.Contracts;
 using IW4.Linker.Plans;
@@ -14,12 +15,14 @@ public sealed class FastFileDocument
     private readonly Guid _documentId = Guid.NewGuid();
     private readonly FastFileDocumentOpenRequest? _request;
     private readonly string? _sourcePath;
+    private readonly string? _protectedSourcePath;
     private readonly LoadedXZone? _loadedZone;
 
     internal FastFileDocument(
         FastFileDocumentOpenRequest request,
         WorkspaceZone targetZone,
-        ZoneLinkRequest initialLinkRequest)
+        ZoneLinkRequest initialLinkRequest,
+        bool protectSourceIdentity)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(targetZone);
@@ -29,14 +32,23 @@ public sealed class FastFileDocument
         if (!targetZone.IsTarget)
             throw new ArgumentException("The document target must be marked as target.", nameof(targetZone));
         _sourcePath = targetZone.PhysicalPath;
+        _protectedSourcePath = protectSourceIdentity
+            ? targetZone.PhysicalPath
+            : null;
         _loadedZone = targetZone.LoadResult;
         InitialLinkRequest = initialLinkRequest;
+        InitialHeaderMetadata = DbHeaderAuthoringMetadata.FromHeader(
+            targetZone.LoadResult.Header);
     }
 
-    internal FastFileDocument(ZoneLinkRequest initialLinkRequest)
+    internal FastFileDocument(
+        ZoneLinkRequest initialLinkRequest,
+        DbHeaderAuthoringMetadata initialHeaderMetadata)
     {
         InitialLinkRequest = initialLinkRequest ??
             throw new ArgumentNullException(nameof(initialLinkRequest));
+        InitialHeaderMetadata = initialHeaderMetadata ??
+            throw new ArgumentNullException(nameof(initialHeaderMetadata));
     }
 
     public bool IsBlank => _loadedZone is null;
@@ -55,7 +67,10 @@ public sealed class FastFileDocument
     /// <summary>The immutable semantic state captured at open or blank creation.</summary>
     public ZoneLinkRequest InitialLinkRequest { get; }
 
-    internal string? SourcePathOrNull => _sourcePath;
+    /// <summary>The immutable authored header values captured at open or blank creation.</summary>
+    internal DbHeaderAuthoringMetadata InitialHeaderMetadata { get; }
+
+    internal string? ProtectedSourcePathOrNull => _protectedSourcePath;
 
     /// <summary>
     /// The loader-frozen symbolic input for unchanged source-layout replay.

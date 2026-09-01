@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Numerics;
-using System.Text;
 using IW4.Assets.Assets.Image;
 using IW4.FastFiles.Database;
 using IW4.FastFiles.Database.Streaming;
@@ -14,9 +13,8 @@ public enum FastFileMaxFileSizePolicy
     ExactFileSize
 }
 
-/// <summary>The deterministic container metadata policy owned by the Linker.</summary>
+/// <summary>The deterministic container layout policy owned by the Linker.</summary>
 public sealed record FastFilePackagingPolicy(
-    ulong? FileCreationTimeRaw = null,
     FastFileMaxFileSizePolicy MaxFileSizePolicy = FastFileMaxFileSizePolicy.AtLeastFileSize,
     bool EmitDoubleTerminator = true)
 {
@@ -61,14 +59,16 @@ public sealed class FastFilePackager
         uint languageMask,
         uint selectedLanguageMask,
         IEnumerable<DbHeaderImageStreamLanguageTable>? imageStreamLanguageTables = null,
-        FastFilePackagingPolicy? policy = null)
+        FastFilePackagingPolicy? policy = null,
+        DbHeaderAuthoringMetadata? headerMetadata = null)
     {
         try
         {
             DbHeader envelope = CreateGreenfieldEnvelope(
                 languageMask,
                 selectedLanguageMask,
-                imageStreamLanguageTables);
+                imageStreamLanguageTables,
+                headerMetadata ?? DbHeaderAuthoringMetadata.Canonical);
             return Package(decodedZone, envelope, policy);
         }
         catch (Exception exception) when (exception is
@@ -113,7 +113,6 @@ public sealed class FastFilePackager
 
             byte[] header = EncodeHeader(
                 envelope,
-                policy.FileCreationTimeRaw ?? envelope.FileCreationTimeRaw,
                 fileSize,
                 maxFileSize);
             byte[] output = new byte[checked(header.Length + packedStream.Bytes.Length)];
@@ -132,14 +131,13 @@ public sealed class FastFilePackager
     {
         void Error(string code, string message) => errors.Add(new FastFilePackagingError(code, message));
 
-        if (!string.Equals(envelope.Magic, DbHeader.UnsignedMagic, StringComparison.Ordinal) ||
-            Encoding.Latin1.GetByteCount(envelope.Magic) != DbHeader.MagicByteLength)
+        if (!DbHeaderAuthoringMetadata.IsSupportedMagic(envelope.Magic))
         {
             Error(
                 "header.magic",
                 $"PS3 packaging requires the eight-byte magic '{DbHeader.UnsignedMagic}'.");
         }
-        if (envelope.Version != XFileVersion.ModernWarfare2)
+        if (!DbHeaderAuthoringMetadata.IsSupportedVersion(envelope.Version))
         {
             Error(
                 "header.version",
@@ -187,8 +185,10 @@ public sealed class FastFilePackager
     private static DbHeader CreateGreenfieldEnvelope(
         uint languageMask,
         uint selectedLanguageMask,
-        IEnumerable<DbHeaderImageStreamLanguageTable>? languageTablesSource)
+        IEnumerable<DbHeaderImageStreamLanguageTable>? languageTablesSource,
+        DbHeaderAuthoringMetadata metadata)
     {
+        ArgumentNullException.ThrowIfNull(metadata);
         if (!DbLanguageMask.IsSupported(languageMask))
         {
             throw new ArgumentOutOfRangeException(
@@ -258,10 +258,10 @@ public sealed class FastFilePackager
             throw new InvalidDataException("Selected language is absent from the rebuilt table order.");
 
         return new DbHeader(
-            magic: DbHeader.UnsignedMagic,
-            version: XFileVersion.ModernWarfare2,
-            allowOnlineUpdate: false,
-            fileCreationTimeRaw: 0,
+            magic: metadata.Magic,
+            version: metadata.Version,
+            allowOnlineUpdate: metadata.AllowOnlineUpdate,
+            fileCreationTimeRaw: metadata.FileCreationTimeRaw,
             languageMask: languageMask,
             selectedLanguageMask: selectedLanguageMask,
             languageCount: checked((uint)tables.Length),
@@ -269,7 +269,7 @@ public sealed class FastFilePackager
             entryCount: checked((uint)(entryCount ?? 0)),
             languageTables: tables,
             fileSize: 0,
-            maxFileSize: 0,
+            maxFileSize: metadata.MaxFileSize,
             serializedHeaderOffset: 0,
             serializedHeaderBytes: [],
             packedStreamOffset: 0,
@@ -324,13 +324,13 @@ public sealed class FastFilePackager
             : null;
     }
 
-    private static byte[] EncodeHeader(DbHeader envelope, ulong creationTime, uint fileSize, uint maxFileSize)
+    private static byte[] EncodeHeader(DbHeader envelope, uint fileSize, uint maxFileSize)
     {
         byte[] output = new byte[ComputeHeaderLength(envelope)];
-        PackageFormat.WriteUnsignedPrefix(output);
+        PackageFormat.WritePrefix(output, envelope.Magic, envelope.Version);
         int offset = DbHeader.UnsignedPrefixLength;
         output[offset++] = envelope.AllowOnlineUpdate ? (byte)1 : (byte)0;
-        WriteUInt64(output, ref offset, creationTime);
+        WriteUInt64(output, ref offset, envelope.FileCreationTimeRaw);
         WriteUInt32(output, ref offset, envelope.LanguageMask);
         WriteUInt32(output, ref offset, envelope.EntryCount);
         foreach (DbHeaderImageStreamLanguageTable table in envelope.LanguageTables)

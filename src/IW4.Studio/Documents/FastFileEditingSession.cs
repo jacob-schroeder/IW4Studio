@@ -1,3 +1,4 @@
+using System.Numerics;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Image;
@@ -6,6 +7,7 @@ using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.D3dbsp;
+using IW4.FastFiles.Database;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.D3dbsp;
@@ -37,6 +39,8 @@ public sealed class FastFileEditingSession : IDisposable
     private readonly Dictionary<TargetZoneRowIdentity, Dictionary<AssetKey, IW4.Assets.Assets.BaseAsset>> _compiledAuxiliaryProviders = [];
     private readonly CancellationTokenSource _cancellation = new();
     private AssetChangeSet _changeSet = new([]);
+    private DbHeaderAuthoringMetadata _savedHeaderMetadata;
+    private uint _savedLanguageMask;
     private FastFileSaveRevision _revision;
     private bool _disposed;
 
@@ -49,9 +53,12 @@ public sealed class FastFileEditingSession : IDisposable
         _targetBaseAssets = workspace.InitialLinkRequest.Assets;
         _authoredAssets = workspace.InitialLinkRequest.Assets.WithoutProviders(
             workspace.InitialLinkRequest.Assets.Providers.Select(provider => provider.Key));
+        _savedHeaderMetadata = workspace.Document.InitialHeaderMetadata;
+        _savedLanguageMask = workspace.InitialLinkRequest.LanguageMask;
         _revision = new FastFileSaveRevision(
             Revision: 0,
-            SourcePath: workspace.Document.SourcePathOrNull,
+            ProtectedSourcePath: workspace.Document.ProtectedSourcePathOrNull,
+            HeaderMetadata: workspace.Document.InitialHeaderMetadata,
             LinkRequest: workspace.InitialLinkRequest);
         AssetAuthoringAdapterRegistry adapters =
             AssetAuthoringAdapterRegistry.CreateDefault();
@@ -465,7 +472,37 @@ public sealed class FastFileEditingSession : IDisposable
         }
     }
 
-    public bool IsDirty => !ChangeSet.IsEmpty;
+    public bool IsDirty
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposedCore();
+                return !_changeSet.IsEmpty ||
+                    HasPendingHeaderPropertiesChangeCore();
+            }
+        }
+    }
+
+    public bool HasPendingHeaderPropertiesChange
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposedCore();
+                return HasPendingHeaderPropertiesChangeCore();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The document-level dirty contribution for header values and the
+    /// serialized language mask. All pending edits count as one changed item.
+    /// </summary>
+    public int PendingDocumentChangeCount =>
+        HasPendingHeaderPropertiesChange ? 1 : 0;
 
     /// <summary>Validates one new hosted-definition name against live rows and the imported pool.</summary>
     public string? ValidateNewAssetName(XAssetType assetType, string? name)
@@ -746,6 +783,83 @@ public sealed class FastFileEditingSession : IDisposable
                 ThrowIfDisposedCore();
                 return _revision.LinkRequest;
             }
+        }
+    }
+
+    public DbHeaderAuthoringMetadata HeaderMetadata
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposedCore();
+                return _revision.HeaderMetadata;
+            }
+        }
+    }
+
+    public uint LanguageMask
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposedCore();
+                return _revision.LinkRequest.LanguageMask;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Publishes header values and the serialized language mask together as
+    /// one semantic revision. The loader-only selected-language context is
+    /// preserved when possible and otherwise derived from the new mask.
+    /// </summary>
+    public bool UpdateHeaderProperties(
+        DbHeaderAuthoringMetadata headerMetadata,
+        uint languageMask)
+    {
+        ArgumentNullException.ThrowIfNull(headerMetadata);
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            if (!headerMetadata.HasSupportedMagic)
+            {
+                throw new ArgumentException(
+                    $"Studio authoring currently supports only unsigned PS3 IW4 magic '{DbHeader.UnsignedMagic}'.",
+                    nameof(headerMetadata));
+            }
+            if (!headerMetadata.HasSupportedVersion)
+            {
+                throw new ArgumentException(
+                    $"Studio authoring currently supports only PS3 IW4 version 0x{(uint)XFileVersion.ModernWarfare2:X}.",
+                    nameof(headerMetadata));
+            }
+
+            ZoneLinkRequest previous = _revision.LinkRequest;
+            uint selectedLanguageMask =
+                DbLanguageMask.IsSingleLanguage(previous.SelectedLanguageMask) &&
+                (previous.SelectedLanguageMask & languageMask) != 0
+                    ? previous.SelectedLanguageMask
+                    : 1u << BitOperations.TrailingZeroCount(languageMask);
+            if (_revision.HeaderMetadata == headerMetadata &&
+                previous.LanguageMask == languageMask)
+            {
+                return false;
+            }
+
+            var request = new ZoneLinkRequest(
+                previous.Assets,
+                previous.Roots,
+                languageMask,
+                selectedLanguageMask,
+                previous.ScriptStrings);
+            _revision = new FastFileSaveRevision(
+                checked(_revision.Revision + 1),
+                _revision.ProtectedSourcePath,
+                headerMetadata,
+                request);
+            return true;
         }
     }
 
@@ -1714,6 +1828,8 @@ public sealed class FastFileEditingSession : IDisposable
                 state.AcknowledgeSaved();
             WithdrawSavedAuxiliaries();
             _addedRows.Clear();
+            _savedHeaderMetadata = _revision.HeaderMetadata;
+            _savedLanguageMask = _revision.LinkRequest.LanguageMask;
             RebuildChangeSet();
             return true;
         }
@@ -1823,7 +1939,8 @@ public sealed class FastFileEditingSession : IDisposable
             previous.ScriptStrings);
         var revision = new FastFileSaveRevision(
             checked(_revision.Revision + 1),
-            _revision.SourcePath,
+            _revision.ProtectedSourcePath,
+            _revision.HeaderMetadata,
             request);
         _authoredAssets = effectiveAuthoredAssets;
         _maskedTargetBaseProviderKeys = maskedTargetBaseProviderKeys;
@@ -1915,6 +2032,10 @@ public sealed class FastFileEditingSession : IDisposable
         });
         _changeSet = new AssetChangeSet(modified.Concat(added));
     }
+
+    private bool HasPendingHeaderPropertiesChangeCore() =>
+        _revision.HeaderMetadata != _savedHeaderMetadata ||
+        _revision.LinkRequest.LanguageMask != _savedLanguageMask;
 
     private sealed class DraftState
     {
@@ -2009,5 +2130,6 @@ public sealed class FastFileEditingSession : IDisposable
 /// <summary>One immutable canonical-link revision captured by Save As.</summary>
 internal sealed record FastFileSaveRevision(
     long Revision,
-    string? SourcePath,
+    string? ProtectedSourcePath,
+    DbHeaderAuthoringMetadata HeaderMetadata,
     ZoneLinkRequest LinkRequest);

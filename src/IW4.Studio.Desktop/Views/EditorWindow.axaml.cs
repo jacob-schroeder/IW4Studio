@@ -660,12 +660,14 @@ public sealed partial class EditorWindow : Window
         if (_disposed || _workbench is not { } workbench)
             return SupplementalUnsavedChanges.Clean;
 
-        int changedTabCount = workbench.OpenEditorTabs.Count(tab => tab.IsDirty);
-        return changedTabCount == 0
+        int changedItemCount = checked(
+            workbench.OpenEditorTabs.Count(tab => tab.IsDirty) +
+            (workbench.FastFileDetails.HasDraftChanges ? 1 : 0));
+        return changedItemCount == 0
             ? SupplementalUnsavedChanges.Clean
             : new SupplementalUnsavedChanges(
                 IsDirty: true,
-                ChangedItemCount: changedTabCount);
+                ChangedItemCount: changedItemCount);
     }
 
     private void DisposeEditor()

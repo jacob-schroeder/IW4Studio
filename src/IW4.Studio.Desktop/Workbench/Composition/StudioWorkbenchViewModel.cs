@@ -183,7 +183,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 ImageFilePak,
                 PackFilePak);
             constructionResources.Add(Properties);
-            FastFileDetails = new FastFileDetailsToolViewModel(workspace);
+            FastFileDetails = new FastFileDetailsToolViewModel(editingSession);
             ZoneDetails = new ZoneDetailsToolViewModel(workspace);
             DependencyGraph = new DependencyGraphToolViewModel(workspace);
 
@@ -509,8 +509,11 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         int targetIndex) =>
         DockLayout.MoveTool(toolId, region, targetIndex);
 
-    public void RefreshAfterSave() =>
+    public void RefreshAfterSave()
+    {
         Editor.RefreshAfterSave();
+        FastFileDetails.RefreshAfterSave();
+    }
 
     public void RequestCloseEditorTab(WorkbenchEditorTabViewModel tab)
     {

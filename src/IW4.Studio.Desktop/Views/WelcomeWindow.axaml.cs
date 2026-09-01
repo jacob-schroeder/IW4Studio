@@ -14,6 +14,7 @@ public sealed partial class WelcomeWindow : Window
 {
     private readonly AppSettingsStore _settingsStore;
     private readonly WelcomeViewModel _viewModel = new();
+    private readonly TransactionalSaveAsService _saveAsService = new();
     private readonly DispatcherTimer _progressTimer;
     private readonly object _progressSync = new();
     private XAssetLoadProgress? _pendingProgress;
@@ -64,6 +65,9 @@ public sealed partial class WelcomeWindow : Window
 
     private async void LoadDependenciesButton_Click(object? sender, RoutedEventArgs e) =>
         await OpenWorkspaceAsync(withDependencies: true);
+
+    private async void CreateNewButton_Click(object? sender, RoutedEventArgs e) =>
+        await CreateNewFastFileAsync();
 
     private void RecentFileButton_Click(object? sender, RoutedEventArgs e)
     {
@@ -133,6 +137,136 @@ public sealed partial class WelcomeWindow : Window
         }
     }
 
+    private async Task<string?> SelectNewFastFileDestinationAsync()
+    {
+        try
+        {
+            IStorageFile? file = await StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = "Create an IW4 fastfile",
+                    SuggestedFileName = SaveFilePickerName.WithoutDefaultExtension(
+                        "patch.ff",
+                        "ff"),
+                    DefaultExtension = "ff",
+                    ShowOverwritePrompt = true,
+                    FileTypeChoices =
+                    [
+                        new FilePickerFileType("IW4 fastfiles")
+                        {
+                            Patterns = ["*.ff"]
+                        },
+                        FilePickerFileTypes.All
+                    ]
+                });
+            if (file is null)
+                return null;
+
+            string? localPath = file.TryGetLocalPath();
+            if (localPath is null && !_isClosing)
+            {
+                _viewModel.FailCreate(
+                    new InvalidOperationException(
+                        "The selected destination is not available as a local filesystem path."),
+                    wasPublished: false);
+            }
+
+            return localPath;
+        }
+        catch (Exception exception)
+        {
+            if (!_isClosing)
+            {
+                _viewModel.FailCreate(
+                    new InvalidOperationException(
+                        "The fastfile destination picker could not be opened.",
+                        exception),
+                    wasPublished: false);
+            }
+
+            return null;
+        }
+    }
+
+    private async Task CreateNewFastFileAsync()
+    {
+        if (_viewModel.IsBusy)
+            return;
+
+        string? destination = await SelectNewFastFileDestinationAsync();
+        if (_isClosing || destination is null)
+            return;
+
+        destination = Path.GetFullPath(destination);
+        _viewModel.SelectedPath = destination;
+        _viewModel.BeginCreate();
+        lock (_progressSync)
+            _pendingProgress = null;
+        _progressTimer.Start();
+
+        bool wasPublished = false;
+        try
+        {
+            var service = new FastFileDocumentService(QueueProgress);
+            var progress = new Progress<SaveAsProgress>(value =>
+            {
+                if (!_isClosing)
+                    _viewModel.ReportCreateProgress(value.Message);
+            });
+            SaveAsResult save = await Task.Run(() =>
+            {
+                using FastFileWorkspace blank = service.CreateBlank(
+                    languageMask: 1,
+                    selectedLanguageMask: 1);
+                using var session = new FastFileEditingSession(blank);
+                session.UpdateHeaderProperties(
+                    session.HeaderMetadata with
+                    {
+                        FileCreationTimeRaw = checked(
+                            (ulong)DateTime.UtcNow.ToFileTimeUtc())
+                    },
+                    session.LanguageMask);
+                return _saveAsService.SaveAs(
+                    session,
+                    new SaveAsRequest(destination, AllowOverwrite: true),
+                    progress,
+                    session.CancellationToken);
+            });
+            if (!save.Succeeded)
+                throw CreateSaveFailure(save);
+
+            wasPublished = true;
+            string authoredPath = save.DestinationPath ?? destination;
+            _viewModel.ReportCreateProgress(
+                "Opening the validated fastfile workspace...");
+            FastFileWorkspace? workspace = await Task.Run(() =>
+                service.OpenAuthoredOutput(new FastFileDocumentOpenRequest(
+                    authoredPath,
+                    Isolated.Instance)));
+            ApplyPendingProgress();
+            try
+            {
+                if (TransferWorkspaceToHost(authoredPath, workspace))
+                    workspace = null;
+            }
+            finally
+            {
+                workspace?.Dispose();
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!_isClosing)
+                _viewModel.FailCreate(exception, wasPublished);
+        }
+        finally
+        {
+            _progressTimer.Stop();
+            lock (_progressSync)
+                _pendingProgress = null;
+        }
+    }
+
     private async Task OpenWorkspaceAsync(bool withDependencies)
     {
         if (_viewModel.IsBusy)
@@ -176,15 +310,8 @@ public sealed partial class WelcomeWindow : Window
             ApplyPendingProgress();
             try
             {
-                if (_isClosing)
-                    return;
-
-                SaveRecentFastFile(selectedPath);
-                Action<WelcomeWindow, FastFileWorkspace> opened = WorkspaceOpened
-                    ?? throw new InvalidOperationException(
-                        "No application host is available to own the opened workspace.");
-                opened(this, workspace);
-                workspace = null;
+                if (TransferWorkspaceToHost(selectedPath, workspace))
+                    workspace = null;
             }
             finally
             {
@@ -202,6 +329,39 @@ public sealed partial class WelcomeWindow : Window
             lock (_progressSync)
                 _pendingProgress = null;
         }
+    }
+
+    private bool TransferWorkspaceToHost(
+        string path,
+        FastFileWorkspace workspace)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(workspace);
+        if (_isClosing)
+            return false;
+
+        SaveRecentFastFile(path);
+        Action<WelcomeWindow, FastFileWorkspace> opened = WorkspaceOpened
+            ?? throw new InvalidOperationException(
+                "No application host is available to own the opened workspace.");
+        opened(this, workspace);
+        return true;
+    }
+
+    private static InvalidOperationException CreateSaveFailure(
+        SaveAsResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        string summary = result.Cancelled
+            ? "Fastfile creation was cancelled before publication."
+            : "The new fastfile failed validation and was not published.";
+        string diagnostics = string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return new InvalidOperationException(
+            string.IsNullOrWhiteSpace(diagnostics)
+                ? summary
+                : $"{summary}{Environment.NewLine}{diagnostics}");
     }
 
     private void QueueProgress(XAssetLoadProgress progress)
