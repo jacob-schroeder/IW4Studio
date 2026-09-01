@@ -15,14 +15,12 @@ public sealed class FastFileDocument
     private readonly Guid _documentId = Guid.NewGuid();
     private readonly FastFileDocumentOpenRequest? _request;
     private readonly string? _sourcePath;
-    private readonly string? _protectedSourcePath;
     private readonly LoadedXZone? _loadedZone;
 
     internal FastFileDocument(
         FastFileDocumentOpenRequest request,
         WorkspaceZone targetZone,
-        ZoneLinkRequest initialLinkRequest,
-        bool protectSourceIdentity)
+        ZoneLinkRequest initialLinkRequest)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(targetZone);
@@ -32,9 +30,6 @@ public sealed class FastFileDocument
         if (!targetZone.IsTarget)
             throw new ArgumentException("The document target must be marked as target.", nameof(targetZone));
         _sourcePath = targetZone.PhysicalPath;
-        _protectedSourcePath = protectSourceIdentity
-            ? targetZone.PhysicalPath
-            : null;
         _loadedZone = targetZone.LoadResult;
         InitialLinkRequest = initialLinkRequest;
         InitialHeaderMetadata = DbHeaderAuthoringMetadata.FromHeader(
@@ -69,8 +64,6 @@ public sealed class FastFileDocument
 
     /// <summary>The immutable authored header values captured at open or blank creation.</summary>
     internal DbHeaderAuthoringMetadata InitialHeaderMetadata { get; }
-
-    internal string? ProtectedSourcePathOrNull => _protectedSourcePath;
 
     /// <summary>
     /// The loader-frozen symbolic input for unchanged source-layout replay.

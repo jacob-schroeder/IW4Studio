@@ -411,11 +411,14 @@ public sealed class TransactionalSaveAsService
             string destinationPath = Path.Combine(
                 physicalDestinationDirectory,
                 Path.GetFileName(requestedDestinationPath));
-            if (revision.ProtectedSourcePath is { } sourcePath &&
+            string? sourcePath = session.Workspace.IsBlank
+                ? null
+                : session.Workspace.SourcePath;
+            if (sourcePath is not null &&
+                _fileSystem.FileExists(sourcePath) &&
                 IsSourceDestinationAlias(sourcePath, destinationPath))
             {
-                throw new InvalidOperationException(
-                    "Save As cannot replace the currently opened source fastfile through a physical path alias.");
+                destinationPath = _fileSystem.ResolveExistingFilePath(sourcePath);
             }
             if (_fileSystem.FileExists(destinationPath) && !request.AllowOverwrite)
                 throw new IOException("Save destination already exists and overwrite was not approved.");
@@ -499,6 +502,9 @@ public sealed class TransactionalSaveAsService
                             temporaryFastFile,
                             destinationPath,
                             request.AllowOverwrite);
+                        ReleasePublishedFile(
+                            ref temporaryFastFile,
+                            diagnostics);
                     }))
             {
                 diagnostics.Add(
@@ -510,7 +516,6 @@ public sealed class TransactionalSaveAsService
                 return new SaveAsResult(false, false, null, diagnostics);
             }
 
-            ReleasePublishedFile(ref temporaryFastFile, diagnostics);
             DeleteTemporaryDirectory(ref temporaryDirectory, diagnostics);
             return new SaveAsResult(true, false, destinationPath, diagnostics);
         }
@@ -671,7 +676,7 @@ public sealed class TransactionalSaveAsService
         if (string.Equals(
                 destinationPath,
                 fullSourcePath,
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.Ordinal))
         {
             return true;
         }
@@ -683,12 +688,12 @@ public sealed class TransactionalSaveAsService
         return string.Equals(
                    destinationPath,
                    physicalSourcePath,
-                   StringComparison.OrdinalIgnoreCase) ||
+                   StringComparison.Ordinal) ||
                (_fileSystem.FileExists(destinationPath) &&
                 string.Equals(
                     _fileSystem.ResolveExistingFilePath(destinationPath),
                     physicalSourcePath,
-                    StringComparison.OrdinalIgnoreCase));
+                    StringComparison.Ordinal));
     }
 
     internal static bool IsProtectedImageFilePackagePath(string path)

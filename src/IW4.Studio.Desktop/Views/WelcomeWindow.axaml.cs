@@ -240,7 +240,7 @@ public sealed partial class WelcomeWindow : Window
             _viewModel.ReportCreateProgress(
                 "Opening the validated fastfile workspace...");
             FastFileWorkspace? workspace = await Task.Run(() =>
-                service.OpenAuthoredOutput(new FastFileDocumentOpenRequest(
+                service.Open(new FastFileDocumentOpenRequest(
                     authoredPath,
                     Isolated.Instance)));
             ApplyPendingProgress();

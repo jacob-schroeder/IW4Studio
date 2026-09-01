@@ -25,37 +25,14 @@ public sealed class FastFileDocumentService
 
     public FastFileWorkspace Open(FastFileDocumentOpenRequest request)
     {
-        return OpenCore(request, protectSourceIdentity: true);
-    }
-
-    /// <summary>
-    /// Opens a newly authored output as a real loaded workspace without
-    /// protecting that output as an immutable imported source alias.
-    /// </summary>
-    public FastFileWorkspace OpenAuthoredOutput(FastFileDocumentOpenRequest request)
-    {
-        return OpenCore(request, protectSourceIdentity: false);
-    }
-
-    private FastFileWorkspace OpenCore(
-        FastFileDocumentOpenRequest request,
-        bool protectSourceIdentity)
-    {
         ArgumentNullException.ThrowIfNull(request);
         var loadSession = new DbLoadSession(_assetProgress);
         try
         {
             return request.Mode switch
             {
-                Isolated => OpenIsolated(
-                    request,
-                    loadSession,
-                    protectSourceIdentity),
-                ZonePlan plan => OpenDependencies(
-                    request,
-                    plan,
-                    loadSession,
-                    protectSourceIdentity),
+                Isolated => OpenIsolated(request, loadSession),
+                ZonePlan plan => OpenDependencies(request, plan, loadSession),
                 _ => throw new NotSupportedException("The requested fastfile open mode is not supported.")
             };
         }
@@ -68,8 +45,7 @@ public sealed class FastFileDocumentService
 
     private static FastFileWorkspace OpenIsolated(
         FastFileDocumentOpenRequest request,
-        DbLoadSession session,
-        bool protectSourceIdentity)
+        DbLoadSession session)
     {
         LoadedXZone target = session.DB_LoadXZone(request.Path, XZoneFlags.DB_ZONE_DEV);
         LinkAssetPool targetAssets = session.FreezeLinkAssetPool(target);
@@ -80,15 +56,13 @@ public sealed class FastFileDocumentService
             profileName: null,
             new FastFileDependencyGraph([new FastFileDependencyNode(
                 Path.GetFullPath(request.Path), DbDependencyRequestLoadStatus.Loaded, true)]),
-            targetAssets,
-            protectSourceIdentity);
+            targetAssets);
     }
 
     private static FastFileWorkspace OpenDependencies(
         FastFileDocumentOpenRequest request,
         ZonePlan plan,
-        DbLoadSession session,
-        bool protectSourceIdentity)
+        DbLoadSession session)
     {
         string directory = ResolveDependencyDirectory(request.Path);
         DbDependencyLoadExecution execution = DbDefaultZoneDependencyLoader.Execute(
@@ -112,8 +86,7 @@ public sealed class FastFileDocumentService
             zones,
             plan.ProfileName,
             graph,
-            execution.TargetAssets,
-            protectSourceIdentity);
+            execution.TargetAssets);
     }
 
     private static FastFileWorkspace CreateWorkspace(
@@ -122,8 +95,7 @@ public sealed class FastFileDocumentService
         IReadOnlyList<WorkspaceZone> zones,
         string? profileName,
         FastFileDependencyGraph graph,
-        LinkAssetPool targetAssets,
-        bool protectSourceIdentity)
+        LinkAssetPool targetAssets)
     {
         ArgumentNullException.ThrowIfNull(targetAssets);
         WorkspaceZone target = zones.Single(zone => zone.IsTarget);
@@ -137,8 +109,7 @@ public sealed class FastFileDocumentService
             new FastFileDocument(
                 request,
                 target,
-                linkRequest,
-                protectSourceIdentity),
+                linkRequest),
             session,
             zones,
             profileName,

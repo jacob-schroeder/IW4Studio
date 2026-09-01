@@ -57,7 +57,6 @@ public sealed class FastFileEditingSession : IDisposable
         _savedLanguageMask = workspace.InitialLinkRequest.LanguageMask;
         _revision = new FastFileSaveRevision(
             Revision: 0,
-            ProtectedSourcePath: workspace.Document.ProtectedSourcePathOrNull,
             HeaderMetadata: workspace.Document.InitialHeaderMetadata,
             LinkRequest: workspace.InitialLinkRequest);
         AssetAuthoringAdapterRegistry adapters =
@@ -856,7 +855,6 @@ public sealed class FastFileEditingSession : IDisposable
                 previous.ScriptStrings);
             _revision = new FastFileSaveRevision(
                 checked(_revision.Revision + 1),
-                _revision.ProtectedSourcePath,
                 headerMetadata,
                 request);
             return true;
@@ -1939,7 +1937,6 @@ public sealed class FastFileEditingSession : IDisposable
             previous.ScriptStrings);
         var revision = new FastFileSaveRevision(
             checked(_revision.Revision + 1),
-            _revision.ProtectedSourcePath,
             _revision.HeaderMetadata,
             request);
         _authoredAssets = effectiveAuthoredAssets;
@@ -2130,6 +2127,5 @@ public sealed class FastFileEditingSession : IDisposable
 /// <summary>One immutable canonical-link revision captured by Save As.</summary>
 internal sealed record FastFileSaveRevision(
     long Revision,
-    string? ProtectedSourcePath,
     DbHeaderAuthoringMetadata HeaderMetadata,
     ZoneLinkRequest LinkRequest);
