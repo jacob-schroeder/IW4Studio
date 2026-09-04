@@ -2,8 +2,8 @@
 All in one studio software for IW4 mod tools for PS3.
 
 ## Other Repos
-- https://github.com/jacob-schroeder/IW4-Binaries
-- https://github.com/jacob-schroeder/IW4-Custom-Maps
+- https://github.com/jacob-schroeder/IW4-Binaries (patched gsc default_mp.self)
+- https://github.com/jacob-schroeder/IW4-Custom-Maps (downloads)
 
 ## Credits
 This project wouldn't have been possible if it weren't for the help of many amazing friends, developers and testers.
