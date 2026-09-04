@@ -10,6 +10,7 @@ This project wouldn't have been possible if it weren't for the help of many amaz
 * SVDDENDEVTH - Resources and .self assistance
 * primetime43 - Resources and .self assistance
 * Red-EyeX32 - Reverse Engineering Documentation
+> https://codresearch.dev/
 * aerosoul94 - Reverse Engineering Documentation
 * mo - His fork of OAT
 > https://github.com/michaeloliverx/OpenAssetTools/
