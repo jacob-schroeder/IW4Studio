@@ -22,7 +22,8 @@ internal sealed record D3dbspStaticModelEntity(
     GfxStaticModelDrawInstFlags Flags,
     bool HasGroundLighting,
     GfxColor GroundLighting,
-    byte PrimaryLightIndex);
+    byte PrimaryLightIndex,
+    bool IsScriptModel);
 
 internal sealed record D3dbspSyntheticBrushModel(
     Bounds Bounds,
@@ -73,13 +74,28 @@ internal static class D3dbspMapEntsCodec
         return DecodeEntityString(source, entities, null);
     }
 
+    public static IReadOnlyList<string> DecodeNamedEntityModelNames(
+        ReadOnlySpan<byte> source)
+    {
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (ParsedEntity entity in ParseEntities(source))
+        {
+            if (!HasNamedModel(entity))
+                continue;
+
+            names.Add(entity.GetRequiredValue("model"));
+        }
+        return Array.AsReadOnly(names.ToArray());
+    }
+
     public static (byte[] EntityString, MapTriggers Trigger) DecodeMapTriggers(
         ReadOnlySpan<byte> source,
         IReadOnlyList<CModel> collisionModels,
         IReadOnlyList<CLeafBrushNode> leafBrushNodes,
         IReadOnlyList<CBrush> brushes,
         IReadOnlyList<Bounds> brushBounds,
-        IReadOnlyList<uint> brushContents)
+        IReadOnlyList<uint> brushContents,
+        bool omitNamedModelEntities = false)
     {
         ArgumentNullException.ThrowIfNull(collisionModels);
         ArgumentNullException.ThrowIfNull(leafBrushNodes);
@@ -93,6 +109,8 @@ internal static class D3dbspMapEntsCodec
         }
 
         IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
+        if (omitNamedModelEntities)
+            entities = entities.Where(entity => !HasNamedModel(entity)).ToArray();
         Dictionary<int, int> brushModelReferenceCounts = CountBrushModelReferences(entities);
         var replacements = new Dictionary<int, string>();
         var triggerModels = new List<TriggerModel>();
@@ -1163,7 +1181,8 @@ internal static class D3dbspMapEntsCodec
 
     public static IReadOnlyList<D3dbspStaticModelEntity> DecodeStaticModels(
         ReadOnlySpan<byte> source,
-        int defaultSunPrimaryLightIndex)
+        int defaultSunPrimaryLightIndex,
+        IReadOnlySet<string>? staticScriptModelNames = null)
     {
         if ((uint)defaultSunPrimaryLightIndex > byte.MaxValue)
         {
@@ -1175,11 +1194,9 @@ internal static class D3dbspMapEntsCodec
 
         IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
         var staticModels = new List<D3dbspStaticModelEntity>();
-        foreach (ParsedEntity entity in entities)
+        foreach (ParsedEntity entity in SelectStaticModelEntities(entities, staticScriptModelNames))
         {
-            if (!entity.HasClassname("misc_model"))
-                continue;
-
+            bool isScriptModel = entity.HasClassname("script_model");
             string modelName = NormalizeModelName(entity.GetRequiredValue("model"));
             Vec3 origin = ParseVec3(entity.GetRequiredValue("origin"), "misc_model origin");
             Vec3 collisionAngles = entity.TryGetValue("angles", out string authoredAngles)
@@ -1193,10 +1210,13 @@ internal static class D3dbspMapEntsCodec
                 : new Vec3 { Y = authoredAngle };
             IReadOnlyList<Vec3> collisionAxis = AnglesToAxis(collisionAngles);
             IReadOnlyList<Vec3> renderAxis = AnglesToAxis(renderAngles);
-            RequireEquivalentAxes(
-                collisionAxis,
-                renderAxis,
-                "misc_model 'angle' and 'angles' keys produce different collision and render transforms");
+            if (!isScriptModel)
+            {
+                RequireEquivalentAxes(
+                    collisionAxis,
+                    renderAxis,
+                    "misc_model 'angle' and 'angles' keys produce different collision and render transforms");
+            }
 
             float scale = entity.TryGetValue("modelscale", out string authoredScale)
                 ? ParseSingle(authoredScale, "misc_model modelscale")
@@ -1207,7 +1227,8 @@ internal static class D3dbspMapEntsCodec
                     $"The misc_model modelscale {FormatFloat(scale)} must be positive.");
             }
 
-            int spawnFlags = entity.TryGetValue("spawnflags", out string authoredSpawnFlags)
+            // Script-entity spawn flags are not misc_model shadow flags.
+            int spawnFlags = !isScriptModel && entity.TryGetValue("spawnflags", out string authoredSpawnFlags)
                 ? ParseInt32(authoredSpawnFlags, "misc_model spawnflags")
                 : 0;
             bool hasGroundLighting = entity.TryGetValue("gndLt", out string groundLightingText);
@@ -1232,11 +1253,33 @@ internal static class D3dbspMapEntsCodec
                 flags,
                 hasGroundLighting,
                 groundLighting,
-                primaryLightIndex));
+                primaryLightIndex,
+                isScriptModel));
         }
 
         return staticModels.AsReadOnly();
     }
+
+    public static IReadOnlyList<string> DecodeStaticModelNames(
+        ReadOnlySpan<byte> source,
+        IReadOnlySet<string>? staticScriptModelNames = null)
+    {
+        IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
+        return SelectStaticModelEntities(entities, staticScriptModelNames)
+            .Select(entity => NormalizeModelName(entity.GetRequiredValue("model")))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IEnumerable<ParsedEntity> SelectStaticModelEntities(
+        IReadOnlyList<ParsedEntity> entities,
+        IReadOnlySet<string>? staticScriptModelNames) =>
+        // Retain the original static index space; selected visual props append.
+        entities.Where(entity => entity.HasClassname("misc_model"))
+            .Concat(entities.Where(entity =>
+                staticScriptModelNames is not null &&
+                entity.HasClassname("script_model") && HasNamedModel(entity) &&
+                staticScriptModelNames.Contains(NormalizeModelName(entity.GetRequiredValue("model")))));
 
     private static void AppendMultiplayerSpawnFallbacks(
         Stream output,
@@ -1409,7 +1452,8 @@ internal static class D3dbspMapEntsCodec
                 draw.Flags,
                 true,
                 draw.GroundLighting,
-                draw.PrimaryLightIndex);
+                draw.PrimaryLightIndex,
+                IsScriptModel: false);
         }
 
         ValidateCollisionStaticModelSubset(clipMap, staticModels);
@@ -1768,6 +1812,11 @@ internal static class D3dbspMapEntsCodec
                 !entity.ContainsKey("pl#")) ||
             IsRuntimeStage(entity);
     }
+
+    private static bool HasNamedModel(ParsedEntity entity) =>
+        entity.TryGetValue("model", out string name) &&
+        name.Length != 0 &&
+        name[0] is not ('*' or '?');
 
     private static bool IsRuntimeStage(ParsedEntity entity) =>
         entity.TryGetValue("classname", out string classname) &&

@@ -24,7 +24,22 @@ public sealed record D3dbspLinkRequest(
     string AssetName,
     bool ForceFullbright,
     int FragmentProgramUploadCapacity,
-    IReadOnlyList<XModelAsset> AvailableXModels);
+    IReadOnlyList<XModelAsset> AvailableXModels)
+{
+    public bool WorldOnly { get; init; }
+    public bool UseSourceMaterials { get; init; }
+    public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+    public IReadOnlyList<MaterialAsset> AvailableMaterials { get; init; } = [];
+    public IReadOnlyList<GfxLightmapArray> Lightmaps { get; init; } = [];
+    public GfxImageAsset? OutdoorImage { get; init; }
+    public IReadOnlyList<float> OutdoorLookupMatrix { get; init; } = [];
+
+    public IReadOnlyList<IReadOnlyList<DynEntityDef>>? DynamicEntityDefinitions
+    {
+        get;
+        init;
+    }
+}
 
 public sealed class D3dbspLinkResult
 {
@@ -53,14 +68,39 @@ public sealed class D3dbspLinkResult
 
 public static class D3dbspAssetLinker
 {
+    public static string GetWorldMaterialName(string sourceName) =>
+        AssetKey.FromDefinition(CreateMaterialReference(sourceName, 0)).NormalizedName;
+
+    public static IReadOnlyList<string> ReadWorldMaterialNames(string bspPath) =>
+        Array.AsReadOnly(D3dbspFile.Read(bspPath).GetRenderMaterialNames()
+            .Select(GetWorldMaterialName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray());
+
     public static D3dbspLinkResult Link(D3dbspLinkRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.UseSourceMaterials && !request.WorldOnly)
+            throw new ArgumentException("Source-material selection requires world-only linking.", nameof(request));
         string inputPath = request.InputPath;
         string assetName = request.AssetName;
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ValidateAssetName(assetName);
         ArgumentNullException.ThrowIfNull(request.AvailableXModels);
+        ArgumentNullException.ThrowIfNull(request.AvailableMaterials);
+        ArgumentNullException.ThrowIfNull(request.StaticScriptModelNames);
+        if (request.StaticScriptModelNames.Count != 0 && (!request.WorldOnly || !request.UseSourceMaterials))
+            throw new ArgumentException("Static script-model selection requires world-only source-material linking.", nameof(request));
+        ValidateSuppliedLighting(request);
+        bool forceFullbright = request.ForceFullbright ||
+            (request.WorldOnly && request.Lightmaps.Count == 0);
+        IReadOnlyList<IReadOnlyList<DynEntityDef>> dynamicEntityDefinitions =
+            FreezeDynamicEntityDefinitions(
+                request.WorldOnly ? null : request.DynamicEntityDefinitions);
+        ushort[] dynamicEntityCounts = dynamicEntityDefinitions
+            .Select(definitions => checked((ushort)definitions.Count))
+            .ToArray();
         if (request.FragmentProgramUploadCapacity <= 0 ||
             request.FragmentProgramUploadCapacity > int.MaxValue - 0x1000)
         {
@@ -83,11 +123,13 @@ public static class D3dbspAssetLinker
         byte[] sourceEntities = file.GetRequiredData(D3dbspLumpType.Entities).ToArray();
         int discardedLightByteCount = ValidateSourceProfile(
             file,
-            request.ForceFullbright);
-        IReadOnlyList<GfxLightmapArray> lightmaps = request.ForceFullbright
-            ? []
-            : D3dbspImageCodec.DecodeLightBytes(
-                file.GetOptionalData(D3dbspLumpType.LightBytes));
+            forceFullbright);
+        IReadOnlyList<GfxLightmapArray> lightmaps = request.Lightmaps.Count != 0
+            ? request.Lightmaps
+            : forceFullbright
+                ? []
+                : D3dbspImageCodec.DecodeLightBytes(
+                    file.GetOptionalData(D3dbspLumpType.LightBytes));
         (
             IReadOnlyList<GfxImageAsset?> reflectionProbeImages,
             IReadOnlyList<GfxReflectionProbe> reflectionProbeOrigins) =
@@ -96,10 +138,12 @@ public static class D3dbspAssetLinker
         IReadOnlyList<Stage> stages = D3dbspMapEntsCodec.DecodeStages(
             sourceEntities,
             sunPrimaryLightIndex);
-        IReadOnlyList<D3dbspStaticModelEntity> staticModelEntities =
-            D3dbspMapEntsCodec.DecodeStaticModels(
+        IReadOnlyList<D3dbspStaticModelEntity> staticModelEntities = request.WorldOnly && !request.UseSourceMaterials
+            ? []
+            : D3dbspMapEntsCodec.DecodeStaticModels(
                 sourceEntities,
-                sunPrimaryLightIndex);
+                sunPrimaryLightIndex,
+                request.StaticScriptModelNames);
         (
             IReadOnlyList<GfxStaticModelInst> gfxStaticModelInstances,
             IReadOnlyList<GfxStaticModelDrawInst> gfxStaticModelDrawInstances,
@@ -116,9 +160,28 @@ public static class D3dbspAssetLinker
             file.GetRequiredData(D3dbspLumpType.Planes));
         IReadOnlyList<ClipMaterial> clipMaterials = D3dbspCollisionCodec.DecodeMaterials(
             file.GetRequiredData(D3dbspLumpType.Materials));
-        MaterialAsset[] renderMaterials = clipMaterials
-            .Select((material, index) => CreateMaterialReference(material.Name, index))
-            .ToArray();
+        // Preserve collision material indices and surface order. World-only
+        // defaults to one native material unless source surface names are requested.
+        MaterialAsset[] renderMaterials = request.WorldOnly && !request.UseSourceMaterials
+            ? Enumerable.Repeat(CreateMaterialReference("$default", 0), clipMaterials.Count)
+                .ToArray()
+            : clipMaterials
+                .Select((material, index) => CreateMaterialReference(material.Name, index))
+                .ToArray();
+        if (request.UseSourceMaterials)
+        {
+            Dictionary<AssetKey, MaterialAsset> availableMaterials = request.AvailableMaterials
+                .ToDictionary(AssetKey.FromDefinition);
+            for (int index = 0; index < renderMaterials.Length; index++)
+            {
+                if (availableMaterials.TryGetValue(
+                    AssetKey.FromDefinition(renderMaterials[index]),
+                    out MaterialAsset? material))
+                {
+                    renderMaterials[index] = material;
+                }
+            }
+        }
         IReadOnlyList<byte> brushEdges = D3dbspCollisionCodec.DecodeBrushEdges(
             file.GetOptionalData(D3dbspLumpType.BrushEdges));
         IReadOnlyList<ushort> leafBrushes = D3dbspCollisionCodec.DecodeLeafBrushes(
@@ -174,7 +237,8 @@ public static class D3dbspAssetLinker
                 leafGraph.LeafBrushNodes,
                 brushGraph.Brushes,
                 brushGraph.BrushBounds,
-                brushGraph.BrushContents);
+                brushGraph.BrushContents,
+                omitNamedModelEntities: request.WorldOnly);
         var mapEnts = new MapEntsAsset
         {
             Name = assetName,
@@ -239,9 +303,9 @@ public static class D3dbspAssetLinker
             // even when the map has no static models.
             SModelNodeCount = 1,
             SModelNodes = [clipStaticModelRoot],
-            DynEntCount = [0, 0],
+            DynEntCount = dynamicEntityCounts,
             DynEntDefListPointers = new XPointer<DynEntityDef[]>[2],
-            DynEntDefList = EmptyDynamicLists<DynEntityDef>(),
+            DynEntDefList = dynamicEntityDefinitions,
             DynEntPoseListPointers = new XPointer<DynEntityPose[]>[2],
             DynEntPoseList = EmptyDynamicLists<DynEntityPose>(),
             DynEntClientListPointers = new XPointer<DynEntityClient[]>[2],
@@ -281,7 +345,11 @@ public static class D3dbspAssetLinker
             reflectionProbeImages,
             reflectionProbeOrigins,
             gfxStaticModelInstances,
-            gfxStaticModelDrawInstances);
+            gfxStaticModelDrawInstances,
+            dynamicEntityCounts,
+            useSourceMaterials: request.UseSourceMaterials,
+            outdoorImage: request.OutdoorImage,
+            outdoorLookupMatrix: request.OutdoorLookupMatrix);
 
         var fxWorld = new FxWorldAsset
         {
@@ -310,9 +378,13 @@ public static class D3dbspAssetLinker
             .Concat(gfxWorld.WorldDraw.ReflectionProbeImages
                 .OfType<GfxImageAsset>()
                 .Where(image => image.Name is { Length: > 0 } name && name[0] != ','))
+            .Concat(new[] { gfxWorld.OutdoorImage }.OfType<GfxImageAsset>())
             .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
             .ToArray();
-        BaseAsset[] dependencies = renderMaterials
+        IEnumerable<MaterialAsset> materialDependencies = request.UseSourceMaterials
+            ? gfxWorld.Dpvs.Surfaces.Select(surface => surface.Material).OfType<MaterialAsset>()
+            : renderMaterials;
+        BaseAsset[] dependencies = materialDependencies
             .Cast<BaseAsset>()
             .Concat(gfxWorld.WorldDraw.ReflectionProbeImages
                 .OfType<GfxImageAsset>()
@@ -322,6 +394,7 @@ public static class D3dbspAssetLinker
                     .OfType<GfxImageAsset>()
                     .Where(image => image.Name is { Length: > 0 } name && name[0] == ',')))
             .Concat(xmodelReferences)
+            .Concat(EnumerateDynamicEntityDependencies(dynamicEntityDefinitions))
             .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
             .ToArray();
         return new D3dbspLinkResult(
@@ -491,6 +564,58 @@ public static class D3dbspAssetLinker
         Array.AsReadOnly<IReadOnlyList<T>>(
             [Array.Empty<T>(), Array.Empty<T>()]);
 
+    private static IReadOnlyList<IReadOnlyList<DynEntityDef>>
+        FreezeDynamicEntityDefinitions(
+            IReadOnlyList<IReadOnlyList<DynEntityDef>>? source)
+    {
+        if (source is null)
+            return EmptyDynamicLists<DynEntityDef>();
+        if (source.Count != 2)
+        {
+            throw new InvalidDataException(
+                "The IW4 dynamic-entity definition table must contain model and brush lists.");
+        }
+
+        var result = new IReadOnlyList<DynEntityDef>[2];
+        for (int listIndex = 0; listIndex < result.Length; listIndex++)
+        {
+            IReadOnlyList<DynEntityDef> definitions = source[listIndex] ??
+                throw new InvalidDataException(
+                    $"The IW4 dynamic-entity definition list {listIndex} is null.");
+            if (definitions.Count > ushort.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"The IW4 dynamic-entity definition list {listIndex} exceeds the ushort count range.");
+            }
+
+            DynEntityDef[] rows = definitions.ToArray();
+            for (int definitionIndex = 0; definitionIndex < rows.Length; definitionIndex++)
+            {
+                if (rows[definitionIndex] is null)
+                {
+                    throw new InvalidDataException(
+                        $"The IW4 dynamic-entity definition list {listIndex} contains a null row at {definitionIndex}.");
+                }
+            }
+            result[listIndex] = Array.AsReadOnly(rows);
+        }
+        return Array.AsReadOnly(result);
+    }
+
+    private static IEnumerable<BaseAsset> EnumerateDynamicEntityDependencies(
+        IReadOnlyList<IReadOnlyList<DynEntityDef>> definitions)
+    {
+        foreach (DynEntityDef definition in definitions.SelectMany(list => list))
+        {
+            if (definition.XModel is not null)
+                yield return definition.XModel;
+            if (definition.DestroyFx is not null)
+                yield return definition.DestroyFx;
+            if (definition.PhysPreset is not null)
+                yield return definition.PhysPreset;
+        }
+    }
+
     private static (
         IReadOnlyList<GfxStaticModelInst> GfxInstances,
         IReadOnlyList<GfxStaticModelDrawInst> GfxDrawInstances,
@@ -552,6 +677,14 @@ public static class D3dbspAssetLinker
             D3dbspStaticModelEntity source = sourceModels[index];
             AssetKey key = sourceKeys[index];
             XModelAsset xmodel = xmodelsByKey[key];
+            if (source.IsScriptModel && (xmodel.Flags & XModelFlags.GroundLighting) == 0)
+            {
+                source = source with
+                {
+                    Flags = source.Flags & ~GfxStaticModelDrawInstFlags.GroundLighting,
+                    GroundLighting = new GfxColor(0)
+                };
+            }
             ValidateStaticModel(source, xmodel, index, primaryLightCount);
 
             Bounds renderBounds = TransformBounds(
@@ -711,6 +844,17 @@ public static class D3dbspAssetLinker
                 $"XModel '{xmodel.Name}' declares {xmodel.NumLods} active LODs but retains " +
                 $"{xmodel.Lods.Count} rows.");
         }
+        for (int lodIndex = 0; lodIndex < xmodel.NumLods; lodIndex++)
+        {
+            XModelLodInfo lod = xmodel.Lods[lodIndex] ??
+                throw new InvalidDataException($"XModel '{xmodel.Name}' active LOD {lodIndex} is null.");
+            if (lod.NumSurfs > GfxStaticModelDrawInst.MaxLodSurfaceCount)
+            {
+                throw new InvalidDataException(
+                    $"Static XModel '{xmodel.Name}' LOD {lodIndex} has {lod.NumSurfs} surfaces; " +
+                    $"PS3 static draw tokens support at most {GfxStaticModelDrawInst.MaxLodSurfaceCount}.");
+            }
+        }
         XModelLodInfo terminalLod = xmodel.Lods[xmodel.NumLods - 1] ??
             throw new InvalidDataException(
                 $"XModel '{xmodel.Name}' terminal active LOD is null.");
@@ -839,8 +983,7 @@ public static class D3dbspAssetLinker
                     Z = axis[2].Z * inverseScale
                 }
             ],
-            AbsMin = BoundsEndpoint(collisionBounds, maximum: false),
-            AbsMax = BoundsEndpoint(collisionBounds, maximum: true)
+            Bounds = collisionBounds
         };
     }
 
@@ -913,18 +1056,10 @@ public static class D3dbspAssetLinker
 
     private static Bounds UnionClipBounds(IReadOnlyList<ClipStaticModel> clipModels)
     {
-        Bounds result = BoundsFromEndpoints(
-            clipModels[0].AbsMin,
-            clipModels[0].AbsMax,
-            "Collision static-model tree");
+        Bounds result = clipModels[0].Bounds;
         for (int index = 1; index < clipModels.Count; index++)
         {
-            result = UnionBounds(
-                result,
-                BoundsFromEndpoints(
-                    clipModels[index].AbsMin,
-                    clipModels[index].AbsMax,
-                    $"Collision static model {index}"));
+            result = UnionBounds(result, clipModels[index].Bounds);
         }
         return result;
     }
@@ -1045,6 +1180,81 @@ public static class D3dbspAssetLinker
             throw new ArgumentException(
                 "The map asset name must be an owned .d3dbsp wire name without a comma prefix.",
                 nameof(assetName));
+        }
+    }
+
+    private static void ValidateSuppliedLighting(D3dbspLinkRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request.Lightmaps);
+        ArgumentNullException.ThrowIfNull(request.OutdoorLookupMatrix);
+        if (request.Lightmaps.Count > D3dbspGfxCodec.NoLightmapIndex)
+        {
+            throw new ArgumentException(
+                $"Supplied lighting supports at most {D3dbspGfxCodec.NoLightmapIndex} lightmap arrays.", nameof(request));
+        }
+        if (request.ForceFullbright &&
+            (request.Lightmaps.Count != 0 || request.OutdoorImage is not null ||
+                request.OutdoorLookupMatrix.Count != 0))
+        {
+            throw new ArgumentException("Forced fullbright cannot be combined with supplied lighting.", nameof(request));
+        }
+        if ((request.OutdoorImage is null) != (request.OutdoorLookupMatrix.Count == 0))
+            throw new ArgumentException("An outdoor image and its lookup matrix must be supplied together.", nameof(request));
+        if (request.OutdoorImage is not null &&
+            (request.OutdoorLookupMatrix.Count != 16 || request.OutdoorLookupMatrix.Any(value => !float.IsFinite(value))))
+        {
+            throw new ArgumentException("The outdoor lookup matrix requires 16 finite values.", nameof(request));
+        }
+
+        var imageKeys = new HashSet<AssetKey>();
+        for (int index = 0; index < request.Lightmaps.Count; index++)
+        {
+            GfxLightmapArray lightmap = request.Lightmaps[index] ??
+                throw new InvalidDataException($"Supplied lightmap {index} is null.");
+            GfxImageAsset primary = lightmap.Primary ??
+                throw new InvalidDataException($"Supplied lightmap {index} has no primary image.");
+            GfxImageAsset secondary = lightmap.Secondary ??
+                throw new InvalidDataException($"Supplied lightmap {index} has no secondary image.");
+            ValidateSuppliedLightingImage(primary, GfxImageBaseFormat.B8, ImageCategory.Lightmap, imageKeys);
+            ValidateSuppliedLightingImage(secondary, GfxImageBaseFormat.A8R8G8B8, ImageCategory.Lightmap, imageKeys);
+            if (primary.Width != secondary.Width * 2 || primary.Height != secondary.Height)
+            {
+                throw new InvalidDataException(
+                    $"Supplied lightmap {index} primary and secondary images require a 2:1 width ratio and equal heights.");
+            }
+        }
+        if (request.OutdoorImage is { } outdoor)
+            ValidateSuppliedLightingImage(outdoor, GfxImageBaseFormat.B8, ImageCategory.AutoGenerated, imageKeys);
+    }
+
+    private static void ValidateSuppliedLightingImage(
+        GfxImageAsset image,
+        GfxImageBaseFormat format,
+        ImageCategory category,
+        HashSet<AssetKey> imageKeys)
+    {
+        if (string.IsNullOrWhiteSpace(image.Name) || image.Name.StartsWith(','))
+            throw new InvalidDataException("Supplied lighting requires named, owned image definitions.");
+        if (!imageKeys.Add(AssetKey.FromDefinition(image)))
+            throw new InvalidDataException($"Supplied lighting uses image '{image.Name}' more than once.");
+        if (image.FormatEncoding.BaseFormat != format || image.FormatEncoding.Flags != GfxImageFormatFlags.None ||
+            image.MapType != MapType.TwoDimensional || image.DimensionCount != GfxImageDimension.TwoDimensional ||
+            image.IsCubemap || image.Width == 0 || image.Height == 0 || image.Depth != 1 ||
+            image.LevelCount != 1 || image.BaseLevelCount != 1 ||
+            image.BaseWidth != image.Width || image.BaseHeight != image.Height || image.BaseDepth != 1 ||
+            image.TextureSemantic != TextureSemantic.Function || image.Category != category || image.UsesSrgbReads ||
+            image.StreamData.Any(part => part.HasStreamingData))
+        {
+            throw new InvalidDataException(
+                $"Supplied lighting image '{image.Name}' requires a resident, single-level native {format} Function/{category} profile.");
+        }
+        int byteCount = GfxImagePixelLayout.ComputePayloadByteCount(
+            image.FormatEncoding, image.LevelCount, image.IsCubemap, image.TextureRemap,
+            image.Width, image.Height, image.Depth);
+        if (byteCount <= 0 || image.PayloadByteCount != byteCount || image.PayloadBytes.Count != byteCount)
+        {
+            throw new InvalidDataException(
+                $"Supplied lighting image '{image.Name}' does not contain its complete {byteCount}-byte native payload.");
         }
     }
 

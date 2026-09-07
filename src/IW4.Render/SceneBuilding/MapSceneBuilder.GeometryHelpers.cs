@@ -158,10 +158,8 @@ public sealed partial class MapSceneBuilder
              modelIndex++)
         {
             ClipStaticModel model = clipMap.StaticModelList[modelIndex];
-            // IW4 serializes these historically named fields with Bounds
-            // semantics: AbsMin is the midpoint and AbsMax is the half size.
-            Vector3 midPoint = ToVector3(model.AbsMin);
-            Vector3 halfSize = ToRenderHalfSize(model.AbsMax);
+            Vector3 midPoint = ToVector3(model.Bounds.MidPoint);
+            Vector3 halfSize = ToRenderHalfSize(model.Bounds.HalfSize);
             if (!TryWriteBoundsCorners(
                     midPoint,
                     halfSize,

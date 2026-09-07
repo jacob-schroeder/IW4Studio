@@ -123,7 +123,7 @@ internal static class D3dbspImageCodec
                 layout.Secondary.Width,
                 layout.Secondary.Height,
                 bytesPerPixel: 4);
-            ReverseFourBytePixelOrder(secondary);
+            GfxImagePixelLayout.ReverseFourBytePixelOrder(secondary);
 
             for (int tileY = 0; tileY < layout.TilesHigh; tileY++)
             {
@@ -200,7 +200,7 @@ internal static class D3dbspImageCodec
                 checked(index * LightmapByteCount),
                 LightmapByteCount);
             byte[] secondaryLinear = row[..LightmapSecondaryByteCount].ToArray();
-            ReverseFourBytePixelOrder(secondaryLinear);
+            GfxImagePixelLayout.ReverseFourBytePixelOrder(secondaryLinear);
             byte[] primaryLinear = row[LightmapSecondaryByteCount..].ToArray();
             lightmaps[index] = new GfxLightmapArray
             {
@@ -353,7 +353,7 @@ internal static class D3dbspImageCodec
         int requiredBytes = checked(image.Width * image.Height * bytesPerPixel);
         ValidatePayload(image, requiredBytes, description);
         if (!image.FormatEncoding.IsLinear &&
-            (!IsPowerOfTwo(image.Width) || !IsPowerOfTwo(image.Height)))
+            (!GfxImagePixelLayout.IsPowerOfTwo(image.Width) || !GfxImagePixelLayout.IsPowerOfTwo(image.Height)))
         {
             throw new NotSupportedException(
                 $"{description} uses a swizzled non-power-of-two layout.");
@@ -412,7 +412,7 @@ internal static class D3dbspImageCodec
         byte[] source = image.PayloadBytes as byte[] ?? image.PayloadBytes.ToArray();
         return image.FormatEncoding.IsLinear
             ? source.ToArray()
-            : DeswizzleMorton2D(source, width, height, bytesPerPixel);
+            : GfxImagePixelLayout.DeswizzleMorton2D(source, width, height, bytesPerPixel);
     }
 
     private static byte[] FromLinearPixels(
@@ -420,7 +420,7 @@ internal static class D3dbspImageCodec
         int width,
         int height,
         int bytesPerPixel) =>
-        SwizzleMorton2D(pixels, width, height, bytesPerPixel);
+        GfxImagePixelLayout.SwizzleMorton2D(pixels, width, height, bytesPerPixel);
 
     private static void CopyRectangle(
         ReadOnlySpan<byte> source,
@@ -525,8 +525,8 @@ internal static class D3dbspImageCodec
                     mipByteCount);
                 byte[] linear = image.FormatEncoding.IsLinear
                     ? runtimeMip.ToArray()
-                    : DeswizzleMorton2D(runtimeMip, edge, edge, bytesPerPixel: 4);
-                ReverseFourBytePixelOrder(linear);
+                    : GfxImagePixelLayout.DeswizzleMorton2D(runtimeMip, edge, edge, bytesPerPixel: 4);
+                GfxImagePixelLayout.ReverseFourBytePixelOrder(linear);
 
                 int diskOffset = mip == 0
                     ? checked(face * ReflectionProbeTopMipByteCount)
@@ -560,8 +560,8 @@ internal static class D3dbspImageCodec
                     ? checked(face * ReflectionProbeTopMipByteCount)
                     : tailOffset;
                 byte[] linear = source.Slice(diskOffset, mipByteCount).ToArray();
-                ReverseFourBytePixelOrder(linear);
-                byte[] runtimeMip = SwizzleMorton2D(
+                GfxImagePixelLayout.ReverseFourBytePixelOrder(linear);
+                byte[] runtimeMip = GfxImagePixelLayout.SwizzleMorton2D(
                     linear,
                     edge,
                     edge,
@@ -587,113 +587,6 @@ internal static class D3dbspImageCodec
             diskPixels[offset + 3] = byte.MaxValue;
         }
         return DecodeReflectionProbePixels(diskPixels);
-    }
-
-    private static void ReverseFourBytePixelOrder(Span<byte> pixels)
-    {
-        for (int offset = 0; offset < pixels.Length; offset += 4)
-        {
-            (pixels[offset], pixels[offset + 3]) =
-                (pixels[offset + 3], pixels[offset]);
-            (pixels[offset + 1], pixels[offset + 2]) =
-                (pixels[offset + 2], pixels[offset + 1]);
-        }
-    }
-
-    private static byte[] DeswizzleMorton2D(
-        ReadOnlySpan<byte> source,
-        int width,
-        int height,
-        int bytesPerPixel)
-    {
-        ValidatePixelBuffer(source, width, height, bytesPerPixel);
-        var result = new byte[source.Length];
-        int log2Width = System.Numerics.BitOperations.Log2((uint)width);
-        int log2Height = System.Numerics.BitOperations.Log2((uint)height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int sourcePixel = MortonIndex2D(x, y, log2Width, log2Height);
-                int destinationPixel = checked(y * width + x);
-                source.Slice(
-                        checked(sourcePixel * bytesPerPixel),
-                        bytesPerPixel)
-                    .CopyTo(result.AsSpan(
-                        checked(destinationPixel * bytesPerPixel),
-                        bytesPerPixel));
-            }
-        }
-        return result;
-    }
-
-    private static byte[] SwizzleMorton2D(
-        ReadOnlySpan<byte> source,
-        int width,
-        int height,
-        int bytesPerPixel)
-    {
-        ValidatePixelBuffer(source, width, height, bytesPerPixel);
-        var result = new byte[source.Length];
-        int log2Width = System.Numerics.BitOperations.Log2((uint)width);
-        int log2Height = System.Numerics.BitOperations.Log2((uint)height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int sourcePixel = checked(y * width + x);
-                int destinationPixel = MortonIndex2D(x, y, log2Width, log2Height);
-                source.Slice(
-                        checked(sourcePixel * bytesPerPixel),
-                        bytesPerPixel)
-                    .CopyTo(result.AsSpan(
-                        checked(destinationPixel * bytesPerPixel),
-                        bytesPerPixel));
-            }
-        }
-        return result;
-    }
-
-    private static void ValidatePixelBuffer(
-        ReadOnlySpan<byte> source,
-        int width,
-        int height,
-        int bytesPerPixel)
-    {
-        if (!IsPowerOfTwo(width) || !IsPowerOfTwo(height))
-            throw new NotSupportedException("Morton image conversion requires power-of-two dimensions.");
-        int required = checked(width * height * bytesPerPixel);
-        if (source.Length != required)
-        {
-            throw new InvalidDataException(
-                $"The image buffer has {source.Length} bytes; expected {required}.");
-        }
-    }
-
-    private static int MortonIndex2D(
-        int x,
-        int y,
-        int log2Width,
-        int log2Height)
-    {
-        int index = 0;
-        int outputBit = 0;
-        while (log2Width > 0 || log2Height > 0)
-        {
-            if (log2Width > 0)
-            {
-                index |= (x & 1) << outputBit++;
-                x >>= 1;
-                log2Width--;
-            }
-            if (log2Height > 0)
-            {
-                index |= (y & 1) << outputBit++;
-                y >>= 1;
-                log2Height--;
-            }
-        }
-        return index;
     }
 
     private static float ReadFiniteSingle(
@@ -725,9 +618,6 @@ internal static class D3dbspImageCodec
             data[offset..],
             value == 0.0f ? 0.0f : value);
     }
-
-    private static bool IsPowerOfTwo(int value) =>
-        value > 0 && (value & (value - 1)) == 0;
 
     private sealed record LightmapLayout(
         GfxImageAsset Primary,

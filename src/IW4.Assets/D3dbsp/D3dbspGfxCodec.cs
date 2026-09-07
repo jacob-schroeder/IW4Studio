@@ -16,13 +16,35 @@ internal static class D3dbspGfxCodec
     private const int DiskModelSize = 48;
     private const int PositionStride = 16;
     private const int LayerStride = 28;
-    private const byte NoLightmapIndex = 0x1f;
+    internal const byte NoLightmapIndex = 0x1f;
     private const int SortKeyLitDecal = 0x06;
     private const int SortKeyEffectDecal = 0x27;
     private const int SortKeyEffectAuto = 0x30;
     private const int SortKeyDistortion = 0x2b;
     internal const string FullbrightPrimaryLightmapImageName = "*lightmap0_primary";
     internal const string FullbrightSecondaryLightmapImageName = "*lightmap0_secondary";
+
+    public static IReadOnlyList<string> DecodeRenderMaterialNames(D3dbspFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        IReadOnlyList<ClipMaterial> materials = D3dbspCollisionCodec.DecodeMaterials(
+            file.GetRequiredData(D3dbspLumpType.Materials));
+        ReadOnlySpan<byte> triangleBytes = GetTriangleData(
+            file,
+            SelectUnlayeredGeometryFamily(file));
+        int surfaceCount = GetRenderSurfaceCount(triangleBytes);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
+        {
+            int materialIndex = ReadTriangleMaterialIndex(
+                triangleBytes.Slice(surfaceIndex * DiskTriangleSoupSize, DiskTriangleSoupSize),
+                surfaceIndex,
+                materials.Count);
+            names.Add(materials[materialIndex].Name ??
+                throw new InvalidDataException($"Collision material row {materialIndex} has no name."));
+        }
+        return Array.AsReadOnly(names.OrderBy(name => name, StringComparer.Ordinal).ToArray());
+    }
 
     public static GfxWorldAsset DecodeWorld(
         string assetName,
@@ -38,7 +60,11 @@ internal static class D3dbspGfxCodec
         IReadOnlyList<GfxImageAsset?> reflectionProbeImages,
         IReadOnlyList<GfxReflectionProbe> reflectionProbeOrigins,
         IReadOnlyList<GfxStaticModelInst> staticModelInstances,
-        IReadOnlyList<GfxStaticModelDrawInst> staticModelDrawInstances)
+        IReadOnlyList<GfxStaticModelDrawInst> staticModelDrawInstances,
+        IReadOnlyList<ushort>? dynamicEntityCounts = null,
+        bool useSourceMaterials = false,
+        GfxImageAsset? outdoorImage = null,
+        IReadOnlyList<float>? outdoorLookupMatrix = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
@@ -50,6 +76,12 @@ internal static class D3dbspGfxCodec
         ArgumentNullException.ThrowIfNull(reflectionProbeOrigins);
         ArgumentNullException.ThrowIfNull(staticModelInstances);
         ArgumentNullException.ThrowIfNull(staticModelDrawInstances);
+        dynamicEntityCounts ??= [0, 0];
+        if (dynamicEntityCounts.Count != 2)
+        {
+            throw new InvalidDataException(
+                "The dynamic-entity count table must contain model and brush counts.");
+        }
         if (primaryLightCount < 0 || sunPrimaryLightIndex < 0 ||
             sunPrimaryLightIndex > primaryLightCount)
         {
@@ -74,10 +106,7 @@ internal static class D3dbspGfxCodec
         }
 
         bool useUnlayeredGeometry = SelectUnlayeredGeometryFamily(file);
-        ReadOnlySpan<byte> triangleBytes = file.GetRequiredData(
-            useUnlayeredGeometry
-                ? D3dbspLumpType.UnlayeredTriangles
-                : D3dbspLumpType.Triangles);
+        ReadOnlySpan<byte> triangleBytes = GetTriangleData(file, useUnlayeredGeometry);
         ReadOnlySpan<byte> vertexBytes = file.GetRequiredData(
             useUnlayeredGeometry
                 ? D3dbspLumpType.UnlayeredDrawVerts
@@ -87,16 +116,9 @@ internal static class D3dbspGfxCodec
                 ? D3dbspLumpType.UnlayeredDrawIndices
                 : D3dbspLumpType.DrawIndices);
 
-        int surfaceCount = GetElementCount(
-            triangleBytes,
-            DiskTriangleSoupSize,
-            "render triangle soup");
+        int surfaceCount = GetRenderSurfaceCount(triangleBytes);
         int vertexCount = GetElementCount(vertexBytes, DiskVertexSize, "render vertex");
         int sourceIndexCount = GetElementCount(indexBytes, sizeof(ushort), "render index");
-        if (surfaceCount == 0)
-            throw new InvalidDataException("The d3dbsp has no render surfaces.");
-        if (surfaceCount > ushort.MaxValue)
-            throw new InvalidDataException("The render surface count exceeds the IW4 ushort range.");
         if (vertexCount == 0)
             throw new InvalidDataException("The d3dbsp has no render vertices.");
 
@@ -147,12 +169,7 @@ internal static class D3dbspGfxCodec
             ReadOnlySpan<byte> row = triangleBytes.Slice(
                 surfaceIndex * DiskTriangleSoupSize,
                 DiskTriangleSoupSize);
-            int materialIndex = BinaryPrimitives.ReadUInt16LittleEndian(row);
-            if ((uint)materialIndex >= (uint)materials.Count)
-            {
-                throw new InvalidDataException(
-                    $"Render surface {surfaceIndex} references material {materialIndex}; the material table has {materials.Count} rows.");
-            }
+            int materialIndex = ReadTriangleMaterialIndex(row, surfaceIndex, materials.Count);
 
             uint firstVertexRaw = BinaryPrimitives.ReadUInt32LittleEndian(row[12..]);
             if (firstVertexRaw > int.MaxValue)
@@ -329,6 +346,84 @@ internal static class D3dbspGfxCodec
                 staticSurfaceCount)
             .Select(value => checked((ushort)value))
             .ToArray();
+        uint litSurfaceEnd = checked((uint)staticSurfaceCount);
+        if (useSourceMaterials)
+        {
+            if (staticSurfaceStart != 0)
+            {
+                throw new InvalidDataException(
+                    "Native source-material draw ranges require the world-model surfaces to be a prefix.");
+            }
+            litSurfaceEnd = 0;
+            foreach (ushort surfaceIndex in sortedSurfaceIndices)
+            {
+                MaterialAsset material = surfaces[surfaceIndex].Material ??
+                    throw new InvalidDataException($"Render surface {surfaceIndex} has no material.");
+                int sortKey = (byte)material.Info.SortKey;
+                GfxCameraRegionType cameraRegion = sortKey < SortKeyLitDecal
+                    ? GfxCameraRegionType.LitOpaque
+                    : GfxCameraRegionType.LitTrans;
+                if (string.IsNullOrWhiteSpace(material.Info.Name) ||
+                    material.Info.Name.StartsWith(',') ||
+                    sortKey >= SortKeyEffectDecal ||
+                    material.CameraRegion != cameraRegion ||
+                    material.TechniqueSet?.TechniqueSlots.Any(slot =>
+                        slot.Type == MaterialTechniqueType.Lit && slot.Technique is not null) != true)
+                {
+                    throw new InvalidDataException(
+                        $"Render surface {surfaceIndex} material '{material.Info.Name}' is outside the " +
+                        "resolved native opaque/sky and decal/translucent source-material subset.");
+                }
+                if (sortKey < SortKeyLitDecal)
+                    litSurfaceEnd++;
+            }
+            // PS3 sorts the physical world-surface prefix by material sort key.
+            // Native Invasion partitions opaque/sky below sortKeyLitDecal, then
+            // lit decals/translucency; this subset has no later draw ranges.
+        }
+        GfxSky[] skies = sortedSurfaceIndices
+            .Select((surfaceIndex, sortedPosition) => new
+            {
+                Material = surfaces[surfaceIndex].Material,
+                SortedPosition = sortedPosition
+            })
+            .Where(entry => entry.Material is not null &&
+                (entry.Material.Info.GameFlags & MaterialGameFlags.Sky) != 0)
+            .GroupBy(entry => entry.Material)
+            .Select(group =>
+            {
+                MaterialAsset material = group.Key ??
+                    throw new InvalidDataException("A sky surface has no material.");
+                MaterialTextureDef[] colorMaps = material.Textures
+                    .Where(texture => texture.Semantic == TextureSemantic.ColorMap)
+                    .ToArray();
+                if (colorMaps.Length != 1)
+                {
+                    throw new InvalidDataException(
+                        $"Sky material '{material.Info.Name}' requires exactly one color-map texture; " +
+                        $"found {colorMaps.Length}.");
+                }
+                MaterialTextureDef colorMap = colorMaps[0];
+                GfxImageAsset image = colorMap.Image ?? throw new InvalidDataException(
+                    $"Sky material '{material.Info.Name}' has no color-map image.");
+                if (string.IsNullOrWhiteSpace(image.Name) || image.Name.StartsWith(','))
+                {
+                    throw new InvalidDataException(
+                        $"Sky material '{material.Info.Name}' requires an owned color-map image.");
+                }
+
+                // Native sky lists address sortedSurfIndex positions, not physical
+                // surface slots. Post-load surface sorting preserves these positions.
+                int[] positions = group.Select(entry => entry.SortedPosition).ToArray();
+                return new GfxSky
+                {
+                    SkySurfCount = positions.Length,
+                    SkyStartSurfs = Array.AsReadOnly(positions),
+                    SkyImage = image,
+                    SkySamplerState = unchecked((int)((uint)(byte)colorMap.SamplerState << 24))
+                };
+            })
+            .ToArray();
         IReadOnlyList<GfxLightmapArray> outputLightmaps;
         if (needsFullbrightLightmap)
         {
@@ -381,7 +476,8 @@ internal static class D3dbspGfxCodec
             PlaneCount = 0,
             NodeCount = 1,
             SurfaceCount = surfaceCount,
-            SkyCount = 0,
+            SkyCount = checked((uint)skies.Length),
+            Skies = Array.AsReadOnly(skies),
             SunPrimaryLightIndex = sunPrimaryLightIndex,
             PrimaryLightCount = primaryLightCount,
             SortKeyLitDecal = SortKeyLitDecal,
@@ -446,7 +542,10 @@ internal static class D3dbspGfxCodec
             Maxs = [world.HalfSize.X, world.HalfSize.Y, world.HalfSize.Z],
             Checksum = checksum,
             Sun = new Sunflare { SunFxPosition = [0, 0, 0] },
-            OutdoorLookupMatrix = new float[16],
+            OutdoorLookupMatrix = outdoorLookupMatrix is { Count: > 0 }
+                ? outdoorLookupMatrix
+                : new float[16],
+            OutdoorImage = outdoorImage,
             ShadowGeom = shadowGeometry,
             LightRegions = lightRegions,
             Dpvs = new GfxWorldDpvsStatic
@@ -454,10 +553,10 @@ internal static class D3dbspGfxCodec
                 SModelCount = checked((uint)staticModelCount),
                 StaticSurfaceCount = checked((uint)staticSurfaceCount),
                 LitSurfsBegin = 0,
-                LitSurfsEnd = checked((uint)staticSurfaceCount),
+                LitSurfsEnd = litSurfaceEnd,
                 VisibilityCounts =
                 [
-                    checked((uint)staticSurfaceCount),
+                    litSurfaceEnd,
                     checked((uint)staticSurfaceCount),
                     checked((uint)staticSurfaceCount),
                     checked((uint)staticSurfaceCount),
@@ -474,8 +573,16 @@ internal static class D3dbspGfxCodec
             },
             DpvsDyn = new GfxWorldDpvsDynamic
             {
-                DynEntClientWordCount = [0, 0],
-                DynEntClientCount = [0, 0]
+                DynEntClientWordCount =
+                [
+                    DynamicEntityWordCount(dynamicEntityCounts[0]),
+                    DynamicEntityWordCount(dynamicEntityCounts[1])
+                ],
+                DynEntClientCount =
+                [
+                    dynamicEntityCounts[0],
+                    dynamicEntityCounts[1]
+                ]
             },
             MapVertexChecksum = 0,
             FogTypesAllowed = FogTypesAllowed.Normal,
@@ -485,6 +592,9 @@ internal static class D3dbspGfxCodec
             FragmentProgramUploadCapacity = ps3FragmentProgramUploadCapacity
         };
     }
+
+    private static uint DynamicEntityWordCount(ushort count) =>
+        checked(((uint)count + 31) >> 5);
 
     private static GfxImageAsset CreateFullbrightLightmapImage(
         string name,
@@ -1122,6 +1232,37 @@ internal static class D3dbspGfxCodec
         file.HasLump(preferred)
             ? file.GetRequiredData(preferred)
             : file.GetRequiredData(fallback);
+
+    private static ReadOnlySpan<byte> GetTriangleData(
+        D3dbspFile file,
+        bool useUnlayeredGeometry) =>
+        file.GetRequiredData(useUnlayeredGeometry
+            ? D3dbspLumpType.UnlayeredTriangles
+            : D3dbspLumpType.Triangles);
+
+    private static int GetRenderSurfaceCount(ReadOnlySpan<byte> triangleBytes)
+    {
+        int count = GetElementCount(triangleBytes, DiskTriangleSoupSize, "render triangle soup");
+        if (count == 0)
+            throw new InvalidDataException("The d3dbsp has no render surfaces.");
+        if (count > ushort.MaxValue)
+            throw new InvalidDataException("The render surface count exceeds the IW4 ushort range.");
+        return count;
+    }
+
+    private static int ReadTriangleMaterialIndex(
+        ReadOnlySpan<byte> row,
+        int surfaceIndex,
+        int materialCount)
+    {
+        int index = BinaryPrimitives.ReadUInt16LittleEndian(row);
+        if ((uint)index >= (uint)materialCount)
+        {
+            throw new InvalidDataException(
+                $"Render surface {surfaceIndex} references material {index}; the material table has {materialCount} rows.");
+        }
+        return index;
+    }
 
     private static bool SelectUnlayeredGeometryFamily(D3dbspFile file)
     {

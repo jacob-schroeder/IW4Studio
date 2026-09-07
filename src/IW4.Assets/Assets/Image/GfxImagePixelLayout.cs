@@ -1,7 +1,7 @@
 namespace IW4.Assets.Assets.Image;
 
 /// <summary>
-/// PS3 GfxImage pixel-storage sizing.
+/// PS3 GfxImage pixel-storage sizing and layout conversion.
 /// </summary>
 public static class GfxImagePixelLayout
 {
@@ -87,6 +87,119 @@ public static class GfxImagePixelLayout
 
         return checked((int)byteCount);
     }
+
+    public static void ReverseFourBytePixelOrder(Span<byte> pixels)
+    {
+        if (pixels.Length % 4 != 0)
+            throw new ArgumentException("Four-byte pixel data must contain complete pixels.", nameof(pixels));
+        for (int offset = 0; offset < pixels.Length; offset += 4)
+        {
+            (pixels[offset], pixels[offset + 3]) =
+                (pixels[offset + 3], pixels[offset]);
+            (pixels[offset + 1], pixels[offset + 2]) =
+                (pixels[offset + 2], pixels[offset + 1]);
+        }
+    }
+
+    internal static byte[] DeswizzleMorton2D(
+        ReadOnlySpan<byte> source,
+        int width,
+        int height,
+        int bytesPerPixel)
+    {
+        ValidatePixelBuffer(source, width, height, bytesPerPixel);
+        var result = new byte[source.Length];
+        int log2Width = System.Numerics.BitOperations.Log2((uint)width);
+        int log2Height = System.Numerics.BitOperations.Log2((uint)height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int sourcePixel = MortonIndex2D(x, y, log2Width, log2Height);
+                int destinationPixel = checked(y * width + x);
+                source.Slice(
+                        checked(sourcePixel * bytesPerPixel),
+                        bytesPerPixel)
+                    .CopyTo(result.AsSpan(
+                        checked(destinationPixel * bytesPerPixel),
+                        bytesPerPixel));
+            }
+        }
+        return result;
+    }
+
+    public static byte[] SwizzleMorton2D(
+        ReadOnlySpan<byte> source,
+        int width,
+        int height,
+        int bytesPerPixel)
+    {
+        ValidatePixelBuffer(source, width, height, bytesPerPixel);
+        var result = new byte[source.Length];
+        int log2Width = System.Numerics.BitOperations.Log2((uint)width);
+        int log2Height = System.Numerics.BitOperations.Log2((uint)height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int sourcePixel = checked(y * width + x);
+                int destinationPixel = MortonIndex2D(x, y, log2Width, log2Height);
+                source.Slice(
+                        checked(sourcePixel * bytesPerPixel),
+                        bytesPerPixel)
+                    .CopyTo(result.AsSpan(
+                        checked(destinationPixel * bytesPerPixel),
+                        bytesPerPixel));
+            }
+        }
+        return result;
+    }
+
+    private static void ValidatePixelBuffer(
+        ReadOnlySpan<byte> source,
+        int width,
+        int height,
+        int bytesPerPixel)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytesPerPixel);
+        if (!IsPowerOfTwo(width) || !IsPowerOfTwo(height))
+            throw new NotSupportedException("Morton image conversion requires power-of-two dimensions.");
+        int required = checked(width * height * bytesPerPixel);
+        if (source.Length != required)
+        {
+            throw new InvalidDataException(
+                $"The image buffer has {source.Length} bytes; expected {required}.");
+        }
+    }
+
+    private static int MortonIndex2D(
+        int x,
+        int y,
+        int log2Width,
+        int log2Height)
+    {
+        int index = 0;
+        int outputBit = 0;
+        while (log2Width > 0 || log2Height > 0)
+        {
+            if (log2Width > 0)
+            {
+                index |= (x & 1) << outputBit++;
+                x >>= 1;
+                log2Width--;
+            }
+            if (log2Height > 0)
+            {
+                index |= (y & 1) << outputBit++;
+                y >>= 1;
+                log2Height--;
+            }
+        }
+        return index;
+    }
+
+    internal static bool IsPowerOfTwo(int value) =>
+        value > 0 && (value & (value - 1)) == 0;
 
     private static long Align(long value, int alignment)
     {

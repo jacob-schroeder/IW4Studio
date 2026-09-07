@@ -16,6 +16,5 @@ public sealed class ClipStaticModel
     public XModelAsset? XModel { get; init; }
     public ModelVec3 Origin { get; init; }
     public IReadOnlyList<ModelVec3> InvScaledAxis { get; init; } = [];
-    public ModelVec3 AbsMin { get; init; }
-    public ModelVec3 AbsMax { get; init; }
+    public ModelBounds Bounds { get; init; } = new();
 }

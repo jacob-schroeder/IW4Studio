@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>MapConverter</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\IW4.AssetExchange\IW4.AssetExchange.csproj" />
+    <ProjectReference Include="..\..\IW4.Assets\IW4.Assets.csproj" />
+    <ProjectReference Include="..\..\IW4.Linker\IW4.Linker.csproj" />
+    <ProjectReference Include="..\..\IW4.Studio\IW4.Studio.csproj" />
+  </ItemGroup>
+
+  <Target Name="BuildLocalShaderTools" BeforeTargets="CoreCompile" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <PropertyGroup>
+      <ShaderNativeOutput>$(OutDir)Native</ShaderNativeOutput>
+      <ShaderNativeIntermediate>$(IntermediateOutputPath)Native</ShaderNativeIntermediate>
+      <ShaderNativeRoot>$(MSBuildProjectDirectory)/Native</ShaderNativeRoot>
+      <CgCompiler Condition="Exists('/opt/homebrew/opt/llvm/bin/clang++')">/opt/homebrew/opt/llvm/bin/clang++</CgCompiler>
+      <CgCompiler Condition="'$(CgCompiler)' == ''">c++</CgCompiler>
+      <MojoShaderDefines>-DSUPPORT_PROFILE_BYTECODE=0 -DSUPPORT_PROFILE_D3D=0 -DSUPPORT_PROFILE_HLSL=0 -DSUPPORT_PROFILE_GLSL=0 -DSUPPORT_PROFILE_GLSL120=0 -DSUPPORT_PROFILE_GLSLES=0 -DSUPPORT_PROFILE_GLSLES3=0 -DSUPPORT_PROFILE_GLSPIRV=0 -DSUPPORT_PROFILE_METAL=0 -DSUPPORT_PROFILE_SPIRV=0 -DSUPPORT_PROFILE_ARB1=1 -DSUPPORT_PROFILE_ARB1_NV=1</MojoShaderDefines>
+    </PropertyGroup>
+    <MakeDir Directories="$(ShaderNativeOutput);$(ShaderNativeIntermediate)" />
+    <Exec Command="cc -std=c99 -O2 $(MojoShaderDefines) -I &quot;$(ShaderNativeRoot)/ThirdParty/MojoShader&quot; -I &quot;$(ShaderNativeRoot)/ThirdParty/MojoShader/profiles&quot; &quot;$(ShaderNativeRoot)/Tools/mojoshader_translate.c&quot; &quot;$(ShaderNativeRoot)/ThirdParty/MojoShader/mojoshader.c&quot; &quot;$(ShaderNativeRoot)/ThirdParty/MojoShader/mojoshader_common.c&quot; &quot;$(ShaderNativeRoot)/ThirdParty/MojoShader/profiles/mojoshader_profile_common.c&quot; &quot;$(ShaderNativeRoot)/ThirdParty/MojoShader/profiles/mojoshader_profile_arb1.c&quot; -lm -o &quot;$(ShaderNativeIntermediate)/mapconverter-mojoshader&quot;" />
+    <Exec Command="&quot;$(CgCompiler)&quot; -std=c++11 -O2 -I &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/include&quot; &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/source/compilerfp.cpp&quot; &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/source/compilervp.cpp&quot; &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/source/fpparser.cpp&quot; &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/source/main.cpp&quot; &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/source/parser.cpp&quot; &quot;$(ShaderNativeRoot)/ThirdParty/CgComp/source/vpparser.cpp&quot; -o &quot;$(ShaderNativeIntermediate)/mapconverter-cgcomp&quot;" />
+    <Copy SourceFiles="$(ShaderNativeIntermediate)/mapconverter-mojoshader;$(ShaderNativeIntermediate)/mapconverter-cgcomp" DestinationFolder="$(ShaderNativeOutput)" />
+  </Target>
+
+</Project>

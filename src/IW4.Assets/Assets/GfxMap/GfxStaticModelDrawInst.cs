@@ -9,6 +9,8 @@ namespace IW4.Assets.Assets.GfxMap;
 public sealed class GfxStaticModelDrawInst
 {
     public const int SerializedSize = 0x2C;
+    // PS3 static draw tokens reserve four bits for the surface within a LOD.
+    public const int MaxLodSurfaceCount = 16;
 
     public GfxPackedPlacement Placement { get; init; } = new();
     public XPointer<XModelAsset> ModelPointer { get; init; }

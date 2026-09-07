@@ -629,8 +629,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                         $"ClipMap.StaticModelList[{index}].InvScaledAxis");
                     foreach (Vec3 axis in item.InvScaledAxis)
                         WriteVec3(writer, axis);
-                    WriteVec3(writer, item.AbsMin);
-                    WriteVec3(writer, item.AbsMax);
+                    WriteBounds(writer, item.Bounds);
                 },
                 "ClipMap.StaticModelList",
                 operations: (table, addend) => dependencies
@@ -1663,6 +1662,45 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                 {
                     throw new InvalidDataException(
                         $"ClipMap.DynEntDefList[{list}][{index}] requires Pose and Mass.");
+                }
+                if (definition.Type is not (1 or 2))
+                {
+                    throw new InvalidDataException(
+                        $"ClipMap.DynEntDefList[{list}][{index}].Type must be " +
+                        "CLUTTER (1) or DESTRUCT (2).");
+                }
+                if (definition.PhysPreset is null)
+                {
+                    throw new InvalidDataException(
+                        $"ClipMap.DynEntDefList[{list}][{index}] requires a " +
+                        "physics preset.");
+                }
+                if (list == 0 && definition.XModel is null)
+                {
+                    throw new InvalidDataException(
+                        $"ClipMap.DynEntDefList[0][{index}] requires an XModel.");
+                }
+                if (definition.PhysicsBrushModel != 0 &&
+                    definition.PhysicsBrushModel >= value.CModels.Count)
+                {
+                    throw new InvalidDataException(
+                        $"ClipMap.DynEntDefList[{list}][{index}].PhysicsBrushModel " +
+                        $"{definition.PhysicsBrushModel} is out of range.");
+                }
+                if (list == 1)
+                {
+                    if (definition.XModel is not null)
+                    {
+                        throw new InvalidDataException(
+                            $"ClipMap.DynEntDefList[1][{index}] cannot use an XModel.");
+                    }
+                    if (definition.BrushModel == 0 ||
+                        definition.BrushModel >= value.CModels.Count)
+                    {
+                        throw new InvalidDataException(
+                            $"ClipMap.DynEntDefList[1][{index}].BrushModel " +
+                            $"{definition.BrushModel} does not select a non-world CModel.");
+                    }
                 }
                 RequireCount(
                     definition.Pose.Quat,

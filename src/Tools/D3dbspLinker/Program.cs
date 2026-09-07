@@ -1,3 +1,4 @@
+using System.Globalization;
 using IW4.Assets.D3dbsp;
 using D3dbspLinker.Conversion;
 using D3dbspLinker.Inspection;
@@ -49,15 +50,23 @@ static int ToFastFile(
     IReadOnlyList<string> optionsAndDependencies)
 {
     bool forceFullbright = false;
+    bool worldOnly = false;
+    bool useSourceMaterials = false;
+    var lightmapImageNames = new List<(string PrimaryImageName, string SecondaryImageName)>();
+    string? outdoorImageName = null;
+    float[]? outdoorLookupMatrix = null;
     var dependencies = new List<string>();
     var providerFastFiles = new List<string>();
     var distinctProviderFastFiles = new HashSet<string>(StringComparer.Ordinal);
     var additionalXModelNames = new List<string>();
     var distinctXModelNames = new HashSet<string>(StringComparer.Ordinal);
+    var staticScriptModelNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalMaterialNames = new List<string>();
     var distinctMaterialNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalFxNames = new List<string>();
     var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
+    var additionalSoundNames = new List<string>();
+    var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
     var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
     for (int index = 0; index < optionsAndDependencies.Count; index++)
     {
@@ -67,6 +76,54 @@ static int ToFastFile(
             if (forceFullbright)
                 throw new ArgumentException("The --fullbright option may be supplied only once.");
             forceFullbright = true;
+            continue;
+        }
+        if (string.Equals(value, "--world-only", StringComparison.Ordinal))
+        {
+            if (worldOnly)
+                throw new ArgumentException("The --world-only option may be supplied only once.");
+            worldOnly = true;
+            continue;
+        }
+        if (string.Equals(value, "--source-materials", StringComparison.Ordinal))
+        {
+            if (useSourceMaterials)
+                throw new ArgumentException("The --source-materials option may be supplied only once.");
+            useSourceMaterials = true;
+            continue;
+        }
+        if (string.Equals(value, "--lightmap", StringComparison.Ordinal))
+        {
+            string primary = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--lightmap", "a primary image name and a secondary image name");
+            string secondary = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--lightmap", "a secondary image name");
+            lightmapImageNames.Add((primary, secondary));
+            continue;
+        }
+        if (string.Equals(value, "--outdoor-image", StringComparison.Ordinal))
+        {
+            if (outdoorImageName is not null)
+                throw new ArgumentException("The --outdoor-image option may be supplied only once.");
+            outdoorImageName = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--outdoor-image", "an exact image name");
+            continue;
+        }
+        if (string.Equals(value, "--outdoor-lookup-matrix", StringComparison.Ordinal))
+        {
+            if (outdoorLookupMatrix is not null)
+                throw new ArgumentException("The --outdoor-lookup-matrix option may be supplied only once.");
+            string matrix = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--outdoor-lookup-matrix", "16 comma-separated finite floats");
+            outdoorLookupMatrix = matrix.Split(',').Select(component =>
+            {
+                if (!float.TryParse(component, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed) ||
+                    !float.IsFinite(parsed))
+                {
+                    throw new ArgumentException("The --outdoor-lookup-matrix option requires finite floats.");
+                }
+                return parsed;
+            }).ToArray();
             continue;
         }
         if (string.Equals(value, "--xmodel", StringComparison.Ordinal))
@@ -82,6 +139,14 @@ static int ToFastFile(
                     $"The --xmodel option names XModel '{name}' more than once.");
             }
             additionalXModelNames.Add(name);
+            continue;
+        }
+        if (string.Equals(value, "--static-script-model", StringComparison.Ordinal))
+        {
+            string name = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--static-script-model", "an exact script_model XModel name");
+            if (!staticScriptModelNames.Add(name))
+                throw new ArgumentException($"The --static-script-model option names '{name}' more than once.");
             continue;
         }
         if (string.Equals(value, "--material", StringComparison.Ordinal))
@@ -129,6 +194,21 @@ static int ToFastFile(
             additionalFxNames.Add(name);
             continue;
         }
+        if (string.Equals(value, "--sound", StringComparison.Ordinal))
+        {
+            string name = ReadRequiredOptionValue(
+                optionsAndDependencies,
+                ref index,
+                "--sound",
+                "an exact Sound alias name");
+            if (!distinctSoundNames.Add(name))
+            {
+                throw new ArgumentException(
+                    $"The --sound option names Sound '{name}' more than once.");
+            }
+            additionalSoundNames.Add(name);
+            continue;
+        }
         if (string.Equals(value, "--rawfile", StringComparison.Ordinal))
         {
             string mapping = ReadRequiredOptionValue(
@@ -154,18 +234,30 @@ static int ToFastFile(
         dependencies.Add(value);
     }
 
+    if (useSourceMaterials && !worldOnly)
+        throw new ArgumentException("The --source-materials option requires --world-only.");
+    if (staticScriptModelNames.Count != 0 && (!worldOnly || !useSourceMaterials))
+        throw new ArgumentException("The --static-script-model option requires --world-only and --source-materials.");
+
     FastFileConverter.FromD3dbsp(
         d3dbsp,
         template,
         assetName,
         output,
         forceFullbright,
+        worldOnly,
+        useSourceMaterials,
         dependencies,
         providerFastFiles,
         additionalXModelNames,
         additionalMaterialNames,
         additionalFxNames,
-        rawFilePaths);
+        additionalSoundNames,
+        rawFilePaths,
+        lightmapImageNames,
+        outdoorImageName,
+        outdoorLookupMatrix ?? [],
+        staticScriptModelNames);
     return 0;
 }
 
@@ -254,7 +346,8 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [--provider-fastfile <provider-only.ff>]... [--xmodel <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [--world-only [--source-materials]] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+    Console.Error.WriteLine("  Lighting images must be owned by --provider-fastfile inputs; --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
     Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
     return 2;
 }

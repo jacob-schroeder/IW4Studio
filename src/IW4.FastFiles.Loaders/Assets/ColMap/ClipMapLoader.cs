@@ -348,8 +348,7 @@ public sealed class ClipMapLoader
             XPointer<XModelAsset> xmodelPointer = ReadPointer<XModelAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
             ModelVec3 origin = ReadVec3(rowCursor);
             ModelVec3[] invScaledAxis = [ReadVec3(rowCursor), ReadVec3(rowCursor), ReadVec3(rowCursor)];
-            ModelVec3 absMin = ReadVec3(rowCursor);
-            ModelVec3 absMax = ReadVec3(rowCursor);
+            ModelBounds bounds = ReadBounds(rowCursor);
 
             if (rowCursor.Offset != ClipStaticModel.SerializedSize)
                 throw new InvalidDataException($"ClipStaticModel consumed 0x{rowCursor.Offset:X} bytes.");
@@ -364,8 +363,7 @@ public sealed class ClipMapLoader
                 XModel = xmodel,
                 Origin = origin,
                 InvScaledAxis = invScaledAxis,
-                AbsMin = absMin,
-                AbsMax = absMax
+                Bounds = bounds
             };
         }
 
