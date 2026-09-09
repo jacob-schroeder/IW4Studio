@@ -39,6 +39,54 @@ void CCompilerFP::Prepare(CParser *pParser)
 	int i,j,nCount = pParser->GetInstructionCount();
 	struct nvfx_insn *insns = pParser->GetInstructions();
 
+	// ARB temporaries and outputs are distinct, but RSX color/depth outputs
+	// share physical registers with R temporaries. Keep the outputs fixed.
+	u8 outputRegs[NUM_HW_REGS] = {};
+	u8 usedRegs[NUM_HW_REGS] = {};
+	u8 fullTemps[NUM_HW_REGS] = {};
+	s32 mappedRegs[NUM_HW_REGS];
+	for(i=0;i<NUM_HW_REGS;i++)
+		mappedRegs[i] = i;
+	for(i=0;i<nCount;i++) {
+		const struct nvfx_insn& insn = insns[i];
+		const struct nvfx_reg regs[] = { insn.dst, insn.src[0].reg,
+			insn.src[1].reg, insn.src[2].reg };
+		for(j=0;j<4;j++) {
+			const struct nvfx_reg& reg = regs[j];
+			if(reg.type!=NVFXSR_TEMP && reg.type!=NVFXSR_OUTPUT)
+				continue;
+			if(reg.index<0 || reg.index>=NUM_HW_REGS)
+				throw std::runtime_error("Fragment temporary or output register is out of range.");
+			u32 index = reg.is_fp16 ? (reg.index >> 1) : reg.index;
+			usedRegs[index] = 1;
+			if(reg.type==NVFXSR_OUTPUT)
+				outputRegs[index] = 1;
+			else if(!reg.is_fp16)
+				fullTemps[index] = 1;
+		}
+	}
+	for(i=0;i<NUM_HW_REGS;i++) {
+		if(!outputRegs[i] || !fullTemps[i])
+			continue;
+		for(j=0;j<NUM_HW_REGS && usedRegs[j];j++) {}
+		if(j==NUM_HW_REGS)
+			throw std::runtime_error("No fragment temporary register left to separate an output.");
+		mappedRegs[i] = j;
+		usedRegs[j] = 1;
+		if(m_nNumRegs<j + 1)
+			m_nNumRegs = j + 1;
+	}
+	for(i=0;i<nCount;i++) {
+		struct nvfx_insn& insn = insns[i];
+		for(j=0;j<3;j++) {
+			struct nvfx_reg& reg = insn.src[j].reg;
+			if(reg.type==NVFXSR_TEMP && !reg.is_fp16)
+				reg.index = mappedRegs[reg.index];
+		}
+		if(insn.dst.type==NVFXSR_TEMP && !insn.dst.is_fp16)
+			insn.dst.index = mappedRegs[insn.dst.index];
+	}
+
 	memset(m_RRegs, 0, NUM_HW_REGS);
 	memset(m_HRegs, 0, NUM_HW_REGS);
 	m_lParameters = pParser->GetParameters();
@@ -142,6 +190,40 @@ void CCompilerFP::Compile(CParser *pParser)
 	int i,nCount = pParser->GetInstructionCount();
 	struct nvfx_insn *insns = pParser->GetInstructions();
 
+	// Vector KIL needs RC as scratch.  Only lower straight-line programs
+	// whose later instructions do not depend on the condition state it replaces.
+	bool hasVectorKill = false, hasControlFlow = false;
+	for(i=0;i<nCount;i++) {
+		const struct nvfx_insn& insn = insns[i];
+		if(hasVectorKill && insn.cc_test &&
+		   insn.cc_cond!=NVFX_COND_TR && insn.cc_cond!=NVFX_COND_FL)
+			throw std::runtime_error("Vector KIL would overwrite condition state used later.");
+		if(insn.op==OPCODE_KIL)
+			hasVectorKill = true;
+		switch(insn.op) {
+			case OPCODE_BGNLOOP:
+			case OPCODE_ENDLOOP:
+			case OPCODE_BGNREP:
+			case OPCODE_ENDREP:
+			case OPCODE_BGNSUB:
+			case OPCODE_ENDSUB:
+			case OPCODE_BRA:
+			case OPCODE_BRK:
+			case OPCODE_CONT:
+			case OPCODE_CAL:
+			case OPCODE_RET:
+			case OPCODE_IF:
+			case OPCODE_ELSE:
+			case OPCODE_ENDIF:
+				hasControlFlow = true;
+				break;
+			default:
+				break;
+		}
+	}
+	if(hasVectorKill && hasControlFlow)
+		throw std::runtime_error("Vector KIL lowering requires straight-line fragment assembly.");
+
 	Prepare(pParser);
 
 	for(i=0;i<nCount;i++) {
@@ -191,6 +273,19 @@ void CCompilerFP::Compile(CParser *pParser)
 				emit_insn(insn,NVFX_FP_OP_OPCODE_FRC);
 				break;
 			case OPCODE_KIL:
+			{
+				struct nvfx_insn condition = *insn;
+				condition.cc_update = TRUE;
+				emit_insn(&condition,NVFX_FP_OP_OPCODE_MOV);
+
+				struct nvfx_insn kill = *insn;
+				kill.src[0] = nvfx_src(nvfx_reg(NVFXSR_NONE,0));
+				kill.cc_test = TRUE;
+				kill.cc_cond = NVFX_COND_LT;
+				emit_insn(&kill,NVFX_FP_OP_OPCODE_KIL);
+				break;
+			}
+			case OPCODE_KIL_NV:
 				emit_insn(insn,NVFX_FP_OP_OPCODE_KIL);
 				break;
 			case OPCODE_LG2:
@@ -322,6 +417,9 @@ void CCompilerFP::Compile(CParser *pParser)
 					m_pInstructions[m_nCurInstruction].data[2] = 0x00000000;
 					m_pInstructions[m_nCurInstruction].data[3] = 0x00000000;
 				}
+				break;
+			default:
+				throw std::runtime_error("Unsupported fragment opcode: " + std::to_string(insn->op));
 		}
 		release_temps();
 	}
@@ -331,6 +429,18 @@ void CCompilerFP::emit_insn(struct nvfx_insn *insn,u8 op)
 {
 	u32 *hw;
 	bool have_const = false;
+	for(int i=0;i<3;i++) {
+		const struct nvfx_reg& source = insn->src[i].reg;
+		for(int j=0;j<i;j++) {
+			const struct nvfx_reg& previous = insn->src[j].reg;
+			if(source.type==NVFXSR_INPUT && previous.type==NVFXSR_INPUT && source.index!=previous.index)
+				throw std::runtime_error("Fragment instruction uses distinct input registers.");
+			if((source.type==NVFXSR_CONST || source.type==NVFXSR_IMM) &&
+			   (previous.type==NVFXSR_CONST || previous.type==NVFXSR_IMM) &&
+			   (source.index!=previous.index || source.type!=previous.type))
+				throw std::runtime_error("Fragment instruction uses distinct constant registers.");
+		}
+	}
 
 	m_nCurInstruction = grow_insns(1);
 	memset(&m_pInstructions[m_nCurInstruction],0,sizeof(struct fragment_program_exec));
@@ -387,6 +497,8 @@ void CCompilerFP::emit_dst(struct nvfx_insn *insn,bool *have_const)
 		case NVFXSR_NONE:
 			hw[0] |= NV40_FP_OP_OUT_NONE;
 			break;
+		default:
+			throw std::runtime_error("Unsupported fragment destination register type.");
 	}
 	if(dst->is_fp16)
 		hw[0] |= NVFX_FP_OP_OUT_REG_HALF;
@@ -402,6 +514,8 @@ void CCompilerFP::emit_src(struct nvfx_insn *insn,s32 pos,bool *have_const)
 
 	switch(src->reg.type) {
 		case NVFXSR_INPUT:
+			if(src->reg.index<0 || src->reg.index>=MAX_NV_FRAGMENT_PROGRAM_INPUTS)
+				throw std::runtime_error("Fragment input register is out of range.");
 			sr |= (NVFX_FP_REG_TYPE_INPUT << NVFX_FP_REG_TYPE_SHIFT);
 			hw[0] |= (src->reg.index << NVFX_FP_OP_INPUT_SRC_SHIFT);
 
@@ -448,7 +562,9 @@ void CCompilerFP::emit_src(struct nvfx_insn *insn,s32 pos,bool *have_const)
 			}
 			{
 				param fpd = GetImmData(src->reg.index);
-				if(fpd.values!=NULL) memcpy(&m_pInstructions[m_nCurInstruction + 1],fpd.values,4*sizeof(f32));
+				if(!fpd.values)
+					throw std::runtime_error("Fragment immediate constant has no value.");
+				memcpy(&m_pInstructions[m_nCurInstruction + 1],fpd.values,4*sizeof(f32));
 				sr |= (NVFX_FP_REG_TYPE_CONST << NVFX_FP_REG_TYPE_SHIFT);
 			}
 			break;
@@ -473,9 +589,9 @@ void CCompilerFP::emit_src(struct nvfx_insn *insn,s32 pos,bool *have_const)
 			sr |= (NVFX_FP_REG_TYPE_TEMP << NVFX_FP_REG_TYPE_SHIFT);
 			break;
 		case NVFXSR_OUTPUT:
-			fprintf(stderr,"Output register used as input.\n");
-			exit(EXIT_FAILURE);
-			return;
+			throw std::runtime_error("Output register used as fragment input.");
+		default:
+			throw std::runtime_error("Unsupported fragment source register type.");
 	}
 
 	if(src->reg.is_fp16)
@@ -844,15 +960,18 @@ struct nvfx_reg CCompilerFP::imm(f32 x, f32 y, f32 z, f32 w)
 
 void CCompilerFP::reserveReg(const struct nvfx_reg& reg)
 {
+	if(reg.index<0 || reg.index>=NUM_HW_REGS)
+		throw std::runtime_error("Fragment temporary or output register is out of range.");
 	u32 index = reg.is_fp16 ? (reg.index >> 1) : reg.index;
 	if (reg.is_fp16) {
 		m_HRegs[reg.index] = 1;
-		m_hTemps |= (1 << reg.index);
+		m_hTemps |= (1ULL << reg.index);
 	} else {
 		m_RRegs[reg.index] = 1;
-		m_hTemps |= (3 << (reg.index<<1));
+		if(reg.index<NUM_HW_REGS/2)
+			m_hTemps |= (3ULL << (reg.index<<1));
 	}
-	m_rTemps |= (1 << index);
+	m_rTemps |= (1ULL << index);
 }
 
 struct nvfx_reg CCompilerFP::temp(struct nvfx_insn *insn)
@@ -861,26 +980,30 @@ struct nvfx_reg CCompilerFP::temp(struct nvfx_insn *insn)
 	bool useFp16 = canUseTempFp16(insn);
 
 	if (useFp16) {
-		reg = idx = __builtin_ctzll(~m_hTemps);
-		if (idx < 0)
-			throw std::runtime_error("Error: No temprary register left to allocate.");
+		u64 available = ~m_hTemps & ((1ULL << NUM_HW_REGS) - 1);
+		if(!available)
+			throw std::runtime_error("No fragment temporary register left to allocate.");
+		reg = idx = __builtin_ctzll(available);
 
 		reg = idx;
-		m_hTemps |= (1 << idx);
-		m_hTempsDiscard |= (1 << idx);
+		m_hTemps |= (1ULL << idx);
+		m_hTempsDiscard |= (1ULL << idx);
 		idx >>= 1;
 	} else {
-		idx = __builtin_ctzll(~m_rTemps);
-		if (idx < 0)
-			throw std::runtime_error("Error: No temprary register left to allocate.");
+		u64 available = ~m_rTemps & ((1ULL << NUM_HW_REGS) - 1);
+		if(!available)
+			throw std::runtime_error("No fragment temporary register left to allocate.");
+		idx = __builtin_ctzll(available);
 
 		reg = idx;
-		m_hTemps |= (3 << (idx << 1));
-		m_hTempsDiscard |= (3 << (idx << 1));
+		if(idx<NUM_HW_REGS/2) {
+			m_hTemps |= (3ULL << (idx << 1));
+			m_hTempsDiscard |= (3ULL << (idx << 1));
+		}
 	}
 
-	m_rTemps |= (1<<idx);
-	m_rTempsDiscard |= (1<<idx);
+	m_rTemps |= (1ULL<<idx);
+	m_rTempsDiscard |= (1ULL<<idx);
 
 	return nvfx_reg(NVFXSR_TEMP, reg);
 }

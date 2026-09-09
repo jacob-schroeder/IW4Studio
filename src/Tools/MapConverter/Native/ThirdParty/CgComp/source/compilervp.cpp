@@ -102,12 +102,8 @@ void CCompilerVP::Compile(CParser *pParser)
 			case OPCODE_ADD:
 				emit_insn(insn,gen_op(ADD,VEC));
 				break;
-			case OPCODE_ARA:
-				break;
 			case OPCODE_ARL:
 				emit_insn(insn,gen_op(ARL,VEC));
-				break;
-			case OPCODE_ARR:
 				break;
 			case OPCODE_BRA:
 				reloc.location = m_nInstructions;
@@ -255,6 +251,15 @@ void CCompilerVP::emit_insn(struct nvfx_insn *insn,u8 opcode)
 	u32 *hw;
 	u32 slot = opcode>>7;
 	u32 op = opcode&0x7f;
+	for(int i=0;i<3;i++) {
+		const struct nvfx_reg& source = insn->src[i].reg;
+		for(int j=0;j<i;j++) {
+			const struct nvfx_reg& previous = insn->src[j].reg;
+			if((source.type==NVFXSR_INPUT || source.type==NVFXSR_CONST) &&
+			   source.type==previous.type && source.index!=previous.index)
+				throw std::runtime_error("Vertex instruction uses distinct input or constant registers.");
+		}
+	}
 
 	m_nCurInstruction = grow_insns(1);
 	memset(&m_pInstructions[m_nCurInstruction],0,sizeof(struct vertex_program_exec));
@@ -307,6 +312,8 @@ void CCompilerVP::emit_dst(struct nvfx_insn *insn,u8 slot)
 				hw[3] |= NV40_VP_INST_SCA_DEST_TEMP_MASK;
 			break;
 		case NVFXSR_TEMP:
+			if(dst->index<0 || dst->index>31)
+				throw std::runtime_error("Vertex temporary register is out of range.");
 			if(m_nNumRegs<(s32)(dst->index + 1))
 				m_nNumRegs = (dst->index + 1);
 		case NVFXSR_ADDRESS:
@@ -374,6 +381,8 @@ void CCompilerVP::emit_dst(struct nvfx_insn *insn,u8 slot)
 				hw[3] |= NV40_VP_INST_SCA_DEST_TEMP_MASK;
 			}
 			break;
+		default:
+			throw std::runtime_error("Unsupported vertex destination register type.");
 	}
 }
 
@@ -386,10 +395,14 @@ void CCompilerVP::emit_src(struct nvfx_insn *insn,u8 pos)
 
 	switch(src->reg.type) {
 		case NVFXSR_TEMP:
+			if(src->reg.index<0 || src->reg.index>31)
+				throw std::runtime_error("Vertex temporary register is out of range.");
 			sr |= (NVFX_VP(SRC_REG_TYPE_TEMP) << NVFX_VP(SRC_REG_TYPE_SHIFT));
 			sr |= (src->reg.index << NVFX_VP(SRC_TEMP_SRC_SHIFT));
 			break;
 		case NVFXSR_INPUT:
+			if(src->reg.index<0 || src->reg.index>=MAX_NV_VERTEX_PROGRAM_INPUTS)
+				throw std::runtime_error("Vertex input register is out of range.");
 			sr |= (NVFX_VP(SRC_REG_TYPE_INPUT) <<
 				   NVFX_VP(SRC_REG_TYPE_SHIFT));
 			m_nInputMask |= (1 << src->reg.index);
@@ -410,6 +423,8 @@ void CCompilerVP::emit_src(struct nvfx_insn *insn,u8 pos)
 			sr |= (NVFX_VP(SRC_REG_TYPE_INPUT) <<
 				   NVFX_VP(SRC_REG_TYPE_SHIFT));
 			break;
+		default:
+			throw std::runtime_error("Unsupported vertex source register type.");
 	}
 
 	if (src->negate)
@@ -544,13 +559,13 @@ void CCompilerVP::emit_nop()
 
 struct nvfx_reg CCompilerVP::temp()
 {
-	s32 idx = __builtin_ctzll(~m_rTemps);
+	u64 available = ~m_rTemps & 0xffffffffULL;
+	if(!available)
+		throw std::runtime_error("No vertex temporary register left to allocate.");
+	s32 idx = __builtin_ctzll(available);
 
-	if(idx<0)
-		throw std::runtime_error("Error: No temprary register left to allocate.");
-
-	m_rTemps |= (1<<idx);
-	m_rTempsDiscard |= (1<<idx);
+	m_rTemps |= (1ULL<<idx);
+	m_rTempsDiscard |= (1ULL<<idx);
 
 	return nvfx_reg(NVFXSR_TEMP,idx);
 }

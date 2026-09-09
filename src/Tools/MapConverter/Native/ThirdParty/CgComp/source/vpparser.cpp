@@ -155,6 +155,8 @@ int CVPParser::Parse(const char *str)
 		struct nvfx_insn *insn = NULL;
 
 		input.getline(line,255);
+		if(input.fail() && !input.eof())
+			throw std::runtime_error("Vertex assembly line exceeds parser capacity.");
 		iline++;
 			
 		for(i=0;i<256;i++) {
@@ -187,6 +189,9 @@ int CVPParser::Parse(const char *str)
 		char *col_ptr = NULL;
 		char *opcode = NULL;
 		char *ptr = line;
+		ptr = (char*)SkipSpaces(ptr);
+		if(!*ptr || *ptr=='#')
+			continue;
 		
 		if((col_ptr = strstr((char*)ptr,":"))!=NULL) {
 			int j = 0;
@@ -217,23 +222,44 @@ int CVPParser::Parse(const char *str)
 		if(opcode) {
 			const char *param_str = SkipSpaces(strtok(NULL,"\0"));
 			if(strcasecmp(opcode,"OPTION")==0) {
-				if(strncasecmp(param_str,"NV_vertex_program3",18)==0)
+				if(param_str && strncasecmp(param_str,"NV_vertex_program3",18)==0 && !*SkipSpaces(param_str + 18))
 					m_nOption |= NV_OPTION_VP3;
+				else
+					throw std::runtime_error("Unsupported vertex option.");
 				continue;
-			} else if(strcasecmp(opcode,"PARAM")==0)
+			} else if(strcasecmp(opcode,"TEMP")==0) {
+				const char *temp = SkipSpaces(strtok((char*)param_str,","));
+				if(!temp)
+					throw std::runtime_error("Missing vertex temporary declaration.");
+				while(temp) {
+					s32 index;
+					if(*temp!='R' || *SkipSpaces(ParseTempReg(temp,&index)))
+						throw std::runtime_error("Unsupported vertex temporary declaration.");
+					temp = SkipSpaces(strtok(NULL,","));
+				}
 				continue;
-			else if(strcasecmp(opcode,"TEMP")==0)
+			} else if(strcasecmp(opcode,"ADDRESS")==0) {
+				const char *address = SkipSpaces(strtok((char*)param_str,","));
+				if(!address)
+					throw std::runtime_error("Missing vertex address declaration.");
+				while(address) {
+					if(address[0]!='A' || (address[1]!='0' && address[1]!='1') || *SkipSpaces(address + 2))
+						throw std::runtime_error("Unsupported vertex address declaration.");
+					address = SkipSpaces(strtok(NULL,","));
+				}
 				continue;
-			else if(strcasecmp(opcode,"ADDRESS")==0)
-				continue;
-			else {
+			} else {
 				opc = FindOpcode(opcode);
+				if(!opc)
+					throw std::runtime_error(std::string("Unsupported vertex opcode or declaration: ") + opcode);
+				if(m_nInstructions>=MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS)
+					throw std::runtime_error("Too many vertex instructions.");
 				insn = &m_pInstructions[m_nInstructions];
-
-				if(!opc) continue;
 
 				InitInstruction(insn,opc->opcode);
 				if(opc->opcode==OPCODE_END) {
+					if(strcmp(opcode,"END") || (param_str && *param_str))
+						throw std::runtime_error("Unsupported vertex END suffix or operand.");
 					m_nInstructions++;
 					break;
 				}
@@ -257,14 +283,19 @@ int CVPParser::Parse(const char *str)
 						opc_ext++;
 					}
 				}
-				if(opc_ext[0]=='_') {
-					if(strncasecmp(opc_ext,"_sat",4)==0) insn->sat = TRUE;
+				if(strcasecmp(opc_ext,"_sat")==0) {
+					insn->sat = TRUE;
+					opc_ext += 4;
 				}
+				if(*opc_ext)
+					throw std::runtime_error(std::string("Unsupported vertex opcode suffix: ") + opcode);
 				ParseInstruction(insn,opc,param_str);
 				m_nInstructions++;
 			}
 		}
 	}
+	if(!m_nInstructions || m_pInstructions[m_nInstructions - 1].op!=OPCODE_END)
+		throw std::runtime_error("Vertex assembly is missing END.");
 
 	for(std::list<jmpdst>::iterator r=m_lJmpDst.begin();r!=m_lJmpDst.end();r++) {
 		bool found = false;
@@ -290,6 +321,11 @@ void CVPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 {
 	u32 i;
 	const char *token = SkipSpaces(strtok((char*)param_str,","));
+	if(opc->opcode==OPCODE_NOP) {
+		if(token)
+			throw std::runtime_error("Unexpected vertex NOP operand.");
+		return;
+	}
 
 	if(opc->is_imm)
 		ParseMaskedDstAddr(token,insn);
@@ -300,13 +336,16 @@ void CVPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 		token = SkipSpaces(strtok(NULL,","));
 		ParseSwizzledSrcReg(token,insn,opc->src_slots[i]);
 	}
+	if(strtok(NULL,","))
+		throw std::runtime_error("Too many vertex operands.");
 }
 
 void CVPParser::ParseMaskedDstReg(const char *token,struct nvfx_insn *insn)
 {
-	s32 idx;
+	s32 idx = -1;
 
-	if(!token) return;
+	if(!token)
+		throw std::runtime_error("Missing vertex destination operand.");
 
 	if(token[0]=='R' || token[0]=='H') {
 		if(token[1]=='C') token += 2;
@@ -321,6 +360,9 @@ void CVPParser::ParseMaskedDstReg(const char *token,struct nvfx_insn *insn)
 		insn->dst.index = idx;
 	} else if(token[0]=='o' && token[1]=='[') {
 		token = ParseOutputReg(&token[2],&idx);
+		if(!token || *token!=']')
+			throw std::runtime_error("Unsupported vertex output operand.");
+		token++;
 		insn->dst.type = NVFXSR_OUTPUT;
 		insn->dst.index = idx;
 	} else if(token[0]=='A' && (token[1]=='0' || token[1]=='1')) {
@@ -329,6 +371,8 @@ void CVPParser::ParseMaskedDstReg(const char *token,struct nvfx_insn *insn)
 		insn->dst.index = idx;
 	} else if(token[0]=='C' && token[1]=='C')
 		token += 2;
+	else
+		throw std::runtime_error(std::string("Unsupported vertex destination: ") + token);
 
 	ParseMaskedDstRegExt(token,insn);
 }
@@ -345,10 +389,11 @@ void CVPParser::ParseMaskedDstAddr(const char *token,struct nvfx_insn *insn)
 {
 	jmpdst d;
 
-	if(!token) return;
+	if(!token)
+		throw std::runtime_error("Missing vertex branch destination.");
 
 	int len = 0;
-	while(!isWhitespace(token[len]) && !(token[len] == '(')) len++;
+	while(token[len] && !isWhitespace(token[len]) && token[len]!='(') len++;
 
 	d.ident = std::string(token,len);
 	d.location = m_nInstructions;
@@ -362,12 +407,14 @@ void CVPParser::ParseSwizzledSrcReg(const char *token,struct nvfx_insn *insn,s32
 	s32 idx = -1;
 	struct nvfx_src *reg = &insn->src[slot];
 
-	if(!token) return;
+	if(!token)
+		throw std::runtime_error("Missing vertex source operand.");
 
 	if(token[0]=='-') {
 		reg->negate = TRUE;
 		token++;
-	}
+	} else if(token[0]=='+')
+		token++;
 	if(token[0]=='|') {
 		reg->abs = TRUE;
 		token++;
@@ -378,7 +425,9 @@ void CVPParser::ParseSwizzledSrcReg(const char *token,struct nvfx_insn *insn,s32
 			token = ParseInputReg(token,&idx);
 		else if(token[1]=='[') {
 			token = ParseInputReg(&token[2],&idx);
-			if(*token==']') token++;
+			if(!token || *token!=']')
+				throw std::runtime_error("Unsupported vertex input operand.");
+			token++;
 		}
 
 		reg->reg.type = NVFXSR_INPUT;
@@ -390,6 +439,7 @@ void CVPParser::ParseSwizzledSrcReg(const char *token,struct nvfx_insn *insn,s32
 
 		reg->reg.type = NVFXSR_SAMPLER;
 		reg->reg.index = insn->tex_unit;
+		return;
 	} else if(token[0]=='R') {
 		token = ParseTempReg(token,&idx);
 		reg->reg.type = NVFXSR_TEMP;

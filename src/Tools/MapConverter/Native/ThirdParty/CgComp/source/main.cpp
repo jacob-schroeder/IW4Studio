@@ -584,15 +584,20 @@ int main(int argc,char *argv[])
         return EXIT_FAILURE;
     }
 
-	switch(Options.prog_type) {
-		case PROG_TYPE_VP:
-			ret = compileVP();
-			break;
-		case PROG_TYPE_FP:
-			ret = compileFP();
-			break;
-		default:
-			break;
+	try {
+		switch(Options.prog_type) {
+			case PROG_TYPE_VP:
+				ret = compileVP();
+				break;
+			case PROG_TYPE_FP:
+				ret = compileFP();
+				break;
+			default:
+				break;
+		}
+	} catch(const std::exception& error) {
+		fprintf(stderr,"%s\n",error.what());
+		return EXIT_FAILURE;
 	}
 	return ret;
 }

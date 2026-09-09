@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <stdexcept>
 
 #include "nv30_vertprog.h"
 #include "nv40_vertprog.h"

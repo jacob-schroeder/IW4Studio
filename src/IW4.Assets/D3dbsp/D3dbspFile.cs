@@ -27,6 +27,9 @@ public sealed class D3dbspFile
     public bool HasLump(D3dbspLumpType type) =>
         Lumps.Any(lump => lump.Type == type);
 
+    public IReadOnlyList<IReadOnlyDictionary<string, string>> GetEntities() =>
+        D3dbspMapEntsCodec.DecodeEntities(GetRequiredData(D3dbspLumpType.Entities));
+
     public IReadOnlyList<string> GetStaticModelNames(IReadOnlySet<string>? staticScriptModelNames = null) =>
         D3dbspMapEntsCodec.DecodeStaticModelNames(
             GetRequiredData(D3dbspLumpType.Entities), staticScriptModelNames);

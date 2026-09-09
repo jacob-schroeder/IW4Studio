@@ -74,6 +74,10 @@ internal static class D3dbspMapEntsCodec
         return DecodeEntityString(source, entities, null);
     }
 
+    public static IReadOnlyList<IReadOnlyDictionary<string, string>> DecodeEntities(
+        ReadOnlySpan<byte> source) =>
+        Array.AsReadOnly(ParseEntities(source).Select(entity => entity.Values).ToArray());
+
     public static IReadOnlyList<string> DecodeNamedEntityModelNames(
         ReadOnlySpan<byte> source)
     {
@@ -2138,6 +2142,8 @@ internal static class D3dbspMapEntsCodec
 
         public int Begin { get; }
         public int End { get; set; }
+        public IReadOnlyDictionary<string, string> Values =>
+            new ReadOnlyDictionary<string, string>(_values);
 
         public void Add(string key, string value, int valueBegin, int valueEnd)
         {

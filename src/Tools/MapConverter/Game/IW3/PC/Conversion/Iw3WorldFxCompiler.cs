@@ -121,14 +121,14 @@ internal static class Iw3WorldFxCompiler
         return source.Replace(before, after, StringComparison.Ordinal);
     }
 
-    private static string Quote(string value)
+    internal static string Quote(string value)
     {
         if (value.Length == 0 || value.Any(char.IsControl))
-            throw new InvalidDataException("A damage-FX asset has an invalid script name.");
+            throw new InvalidDataException("A generated script has an invalid string value.");
         return "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 
-    private static string Vector(IReadOnlyList<float> values) => "(" +
+    internal static string Vector(IReadOnlyList<float> values) => "(" +
         string.Join(", ", values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))) + ")";
 }

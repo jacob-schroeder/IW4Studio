@@ -181,6 +181,7 @@ internal static class Iw3PcMapConverter
             IReadOnlyList<string> hudMaterialNames = [];
             string? hudScriptPath = null;
             Iw3WorldFxCompilation? damageFx = null;
+            Iw3WorldObjectiveCompilation? objectives = null;
             IReadOnlyList<GfxLightmapArray> lightmaps = [];
             GfxImageAsset? outdoorImage = null;
             string? outdoorLookupMatrix = null;
@@ -194,6 +195,7 @@ internal static class Iw3PcMapConverter
                 Iw3DynamicEntitySourceData dynamicEntities = Iw3DynamicEntityReader.Read(dynamicEntityPath);
                 ValidateDynamicEntityMapName(dynamicEntities.MapName, mapName);
                 damageFx = Iw3WorldFxCompiler.Compile(assetDirectory, dynamicEntities, mapName, scratchDirectory);
+                objectives = Iw3WorldObjectiveCompiler.Compile(bspPath, mapName, scratchDirectory);
                 (string AssetDirectory, string Name, string OutputPath)? loadZone = null;
                 if (loadInputPath is not null && loadName is not null)
                 {
@@ -227,7 +229,7 @@ internal static class Iw3PcMapConverter
                         bootstrapPath ?? throw new InvalidOperationException("Missing material bootstrap."),
                         iwdPath, sourceFastFileDirectory,
                         options.ImageFileIndex ?? throw new InvalidOperationException("Missing imagefile index."),
-                        materialProviderPath, stagedImagePath, lightmaps, outdoorImage, loadZone, damageFx);
+                        materialProviderPath, stagedImagePath, lightmaps, outdoorImage, loadZone, damageFx, objectives);
             }
             stagedMapPath = Path.Combine(scratchDirectory, mapName + ".ff");
             List<string> linkerArguments =
@@ -272,6 +274,18 @@ internal static class Iw3PcMapConverter
                         linkerArguments.Add("--rawfile");
                         linkerArguments.Add(name + "=" + path);
                     }
+                }
+                if (objectives is not null)
+                {
+                    HashSet<string> linkedModelNames = linkerArguments.Zip(linkerArguments.Skip(1))
+                        .Where(pair => pair.First == "--xmodel").Select(pair => pair.Second)
+                        .Concat(Iw3StaticModelNameReader.ReadFromConvertedD3dbsp(bspPath, WorldOnlyVehicleModels).StaticModelNames)
+                        .ToHashSet(StringComparer.Ordinal);
+                    foreach (string modelName in objectives.ModelNames.Where(linkedModelNames.Add))
+                        linkerArguments.AddRange(["--xmodel", modelName]);
+                    foreach (string materialName in objectives.MaterialNames)
+                        linkerArguments.AddRange(["--material", materialName]);
+                    linkerArguments.AddRange(["--rawfile", objectives.RawFileName + "=" + objectives.Path]);
                 }
                 foreach (string modelName in WorldOnlyVehicleModels.Order(StringComparer.Ordinal))
                 {
@@ -354,7 +368,7 @@ internal static class Iw3PcMapConverter
         string providerPath, string imagePath, IReadOnlyList<GfxLightmapArray> lightmaps,
         GfxImageAsset outdoorImage,
         (string AssetDirectory, string Name, string OutputPath)? loadZone,
-        Iw3WorldFxCompilation damageFx)
+        Iw3WorldFxCompilation damageFx, Iw3WorldObjectiveCompilation? objectives)
     {
         IReadOnlyList<string> worldNames = D3dbspAssetLinker.ReadWorldMaterialNames(bspPath);
         Iw3ZoneManifest manifest = Iw3ZoneManifest.Read(
@@ -597,12 +611,15 @@ internal static class Iw3PcMapConverter
                 TextureSemantic.TwoDimensional, 0x19655165,
                 new MaterialTechniqueSetAsset { Name = ",2d" }, (MaterialSortKey)47));
         }
-        if (compassMaterialName is not null || damageFx.EffectNames.Count != 0)
+        if (compassMaterialName is not null || damageFx.EffectNames.Count != 0 || objectives is not null)
         {
             string providerDirectory = Path.GetDirectoryName(providerPath) ??
                 throw new InvalidDataException("The material provider path has no output directory.");
             hudScriptPath = Path.Combine(providerDirectory, mapName + ".hud.gsc");
             string script = "main()\r\n{\r\n" +
+                // Register objective model/exploder pairs before native _load
+                // initializes them; native gametype callbacks run after main.
+                (objectives is not null ? $"\tmaps\\mp\\{mapName}_objectives::main();\r\n" : "") +
                 "\tmaps\\mp\\_load::main();\r\n" +
                 (compassMaterialName is not null
                     ? $"\tmaps\\mp\\_compass::setupMiniMap(\"{compassMaterialName}\");\r\n" : "") +

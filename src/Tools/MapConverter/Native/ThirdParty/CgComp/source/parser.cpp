@@ -135,6 +135,8 @@ void CParser::InitParameter(param *p)
 
 const char* CParser::ConvertCond(const char *token,struct nvfx_insn *insn)
 {
+	if(!token || strlen(token)<2)
+		throw std::runtime_error("Missing condition operand.");
 	if(strncasecmp(token,"FL",2)==0)
 		insn->cc_cond = NVFX_COND_FL;
 	else if(strncasecmp(token,"LT",2)==0)
@@ -151,9 +153,13 @@ const char* CParser::ConvertCond(const char *token,struct nvfx_insn *insn)
 		insn->cc_cond = NVFX_COND_GE;
 	else if(strncasecmp(token,"TR",2)==0)
 		insn->cc_cond = NVFX_COND_TR;
+	else
+		throw std::runtime_error(std::string("Unsupported condition operand: ") + token);
 	
 	token += 2;
 	if(isdigit(*token)) {
+		if(*token!='0' && *token!='1')
+			throw std::runtime_error("Unsupported condition register.");
 		insn->cc_test_reg = atoi(token);
 		token++;
 	}
@@ -211,11 +217,8 @@ const char* CParser::ParseTempReg(const char *token,s32 *reg)
 {
 	const char *p;
 
-	if(token[0]!='R' && token[0]!='H')
-		return NULL;
-
-	if(!isdigit(token[1]))
-		return token;
+	if(!token || (token[0]!='R' && token[0]!='H') || !isdigit(token[1]))
+		throw std::runtime_error("Unsupported temporary register.");
 
 	p = token + 1;
 	while(isdigit(*p)) p++;
@@ -227,13 +230,23 @@ const char* CParser::ParseTempReg(const char *token,s32 *reg)
 
 const char* CParser::ParseMaskedDstRegExt(const char *token,struct nvfx_insn *insn)
 {
+	if(!token)
+		throw std::runtime_error("Unsupported destination operand.");
 	token = ParseOutputMask(token,&insn->mask);
+	if(!insn->mask)
+		throw std::runtime_error("Empty destination mask.");
+	token = SkipSpaces(token);
 	if(token && *token!='\0') {
 		if(token[0]=='(') {
 			token = ParseCond(&token[1],insn);
+			if(*token!=')')
+				throw std::runtime_error("Unterminated destination condition.");
 			token++;
 		}
 	}
+	token = SkipSpaces(token);
+	if(*token)
+		throw std::runtime_error(std::string("Unsupported destination suffix: ") + token);
 	return token;
 }
 
@@ -255,7 +268,11 @@ const char* CParser::ParseCond(const char *token,struct nvfx_insn *insn)
 				insn->cc_swz[k] = NVFX_SWZ_Z;
 			else if(token[k]=='w')
 				insn->cc_swz[k] = NVFX_SWZ_W;
+			else
+				break;
 		}
+		if(!k)
+			throw std::runtime_error("Empty condition swizzle.");
 		if(k && k<4) {
 			u32 cnt = k; 
 			u8 lastswz = insn->cc_swz[cnt - 1];
@@ -271,6 +288,8 @@ const char* CParser::ParseCond(const char *token,struct nvfx_insn *insn)
 
 const char* CParser::ParseRegSwizzle(const char *token,struct nvfx_src *reg)
 {
+	if(!token || reg->reg.type==NVFXSR_NONE || reg->reg.type<0)
+		throw std::runtime_error("Unsupported source operand.");
 	if(token && *token!='\0') {
 		if(token[0]=='.') {
 			u32 k;
@@ -287,7 +306,11 @@ const char* CParser::ParseRegSwizzle(const char *token,struct nvfx_src *reg)
 					reg->swz[k] = NVFX_SWZ_Z;
 				else if(*token=='w')
 					reg->swz[k] = NVFX_SWZ_W;
+				else
+					break;
 			}
+			if(!k)
+				throw std::runtime_error("Empty source swizzle.");
 			if(k && k<4) {
 				u8 lastswz = reg->swz[k - 1];
 				while(k<4) {
@@ -297,6 +320,14 @@ const char* CParser::ParseRegSwizzle(const char *token,struct nvfx_src *reg)
 			}
 		}
 	}
+	if(reg->abs) {
+		if(*token!='|')
+			throw std::runtime_error("Unterminated absolute source operand.");
+		token++;
+	}
+	token = SkipSpaces(token);
+	if(*token)
+		throw std::runtime_error(std::string("Unsupported source suffix: ") + token);
 	return token;
 }
 
@@ -306,13 +337,14 @@ void CParser::ParseTextureUnit(const char *token,s32 *texUnit)
 
 	*texUnit = -1;
 
-	if(!token) return;
-
-	if(strncmp(token,"texture[",8)) return;
+	if(!token || strncmp(token,"texture[",8) || !isdigit(token[8]))
+		throw std::runtime_error("Unsupported texture unit.");
 
 	p = (char*)token + 8;
 	token = p;
 	while(isdigit(*p)) p++;
+	if(*p!=']' || *SkipSpaces(p + 1))
+		throw std::runtime_error("Unsupported texture unit suffix.");
 
 	*texUnit = atoi(token);
 }
@@ -321,22 +353,28 @@ void CParser::ParseTextureTarget(const char *token,s32 *texTarget)
 {
 	*texTarget = -1;
 
-	if(!token) return;
+	if(!token)
+		throw std::runtime_error("Missing texture target.");
+	std::string target(token);
+	target.erase(target.find_last_not_of(' ') + 1);
+	token = target.c_str();
 
-	if(strncasecmp(token,"1D",2)==0)
+	if(strcasecmp(token,"1D")==0)
 		*texTarget = PARAM_SAMPLER1D;
-	else if(strncasecmp(token,"2D",2)==0)
+	else if(strcasecmp(token,"2D")==0)
 		*texTarget = PARAM_SAMPLER2D;
-	else if(strncasecmp(token,"3D",2)==0)
+	else if(strcasecmp(token,"3D")==0)
 		*texTarget = PARAM_SAMPLER3D;
-	else if(strncasecmp(token,"CUBE",4)==0)
+	else if(strcasecmp(token,"CUBE")==0)
 		*texTarget = PARAM_SAMPLERCUBE;
-	else if(strncasecmp(token,"RECT",4)==0)
+	else if(strcasecmp(token,"RECT")==0)
 		*texTarget = PARAM_SAMPLERRECT;
-	else if(strncasecmp(token,"SHADOW1D",8)==0)
+	else if(strcasecmp(token,"SHADOW1D")==0)
 		*texTarget = PARAM_SAMPLERSHADOW1D;
-	else if(strncasecmp(token,"SHADOW2D",8)==0)
+	else if(strcasecmp(token,"SHADOW2D")==0)
 		*texTarget = PARAM_SAMPLERSHADOW2D;
-	else if(strncasecmp(token,"SHADOWRECT",10)==0)
+	else if(strcasecmp(token,"SHADOWRECT")==0)
 		*texTarget = PARAM_SAMPLERSHADOWRECT;
+	else
+		throw std::runtime_error(std::string("Unsupported texture target: ") + token);
 }

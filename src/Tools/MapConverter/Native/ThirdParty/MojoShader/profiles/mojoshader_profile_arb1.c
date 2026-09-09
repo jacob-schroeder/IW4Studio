@@ -186,7 +186,8 @@ const char *make_ARB1_srcarg_string_in_buf(Context *ctx,
     //  register, in which case we'll replace the register name.
     const SourceMod mod = arg->src_mod;
     const int inplace = ( (mod == SRCMOD_NONE) || (mod == SRCMOD_NEGATE) ||
-                          ((mod == SRCMOD_ABS) && support_nv2(ctx)) );
+                          (((mod == SRCMOD_ABS) || (mod == SRCMOD_ABSNEGATE)) &&
+                           support_nv2(ctx)) );
 
     if (!inplace)
     {
@@ -1520,7 +1521,7 @@ void nv2_if(Context *ctx)
     // The condition code register MUST be set up before this!
     // nv2 fragment programs (and everything nv4) have a real IF.
     if ( (support_nv4(ctx)) || (shader_is_pixel(ctx)) )
-        output_line(ctx, "IF EQ.x;");
+        output_line(ctx, "IF NE.x;");
     else
     {
         // there's no IF construct, but we can use a branch to a label.
@@ -1533,7 +1534,7 @@ void nv2_if(Context *ctx)
 
         ctx->branch_labels_stack[ctx->branch_labels_stack_index++] = label;
 
-        // !!! FIXME: should this be NE? (EQ would jump to the ELSE for the IF condition, right?).
+        // A zero condition skips the true block and branches to ELSE/ENDIF.
         output_line(ctx, "BRA %s (EQ.x);", failbranch);
     } // else
 } // nv2_if
@@ -1544,7 +1545,7 @@ void emit_ARB1_IF(Context *ctx)
     if (support_nv2(ctx))
     {
         char buf[64]; allocate_ARB1_scratch_reg_name(ctx, buf, sizeof (buf));
-        char src0[64]; get_ARB1_srcarg_varname(ctx, 0, src0, sizeof (src0));
+        char src0[64]; make_ARB1_srcarg_string(ctx, 0, src0, sizeof (src0));
         output_line(ctx, "MOVC %s.x, %s;", buf, src0);
         nv2_if(ctx);
     } // if
@@ -2055,7 +2056,7 @@ static void arb1_texld(Context *ctx, const char *opcode, const int texldd)
     if (sm1)
         get_ARB1_destarg_varname(ctx, src0, sizeof (src0));
     else
-        get_ARB1_srcarg_varname(ctx, 0, src0, sizeof (src0));
+        make_ARB1_srcarg_string(ctx, 0, src0, sizeof (src0));
     //char src1[64]; get_ARB1_srcarg_varname(ctx, 1, src1, sizeof (src1));  // !!! FIXME: SRC_MOD?
 
     char src2[64] = { 0 };
@@ -2143,10 +2144,11 @@ void emit_ARB1_IFC(Context *ctx)
     if (support_nv2(ctx))
     {
         const char *comps[] = {
-            "", "SGTC", "SEQC", "SGEC", "SGTC", "SNEC", "SLEC"
+            "", "SGTC", "SEQC", "SGEC", "SLTC", "SNEC", "SLEC"
         };
 
-        if (ctx->instruction_controls >= STATICARRAYLEN(comps))
+        if ((ctx->instruction_controls == 0) ||
+            (ctx->instruction_controls >= STATICARRAYLEN(comps)))
         {
             fail(ctx, "unknown comparison control");
             return;
@@ -2157,8 +2159,8 @@ void emit_ARB1_IFC(Context *ctx)
         char scratch[64];
 
         const char *comp = comps[ctx->instruction_controls];
-        get_ARB1_srcarg_varname(ctx, 0, src0, sizeof (src0));
-        get_ARB1_srcarg_varname(ctx, 1, src1, sizeof (src1));
+        make_ARB1_srcarg_string(ctx, 0, src0, sizeof (src0));
+        make_ARB1_srcarg_string(ctx, 1, src1, sizeof (src1));
         allocate_ARB1_scratch_reg_name(ctx, scratch, sizeof (scratch));
         output_line(ctx, "%s %s.x, %s, %s;", comp, scratch, src0, src1);
         nv2_if(ctx);

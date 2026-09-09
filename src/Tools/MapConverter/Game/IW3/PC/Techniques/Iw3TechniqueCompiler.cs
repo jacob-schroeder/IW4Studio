@@ -50,12 +50,12 @@ internal sealed class Iw3TechniqueCompiler
         ArgumentNullException.ThrowIfNull(source);
         ValidateOwnedName(source.Name, "technique set");
         ValidateSourceSlots(source);
+        string sourceName = source.Name[(source.Name.LastIndexOf('/') + 1)..];
+        bool isWorld = Iw3MaterialCompiler.GetWorldTechniqueFamily(sourceName) is not null;
 
         var usedShaders = new Dictionary<ShaderKey, MaterialShaderAsset>();
         var compiledTechniques = new Dictionary<string, CompiledTechnique>(
             StringComparer.Ordinal);
-        string? depthPrepassTechniqueName = source.Slots[
-            (int)Iw3TechniqueSlot.DepthPrepass].TechniqueName;
         MaterialTechniqueSlot[] targetSlots = Iw3TechniqueSlotMapping.Iw4Slots
             .Select((sourceSlot, targetIndex) =>
             {
@@ -72,10 +72,7 @@ internal sealed class Iw3TechniqueCompiler
                     ? null
                     : CompileTechnique(
                         slot.Technique,
-                        string.Equals(
-                            slot.Technique.Name,
-                            depthPrepassTechniqueName,
-                            StringComparison.Ordinal),
+                        isWorld,
                         compiledTechniques,
                         usedShaders);
                 return new MaterialTechniqueSlot(
@@ -103,7 +100,7 @@ internal sealed class Iw3TechniqueCompiler
 
     private MaterialTechniqueAsset CompileTechnique(
         Iw3TechniqueSource source,
-        bool isDepthPrepass,
+        bool isWorld,
         IDictionary<string, CompiledTechnique> compiledTechniques,
         IDictionary<ShaderKey, MaterialShaderAsset> usedShaders)
     {
@@ -132,6 +129,7 @@ internal sealed class Iw3TechniqueCompiler
             CompiledPass compiled = CompilePass(
                 source.Name,
                 index,
+                isWorld,
                 source.Passes[index] ?? throw TechniqueError(
                     source.Name,
                     $"pass {index} is null"));
@@ -140,9 +138,9 @@ internal sealed class Iw3TechniqueCompiler
             shaderKeys.Add(compiled.VertexShader);
             shaderKeys.Add(compiled.PixelShader);
         }
-        if (isDepthPrepass)
-            flags |= MaterialTechniqueFlags.ZPrepass;
-
+        // ZPrepass permits IW4 to substitute its global depth material. Slot 0
+        // alone does not prove position invariance with that native shader;
+        // compiled prepasses must retain their own matching position program.
         var asset = new MaterialTechniqueAsset
         {
             Name = source.Name,
@@ -165,6 +163,7 @@ internal sealed class Iw3TechniqueCompiler
     private CompiledPass CompilePass(
         string techniqueName,
         int passIndex,
+        bool isWorld,
         Iw3TechniquePassSource source)
     {
         string passPath = $"Technique '{techniqueName}' pass {passIndex}";
@@ -177,11 +176,18 @@ internal sealed class Iw3TechniqueCompiler
 
         ShaderKey vertexKey = new(Iw3ShaderStage.Vertex, source.VertexShader.ProgramName);
         ShaderKey pixelKey = new(Iw3ShaderStage.Pixel, source.PixelShader.ProgramName);
-        Iw3ShaderCompilation vertex = CompileShader(source.VertexShader, passPath);
-        Iw3ShaderCompilation pixel = CompileShader(source.PixelShader, passPath);
         MaterialVertexDeclarationAsset declaration = CompileDeclaration(
             source.VertexRouting,
-            passPath);
+            passPath,
+            isWorld);
+        ushort signedNormalInputMask = 0;
+        foreach (MaterialVertexStreamRouting route in declaration.Routing.Take(declaration.StreamCount))
+        {
+            if (route.Source is MaterialStreamSource.Normal or MaterialStreamSource.Tangent)
+                signedNormalInputMask |= checked((ushort)(1 << (int)route.Dest));
+        }
+        Iw3ShaderCompilation vertex = CompileShader(source.VertexShader, passPath, signedNormalInputMask);
+        Iw3ShaderCompilation pixel = CompileShader(source.PixelShader, passPath, 0);
         CompiledArguments arguments = CompileArguments(
             source.VertexShader,
             vertex,
@@ -213,13 +219,29 @@ internal sealed class Iw3TechniqueCompiler
 
     private Iw3ShaderCompilation CompileShader(
         Iw3ShaderSource source,
-        string passPath)
+        string passPath,
+        ushort signedNormalInputMask)
     {
         ArgumentNullException.ThrowIfNull(source);
         ValidateOwnedName(source.ProgramName, "shader program");
         var key = new ShaderKey(source.Stage, source.ProgramName);
         if (_shaderCache.TryGetValue(key, out CachedShader? cached))
+        {
+            if (cached.SignedNormalInputMask != signedNormalInputMask)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting signed-normal " +
+                    $"input masks 0x{cached.SignedNormalInputMask:X4} and 0x{signedNormalInputMask:X4}.");
+            }
+            var codeSamplerMasks = Iw3PcShaderCompiler.GetCodeSamplerMasks(source, cached.Compilation.Parameters);
+            if (cached.CodeSamplerMasks != codeSamplerMasks)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting code " +
+                    $"sampler masks {cached.CodeSamplerMasks} and {codeSamplerMasks}.");
+            }
             return cached.Compilation;
+        }
 
         string stagePrefix = source.Stage == Iw3ShaderStage.Vertex ? "vs_" : "ps_";
         string programPath = Path.GetFullPath(
@@ -230,7 +252,7 @@ internal sealed class Iw3TechniqueCompiler
                 $"{passPath} shader name '{source.ProgramName}' resolves outside the extracted shader directory.");
         }
 
-        Iw3ShaderCompilation compilation = _shaderCompiler.Compile(source, programPath);
+        Iw3ShaderCompilation compilation = _shaderCompiler.Compile(source, programPath, signedNormalInputMask);
         MaterialShaderKind expectedKind = source.Stage == Iw3ShaderStage.Vertex
             ? MaterialShaderKind.Vertex
             : MaterialShaderKind.Pixel;
@@ -248,7 +270,8 @@ internal sealed class Iw3TechniqueCompiler
         }
         EnsureUniqueParameters(compilation.Parameters, source.ProgramName);
 
-        _shaderCache.Add(key, new CachedShader(compilation));
+        _shaderCache.Add(key, new CachedShader(compilation, signedNormalInputMask,
+            Iw3PcShaderCompiler.GetCodeSamplerMasks(source, compilation.Parameters)));
         return compilation;
     }
 
@@ -273,7 +296,8 @@ internal sealed class Iw3TechniqueCompiler
 
     private static MaterialVertexDeclarationAsset CompileDeclaration(
         IReadOnlyList<Iw3VertexStreamRoutingSource> source,
-        string passPath)
+        string passPath,
+        bool isWorld)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Count > MaterialVertexDeclarationAsset.RoutingCount)
@@ -302,7 +326,9 @@ internal sealed class Iw3TechniqueCompiler
             }
 
             target[index] = new MaterialVertexStreamRouting(streamSource, destination);
-            hasOptionalSource |= streamSource >= MaterialStreamSource.OptionalBegin;
+            hasOptionalSource |= isWorld
+                ? streamSource != MaterialStreamSource.Position
+                : streamSource >= MaterialStreamSource.OptionalBegin;
         }
 
         return new MaterialVertexDeclarationAsset
@@ -677,11 +703,35 @@ internal sealed class Iw3TechniqueCompiler
         byte rowCount;
         if (binding.IsMatrix)
         {
-            if (sourceElement + parameter.RegisterCount > 4)
+            const ushort direct3DMatrixRows = 2;
+            const ushort direct3DMatrixColumns = 3;
+            if (stage != Iw3ShaderStage.Vertex)
             {
                 throw new InvalidDataException(
-                    $"{passPath} matrix binding for '{parameter.Name}' reads rows " +
-                    $"{sourceElement}+{parameter.RegisterCount}, outside a float4x4 source.");
+                    $"{passPath} matrix binding for '{parameter.Name}' requires a vertex shader; " +
+                    "IW4 pixel matrix uploads are not established.");
+            }
+            if (parameter.Class is not (direct3DMatrixRows or direct3DMatrixColumns) ||
+                parameter.Rows != 4 || parameter.Columns != 4 || parameter.Elements != 1)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} matrix binding for '{parameter.Name}' requires one row- or column-packed " +
+                    $"float4x4; CTAB declares class {parameter.Class}, " +
+                    $"{parameter.Rows}x{parameter.Columns}, {parameter.Elements} elements.");
+            }
+            if (parameter.RegisterCount == 0 || sourceElement + parameter.RegisterCount > 4)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} matrix binding for '{parameter.Name}' has invalid row range " +
+                    $"{sourceElement}+{parameter.RegisterCount} for a float4x4 source.");
+            }
+            if (parameter.Class == direct3DMatrixColumns)
+            {
+                // IW4 uploads stored rows. Toggle the relative matrix transpose bit
+                // for column-packed CTAB data, preserving the family and inverse bit.
+                int matrixIndex = (int)binding.Source - (int)MaterialConstantSource.FirstCodeMatrix;
+                targetSource = (MaterialConstantSource)(
+                    (int)MaterialConstantSource.FirstCodeMatrix + (matrixIndex ^ 2));
             }
             firstRow = checked((byte)sourceElement);
             rowCount = checked((byte)parameter.RegisterCount);
@@ -945,7 +995,10 @@ internal sealed class Iw3TechniqueCompiler
         Iw3ShaderStage Stage,
         string ProgramName);
 
-    private sealed record CachedShader(Iw3ShaderCompilation Compilation);
+    private sealed record CachedShader(
+        Iw3ShaderCompilation Compilation,
+        ushort SignedNormalInputMask,
+        (ushort Comparison, ushort ReflectionProbe) CodeSamplerMasks);
 
     private sealed record CompiledTechnique(
         Iw3TechniqueSource Source,

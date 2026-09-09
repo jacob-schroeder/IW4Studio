@@ -549,7 +549,7 @@ internal static class Iw3MaterialCompiler
                     argument.MaterialNameHash == waterColorHash));
     }
 
-    private static string? GetWorldTechniqueFamily(string name) =>
+    internal static string? GetWorldTechniqueFamily(string name) =>
         name.StartsWith("wc_", StringComparison.Ordinal)
             ? name[3..]
             : name.StartsWith("w_", StringComparison.Ordinal)

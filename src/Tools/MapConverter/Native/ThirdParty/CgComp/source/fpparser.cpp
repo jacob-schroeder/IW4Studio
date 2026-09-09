@@ -167,6 +167,8 @@ int CFPParser::Parse(const char *str)
 		struct nvfx_insn *insn = NULL;
 
 		input.getline(line,255);
+		if(input.fail() && !input.eof())
+			throw std::runtime_error("Fragment assembly line exceeds parser capacity.");
 		iline++;
 			
 		for(i=0;i<256;i++) {
@@ -216,17 +218,30 @@ int CFPParser::Parse(const char *str)
 		}
 
 		ptr = SkipSpaces(ptr);
-		if ((param_str = strstr(ptr, "OPTION"))!=NULL) {
+		if(!*ptr || *ptr=='#')
+			continue;
+		if (strncmp(ptr,"OPTION ",7)==0) {
+			param_str = ptr;
 			param_str = SkipSpaces(param_str + 6);
-			if(strncasecmp(param_str,"NV_fragment_program2",20)==0)
+			if(strncasecmp(param_str,"NV_fragment_program2",20)==0 && !*SkipSpaces(param_str + 20))
 				m_nOption |= NV_OPTION_FP2;
+			else
+				throw std::runtime_error(std::string("Unsupported fragment option: ") + param_str);
 			continue;
 		} 
-		else if ((param_str = strstr(ptr, "PARAM"))!=NULL)
+		else if (strncmp(ptr,"TEMP ",5)==0) {
+			const char *temp = SkipSpaces(strtok((char*)ptr + 5,","));
+			if(!temp)
+				throw std::runtime_error("Missing fragment temporary declaration.");
+			while(temp) {
+				s32 index;
+				if(*SkipSpaces(ParseTempReg(temp,&index)))
+					throw std::runtime_error("Unsupported fragment temporary declaration.");
+				temp = SkipSpaces(strtok(NULL,","));
+			}
 			continue;
-		else if ((param_str = strstr(ptr, "TEMP"))!=NULL)
-			continue;
-		else if ((param_str = strstr(ptr, "OUTPUT"))!=NULL) {
+		}
+		else if (strncmp(ptr,"OUTPUT ",7)==0 || strncmp(ptr,"SHORT OUTPUT ",13)==0) {
 			ParseOutput(ptr);
 			continue;
 		} else {
@@ -234,13 +249,17 @@ int CFPParser::Parse(const char *str)
 			struct _opcode opc = FindOpcode(opcode);
 
 			if(opc.opcode>=MAX_OPCODE)
-				continue;
+				throw std::runtime_error(std::string("Unsupported fragment opcode or declaration: ") + opcode);
+			if(m_nInstructions>=MAX_NV_FRAGMENT_PROGRAM_INSTRUCTIONS)
+				throw std::runtime_error("Too many fragment instructions.");
 			
 			insn = &m_pInstructions[m_nInstructions];
 			param_str = SkipSpaces(strtok(NULL,"\0"));
 
 			InitInstruction(insn,opc.opcode);
 			if(opc.opcode==OPCODE_END) {
+				if(param_str && *param_str)
+					throw std::runtime_error("Unexpected fragment END operand.");
 				m_nInstructions++;
 				break;
 			}
@@ -249,6 +268,8 @@ int CFPParser::Parse(const char *str)
 			m_nInstructions++;
 		}
 	}
+	if(!m_nInstructions || m_pInstructions[m_nInstructions - 1].op!=OPCODE_END)
+		throw std::runtime_error("Fragment assembly is missing END.");
 	return 0;
 }
 
@@ -315,9 +336,36 @@ void CFPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 		token = SkipSpaces(strtok(NULL,","));
 		ParseTextureTarget(token,&insn->tex_target);
 	} else if(opc->inputs==INPUT_CC) {
-		if (*token == '(') token++;
-		ParseCond(token,insn);
+		if(!token || !*token)
+			throw std::runtime_error("Missing fragment condition operand.");
+		// ARB KIL takes a vector; NV KIL takes a condition.  Recognize
+		// the source prefixes without treating the condition FL as an input.
+		if(opc->opcode==OPCODE_KIL &&
+		   (strchr("RHc+-|",*token) || strncmp(token,"f[",2)==0 ||
+		    strncmp(token,"fragment.",9)==0)) {
+			ParseVectorSrc(token,&insn->src[0]);
+		} else {
+			bool parenthesized = *token=='(';
+			if(parenthesized) token++;
+			token = ParseCond(token,insn);
+			if(parenthesized) {
+				if(*token!=')')
+					throw std::runtime_error("Unterminated fragment condition.");
+				token++;
+			}
+			if(*SkipSpaces(token))
+				throw std::runtime_error("Unsupported fragment condition suffix.");
+			if(opc->opcode==OPCODE_KIL)
+				insn->op = OPCODE_KIL_NV;
+		}
+	} else if(opc->inputs==INPUT_NONE) {
+		if(token && *token)
+			throw std::runtime_error("Unexpected fragment operand.");
+	} else {
+		throw std::runtime_error("Unsupported fragment instruction operands.");
 	}
+	if(strtok(NULL,","))
+		throw std::runtime_error("Too many fragment operands.");
 
 	// finally check for insns disabling perspective correction interpolation
 	// only at this point we know everyhting about the insn to decide.
@@ -357,10 +405,14 @@ opcode CFPParser::FindOpcode(const char *mnemonic)
 				result.suffixes |= _C;
 				i++;
 			}
-			if(mnemonic[i+0]=='_' && mnemonic[i+1]=='S' &&
-			   mnemonic[i+2]=='A' && mnemonic[i+3]=='T')
+			if(strcmp(mnemonic + i,"_SAT")==0)
 			{
 				result.suffixes |= _S;
+				i += 4;
+			}
+			if(mnemonic[i] || (result.suffixes & ~inst->suffixes)) {
+				result.opcode = MAX_OPCODE;
+				continue;
 			}
 			return result;
 		}
@@ -408,7 +460,11 @@ void CFPParser::ParseOutput(const char *param_str)
 	const char *token = SkipSpaces(strtok((char*)param," ="));
 	const char *name = SkipSpaces(strtok(NULL,"=\0"));
 
-	ParseOutputReg(name,&reg,&is_fp16);
+	if(!token || !name)
+		throw std::runtime_error("Incomplete fragment output declaration.");
+	const char *end = ParseOutputReg(name,&reg,&is_fp16);
+	if(!end || *SkipSpaces(end))
+		throw std::runtime_error("Unsupported fragment output declaration.");
 
 	p.alias = token;
 	p.index = reg;
@@ -442,6 +498,7 @@ const char* CFPParser::ParseOutputReg(const char *token, s32 *reg,u8 *is_fp16)
 				if(token[tlen]=='[' && isdigit(token[tlen+1])) {
 					char *p = (char*)(token + tlen + 1);
 					while(isdigit(*p)) p++;
+					if(*p!=']') return NULL;
 
 					*reg = *reg + atoi(token + tlen + 1) + 1;
 					tlen = (p - token) + 1;
@@ -502,7 +559,8 @@ const char* CFPParser::ParseOutputRegAlias(const char *token,s32 *reg,u8 *is_fp1
 			len++;
 		}
 		
-		if(strncmp(token, it->alias.c_str(), len) == 0) {
+		if(len==it->alias.size() && (token[len]=='.' || token[len]=='(' || token[len]==' ' || !token[len]) &&
+		   strncmp(token, it->alias.c_str(), len) == 0) {
 			*reg = it->index;
 			*is_fp16 = it->is_fp16;
 			return token + len;
@@ -513,10 +571,11 @@ const char* CFPParser::ParseOutputRegAlias(const char *token,s32 *reg,u8 *is_fp1
 
 void CFPParser::ParseMaskedDstReg(const char *token,struct nvfx_insn *insn)
 {
-	s32 idx;
+	s32 idx = -1;
 	u8 is_fp16 = 0;
 
-	if(!token) return;
+	if(!token)
+		throw std::runtime_error("Missing fragment destination operand.");
 
 	if(strncmp(token,"RC",2)==0 ||
 	   strncmp(token,"HC",2)==0)
@@ -529,6 +588,8 @@ void CFPParser::ParseMaskedDstReg(const char *token,struct nvfx_insn *insn)
 		token = ParseTempReg(token,&insn->dst.index);
 	} else if(token[0]=='o' && token[1]=='[') {
 		token = ParseOutputReg(&token[2],&idx,&is_fp16);
+		if(!token || *token!=']')
+			throw std::runtime_error("Unsupported fragment output operand.");
 		token++;
 
 		insn->dst.type = NVFXSR_OUTPUT;
@@ -539,16 +600,18 @@ void CFPParser::ParseMaskedDstReg(const char *token,struct nvfx_insn *insn)
 
 		insn->dst.type = NVFXSR_OUTPUT;
 		insn->dst.index = idx;
+		insn->dst.is_fp16 = is_fp16;
 	}
 	ParseMaskedDstRegExt(token,insn);
 }
 
 void CFPParser::ParseVectorSrc(const char *token,struct nvfx_src *reg)
 {
-	s32 idx;
+	s32 idx = -1;
 	//f32 sign = 1.0f;
 
-	if(!token) return;
+	if(!token)
+		throw std::runtime_error("Missing fragment source operand.");
 
 	if(token[0]=='-') {
 		reg->negate = TRUE;
@@ -570,7 +633,9 @@ void CFPParser::ParseVectorSrc(const char *token,struct nvfx_src *reg)
 	} else if(token[0]=='f') {
 		if(token[1]=='[') {
 			token = ParseInputReg(&token[2],&idx);
-			if(*token==']') token++;
+			if(!token || *token!=']')
+				throw std::runtime_error("Unsupported fragment input operand.");
+			token++;
 		} else
 			token = ParseInputReg(token,&idx);
 
@@ -590,8 +655,9 @@ void CFPParser::ParseVectorSrc(const char *token,struct nvfx_src *reg)
 		if(reg->reg.type < 0)
 			reg->reg.type = NVFXSR_CONST;
 
-		if(*p==']') p++;
-		token = p;
+		if(*p!=']')
+			throw std::runtime_error("Unterminated fragment constant operand.");
+		token = p + 1;
 	}
 
 	token = ParseRegSwizzle(token,reg);
@@ -599,50 +665,7 @@ void CFPParser::ParseVectorSrc(const char *token,struct nvfx_src *reg)
 
 void CFPParser::ParseScalarSrc(const char *token,struct nvfx_src *reg)
 {
-	s32 idx = -1;
-
-	if(!token) return;
-
-	if(token[0]=='-') {
-		reg->negate = TRUE;
-		token++;
-	} else if(token[0]=='+') {
-		reg->negate = FALSE;
-		token++;
-	}
-
-	if(token[0]=='|') {
-		reg->abs = TRUE;
-		token++;
-	}
-
-	if(token[0]=='R' || token[0]=='H') {
-		token = ParseTempReg(token,&idx);
-
-		reg->reg.type = NVFXSR_TEMP;
-		reg->reg.index = idx;
-	} else if(token[0]=='f') {
-		if(token[1]=='[') {
-			token = ParseInputReg(&token[2],&idx);
-			if(*token==']') token++;
-		} else
-			token = ParseInputReg(token,&idx);
-
-		reg->reg.type = NVFXSR_INPUT;
-		reg->reg.index = idx;
-	} else if(token[0]=='c' && token[1]=='[' && isdigit(token[2])) {
-		char *p = (char*)(token + 2);
-		
-		while(isdigit(*p)) p++;
-
-		reg->reg.index = atoi(token+2);
-		reg->reg.type = GetConstRegType(reg->reg.index);
-
-		if(*p==']') p++;
-		token = p;
-	}
-
-	token = ParseRegSwizzle(token,reg);
+	ParseVectorSrc(token,reg);
 }
 
 int CFPParser::GetConstRegType(int index)
