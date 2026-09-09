@@ -77,7 +77,7 @@ internal sealed class Iw3PcShaderCompiler
 
             string mojoProfile = TranslateWithMojoShader(inputPath, assemblyPath, source.Stage, fullPath);
             NormalizeAssembly(assemblyPath, source.Stage, signedNormalInputMask,
-                comparisonSamplerMask, reflectionProbeSamplerMask);
+                comparisonSamplerMask, reflectionProbeSamplerMask, GetPositionMatrixRegisters(source, parameters));
             Assemble(assemblyPath, binaryPath, source.Stage, fullPath);
 
             RsxProgram program = ReadRsxProgram(File.ReadAllBytes(binaryPath), source.Stage, fullPath);
@@ -133,7 +133,8 @@ internal sealed class Iw3PcShaderCompiler
         Iw3ShaderStage stage,
         ushort signedNormalInputMask,
         ushort comparisonSamplerMask,
-        ushort reflectionProbeSamplerMask)
+        ushort reflectionProbeSamplerMask,
+        (int World, int ViewProjection) positionMatrices)
     {
         string assembly = File.ReadAllText(assemblyPath, Encoding.ASCII);
         string requiredHeader = stage == Iw3ShaderStage.Vertex ? "!!ARBvp1.0" : "!!ARBfp1.0";
@@ -161,6 +162,8 @@ internal sealed class Iw3PcShaderCompiler
         else if (comparisonSamplerMask != 0 || reflectionProbeSamplerMask != 0)
             throw new InvalidDataException("A vertex shader cannot have code pixel samplers.");
         assembly = NormalizeCgCompSyntax(assembly, stage);
+        if (stage == Iw3ShaderStage.Vertex)
+            assembly = LowerWorldPosition(assembly, positionMatrices);
         if (stage == Iw3ShaderStage.Pixel)
             assembly = LowerComparisonSamplers(assembly, comparisonSamplerMask);
         File.WriteAllText(assemblyPath, assembly, Encoding.ASCII);
@@ -203,6 +206,134 @@ internal sealed class Iw3PcShaderCompiler
                 comparison |= bit;
         }
         return (comparison, reflectionProbe);
+    }
+
+    internal static (int World, int ViewProjection) GetPositionMatrixRegisters(
+        Iw3ShaderSource source,
+        IReadOnlyList<Iw3ShaderParameter> parameters)
+    {
+        int world = -1, viewProjection = -1;
+        bool supported = true;
+        if (source.Stage != Iw3ShaderStage.Vertex)
+            return (world, viewProjection);
+
+        foreach (Iw3ShaderParameter parameter in parameters)
+        {
+            if (parameter.Kind != Iw3ShaderParameterKind.Constant || !parameter.IsReferenced)
+                continue;
+            Iw3ShaderArgumentSource[] assignments = source.Arguments
+                .Where(argument => argument.Destination.Name == parameter.Name).ToArray();
+            if (assignments.Length > 1)
+                throw new InvalidDataException($"Shader '{source.ProgramName}' assigns constant '{parameter.Name}' more than once.");
+            string accessor = parameter.Name;
+            if (assignments.Length == 1)
+            {
+                if (assignments[0].Value is not Iw3CodeShaderValueSource { Kind: Iw3CodeShaderValueKind.Constant } code)
+                    continue;
+                accessor = code.Accessor;
+            }
+            if (!Iw3TechniqueBindingFacts.TryGetConstant(accessor, out Iw3CodeConstantBinding binding) ||
+                binding.Source is not (MaterialConstantSource.WorldMatrix0 or MaterialConstantSource.ViewProjectionMatrix))
+                continue;
+            if (assignments.Length == 1 && (assignments[0].Destination.Index is not null ||
+                    ((Iw3CodeShaderValueSource)assignments[0].Value).ElementIndex is not null) ||
+                parameter.Class != 3 || parameter.Rows != 4 || parameter.Columns != 4 || parameter.Elements != 1 ||
+                parameter.RegisterCount != 4 || parameter.ResourceIndex > 252)
+                supported = false;
+
+            ref int register = ref (binding.Source == MaterialConstantSource.WorldMatrix0 ? ref world : ref viewProjection);
+            if (register != -1)
+                throw new InvalidDataException($"Shader '{source.ProgramName}' binds a position matrix more than once.");
+            register = checked((int)parameter.ResourceIndex);
+        }
+        if (world < 0 || viewProjection < 0)
+            return (-1, -1);
+        if (!supported || Math.Abs(world - viewProjection) < 4)
+            throw new InvalidDataException($"Shader '{source.ProgramName}' has unsupported world/view-projection matrices.");
+        return (world, viewProjection);
+    }
+
+    private static string LowerWorldPosition(string assembly, (int World, int ViewProjection) matrices)
+    {
+        if (matrices.World < 0 || matrices.ViewProjection < 0)
+            return assembly;
+
+        string[] lines = assembly.Split('\n');
+        int[] instructions = Enumerable.Range(0, lines.Length)
+            .Where(index => !string.IsNullOrWhiteSpace(lines[index]) &&
+                !Regex.IsMatch(lines[index].TrimStart(), @"^(?:!!|#|OPTION\b)"))
+            .ToArray();
+        var constants = Regex.Matches(assembly, @"(?m)^#const (c\[\d+\]) = ([^\r\n]+)$")
+            .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(value => float.Parse(value, CultureInfo.InvariantCulture)).ToArray(), StringComparer.Ordinal);
+        var occupied = Regex.Matches(assembly, @"\bR(\d+)\b")
+            .Select(match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)).ToHashSet();
+        int scratch = Enumerable.Range(0, 32).FirstOrDefault(register => !occupied.Contains(register), -1);
+        int lowered = 0;
+        for (int index = 0; index + 8 < instructions.Length; index++)
+        {
+            Match homogeneous = Regex.Match(lines[instructions[index]].Trim(),
+                @"^MAD (R\d+), v\[vertex\.position\]\.xyzx, (c\[\d+\])\.([xyzw]{4}), \2\.([xyzw]{4});$");
+            if (!homogeneous.Success || !constants.TryGetValue(homogeneous.Groups[2].Value, out float[]? values) ||
+                values.Length != 4 || !homogeneous.Groups[3].Value.Select(lane => values["xyzw".IndexOf(lane)])
+                    .SequenceEqual(new float[] { 1, 1, 1, 0 }) ||
+                !homogeneous.Groups[4].Value.Select(lane => values["xyzw".IndexOf(lane)])
+                    .SequenceEqual(new float[] { 0, 0, 0, 1 }))
+                continue;
+
+            Match[] dots = Enumerable.Range(1, 8).Select(offset => Regex.Match(lines[instructions[index + offset]].Trim(),
+                @"^DP4 (R\d+|result\.position)\.([xyzw]), (R\d+), c\[(\d+)\];$")).ToArray();
+            if (dots.Any(dot => !dot.Success))
+                continue;
+            string input = homogeneous.Groups[1].Value;
+            string world = dots[0].Groups[1].Value;
+            string output = dots[4].Groups[1].Value;
+            if (!Regex.IsMatch(world, @"^R\d+$") || world == input || output == world ||
+                dots.Take(4).Select(dot => dot.Groups[2].Value).Distinct().Count() != 4 ||
+                dots.Skip(4).Select(dot => dot.Groups[2].Value).Distinct().Count() != 4)
+                continue;
+            bool valid = true;
+            for (int dotIndex = 0; dotIndex < dots.Length; dotIndex++)
+            {
+                Match dot = dots[dotIndex];
+                int row = "xyzw".IndexOf(dot.Groups[2].Value, StringComparison.Ordinal);
+                valid &= dot.Groups[1].Value == (dotIndex < 4 ? world : output) &&
+                    dot.Groups[3].Value == (dotIndex < 4 ? input : world) &&
+                    int.Parse(dot.Groups[4].Value, CultureInfo.InvariantCulture) ==
+                    (dotIndex < 4 ? matrices.World : matrices.ViewProjection) + row;
+            }
+            if (!valid)
+                continue;
+            if (scratch < 0)
+                throw new InvalidDataException("The shader has no free temporary for native world-position arithmetic.");
+
+            // Native IW4 world passes accumulate Y, X, Z, then translation;
+            // the projection accumulates Y, X, Z, W. DP4's different reduction
+            // order moves coplanar overlays across the native surface's depth.
+            // CTAB still uploads transposed rows: use each row's scalar lanes.
+            for (int dotIndex = 0; dotIndex < dots.Length; dotIndex++)
+            {
+                Match dot = dots[dotIndex];
+                string lane = dot.Groups[2].Value;
+                string destination = dot.Groups[1].Value + "." + lane;
+                string constant = "c[" + dot.Groups[4].Value + "]";
+                string source = dotIndex < 4 ? "v[vertex.position]" : world;
+                string accumulator = dotIndex < 4 ? destination : $"R{scratch}.{lane}";
+                lines[instructions[index + dotIndex + 1]] =
+                    $"MUL {accumulator}, {source}.y, {constant}.y;\n" +
+                    $"MAD {accumulator}, {source}.x, {constant}.x, {accumulator};\n" +
+                    $"MAD {accumulator}, {source}.z, {constant}.z, {accumulator};\n" +
+                    (dotIndex < 4
+                        ? $"ADD {destination}, {accumulator}, {constant}.w;"
+                        : $"MAD {destination}, {source}.w, {constant}.w, {accumulator};");
+            }
+            lowered++;
+            index += 8;
+        }
+        if (lowered != 1)
+            throw new InvalidDataException("The shader requires one supported world-to-view-projection position chain.");
+        return string.Join('\n', lines);
     }
 
     private static string LowerReflectionProbeSamples(string assembly, ushort reflectionProbeSamplerMask)

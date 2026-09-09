@@ -635,7 +635,7 @@ public sealed class RawFileEditorViewModel
             StatusMessage = CreateApplyStatusMessage(changed, gscOutcome);
             RefreshPresentation();
         }
-        catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or IOException or OverflowException)
+        catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or InvalidDataException or IOException or OverflowException)
         {
             StatusMessage = exception.Message;
         }

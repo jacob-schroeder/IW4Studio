@@ -240,6 +240,13 @@ internal sealed class Iw3TechniqueCompiler
                     $"{passPath} shader '{source.ProgramName}' is reused with conflicting code " +
                     $"sampler masks {cached.CodeSamplerMasks} and {codeSamplerMasks}.");
             }
+            var positionMatrices = Iw3PcShaderCompiler.GetPositionMatrixRegisters(source, cached.Compilation.Parameters);
+            if (cached.PositionMatrices != positionMatrices)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting position " +
+                    $"matrix registers {cached.PositionMatrices} and {positionMatrices}.");
+            }
             return cached.Compilation;
         }
 
@@ -271,7 +278,8 @@ internal sealed class Iw3TechniqueCompiler
         EnsureUniqueParameters(compilation.Parameters, source.ProgramName);
 
         _shaderCache.Add(key, new CachedShader(compilation, signedNormalInputMask,
-            Iw3PcShaderCompiler.GetCodeSamplerMasks(source, compilation.Parameters)));
+            Iw3PcShaderCompiler.GetCodeSamplerMasks(source, compilation.Parameters),
+            Iw3PcShaderCompiler.GetPositionMatrixRegisters(source, compilation.Parameters)));
         return compilation;
     }
 
@@ -998,7 +1006,8 @@ internal sealed class Iw3TechniqueCompiler
     private sealed record CachedShader(
         Iw3ShaderCompilation Compilation,
         ushort SignedNormalInputMask,
-        (ushort Comparison, ushort ReflectionProbe) CodeSamplerMasks);
+        (ushort Comparison, ushort ReflectionProbe) CodeSamplerMasks,
+        (int World, int ViewProjection) PositionMatrices);
 
     private sealed record CompiledTechnique(
         Iw3TechniqueSource Source,

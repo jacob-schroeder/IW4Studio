@@ -58,7 +58,9 @@ public static class RawFileContentClassifier
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         bool declaredText = TextExtensions.Contains(Path.GetExtension(name));
-        RawFileTextEncoding? detectedEncoding = DetectTextEncoding(logicalContent);
+        RawFileTextEncoding? detectedEncoding = DetectTextEncoding(
+            logicalContent,
+            allowControlCharacters: declaredText);
         if (declaredText || detectedEncoding is not null)
         {
             return new RawFileContentClassification(
@@ -73,15 +75,16 @@ public static class RawFileContentClassifier
             IsDeclaredTextExtension: false);
     }
 
-    public static RawFileTextEncoding? DetectTextEncoding(
-        ReadOnlySpan<byte> logicalContent)
+    private static RawFileTextEncoding? DetectTextEncoding(
+        ReadOnlySpan<byte> logicalContent,
+        bool allowControlCharacters)
     {
         if (logicalContent.Contains((byte)0))
             return null;
 
-        if (TryDecodeText(logicalContent, StrictUtf8, out _))
+        if (TryDecodeText(logicalContent, StrictUtf8, allowControlCharacters))
             return RawFileTextEncoding.Utf8;
-        if (TryDecodeText(logicalContent, StrictWindows1252, out _))
+        if (TryDecodeText(logicalContent, StrictWindows1252, allowControlCharacters))
             return RawFileTextEncoding.Windows1252;
         return null;
     }
@@ -90,15 +93,15 @@ public static class RawFileContentClassifier
         ReadOnlySpan<byte> logicalContent,
         RawFileTextEncoding encoding)
     {
-        Encoding codec = GetTextEncoding(encoding);
-        string text = codec.GetString(logicalContent);
-        if (!IsText(text))
+        if (logicalContent.Contains((byte)0))
         {
             throw new InvalidDataException(
-                $"RawFile content contains characters that are not valid {GetDisplayName(encoding)} text.");
+                "RawFile text cannot contain an embedded terminal null.");
         }
 
-        return text;
+        // Control characters are valid encoded text, including in GSC strings.
+        // IsText is only a heuristic for content without a declared text extension.
+        return GetTextEncoding(encoding).GetString(logicalContent);
     }
 
     public static byte[] EncodeText(
@@ -129,16 +132,15 @@ public static class RawFileContentClassifier
     private static bool TryDecodeText(
         ReadOnlySpan<byte> content,
         Encoding encoding,
-        out string? text)
+        bool allowControlCharacters)
     {
         try
         {
-            text = encoding.GetString(content);
-            return IsText(text);
+            string text = encoding.GetString(content);
+            return allowControlCharacters || IsText(text);
         }
         catch (DecoderFallbackException)
         {
-            text = null;
             return false;
         }
     }
