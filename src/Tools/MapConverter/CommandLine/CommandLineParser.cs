@@ -1,4 +1,5 @@
 using System.Globalization;
+using IW4.FastFiles.Database.Streaming;
 
 namespace MapConverter.CommandLine;
 
@@ -7,7 +8,7 @@ internal static class CommandLineParser
     internal const string HelpText =
         """
         Usage:
-          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--bootstrap-fastfile <path>] [--imagefile-index <1-20>] --output <directory>
+          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--bootstrap-fastfile <path>] [--imagefile-index <-1|1-20>] --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --world-template <iw4.ff> [--bootstrap-fastfile <iw4.ff>] --output <directory>
 
         Options:
@@ -28,12 +29,20 @@ internal static class CommandLineParser
           --iwd <path>               Optional source IWD archive.
           --source-fastfiles <dir>   Optional IW3 PS3 fastfile directory used
                                      to recover stock streamed-image payloads.
+          --source-library <dir>     Optional COD4 source library directory.
+                                     Searches fastfiles and IWD archives recursively
+                                     for stock assets. Requires --imagefile-index;
+                                     cannot be combined with --world-template.
+                                     Supported PS3 asset graphs can be cataloged;
+                                     PS3 asset export is not supported yet.
           --bootstrap-fastfile <ff>  Optional IW4 PS3 fastfile supplying an
                                      owned target XModel missing from IW3 input.
                                      With --world-template, supplies the native
                                      world/model materials and their dependencies.
-          --imagefile-index <1-20>   Required with an image source; selects
-                                     imagefileN.pak.
+          --imagefile-index <-1|1-20>
+                                     Required with an image source. Use -1 for
+                                     the map's named .pak shared with its _load
+                                     fastfile, or 1-20 for imagefileN.pak.
           --output <directory>       Destination directory.
           --help                     Show this help text.
 
@@ -54,6 +63,7 @@ internal static class CommandLineParser
         "--world-template",
         "--iwd",
         "--source-fastfiles",
+        "--source-library",
         "--bootstrap-fastfile",
         "--imagefile-index",
         "--output",
@@ -137,32 +147,48 @@ internal static class CommandLineParser
         var hasSourceFastFiles = values.TryGetValue(
             "--source-fastfiles",
             out var sourceFastFileDirectory);
+        var hasSourceLibrary = values.TryGetValue(
+            "--source-library",
+            out var sourceLibraryDirectory);
         var hasImageFileIndex = values.TryGetValue("--imagefile-index", out var imageFileIndexValue);
 
-        if ((hasIwd || hasSourceFastFiles) && !hasImageFileIndex)
+        if (worldOnly && hasSourceLibrary)
         {
             return CommandLineParseResult.Failure(
-                "Option '--imagefile-index' is required when '--iwd' or " +
-                "'--source-fastfiles' is specified.");
+                "Option '--source-library' is supported only for full conversion and " +
+                "cannot be combined with '--world-template'.");
         }
 
-        if (!hasIwd && !hasSourceFastFiles && hasImageFileIndex)
+        if ((hasIwd || hasSourceFastFiles || hasSourceLibrary) && !hasImageFileIndex)
         {
             return CommandLineParseResult.Failure(
-                "Option '--iwd' or '--source-fastfiles' is required when " +
+                "Option '--imagefile-index' is required when '--iwd', " +
+                "'--source-fastfiles', or '--source-library' is specified.");
+        }
+
+        if (!hasIwd && !hasSourceFastFiles && !hasSourceLibrary && hasImageFileIndex)
+        {
+            return CommandLineParseResult.Failure(
+                "Option '--iwd', '--source-fastfiles', or '--source-library' is required when " +
                 "'--imagefile-index' is specified.");
         }
 
         int? imageFileIndex = null;
         if (hasImageFileIndex)
         {
-            if (!int.TryParse(imageFileIndexValue, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIndex) ||
-                parsedIndex is < 1 or > 20)
+            if (imageFileIndexValue == "-1")
             {
-                return CommandLineParseResult.Failure("Option '--imagefile-index' must be an integer from 1 through 20.");
+                imageFileIndex = unchecked((int)DbHeaderImageStreamEntry.NamedFileIndex);
             }
-
-            imageFileIndex = parsedIndex;
+            else if (int.TryParse(imageFileIndexValue, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIndex) &&
+                DbHeaderImageStreamEntry.IsValidPackageFileIndex(checked((uint)parsedIndex)))
+            {
+                imageFileIndex = parsedIndex;
+            }
+            else
+            {
+                return CommandLineParseResult.Failure("Option '--imagefile-index' must be -1 or an integer from 1 through 20.");
+            }
         }
 
         var options = new MapConverterOptions(
@@ -172,6 +198,7 @@ internal static class CommandLineParser
             values.GetValueOrDefault("--load"),
             iwdPath,
             sourceFastFileDirectory,
+            sourceLibraryDirectory,
             values.GetValueOrDefault("--bootstrap-fastfile"),
             imageFileIndex,
             values["--output"],

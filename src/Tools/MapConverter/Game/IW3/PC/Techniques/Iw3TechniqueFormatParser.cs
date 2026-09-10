@@ -89,7 +89,7 @@ internal sealed class Iw3TechniqueFormatParser
         string fullPath = Path.GetFullPath(techniqueSetPath);
         string name = assetName;
 
-        var reader = CreateReader(fullPath);
+        var reader = CreateReader(fullPath, techniqueSet: true);
         var pendingSlots = new List<Iw3TechniqueSlot>();
         var techniqueNames = new Dictionary<Iw3TechniqueSlot, string>();
 
@@ -183,7 +183,7 @@ internal sealed class Iw3TechniqueFormatParser
                 techniquePath);
         }
 
-        var reader = CreateReader(techniquePath);
+        var reader = CreateReader(techniquePath, techniqueSet: false);
         var passes = new List<Iw3TechniquePassSource>();
         while (reader.Peek().Kind != TokenKind.End)
             passes.Add(ParsePass(reader));
@@ -458,10 +458,10 @@ internal sealed class Iw3TechniqueFormatParser
         return value;
     }
 
-    private static TokenReader CreateReader(string path)
+    private static TokenReader CreateReader(string path, bool techniqueSet)
     {
         string text = File.ReadAllText(path);
-        return new TokenReader(path, Lexer.Tokenize(path, text));
+        return new TokenReader(path, Lexer.Tokenize(path, text, techniqueSet));
     }
 
     private enum TokenKind
@@ -531,7 +531,7 @@ internal sealed class Iw3TechniqueFormatParser
 
     private static class Lexer
     {
-        internal static IReadOnlyList<Token> Tokenize(string sourcePath, string text)
+        internal static IReadOnlyList<Token> Tokenize(string sourcePath, string text, bool techniqueSet)
         {
             var tokens = new List<Token>();
             int index = 0;
@@ -565,14 +565,19 @@ internal sealed class Iw3TechniqueFormatParser
                         ref column));
                     continue;
                 }
-                if (IsIdentifierStart(current))
+                // Techset statements name relative files (including 2d and sm2/
+                // namespaces); technique bodies instead contain typed values.
+                if (IsIdentifierStart(current) || (techniqueSet && char.IsAsciiDigit(current)))
                 {
                     int start = index;
                     do
                     {
                         Advance(text, ref index, ref line, ref column);
                     }
-                    while (index < text.Length && IsIdentifierPart(text[index]));
+                    while (index < text.Length &&
+                           (IsIdentifierPart(text[index]) ||
+                            (techniqueSet && text[index] == '/' &&
+                             index + 1 < text.Length && text[index + 1] != '/')));
                     tokens.Add(new Token(
                         TokenKind.Identifier,
                         text[start..index],

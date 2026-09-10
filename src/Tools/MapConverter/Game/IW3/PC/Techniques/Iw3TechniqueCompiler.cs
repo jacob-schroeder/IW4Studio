@@ -90,6 +90,8 @@ internal sealed class Iw3TechniqueCompiler
         };
         MaterialShaderAsset[] shaders = usedShaders
             .OrderBy(pair => pair.Key.Stage)
+            .ThenBy(pair => pair.Key.ShaderModel.Major)
+            .ThenBy(pair => pair.Key.ShaderModel.Minor)
             .ThenBy(pair => pair.Key.ProgramName, StringComparer.Ordinal)
             .Select(pair => pair.Value)
             .ToArray();
@@ -153,6 +155,8 @@ internal sealed class Iw3TechniqueCompiler
             asset,
             Array.AsReadOnly(shaderKeys
                 .OrderBy(key => key.Stage)
+                .ThenBy(key => key.ShaderModel.Major)
+                .ThenBy(key => key.ShaderModel.Minor)
                 .ThenBy(key => key.ProgramName, StringComparer.Ordinal)
                 .ToArray()));
         compiledTechniques.Add(source.Name, compiledTechnique);
@@ -174,8 +178,14 @@ internal sealed class Iw3TechniqueCompiler
                 "passthrough state map has a proven IW4 representation.");
         }
 
-        ShaderKey vertexKey = new(Iw3ShaderStage.Vertex, source.VertexShader.ProgramName);
-        ShaderKey pixelKey = new(Iw3ShaderStage.Pixel, source.PixelShader.ProgramName);
+        ShaderKey vertexKey = new(
+            Iw3ShaderStage.Vertex,
+            source.VertexShader.ShaderModel,
+            source.VertexShader.ProgramName);
+        ShaderKey pixelKey = new(
+            Iw3ShaderStage.Pixel,
+            source.PixelShader.ShaderModel,
+            source.PixelShader.ProgramName);
         MaterialVertexDeclarationAsset declaration = CompileDeclaration(
             source.VertexRouting,
             passPath,
@@ -224,7 +234,7 @@ internal sealed class Iw3TechniqueCompiler
     {
         ArgumentNullException.ThrowIfNull(source);
         ValidateOwnedName(source.ProgramName, "shader program");
-        var key = new ShaderKey(source.Stage, source.ProgramName);
+        var key = new ShaderKey(source.Stage, source.ShaderModel, source.ProgramName);
         if (_shaderCache.TryGetValue(key, out CachedShader? cached))
         {
             if (cached.SignedNormalInputMask != signedNormalInputMask)
@@ -246,6 +256,14 @@ internal sealed class Iw3TechniqueCompiler
                 throw new InvalidDataException(
                     $"{passPath} shader '{source.ProgramName}' is reused with conflicting position " +
                     $"matrix registers {cached.PositionMatrices} and {positionMatrices}.");
+            }
+            var sunShadow = Iw3PcShaderCompiler.GetSunShadowRegisters(source, cached.Compilation.Parameters);
+            int fogRegister = Iw3PcShaderCompiler.GetFogRegister(source, cached.Compilation.Parameters);
+            int sunSpecular = Iw3PcShaderCompiler.GetSunSpecularRegister(source, cached.Compilation.Parameters);
+            if (cached.SunShadow != sunShadow || cached.FogRegister != fogRegister || cached.SunSpecularRegister != sunSpecular)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting Sun receiver, fog or sun-specular bindings.");
             }
             return cached.Compilation;
         }
@@ -279,7 +297,10 @@ internal sealed class Iw3TechniqueCompiler
 
         _shaderCache.Add(key, new CachedShader(compilation, signedNormalInputMask,
             Iw3PcShaderCompiler.GetCodeSamplerMasks(source, compilation.Parameters),
-            Iw3PcShaderCompiler.GetPositionMatrixRegisters(source, compilation.Parameters)));
+            Iw3PcShaderCompiler.GetPositionMatrixRegisters(source, compilation.Parameters),
+            Iw3PcShaderCompiler.GetSunShadowRegisters(source, compilation.Parameters),
+            Iw3PcShaderCompiler.GetFogRegister(source, compilation.Parameters),
+            Iw3PcShaderCompiler.GetSunSpecularRegister(source, compilation.Parameters)));
         return compilation;
     }
 
@@ -1001,13 +1022,17 @@ internal sealed class Iw3TechniqueCompiler
 
     private readonly record struct ShaderKey(
         Iw3ShaderStage Stage,
+        Iw3ShaderModel ShaderModel,
         string ProgramName);
 
     private sealed record CachedShader(
         Iw3ShaderCompilation Compilation,
         ushort SignedNormalInputMask,
         (ushort Comparison, ushort ReflectionProbe) CodeSamplerMasks,
-        (int World, int ViewProjection) PositionMatrices);
+        (int World, int ViewProjection) PositionMatrices,
+        (int Sampler, int PrimarySampler, int Switch, int Scale) SunShadow,
+        int FogRegister,
+        int SunSpecularRegister);
 
     private sealed record CompiledTechnique(
         Iw3TechniqueSource Source,

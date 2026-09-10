@@ -6,8 +6,7 @@ internal sealed record Iw3ZoneManifestEntry(
     bool IsReference);
 
 /// <summary>
-/// Reads the deterministic IW3 zone-source manifest emitted by
-/// OpenAssetTools after a fastfile is unlinked.
+/// Reads and writes the deterministic IW3 zone-source manifest.
 /// </summary>
 internal sealed class Iw3ZoneManifest
 {
@@ -17,6 +16,31 @@ internal sealed class Iw3ZoneManifest
     }
 
     internal IReadOnlyList<Iw3ZoneManifestEntry> Entries { get; }
+
+    internal static void Write(string path, IEnumerable<Iw3ZoneManifestEntry> entries)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(entries);
+
+        var lines = new List<string> { ">game,IW3" };
+        foreach (Iw3ZoneManifestEntry entry in entries
+                     .OrderBy(entry => entry.AssetType, StringComparer.Ordinal)
+                     .ThenBy(entry => entry.AssetName, StringComparer.Ordinal))
+        {
+            if (!IsValidEntry(entry.AssetType, entry.AssetName))
+            {
+                throw new InvalidDataException(
+                    $"Cannot write invalid IW3 zone entry '{entry.AssetType},{entry.AssetName}'.");
+            }
+            lines.Add($"{entry.AssetType},{(entry.IsReference ? "," : "")}{entry.AssetName}");
+        }
+
+        string fullPath = Path.GetFullPath(path);
+        string directory = Path.GetDirectoryName(fullPath)
+            ?? throw new ArgumentException("The IW3 zone manifest requires a file path.", nameof(path));
+        Directory.CreateDirectory(directory);
+        File.WriteAllLines(fullPath, lines, new System.Text.UTF8Encoding(false));
+    }
 
     internal static Iw3ZoneManifest Read(string path)
     {
@@ -61,17 +85,14 @@ internal sealed class Iw3ZoneManifest
             string encodedName = line[(firstComma + 1)..];
             bool isReference = encodedName.StartsWith(',');
             string assetName = isReference ? encodedName[1..] : encodedName;
-            if (assetName.Length == 0 || assetName.Contains(',') ||
-                assetName.Contains('\0') ||
-                !string.Equals(assetName, assetName.Trim(), StringComparison.Ordinal))
+            if (!IsValidAssetName(assetName))
             {
                 throw ManifestError(
                     fullPath,
                     lineNumber,
                     $"invalid {assetType} asset name '{assetName}'");
             }
-            if (assetType.Any(character =>
-                    character is < 'a' or > 'z'))
+            if (!IsValidAssetType(assetType))
             {
                 throw ManifestError(
                     fullPath,
@@ -93,6 +114,17 @@ internal sealed class Iw3ZoneManifest
 
         return new Iw3ZoneManifest(Array.AsReadOnly(entries.ToArray()));
     }
+
+    private static bool IsValidAssetType(string value) =>
+        !string.IsNullOrEmpty(value) && value.All(character => character is >= 'a' and <= 'z' or '_');
+
+    internal static bool IsValidEntry(string type, string name) =>
+        IsValidAssetType(type) && IsValidAssetName(name);
+
+    private static bool IsValidAssetName(string value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.IndexOfAny([',', '\0', '\r', '\n']) < 0 &&
+        string.Equals(value, value.Trim(), StringComparison.Ordinal);
 
     private static InvalidDataException ManifestError(
         string path,

@@ -29,24 +29,25 @@ public sealed class ImageFilePackage
 }
 
 /// <summary>
-/// Writes a native PS3 imagefileN.pak from ordered logical stream payloads.
+/// Writes a native PS3 image package from ordered logical stream payloads.
 /// The package uses the shared 64 KiB PS3 frame encoder; returned references
 /// identify the exact physical frame range and logical offset of every input.
 /// </summary>
 public sealed class ImageFilePackager
 {
-    private const uint MaximumFileIndex = 20;
     private const int StreamPartAlignment = 0x80;
 
     public ImageFilePackage Package(
         uint fileIndex,
         IReadOnlyList<ReadOnlyMemory<byte>> payloads)
     {
-        if (fileIndex is 0 or > MaximumFileIndex)
+        if (!DbHeaderImageStreamEntry.IsValidPackageFileIndex(fileIndex))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(fileIndex),
-                $"A PS3 imagefile package index must be between 1 and {MaximumFileIndex}.");
+                "A PS3 image package index must be between 1 and " +
+                $"{DbHeaderImageStreamEntry.MaximumNumberedFileIndex}, or " +
+                "0xFFFFFFFF for a named map package.");
         }
         ArgumentNullException.ThrowIfNull(payloads);
         if (payloads.Count == 0)

@@ -15,6 +15,10 @@
     <ProjectReference Include="..\..\IW4.Studio\IW4.Studio.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Game\IW3\PS3\" />
+  </ItemGroup>
+
   <Target Name="BuildLocalShaderTools" BeforeTargets="CoreCompile" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
     <PropertyGroup>
       <ShaderNativeOutput>$(OutDir)Native</ShaderNativeOutput>

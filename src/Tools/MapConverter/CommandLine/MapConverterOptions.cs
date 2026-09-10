@@ -17,6 +17,7 @@ internal sealed record MapConverterOptions(
     string? LoadPath,
     string? IwdPath,
     string? SourceFastFileDirectory,
+    string? SourceLibraryDirectory,
     string? BootstrapFastFilePath,
     int? ImageFileIndex,
     string OutputDirectory,

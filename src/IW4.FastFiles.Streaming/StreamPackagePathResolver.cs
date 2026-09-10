@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using IW4.FastFiles.Database.Streaming;
 
 namespace IW4.FastFiles.Streaming;
 
@@ -8,17 +9,20 @@ internal sealed class StreamPackagePathResolver
     private readonly string _packageDirectory;
     private readonly string _packageFilePrefix;
     private readonly string _packageDescription;
+    private readonly string? _namedPackageFileName;
 
     public StreamPackagePathResolver(
         string fastFilePath,
         string packageFilePrefix,
-        string packageDescription)
+        string packageDescription,
+        string? namedPackageFileName = null)
     {
         _packageDirectory =
             Path.GetDirectoryName(Path.GetFullPath(fastFilePath)) ??
             Environment.CurrentDirectory;
         _packageFilePrefix = packageFilePrefix;
         _packageDescription = packageDescription;
+        _namedPackageFileName = namedPackageFileName;
     }
 
     public bool TryResolve(
@@ -33,7 +37,11 @@ internal sealed class StreamPackagePathResolver
             return true;
         }
 
-        string packageFileName = $"{_packageFilePrefix}{fileIndex}.pak";
+        string packageFileName =
+            fileIndex == DbHeaderImageStreamEntry.NamedFileIndex &&
+            _namedPackageFileName is not null
+                ? _namedPackageFileName
+                : $"{_packageFilePrefix}{fileIndex}.pak";
         string adjacentPath = Path.Combine(
             _packageDirectory,
             packageFileName);

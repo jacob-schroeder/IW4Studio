@@ -7,8 +7,10 @@ namespace MapConverter.Game.IW3.PC.Techniques;
 /// no DFOG slots, so each DFOG slot intentionally shares its base technique.
 /// PS3 uses depth shadow maps and stock PS3 technique sets leave the desktop
 /// color-shadow-map slot empty.
-/// Source-only instanced sun-shadow/spot/omni, shadow-cookie, and instanced
-/// debug slots have no PS3 IW4 counterpart.
+/// PS3 slots 23..26 select lower-detail lit/sun passes, not IW3 instanced
+/// geometry. Reuse the base source passes and their material state rows.
+/// Source-only instanced, shadow-cookie, and instanced debug slots have no
+/// PS3 IW4 counterpart.
 /// </summary>
 internal static class Iw3TechniqueSlotMapping
 {
@@ -42,10 +44,10 @@ internal static class Iw3TechniqueSlotMapping
             Iw3TechniqueSlot.LitOmni,
             Iw3TechniqueSlot.LitOmniShadow,
             Iw3TechniqueSlot.LitOmniShadow,
-            Iw3TechniqueSlot.LitInstanced,
-            Iw3TechniqueSlot.LitInstanced,
-            Iw3TechniqueSlot.LitInstancedSun,
-            Iw3TechniqueSlot.LitInstancedSun,
+            Iw3TechniqueSlot.Lit,
+            Iw3TechniqueSlot.Lit,
+            Iw3TechniqueSlot.LitSun,
+            Iw3TechniqueSlot.LitSun,
             Iw3TechniqueSlot.LightSpot,
             Iw3TechniqueSlot.LightOmni,
             Iw3TechniqueSlot.LightSpotShadow,

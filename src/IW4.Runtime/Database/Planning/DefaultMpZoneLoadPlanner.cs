@@ -15,6 +15,7 @@ public sealed class DefaultMpZoneLoadPlanner
     private const string Dlc1UiZone = "dlc1_ui_mp";
     private const string UiZone = "ui_mp";
     private const string CommonZone = "common_mp";
+    private const string CustomUiZone = "custom_ui_mp";
     private readonly DbZoneCatalog _catalog;
 
     public DefaultMpZoneLoadPlanner(DbZoneCatalog catalog)
@@ -38,6 +39,7 @@ public sealed class DefaultMpZoneLoadPlanner
                string.Equals(targetName, Dlc1UiZone, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(targetName, UiZone, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(targetName, CommonZone, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(targetName, CustomUiZone, StringComparison.OrdinalIgnoreCase) ||
                IsMapZone(targetName, out _, out _);
     }
 
@@ -108,16 +110,29 @@ public sealed class DefaultMpZoneLoadPlanner
         bool needsUiCommon = !IsCoreZone(targetName) || scope == DbZonePlanScope.StableRuntime;
         if (needsUiCommon)
         {
+            var uiCommonRequests = new List<DbZonePlanRequest>
+            {
+                CreateLoadRequest(Dlc2UiZone, XZoneFlags.DB_ZONE_UI, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen),
+                CreateLoadRequest(Dlc1UiZone, XZoneFlags.DB_ZONE_UI, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen),
+                CreateLoadRequest(UiZone, XZoneFlags.DB_ZONE_UI, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen),
+                CreateLoadRequest(CommonZone, XZoneFlags.DB_ZONE_COMMON, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen)
+            };
+            if (_catalog.TryGet(CustomUiZone, out _) ||
+                string.Equals(targetName, CustomUiZone, StringComparison.OrdinalIgnoreCase))
+            {
+                uiCommonRequests.Add(CreateLoadRequest(
+                    CustomUiZone,
+                    XZoneFlags.DB_ZONE_UI,
+                    XZoneFlags.None,
+                    targetName,
+                    targetOverride,
+                    targetSeen,
+                    out targetSeen));
+            }
             batches.Add(new DbLoadXAssetsBatch(
                 "StartupUiCommon",
                 Synchronous: false,
-                Requests:
-                [
-                    CreateLoadRequest(Dlc2UiZone, XZoneFlags.DB_ZONE_UI, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen),
-                    CreateLoadRequest(Dlc1UiZone, XZoneFlags.DB_ZONE_UI, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen),
-                    CreateLoadRequest(UiZone, XZoneFlags.DB_ZONE_UI, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen),
-                    CreateLoadRequest(CommonZone, XZoneFlags.DB_ZONE_COMMON, XZoneFlags.None, targetName, targetOverride, targetSeen, out targetSeen)
-                ]));
+                Requests: uiCommonRequests));
         }
 
         if (IsMapZone(targetName, out string mapName, out bool targetIsLoadZone))
@@ -240,7 +255,8 @@ public sealed class DefaultMpZoneLoadPlanner
     {
         if (string.Equals(targetName, UiZone, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(targetName, Dlc1UiZone, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(targetName, Dlc2UiZone, StringComparison.OrdinalIgnoreCase))
+            string.Equals(targetName, Dlc2UiZone, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(targetName, CustomUiZone, StringComparison.OrdinalIgnoreCase))
         {
             return XZoneFlags.DB_ZONE_UI;
         }

@@ -8,11 +8,15 @@ using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
+using IW4.FastFiles.Database;
+using IW4.FastFiles.Database.Streaming;
+using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.D3dbsp;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
+using IW4.Runtime.IO;
 using IW4.Studio.Documents;
 using MapConverter.CommandLine;
 using MapConverter.Game.IW3.PC.Bootstrap;
@@ -24,6 +28,7 @@ using MapConverter.Game.IW3.PC.Models;
 using MapConverter.Game.IW3.PC.Physics;
 using MapConverter.Game.IW3.PC.Shaders;
 using MapConverter.Game.IW3.PC.Techniques;
+using MapConverter.Game.IW3.PS3.Images;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 
@@ -32,6 +37,7 @@ internal sealed record Iw3PcMapConversionResult(
     string MapFastFilePath,
     string LoadFastFilePath,
     string? ImageFilePath,
+    string? SourceProvenancePath,
     int ImageCount,
     int ExternalImageCount,
     int TechniqueSetCount,
@@ -107,6 +113,11 @@ internal static class Iw3PcMapConverter
             "IW4 world template fastfile");
         if (PathComparer.Equals(inputPath, templatePath))
             throw new ArgumentException("The IW3 input and IW4 world template must be different files.");
+        RejectNamedImagePackageReferences(
+            new DbHeaderReader().Read(
+                new FastFileCursor(File.ReadAllBytes(templatePath)),
+                new DbLoadContext()),
+            "The world template");
         string? bootstrapPath = options.BootstrapFastFilePath is null
             ? null
             : RequireInputFile(
@@ -126,15 +137,16 @@ internal static class Iw3PcMapConverter
             ? null : RequireInputDirectory(options.SourceFastFileDirectory, "IW3 PS3 fastfile directory");
         bool textured = iwdPath is not null || sourceFastFileDirectory is not null;
         if (textured != (options.ImageFileIndex is not null) ||
-            options.ImageFileIndex is < 1 or > 20)
-            throw new ArgumentException("World textures require an image source and an imagefile index from 1 through 20.");
+            options.ImageFileIndex is { } selectedImageIndex &&
+            !DbHeaderImageStreamEntry.IsValidPackageFileIndex(unchecked((uint)selectedImageIndex)))
+            throw new ArgumentException("World textures require an image source and an imagefile index of -1 or 1 through 20.");
         if (textured && bootstrapPath is null)
             throw new ArgumentException("World texturing requires --bootstrap-fastfile with the proven native world material.");
         if (options.LoadPath is not null && !textured)
             throw new ArgumentException("A world-first loading screen requires an image source and --imagefile-index.");
         string mapName = RequireFileStem(inputPath, "map fastfile");
         string? loadInputPath = options.LoadPath is null
-            ? null : RequireLoadInput(options.LoadPath, inputPath);
+            ? null : RequireLoadInput(options.LoadPath, inputPath, options.ImageFileIndex);
         string? loadName = loadInputPath is null ? null : RequireFileStem(loadInputPath, "load fastfile");
         string outputDirectory = Path.GetFullPath(options.OutputDirectory);
         if (File.Exists(outputDirectory))
@@ -146,7 +158,8 @@ internal static class Iw3PcMapConverter
         if (loadOutputPath is not null && (File.Exists(loadOutputPath) || Directory.Exists(loadOutputPath)))
             throw new IOException($"Output file '{loadOutputPath}' already exists.");
         string? imagePath = options.ImageFileIndex is { } imageIndex
-            ? Path.Combine(outputDirectory, $"imagefile{imageIndex}.pak") : null;
+            ? Path.Combine(outputDirectory, DbHeaderImageStreamEntry.GetPackageFileName(
+                unchecked((uint)imageIndex), outputPath)) : null;
         if (imagePath is not null && (File.Exists(imagePath) || Directory.Exists(imagePath)))
             throw new IOException($"Output file '{imagePath}' already exists.");
 
@@ -402,8 +415,9 @@ internal static class Iw3PcMapConverter
             .Where(material => !IsExternal(material)).ToArray();
         MaterialAsset defaultTemplate = nativeTemplates.Single(material => material.Info.Name == "w/$default3d");
         MaterialAsset defaultModelTemplate = nativeTemplates.Single(material => material.Info.Name == "mc/lambert1");
+        RejectNamedImagePackageReferences(bootstrap.LoadedZone.Header, "The material bootstrap");
         if (bootstrap.LoadedZone.Header.ImageStreamEntries.Any(entry =>
-                !entry.IsEmpty && entry.FileIndex == imageFileIndex))
+                !entry.IsEmpty && entry.FileIndex == unchecked((uint)imageFileIndex)))
             throw new InvalidDataException("The material bootstrap already references the selected imagefile index.");
         var templatesByMaterial = new Dictionary<string, MaterialAsset>(StringComparer.Ordinal);
         var bindingsByMaterial = new Dictionary<string, Iw3IwdImageRequest[]>(StringComparer.Ordinal);
@@ -754,6 +768,7 @@ internal static class Iw3PcMapConverter
         string? stagedMapPath = null;
         string? stagedLoadPath = null;
         string? stagedImagePath = null;
+        string? stagedSourcePath = null;
         try
         {
             Iw3PcExtractionResult extraction =
@@ -764,6 +779,7 @@ internal static class Iw3PcMapConverter
                         paths.MapInputPath,
                         paths.LoadInputPath,
                         paths.IwdInputPath,
+                        paths.SourceLibraryDirectory,
                         scratchDirectory),
                     cancellationToken).ConfigureAwait(false);
 
@@ -845,9 +861,16 @@ internal static class Iw3PcMapConverter
                     [BootstrapTntBombModelName],
                     scratchDirectory)
                 : null;
+            if (bootstrap?.ReferencedImageFileIndices.Contains(
+                    DbHeaderImageStreamEntry.NamedFileIndex) == true)
+            {
+                throw new InvalidDataException(
+                    "The bootstrap XModel closure references its own named image package, " +
+                    "which cannot be retained in the converted map.");
+            }
             if (options.ImageFileIndex is { } outputImageFileIndex &&
                 bootstrap?.ReferencedImageFileIndices.Contains(
-                    checked((uint)outputImageFileIndex)) == true)
+                    unchecked((uint)outputImageFileIndex)) == true)
             {
                 throw new InvalidDataException(
                     $"The bootstrap XModel closure references stock imagefile" +
@@ -899,7 +922,8 @@ internal static class Iw3PcMapConverter
                 [(mapManifest, extraction.MapAssetDirectory), (loadManifest, extraction.LoadAssetDirectory)],
                 paths.IwdInputPath,
                 paths.SourceFastFileDirectory,
-                options.ImageFileIndex);
+                options.ImageFileIndex,
+                sourceLibrary: extraction.SourceLibrary);
 
             TechniqueCompilationGraph techniques = CompileTechniques(
                 extraction,
@@ -1022,21 +1046,34 @@ internal static class Iw3PcMapConverter
                     images.Package.Bytes.Span);
             }
 
+            if (paths.SourceProvenancePath is not null)
+            {
+                Iw3PcSourceLibrary library = extraction.SourceLibrary ??
+                    throw new InvalidOperationException("The source library was not resolved.");
+                stagedSourcePath = StageOutput(
+                    paths.SourceProvenancePath, token, library.SerializeProvenance());
+            }
+
             PublishOutputs(
                 (stagedMapPath, paths.MapOutputPath),
                 (stagedLoadPath, paths.LoadOutputPath),
                 stagedImagePath is null || paths.ImageOutputPath is null
                     ? null
-                    : (stagedImagePath, paths.ImageOutputPath));
+                    : (stagedImagePath, paths.ImageOutputPath),
+                stagedSourcePath is null || paths.SourceProvenancePath is null
+                    ? null
+                    : (stagedSourcePath, paths.SourceProvenancePath));
             stagedMapPath = null;
             stagedLoadPath = null;
             stagedImagePath = null;
+            stagedSourcePath = null;
 
             return new Iw3PcMapConversionResult(
                 extraction.BackendDescription,
                 paths.MapOutputPath,
                 paths.LoadOutputPath,
                 paths.ImageOutputPath,
+                paths.SourceProvenancePath,
                 images.OwnedImageCount +
                     (mapImageNames.Contains(loadImageNames.Single()) ? 1 : 0),
                 images.AssetsBySourceName.Count - images.OwnedImageCount + 1,
@@ -1061,6 +1098,7 @@ internal static class Iw3PcMapConverter
             DeleteIfExists(stagedMapPath);
             DeleteIfExists(stagedLoadPath);
             DeleteIfExists(stagedImagePath);
+            DeleteIfExists(stagedSourcePath);
             TryDeleteDirectory(scratchDirectory);
         }
     }
@@ -1069,7 +1107,8 @@ internal static class Iw3PcMapConverter
     {
         string mapPath = RequireInputFile(options.MapPath, ".ff", "map fastfile");
         string loadPath = RequireLoadInput(
-            options.LoadPath ?? throw new ArgumentException("A load fastfile is required for full conversion."), mapPath);
+            options.LoadPath ?? throw new ArgumentException("A load fastfile is required for full conversion."),
+            mapPath, options.ImageFileIndex);
         string mapName = RequireFileStem(mapPath, "map fastfile");
         string loadName = RequireFileStem(loadPath, "load fastfile");
 
@@ -1081,6 +1120,9 @@ internal static class Iw3PcMapConverter
             : RequireInputDirectory(
                 options.SourceFastFileDirectory,
                 "IW3 PS3 source fastfile directory");
+        string? sourceLibraryDirectory = options.SourceLibraryDirectory is null
+            ? null
+            : RequireInputDirectory(options.SourceLibraryDirectory, "IW3 source library");
         string? bootstrapFastFilePath = options.BootstrapFastFilePath is null
             ? null
             : RequireInputFile(
@@ -1097,14 +1139,15 @@ internal static class Iw3PcMapConverter
                 "The IW4 bootstrap fastfile must be named 'mp_rust.ff'.");
         }
         bool hasImageSource = iwdPath is not null ||
-            sourceFastFileDirectory is not null;
+            sourceFastFileDirectory is not null || sourceLibraryDirectory is not null;
         if (hasImageSource != (options.ImageFileIndex is not null))
         {
             throw new ArgumentException(
-                "An IWD or IW3 PS3 source fastfile directory and imagefile " +
+                "An IWD, source library or IW3 PS3 source fastfile directory and imagefile " +
                 "index must be supplied together.");
         }
-        if (options.ImageFileIndex is < 1 or > 20)
+        if (options.ImageFileIndex is { } selectedImageIndex &&
+            !DbHeaderImageStreamEntry.IsValidPackageFileIndex(unchecked((uint)selectedImageIndex)))
             throw new ArgumentOutOfRangeException(nameof(options.ImageFileIndex));
 
         string outputDirectory = Path.GetFullPath(options.OutputDirectory);
@@ -1117,20 +1160,23 @@ internal static class Iw3PcMapConverter
         string mapOutputPath = Path.Combine(outputDirectory, mapName + ".ff");
         string loadOutputPath = Path.Combine(outputDirectory, loadName + ".ff");
         string? imageOutputPath = options.ImageFileIndex is { } imageIndex
-            ? Path.Combine(outputDirectory, $"imagefile{imageIndex}.pak")
+            ? Path.Combine(outputDirectory, DbHeaderImageStreamEntry.GetPackageFileName(
+                unchecked((uint)imageIndex), mapOutputPath))
             : null;
         var result = new ConversionPaths(
             mapPath,
             loadPath,
             iwdPath,
             sourceFastFileDirectory,
+            sourceLibraryDirectory,
             bootstrapFastFilePath,
             outputDirectory,
             mapName,
             loadName,
             mapOutputPath,
             loadOutputPath,
-            imageOutputPath);
+            imageOutputPath,
+            sourceLibraryDirectory is null ? null : Path.Combine(outputDirectory, mapName + ".sources.json"));
         RejectExistingOutputs(result);
         return result;
     }
@@ -1269,7 +1315,8 @@ internal static class Iw3PcMapConverter
         string? iwdPath,
         string? sourceFastFileDirectory,
         int? imageFileIndex,
-        bool useFallbackImages = false)
+        bool useFallbackImages = false,
+        Iw3PcSourceLibrary? sourceLibrary = null)
     {
         ImageRequirement[] ordered = requirements.Values
             .OrderBy(requirement => requirement.Name, StringComparer.OrdinalIgnoreCase)
@@ -1301,22 +1348,23 @@ internal static class Iw3PcMapConverter
             string,
             Iw3Iwi6StreamedImageCompilation>(StringComparer.OrdinalIgnoreCase);
 
-        void AddCompilation(Iw3Iwi6StreamedImageCompilation compilation)
+        string AddCompilation(Iw3Iwi6StreamedImageCompilation compilation)
         {
             string name = compilation.Image.Name ??
                 throw new InvalidDataException("A compiled image has no name.");
             if (!fullImagesByName.TryAdd(name, compilation))
                 throw new InvalidDataException($"Image '{name}' was compiled more than once.");
+            return name;
         }
 
         if (iwdPath is not null)
         {
-            IReadOnlyList<Iw3Iwi6StreamedImageCompilation> iwdImages =
-                Iw3IwdImageCompiler.Compile(
-                iwdPath,
-                streamableRequests);
-            foreach (Iw3Iwi6StreamedImageCompilation compilation in iwdImages)
-                AddCompilation(compilation);
+            foreach (var (compilation, origins) in Iw3IwdImageCompiler.Compile(
+                         [iwdPath], streamableRequests))
+            {
+                string name = AddCompilation(compilation);
+                sourceLibrary?.RecordImageSources(name, origins);
+            }
         }
 
         if (imageFileIndex is not null)
@@ -1338,6 +1386,22 @@ internal static class Iw3PcMapConverter
             }
         }
 
+        if (sourceLibrary is not null)
+        {
+            Iw3IwdImageRequest[] unresolvedRequests = streamableRequests
+                .Where(request => !fullImagesByName.ContainsKey(request.ImageName))
+                .ToArray();
+            if (unresolvedRequests.Length != 0)
+            {
+                foreach (var (compilation, origins) in Iw3IwdImageCompiler.Compile(
+                             sourceLibrary.IwdPaths, unresolvedRequests))
+                {
+                    string name = AddCompilation(compilation);
+                    sourceLibrary.RecordImageSources(name, origins);
+                }
+            }
+        }
+
         if (sourceFastFileDirectory is not null)
         {
             Iw3IwdImageRequest[] unresolvedRequests = streamableRequests
@@ -1346,20 +1410,18 @@ internal static class Iw3PcMapConverter
                 .ToArray();
             if (unresolvedRequests.Length != 0)
             {
-                IReadOnlyList<Iw3Iwi6StreamedImageCompilation> sourceFastFileImages =
-                    Iw3Ps3FastFileImageCompiler.Compile(
-                        sourceFastFileDirectory,
-                        unresolvedRequests);
-                foreach (Iw3Iwi6StreamedImageCompilation compilation in
-                         sourceFastFileImages)
+                foreach (var (compilation, sourceFastFilePath) in
+                         Iw3Ps3FastFileImageCompiler.Compile(
+                             sourceFastFileDirectory, unresolvedRequests))
                 {
-                    AddCompilation(compilation);
+                    string name = AddCompilation(compilation);
+                    sourceLibrary?.RecordImageSources(name, [sourceFastFilePath]);
                 }
             }
         }
 
         var fallbackImageNames = new List<string>();
-        if (sourceFastFileDirectory is not null || useFallbackImages)
+        if (sourceLibrary is null && (sourceFastFileDirectory is not null || useFallbackImages))
         {
             foreach (Iw3IwdImageRequest request in streamableRequests)
             {
@@ -1395,7 +1457,7 @@ internal static class Iw3PcMapConverter
                 .SelectMany(compilation => compilation.StreamPartPayloads)
                 .ToArray();
             package = new ImageFilePackager().Package(
-                checked((uint)imageFileIndex.Value),
+                unchecked((uint)imageFileIndex.Value),
                 payloads);
             for (int imageIndex = 0; imageIndex < sortedFullImages.Length; imageIndex++)
             {
@@ -1420,11 +1482,11 @@ internal static class Iw3PcMapConverter
             if (assetsBySourceName.ContainsKey(requirement.Name))
                 continue;
             bool isOwnedSource = ownedSourceImages.Contains(requirement.Name);
-            if (isOwnedSource)
+            if (isOwnedSource || sourceLibrary is not null)
             {
                 throw new InvalidDataException(
-                    $"IW3 image '{requirement.Name}' is source-owned, but its " +
-                    "payload was not found in the selected custom IWD, " +
+                    $"Required IW3 image '{requirement.Name}' has no source payload; it " +
+                    "was not found in the selected custom IWD, PC source library, " +
                     "extracted fastfiles, or supplied IW3 PS3 fastfiles.");
             }
             if (!isOwnedSource && !externalSourceImages.Contains(requirement.Name))
@@ -1872,7 +1934,14 @@ internal static class Iw3PcMapConverter
         return image;
     }
 
-    private static string RequireLoadInput(string path, string mapPath)
+    private static void RejectNamedImagePackageReferences(DbHeader header, string description)
+    {
+        if (header.LanguageTables.SelectMany(table => table.ImageStreamEntries).Any(entry =>
+                !entry.IsEmpty && entry.FileIndex == DbHeaderImageStreamEntry.NamedFileIndex))
+            throw new InvalidDataException($"{description} references its own named image package, which cannot be retained in the converted map.");
+    }
+
+    private static string RequireLoadInput(string path, string mapPath, int? imageFileIndex)
     {
         string loadPath = RequireInputFile(path, ".ff", "load fastfile");
         if (PathComparer.Equals(mapPath, loadPath))
@@ -1880,6 +1949,12 @@ internal static class Iw3PcMapConverter
         string expectedLoadName = RequireFileStem(mapPath, "map fastfile") + "_load";
         if (!string.Equals(RequireFileStem(loadPath, "load fastfile"), expectedLoadName, StringComparison.Ordinal))
             throw new ArgumentException($"Load fastfile must be named '{expectedLoadName}.ff'.");
+        if (imageFileIndex is { } packageIndex &&
+            !string.Equals(
+                DbHeaderImageStreamEntry.GetPackageFileName(unchecked((uint)packageIndex), mapPath),
+                DbHeaderImageStreamEntry.GetPackageFileName(unchecked((uint)packageIndex), loadPath),
+                StringComparison.Ordinal))
+            throw new ArgumentException("Map and load fastfiles must resolve to the same named image package.");
         return loadPath;
     }
 
@@ -2041,9 +2116,10 @@ internal static class Iw3PcMapConverter
     private static void PublishOutputs(
         (string Staged, string Final) map,
         (string Staged, string Final)? load,
-        (string Staged, string Final)? image)
+        (string Staged, string Final)? image,
+        (string Staged, string Final)? source = null)
     {
-        var moved = new List<string>(3);
+        var moved = new List<string>(4);
         try
         {
             IEnumerable<(string Staged, string Final)> outputs = [map];
@@ -2051,6 +2127,8 @@ internal static class Iw3PcMapConverter
                 outputs = outputs.Append(loadValue);
             if (image is { } imageValue)
                 outputs = outputs.Append(imageValue);
+            if (source is { } sourceValue)
+                outputs = outputs.Append(sourceValue);
             foreach ((string staged, string final) in outputs)
             {
                 File.Move(staged, final, overwrite: false);
@@ -2264,7 +2342,8 @@ internal static class Iw3PcMapConverter
                  {
                      paths.MapOutputPath,
                      paths.LoadOutputPath,
-                     paths.ImageOutputPath
+                     paths.ImageOutputPath,
+                     paths.SourceProvenancePath
                  }.OfType<string>())
         {
             if (File.Exists(output) || Directory.Exists(output))
@@ -2320,13 +2399,15 @@ internal static class Iw3PcMapConverter
         string LoadInputPath,
         string? IwdInputPath,
         string? SourceFastFileDirectory,
+        string? SourceLibraryDirectory,
         string? BootstrapFastFilePath,
         string OutputDirectory,
         string MapName,
         string LoadName,
         string MapOutputPath,
         string LoadOutputPath,
-        string? ImageOutputPath);
+        string? ImageOutputPath,
+        string? SourceProvenancePath);
 
     private sealed record ImageRequirement(
         string Name,

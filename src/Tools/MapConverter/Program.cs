@@ -49,6 +49,8 @@ try
     Console.WriteLine($"load: {result.LoadFastFilePath}");
     if (result.ImageFilePath is not null)
         Console.WriteLine($"imagefile: {result.ImageFilePath}");
+    if (result.SourceProvenancePath is not null)
+        Console.WriteLine($"source-provenance: {result.SourceProvenancePath}");
     Console.WriteLine($"extraction-backend: {result.BackendDescription}");
     Console.WriteLine(
         $"assets: {result.ImageCount} owned images, " +

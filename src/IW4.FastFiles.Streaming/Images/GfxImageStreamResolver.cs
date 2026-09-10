@@ -52,7 +52,10 @@ public sealed class GfxImageStreamResolver : IDisposable
         _packagePaths = new StreamPackagePathResolver(
             fastFilePath,
             "imagefile",
-            "texture stream package");
+            "texture stream package",
+            DbHeaderImageStreamEntry.GetPackageFileName(
+                DbHeaderImageStreamEntry.NamedFileIndex,
+                fastFilePath));
     }
 
     public bool TryReadBestPayload(
@@ -307,7 +310,7 @@ public sealed class GfxImageStreamResolver : IDisposable
         {
             packagePath = string.Empty;
             reason =
-                "image stream points at the current fastfile; image package resolver only handles imagefileN.pak";
+                "image stream points at the current fastfile; image package resolver only handles external image packages";
             return false;
         }
         return _packagePaths.TryResolve(fileIndex, out packagePath, out reason);

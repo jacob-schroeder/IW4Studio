@@ -1,9 +1,10 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Text;
 using IW4.Assets.Assets.Image;
+using MapConverter.Game.IW3.PC.Images;
+using MapConverter.Game.IW3.PS3.FastFiles;
 
-namespace MapConverter.Game.IW3.PC.Images;
+namespace MapConverter.Game.IW3.PS3.Images;
 
 /// <summary>
 /// Recovers streamed IW3 PS3 image payloads from unsigned console fastfiles.
@@ -13,9 +14,6 @@ namespace MapConverter.Game.IW3.PC.Images;
 /// </summary>
 internal static class Iw3Ps3FastFileImageCompiler
 {
-    private const uint Iw3FastFileVersion = 1;
-    private const ushort PackedStreamTerminator = 1;
-    private const int DecodedFrameSize = 0x10000;
     private const int XFileHeaderSize = 0x24;
     private const int SourceImageHeaderSize = 0x34;
     private const int MaximumInlineNameLength = 256;
@@ -30,7 +28,9 @@ internal static class Iw3Ps3FastFileImageCompiler
     private static readonly StringComparer ImageNameComparer =
         StringComparer.OrdinalIgnoreCase;
 
-    internal static IReadOnlyList<Iw3Iwi6StreamedImageCompilation> Compile(
+    internal static IReadOnlyList<(
+        Iw3Iwi6StreamedImageCompilation Compilation,
+        string SourceFastFilePath)> Compile(
         string sourceDirectory,
         IEnumerable<Iw3IwdImageRequest> requests)
     {
@@ -41,7 +41,9 @@ internal static class Iw3Ps3FastFileImageCompiler
         var unresolved = orderedRequests.ToDictionary(
             request => request.ImageName,
             ImageNameComparer);
-        var compiledImages = new List<Iw3Iwi6StreamedImageCompilation>();
+        var compiledImages = new List<(
+            Iw3Iwi6StreamedImageCompilation Compilation,
+            string SourceFastFilePath)>();
         long retainedPayloadByteCount = 0;
 
         foreach (string fastFilePath in EnumerateFastFiles(fullSourceDirectory))
@@ -57,9 +59,9 @@ internal static class Iw3Ps3FastFileImageCompiler
                     MaximumRetainedPayloadByteCount - retainedPayloadByteCount));
         }
 
-        Iw3Iwi6StreamedImageCompilation[] orderedCompiledImages = compiledImages
-            .OrderBy(compilation => compilation.Image.Name, ImageNameComparer)
-            .ThenBy(compilation => compilation.Image.Name, StringComparer.Ordinal)
+        var orderedCompiledImages = compiledImages
+            .OrderBy(result => result.Compilation.Image.Name, ImageNameComparer)
+            .ThenBy(result => result.Compilation.Image.Name, StringComparer.Ordinal)
             .ToArray();
         return Array.AsReadOnly(orderedCompiledImages);
     }
@@ -150,82 +152,40 @@ internal static class Iw3Ps3FastFileImageCompiler
     private static long CompileFastFile(
         string fastFilePath,
         IDictionary<string, Iw3IwdImageRequest> unresolved,
-        ICollection<Iw3Iwi6StreamedImageCompilation> compiledImages,
+        ICollection<(
+            Iw3Iwi6StreamedImageCompilation Compilation,
+            string SourceFastFilePath)> compiledImages,
         long retainedPayloadBudget)
     {
-        using var stream = new FileStream(
+        using (var stream = new FileStream(
             fastFilePath,
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read,
-            bufferSize: DecodedFrameSize,
-            FileOptions.SequentialScan);
-
-        Span<byte> magic = stackalloc byte[8];
-        int magicLength = ReadUpTo(stream, magic);
-        if (magicLength != magic.Length || !magic.SequenceEqual("IWffu100"u8))
-            return 0;
+            bufferSize: 8,
+            FileOptions.SequentialScan))
+        {
+            Span<byte> magic = stackalloc byte[8];
+            int magicLength = stream.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false);
+            if (magicLength != magic.Length || !magic.SequenceEqual("IWffu100"u8))
+                return 0;
+        }
 
         try
         {
-            Span<byte> versionBytes = stackalloc byte[sizeof(uint)];
-            ReadExactly(stream, versionBytes, "fastfile version");
-            uint version = BinaryPrimitives.ReadUInt32BigEndian(versionBytes);
-            if (version != Iw3FastFileVersion)
-            {
-                throw new InvalidDataException(
-                    $"unsigned fastfile version {version} is unsupported; expected {Iw3FastFileVersion}.");
-            }
-
             var scanner = new FastFileScanner(
                 unresolved,
                 retainedPayloadBudget);
-            byte[] encodedFrame = new byte[ushort.MaxValue];
-            byte[] decodedFrame = new byte[DecodedFrameSize];
-            bool sawTerminator = false;
-            while (TryReadPackedSize(stream, out ushort encodedSize))
-            {
-                if (encodedSize == PackedStreamTerminator)
-                {
-                    sawTerminator = true;
-                    ValidateTrailingTerminator(stream);
-                    break;
-                }
-
-                int decodedLength;
-                if (encodedSize == 0)
-                {
-                    ReadExactly(
-                        stream,
-                        decodedFrame,
-                        "uncompressed 0x10000-byte packed frame");
-                    decodedLength = DecodedFrameSize;
-                }
-                else
-                {
-                    ReadExactly(
-                        stream,
-                        encodedFrame.AsSpan(0, encodedSize),
-                        $"0x{encodedSize:X}-byte compressed packed frame");
-                    decodedLength = InflateFrame(
-                        encodedFrame,
-                        encodedSize,
-                        decodedFrame);
-                }
-
-                scanner.ProcessDecodedFrame(
-                    decodedFrame.AsSpan(0, decodedLength));
-            }
-
-            if (!sawTerminator)
-                throw new InvalidDataException("the packed stream has no terminator.");
+            Iw3Ps3FastFileFrames.Read(
+                fastFilePath,
+                frame => scanner.ProcessDecodedFrame(frame.Span));
 
             IReadOnlyList<PayloadCapture> captures = scanner.Complete();
             foreach (PayloadCapture capture in captures)
             {
                 try
                 {
-                    compiledImages.Add(
+                    compiledImages.Add((
                         Iw3Iwi6StreamedImageCompiler.CompileTopLevelFirstPs3Payload(
                             capture.Request.ImageName,
                             capture.Header.Format,
@@ -234,7 +194,8 @@ internal static class Iw3Ps3FastFileImageCompiler
                             capture.Header.Height,
                             capture.Payload,
                             capture.Request.Semantic,
-                            capture.Request.UseSrgbReads));
+                            capture.Request.UseSrgbReads),
+                        fastFilePath));
                 }
                 catch (Exception exception) when (exception is
                     ArgumentException or
@@ -263,156 +224,12 @@ internal static class Iw3Ps3FastFileImageCompiler
         }
     }
 
-    private static int InflateFrame(
-        byte[] encodedFrame,
-        int encodedLength,
-        byte[] decodedFrame)
-    {
-        const int adlerTrailerSize = sizeof(uint);
-        if (encodedLength <= adlerTrailerSize)
-        {
-            throw new InvalidDataException(
-                "a compressed packed frame must contain raw Deflate data and an Adler-32 trailer.");
-        }
-
-        int deflateLength = encodedLength - adlerTrailerSize;
-        uint expectedAdler = BinaryPrimitives.ReadUInt32BigEndian(
-            encodedFrame.AsSpan(deflateLength, adlerTrailerSize));
-        using var input = new MemoryStream(
-            encodedFrame,
-            index: 0,
-            count: deflateLength,
-            writable: false,
-            publiclyVisible: true);
-        using var deflate = new DeflateStream(
-            input,
-            CompressionMode.Decompress,
-            leaveOpen: false);
-
-        int decodedLength = 0;
-        while (decodedLength < decodedFrame.Length)
-        {
-            int read = deflate.Read(decodedFrame.AsSpan(decodedLength));
-            if (read == 0)
-                break;
-            decodedLength = checked(decodedLength + read);
-        }
-
-        Span<byte> overflowProbe = stackalloc byte[1];
-        if (decodedLength == decodedFrame.Length &&
-            deflate.Read(overflowProbe) != 0)
-        {
-            throw new InvalidDataException(
-                "a packed frame inflated beyond its 0x10000-byte output window.");
-        }
-        if (decodedLength == 0)
-            throw new InvalidDataException("a compressed packed frame inflated to zero bytes.");
-
-        uint actualAdler = ComputeAdler32(decodedFrame.AsSpan(0, decodedLength));
-        if (actualAdler != expectedAdler)
-        {
-            throw new InvalidDataException(
-                $"packed-frame Adler-32 mismatch: stored 0x{expectedAdler:X8}, " +
-                $"calculated 0x{actualAdler:X8}.");
-        }
-        return decodedLength;
-    }
-
-    private static uint ComputeAdler32(ReadOnlySpan<byte> bytes)
-    {
-        const uint modulus = 65_521;
-        const int maximumChunkLength = 5_552;
-        uint a = 1;
-        uint b = 0;
-        while (!bytes.IsEmpty)
-        {
-            int chunkLength = Math.Min(bytes.Length, maximumChunkLength);
-            ReadOnlySpan<byte> chunk = bytes[..chunkLength];
-            for (int index = 0; index < chunk.Length; index++)
-            {
-                a += chunk[index];
-                b += a;
-            }
-            a %= modulus;
-            b %= modulus;
-            bytes = bytes[chunkLength..];
-        }
-        return (b << 16) | a;
-    }
-
-    private static bool TryReadPackedSize(
-        Stream stream,
-        out ushort encodedSize)
-    {
-        int high = stream.ReadByte();
-        if (high < 0)
-        {
-            encodedSize = 0;
-            return false;
-        }
-
-        int low = stream.ReadByte();
-        if (low < 0)
-            throw new EndOfStreamException("the packed stream ends in a truncated size word.");
-        encodedSize = checked((ushort)((high << 8) | low));
-        return true;
-    }
-
-    private static void ValidateTrailingTerminator(Stream stream)
-    {
-        int high = stream.ReadByte();
-        if (high < 0)
-            return;
-        int low = stream.ReadByte();
-        if (low < 0)
-        {
-            throw new EndOfStreamException(
-                "the packed stream has one trailing byte after its terminator.");
-        }
-        if (((high << 8) | low) != PackedStreamTerminator)
-        {
-            throw new InvalidDataException(
-                "the packed stream contains data after its terminator.");
-        }
-        if (stream.ReadByte() >= 0)
-        {
-            throw new InvalidDataException(
-                "the packed stream contains data after its optional second terminator.");
-        }
-    }
-
-    private static int ReadUpTo(Stream stream, Span<byte> destination)
-    {
-        int total = 0;
-        while (total < destination.Length)
-        {
-            int read = stream.Read(destination[total..]);
-            if (read == 0)
-                break;
-            total += read;
-        }
-        return total;
-    }
-
-    private static void ReadExactly(
-        Stream stream,
-        Span<byte> destination,
-        string description)
-    {
-        int read = ReadUpTo(stream, destination);
-        if (read != destination.Length)
-        {
-            throw new EndOfStreamException(
-                $"{description} is truncated: expected {destination.Length} byte(s), read {read}.");
-        }
-    }
-
     private sealed class FastFileScanner
     {
         private readonly IDictionary<string, Iw3IwdImageRequest> _requests;
         private readonly byte[] _xfileHeader = new byte[XFileHeaderSize];
         private readonly byte[] _carry = new byte[ScanCarrySize];
-        private readonly byte[] _window = new byte[DecodedFrameSize + ScanCarrySize];
+        private readonly byte[] _window = new byte[Iw3Ps3FastFileFrames.DecodedFrameSize + ScanCarrySize];
         private readonly List<PayloadCapture> _captures = [];
         private readonly HashSet<string> _matchedNames = new(ImageNameComparer);
         private readonly long _retainedPayloadBudget;
@@ -438,7 +255,7 @@ internal static class Iw3Ps3FastFileImageCompiler
 
         internal void ProcessDecodedFrame(ReadOnlySpan<byte> frame)
         {
-            if (frame.IsEmpty || frame.Length > DecodedFrameSize)
+            if (frame.IsEmpty || frame.Length > Iw3Ps3FastFileFrames.DecodedFrameSize)
                 throw new InvalidDataException("a decoded packed frame has an invalid byte count.");
 
             long frameStart = _decodedOffset;
