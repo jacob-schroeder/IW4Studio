@@ -347,6 +347,7 @@ internal static class D3dbspGfxCodec
             .Select(value => checked((ushort)value))
             .ToArray();
         uint litSurfaceEnd = checked((uint)staticSurfaceCount);
+        uint emissiveSurfaceBegin = checked((uint)staticSurfaceCount);
         if (useSourceMaterials)
         {
             if (staticSurfaceStart != 0)
@@ -355,31 +356,40 @@ internal static class D3dbspGfxCodec
                     "Native source-material draw ranges require the world-model surfaces to be a prefix.");
             }
             litSurfaceEnd = 0;
+            emissiveSurfaceBegin = 0;
             foreach (ushort surfaceIndex in sortedSurfaceIndices)
             {
                 MaterialAsset material = surfaces[surfaceIndex].Material ??
                     throw new InvalidDataException($"Render surface {surfaceIndex} has no material.");
                 int sortKey = (byte)material.Info.SortKey;
-                GfxCameraRegionType cameraRegion = sortKey < SortKeyLitDecal
-                    ? GfxCameraRegionType.LitOpaque
-                    : GfxCameraRegionType.LitTrans;
+                bool isEmissive = sortKey >= SortKeyEffectDecal;
+                bool hasLitTechnique = material.TechniqueSet?.TechniqueSlots.Any(slot =>
+                    slot.Type == MaterialTechniqueType.Lit && slot.Technique is not null) == true;
+                bool hasEmissiveTechnique = material.TechniqueSet?.TechniqueSlots.Any(slot =>
+                    slot.Type == MaterialTechniqueType.Emissive && slot.Technique is not null) == true;
+                GfxCameraRegionType cameraRegion = isEmissive
+                    ? GfxCameraRegionType.Emissive
+                    : sortKey < SortKeyLitDecal
+                        ? GfxCameraRegionType.LitOpaque
+                        : GfxCameraRegionType.LitTrans;
                 if (string.IsNullOrWhiteSpace(material.Info.Name) ||
                     material.Info.Name.StartsWith(',') ||
-                    sortKey >= SortKeyEffectDecal ||
+                    sortKey >= 64 ||
                     material.CameraRegion != cameraRegion ||
-                    material.TechniqueSet?.TechniqueSlots.Any(slot =>
-                        slot.Type == MaterialTechniqueType.Lit && slot.Technique is not null) != true)
+                    (isEmissive ? hasLitTechnique || !hasEmissiveTechnique : !hasLitTechnique))
                 {
                     throw new InvalidDataException(
                         $"Render surface {surfaceIndex} material '{material.Info.Name}' is outside the " +
-                        "resolved native opaque/sky and decal/translucent source-material subset.");
+                        "resolved native opaque/sky, decal/translucent and emissive source-material subset.");
                 }
                 if (sortKey < SortKeyLitDecal)
                     litSurfaceEnd++;
+                if (!isEmissive)
+                    emissiveSurfaceBegin++;
             }
             // PS3 sorts the physical world-surface prefix by material sort key.
-            // Native Invasion partitions opaque/sky below sortKeyLitDecal, then
-            // lit decals/translucency; this subset has no later draw ranges.
+            // Opaque/sky ends at sortKeyLitDecal; lit decals/translucency ends
+            // at sortKeyEffectDecal, followed by the emissive draw range.
         }
         GfxSky[] skies = sortedSurfaceIndices
             .Select((surfaceIndex, sortedPosition) => new
@@ -557,10 +567,10 @@ internal static class D3dbspGfxCodec
                 VisibilityCounts =
                 [
                     litSurfaceEnd,
-                    checked((uint)staticSurfaceCount),
-                    checked((uint)staticSurfaceCount),
-                    checked((uint)staticSurfaceCount),
-                    checked((uint)staticSurfaceCount),
+                    emissiveSurfaceBegin,
+                    emissiveSurfaceBegin,
+                    emissiveSurfaceBegin,
+                    emissiveSurfaceBegin,
                     checked((uint)staticSurfaceCount),
                     staticModelVisibilityWordCount,
                     surfaceVisibilityWordCount

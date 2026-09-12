@@ -61,7 +61,7 @@ try
         $"{result.BootstrapXModelCount} bootstrapped xmodels, " +
         $"{result.ExternalXModelCount} external xmodels, " +
         $"{result.RawFileCount} rawfiles");
-    if (result.BootstrapFastFilePath is null)
+    if (result.BootstrapXModelCount == 0)
     {
         Console.WriteLine(
             "target-bootstrap-data: none; shaders were lowered from IW3 Direct3D bytecode");
@@ -69,9 +69,8 @@ try
     else
     {
         Console.WriteLine(
-            $"target-bootstrap-data: {result.BootstrapFastFilePath} " +
-            $"({result.BootstrapXModelCount} scoped xmodel closure); " +
-            "shaders were lowered from IW3 Direct3D bytecode");
+            $"target-bootstrap-data: bundled gameplay assets ({result.BootstrapXModelCount} scoped xmodel closure); " +
+            "map shaders were lowered from IW3 Direct3D bytecode");
     }
     Console.WriteLine($"dynamic-entities: {result.DynamicEntityCount}");
     if (result.DestroyFxFallbackCount != 0)

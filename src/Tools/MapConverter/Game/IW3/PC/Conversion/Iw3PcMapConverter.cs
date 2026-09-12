@@ -19,6 +19,7 @@ using IW4.Linker.Packaging;
 using IW4.Runtime.IO;
 using IW4.Studio.Documents;
 using MapConverter.CommandLine;
+using MapConverter.Bootstrap.XModel;
 using MapConverter.Game.IW3.PC.Bootstrap;
 using MapConverter.Game.IW3.PC.DynamicEntities;
 using MapConverter.Game.IW3.PC.Extraction;
@@ -45,7 +46,6 @@ internal sealed record Iw3PcMapConversionResult(
     int MaterialCount,
     int XModelCount,
     int BootstrapXModelCount,
-    string? BootstrapFastFilePath,
     int ExternalXModelCount,
     int DynamicEntityCount,
     int DestroyFxFallbackCount,
@@ -58,14 +58,13 @@ internal sealed record Iw3PcMapConversionResult(
 
 /// <summary>
 /// Converts one extracted IW3 PC custom-map graph directly into authored IW4
-/// PS3 assets. A caller-selected IW4 fastfile may supply an explicitly scoped
-/// bootstrap XModel closure when the source map references that stock model.
+/// PS3 assets. Bundled gameplay assets supply the scoped bootstrap XModel
+/// closure when the source map references that stock model.
 /// </summary>
 internal static class Iw3PcMapConverter
 {
     private const uint LanguageMask = 1;
     private const int FragmentProgramUploadCapacity = 0x1a0000;
-    private const string BootstrapTntBombModelName = "mil_tntbomb_mp";
     private const string LoadBriefingMaterialName = "$levelbriefing";
     internal const string ElectricBoxRawFileName = "maps/mp/_electricbox.gsc";
     internal const string ElectricBoxFxName = "explosions/tv_explosion_mp";
@@ -219,30 +218,25 @@ internal static class Iw3PcMapConverter
                     stagedLoadPath = Path.Combine(scratchDirectory, loadName + ".ff");
                     loadZone = (loadAssetDirectory, loadName, stagedLoadPath);
                 }
-                string imageDirectory = Path.Combine(assetDirectory, "images");
-                string atlasCountText = ReadWorldExtractionValue(
-                    worldExtractionOutput, "source-lightmap-atlases-linker-owned");
-                if (!int.TryParse(atlasCountText, NumberStyles.None, CultureInfo.InvariantCulture,
-                        out int atlasCount) || atlasCount is < 0 or > 31)
-                    throw new InvalidDataException("Native world extraction returned an invalid lightmap atlas count.");
-                lightmaps = Iw3Iwi6LightingCompiler.CompileDirectory(imageDirectory, atlasCount);
-                string outdoorName = ReadWorldExtractionValue(worldExtractionOutput, "outdoor-image");
-                outdoorImage = Iw3Iwi6LightingCompiler.CompileOutdoor(
-                    ResolveAssetFile(assetDirectory, "images", outdoorName, ".iwi", "outdoor image"));
-                outdoorLookupMatrix = ReadWorldExtractionValue(worldExtractionOutput, "outdoor-lookup-matrix");
-                string[] matrixElements = outdoorLookupMatrix.Split(',');
-                if (matrixElements.Length != 16 || matrixElements.Any(value =>
-                        !float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture,
-                            out float element) || !float.IsFinite(element)))
-                    throw new InvalidDataException("Native world extraction returned an invalid outdoor lookup matrix.");
+                var lighting = CompileSourceLighting(worldExtractionOutput, assetDirectory);
+                lightmaps = lighting.Lightmaps;
+                outdoorImage = lighting.OutdoorImage;
+                outdoorLookupMatrix = string.Join(',', lighting.OutdoorLookupMatrix
+                    .Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
                 materialProviderPath = Path.Combine(scratchDirectory, "world-materials.ff");
                 stagedImagePath = Path.Combine(scratchDirectory, "world-images.pak");
-                (texturedMaterialCount, defaultMaterialNames, fallbackImageNames, hudMaterialNames, hudScriptPath) =
+                bool hasImagePackage;
+                (texturedMaterialCount, defaultMaterialNames, fallbackImageNames, hudMaterialNames, hudScriptPath, hasImagePackage) =
                     BuildWorldTextureProvider(bspPath, modelCollisionPath, assetDirectory, mapName,
                         bootstrapPath ?? throw new InvalidOperationException("Missing material bootstrap."),
                         iwdPath, sourceFastFileDirectory,
                         options.ImageFileIndex ?? throw new InvalidOperationException("Missing imagefile index."),
                         materialProviderPath, stagedImagePath, lightmaps, outdoorImage, loadZone, damageFx, objectives);
+                if (!hasImagePackage)
+                {
+                    stagedImagePath = null;
+                    imagePath = null;
+                }
             }
             stagedMapPath = Path.Combine(scratchDirectory, mapName + ".ff");
             List<string> linkerArguments =
@@ -254,7 +248,7 @@ internal static class Iw3PcMapConverter
                 "--xmodel", "com_cellphone_on",
                 "--xmodel", "com_bomb_objective",
                 "--xmodel", "com_bomb_objective_d",
-                "--xmodel", BootstrapTntBombModelName
+                "--xmodel", MilTntBombMp.Name
             ];
             if (textured)
             {
@@ -361,6 +355,33 @@ internal static class Iw3PcMapConverter
         }
     }
 
+    private static (IReadOnlyList<GfxLightmapArray> Lightmaps, GfxImageAsset OutdoorImage,
+        float[] OutdoorLookupMatrix) CompileSourceLighting(string output, string assetDirectory)
+    {
+        string atlasCountText = ReadWorldExtractionValue(output, "source-lightmap-atlases-linker-owned");
+        if (!int.TryParse(atlasCountText, NumberStyles.None, CultureInfo.InvariantCulture,
+                out int atlasCount) || atlasCount is < 0 or > 31)
+            throw new InvalidDataException("Native world extraction returned an invalid lightmap atlas count.");
+
+        string[] matrixElements = ReadWorldExtractionValue(output, "outdoor-lookup-matrix").Split(',');
+        var matrix = new float[16];
+        if (matrixElements.Length != matrix.Length)
+            throw new InvalidDataException("Native world extraction returned an invalid outdoor lookup matrix.");
+        for (int index = 0; index < matrix.Length; index++)
+        {
+            if (!float.TryParse(matrixElements[index], NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out matrix[index]) || !float.IsFinite(matrix[index]))
+                throw new InvalidDataException("Native world extraction returned an invalid outdoor lookup matrix.");
+        }
+
+        string outdoorName = ReadWorldExtractionValue(output, "outdoor-image");
+        return (
+            Iw3Iwi6LightingCompiler.CompileDirectory(Path.Combine(assetDirectory, "images"), atlasCount),
+            Iw3Iwi6LightingCompiler.CompileOutdoor(
+                ResolveAssetFile(assetDirectory, "images", outdoorName, ".iwi", "outdoor image")),
+            matrix);
+    }
+
     private static string ReadWorldExtractionValue(string output, string field)
     {
         string prefix = field + ": ";
@@ -375,7 +396,7 @@ internal static class Iw3PcMapConverter
     private static (int TexturedMaterialCount, IReadOnlyList<string> DefaultMaterialNames,
         IReadOnlyList<string> FallbackImageNames,
         IReadOnlyList<string> HudMaterialNames,
-        string? HudScriptPath) BuildWorldTextureProvider(
+        string? HudScriptPath, bool HasImagePackage) BuildWorldTextureProvider(
         string bspPath, string modelCollisionPath, string assetDirectory, string mapName, string bootstrapPath,
         string? iwdPath, string? sourceFastFileDirectory, int imageFileIndex,
         string providerPath, string imagePath, IReadOnlyList<GfxLightmapArray> lightmaps,
@@ -602,7 +623,8 @@ internal static class Iw3PcMapConverter
                 using FileStream stream = File.OpenRead(waterSourcePath);
                 sourceWaterMaterial = Iw3MaterialCompiler.Compile(
                     targetName, stream, images.AssetsBySourceName,
-                    requiresRuntimeTechniqueState: false).Material;
+                    requiresRuntimeTechniqueState: false,
+                    resolvedTechniqueSet: null).Material;
             }
             GfxStateBits? state = statesByMaterial.GetValueOrDefault(targetName);
             MaterialAsset material = isModel
@@ -671,9 +693,13 @@ internal static class Iw3PcMapConverter
             images.StreamReferencesByAsset, nativeProviders, nativeRootKeys);
         using (FileStream file = new(providerPath, FileMode.CreateNew, FileAccess.Write))
             file.Write(providerBytes);
-        using (FileStream file = new(imagePath, FileMode.CreateNew, FileAccess.Write))
-            file.Write((images.Package ?? throw new InvalidDataException("Missing world image package.")).Bytes.Span);
-        return (texturedMaterialCount, defaultMaterialNames, images.FallbackImageNames, hudMaterialNames, hudScriptPath);
+        if (images.Package is { } imagePackage)
+        {
+            using FileStream file = new(imagePath, FileMode.CreateNew, FileAccess.Write);
+            file.Write(imagePackage.Bytes.Span);
+        }
+        return (texturedMaterialCount, defaultMaterialNames, images.FallbackImageNames,
+            hudMaterialNames, hudScriptPath, images.Package is not null);
     }
 
     private static string[] ReadCallsignMaterialNames(
@@ -759,7 +785,8 @@ internal static class Iw3PcMapConverter
         }
 
         ConversionPaths paths = ValidatePaths(options);
-        Iw3PcExtractionTools tools = Iw3PcExtractionToolLocator.Find();
+        Iw3PcExtractionTools tools = Iw3PcExtractionToolLocator.Find(
+            requireUnlinker: paths.SourceLibraryDirectory is null);
         string scratchDirectory = Path.Combine(
             Path.GetTempPath(),
             "mapconverter-iw3-" + Guid.NewGuid().ToString("N"));
@@ -780,6 +807,7 @@ internal static class Iw3PcMapConverter
                         paths.LoadInputPath,
                         paths.IwdInputPath,
                         paths.SourceLibraryDirectory,
+                        options.AllowMissingSounds,
                         scratchDirectory),
                     cancellationToken).ConfigureAwait(false);
 
@@ -828,7 +856,7 @@ internal static class Iw3PcMapConverter
                     !ownedXModelNames.Contains(name) &&
                     !string.Equals(
                         name,
-                        BootstrapTntBombModelName,
+                        MilTntBombMp.Name,
                         StringComparison.Ordinal))
                 .ToArray();
             if (unownedDynamicModelNames.Length != 0)
@@ -841,25 +869,9 @@ internal static class Iw3PcMapConverter
 
             bool requiresTntBootstrap = modelReferences.NamedEntityModelNames
                 .Concat(dynamicModelNames)
-                .Contains(BootstrapTntBombModelName, StringComparer.Ordinal);
-            if (requiresTntBootstrap && paths.BootstrapFastFilePath is null)
-            {
-                throw new InvalidDataException(
-                    $"The converted map references stock IW4 XModel " +
-                    $"'{BootstrapTntBombModelName}'. Supply mp_rust.ff through " +
-                    "'--bootstrap-fastfile' so MapConverter can own its exact closure.");
-            }
-            if (!requiresTntBootstrap && paths.BootstrapFastFilePath is not null)
-            {
-                throw new ArgumentException(
-                    "Option '--bootstrap-fastfile' was supplied, but this map does " +
-                    $"not require '{BootstrapTntBombModelName}'.");
-            }
+                .Contains(MilTntBombMp.Name, StringComparer.Ordinal);
             Iw4BootstrapXModelGraph? bootstrap = requiresTntBootstrap
-                ? Iw4BootstrapXModelLoader.Load(
-                    paths.BootstrapFastFilePath!,
-                    [BootstrapTntBombModelName],
-                    scratchDirectory)
+                ? Iw4BootstrapXModelLoader.Load()
                 : null;
             if (bootstrap?.ReferencedImageFileIndices.Contains(
                     DbHeaderImageStreamEntry.NamedFileIndex) == true)
@@ -885,7 +897,7 @@ internal static class Iw3PcMapConverter
                     ownedXModelNames.Contains(name) &&
                     !string.Equals(
                         name,
-                        BootstrapTntBombModelName,
+                        MilTntBombMp.Name,
                         StringComparison.Ordinal))
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
@@ -917,24 +929,28 @@ internal static class Iw3PcMapConverter
                 out HashSet<string> mapImageNames,
                 out HashSet<string> loadImageNames);
 
+            string ownedAssetNamePrefix = $"iw3/{paths.MapName}/";
             ImageCompilationGraph images = CompileImages(
                 imageRequirements,
                 [(mapManifest, extraction.MapAssetDirectory), (loadManifest, extraction.LoadAssetDirectory)],
                 paths.IwdInputPath,
                 paths.SourceFastFileDirectory,
                 options.ImageFileIndex,
-                sourceLibrary: extraction.SourceLibrary);
+                sourceLibrary: extraction.SourceLibrary,
+                ownedAssetNamePrefix: ownedAssetNamePrefix);
 
             TechniqueCompilationGraph techniques = CompileTechniques(
                 extraction,
                 mapManifest,
-                materialSources);
+                materialSources,
+                ownedAssetNamePrefix);
 
             MaterialCompilationGraph materials = CompileMaterials(
                 materialSources,
                 images.AssetsBySourceName,
                 techniques.AssetsByName,
-                modelMaterialNames);
+                modelMaterialNames,
+                ownedAssetNamePrefix);
 
             Iw3XModelExportImportResult xmodels =
                 Iw3XModelExportImporter.Import(
@@ -974,6 +990,7 @@ internal static class Iw3PcMapConverter
                     physPresets.ByName);
 
             string mapAssetName = $"maps/mp/{paths.MapName}.d3dbsp";
+            var lighting = CompileSourceLighting(extraction.NativeConversionOutput, extraction.MapAssetDirectory);
             D3dbspLinkResult mapGraph = D3dbspAssetLinker.Link(
                 new D3dbspLinkRequest(
                     extraction.D3dbspPath,
@@ -982,6 +999,11 @@ internal static class Iw3PcMapConverter
                     FragmentProgramUploadCapacity,
                     xmodels.Models)
                 {
+                    UseSourceMaterials = true,
+                    AvailableMaterials = materials.MapMaterials,
+                    Lightmaps = lighting.Lightmaps,
+                    OutdoorImage = lighting.OutdoorImage,
+                    OutdoorLookupMatrix = lighting.OutdoorLookupMatrix,
                     DynamicEntityDefinitions = dynamicEntities.Definitions
                 });
 
@@ -1032,18 +1054,12 @@ internal static class Iw3PcMapConverter
                 paths.LoadOutputPath,
                 token,
                 loadFastFile);
-            if (paths.ImageOutputPath is not null)
+            if (paths.ImageOutputPath is not null && images.Package is { } imagePackage)
             {
-                if (images.Package is null)
-                {
-                    throw new InvalidDataException(
-                        "Image conversion did not produce an imagefile package.");
-                }
-
                 stagedImagePath = StageOutput(
                     paths.ImageOutputPath,
                     token,
-                    images.Package.Bytes.Span);
+                    imagePackage.Bytes.Span);
             }
 
             if (paths.SourceProvenancePath is not null)
@@ -1072,7 +1088,7 @@ internal static class Iw3PcMapConverter
                 extraction.BackendDescription,
                 paths.MapOutputPath,
                 paths.LoadOutputPath,
-                paths.ImageOutputPath,
+                images.Package is null ? null : paths.ImageOutputPath,
                 paths.SourceProvenancePath,
                 images.OwnedImageCount +
                     (mapImageNames.Contains(loadImageNames.Single()) ? 1 : 0),
@@ -1082,7 +1098,6 @@ internal static class Iw3PcMapConverter
                 materials.OwnedMaterials.Count + Iw4LoadZoneBuilder.OwnedMaterialCount,
                 xmodels.Models.Count,
                 bootstrap?.Models.Count ?? 0,
-                paths.BootstrapFastFilePath,
                 externalEntityModels.Length,
                 dynamicEntities.Count,
                 dynamicEntities.DestroyFxFallbackCount,
@@ -1105,6 +1120,12 @@ internal static class Iw3PcMapConverter
 
     private static ConversionPaths ValidatePaths(MapConverterOptions options)
     {
+        if (options.BootstrapFastFilePath is not null)
+        {
+            throw new ArgumentException(
+                "Option '--bootstrap-fastfile' requires '--world-template'; " +
+                "full conversion includes its bundled gameplay bootstrap automatically.");
+        }
         string mapPath = RequireInputFile(options.MapPath, ".ff", "map fastfile");
         string loadPath = RequireLoadInput(
             options.LoadPath ?? throw new ArgumentException("A load fastfile is required for full conversion."),
@@ -1123,21 +1144,6 @@ internal static class Iw3PcMapConverter
         string? sourceLibraryDirectory = options.SourceLibraryDirectory is null
             ? null
             : RequireInputDirectory(options.SourceLibraryDirectory, "IW3 source library");
-        string? bootstrapFastFilePath = options.BootstrapFastFilePath is null
-            ? null
-            : RequireInputFile(
-                options.BootstrapFastFilePath,
-                ".ff",
-                "IW4 bootstrap fastfile");
-        if (bootstrapFastFilePath is not null &&
-            !string.Equals(
-                Path.GetFileName(bootstrapFastFilePath),
-                "mp_rust.ff",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException(
-                "The IW4 bootstrap fastfile must be named 'mp_rust.ff'.");
-        }
         bool hasImageSource = iwdPath is not null ||
             sourceFastFileDirectory is not null || sourceLibraryDirectory is not null;
         if (hasImageSource != (options.ImageFileIndex is not null))
@@ -1169,7 +1175,6 @@ internal static class Iw3PcMapConverter
             iwdPath,
             sourceFastFileDirectory,
             sourceLibraryDirectory,
-            bootstrapFastFilePath,
             outputDirectory,
             mapName,
             loadName,
@@ -1316,7 +1321,8 @@ internal static class Iw3PcMapConverter
         string? sourceFastFileDirectory,
         int? imageFileIndex,
         bool useFallbackImages = false,
-        Iw3PcSourceLibrary? sourceLibrary = null)
+        Iw3PcSourceLibrary? sourceLibrary = null,
+        string ownedAssetNamePrefix = "")
     {
         ImageRequirement[] ordered = requirements.Values
             .OrderBy(requirement => requirement.Name, StringComparer.OrdinalIgnoreCase)
@@ -1437,10 +1443,28 @@ internal static class Iw3PcMapConverter
             }
         }
 
-        Iw3Iwi6StreamedImageCompilation[] sortedFullImages = fullImagesByName.Values
-            .OrderBy(compilation => compilation.Image.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(compilation => compilation.Image.Name, StringComparer.Ordinal)
+        GfxImageAsset QualifyImage(GfxImageAsset image, string sourceName) =>
+            ownedAssetNamePrefix.Length == 0 || sourceName.StartsWith('$')
+                ? image
+                : Iw4LoadZoneBuilder.CloneImage(image, ownedAssetNamePrefix + sourceName);
+
+        var assetsBySourceName = new Dictionary<string, GfxImageAsset>(
+            StringComparer.OrdinalIgnoreCase);
+        Iw3Iwi6StreamedImageCompilation[] sortedFullImages = fullImagesByName
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair =>
+            {
+                GfxImageAsset image = QualifyImage(pair.Value.Image, pair.Key);
+                assetsBySourceName.Add(pair.Key, image);
+                return pair.Value with { Image = image };
+            })
             .ToArray();
+        foreach (GfxImageAsset waterImage in waterImages)
+        {
+            string name = waterImage.Name ?? throw new InvalidDataException("A water image has no name.");
+            assetsBySourceName.Add(name, QualifyImage(waterImage, name));
+        }
 
         ImageFilePackage? package = null;
         var referencesByAsset = new Dictionary<AssetKey, ImageFileStreamLanguageReferences>();
@@ -1453,30 +1477,30 @@ internal static class Iw3PcMapConverter
                     "image used by this conversion.");
             }
 
-            ReadOnlyMemory<byte>[] payloads = sortedFullImages
-                .SelectMany(compilation => compilation.StreamPartPayloads)
+            Iw3Iwi6StreamedImageCompilation[] streamedImages = sortedFullImages
+                .Where(compilation => compilation.Image.StreamData.Any(part => part.HasStreamingData))
                 .ToArray();
-            package = new ImageFilePackager().Package(
-                unchecked((uint)imageFileIndex.Value),
-                payloads);
-            for (int imageIndex = 0; imageIndex < sortedFullImages.Length; imageIndex++)
+            if (streamedImages.Length != 0)
             {
-                ImageFileStreamReference[] references = package.References
-                    .Skip(imageIndex * GfxImageStreamData.EntryCount)
-                    .Take(GfxImageStreamData.EntryCount)
+                ReadOnlyMemory<byte>[] payloads = streamedImages
+                    .SelectMany(compilation => compilation.StreamPartPayloads)
                     .ToArray();
-                referencesByAsset.Add(
-                    AssetKey.FromDefinition(sortedFullImages[imageIndex].Image),
-                    new ImageFileStreamLanguageReferences(LanguageMask, references));
+                package = new ImageFilePackager().Package(
+                    unchecked((uint)imageFileIndex.Value),
+                    payloads);
+                for (int imageIndex = 0; imageIndex < streamedImages.Length; imageIndex++)
+                {
+                    ImageFileStreamReference[] references = package.References
+                        .Skip(imageIndex * GfxImageStreamData.EntryCount)
+                        .Take(GfxImageStreamData.EntryCount)
+                        .ToArray();
+                    referencesByAsset.Add(
+                        AssetKey.FromDefinition(streamedImages[imageIndex].Image),
+                        new ImageFileStreamLanguageReferences(LanguageMask, references));
+                }
             }
         }
 
-        var assetsBySourceName = new Dictionary<string, GfxImageAsset>(
-            StringComparer.OrdinalIgnoreCase);
-        foreach (Iw3Iwi6StreamedImageCompilation compilation in sortedFullImages)
-            assetsBySourceName.Add(compilation.Image.Name!, compilation.Image);
-        foreach (GfxImageAsset waterImage in waterImages)
-            assetsBySourceName.Add(waterImage.Name!, waterImage);
         foreach (ImageRequirement requirement in ordered)
         {
             if (assetsBySourceName.ContainsKey(requirement.Name))
@@ -1576,7 +1600,8 @@ internal static class Iw3PcMapConverter
     private static TechniqueCompilationGraph CompileTechniques(
         Iw3PcExtractionResult extraction,
         Iw3ZoneManifest mapManifest,
-        IReadOnlyList<MaterialSource> materialSources)
+        IReadOnlyList<MaterialSource> materialSources,
+        string ownedAssetNamePrefix)
     {
         string[] mapNames = OwnedNames(mapManifest, "techniqueset");
         var compiledByName = new Dictionary<string, MaterialTechniqueSetAsset>(
@@ -1585,6 +1610,7 @@ internal static class Iw3PcMapConverter
         CompileTechniqueDirectory(
             extraction.MapAssetDirectory,
             mapNames,
+            ownedAssetNamePrefix,
             compiledByName,
             shadersByKey);
         var assetsByName = new Dictionary<string, MaterialTechniqueSetAsset>(
@@ -1608,13 +1634,13 @@ internal static class Iw3PcMapConverter
             Array.AsReadOnly(shadersByKey.Values
                 .OrderBy(asset => asset.SerializedAssetType)
                 .ThenBy(asset => asset.Name, StringComparer.Ordinal)
-                .ToArray()),
-            mapNames.ToHashSet(StringComparer.Ordinal));
+                .ToArray()));
     }
 
     private static void CompileTechniqueDirectory(
         string assetDirectory,
         IReadOnlyList<string> names,
+        string targetNamePrefix,
         IDictionary<string, MaterialTechniqueSetAsset> compiledByName,
         IDictionary<AssetKey, MaterialShaderAsset> shadersByKey)
     {
@@ -1645,7 +1671,15 @@ internal static class Iw3PcMapConverter
                 "technique set");
             Iw3TechniqueSetSource source = parser.ParseTechniqueSet(path, name);
             Iw3TechniqueSetCompilation compilation = compiler.Compile(source);
-            compiledByName.Add(name, compilation.TechniqueSet);
+            // Native common-zone technique sets win identical asset names.
+            // Keep source lookup names, but bind materials to map-owned names
+            // so their converted state tables use the compiled source passes.
+            compiledByName.Add(name, new MaterialTechniqueSetAsset
+            {
+                Name = targetNamePrefix + name,
+                WorldVertexFormat = compilation.TechniqueSet.WorldVertexFormat,
+                TechniqueSlots = compilation.TechniqueSet.TechniqueSlots
+            });
             foreach (MaterialShaderAsset shader in compilation.Shaders)
             {
                 AssetKey key = AssetKey.FromDefinition(shader);
@@ -1658,8 +1692,10 @@ internal static class Iw3PcMapConverter
         IReadOnlyList<MaterialSource> materialSources,
         IReadOnlyDictionary<string, GfxImageAsset> images,
         IReadOnlyDictionary<string, MaterialTechniqueSetAsset> techniqueSets,
-        IReadOnlyList<string> staticModelMaterialNames)
+        IReadOnlyList<string> staticModelMaterialNames,
+        string ownedAssetNamePrefix)
     {
+        HashSet<string> modelMaterialNames = staticModelMaterialNames.ToHashSet(StringComparer.Ordinal);
         var bySourceName = new Dictionary<string, MaterialAsset>(
             StringComparer.Ordinal);
         var map = new List<MaterialAsset>();
@@ -1686,10 +1722,13 @@ internal static class Iw3PcMapConverter
                     slot.Technique?.PassCount == 2);
             using FileStream stream = File.OpenRead(source.Path);
             Iw3MaterialCompilation compilation = Iw3MaterialCompiler.Compile(
-                source.TargetName,
+                modelMaterialNames.Contains(source.SourceName)
+                    ? ownedAssetNamePrefix + source.TargetName
+                    : source.TargetName,
                 stream,
                 images,
-                requiresRuntimeTechniqueState);
+                requiresRuntimeTechniqueState,
+                techniqueSet);
             bySourceName.Add(source.SourceName, compilation.Material);
             map.Add(compilation.Material);
         }
@@ -1716,7 +1755,6 @@ internal static class Iw3PcMapConverter
         }
 
         return new MaterialCompilationGraph(
-            bySourceName,
             Array.AsReadOnly(map.ToArray()),
             Array.AsReadOnly(externalModelMaterials
                 .DistinctBy(AssetKey.FromDefinition)
@@ -1819,13 +1857,10 @@ internal static class Iw3PcMapConverter
         var roots = new OrderedAssetSet();
         AddImages(roots, imageNames, images);
         roots.AddRange(techniques.Shaders);
-        roots.AddRange(techniques.OwnedTechniqueSets.Where(set =>
-            techniques.MapOwnedNames.Contains(set.Name!)));
-        AddRequiredTechniqueSets(
-            roots,
-            materials.MapMaterials,
-            materials.BySourceName,
-            techniques.AssetsByName);
+        roots.AddRange(techniques.OwnedTechniqueSets);
+        roots.AddRange(materials.MapMaterials.Select(material =>
+            material.TechniqueSet ?? throw new InvalidDataException(
+                $"Material '{material.Info.Name}' has no resolved technique set.")));
         roots.AddRange(materials.MapMaterials);
         roots.AddRange(materials.ExternalModelMaterials);
         roots.AddRange(xmodels.Models);
@@ -1844,40 +1879,6 @@ internal static class Iw3PcMapConverter
             mapAssetName,
             mapGraph.Checksum));
         return roots.Assets.ToArray();
-    }
-
-    private static void AddRequiredTechniqueSets(
-        OrderedAssetSet roots,
-        IReadOnlyList<MaterialAsset> zoneMaterials,
-        IReadOnlyDictionary<string, MaterialAsset> materialsBySourceName,
-        IReadOnlyDictionary<string, MaterialTechniqueSetAsset> techniquesByName)
-    {
-        roots.AddRange(ResolveRequiredTechniqueSets(
-            zoneMaterials,
-            materialsBySourceName,
-            techniquesByName));
-    }
-
-    private static IEnumerable<MaterialTechniqueSetAsset>
-        ResolveRequiredTechniqueSets(
-            IReadOnlyList<MaterialAsset> zoneMaterials,
-            IReadOnlyDictionary<string, MaterialAsset> materialsBySourceName,
-            IReadOnlyDictionary<string, MaterialTechniqueSetAsset> techniquesByName)
-    {
-        HashSet<AssetKey> materialKeys = zoneMaterials
-            .Select(AssetKey.FromDefinition)
-            .ToHashSet();
-        foreach ((string _, MaterialAsset material) in materialsBySourceName)
-        {
-            if (!materialKeys.Contains(AssetKey.FromDefinition(material)))
-                continue;
-            string name = material.TechniqueSet?.Name?.TrimStart(',') ??
-                throw new InvalidDataException(
-                    $"Material '{material.Info.Name}' has no technique set.");
-            if (!techniquesByName.TryGetValue(name, out MaterialTechniqueSetAsset? techniqueSet))
-                throw new InvalidDataException($"Technique set '{name}' was not resolved.");
-            yield return techniqueSet;
-        }
     }
 
     private static void AddImages(
@@ -1900,17 +1901,19 @@ internal static class Iw3PcMapConverter
         IReadOnlyList<RawFileAsset> loadRawFiles)
     {
         GfxImageAsset loadScreenImage = ResolveLoadScreenImage(loadImageNames, images.AssetsBySourceName);
-        if (images.FallbackImageNames.Contains(loadScreenImage.Name, StringComparer.OrdinalIgnoreCase))
+        if (images.FallbackImageNames.Contains(loadImageNames.Single(), StringComparer.OrdinalIgnoreCase))
             throw new InvalidDataException($"Loadscreen image '{loadScreenImage.Name}' has no source-owned pixels.");
-        if (!images.StreamReferencesByAsset.TryGetValue(AssetKey.FromDefinition(loadScreenImage),
-                out ImageFileStreamLanguageReferences? loadScreenReferences))
+        images.StreamReferencesByAsset.TryGetValue(AssetKey.FromDefinition(loadScreenImage),
+            out ImageFileStreamLanguageReferences? loadScreenReferences);
+        if (loadScreenImage.StreamData.Any(part => part.HasStreamingData) && loadScreenReferences is null)
         {
             throw new InvalidDataException(
                 $"Loadscreen image '{loadScreenImage.Name}' is not backed by the generated imagefile package.");
         }
         if (loadRawFiles.Count != 1 || !string.Equals(loadRawFiles[0].Name, loadName, StringComparison.Ordinal))
             throw new InvalidDataException($"IW3 load zone '{loadName}' must contain exactly its matching marker rawfile.");
-        return Iw4LoadZoneBuilder.Build(loadName, loadScreenImage, [loadScreenReferences], loadRawFiles[0]);
+        return Iw4LoadZoneBuilder.Build(loadName, loadScreenImage,
+            loadScreenReferences is null ? [] : [loadScreenReferences], loadRawFiles[0]);
     }
 
     private static GfxImageAsset ResolveLoadScreenImage(
@@ -2400,7 +2403,6 @@ internal static class Iw3PcMapConverter
         string? IwdInputPath,
         string? SourceFastFileDirectory,
         string? SourceLibraryDirectory,
-        string? BootstrapFastFilePath,
         string OutputDirectory,
         string MapName,
         string LoadName,
@@ -2440,11 +2442,9 @@ internal static class Iw3PcMapConverter
     private sealed record TechniqueCompilationGraph(
         IReadOnlyDictionary<string, MaterialTechniqueSetAsset> AssetsByName,
         IReadOnlyList<MaterialTechniqueSetAsset> OwnedTechniqueSets,
-        IReadOnlyList<MaterialShaderAsset> Shaders,
-        IReadOnlySet<string> MapOwnedNames);
+        IReadOnlyList<MaterialShaderAsset> Shaders);
 
     private sealed record MaterialCompilationGraph(
-        IReadOnlyDictionary<string, MaterialAsset> BySourceName,
         IReadOnlyList<MaterialAsset> MapMaterials,
         IReadOnlyList<MaterialAsset> ExternalModelMaterials,
         IReadOnlyDictionary<string, Iw3XModelMaterialMapping>

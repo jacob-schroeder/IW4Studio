@@ -1162,7 +1162,8 @@ public sealed class XModelSceneBuilder
                 new Vector2(u, 0f),
                 Vector4.One,
                 Vector3.UnitZ,
-                tangent);
+                tangent,
+                1f);
             XSurfaceVertexCodec.WriteVertex(
                 verts0,
                 verts1,
@@ -1171,7 +1172,8 @@ public sealed class XModelSceneBuilder
                 new Vector2(u, 1f),
                 Vector4.One,
                 -Vector3.UnitZ,
-                tangent);
+                tangent,
+                1f);
         }
 
         for (int latitude = 1;
@@ -1206,7 +1208,8 @@ public sealed class XModelSceneBuilder
                     new Vector2(u, v),
                     Vector4.One,
                     normal,
-                    tangent);
+                    tangent,
+                    1f);
             }
         }
 

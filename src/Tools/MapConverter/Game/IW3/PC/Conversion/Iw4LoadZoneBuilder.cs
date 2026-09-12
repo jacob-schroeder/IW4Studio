@@ -22,6 +22,8 @@ internal static class Iw4LoadZoneBuilder
     private const string TechniqueSetName = ",2d";
     private const string DefaultImageName = ",default";
     internal const int OwnedMaterialCount = 3;
+    internal const string VictoryBackdropMaterialName = "$victorybackdrop";
+    internal const string DefeatBackdropMaterialName = "$defeatbackdrop";
 
     internal static byte[] Build(
         string targetZoneName,
@@ -46,11 +48,6 @@ internal static class Iw4LoadZoneBuilder
             throw new InvalidDataException(
                 "The loadscreen requires an owned source image definition.");
         }
-        if (sourceImage.PayloadByteCount != 0 || sourceImage.PayloadBytes.Count != 0)
-        {
-            throw new InvalidDataException(
-                $"Loadscreen image '{sourceImage.Name}' must be streamed, not resident.");
-        }
         if (sourceImage.TextureSemantic != TextureSemantic.TwoDimensional)
         {
             throw new InvalidDataException(
@@ -60,21 +57,48 @@ internal static class Iw4LoadZoneBuilder
         int[] streamPartByteCounts =
             GfxImageStreamData.ValidateProfileAndComputePartByteCounts(
                 sourceImage.StreamData);
-        if (imageStreamReferences.Count != 1 ||
-            imageStreamReferences[0].LanguageMask != LanguageMask)
+        bool isStreamed = streamPartByteCounts.Any(byteCount => byteCount != 0);
+        ImageFileStreamLanguageReferences? languageReferences = null;
+        if (isStreamed)
         {
-            throw new InvalidDataException(
-                "The loadscreen requires exactly the PS3 default-language imagefile references.");
-        }
-        ImageFileStreamLanguageReferences languageReferences =
-            imageStreamReferences[0];
-        for (int index = 0; index < streamPartByteCounts.Length; index++)
-        {
-            if (languageReferences.References[index].ByteLength !=
-                streamPartByteCounts[index])
+            if (sourceImage.PayloadByteCount != 0 || sourceImage.PayloadBytes.Count != 0)
             {
                 throw new InvalidDataException(
-                    $"Loadscreen stream part {index} has a mismatched imagefile byte length.");
+                    $"Streamed loadscreen image '{sourceImage.Name}' cannot own a resident payload.");
+            }
+            if (imageStreamReferences.Count != 1 ||
+                imageStreamReferences[0].LanguageMask != LanguageMask)
+            {
+                throw new InvalidDataException(
+                    "The loadscreen requires exactly the PS3 default-language imagefile references.");
+            }
+            languageReferences = imageStreamReferences[0];
+            for (int index = 0; index < streamPartByteCounts.Length; index++)
+            {
+                if (languageReferences.References[index].ByteLength !=
+                    streamPartByteCounts[index])
+                {
+                    throw new InvalidDataException(
+                        $"Loadscreen stream part {index} has a mismatched imagefile byte length.");
+                }
+            }
+        }
+        else
+        {
+            if (sourceImage.MapType != MapType.TwoDimensional ||
+                sourceImage.DimensionCount != GfxImageDimension.TwoDimensional ||
+                sourceImage.IsCubemap || sourceImage.Depth != 1 ||
+                sourceImage.Width == 0 || sourceImage.Height == 0 ||
+                sourceImage.PayloadByteCount <= 0 ||
+                sourceImage.PayloadByteCount != sourceImage.PayloadBytes.Count)
+            {
+                throw new InvalidDataException(
+                    $"Resident loadscreen image '{sourceImage.Name}' requires an owned two-dimensional payload.");
+            }
+            if (imageStreamReferences.Count != 0)
+            {
+                throw new InvalidDataException(
+                    "A resident loadscreen cannot carry imagefile references.");
             }
         }
 
@@ -86,11 +110,11 @@ internal static class Iw4LoadZoneBuilder
         {
             Name = DefaultImageName
         };
-        GfxImageAsset targetImage = CloneStreamedImage(
+        GfxImageAsset targetImage = CloneImage(
             sourceImage,
             $"loadscreen_{targetZoneName}");
         MaterialAsset victoryBackdrop = CreateBackdropMaterial(
-            "$victorybackdrop",
+            VictoryBackdropMaterialName,
             0x8800180080000000,
             defaultImage,
             MaterialSamplerState.FilterNearest,
@@ -99,7 +123,7 @@ internal static class Iw4LoadZoneBuilder
             techniqueSet,
             (MaterialSortKey)34);
         MaterialAsset defeatBackdrop = CreateBackdropMaterial(
-            "$defeatbackdrop",
+            DefeatBackdropMaterialName,
             0x8800180000000000,
             defaultImage,
             MaterialSamplerState.FilterNearest,
@@ -236,7 +260,7 @@ internal static class Iw4LoadZoneBuilder
         };
     }
 
-    private static GfxImageAsset CloneStreamedImage(
+    internal static GfxImageAsset CloneImage(
         GfxImageAsset source,
         string targetName) => new()
     {
@@ -266,8 +290,8 @@ internal static class Iw4LoadZoneBuilder
             entry.Width,
             entry.Height,
             entry.LevelSizeAndOffset)).ToArray(),
-        PayloadByteCount = 0,
-        PayloadBytes = [],
+        PayloadByteCount = source.PayloadByteCount,
+        PayloadBytes = source.PayloadBytes.ToArray(),
         Name = targetName
     };
 
@@ -289,8 +313,21 @@ internal static class Iw4LoadZoneBuilder
 
     private static void ValidateStreamTable(
         IReadOnlyList<DbHeaderImageStreamLanguageTable> tables,
-        ImageFileStreamLanguageReferences expected)
+        ImageFileStreamLanguageReferences? expected)
     {
+        if (expected is null)
+        {
+            // External default-image slots may remain in the table, but a
+            // resident loadscreen contributes no nonempty stream rows.
+            if (tables.Count > 1 || tables.Any(table =>
+                    table.LanguageMask != LanguageMask ||
+                    table.ImageStreamEntries.Any(entry => !entry.IsEmpty)))
+            {
+                throw new InvalidDataException(
+                    "Linked resident loadscreen has unexpected image-stream rows.");
+            }
+            return;
+        }
         if (tables.Count != 1 || tables[0].LanguageMask != LanguageMask)
         {
             throw new InvalidDataException(

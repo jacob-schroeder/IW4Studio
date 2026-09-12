@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PS3.Extraction;
 
@@ -27,9 +29,11 @@ internal sealed class Iw3PcSourceLibrary
     private readonly Dictionary<(string Type, string Key), List<Node>> _providers = [];
     private readonly Dictionary<string, Closure> _closures = new(PathComparer);
     private readonly Dictionary<(string Type, string Key), Node> _selectedDefinitions = [];
+    private readonly Dictionary<(Node Left, Node Right), bool> _definitionComparisons = [];
     private readonly List<ExportedFile> _exportedFiles = [];
     private readonly Dictionary<string, IReadOnlyList<string>> _imageSources = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<string>> _soundSources = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _deferredSoundPaths = [];
     private int _exportSequence;
 
     private Iw3PcSourceLibrary(
@@ -52,6 +56,7 @@ internal sealed class Iw3PcSourceLibrary
         string? customIwd,
         string libraryDirectory,
         string scratch,
+        bool allowMissingSounds,
         CancellationToken cancellationToken)
     {
         nativePath = ExistingPath(nativePath, directory: false);
@@ -120,16 +125,8 @@ internal sealed class Iw3PcSourceLibrary
 
         var errors = new SortedSet<string>(StringComparer.Ordinal);
         foreach (Source source in library._sources.Where(source => source.Role != "library"))
-            library.ResolveClosure(source, errors, cancellationToken);
-        library.ResolveStreamedSounds(errors, cancellationToken);
-        // World extraction still loads only the original map fastfile. A model
-        // recovered from another owner would lose its source collision data.
-        foreach (Node node in library._closures[mapFF].Nodes.Where(node =>
-                     node.Asset.Type == "xmodel" && !PathComparer.Equals(node.Source.Path, mapFF)))
-        {
-            errors.Add($"Resolved xmodel:{node.Asset.Name} from '{node.Source.Path}', but map-model collision " +
-                "extraction from another fastfile is not supported. Conversion cannot preserve this model's collision.");
-        }
+            await library.ResolveClosureAsync(source, errors, cancellationToken).ConfigureAwait(false);
+        library.ResolveStreamedSounds(errors, allowMissingSounds, cancellationToken);
         if (errors.Count != 0)
         {
             throw new InvalidDataException(
@@ -137,6 +134,40 @@ internal sealed class Iw3PcSourceLibrary
                 string.Join("\n", errors.Select(error => $"- {error}")));
         }
         return library;
+    }
+
+    internal async Task<string> ConvertWorldAsync(
+        string mapFF, string d3dbspPath, string dynamicEntityPath, string collisionPath,
+        CancellationToken cancellationToken)
+    {
+        mapFF = ExistingPath(mapFF, directory: false);
+        Closure closure = _closures[mapFF];
+        Node[] externalModels = OrderedNodes(closure.Nodes.Where(node =>
+            node.Asset.Type == "xmodel" &&
+            !PathComparer.Equals(node.Source.Path, mapFF)))
+            .DistinctBy(node => node.Asset.Key).ToArray();
+        if (externalModels.Any(node => node.Source.IsPs3))
+            throw new NotSupportedException("World model extraction requires IW3 PC source definitions.");
+
+        Source[] sources = externalModels.Select(node => node.Source)
+            .Append(closure.Root).Distinct().ToArray();
+        foreach (Source source in sources)
+            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+        string selectionPath = Path.Combine(_scratchDirectory, "source-world-models.json");
+        RejectExisting(selectionPath);
+        await File.WriteAllBytesAsync(selectionPath, JsonSerializer.SerializeToUtf8Bytes(
+            externalModels.GroupBy(node => node.Source).Select(group => new
+            {
+                FastFilePath = group.Key.Path,
+                RecordIds = group.Select(node => node.Asset.Id).Distinct().Order().ToArray(),
+            })), cancellationToken).ConfigureAwait(false);
+        string result = await Iw3PcExtractionBackend.RunToolAsync(
+            "Native IW3 map conversion with resolved source models", _nativePath, _scratchDirectory,
+            [mapFF, d3dbspPath, dynamicEntityPath, collisionPath, selectionPath],
+            cancellationToken).ConfigureAwait(false);
+        foreach (Source source in sources)
+            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+        return result;
     }
 
     internal async Task ExtractAsync(
@@ -285,16 +316,26 @@ internal sealed class Iw3PcSourceLibrary
             .Select(pair => new
             {
                 Path = pair.Key, Sources = pair.Value,
-                Requesters = _closures.Values.SelectMany(closure => closure.Nodes)
-                    .Where(node => node.Asset.StreamedSounds.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
-                    .Distinct().Select(node => new
-                    {
-                        node.Asset.Type, node.Asset.Name, SourceFastFile = node.Source.Path, RecordId = node.Asset.Id,
-                    }),
+                Requesters = SoundRequesterProvenance(pair.Key),
+            }),
+        StreamedSoundTodos = _deferredSoundPaths.Order(StringComparer.Ordinal)
+            .Select(path => new
+            {
+                Path = path, Status = "TODO",
+                Reason = "Missing source sound payload; sound payloads remain unconverted.",
+                Requesters = SoundRequesterProvenance(path),
             }),
     }, new JsonSerializerOptions { WriteIndented = true });
 
-    private void ResolveClosure(Source root, SortedSet<string> errors, CancellationToken cancellationToken)
+    private IEnumerable<object> SoundRequesterProvenance(string path) =>
+        _closures.Values.SelectMany(closure => closure.Nodes)
+            .Where(node => node.Asset.StreamedSounds.Contains(path, StringComparer.OrdinalIgnoreCase))
+            .Distinct().Select(node => new
+            {
+                node.Asset.Type, node.Asset.Name, SourceFastFile = node.Source.Path, RecordId = node.Asset.Id,
+            });
+
+    private async Task ResolveClosureAsync(Source root, SortedSet<string> errors, CancellationToken cancellationToken)
     {
         var closure = new Closure(root);
         _closures.Add(root.Path, closure);
@@ -304,8 +345,15 @@ internal sealed class Iw3PcSourceLibrary
         // A reference may be a root entry without another named asset depending on it.
         foreach (CatalogAsset asset in root.Catalog.Assets.Where(asset => asset.IsReference))
         {
+            // These standalone load roots are authored by the IW4 load-zone
+            // builder. References reached through retained assets still resolve below.
+            if (root.Role == "load" && asset.Type == "material" &&
+                asset.Key is Iw4LoadZoneBuilder.VictoryBackdropMaterialName or
+                    Iw4LoadZoneBuilder.DefeatBackdropMaterialName)
+                continue;
             string chain = $"'{root.Path}' -> {asset.Type}:{asset.Name} (reference)";
-            Node? provider = ResolveNamed(root, asset.Type, asset.Key, chain, errors);
+            Node? provider = await ResolveNamedAsync(root, asset.Type, asset.Key, chain, errors, cancellationToken)
+                .ConfigureAwait(false);
             if (provider is not null)
                 pending.Enqueue((provider, chain + $" -> '{provider.Source.Path}'"));
         }
@@ -317,7 +365,8 @@ internal sealed class Iw3PcSourceLibrary
             if (!closure.Nodes.Add(node))
                 continue;
             var key = (node.Asset.Type, node.Asset.Key);
-            if (_selectedDefinitions.TryGetValue(key, out Node? previous) && !SameDefinition(previous, node))
+            if (_selectedDefinitions.TryGetValue(key, out Node? previous) &&
+                !await CompareDefinitionsAsync(previous, node, item.Chain, errors, cancellationToken).ConfigureAwait(false))
             {
                 errors.Add($"Conflicting concrete definitions for {key.Type}:{key.Key}: " +
                     $"'{previous.Source.Path}' record {previous.Asset.Id} and '{node.Source.Path}' record {node.Asset.Id}; " +
@@ -333,14 +382,16 @@ internal sealed class Iw3PcSourceLibrary
                 CatalogAsset dependency = node.Source.Records[id];
                 string chain = item.Chain + $" -> {dependency.Type}:{dependency.Name}";
                 Node? target = dependency.IsReference
-                    ? ResolveNamed(node.Source, dependency.Type, dependency.Key, chain, errors)
+                    ? await ResolveNamedAsync(node.Source, dependency.Type, dependency.Key, chain, errors, cancellationToken)
+                        .ConfigureAwait(false)
                     : new Node(node.Source, dependency);
                 AddDependency(target, dependency.IsReference ? "reference-record" : "record", chain);
             }
             foreach (CatalogReference reference in node.Asset.References)
             {
                 string chain = item.Chain + $" -> {reference.Type}:{reference.Name}";
-                AddDependency(ResolveNamed(node.Source, reference.Type, reference.Key, chain, errors), "named-reference", chain);
+                AddDependency(await ResolveNamedAsync(node.Source, reference.Type, reference.Key, chain, errors, cancellationToken)
+                    .ConfigureAwait(false), "named-reference", chain);
             }
 
             void AddDependency(Node? target, string kind, string chain)
@@ -353,7 +404,8 @@ internal sealed class Iw3PcSourceLibrary
         }
     }
 
-    private Node? ResolveNamed(Source requester, string type, string key, string chain, SortedSet<string> errors)
+    private async Task<Node?> ResolveNamedAsync(
+        Source requester, string type, string key, string chain, SortedSet<string> errors, CancellationToken cancellationToken)
     {
         if (!_providers.TryGetValue((type, key), out List<Node>? candidates))
         {
@@ -366,8 +418,10 @@ internal sealed class Iw3PcSourceLibrary
         if (providers.Length == 0)
             providers = candidates.ToArray();
         Node first = providers[0];
-        if (providers.Any(node => !SameDefinition(first, node)))
+        foreach (Node provider in providers.Skip(1))
         {
+            if (await CompareDefinitionsAsync(first, provider, chain, errors, cancellationToken).ConfigureAwait(false))
+                continue;
             errors.Add($"Ambiguous {type}:{key}; requested by {chain}; providers: " +
                 string.Join(", ", providers.Select(node => $"'{node.Source.Path}' record {node.Asset.Id}")) + ".");
             return null;
@@ -375,7 +429,8 @@ internal sealed class Iw3PcSourceLibrary
         return first;
     }
 
-    private void ResolveStreamedSounds(SortedSet<string> errors, CancellationToken cancellationToken)
+    private void ResolveStreamedSounds(
+        SortedSet<string> errors, bool allowMissingSounds, CancellationToken cancellationToken)
     {
         Node[] nodes = _closures.Values.SelectMany(closure => closure.Nodes).Distinct().ToArray();
         string[] requests = nodes.SelectMany(node => node.Asset.StreamedSounds)
@@ -397,6 +452,11 @@ internal sealed class Iw3PcSourceLibrary
         }
         foreach (string missing in requests.Where(path => !_soundSources.ContainsKey(path)))
         {
+            if (allowMissingSounds)
+            {
+                _deferredSoundPaths.Add(missing);
+                continue;
+            }
             string requesters = string.Join(", ", nodes
                 .Where(node => node.Asset.StreamedSounds.Contains(missing, StringComparer.OrdinalIgnoreCase))
                 .Select(node => $"{node.Asset.Type}:{node.Asset.Name} in '{node.Source.Path}'"));
@@ -405,8 +465,77 @@ internal sealed class Iw3PcSourceLibrary
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private static bool SameDefinition(Node left, Node right) =>
-        left.Asset.Id == right.Asset.Id && left.Source.Sha256 == right.Source.Sha256;
+    private bool SameDefinition(Node left, Node right) =>
+        (left.Asset.Id == right.Asset.Id && left.Source.Sha256 == right.Source.Sha256) ||
+        (_definitionComparisons.TryGetValue((left, right), out bool equal) && equal) ||
+        (_definitionComparisons.TryGetValue((right, left), out equal) && equal);
+
+    private async Task<bool> CompareDefinitionsAsync(
+        Node left, Node right, string chain, SortedSet<string> errors, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (left.Asset.Type != right.Asset.Type || left.Asset.Key != right.Asset.Key)
+            return false;
+        if (SameDefinition(left, right))
+            return true;
+        if (_definitionComparisons.ContainsKey((left, right)) || _definitionComparisons.ContainsKey((right, left)))
+            return false;
+        // A comparison is unequal until its complete dependency graph is proven.
+        // Reentering an unfinished pair therefore rejects cycles conservatively.
+        _definitionComparisons.Add((left, right), false);
+        if (left.Source.IsPs3 || right.Source.IsPs3 ||
+            left.Asset.References.Length != 0 || right.Asset.References.Length != 0 ||
+            left.Asset.StreamedSounds.Length != 0 || right.Asset.StreamedSounds.Length != 0)
+            return false;
+
+        Source[] sources = new[] { left.Source, right.Source }.Distinct().ToArray();
+        foreach (Source source in sources)
+            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+        string result = await Iw3PcExtractionBackend.RunToolAsync(
+            $"IW3 source comparison {left.Asset.Type}:{left.Asset.Name}", _nativePath, _scratchDirectory,
+            ["--compare-assets", left.Source.Path, left.Asset.Id.ToString(CultureInfo.InvariantCulture),
+                right.Source.Path, right.Asset.Id.ToString(CultureInfo.InvariantCulture)], cancellationToken).ConfigureAwait(false);
+        foreach (Source source in sources)
+            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+        bool localEqual = result.Trim() switch
+        {
+            "true" => true,
+            "false" => false,
+            _ => throw new InvalidDataException($"Invalid source comparison result for {left.Asset.Type}:{left.Asset.Name}."),
+        };
+        if (!localEqual)
+            return false;
+
+        CatalogAsset[] leftDependencies = Dependencies(left);
+        CatalogAsset[] rightDependencies = Dependencies(right);
+        if (leftDependencies.Length != rightDependencies.Length)
+            return false;
+        for (int index = 0; index < leftDependencies.Length; index++)
+        {
+            CatalogAsset leftAsset = leftDependencies[index];
+            CatalogAsset rightAsset = rightDependencies[index];
+            if (leftAsset.Type != rightAsset.Type || leftAsset.Key != rightAsset.Key)
+                return false;
+            string dependencyChain = chain + $" -> {leftAsset.Type}:{leftAsset.Name} (equivalence check)";
+            Node? leftNode = leftAsset.IsReference
+                ? await ResolveNamedAsync(left.Source, leftAsset.Type, leftAsset.Key, dependencyChain, errors, cancellationToken)
+                    .ConfigureAwait(false)
+                : new Node(left.Source, leftAsset);
+            Node? rightNode = rightAsset.IsReference
+                ? await ResolveNamedAsync(right.Source, rightAsset.Type, rightAsset.Key, dependencyChain, errors, cancellationToken)
+                    .ConfigureAwait(false)
+                : new Node(right.Source, rightAsset);
+            if (leftNode is null || rightNode is null ||
+                !await CompareDefinitionsAsync(leftNode, rightNode, dependencyChain, errors, cancellationToken).ConfigureAwait(false))
+                return false;
+        }
+        _definitionComparisons[(left, right)] = true;
+        return true;
+
+        static CatalogAsset[] Dependencies(Node node) => node.Asset.Dependencies.Select(id => node.Source.Records[id])
+            .OrderBy(asset => asset.Type, StringComparer.Ordinal).ThenBy(asset => asset.Key, StringComparer.Ordinal)
+            .ThenBy(asset => asset.Id).ToArray();
+    }
 
     private static IOrderedEnumerable<Node> OrderedNodes(IEnumerable<Node> nodes) => nodes
         .OrderBy(node => node.Asset.Type, StringComparer.Ordinal)
@@ -442,7 +571,9 @@ internal sealed class Iw3PcSourceLibrary
     }
 
     private static bool ValidIdentity(string type, string name, string key) =>
-        Iw3ZoneManifest.IsValidEntry(type, name) && Iw3ZoneManifest.IsValidEntry(type, key);
+        // Stock names can contain surrounding whitespace; retain it in the source record.
+        !string.IsNullOrWhiteSpace(name) &&
+        Iw3ZoneManifest.IsValidEntry(type, name.Trim()) && Iw3ZoneManifest.IsValidEntry(type, key);
 
     private static IEnumerable<string> EnumerateLibraryFiles(string root, CancellationToken cancellationToken)
     {

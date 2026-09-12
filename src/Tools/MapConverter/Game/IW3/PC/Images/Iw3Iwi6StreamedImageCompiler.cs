@@ -8,18 +8,27 @@ internal sealed record Iw3Iwi6StreamedImageCompilation(
     IReadOnlyList<ReadOnlyMemory<byte>> StreamPartPayloads);
 
 /// <summary>
-/// Converts one two-dimensional IW3 IWI6 block-compressed image into an owned
-/// streamed PS3 IW4 GfxImage and its four ordered imagefile payload parts.
-/// IWI stores mips smallest-first; PS3 stream payloads retain the same BC block
-/// contents in top-level-first order.
+/// Converts one IW3 IWI6 image into an owned PS3 IW4 GfxImage.
+/// Ordinary 2D images use four ordered imagefile parts; cubemaps and no-picmip
+/// images retain their full payload in the fastfile.
+/// IWI stores mips smallest-first; PS3 payloads use top-level-first order,
+/// retaining BC blocks or converting bitmap pixels to native swizzled ARGB storage.
 /// </summary>
 internal static class Iw3Iwi6StreamedImageCompiler
 {
     private const int HeaderSize = 0x1c;
     private const byte Version = 6;
+    private const byte NoPicMip = 0x01;
     private const byte NoMipMaps = 0x02;
+    private const byte CubeMap = 0x04;
+    private const byte LegacyNormals = 0x20;
+    private const byte ClampU = 0x40;
+    private const byte ClampV = 0x80;
     private const uint TextureControl1 = 0x0001aae4;
 
+    private const byte IwiRgba = 0x01;
+    private const byte IwiRgb = 0x02;
+    private const byte IwiLuminance = 0x04;
     private const byte IwiDxt1 = 0x0b;
     private const byte IwiDxt3 = 0x0c;
     private const byte IwiDxt5 = 0x0d;
@@ -36,7 +45,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
             throw new ArgumentOutOfRangeException(
                 nameof(semantic),
                 semantic,
-                "A streamed two-dimensional material-image semantic is required.");
+                "A material-image semantic is required.");
         }
         if (iwiBytes.Length < HeaderSize)
             throw new InvalidDataException("IWI6 data is shorter than its 0x1C-byte header.");
@@ -50,28 +59,45 @@ internal static class Iw3Iwi6StreamedImageCompiler
 
         GfxImageBaseFormat baseFormat = iwiBytes[4] switch
         {
+            IwiRgba or IwiRgb or IwiLuminance => GfxImageBaseFormat.A8R8G8B8,
             IwiDxt1 => GfxImageBaseFormat.CompressedDxt1,
             IwiDxt3 => GfxImageBaseFormat.CompressedDxt23,
             IwiDxt5 => GfxImageBaseFormat.CompressedDxt45,
             _ => throw new NotSupportedException(
                 $"IWI6 format 0x{iwiBytes[4]:X2} is not supported; " +
-                "DXT1, DXT3, or DXT5 is required.")
+                "RGB, RGBA, luminance, DXT1, DXT3, or DXT5 is required.")
         };
         byte flags = iwiBytes[5];
-        if ((flags & ~NoMipMaps) != 0)
+        // Clamp flags do not change pixel layout. Per-use addressing is
+        // retained by the source material's sampler state.
+        if ((flags & ~(NoPicMip | NoMipMaps | CubeMap | LegacyNormals | ClampU | ClampV)) != 0)
         {
             throw new NotSupportedException(
                 $"IWI6 flags 0x{flags:X2} request an unsupported image shape or layout.");
         }
+        if ((flags & LegacyNormals) != 0 &&
+            ((flags & CubeMap) != 0 || baseFormat != GfxImageBaseFormat.CompressedDxt45 ||
+             semantic != TextureSemantic.NormalMap || useSrgbReads))
+        {
+            throw new NotSupportedException(
+                "Legacy IWI6 normals require linear two-dimensional DXT5 data and the NormalMap semantic.");
+        }
+        // Legacy DXT5 normal channels are authored in alpha/green and decoded
+        // by the material shader. Retain the compressed blocks unchanged.
 
         ushort width = ReadDimension(iwiBytes, 0x06, "width");
         ushort height = ReadDimension(iwiBytes, 0x08, "height");
         ushort depth = ReadDimension(iwiBytes, 0x0a, "depth");
+        bool isCubemap = (flags & CubeMap) != 0;
         if (depth != 1)
         {
             throw new NotSupportedException(
                 $"IWI6 depth {depth} is not supported; a two-dimensional image requires depth 1.");
         }
+        if (isCubemap && width != height)
+            throw new InvalidDataException("An IWI6 cubemap requires square faces.");
+        if (isCubemap && !System.Numerics.BitOperations.IsPow2((uint)width))
+            throw new InvalidDataException("An IWI6 cubemap requires power-of-two face dimensions.");
 
         int mipCount = (flags & NoMipMaps) != 0
             ? 1
@@ -82,9 +108,19 @@ internal static class Iw3Iwi6StreamedImageCompiler
             mipCount,
             width,
             height);
-        int sourcePayloadByteCount = mipByteCounts.Aggregate(
+        // Bitmap formats expand into the existing four-byte PS3 ARGB format.
+        // IWI file extents still describe the original source pixels.
+        int[] sourceMipByteCounts = iwiBytes[4] switch
+        {
+            IwiRgb => mipByteCounts.Select(byteCount => checked(byteCount / 4 * 3)).ToArray(),
+            IwiLuminance => mipByteCounts.Select(byteCount => byteCount / 4).ToArray(),
+            _ => mipByteCounts
+        };
+        int faceCount = isCubemap ? 6 : 1;
+        int sourceFaceByteCount = sourceMipByteCounts.Aggregate(
             0,
             (total, byteCount) => checked(total + byteCount));
+        int sourcePayloadByteCount = checked(sourceFaceByteCount * faceCount);
 
         int sourceFileByteCount = checked(HeaderSize + sourcePayloadByteCount);
         if (iwiBytes.Length != sourceFileByteCount)
@@ -96,19 +132,25 @@ internal static class Iw3Iwi6StreamedImageCompiler
         }
         ValidatePicmipFileSizes(
             iwiBytes,
-            mipByteCounts,
+            sourceMipByteCounts,
+            faceCount,
             sourceFileByteCount);
 
         int alignedPayloadByteCount = GfxImagePixelLayout.ComputePayloadByteCount(
             new GfxImageFormat(format),
             checked((byte)mipCount),
-            isCubemap: false,
+            isCubemap,
             new GfxImageTextureRemap(TextureControl1),
             width,
             height,
             depth);
-        if (alignedPayloadByteCount < sourcePayloadByteCount ||
-            alignedPayloadByteCount - sourcePayloadByteCount >= 0x80)
+        int faceStride = alignedPayloadByteCount / faceCount;
+        int targetFaceByteCount = mipByteCounts.Aggregate(
+            0,
+            (total, byteCount) => checked(total + byteCount));
+        if (alignedPayloadByteCount % faceCount != 0 ||
+            faceStride < targetFaceByteCount ||
+            faceStride - targetFaceByteCount >= 0x80)
         {
             throw new InvalidDataException(
                 "The proven PS3 image payload alignment is inconsistent.");
@@ -122,12 +164,87 @@ internal static class Iw3Iwi6StreamedImageCompiler
              mipLevel--)
         {
             int byteCount = mipByteCounts[mipLevel];
-            iwiBytes.Slice(sourceOffset, byteCount).CopyTo(
-                payload.AsSpan(destinationOffsets[mipLevel], byteCount));
-            sourceOffset = checked(sourceOffset + byteCount);
+            int sourceByteCount = sourceMipByteCounts[mipLevel];
+            // Source: mip-major, six consecutive faces at each mip. Native:
+            // face-major, each complete top-first mip chain aligned to 0x80.
+            for (int face = 0; face < faceCount; face++)
+            {
+                ReadOnlySpan<byte> sourceMip = iwiBytes.Slice(sourceOffset, sourceByteCount);
+                Span<byte> destinationMip = payload.AsSpan(
+                    checked(face * faceStride + destinationOffsets[mipLevel]), byteCount);
+                if (baseFormat == GfxImageBaseFormat.A8R8G8B8)
+                {
+                    byte[] linear;
+                    if (iwiBytes[4] is IwiRgb or IwiLuminance)
+                    {
+                        linear = new byte[byteCount];
+                        int sourcePixelSize = iwiBytes[4] == IwiRgb ? 3 : 1;
+                        for (int sourcePixel = 0, targetPixel = 0;
+                             sourcePixel < sourceMip.Length;
+                             sourcePixel += sourcePixelSize, targetPixel += 4)
+                        {
+                            if (iwiBytes[4] == IwiRgb)
+                                sourceMip.Slice(sourcePixel, 3).CopyTo(linear.AsSpan(targetPixel, 3));
+                            else
+                                linear.AsSpan(targetPixel, 3).Fill(sourceMip[sourcePixel]);
+                            linear[targetPixel + 3] = byte.MaxValue;
+                        }
+                    }
+                    else
+                    {
+                        linear = sourceMip.ToArray();
+                    }
+                    GfxImagePixelLayout.ReverseFourBytePixelOrder(linear);
+                    GfxImagePixelLayout.SwizzleMorton2D(
+                        linear,
+                        Math.Max(1, width >> mipLevel),
+                        Math.Max(1, height >> mipLevel),
+                        bytesPerPixel: 4).CopyTo(destinationMip);
+                }
+                else
+                {
+                    sourceMip.CopyTo(destinationMip);
+                }
+                sourceOffset = checked(sourceOffset + sourceByteCount);
+            }
         }
         if (sourceOffset != iwiBytes.Length)
             throw new InvalidDataException("IWI6 mip traversal did not consume the source payload.");
+
+        if (isCubemap || (flags & NoPicMip) != 0)
+        {
+            // The PS3 wire image has no noPicmip field. Full resident storage
+            // preserves the source resolution without stream quality reduction.
+            var image = new GfxImageAsset
+            {
+                Format = format,
+                LevelCount = checked((byte)mipCount),
+                DimensionCount = GfxImageDimension.TwoDimensional,
+                MultiFaceControl = isCubemap ? (byte)1 : (byte)0,
+                TextureControl1 = TextureControl1,
+                Width = width,
+                Height = height,
+                Depth = 1,
+                MemoryLocation = GfxImageMemoryLocation.Local,
+                MapType = isCubemap ? MapType.Cube : MapType.TwoDimensional,
+                TextureSemantic = semantic,
+                Category = ImageCategory.LoadFromFile,
+                UseSrgbReads = useSrgbReads ? (byte)1 : (byte)0,
+                CardMemory = checked((uint)payload.Length),
+                BaseWidth = width,
+                BaseHeight = height,
+                BaseDepth = 1,
+                BaseLevelCount = checked((byte)mipCount),
+                Cached = GfxImageCached.No,
+                StreamData = Enumerable.Repeat(new GfxImageStreamData(0, 0, 0), GfxImageStreamData.EntryCount).ToArray(),
+                PayloadByteCount = payload.Length,
+                PayloadBytes = payload,
+                Name = imageName
+            };
+            return new Iw3Iwi6StreamedImageCompilation(
+                image,
+                Array.AsReadOnly(new ReadOnlyMemory<byte>[GfxImageStreamData.EntryCount]));
+        }
 
         return CompileTopLevelFirstPs3Payload(
             imageName,
@@ -142,7 +259,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
 
     /// <summary>
     /// Authors the IW4 streamed-image wrapper around an already-native PS3
-    /// DXT payload. The payload remains in top-level-first mip order.
+    /// DXT or swizzled ARGB payload. The payload remains in top-level-first mip order.
     /// </summary>
     internal static Iw3Iwi6StreamedImageCompilation
         CompileTopLevelFirstPs3Payload(
@@ -173,13 +290,14 @@ internal static class Iw3Iwi6StreamedImageCompiler
                 $"PS3 image mip count {mipCount} is invalid for {width}x{height}.");
         }
         if (format is not
+            (byte)GfxImageBaseFormat.A8R8G8B8 and not
             (byte)GfxImageBaseFormat.CompressedDxt1 and not
             (byte)GfxImageBaseFormat.CompressedDxt23 and not
             (byte)GfxImageBaseFormat.CompressedDxt45)
         {
             throw new NotSupportedException(
                 $"PS3 GfxImage format 0x{format:X2} is not supported; " +
-                "DXT1, DXT3, or DXT5 is required.");
+                "ARGB, DXT1, DXT3, or DXT5 is required.");
         }
 
         int[] mipByteCounts = ComputeMipByteCounts(
@@ -394,6 +512,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
     private static void ValidatePicmipFileSizes(
         ReadOnlySpan<byte> source,
         IReadOnlyList<int> mipByteCounts,
+        int faceCount,
         int sourceFileByteCount)
     {
         uint serializedFileSize = BinaryPrimitives.ReadUInt32LittleEndian(
@@ -415,11 +534,13 @@ internal static class Iw3Iwi6StreamedImageCompiler
                  mipLevel < mipByteCounts.Count;
                  mipLevel++)
             {
-                expected = checked(expected + mipByteCounts[mipLevel]);
+                expected = checked(expected + mipByteCounts[mipLevel] * faceCount);
             }
 
             uint serialized = BinaryPrimitives.ReadUInt32LittleEndian(
                 source.Slice(0x0c + picmip * sizeof(uint), sizeof(uint)));
+            if (picmip >= mipByteCounts.Count && serialized == 0)
+                continue;
             if (serialized != expected)
             {
                 throw new InvalidDataException(

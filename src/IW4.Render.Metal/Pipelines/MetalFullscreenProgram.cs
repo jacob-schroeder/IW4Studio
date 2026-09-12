@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.Versioning;
 
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution;
 using IW4.Render.Metal.Shaders;
 using IW4.Render.Shaders;

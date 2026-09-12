@@ -191,13 +191,17 @@ internal sealed class Iw3TechniqueCompiler
             passPath,
             isWorld);
         ushort signedNormalInputMask = 0;
+        ushort decodedTexCoordInputMask = 0;
         foreach (MaterialVertexStreamRouting route in declaration.Routing.Take(declaration.StreamCount))
         {
             if (route.Source is MaterialStreamSource.Normal or MaterialStreamSource.Tangent)
                 signedNormalInputMask |= checked((ushort)(1 << (int)route.Dest));
+            if (route.Source == MaterialStreamSource.TexCoord0)
+                decodedTexCoordInputMask |= checked((ushort)(1 << (int)route.Dest));
         }
-        Iw3ShaderCompilation vertex = CompileShader(source.VertexShader, passPath, signedNormalInputMask);
-        Iw3ShaderCompilation pixel = CompileShader(source.PixelShader, passPath, 0);
+        Iw3ShaderCompilation vertex = CompileShader(source.VertexShader, passPath,
+            signedNormalInputMask, decodedTexCoordInputMask, isWorld);
+        Iw3ShaderCompilation pixel = CompileShader(source.PixelShader, passPath, 0, 0, isWorld);
         CompiledArguments arguments = CompileArguments(
             source.VertexShader,
             vertex,
@@ -219,7 +223,7 @@ internal sealed class Iw3TechniqueCompiler
                 PerObjArgCount = arguments.PerObjectCount,
                 StableArgCount = arguments.RarelyCount,
                 CustomSamplerFlags = arguments.CustomSamplerFlags,
-                PrecompiledVertexShader = MaterialPrecompiledVertexShader.None,
+                PrecompiledVertexShader = SelectModelVertexShader(arguments, isWorld),
                 Args = arguments.Arguments
             },
             flags,
@@ -227,10 +231,38 @@ internal sealed class Iw3TechniqueCompiler
             pixelKey);
     }
 
+    private static MaterialPrecompiledVertexShader SelectModelVertexShader(
+        CompiledArguments arguments, bool isWorld)
+    {
+        // R_DrawStaticModels (003a1c88) skips selector zero. Its model paths
+        // write fixed per-primitive registers: c4..c7 for placement, plus c8
+        // for lighting in ModelLit. Select only the matching argument ABI.
+        if (isWorld || arguments.PerPrimitiveCount is not (1 or 2))
+            return MaterialPrecompiledVertexShader.None;
+        MaterialShaderArgumentAsset world = arguments.Arguments[0];
+        if (world.Type != MaterialShaderArgumentType.CodeVertexConst || world.Dest != 4 ||
+            world.CodeConstant != new MaterialCodeConstantArgument(MaterialConstantSource.WorldMatrix0, 0, 4))
+            return MaterialPrecompiledVertexShader.None;
+        if (arguments.PerPrimitiveCount == 1)
+        {
+            return arguments.CustomSamplerFlags == MaterialCustomSamplerFlags.None
+                ? MaterialPrecompiledVertexShader.ModelUnlit
+                : MaterialPrecompiledVertexShader.None;
+        }
+        MaterialShaderArgumentAsset lighting = arguments.Arguments[1];
+        return lighting.Type == MaterialShaderArgumentType.CodeVertexConst && lighting.Dest == 8 &&
+            lighting.CodeConstant == new MaterialCodeConstantArgument(MaterialConstantSource.BaseLightingCoords, 0, 1) &&
+            (arguments.CustomSamplerFlags & ~MaterialCustomSamplerFlags.ReflectionProbe) == 0
+                ? MaterialPrecompiledVertexShader.ModelLit
+                : MaterialPrecompiledVertexShader.None;
+    }
+
     private Iw3ShaderCompilation CompileShader(
         Iw3ShaderSource source,
         string passPath,
-        ushort signedNormalInputMask)
+        ushort signedNormalInputMask,
+        ushort decodedTexCoordInputMask,
+        bool isWorld)
     {
         ArgumentNullException.ThrowIfNull(source);
         ValidateOwnedName(source.ProgramName, "shader program");
@@ -242,6 +274,12 @@ internal sealed class Iw3TechniqueCompiler
                 throw new InvalidDataException(
                     $"{passPath} shader '{source.ProgramName}' is reused with conflicting signed-normal " +
                     $"input masks 0x{cached.SignedNormalInputMask:X4} and 0x{signedNormalInputMask:X4}.");
+            }
+            if (cached.DecodedTexCoordInputMask != decodedTexCoordInputMask)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting decoded-UV " +
+                    $"input masks 0x{cached.DecodedTexCoordInputMask:X4} and 0x{decodedTexCoordInputMask:X4}.");
             }
             var codeSamplerMasks = Iw3PcShaderCompiler.GetCodeSamplerMasks(source, cached.Compilation.Parameters);
             if (cached.CodeSamplerMasks != codeSamplerMasks)
@@ -259,12 +297,13 @@ internal sealed class Iw3TechniqueCompiler
             }
             var sunShadow = Iw3PcShaderCompiler.GetSunShadowRegisters(source, cached.Compilation.Parameters);
             int fogRegister = Iw3PcShaderCompiler.GetFogRegister(source, cached.Compilation.Parameters);
-            int sunSpecular = Iw3PcShaderCompiler.GetSunSpecularRegister(source, cached.Compilation.Parameters);
-            if (cached.SunShadow != sunShadow || cached.FogRegister != fogRegister || cached.SunSpecularRegister != sunSpecular)
+            var lightColors = Iw3PcShaderCompiler.GetLightColorRegisters(source, cached.Compilation.Parameters);
+            if (cached.SunShadow != sunShadow || cached.FogRegister != fogRegister || cached.LightColors != lightColors)
             {
                 throw new InvalidDataException(
-                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting Sun receiver, fog or sun-specular bindings.");
+                    $"{passPath} shader '{source.ProgramName}' is reused with conflicting Sun receiver, fog or light-color bindings.");
             }
+            RequireWorldPosition(cached.Compilation, positionMatrices);
             return cached.Compilation;
         }
 
@@ -277,7 +316,8 @@ internal sealed class Iw3TechniqueCompiler
                 $"{passPath} shader name '{source.ProgramName}' resolves outside the extracted shader directory.");
         }
 
-        Iw3ShaderCompilation compilation = _shaderCompiler.Compile(source, programPath, signedNormalInputMask);
+        Iw3ShaderCompilation compilation = _shaderCompiler.Compile(source, programPath,
+            signedNormalInputMask, decodedTexCoordInputMask);
         MaterialShaderKind expectedKind = source.Stage == Iw3ShaderStage.Vertex
             ? MaterialShaderKind.Vertex
             : MaterialShaderKind.Pixel;
@@ -294,14 +334,27 @@ internal sealed class Iw3TechniqueCompiler
                 $"{passPath} shader compiler returned no complete bytecode for '{source.ProgramName}'.");
         }
         EnsureUniqueParameters(compilation.Parameters, source.ProgramName);
+        var compiledPositionMatrices = Iw3PcShaderCompiler.GetPositionMatrixRegisters(source, compilation.Parameters);
+        RequireWorldPosition(compilation, compiledPositionMatrices);
 
-        _shaderCache.Add(key, new CachedShader(compilation, signedNormalInputMask,
+        _shaderCache.Add(key, new CachedShader(compilation, signedNormalInputMask, decodedTexCoordInputMask,
             Iw3PcShaderCompiler.GetCodeSamplerMasks(source, compilation.Parameters),
-            Iw3PcShaderCompiler.GetPositionMatrixRegisters(source, compilation.Parameters),
+            compiledPositionMatrices,
             Iw3PcShaderCompiler.GetSunShadowRegisters(source, compilation.Parameters),
             Iw3PcShaderCompiler.GetFogRegister(source, compilation.Parameters),
-            Iw3PcShaderCompiler.GetSunSpecularRegister(source, compilation.Parameters)));
+            Iw3PcShaderCompiler.GetLightColorRegisters(source, compilation.Parameters)));
         return compilation;
+
+        void RequireWorldPosition(
+            Iw3ShaderCompilation compiled, (int World, int ViewProjection) matrices)
+        {
+            if (isWorld && matrices.World >= 0 && matrices.ViewProjection >= 0 && !compiled.WorldPositionLowered)
+            {
+                throw new InvalidDataException(
+                    $"{passPath} shader '{source.ProgramName}' requires one supported " +
+                    "world-to-view-projection position chain.");
+            }
+        }
     }
 
     private static void EnsureUniqueParameters(
@@ -423,6 +476,24 @@ internal sealed class Iw3TechniqueCompiler
             arguments,
             ref flags,
             ref customSamplerFlags);
+        if (vertex.NativeWorldMatrixRegister >= 0)
+        {
+            int worldIndex = arguments.FindIndex(argument =>
+                argument.Asset.Type == MaterialShaderArgumentType.CodeVertexConst &&
+                argument.Asset.Dest == vertex.NativeWorldMatrixRegister &&
+                argument.Asset.CodeConstant == new MaterialCodeConstantArgument(
+                    MaterialConstantSource.TransposeWorldMatrix0, 0, 4));
+            if (worldIndex < 0)
+                throw new InvalidDataException($"{passPath} has no matching lowered world-matrix argument.");
+            PendingArgument world = arguments[worldIndex];
+            arguments[worldIndex] = world with
+            {
+                Asset = world.Asset with
+                {
+                    ArgumentRaw = new MaterialCodeConstantArgument(MaterialConstantSource.WorldMatrix0, 0, 4).Raw
+                }
+            };
+        }
         CompileStageArguments(
             pixelSource,
             pixel,
@@ -1028,11 +1099,12 @@ internal sealed class Iw3TechniqueCompiler
     private sealed record CachedShader(
         Iw3ShaderCompilation Compilation,
         ushort SignedNormalInputMask,
+        ushort DecodedTexCoordInputMask,
         (ushort Comparison, ushort ReflectionProbe) CodeSamplerMasks,
         (int World, int ViewProjection) PositionMatrices,
-        (int Sampler, int PrimarySampler, int Switch, int Scale) SunShadow,
+        (int Sampler, int PrimarySampler, int ModelSampler, int Switch, int Scale) SunShadow,
         int FogRegister,
-        int SunSpecularRegister);
+        (int SunSpecular, int PointDiffuse, int PointSpecular) LightColors);
 
     private sealed record CompiledTechnique(
         Iw3TechniqueSource Source,

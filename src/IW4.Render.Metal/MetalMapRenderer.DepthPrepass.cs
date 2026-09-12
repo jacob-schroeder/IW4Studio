@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Diagnostics;
 using IW4.Render.EditorPreview;
 using IW4.Render.Execution;

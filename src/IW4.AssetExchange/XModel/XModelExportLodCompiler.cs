@@ -152,7 +152,8 @@ public static class XModelExportLodCompiler
             float determinant = duv1.X * duv2.Y - duv1.Y * duv2.X;
             if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 0.0000001f) { errors.Add($"{prefix} triangle {triangleIndex}: has UV-degenerate mapping."); continue; }
             Vector3 tangent = ((second.Position - first.Position) * duv2.Y - (third.Position - first.Position) * duv1.Y) / determinant;
-            if (!Append(first, tangent, corners) || !Append(second, tangent, corners) || !Append(third, tangent, corners))
+            Vector3 binormal = ((third.Position - first.Position) * duv1.X - (second.Position - first.Position) * duv2.X) / determinant;
+            if (!Append(first, tangent, binormal, corners) || !Append(second, tangent, binormal, corners) || !Append(third, tangent, binormal, corners))
             {
                 errors.Add($"{prefix} triangle {triangleIndex}: tangent cannot be orthogonalized and normalized against an authored normal.");
                 continue;
@@ -190,7 +191,7 @@ public static class XModelExportLodCompiler
         for (int index = 0; index < ordered.Length; index++)
         {
             CompiledCorner corner = ordered[index];
-            try { XSurfaceVertexCodec.WriteVertex(verts0, verts1, index, corner.Position, corner.Uv, corner.Color, corner.Normal, corner.Tangent); }
+            try { XSurfaceVertexCodec.WriteVertex(verts0, verts1, index, corner.Position, corner.Uv, corner.Color, corner.Normal, corner.Tangent, corner.BinormalSign); }
             catch (ArgumentOutOfRangeException) { blockers = [$"{prefix}: emitted vertex {index} has a UV, colour, or direction not representable by the native stream."]; surface = null; return false; }
             if (!rigid) counts[corner.Weights.Count - 1]++;
             foreach (Weight weight in corner.Weights) SetPartBit(bits, weight.BoneIndex);
@@ -206,11 +207,12 @@ public static class XModelExportLodCompiler
         return true;
     }
 
-    private static bool Append(CompiledCorner corner, Vector3 rawTangent, List<CompiledCorner> destination)
+    private static bool Append(CompiledCorner corner, Vector3 rawTangent, Vector3 rawBinormal, List<CompiledCorner> destination)
     {
         Vector3 tangent = rawTangent - corner.Normal * Vector3.Dot(rawTangent, corner.Normal);
-        if (!Normalize(tangent, out tangent)) return false;
-        destination.Add(corner with { Tangent = tangent, Serial = destination.Count });
+        if (!Normalize(tangent, out tangent) || !Finite(rawBinormal)) return false;
+        float binormalSign = Vector3.Dot(Vector3.Cross(corner.Normal, tangent), rawBinormal) < 0f ? -1f : 1f;
+        destination.Add(corner with { Tangent = tangent, BinormalSign = binormalSign, Serial = destination.Count });
         return true;
     }
     private static bool TryCorner(XModelExportDocument document, XModelExportCorner corner, int boneCount, string prefix, out CompiledCorner result, out string? error)
@@ -224,7 +226,7 @@ public static class XModelExportLodCompiler
         if (vertex.Weights.Any(w => w.BoneIndex < 0 || w.BoneIndex >= boneCount || !float.IsFinite(w.Weight) || w.Weight <= 0f)) { error = $"{prefix}: vertex has invalid bone index or weight."; return false; }
         if (MathF.Abs(vertex.Weights.Sum(w => w.Weight) - 1f) > UnitTolerance) { error = $"{prefix}: vertex weights must sum to one."; return false; }
         Weight[] weights = Quantize(vertex.Weights, prefix, out error); if (error is not null) return false;
-        result = new CompiledCorner(vertex.Position, corner.Uv0, corner.Color, normal, default, weights, -1); return true;
+        result = new CompiledCorner(vertex.Position, corner.Uv0, corner.Color, normal, default, 1f, weights, -1); return true;
     }
     private static Weight[] Quantize(IReadOnlyList<XModelExportBoneWeight> values, string prefix, out string? error)
     {
@@ -248,9 +250,10 @@ public static class XModelExportLodCompiler
         value.Color.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Color.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Color.Z.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Color.W.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
         value.Normal.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Normal.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Normal.Z.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
         value.Tangent.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Tangent.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Tangent.Z.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+        value.BinormalSign.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
         string.Join(",", value.Weights.Select(weight => $"{weight.BoneIndex}:{weight.QuantizedWeight}"))
     });
-    private sealed record CompiledCorner(Vector3 Position, Vector2 Uv, Vector4 Color, Vector3 Normal, Vector3 Tangent, IReadOnlyList<Weight> Weights, int Serial);
+    private sealed record CompiledCorner(Vector3 Position, Vector2 Uv, Vector4 Color, Vector3 Normal, Vector3 Tangent, float BinormalSign, IReadOnlyList<Weight> Weights, int Serial);
     private readonly record struct Weight(int BoneIndex, ushort QuantizedWeight);
 }
 

@@ -17,8 +17,10 @@ public static class XSurfaceVertexCodec
     public static void WriteVertex(
         Span<byte> verts0, Span<byte> verts1, int vertexIndex,
         Vector3 position, Vector2 uv0, Vector4 color, Vector3 normal,
-        Vector3 tangent)
+        Vector3 tangent, float binormalSign)
     {
+        if (binormalSign is not (-1f or 1f))
+            throw new ArgumentOutOfRangeException(nameof(binormalSign));
         if (!float.IsFinite(uv0.X) || !float.IsFinite(uv0.Y) ||
             !float.IsFinite(color.X) || !float.IsFinite(color.Y) ||
             !float.IsFinite(color.Z) || !float.IsFinite(color.W) ||
@@ -35,7 +37,7 @@ public static class XSurfaceVertexCodec
         WriteSingle(verts0, offset, position.X);
         WriteSingle(verts0, offset + 4, position.Y);
         WriteSingle(verts0, offset + 8, position.Z);
-        WriteSingle(verts0, offset + 12, 1f);
+        WriteSingle(verts0, offset + 12, binormalSign);
         verts1[offset] = QuantizeColor(color.X);
         verts1[offset + 1] = QuantizeColor(color.Y);
         verts1[offset + 2] = QuantizeColor(color.Z);

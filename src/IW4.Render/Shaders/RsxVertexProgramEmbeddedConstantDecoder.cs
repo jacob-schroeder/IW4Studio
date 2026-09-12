@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.Render.Shaders;
 

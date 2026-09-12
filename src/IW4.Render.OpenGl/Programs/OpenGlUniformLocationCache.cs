@@ -1,5 +1,6 @@
 namespace IW4.Render.OpenGl.Programs;
 
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.OpenGl.Shaders;
 using IW4.Render.Shaders;
 

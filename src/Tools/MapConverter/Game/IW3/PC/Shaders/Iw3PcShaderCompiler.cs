@@ -42,7 +42,8 @@ internal sealed class Iw3PcShaderCompiler
     internal Iw3ShaderCompilation Compile(
         Iw3ShaderSource source,
         string shaderProgramPath,
-        ushort signedNormalInputMask)
+        ushort signedNormalInputMask,
+        ushort decodedTexCoordInputMask)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(shaderProgramPath);
@@ -56,6 +57,7 @@ internal sealed class Iw3PcShaderCompiler
         IReadOnlyList<Direct3DConstant> constants = ReadConstantTable(direct3D, fullPath);
         ValidateSourceArguments(source, constants, fullPath);
         Iw3ShaderParameter[] parameters = constants.Select(CreateParameter).ToArray();
+        var positionMatrices = GetPositionMatrixRegisters(source, parameters);
         (ushort comparisonSamplerMask, ushort reflectionProbeSamplerMask) = GetCodeSamplerMasks(source, parameters);
         var sunShadow = GetSunShadowRegisters(source, parameters);
         if (constants.Any(constant => constant.RegisterSet == 3 && constant.RegisterIndex < 16 &&
@@ -66,10 +68,11 @@ internal sealed class Iw3PcShaderCompiler
                 (reflectionProbeSamplerMask & (1 << constant.RegisterIndex)) != 0 &&
                 constant.Type != Direct3DSamplerCube))
             throw new InvalidDataException($"Shader '{fullPath}' binds a non-cube reflection probe sampler.");
-        if (sunShadow != (-1, -1, -1, -1) && constants.Any(constant => constant.RegisterSet == 3 &&
-                (constant.RegisterIndex == sunShadow.Sampler || constant.RegisterIndex == sunShadow.PrimarySampler) &&
-                constant.Type != Direct3DSampler2D))
-            throw new InvalidDataException($"Shader '{fullPath}' binds a non-2D Sun receiver sampler.");
+        if (sunShadow != (-1, -1, -1, -1, -1) && constants.Any(constant => constant.RegisterSet == 3 &&
+                (((constant.RegisterIndex == sunShadow.Sampler || constant.RegisterIndex == sunShadow.PrimarySampler) &&
+                    constant.Type != Direct3DSampler2D) ||
+                 (constant.RegisterIndex == sunShadow.ModelSampler && constant.Type != Direct3DSampler3D))))
+            throw new InvalidDataException($"Shader '{fullPath}' binds an unsupported Sun receiver sampler dimension.");
 
         string scratchDirectory = Path.Combine(Path.GetTempPath(), "mapconverter-shaders", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDirectory);
@@ -81,9 +84,10 @@ internal sealed class Iw3PcShaderCompiler
             File.WriteAllBytes(inputPath, direct3D);
 
             string mojoProfile = TranslateWithMojoShader(inputPath, assemblyPath, source.Stage, fullPath);
-            NormalizeAssembly(assemblyPath, source.Stage, signedNormalInputMask,
-                comparisonSamplerMask, reflectionProbeSamplerMask, GetPositionMatrixRegisters(source, parameters),
-                sunShadow, GetFogRegister(source, parameters), GetSunSpecularRegister(source, parameters));
+            bool worldPositionLowered = NormalizeAssembly(assemblyPath, source.Stage, signedNormalInputMask,
+                decodedTexCoordInputMask,
+                comparisonSamplerMask, reflectionProbeSamplerMask, positionMatrices,
+                sunShadow, GetFogRegister(source, parameters), GetLightColorRegisters(source, parameters));
             Assemble(assemblyPath, binaryPath, source.Stage, fullPath);
 
             RsxProgram program = ReadRsxProgram(File.ReadAllBytes(binaryPath), source.Stage, fullPath);
@@ -103,6 +107,8 @@ internal sealed class Iw3PcShaderCompiler
             return new Iw3ShaderCompilation(
                 asset,
                 parameters,
+                worldPositionLowered,
+                positionMatrices.World,
                 $"MojoShader ad5dff84830c2863c841f4b1f4e3df78c705b383 ({mojoProfile}) + PSL1GHT cgcomp f649a08fd536a9e27c08c7db2d93a2d7ee4c3bbe");
         }
         finally
@@ -134,16 +140,17 @@ internal sealed class Iw3PcShaderCompiler
             $"Shader '{sourcePath}' could not be translated from Direct3D 9 bytecode. {error}");
     }
 
-    private static void NormalizeAssembly(
+    private static bool NormalizeAssembly(
         string assemblyPath,
         Iw3ShaderStage stage,
         ushort signedNormalInputMask,
+        ushort decodedTexCoordInputMask,
         ushort comparisonSamplerMask,
         ushort reflectionProbeSamplerMask,
         (int World, int ViewProjection) positionMatrices,
-        (int Sampler, int PrimarySampler, int Switch, int Scale) sunShadow,
+        (int Sampler, int PrimarySampler, int ModelSampler, int Switch, int Scale) sunShadow,
         int fogRegister,
-        int sunSpecularRegister)
+        (int SunSpecular, int PointDiffuse, int PointSpecular) lightColors)
     {
         string assembly = File.ReadAllText(assemblyPath, Encoding.ASCII);
         string requiredHeader = stage == Iw3ShaderStage.Vertex ? "!!ARBvp1.0" : "!!ARBfp1.0";
@@ -163,24 +170,29 @@ internal sealed class Iw3PcShaderCompiler
         // instructions generated by MojoShader; only the profile declaration differs.
         assembly = requiredHeader + assembly[firstLine..];
         if (stage == Iw3ShaderStage.Vertex)
+        {
+            assembly = LowerDecodedTexCoordInputs(assembly, decodedTexCoordInputMask);
             assembly = LowerSignedNormalInputs(assembly, signedNormalInputMask);
-        else if (signedNormalInputMask != 0)
-            throw new InvalidDataException("A pixel shader cannot have signed normal vertex inputs.");
+        }
+        else if (signedNormalInputMask != 0 || decodedTexCoordInputMask != 0)
+            throw new InvalidDataException("A pixel shader cannot have converted vertex inputs.");
         if (stage == Iw3ShaderStage.Pixel)
         {
             assembly = LowerReflectionProbeSamples(assembly, reflectionProbeSamplerMask);
-            assembly = LowerSunSpecular(assembly, sunSpecularRegister);
+            assembly = LowerLightColors(assembly, lightColors);
         }
         else if (comparisonSamplerMask != 0 || reflectionProbeSamplerMask != 0)
             throw new InvalidDataException("A vertex shader cannot have code pixel samplers.");
-        else if (sunSpecularRegister != -1)
-            throw new InvalidDataException("A vertex shader cannot have pixel sun-specular calibration.");
+        else if (lightColors != (-1, -1, -1))
+            throw new InvalidDataException("A vertex shader cannot have pixel light-color calibration.");
         assembly = NormalizeCgCompSyntax(assembly, stage);
+        bool worldPositionLowered = false;
         if (stage == Iw3ShaderStage.Vertex)
         {
-            assembly = LowerWorldPosition(assembly, positionMatrices);
+            (assembly, worldPositionLowered) = LowerWorldPosition(assembly, positionMatrices);
+            assembly = LowerNativeWorldMatrix(assembly, positionMatrices.World);
             assembly = LowerFogOpacity(assembly, fogRegister);
-            if (sunShadow != (-1, -1, -1, -1))
+            if (sunShadow != (-1, -1, -1, -1, -1))
                 throw new InvalidDataException("A vertex shader cannot have a Sun receiver cascade.");
         }
         if (stage == Iw3ShaderStage.Pixel)
@@ -190,7 +202,42 @@ internal sealed class Iw3PcShaderCompiler
             if (fogRegister != -1)
                 throw new InvalidDataException("A pixel shader cannot have vertex fog transmission.");
         }
+        if (stage == Iw3ShaderStage.Vertex)
+            assembly = RelocateVertexLiterals(assembly);
         File.WriteAllText(assemblyPath, assembly, Encoding.ASCII);
+        return worldPositionLowered;
+    }
+
+    private static string RelocateVertexLiterals(string assembly)
+    {
+        var literals = ReadAssemblyConstants(assembly);
+        if (literals.Count == 0)
+            return assembly;
+        if (literals.Values.Any(values => values.Length != 4 || values.Any(value => !float.IsFinite(value))))
+            throw new InvalidDataException("A vertex literal must contain four finite values.");
+        if (Regex.IsMatch(assembly, @"\bc\[(?!\d+\])"))
+            throw new InvalidDataException("Vertex literal relocation requires direct constant addressing.");
+
+        // PS3 uploads Cg defaults when binding a program without invalidating
+        // its code-constant cache. Keep literals outside the entire D3D9 c0..255
+        // uniform bank so a later native shader cannot reuse a clobbered matrix.
+        const int sourceConstantCount = 256;
+        var occupied = Regex.Matches(assembly, @"\bc\[(\d+)\]")
+            .Select(match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture))
+            .ToHashSet();
+        if (occupied.Any(register => register >= sourceConstantCount))
+            throw new InvalidDataException("The source vertex program exceeds the D3D9 constant register bank.");
+        if (literals.Count > RsxVertexConstantLayout.Count - sourceConstantCount)
+            throw new InvalidDataException("The vertex program has too many literals for the separate RSX constant bank.");
+
+        int next = RsxVertexConstantLayout.MaximumDestination;
+        var relocated = literals.Keys.OrderBy(register =>
+                int.Parse(register.AsSpan(2, register.Length - 3), CultureInfo.InvariantCulture))
+            .ToDictionary(register => register, _ => $"c[{next--}]", StringComparer.Ordinal);
+        // Rewrite both declarations and instruction operands together. Cg
+        // packaging takes its default destinations from the assembler output.
+        return Regex.Replace(assembly, @"\bc\[\d+\]", match =>
+            relocated.TryGetValue(match.Value, out string? target) ? target : match.Value);
     }
 
     private static (string Accessor, bool Indexed)? CodeAccessor(
@@ -272,10 +319,10 @@ internal sealed class Iw3PcShaderCompiler
         return (world, viewProjection);
     }
 
-    internal static (int Sampler, int PrimarySampler, int Switch, int Scale) GetSunShadowRegisters(
+    internal static (int Sampler, int PrimarySampler, int ModelSampler, int Switch, int Scale) GetSunShadowRegisters(
         Iw3ShaderSource source, IReadOnlyList<Iw3ShaderParameter> parameters)
     {
-        int sun = -1, primary = -1, partition = -1, scale = -1;
+        int sun = -1, primary = -1, model = -1, partition = -1, scale = -1;
         bool supported = true;
         foreach (Iw3ShaderParameter parameter in parameters.Where(parameter => parameter.IsReferenced))
         {
@@ -288,9 +335,11 @@ internal sealed class Iw3PcShaderCompiler
             if (sampler)
             {
                 if (!Iw3TechniqueBindingFacts.TryGetSampler(accessor.Value.Accessor, out Iw3CodeSamplerBinding binding) ||
-                    binding.Source is not (MaterialTextureSource.ShadowMapSun or MaterialTextureSource.LightmapPrimary))
+                    binding.Source is not (MaterialTextureSource.ShadowMapSun or MaterialTextureSource.LightmapPrimary or
+                        MaterialTextureSource.ModelLighting))
                     continue;
-                slot = binding.Source == MaterialTextureSource.ShadowMapSun ? 0 : 1;
+                slot = binding.Source == MaterialTextureSource.ShadowMapSun ? 0 :
+                    binding.Source == MaterialTextureSource.LightmapPrimary ? 1 : 2;
                 supported &= parameter.Resource >= CgTextureUnitBase && parameter.Resource < CgTextureUnitBase + 16 &&
                     parameter.Class == 4 && parameter.Rows == 1 && parameter.Columns == 1;
             }
@@ -299,12 +348,13 @@ internal sealed class Iw3PcShaderCompiler
                 if (!Iw3TechniqueBindingFacts.TryGetConstant(accessor.Value.Accessor, out Iw3CodeConstantBinding binding) ||
                     binding.Source is not (MaterialConstantSource.ShadowMapSwitchPartition or MaterialConstantSource.ShadowMapScale))
                     continue;
-                slot = binding.Source == MaterialConstantSource.ShadowMapSwitchPartition ? 2 : 3;
+                slot = binding.Source == MaterialConstantSource.ShadowMapSwitchPartition ? 3 : 4;
                 supported &= parameter.Resource == CgConstantRegister && parameter.ResourceIndex < 256 &&
                     parameter.Class == 1 && parameter.Rows == 1 && parameter.Columns == 4;
             }
             supported &= !accessor.Value.Indexed && parameter.RegisterCount == 1 && parameter.Elements == 1;
-            ref int target = ref (slot == 0 ? ref sun : ref slot == 1 ? ref primary : ref slot == 2 ? ref partition : ref scale);
+            ref int target = ref (slot == 0 ? ref sun : ref slot == 1 ? ref primary : ref slot == 2 ? ref model :
+                ref slot == 3 ? ref partition : ref scale);
             if (target != -1)
                 throw new InvalidDataException($"Shader '{source.ProgramName}' has duplicate Sun receiver bindings.");
             target = sampler
@@ -312,12 +362,13 @@ internal sealed class Iw3PcShaderCompiler
                     ? checked((int)(parameter.Resource - CgTextureUnitBase)) : 16
                 : parameter.ResourceIndex < 256 ? checked((int)parameter.ResourceIndex) : 256;
         }
-        // Light-probe and SM2 receivers have different source contracts.
-        if (sun < 0 || primary < 0 || partition < 0 || scale < 0)
-            return (-1, -1, -1, -1);
-        if (!supported || source.Stage != Iw3ShaderStage.Pixel || sun == primary || partition == scale)
+        // SM2 receivers do not supply the complete fragment-side cascade contract.
+        if (sun < 0 || (primary < 0 && model < 0) || partition < 0 || scale < 0)
+            return (-1, -1, -1, -1, -1);
+        if (!supported || source.Stage != Iw3ShaderStage.Pixel || (primary >= 0 && model >= 0) ||
+            sun == primary || sun == model || partition == scale)
             throw new InvalidDataException($"Shader '{source.ProgramName}' has unsupported Sun receiver bindings.");
-        return (sun, primary, partition, scale);
+        return (sun, primary, model, partition, scale);
     }
 
     internal static int GetFogRegister(Iw3ShaderSource source, IReadOnlyList<Iw3ShaderParameter> parameters)
@@ -342,60 +393,74 @@ internal sealed class Iw3PcShaderCompiler
         return register;
     }
 
-    internal static int GetSunSpecularRegister(Iw3ShaderSource source, IReadOnlyList<Iw3ShaderParameter> parameters)
+    internal static (int SunSpecular, int PointDiffuse, int PointSpecular) GetLightColorRegisters(
+        Iw3ShaderSource source, IReadOnlyList<Iw3ShaderParameter> parameters)
     {
-        int register = -1;
+        int sunSpecular = -1, pointDiffuse = -1, pointSpecular = -1;
         if (source.Stage != Iw3ShaderStage.Pixel)
-            return register;
+            return (-1, -1, -1);
         foreach (Iw3ShaderParameter parameter in parameters)
         {
             if (parameter.Kind != Iw3ShaderParameterKind.Constant || !parameter.IsReferenced)
                 continue;
             var accessor = CodeAccessor(source, parameter, Iw3CodeShaderValueKind.Constant);
-            // The generic lightSpecular accessor also uses the target light row,
-            // but point-light inputs do not share the source sun calibration.
-            if (accessor is null || accessor.Value.Accessor != "sunSpecular")
+            if (accessor is null || accessor.Value.Accessor is not ("sunSpecular" or "lightDiffuse" or "lightSpecular"))
                 continue;
+            ref int register = ref (accessor.Value.Accessor == "sunSpecular" ? ref sunSpecular :
+                ref accessor.Value.Accessor == "lightDiffuse" ? ref pointDiffuse : ref pointSpecular);
             if (register != -1 || accessor.Value.Indexed || parameter.Resource != CgConstantRegister ||
                 parameter.ResourceIndex >= 256 || parameter.RegisterCount != 1 || parameter.Class != 1 ||
                 parameter.Rows != 1 || parameter.Columns != 4 || parameter.Elements != 1)
-                throw new InvalidDataException($"Shader '{source.ProgramName}' has unsupported sun-specular bindings.");
+                throw new InvalidDataException($"Shader '{source.ProgramName}' has unsupported light-color bindings.");
             register = checked((int)parameter.ResourceIndex);
         }
-        return register;
+        if ((sunSpecular >= 0 && (sunSpecular == pointDiffuse || sunSpecular == pointSpecular)) ||
+            (pointDiffuse >= 0 && pointDiffuse == pointSpecular))
+            throw new InvalidDataException($"Shader '{source.ProgramName}' aliases light-color bindings.");
+        return (sunSpecular, pointDiffuse, pointSpecular);
     }
 
-    private static string LowerSunSpecular(string assembly, int register)
+    private static string LowerLightColors(string assembly,
+        (int SunSpecular, int PointDiffuse, int PointSpecular) binding)
+    {
+        assembly = LowerLightColor(assembly, binding.SunSpecular, sun: true, specular: true);
+        assembly = LowerLightColor(assembly, binding.PointDiffuse, sun: false, specular: false);
+        return LowerLightColor(assembly, binding.PointSpecular, sun: false, specular: true);
+    }
+
+    private static string LowerLightColor(string assembly, int register, bool sun, bool specular)
     {
         if (register == -1)
             return assembly;
         if (register is < 0 or >= 256)
-            throw new InvalidDataException("The sun-specular register is invalid.");
+            throw new InvalidDataException("The light-color register is invalid.");
 
         string[] lines = assembly.Split('\n');
         int first = Array.FindIndex(lines, line => !string.IsNullOrWhiteSpace(line) &&
             !Regex.IsMatch(line.TrimStart(), @"^(?:!!|#|OPTION\b|PARAM\b|TEMP\b|FLOAT\s+TEMP\b|ATTRIB\b|OUTPUT\b|ADDRESS\b)"));
         if (first < 0)
-            throw new InvalidDataException("The sun-specular shader has no instruction body.");
+            throw new InvalidDataException("The light-color shader has no instruction body.");
         string uniform = $"c{register}";
         string body = string.Join('\n', lines[first..]);
         string reference = $@"\b{uniform}\b";
         if (!Regex.IsMatch(body, reference))
             return assembly;
         if (Regex.Matches(assembly, $@"(?m)^PARAM\s+{uniform}\s*=\s*program\.local\[\d+\];\s*$").Count != 1)
-            throw new InvalidDataException("The sun-specular input is not a single source uniform.");
+            throw new InvalidDataException("The light-color input is not a single source uniform.");
 
-        const string work = "iw3SunSpecular";
-        const string low = "iw3SunSpecularLow";
-        const string condition = "iw3SunSpecularCondition";
+        string work = sun ? "iw3SunSpecular" : specular ? "iw3PointSpecular" : "iw3PointDiffuse";
+        string low = work + "Low";
+        string condition = work + "Condition";
         foreach (string temporary in new[] { work, low, condition })
             if (Regex.IsMatch(assembly, $@"\b{temporary}\b"))
-                throw new InvalidDataException("The sun-specular temporary is already declared.");
+                throw new InvalidDataException("The light-color temporary is already declared.");
 
-        // PS3 uploads G(encodedSun * specularScale), whose registered default
-        // scale is 2.5; IW3's is 1. Reconstruct G(G^-1(upload) / 2.5), retaining
-        // runtime control relative to that default. These are the target's
-        // transfer constants, including its legacy 0.03928 threshold.
+        // PS3 uploads G(assetRGB * scale), with default specular scale 2.5
+        // versus IW3's 1. Point-light assets retain source RGB, so they need
+        // G^-1(upload), divided by 2.5 for specular. The source sun asset is
+        // already inverse-encoded and instead needs G(G^-1(upload) / 2.5).
+        // Retain runtime scales relative to their defaults and the legacy
+        // target transfer constants, including the 0.03928 threshold.
         // Guard only unused high-branch POW inputs; keep low/negative and HDR
         // outputs intact. POW is scalar, so each color channel needs its own.
         // Run before source instructions because CMP writes condition codes.
@@ -410,8 +475,11 @@ internal sealed class Iw3PcShaderCompiler
             $"MUL {work}.xyz, {work}, 1.0549999475479126;\n" +
             $"ADD {work}.xyz, {work}, -0.054999999701976776;\n" +
             $"ADD {condition}.xyz, -{condition}, 0.003040247829630971;\n" +
-            $"CMP {work}.xyz, {condition}, {work}, {low};\n" +
-            $"MUL {work}.xyz, {work}, 0.4000000059604645;\n" +
+            $"CMP {work}.xyz, {condition}, {work}, {low};\n";
+        if (specular)
+            prefix += $"MUL {work}.xyz, {work}, 0.4000000059604645;\n";
+        if (sun)
+            prefix +=
             $"MUL {low}.xyz, {work}, 0.07739938050508499;\n" +
             $"ADD {condition}.xyz, -{work}, 0.0392800010740757;\n" +
             $"MAX {work}.xyz, {work}, 0.0392800010740757;\n" +
@@ -420,15 +488,16 @@ internal sealed class Iw3PcShaderCompiler
             $"POW {work}.x, {work}.x, 2.4000000953674316;\n" +
             $"POW {work}.y, {work}.y, 2.4000000953674316;\n" +
             $"POW {work}.z, {work}.z, 2.4000000953674316;\n" +
-            $"CMP {work}.xyz, {condition}, {work}, {low};\n" +
-            $"MOV {work}.w, {uniform}.w;\n";
+            $"CMP {work}.xyz, {condition}, {work}, {low};\n";
+        prefix += $"MOV {work}.w, {uniform}.w;\n";
         return string.Join('\n', lines[..first]) + "\n" + prefix + Regex.Replace(body, reference, work);
     }
 
-    private static string LowerWorldPosition(string assembly, (int World, int ViewProjection) matrices)
+    private static (string Assembly, bool Lowered) LowerWorldPosition(
+        string assembly, (int World, int ViewProjection) matrices)
     {
         if (matrices.World < 0 || matrices.ViewProjection < 0)
-            return assembly;
+            return (assembly, false);
 
         string[] lines = assembly.Split('\n');
         int[] instructions = Enumerable.Range(0, lines.Length)
@@ -503,8 +572,63 @@ internal sealed class Iw3PcShaderCompiler
             lowered++;
             index += 8;
         }
+        if (lowered == 0)
+            return (assembly, false);
         if (lowered != 1)
             throw new InvalidDataException("The shader requires one supported world-to-view-projection position chain.");
+        return (string.Join('\n', lines), true);
+    }
+
+    private static string LowerNativeWorldMatrix(string assembly, int firstRegister)
+    {
+        if (firstRegister < 0)
+            return assembly;
+
+        // PS3 static draws upload basis vectors to c4..c6 and translation to c7
+        // directly (003a3158..003a31e4), bypassing matrix argument uploads.
+        // Consume that same stored-row layout in every user of this shader;
+        // DObj and world passes bind WorldMatrix0 instead of its transpose.
+        string[] lines = assembly.Split('\n');
+        var occupied = Regex.Matches(assembly, @"\bR(\d+)\b")
+            .Select(match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)).ToHashSet();
+        var rows = new Dictionary<int, int>();
+        var prefix = new StringBuilder();
+        int firstInstruction = -1;
+        for (int index = 0; index < lines.Length; index++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[index]) ||
+                Regex.IsMatch(lines[index].TrimStart(), @"^(?:!!|#|OPTION\b)"))
+                continue;
+            if (firstInstruction < 0)
+                firstInstruction = index;
+            // Splitting two swizzles across rows must not introduce a second
+            // constant source register into one RSX vertex instruction.
+            bool singleConstantOperand = Regex.Matches(lines[index], @"\bc\[\d+\]").Count == 1;
+            lines[index] = Regex.Replace(lines[index], @"\bc\[(\d+)\](\.[xyzw]+)?", match =>
+            {
+                int row = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) - firstRegister;
+                if (row is < 0 or >= 4)
+                    return match.Value;
+                string swizzle = match.Groups[2].Value;
+                if (singleConstantOperand && swizzle.Length > 1 && swizzle[1..].All(lane => lane == swizzle[1]))
+                    return $"c[{firstRegister + "xyzw".IndexOf(swizzle[1])}].{"xyzw"[row]}";
+
+                if (!rows.TryGetValue(row, out int temporary))
+                {
+                    temporary = Enumerable.Range(0, 32).FirstOrDefault(register => !occupied.Contains(register), -1);
+                    if (temporary < 0)
+                        throw new InvalidDataException("The shader has no free temporary for the native world-matrix layout.");
+                    occupied.Add(temporary);
+                    rows.Add(row, temporary);
+                    for (int column = 0; column < 4; column++)
+                        prefix.AppendLine($"MOV R{temporary}.{"xyzw"[column]}, c[{firstRegister + column}].{"xyzw"[row]};");
+                }
+                return $"R{temporary}{swizzle}";
+            });
+        }
+        if (firstInstruction < 0)
+            throw new InvalidDataException("The shader has no instructions for the native world-matrix layout.");
+        lines[firstInstruction] = prefix.ToString() + lines[firstInstruction];
         return string.Join('\n', lines);
     }
 
@@ -527,9 +651,28 @@ internal sealed class Iw3PcShaderCompiler
                 !Regex.IsMatch(temporary, @"^[rR]\d+$") || index + 1 >= lines.Length)
                 throw new InvalidDataException("The reflection probe has an unsupported texture lookup.");
 
-            Match decode = Regex.Match(lines[index + 1].Trim(),
-                $@"^MUL ([rR]\d+)\.(xyz|yzw), {Regex.Escape(temporary)}\.w, {Regex.Escape(temporary)}(\.(?:xxyz|wzyx))?;$");
-            if (!decode.Success || (decode.Groups[2].Value == "yzw") != decode.Groups[3].Success)
+            int decodeIndex = index + 1;
+            for (; decodeIndex < lines.Length; decodeIndex++)
+            {
+                string line = lines[decodeIndex].Trim();
+                if (line.Length == 0 || line.StartsWith('#'))
+                    continue;
+                if (Regex.IsMatch(line,
+                        @"^(?:IF|ELSE|ENDIF|LOOP|ENDLOOP|REP|ENDREP|BRK|CONT|BRA|CAL|RET|KIL|END)\b|:\s*$"))
+                    throw new InvalidDataException("The reflection probe decode crosses unsupported control flow.");
+                // Independent instructions may separate the sample and decode.
+                // Its first register access must still be the supported decode;
+                // earlier reads or even partial writes cannot be skipped.
+                if (Regex.IsMatch(line, $@"\b{Regex.Escape(temporary)}\b"))
+                    break;
+            }
+            if (decodeIndex == lines.Length)
+                throw new InvalidDataException("The reflection probe has no RGB-alpha decode.");
+
+            Match decode = Regex.Match(lines[decodeIndex].Trim(),
+                $@"^MUL ([rR]\d+)\.(xyz|yzw|xzw), {Regex.Escape(temporary)}\.w, {Regex.Escape(temporary)}(\.(?:xxyz|wzyx|xyyz))?;$");
+            if (!decode.Success || (decode.Groups[2].Value, decode.Groups[3].Value) is not
+                (("xyz", "") or ("yzw", ".xxyz") or ("yzw", ".wzyx") or ("xzw", ".xyyz")))
                 throw new InvalidDataException("The reflection probe has an unsupported RGB-alpha decode.");
 
             // The IW3 converter's probe images store sqrt(saturate(4 * RGB * A))
@@ -538,7 +681,7 @@ internal sealed class Iw3PcShaderCompiler
             string destination = decode.Groups[1].Value;
             string mask = decode.Groups[2].Value;
             string rgb = temporary + decode.Groups[3].Value;
-            lines[index + 1] = $"MUL {destination}.{mask}, {rgb}, {rgb};\n" +
+            lines[decodeIndex] = $"MUL {destination}.{mask}, {rgb}, {rgb};\n" +
                 $"MUL {destination}.{mask}, {destination}, 0.25;";
             sampled |= checked((ushort)(1 << unit));
         }
@@ -636,13 +779,15 @@ internal sealed class Iw3PcShaderCompiler
     }
 
     private static string LowerSunShadow(string assembly,
-        (int Sampler, int PrimarySampler, int Switch, int Scale) binding, ushort comparisonSamplerMask)
+        (int Sampler, int PrimarySampler, int ModelSampler, int Switch, int Scale) binding, ushort comparisonSamplerMask)
     {
-        if (binding == (-1, -1, -1, -1))
+        if (binding == (-1, -1, -1, -1, -1))
             return assembly;
-        if (binding.Sampler is < 0 or >= 16 || binding.PrimarySampler is < 0 or >= 16 ||
+        if (binding.Sampler is < 0 or >= 16 || binding.PrimarySampler is < -1 or >= 16 ||
+            binding.ModelSampler is < -1 or >= 16 || (binding.PrimarySampler < 0) == (binding.ModelSampler < 0) ||
             binding.Switch is < 0 or >= 256 || binding.Scale is < 0 or >= 256 ||
-            binding.Sampler == binding.PrimarySampler || binding.Switch == binding.Scale ||
+            binding.Sampler == binding.PrimarySampler || binding.Sampler == binding.ModelSampler ||
+            binding.Switch == binding.Scale ||
             (comparisonSamplerMask & (1 << binding.Sampler)) == 0)
             throw new InvalidDataException("The Sun receiver has an invalid binding context.");
 
@@ -652,9 +797,10 @@ internal sealed class Iw3PcShaderCompiler
         int[] candidates = Enumerable.Range(0, instructions.Length).Where(index =>
             instructions[index].Opcode == "SGEC" && instructions[index].Arguments.Length == 3 &&
             Regex.IsMatch(instructions[index].Arguments[2], @"^f\[fragment\.texcoord\[\d+\]\]\.w$")).ToArray();
-        if (candidates.Length != 1 || candidates[0] < 7)
-            throw new InvalidDataException("The Sun receiver requires one complete lightmap cascade.");
-        int start = candidates[0], cursor = start - 7;
+        bool modelReceiver = binding.ModelSampler >= 0;
+        if (candidates.Length != 1 || (!modelReceiver && candidates[0] < 7))
+            throw new InvalidDataException("The Sun receiver requires one complete supported cascade.");
+        int start = candidates[0], cursor = modelReceiver ? start : start - 7;
         string shadow = instructions[start].Arguments[2][..^2];
         string partition = $"c[{binding.Switch}]", scale = $"c[{binding.Scale}]";
         string[] V(string register, string mask = "xyzw") => mask.Select(lane => register + "." + lane).ToArray();
@@ -758,24 +904,52 @@ internal sealed class Iw3PcShaderCompiler
         string FarCoordinates() => Vector("MAD", 2, "xy", V(shadow, "xy"),
             V(partition, "ww"), V(partition, "xy")).Register;
 
-        string[] primarySample = Next("TEX", 4);
-        Require(Regex.IsMatch(primarySample[0], @"^R\d+$") &&
-            primarySample[1] == "f[fragment.texcoord[0]].zwzw" &&
-            primarySample[2] == $"texture[{binding.PrimarySampler}]" && primarySample[3] == "2D");
-        string primary = primarySample[0] + ".x";
-        string gate = Scalar("CMP", "-|" + primary + "|", "0", "1");
-        // This intervening instruction prepares diffuse light. It stays outside
-        // the replacement, as do the primary-zero gate and both material suffixes.
-        string[] lighting = Next("MUL", 3);
-        var lightingDestination = AssemblyDestination(lighting[0]);
-        Require(!lightingDestination.Mask.Any(lane =>
-            lightingDestination.Register + "." + lane == primary || lightingDestination.Register + "." + lane == gate));
-        Condition("SNEC", gate, "-" + gate);
-        string output = Scalar("MOV", primary);
-        Control("ELSE");
+        string primary, output = string.Empty;
+        if (modelReceiver)
+        {
+            int[] modelSamples = Enumerable.Range(0, start).Where(index =>
+                instructions[index].Opcode == "TEX" && instructions[index].Arguments.Length == 4 &&
+                instructions[index].Arguments[2] == $"texture[{binding.ModelSampler}]" &&
+                instructions[index].Arguments[3] == "3D").ToArray();
+            Require(modelSamples.Length == 1);
+            string sample = instructions[modelSamples[0]].Arguments[0];
+            Require(Regex.IsMatch(sample, @"^R\d+$"));
+            primary = sample + ".w";
+            // Native model receivers fall back to the 3D lighting sample's
+            // alpha. Retain its RGB preparation and do not add the world gate.
+            for (int index = modelSamples[0] + 1; index < start; index++)
+            {
+                Require(instructions[index].Opcode is not ("IF" or "ELSE" or "ENDIF"));
+                if (instructions[index].Arguments.Length == 0)
+                    continue;
+                var destination = AssemblyDestination(instructions[index].Arguments[0]);
+                Require(!destination.Mask.Any(lane => destination.Register + "." + lane == primary));
+            }
+        }
+        else
+        {
+            string[] primarySample = Next("TEX", 4);
+            Require(Regex.IsMatch(primarySample[0], @"^R\d+$") &&
+                primarySample[1] == "f[fragment.texcoord[0]].zwzw" &&
+                primarySample[2] == $"texture[{binding.PrimarySampler}]" && primarySample[3] == "2D");
+            primary = primarySample[0] + ".x";
+            string gate = Scalar("CMP", "-|" + primary + "|", "0", "1");
+            // Keep diffuse preparation and the source primary-zero gate.
+            string[] lighting = Next("MUL", 3);
+            var lightingDestination = AssemblyDestination(lighting[0]);
+            Require(!lightingDestination.Mask.Any(lane =>
+                lightingDestination.Register + "." + lane == primary || lightingDestination.Register + "." + lane == gate));
+            Condition("SNEC", gate, "-" + gate);
+            output = Scalar("MOV", primary);
+            Control("ELSE");
+        }
         Require(cursor == start);
         Condition("SGEC", "1", shadow + ".w");
-        Require(FourTaps(Coordinates(null)) == output);
+        string nearValue = FourTaps(Coordinates(null));
+        if (modelReceiver)
+            output = nearValue;
+        else
+            Require(nearValue == output);
         Condition("SLTC", "0.75", shadow + ".w");
         string farValue = FourTaps(Coordinates(FarCoordinates()));
         string weight = Scalar("MAD", shadow + ".w", "4", "-3");
@@ -804,7 +978,8 @@ internal sealed class Iw3PcShaderCompiler
         Control("ENDIF");
         Control("ENDIF");
         int end = cursor;
-        Control("ENDIF"); // close the retained primary gate; never remove it
+        if (!modelReceiver)
+            Control("ENDIF"); // close the retained primary gate; never remove it
 
         var removed = new HashSet<string>(StringComparer.Ordinal);
         for (int index = start; index < end; index++)
@@ -1119,37 +1294,150 @@ internal sealed class Iw3PcShaderCompiler
             string.Join('\n', lines.Where(line => !string.IsNullOrWhiteSpace(line))) + "\n";
     }
 
+    private static string LowerDecodedTexCoordInputs(string assembly, ushort decodedTexCoordInputMask)
+    {
+        if (decodedTexCoordInputMask == 0)
+            return assembly;
+
+        string[] lines = assembly.Split('\n');
+        int[] instructions = GetAssemblyInstructionIndexes(lines);
+        var constants = new Dictionary<string, float[]>(StringComparer.Ordinal);
+        foreach (Match constant in Regex.Matches(assembly, @"(?m)^PARAM\s+(c\d+)\s*=\s*\{([^}]*)\};\s*$"))
+        {
+            float[] values = NormalizeLiteralVector(constant.Groups[2].Value).Split(' ')
+                .Select(value => float.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+            if (!constants.TryAdd(constant.Groups[1].Value, values))
+                throw new InvalidDataException("Decoded UV lowering found a repeated literal constant.");
+        }
+
+        foreach (Match attribute in Regex.Matches(assembly, @"(?m)^ATTRIB\s+([vt]\d+)\s*=\s*([^;]+);\s*$"))
+        {
+            MaterialStreamDestination? destination = GetVertexInputDestination(attribute.Groups[2].Value.Trim());
+            if (destination is null || (decodedTexCoordInputMask & (1 << (int)destination.Value)) == 0)
+                continue;
+            string alias = attribute.Groups[1].Value;
+            int[] uses = Enumerable.Range(0, instructions.Length)
+                .Where(index => Regex.IsMatch(lines[instructions[index]], $@"\b{Regex.Escape(alias)}\b"))
+                .ToArray();
+            // Every available PS3 TexCoord0 source is float2/float4 or half2.
+            // Direct world UV programs also use ZW; only byte-unpack signatures
+            // require conversion to the already-decoded XY lanes.
+            bool hasUnpackScale = constants.Values.Any(values =>
+                values.SequenceEqual(new[] { 0.000976562f, 0.000030517f, 0.25f, 0.0078125f }));
+            bool hasByteLaneUse = uses.Any(index => Regex.IsMatch(lines[instructions[index]],
+                $@"\b{Regex.Escape(alias)}\.(?:zxzx|wywy)\b"));
+            if (!hasByteLaneUse && !(hasUnpackScale && uses.Any(index => Regex.IsMatch(lines[instructions[index]],
+                    $@"\b{Regex.Escape(alias)}\.[xyzw]*[zw][xyzw]*\b"))))
+                continue;
+            int start = uses[0];
+            string At(int offset) => start + offset < instructions.Length
+                ? lines[instructions[start + offset]].Trim() : string.Empty;
+            InvalidDataException Invalid() => new($"Decoded UV input '{alias}' has an unsupported packed-half unpack or live temporary.");
+            Match first = Regex.Match(At(0), $@"^MUL (?<value>r\d+), (?:(?<scale>c\d+)\.xxyy, {Regex.Escape(alias)}\.zxzx|{Regex.Escape(alias)}\.zxzx, (?<scale>c\d+)\.xxyy);$");
+            if (!first.Success || uses.Length != 2 || uses[1] != start + 1)
+                throw Invalid();
+            string value = first.Groups["value"].Value;
+            string scale = first.Groups["scale"].Value;
+            if (!constants.TryGetValue(scale, out float[]? scaleValues) ||
+                !scaleValues.SequenceEqual(new[] { 0.000976562f, 0.000030517f, 0.25f, 0.0078125f }) ||
+                At(1) != $"MAD {value}, {alias}.wywy, {scale}.zzww, {value};")
+                throw Invalid();
+            Match fraction = Regex.Match(At(2), $@"^FRC (r\d+), {value};$");
+            string mantissa = fraction.Groups[1].Value;
+            string? fractionTemporary = null;
+            int extraFractionInstructions = 0;
+            if (!fraction.Success)
+            {
+                Match split = Regex.Match(At(2), $@"^FRC (r\d+)\.xy, {value}\.zwzw;$");
+                fractionTemporary = split.Groups[1].Value;
+                Match copy = Regex.Match(At(3), $@"^MOV (r\d+)\.zw, {fractionTemporary}\.xyxy;$");
+                mantissa = copy.Groups[1].Value;
+                if (!split.Success || !copy.Success || fractionTemporary == value || fractionTemporary == mantissa ||
+                    At(4) != $"FRC {mantissa}.xy, {value};")
+                    throw Invalid();
+                extraFractionInstructions = 2;
+            }
+            string Tail(int offset) => At(offset + extraFractionInstructions);
+            Match exponent = Regex.Match(Tail(4), $@"^MAD {value}\.xy, {mantissa}, -(c\d+)\.x, {mantissa}\.zwzw;$");
+            Match sign = Regex.Match(Tail(5), $@"^MAD {value}, {value}, (c\d+)\.xxyy, \1\.zzww;$");
+            if (mantissa == value || !exponent.Success || !sign.Success ||
+                !constants.TryGetValue(exponent.Groups[1].Value, out float[]? exponentValues) ||
+                exponentValues[0] != 0.031249999f ||
+                !constants.TryGetValue(sign.Groups[1].Value, out float[]? signValues) ||
+                !signValues.SequenceEqual(new[] { 32f, -2f, -15f, 1f }) ||
+                Tail(3) != $"ADD {value}.zw, {value}, -{mantissa};" ||
+                Tail(6) != $"MAD {value}.zw, {value}, {mantissa}.xyxy, {value};" ||
+                Tail(7) != $"EX2 {mantissa}.x, {value}.x;" ||
+                Tail(8) != $"EX2 {mantissa}.y, {value}.y;")
+                throw Invalid();
+
+            Match output = Regex.Match(Tail(9), $@"^MUL (o\w*)\.xy, {value}\.zwzw, {mantissa};$");
+            int consumed;
+            if (output.Success)
+            {
+                consumed = 10 + extraFractionInstructions;
+                if (!AreUnpackUsesEquivalent(lines, instructions, start + consumed, value, "xyzw", false) ||
+                    !AreUnpackUsesEquivalent(lines, instructions, start + consumed, mantissa, "xyzw", false))
+                    throw Invalid();
+                lines[instructions[start + 9 + extraFractionInstructions]] = $"MOV {output.Groups[1].Value}.xy, {alias};";
+            }
+            else
+            {
+                // Flag programs retain both UV and 1-UV for the authored wave.
+                Match flag = Regex.Match(Tail(9), $@"^MAD {value}\.xy, {value}\.zwzw, -{mantissa}, -(c\d+)\.z;$");
+                consumed = 11 + extraFractionInstructions;
+                if (!flag.Success || !constants.TryGetValue(flag.Groups[1].Value, out float[]? flagValues) ||
+                    flagValues[2] != -1f || Tail(10) != $"MUL {value}.zw, {value}, {mantissa}.xyxy;" ||
+                    !AreUnpackUsesEquivalent(lines, instructions, start + consumed, mantissa, "xyzw", false))
+                    throw Invalid();
+                lines[instructions[start + 9 + extraFractionInstructions]] = $"ADD {value}.xy, -{alias}, -{flag.Groups[1].Value}.z;";
+                lines[instructions[start + 10 + extraFractionInstructions]] = $"MOV {value}.zw, {alias}.xyxy;";
+            }
+            if (fractionTemporary is not null &&
+                !AreUnpackUsesEquivalent(lines, instructions, start + consumed, fractionTemporary, "xy", false))
+                throw Invalid();
+            for (int index = 0; index < 9 + extraFractionInstructions; index++)
+                lines[instructions[start + index]] = string.Empty;
+        }
+        return string.Join('\n', lines);
+    }
+
+    private static int[] GetAssemblyInstructionIndexes(string[] lines) => Enumerable.Range(0, lines.Length)
+        .Where(index => !string.IsNullOrWhiteSpace(lines[index]) &&
+            !Regex.IsMatch(lines[index].TrimStart(),
+                @"^(?:!!|#|(?:OPTION|PARAM|ATTRIB|OUTPUT|TEMP|FLOAT\s+TEMP|ADDRESS|ALIAS)\b)"))
+        .ToArray();
+
+    private static MaterialStreamDestination? GetVertexInputDestination(string semantic)
+    {
+        MaterialStreamDestination? destination = semantic switch
+        {
+            "vertex.position" => MaterialStreamDestination.Position,
+            "vertex.weight" => MaterialStreamDestination.Weight,
+            "vertex.normal" => MaterialStreamDestination.Normal,
+            "vertex.color.primary" => MaterialStreamDestination.Color0,
+            "vertex.color.secondary" => MaterialStreamDestination.Color1,
+            "vertex.fogcoord" => MaterialStreamDestination.Fog,
+            _ => null
+        };
+        Match texcoord = Regex.Match(semantic, @"^vertex\.texcoord\[([0-7])\]$");
+        return texcoord.Success
+            ? (MaterialStreamDestination)((int)MaterialStreamDestination.TexCoord0 +
+                int.Parse(texcoord.Groups[1].Value, CultureInfo.InvariantCulture))
+            : destination;
+    }
+
     private static string LowerSignedNormalInputs(string assembly, ushort signedNormalInputMask)
     {
         if (signedNormalInputMask == 0)
             return assembly;
 
         string[] lines = assembly.Split('\n');
-        int[] instructions = Enumerable.Range(0, lines.Length)
-            .Where(index => !string.IsNullOrWhiteSpace(lines[index]) &&
-                !Regex.IsMatch(lines[index].TrimStart(),
-                    @"^(?:!!|#|(?:OPTION|PARAM|ATTRIB|OUTPUT|TEMP|FLOAT\s+TEMP|ADDRESS|ALIAS)\b)"))
-            .ToArray();
+        int[] instructions = GetAssemblyInstructionIndexes(lines);
         var inputs = new List<(string Alias, int Instruction)>();
         foreach (Match attribute in Regex.Matches(assembly, @"(?m)^ATTRIB\s+([vt]\d+)\s*=\s*([^;]+);\s*$"))
         {
-            string semantic = attribute.Groups[2].Value.Trim();
-            MaterialStreamDestination? destination = semantic switch
-            {
-                "vertex.position" => MaterialStreamDestination.Position,
-                "vertex.weight" => MaterialStreamDestination.Weight,
-                "vertex.normal" => MaterialStreamDestination.Normal,
-                "vertex.color.primary" => MaterialStreamDestination.Color0,
-                "vertex.color.secondary" => MaterialStreamDestination.Color1,
-                "vertex.fogcoord" => MaterialStreamDestination.Fog,
-                _ => null
-            };
-            Match texcoord = Regex.Match(semantic, @"^vertex\.texcoord\[([0-7])\]$");
-            if (texcoord.Success)
-            {
-                destination = (MaterialStreamDestination)((int)MaterialStreamDestination.TexCoord0 +
-                    int.Parse(texcoord.Groups[1].Value, CultureInfo.InvariantCulture));
-            }
+            MaterialStreamDestination? destination = GetVertexInputDestination(attribute.Groups[2].Value.Trim());
             if (destination is null || (signedNormalInputMask & (1 << (int)destination.Value)) == 0)
                 continue;
 
@@ -1175,7 +1463,7 @@ internal sealed class Iw3PcShaderCompiler
         foreach (int index in instructions)
         {
             if (!Regex.IsMatch(lines[index].Trim(),
-                    @"^(?:END|(?:MOV|ADD|SUB|MUL|MAD|MIN|MAX|ABS|FRC|FLR|DP3|DP4|RCP|RSQ|EX2|LG2|SLT|SGE)\s+[^();]+;)$"))
+                    @"^(?:END|(?:MOV|ADD|SUB|MUL|MAD|MIN|MAX|ABS|FRC|FLR|DP3|DP4|RCP|RSQ|EX2|LG2|SIN|COS|SLT|SGE)\s+[^();]+;)$"))
             {
                 throw new InvalidDataException("Signed normal input lowering requires supported straight-line vertex arithmetic.");
             }
@@ -1184,53 +1472,123 @@ internal sealed class Iw3PcShaderCompiler
         float[] unpack = [0.007874015f, 0.003921568f, -1f, 0.752941191f];
         string unpackLiteral = string.Join(' ', unpack.Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
         var unpackConstants = new HashSet<string>(StringComparer.Ordinal);
-        var declaredConstants = new HashSet<string>(StringComparer.Ordinal);
+        var declaredConstants = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (Match constant in Regex.Matches(assembly, @"(?m)^PARAM\s+(c\d+)\s*=\s*\{([^}]*)\};\s*$"))
         {
             string alias = constant.Groups[1].Value;
-            if (!declaredConstants.Add(alias))
+            string literal = NormalizeLiteralVector(constant.Groups[2].Value);
+            if (!declaredConstants.TryAdd(alias, literal))
                 throw new InvalidDataException($"Signed normal input lowering found repeated constant '{alias}'.");
-            if (NormalizeLiteralVector(constant.Groups[2].Value) == unpackLiteral)
+            if (literal == unpackLiteral)
                 unpackConstants.Add(alias);
         }
 
         foreach ((string alias, int instruction) in inputs)
         {
             int line = instructions[instruction];
+            if (IsDecodedNormalPositionDisplacement(
+                    assembly, lines, instructions, instruction, alias, declaredConstants))
+                continue;
+            // XYZ permutations commute with the shared XYZ scale and bias.
+            // W must retain the source unpack's independent magnitude scale.
             Match unpackInstruction = Regex.Match(lines[line].Trim(),
-                $@"^MAD\s+(r\d+),\s*{Regex.Escape(alias)},\s*(c\d+)\.xxxy,\s*\2\.zzzw;$");
-            if (!unpackInstruction.Success || !unpackConstants.Contains(unpackInstruction.Groups[2].Value) ||
+                $@"^MAD\s+(?<temporary>r\d+),\s*(?<input>{Regex.Escape(alias)}(?:\.(?:xyzw|xzyw|yxzw|yzxw|zxyw|zyxw))?),\s*(?<constant>c\d+)\.xxxy,\s*\k<constant>\.zzzw;$");
+            if (!unpackInstruction.Success || !unpackConstants.Contains(unpackInstruction.Groups["constant"].Value) ||
                 instruction + 1 >= instructions.Length)
             {
                 throw new InvalidDataException($"Signed normal input '{alias}' has an unsupported unpack instruction.");
             }
 
-            string temporary = unpackInstruction.Groups[1].Value;
+            string temporary = unpackInstruction.Groups["temporary"].Value;
             string escapedTemporary = Regex.Escape(temporary);
             string multiply = lines[instructions[instruction + 1]].Trim();
-            bool scaleInPlace = Regex.IsMatch(multiply,
-                $@"^MUL\s+{escapedTemporary}\.xyz,\s*{escapedTemporary}\.w,\s*{escapedTemporary};$");
+            Match scaleIntoXyz = Regex.Match(multiply,
+                $@"^MUL\s+(r\d+)\.xyz,\s*{escapedTemporary}\.w,\s*{escapedTemporary};$");
             Match scaleIntoYzw = Regex.Match(multiply,
                 $@"^MUL\s+(r\d+)\.yzw,\s*{escapedTemporary}\.w,\s*{escapedTemporary}\.xxyz;$");
-            if (!scaleInPlace && !scaleIntoYzw.Success)
+            if (!scaleIntoXyz.Success && !scaleIntoYzw.Success)
                 throw new InvalidDataException($"Signed normal input '{alias}' has an unsupported unpack multiply.");
 
-            string changedComponents = scaleInPlace ? "w" :
-                scaleIntoYzw.Groups[1].Value == temporary ? "x" : "xyzw";
-            if (!AreNormalUnpackComponentsDead(lines, instructions, instruction + 2, temporary, changedComponents))
+            string changedComponents = scaleIntoXyz.Success
+                ? scaleIntoXyz.Groups[1].Value == temporary ? "w" : "xyzw"
+                : scaleIntoYzw.Groups[1].Value == temporary ? "x" : "xyzw";
+            if (!AreUnpackUsesEquivalent(lines, instructions, instruction + 2, temporary, changedComponents))
                 throw new InvalidDataException($"Signed normal input '{alias}' retains source-format unpack components.");
 
-            lines[line] = $"MOV {temporary}, {alias};" + (lines[line].EndsWith('\r') ? "\r" : string.Empty);
+            lines[line] = $"MOV {temporary}, {unpackInstruction.Groups["input"].Value};" + (lines[line].EndsWith('\r') ? "\r" : string.Empty);
         }
         return string.Join('\n', lines);
     }
 
-    private static bool AreNormalUnpackComponentsDead(
+    private static bool IsDecodedNormalPositionDisplacement(
+        string assembly,
+        string[] lines,
+        int[] instructions,
+        int instruction,
+        string alias,
+        IReadOnlyDictionary<string, string> constants)
+    {
+        Match normal = Regex.Match(lines[instructions[instruction]].Trim(),
+            $@"^MOV (r\d+)\.xyz, {Regex.Escape(alias)};$");
+        if (!normal.Success || instruction + 6 >= instructions.Length ||
+            Regex.Matches(assembly, $@"(?m)^ATTRIB\s+{Regex.Escape(alias)}\s*=\s*vertex\.normal;\s*$").Count != 1)
+            return false;
+        MatchCollection positionInputs = Regex.Matches(assembly,
+            @"(?m)^ATTRIB\s+([vt]\d+)\s*=\s*vertex\.position;\s*$");
+        MatchCollection positionOutputs = Regex.Matches(assembly,
+            @"(?m)^OUTPUT\s+(\w+)\s*=\s*result\.position;\s*$");
+        if (positionInputs.Count != 1 || positionOutputs.Count != 1)
+            return false;
+
+        string normalTemporary = normal.Groups[1].Value;
+        Match displacement = Regex.Match(lines[instructions[instruction + 1]].Trim(),
+            $@"^MAD (r\d+)\.xyz, (r\d+)\.[xyzw], {Regex.Escape(normalTemporary)}, {Regex.Escape(positionInputs[0].Groups[1].Value)};$");
+        if (!displacement.Success || displacement.Groups[1].Value == normalTemporary ||
+            displacement.Groups[2].Value == normalTemporary)
+            return false;
+        string positionTemporary = displacement.Groups[1].Value;
+        Match homogeneous = Regex.Match(lines[instructions[instruction + 2]].Trim(),
+            $@"^MOV {Regex.Escape(positionTemporary)}\.w, (c\d+)\.([xyzw]);$");
+        if (!homogeneous.Success || !constants.TryGetValue(homogeneous.Groups[1].Value, out string? literal) ||
+            literal.Split(' ')["xyzw".IndexOf(homogeneous.Groups[2].Value, StringComparison.Ordinal)] != "1")
+            return false;
+
+        string output = positionOutputs[0].Groups[1].Value;
+        var components = new HashSet<char>();
+        int matrixRegister = -1;
+        for (int index = 0; index < 4; index++)
+        {
+            Match dot = Regex.Match(lines[instructions[instruction + 3 + index]].Trim(),
+                $@"^DP4 {Regex.Escape(output)}\.([xyzw]), {Regex.Escape(positionTemporary)}, c(\d+);$");
+            if (!dot.Success || !int.TryParse(dot.Groups[2].Value, out int register))
+                return false;
+            char component = dot.Groups[1].Value[0];
+            if (index == 0)
+                matrixRegister = register - "xyzw".IndexOf(component);
+            if (!components.Add(component) || matrixRegister is < 0 or > 252 ||
+                register != matrixRegister + "xyzw".IndexOf(component) || constants.ContainsKey("c" + register) ||
+                Regex.Matches(assembly, $@"(?m)^PARAM\s+c{register}\s*=\s*program\.local\[\d+\];\s*$").Count != 1)
+                return false;
+        }
+        if (instructions.Count(index => Regex.IsMatch(lines[index], $@"\b{Regex.Escape(output)}\b")) != 4)
+            return false;
+
+        // The approved solid-wireframe correction uses the decoded direction
+        // only for position displacement. No changed normal or position XYZ
+        // may escape that projection into color or other shader calculations.
+        return AreUnpackUsesEquivalent(
+                   lines, instructions, instruction + 7, normalTemporary, "xyz") &&
+               AreUnpackUsesEquivalent(
+                   lines, instructions, instruction + 7, positionTemporary, "xyz");
+    }
+
+    private static bool AreUnpackUsesEquivalent(
         string[] lines,
         int[] instructions,
         int start,
         string temporary,
-        string changedComponents)
+        string changedComponents,
+        bool allowNormalScale = true)
     {
         string escapedTemporary = Regex.Escape(temporary);
         var liveComponents = changedComponents.ToHashSet();
@@ -1243,23 +1601,53 @@ internal sealed class Iw3PcShaderCompiler
             if (!instruction.Success)
                 return false;
             string opcode = instruction.Groups[1].Value;
+            if (!allowNormalScale && opcode is not ("MOV" or "ADD" or "SUB" or "MUL" or "MAD" or
+                "MIN" or "MAX" or "ABS" or "FRC" or "FLR" or "DP3" or "DP4" or "RCP" or "RSQ" or
+                "EX2" or "LG2" or "SIN" or "COS" or "SLT" or "SGE"))
+                return false;
             string destinationMask = instruction.Groups[3].Success ? instruction.Groups[3].Value : "xyzw";
             string readMask = opcode switch
             {
                 "DP3" => "xyz",
                 "DP4" => "xyzw",
-                "RCP" or "RSQ" or "EX2" or "LG2" => "x",
+                "RCP" or "RSQ" or "EX2" or "LG2" or "SIN" or "COS" => "x",
                 _ => destinationMask
             };
-            foreach (Match source in Regex.Matches(instruction.Groups[4].Value,
-                         $@"\b{escapedTemporary}\b(?:\.([xyzw]+))?"))
+            string[] arguments = instruction.Groups[4].Value.Split(',', StringSplitOptions.TrimEntries);
+            int firstUnprovenArgument = 0;
+            if (allowNormalScale && (opcode == "MUL" && arguments.Length == 2 || opcode == "MAD" && arguments.Length == 3) &&
+                liveComponents.Contains('w'))
             {
-                string swizzle = source.Groups[1].Success ? source.Groups[1].Value : "xyzw";
-                if (swizzle.Length != 1 && swizzle.Length != 4)
-                    return false;
-                if (readMask.Any(component => liveComponents.Contains(
-                        swizzle[swizzle.Length == 1 ? 0 : "xyzw".IndexOf(component)])))
-                    return false;
+                int vectorArgument = arguments[0] == temporary + ".w" ? 1 :
+                    arguments[1] == temporary + ".w" ? 0 : -1;
+                if (vectorArgument >= 0)
+                {
+                    Match vector = Regex.Match(arguments[vectorArgument],
+                        $@"^{escapedTemporary}(?:\.([xyzw]|[xyzw]{{4}}))?$");
+                    string swizzle = vector.Groups[1].Success ? vector.Groups[1].Value : "xyzw";
+                    // Each still-original unpack XYZ lane differs only by the
+                    // original W scale. Its paired product is the signed PS3
+                    // direction, including when a later MAD reuses that product.
+                    if (vector.Success && destinationMask.All(component =>
+                        {
+                            char lane = swizzle[swizzle.Length == 1 ? 0 : "xyzw".IndexOf(component)];
+                            return lane != 'w' && liveComponents.Contains(lane);
+                        }))
+                        firstUnprovenArgument = 2;
+                }
+            }
+            for (int argumentIndex = firstUnprovenArgument; argumentIndex < arguments.Length; argumentIndex++)
+            {
+                foreach (Match source in Regex.Matches(arguments[argumentIndex],
+                             $@"\b{escapedTemporary}\b(?:\.([xyzw]+))?"))
+                {
+                    string swizzle = source.Groups[1].Success ? source.Groups[1].Value : "xyzw";
+                    if (swizzle.Length != 1 && swizzle.Length != 4)
+                        return false;
+                    if (readMask.Any(component => liveComponents.Contains(
+                            swizzle[swizzle.Length == 1 ? 0 : "xyzw".IndexOf(component)])))
+                        return false;
+                }
             }
             if (instruction.Groups[2].Value == temporary)
             {
@@ -2077,6 +2465,8 @@ internal sealed class Iw3PcShaderCompiler
 internal sealed record Iw3ShaderCompilation(
     MaterialShaderAsset Asset,
     IReadOnlyList<Iw3ShaderParameter> Parameters,
+    bool WorldPositionLowered,
+    int NativeWorldMatrixRegister,
     string CompilerIdentity);
 
 internal enum Iw3ShaderParameterKind

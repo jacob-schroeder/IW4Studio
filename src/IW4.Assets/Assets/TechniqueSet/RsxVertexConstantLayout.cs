@@ -1,4 +1,4 @@
-namespace IW4.Render.Shaders;
+namespace IW4.Assets.Assets.TechniqueSet;
 
 /// <summary>Native RSX vertex-program constant register file, c0 through c467.</summary>
 public static class RsxVertexConstantLayout

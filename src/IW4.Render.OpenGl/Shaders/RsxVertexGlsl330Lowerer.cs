@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Shaders;
 
 namespace IW4.Render.OpenGl.Shaders;

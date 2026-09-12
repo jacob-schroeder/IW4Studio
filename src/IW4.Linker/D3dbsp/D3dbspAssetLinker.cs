@@ -81,8 +81,6 @@ public static class D3dbspAssetLinker
     public static D3dbspLinkResult Link(D3dbspLinkRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.UseSourceMaterials && !request.WorldOnly)
-            throw new ArgumentException("Source-material selection requires world-only linking.", nameof(request));
         string inputPath = request.InputPath;
         string assetName = request.AssetName;
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
@@ -381,10 +379,11 @@ public static class D3dbspAssetLinker
             .Concat(new[] { gfxWorld.OutdoorImage }.OfType<GfxImageAsset>())
             .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
             .ToArray();
-        IEnumerable<MaterialAsset> materialDependencies = request.UseSourceMaterials
-            ? gfxWorld.Dpvs.Surfaces.Select(surface => surface.Material).OfType<MaterialAsset>()
-            : renderMaterials;
-        BaseAsset[] dependencies = materialDependencies
+        // Collision-only material rows remain in the clip map without adding
+        // rendering dependencies for names that have no Material asset.
+        BaseAsset[] dependencies = gfxWorld.Dpvs.Surfaces
+            .Select(surface => surface.Material)
+            .OfType<MaterialAsset>()
             .Cast<BaseAsset>()
             .Concat(gfxWorld.WorldDraw.ReflectionProbeImages
                 .OfType<GfxImageAsset>()

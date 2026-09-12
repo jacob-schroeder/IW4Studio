@@ -1162,17 +1162,17 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             int smodelVisCount = CountAt(value.VisibilityCounts, 6);
             int surfaceVisCount = CountAt(value.VisibilityCounts, 7);
             LinkStorageSymbol?[] smodelVis = Enumerable.Range(0, 3)
-                .Select(_ => Runtime(checked(smodelVisCount * sizeof(uint)), 4))
+                .Select(_ => Runtime(checked(smodelVisCount * sizeof(uint)), 128))
                 .ToArray();
             LinkStorageSymbol?[] surfaceVis = Enumerable.Range(0, 3)
-                .Select(_ => Runtime(checked(surfaceVisCount * sizeof(uint)), 4))
+                .Select(_ => Runtime(checked(surfaceVisCount * sizeof(uint)), 128))
                 .ToArray();
             LinkStorageSymbol? surfaceMaterials = Runtime(
                 checked(authored.Surfaces.Count * GfxMapDrawSurf.SerializedSize),
-                4);
+                8);
             LinkStorageSymbol? surfaceCastsSunShadow = Runtime(
                 checked(surfaceVisCount * sizeof(uint)),
-                4);
+                128);
             return new DpvsStaticTargets(
                 smodelVis,
                 surfaceVis,

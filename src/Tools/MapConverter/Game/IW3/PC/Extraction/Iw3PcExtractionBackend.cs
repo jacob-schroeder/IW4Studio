@@ -6,15 +6,17 @@ namespace MapConverter.Game.IW3.PC.Extraction;
 
 internal sealed record Iw3PcExtractionRequest(
     string NativeMapConverterPath,
-    string UnlinkerPath,
+    string? UnlinkerPath,
     string MapFastFilePath,
     string LoadFastFilePath,
     string? IwdPath,
     string? SourceLibraryDirectory,
+    bool AllowMissingSounds,
     string ScratchDirectory);
 
 internal sealed record Iw3PcExtractionResult(
     string BackendDescription,
+    string NativeConversionOutput,
     string D3dbspPath,
     string DynamicEntityPath,
     string XModelCollisionPath,
@@ -41,15 +43,13 @@ internal static class Iw3PcExtractionBackend
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.AllowMissingSounds && request.SourceLibraryDirectory is null)
+            throw new ArgumentException("Allowing missing sounds requires a source library.", nameof(request));
 
         var nativeMapConverterPath = ValidateExistingFile(
             request.NativeMapConverterPath,
             nameof(request.NativeMapConverterPath),
             "Native IW3 map converter");
-        var unlinkerPath = ValidateExistingFile(
-            request.UnlinkerPath,
-            nameof(request.UnlinkerPath),
-            "OpenAssetTools Unlinker");
         var mapFastFilePath = ValidateFastFile(
             request.MapFastFilePath,
             nameof(request.MapFastFilePath),
@@ -107,14 +107,17 @@ internal static class Iw3PcExtractionBackend
                 iwdPath,
                 sourceLibraryDirectory,
                 scratchDirectory,
+                request.AllowMissingSounds,
                 cancellationToken).ConfigureAwait(false);
 
-        await RunToolAsync(
-            "Native IW3 map conversion",
-            nativeMapConverterPath,
-            scratchDirectory,
-            [mapFastFilePath, d3dbspPath, dynamicEntityPath, xmodelCollisionPath],
-            cancellationToken).ConfigureAwait(false);
+        string nativeConversionOutput = sourceLibrary is null
+            ? await RunToolAsync(
+                "Native IW3 map conversion", nativeMapConverterPath, scratchDirectory,
+                [mapFastFilePath, d3dbspPath, dynamicEntityPath, xmodelCollisionPath],
+                cancellationToken).ConfigureAwait(false)
+            : await sourceLibrary.ConvertWorldAsync(
+                mapFastFilePath, d3dbspPath, dynamicEntityPath, xmodelCollisionPath,
+                cancellationToken).ConfigureAwait(false);
 
         ValidateProducedFile(d3dbspPath, "The native converter did not produce the expected D3DBSP");
         ValidateProducedFile(
@@ -135,6 +138,11 @@ internal static class Iw3PcExtractionBackend
         }
         else
         {
+            string unlinkerPath = ValidateExistingFile(
+                request.UnlinkerPath ?? throw new ArgumentException(
+                    "Extraction without a source library requires Unlinker.", nameof(request)),
+                nameof(request.UnlinkerPath),
+                "OpenAssetTools Unlinker");
             await ExtractZoneAssetsAsync(
                 unlinkerPath, nativeMapConverterPath, mapFastFilePath,
                 mapAssetDirectory, mapZoneSourcePath, scratchDirectory,
@@ -147,6 +155,7 @@ internal static class Iw3PcExtractionBackend
 
         return new Iw3PcExtractionResult(
             sourceLibrary is null ? Description : "Native IW3 conversion with resolved source assets",
+            nativeConversionOutput,
             d3dbspPath,
             dynamicEntityPath,
             xmodelCollisionPath,

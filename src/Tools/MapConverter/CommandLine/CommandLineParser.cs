@@ -8,7 +8,7 @@ internal static class CommandLineParser
     internal const string HelpText =
         """
         Usage:
-          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--bootstrap-fastfile <path>] [--imagefile-index <-1|1-20>] --output <directory>
+          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--allow-missing-sounds] [--imagefile-index <-1|1-20>] --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --world-template <iw4.ff> [--bootstrap-fastfile <iw4.ff>] --output <directory>
 
         Options:
@@ -35,10 +35,14 @@ internal static class CommandLineParser
                                      cannot be combined with --world-template.
                                      Supported PS3 asset graphs can be cataloged;
                                      PS3 asset export is not supported yet.
-          --bootstrap-fastfile <ff>  Optional IW4 PS3 fastfile supplying an
-                                     owned target XModel missing from IW3 input.
-                                     With --world-template, supplies the native
+          --allow-missing-sounds     Requires --source-library. Record absent sound
+                                     payloads as TODOs in source provenance and
+                                     continue. Sound payloads remain unconverted;
+                                     no audio is synthesized. Strict by default.
+          --bootstrap-fastfile <ff>  Requires --world-template. Supplies native
                                      world/model materials and their dependencies.
+                                     Full conversion includes the bundled gameplay
+                                     model bootstrap automatically when required.
           --imagefile-index <-1|1-20>
                                      Required with an image source. Use -1 for
                                      the map's named .pak shared with its _load
@@ -47,8 +51,9 @@ internal static class CommandLineParser
           --help                     Show this help text.
 
         Extraction tools:
-          Put mapconverter-iw3-d3dbsp and mapconverter-unlinker in the Native
-          output directory or on PATH. Their paths can also be supplied through
+          Source-library extraction requires mapconverter-iw3-d3dbsp;
+          other extraction also requires mapconverter-unlinker. Put them in
+          the Native output directory or on PATH, or supply their paths through
           MAPCONVERTER_IW3_D3DBSP_CONVERTER and MAPCONVERTER_UNLINKER.
           World-first conversion also requires D3dbspLinker in Native or on
           PATH, or its executable path in MAPCONVERTER_D3DBSP_LINKER.
@@ -75,10 +80,19 @@ internal static class CommandLineParser
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var helpRequested = false;
+        var allowMissingSounds = false;
 
         for (var index = 0; index < arguments.Count; index++)
         {
             var argument = arguments[index];
+
+            if (argument == "--allow-missing-sounds")
+            {
+                if (allowMissingSounds)
+                    return CommandLineParseResult.Failure("Option '--allow-missing-sounds' was specified more than once.");
+                allowMissingSounds = true;
+                continue;
+            }
 
             if (argument == "--help")
             {
@@ -152,6 +166,12 @@ internal static class CommandLineParser
             out var sourceLibraryDirectory);
         var hasImageFileIndex = values.TryGetValue("--imagefile-index", out var imageFileIndexValue);
 
+        if (allowMissingSounds && !hasSourceLibrary)
+        {
+            return CommandLineParseResult.Failure(
+                "Option '--allow-missing-sounds' requires '--source-library'.");
+        }
+
         if (worldOnly && hasSourceLibrary)
         {
             return CommandLineParseResult.Failure(
@@ -199,6 +219,7 @@ internal static class CommandLineParser
             iwdPath,
             sourceFastFileDirectory,
             sourceLibraryDirectory,
+            allowMissingSounds,
             values.GetValueOrDefault("--bootstrap-fastfile"),
             imageFileIndex,
             values["--output"],

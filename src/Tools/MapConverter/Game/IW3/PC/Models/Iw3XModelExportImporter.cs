@@ -182,9 +182,11 @@ internal static class Iw3XModelExportImporter
                 modelBounds,
                 boneBounds!);
 
-            // Static-model bullet marks traverse LOD 0 independently of CollLod.
+            // Static marks and collision-enabled scene DObj marks traverse LOD 0,
+            // independently of the LOD selected for collision traces.
             bool compileCollisionTrees =
-                (forStaticWorld && lodIndex == 0) ||
+                (lodIndex == 0 &&
+                 (forStaticWorld || collisionSource is { CollisionLod: >= 0 })) ||
                 (collisionSource is not null &&
                  collisionSource.CollisionLod == lodIndex);
             XModelExportLodCompileResult compiled = metadata.IsAnimated
@@ -349,7 +351,7 @@ internal static class Iw3XModelExportImporter
 
     private static XSurface WithCpuReadStreamsInLarge(XSurface surface)
     {
-        // Collision traces and static LOD 0 marks read positions and indices on
+        // Collision traces and LOD 0 marks read positions and indices on
         // the PPU. Keep those streams in main memory; Verts1 keeps its GPU placement.
         return new XSurface
         {

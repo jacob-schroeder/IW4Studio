@@ -2,7 +2,7 @@ namespace MapConverter.Game.IW3.PC.Extraction;
 
 internal sealed record Iw3PcExtractionTools(
     string NativeMapConverterPath,
-    string UnlinkerPath);
+    string? UnlinkerPath);
 
 internal static class Iw3PcExtractionToolLocator
 {
@@ -11,10 +11,10 @@ internal static class Iw3PcExtractionToolLocator
     private const string UnlinkerEnvironmentVariable =
         "MAPCONVERTER_UNLINKER";
 
-    internal static Iw3PcExtractionTools Find()
+    internal static Iw3PcExtractionTools Find(bool requireUnlinker)
     {
         string mapConverter = FindNativeMapConverter();
-        string unlinker = FindUnlinker();
+        string? unlinker = requireUnlinker ? FindUnlinker() : null;
         return new Iw3PcExtractionTools(mapConverter, unlinker);
     }
 

@@ -1402,14 +1402,14 @@ public sealed class GfxWorldLoader
         for (int i = 0; i < smodelVisData.Length; i++)
         {
             int index = i;
-            smodelVisData[i] = ReadPushed(context, XFileBlockType.RUNTIME, () => ReadUInt32Array(cursor, header.SModelVisDataPointers[index].Untyped, smodelVisCount, 4, context, $"GfxWorld.dpvs.smodelVisData[{index}]"));
+            smodelVisData[i] = ReadPushed(context, XFileBlockType.RUNTIME, () => ReadUInt32Array(cursor, header.SModelVisDataPointers[index].Untyped, smodelVisCount, 128, context, $"GfxWorld.dpvs.smodelVisData[{index}]"));
         }
 
         var surfaceVisData = new IReadOnlyList<uint>[3];
         for (int i = 0; i < surfaceVisData.Length; i++)
         {
             int index = i;
-            surfaceVisData[i] = ReadPushed(context, XFileBlockType.RUNTIME, () => ReadUInt32Array(cursor, header.SurfaceVisDataPointers[index].Untyped, surfaceVisCount, 4, context, $"GfxWorld.dpvs.surfaceVisData[{index}]"));
+            surfaceVisData[i] = ReadPushed(context, XFileBlockType.RUNTIME, () => ReadUInt32Array(cursor, header.SurfaceVisDataPointers[index].Untyped, surfaceVisCount, 128, context, $"GfxWorld.dpvs.surfaceVisData[{index}]"));
         }
 
         IReadOnlyList<ushort> sortedSurfIndex = ReadUInt16Array(
@@ -1444,7 +1444,7 @@ public sealed class GfxWorldLoader
                 cursor,
                 header.SurfaceCastsSunShadowPointer.Untyped,
                 surfaceVisCount,
-                4,
+                128,
                 context,
                 "GfxWorld.dpvs.surfaceCastsSunShadow",
                 out surfaceCastsSunShadowAddress));
@@ -1576,7 +1576,7 @@ public sealed class GfxWorldLoader
         string memberName,
         out XBlockAddress targetAddress)
     {
-        byte[] bytes = LoadInlineArray(cursor, pointer, count, GfxMapDrawSurf.SerializedSize, 4, context, memberName, out targetAddress);
+        byte[] bytes = LoadInlineArray(cursor, pointer, count, GfxMapDrawSurf.SerializedSize, 8, context, memberName, out targetAddress);
         var c = new FastFileCursor(bytes);
         var rows = new GfxMapDrawSurf[count];
         for (int i = 0; i < rows.Length; i++)

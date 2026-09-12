@@ -654,7 +654,8 @@ internal static class Iw3MaterialCompiler
         string assetName,
         Stream json,
         IReadOnlyDictionary<string, GfxImageAsset> images,
-        bool requiresRuntimeTechniqueState)
+        bool requiresRuntimeTechniqueState,
+        MaterialTechniqueSetAsset? resolvedTechniqueSet)
     {
         ValidateInputs(assetName, json);
         ArgumentNullException.ThrowIfNull(images);
@@ -700,7 +701,13 @@ internal static class Iw3MaterialCompiler
                 "surfaceTypeBits",
                 "surfaceTypeBits");
             byte stateFlags = RequireByte(root, "stateFlags", "stateFlags");
-            GfxCameraRegionType cameraRegion = ParseCameraRegion(root, assetName);
+            (MaterialSortKey targetSortKey, GfxCameraRegionType cameraRegion) =
+                ConvertSortAndCameraRegion(
+                    sortKey,
+                    ParseCameraRegion(root, assetName),
+                    stateEntries,
+                    techniqueSetName,
+                    assetName);
 
             var material = new MaterialAsset
             {
@@ -708,7 +715,7 @@ internal static class Iw3MaterialCompiler
                 {
                     Name = assetName,
                     GameFlags = gameFlags,
-                    SortKey = (MaterialSortKey)sortKey,
+                    SortKey = targetSortKey,
                     TextureAtlasRowCount = atlasRows,
                     TextureAtlasColumnCount = atlasColumns,
                     SurfaceTypeBits = (MaterialSurfaceTypeBits)surfaceTypeBits
@@ -719,7 +726,7 @@ internal static class Iw3MaterialCompiler
                 StateBitsCount = checked((byte)stateBits.Length),
                 StateFlags = (MaterialStateFlags)stateFlags,
                 CameraRegion = cameraRegion,
-                TechniqueSet = new MaterialTechniqueSetAsset
+                TechniqueSet = resolvedTechniqueSet ?? new MaterialTechniqueSetAsset
                 {
                     Name = "," + techniqueSetName
                 },
@@ -739,6 +746,56 @@ internal static class Iw3MaterialCompiler
                 $"IW3 material '{assetName}' contains a count that exceeds the IW4 wire format.",
                 exception);
         }
+    }
+
+    private static (MaterialSortKey SortKey, GfxCameraRegionType CameraRegion)
+        ConvertSortAndCameraRegion(
+            byte sourceSortKey,
+            GfxCameraRegionType sourceCameraRegion,
+            IReadOnlyList<MaterialStateBitsEntry> stateEntries,
+            string techniqueSetName,
+            string assetName)
+    {
+        bool lit = stateEntries[(int)MaterialTechniqueType.Lit].StateBitsIndex != byte.MaxValue;
+        bool emissive = stateEntries[(int)MaterialTechniqueType.Emissive].StateBitsIndex != byte.MaxValue;
+        bool ui = !lit && !emissive &&
+            sourceCameraRegion == GfxCameraRegionType.None && techniqueSetName == "2d";
+        GfxCameraRegionType expectedSourceRegion = lit
+            ? sourceSortKey < 24 ? GfxCameraRegionType.LitOpaque : GfxCameraRegionType.LitTrans
+            : emissive ? GfxCameraRegionType.Emissive : GfxCameraRegionType.None;
+        if ((lit && emissive) || (!lit && !emissive && !ui) ||
+            sourceCameraRegion != expectedSourceRegion)
+        {
+            throw MaterialError(assetName,
+                "source sort/camera routing does not match its lit, emissive, or 2d technique family");
+        }
+
+        // IW3 partitions lit/emissive materials before sorting their authored
+        // keys. PS3 IW4 compares the key first, so a raw ordinal cast can make
+        // its material comparator inconsistent. Native lit blends use 29;
+        // emissive blend/additive and 2d materials use 47.
+        MaterialSortKey targetSortKey = sourceSortKey switch
+        {
+            4 when lit => MaterialSortKey.Opaque,
+            4 when ui => MaterialSortKey.AdditiveBlend,
+            5 when lit => MaterialSortKey.Sky,
+            12 when lit => MaterialSortKey.DecalStatic,
+            24 when lit => MaterialSortKey.DecalWeaponImpact,
+            36 when lit => MaterialSortKey.TransparentWater,
+            38 when lit => MaterialSortKey.WindowInside,
+            39 when lit => MaterialSortKey.WindowOutside,
+            43 when lit => (MaterialSortKey)29,
+            43 when emissive || ui => MaterialSortKey.AdditiveBlend,
+            48 when emissive => MaterialSortKey.EffectAutoSort,
+            _ => throw MaterialError(assetName,
+                $"source sort key {sourceSortKey} has no verified PS3 mapping for this technique family")
+        };
+        GfxCameraRegionType targetCameraRegion = lit
+            ? (byte)targetSortKey < (byte)MaterialSortKey.DecalBottom1
+                ? GfxCameraRegionType.LitOpaque
+                : GfxCameraRegionType.LitTrans
+            : sourceCameraRegion;
+        return (targetSortKey, targetCameraRegion);
     }
 
     private static void ValidateInputs(string assetName, Stream json)
@@ -823,10 +880,13 @@ internal static class Iw3MaterialCompiler
                     $"textures[{index}] defines water parameters for a non-water semantic");
             }
 
+            // IW3 PC leaves D3DSAMP_SRGBTEXTURE disabled. Source shaders consume
+            // those sampled values directly; the texture semantic does not add
+            // a hardware gamma conversion on the target.
             imageRequirements.Add(new Iw3IwdImageRequest(
                 imageName,
                 semantic,
-                semantic is TextureSemantic.ColorMap or TextureSemantic.TwoDimensional));
+                UseSrgbReads: false));
             textureSamplerStates.Add(ParseSamplerState(texture, assetName, index));
             if (hasWater)
             {

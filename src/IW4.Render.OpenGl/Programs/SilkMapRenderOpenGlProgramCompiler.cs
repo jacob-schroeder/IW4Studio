@@ -1,4 +1,5 @@
 using Silk.NET.OpenGL;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.OpenGl.Shaders;
 using IW4.Render.Shaders;
 

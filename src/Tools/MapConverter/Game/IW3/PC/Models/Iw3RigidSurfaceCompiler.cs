@@ -50,7 +50,7 @@ internal static class Iw3RigidSurfaceCompiler
 
         if (!TryCalculateTangents(
                 tangentSource,
-                out IReadOnlyList<Vector3> tangentByCorner,
+                out IReadOnlyList<(Vector3 Tangent, float BinormalSign)> tangentByCorner,
                 out string? tangentBlocker))
         {
             return Failure(tangentBlocker!);
@@ -329,7 +329,7 @@ internal static class Iw3RigidSurfaceCompiler
     private static bool TryCompileReconstructedTangentSurface(
         XModelExportDocument document,
         ReadOnlySpan<IndexedTriangle> triangles,
-        IReadOnlyList<Vector3> tangentByCorner,
+        IReadOnlyList<(Vector3 Tangent, float BinormalSign)> tangentByCorner,
         int boneCount,
         int objectIndex,
         int materialIndex,
@@ -435,7 +435,8 @@ internal static class Iw3RigidSurfaceCompiler
                         corner.Uv0,
                         corner.Color,
                         corner.Normal,
-                        tangentByCorner[tangentIndex]);
+                        tangentByCorner[tangentIndex].Tangent,
+                        tangentByCorner[tangentIndex].BinormalSign);
                 }
                 catch (ArgumentOutOfRangeException exception)
                 {
@@ -481,7 +482,7 @@ internal static class Iw3RigidSurfaceCompiler
 
     private static bool TryCalculateTangents(
         XModelExportDocument document,
-        out IReadOnlyList<Vector3> tangentByCorner,
+        out IReadOnlyList<(Vector3 Tangent, float BinormalSign)> tangentByCorner,
         out string? blocker)
     {
         blocker = null;
@@ -542,13 +543,17 @@ internal static class Iw3RigidSurfaceCompiler
                     vertexIndexByIdentity.Add(identity, tangentVertexIndex);
                     vertices.Add(new TangentVertex(
                         sourceVertex.Position,
-                        corner.Normal));
+                        corner.Normal,
+                        0));
                 }
                 vertexIndexByCorner[triangleIndex * 3 + cornerIndex] =
                     tangentVertexIndex;
             }
         }
 
+        var triangleDirections = new (Vector3 Tangent, Vector3 Binormal, Vector3 Angles)[document.Triangles.Count];
+        var handednessByCorner = new int[vertexIndexByCorner.Length];
+        var handednessMasks = new int[vertices.Count];
         for (int triangleIndex = 0;
              triangleIndex < document.Triangles.Count;
              triangleIndex++)
@@ -571,15 +576,49 @@ internal static class Iw3RigidSurfaceCompiler
                 first.Position,
                 second.Position,
                 third.Position);
-            Accumulate(first, tangent, binormal, exteriorAngles.X);
-            Accumulate(second, tangent, binormal, exteriorAngles.Y);
-            Accumulate(third, tangent, binormal, exteriorAngles.Z);
+            triangleDirections[triangleIndex] = (tangent, binormal, exteriorAngles);
+            for (int cornerIndex = 0; cornerIndex < 3; cornerIndex++)
+            {
+                int corner = baseCorner + cornerIndex;
+                int vertexIndex = vertexIndexByCorner[corner];
+                float orientation = Vector3.Dot(
+                    Vector3.Cross(vertices[vertexIndex].Normal, tangent), binormal);
+                int handedness = orientation < 0f ? -1 : orientation > 0f ? 1 : 0;
+                handednessByCorner[corner] = handedness;
+                handednessMasks[vertexIndex] |= handedness < 0 ? 1 : handedness > 0 ? 2 : 0;
+            }
         }
 
-        var finalTangents = new Vector3[vertices.Count];
-        for (int vertexIndex = 0; vertexIndex < vertices.Count; vertexIndex++)
+        // Opposite UV handedness must not share a tangent accumulator. A
+        // degenerate corner can inherit one unambiguous adjacent orientation;
+        // otherwise keep it isolated and retain the existing positive fallback.
+        var splitVertices = new List<TangentVertex>();
+        var splitVertexByIdentity = new Dictionary<(int Vertex, int Handedness), int>();
+        for (int corner = 0; corner < vertexIndexByCorner.Length; corner++)
         {
-            TangentVertex vertex = vertices[vertexIndex];
+            int originalIndex = vertexIndexByCorner[corner];
+            int handedness = handednessByCorner[corner];
+            if (handedness == 0)
+                handedness = handednessMasks[originalIndex] switch { 1 => -1, 2 => 1, _ => 0 };
+            var identity = (originalIndex, handedness);
+            if (!splitVertexByIdentity.TryGetValue(identity, out int splitIndex))
+            {
+                splitIndex = splitVertices.Count;
+                splitVertexByIdentity.Add(identity, splitIndex);
+                TangentVertex original = vertices[originalIndex];
+                splitVertices.Add(new TangentVertex(original.Position, original.Normal, handedness));
+            }
+            vertexIndexByCorner[corner] = splitIndex;
+            handednessByCorner[corner] = handedness;
+            var directions = triangleDirections[corner / 3];
+            Accumulate(splitVertices[splitIndex], directions.Tangent, directions.Binormal,
+                directions.Angles[corner % 3]);
+        }
+
+        var finalTangents = new Vector3[splitVertices.Count];
+        for (int vertexIndex = 0; vertexIndex < splitVertices.Count; vertexIndex++)
+        {
+            TangentVertex vertex = splitVertices[vertexIndex];
             Vector3 tangent = vertex.AccumulatedTangent -
                 vertex.Normal * Vector3.Dot(
                     vertex.Normal,
@@ -589,6 +628,8 @@ internal static class Iw3RigidSurfaceCompiler
                 tangent = Vector3.Cross(
                     vertex.AccumulatedBinormal,
                     vertex.Normal);
+                if (vertex.Handedness < 0)
+                    tangent = -tangent;
                 if (NormalizeWithLength(ref tangent) < TangentLengthTolerance)
                     tangent = OrthogonalDirection(vertex.Normal);
             }
@@ -601,8 +642,8 @@ internal static class Iw3RigidSurfaceCompiler
             finalTangents[vertexIndex] = tangent;
         }
 
-        Vector3[] cornerTangents = vertexIndexByCorner
-            .Select(index => finalTangents[index])
+        (Vector3 Tangent, float BinormalSign)[] cornerTangents = vertexIndexByCorner
+            .Select((index, corner) => (finalTangents[index], handednessByCorner[corner] < 0 ? -1f : 1f))
             .ToArray();
         tangentByCorner = Array.AsReadOnly(cornerTangents);
         return true;
@@ -825,10 +866,11 @@ internal static class Iw3RigidSurfaceCompiler
         Vector4 Color,
         Vector2 Uv);
 
-    private sealed class TangentVertex(Vector3 position, Vector3 normal)
+    private sealed class TangentVertex(Vector3 position, Vector3 normal, int handedness)
     {
         internal Vector3 Position { get; } = position;
         internal Vector3 Normal { get; } = normal;
+        internal int Handedness { get; } = handedness;
         internal Vector3 AccumulatedTangent { get; set; }
         internal Vector3 AccumulatedBinormal { get; set; }
     }
