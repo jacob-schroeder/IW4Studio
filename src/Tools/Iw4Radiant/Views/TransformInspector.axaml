@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.TransformInspector">
+    <StackPanel Spacing="7">
+        <TextBlock Text="TRANSFORM" FontWeight="SemiBold" Foreground="#D1A862" />
+        <TextBlock x:Name="TransformCaption" Classes="caption" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,*,*">
+            <TextBox x:Name="XValue" PlaceholderText="X" Margin="0,0,3,0" />
+            <TextBox x:Name="YValue" Grid.Column="1" PlaceholderText="Y" Margin="0,0,3,0" />
+            <TextBox x:Name="ZValue" Grid.Column="2" PlaceholderText="Z" />
+        </Grid>
+        <Button x:Name="ApplyTransformButton" HorizontalAlignment="Stretch" />
+        <TextBlock x:Name="PivotText" Classes="caption" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" RowSpacing="6">
+            <TextBlock Text="Angle snap (degrees)" VerticalAlignment="Center" />
+            <NumericUpDown x:Name="AngleSnapValue" Grid.Column="1" Minimum="0.001" Maximum="360" Increment="1" FormatString="0.###" />
+            <TextBlock Grid.Row="1" Text="Scale snap" VerticalAlignment="Center" />
+            <NumericUpDown x:Name="ScaleSnapValue" Grid.Row="1" Grid.Column="1" Minimum="0.001" Maximum="10" Increment="0.05" FormatString="0.###" />
+        </Grid>
+    </StackPanel>
+</UserControl>

@@ -22,17 +22,10 @@ internal sealed class CameraNavigation
         Frame(vertices, aspect);
     }
 
-    internal void FrameSelection(MapDocument document, object? selection, float aspect)
+    internal void FrameSelection(MapDocument document, EditorSelection selection, float aspect)
     {
-        if (selection is MapBrush brush)
-            Frame(brush.GetPolygons().SelectMany(polygon => polygon.Vertices), aspect);
-        else if (selection is MapTerrain terrain)
-            Frame(terrain.Vertices, aspect);
-        else if (selection is MapEntity entity)
-        {
-            var bounds = EditorSession.EntityBounds(entity);
+        if (SelectionGeometry.Bounds(selection.Items) is { } bounds)
             Frame([bounds.Min, bounds.Max], aspect);
-        }
         else
             FrameAll(document, aspect);
     }

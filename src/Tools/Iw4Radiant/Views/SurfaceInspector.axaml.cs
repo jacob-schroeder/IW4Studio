@@ -1,0 +1,121 @@
+using System.Globalization;
+using Avalonia.Controls;
+using Iw4Radiant.Editing;
+using Iw4Radiant.MapSource;
+
+namespace Iw4Radiant.Views;
+
+public partial class SurfaceInspector : UserControl
+{
+    private MapFace[] _shownFaces = [];
+    private MapFace? _shownReference;
+    private bool _updating;
+
+    public SurfaceInspector() => InitializeComponent();
+
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    {
+        ApplyProjectionButton.Click += async (_, _) => await ApplyProjectionAsync(session, dialogs, finishGestures);
+        FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
+        TextureLockValue.IsCheckedChanged += (_, _) =>
+        {
+            if (_updating || dialogs.BlocksInput) return;
+            bool textureLock = TextureLockValue.IsChecked == true;
+            finishGestures();
+            session.TextureLock = textureLock;
+            session.Refresh();
+        };
+    }
+
+    internal void RefreshSelection(EditorSession session)
+    {
+        _updating = true;
+        try
+        {
+            var faces = SurfaceEditing.GetFaces(session.Selection).Select(selection => selection.Face).ToArray();
+            MapFace? reference = session.Selection.Active is BrushFaceSelection active && faces.Contains(active.Face)
+                ? active.Face : faces.FirstOrDefault();
+            bool changed = !_shownFaces.SequenceEqual(faces) || !ReferenceEquals(_shownReference, reference);
+            _shownFaces = faces;
+            _shownReference = reference;
+            TextureLockValue.IsChecked = session.TextureLock;
+            ProjectionFields.IsEnabled = reference is not null;
+            SurfaceSummary.Text = faces.Length == 0 ? "Select a brush or face." :
+                $"{faces.Length} selected surface{(faces.Length == 1 ? "" : "s")} · " +
+                (faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).Count() == 1
+                    ? reference?.Material : "Mixed materials");
+            if (reference is null)
+            {
+                ProjectionInfo.Text = "";
+                foreach (var box in ProjectionBoxes()) box.Text = "";
+                return;
+            }
+            try
+            {
+                var projection = SurfaceProjection.Parse(reference.Projection);
+                bool mixed = faces.Any(face => (SurfaceProjection.Parse(face.Projection) with { Suffix = "" }) !=
+                    (projection with { Suffix = "" }));
+                ProjectionInfo.Text = mixed
+                    ? "Mixed projections. Fields show one selected surface; Apply replaces all six values on every selected surface."
+                    : "Apply sets these values on every selected surface. Fit uses each face's current projection.";
+                if (changed || !ProjectionBoxes().Any(box => box.IsKeyboardFocusWithin))
+                {
+                    SetValue(WidthValue, projection.Width);
+                    SetValue(HeightValue, projection.Height);
+                    SetValue(ShiftXValue, projection.ShiftX);
+                    SetValue(ShiftYValue, projection.ShiftY);
+                    SetValue(RotationValue, projection.Rotation);
+                    SetValue(SkewValue, projection.Skew);
+                }
+            }
+            catch (Exception exception) when (exception is ArgumentException or FormatException)
+            {
+                ProjectionFields.IsEnabled = false;
+                ProjectionInfo.Text = exception.Message;
+                foreach (var box in ProjectionBoxes()) box.Text = "";
+            }
+        }
+        finally { _updating = false; }
+    }
+
+    private async Task ApplyProjectionAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            var edits = new SurfaceProjection(ReadValue(WidthValue, "width"), ReadValue(HeightValue, "height"),
+                ReadValue(ShiftXValue, "S shift"), ReadValue(ShiftYValue, "T shift"),
+                ReadValue(RotationValue, "rotation"), ReadValue(SkewValue, "skew"), "");
+            finishGestures();
+            SurfaceEditing.ApplyProjection(session, edits);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        { await dialogs.MessageAsync("Surface projection", exception.Message); }
+    }
+
+    private async Task FitAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            float repeatsX = ReadValue(RepeatsXValue, "S repeats"), repeatsY = ReadValue(RepeatsYValue, "T repeats");
+            if (repeatsX <= 0 || repeatsY <= 0)
+                throw new ArgumentException("Texture fit requires positive repeat counts.");
+            finishGestures();
+            SurfaceEditing.Fit(session, repeatsX, repeatsY);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        { await dialogs.MessageAsync("Fit texture", exception.Message); }
+    }
+
+    private TextBox[] ProjectionBoxes() => [WidthValue, HeightValue, ShiftXValue, ShiftYValue, RotationValue, SkewValue];
+
+    private static void SetValue(TextBox box, float value) => box.Text = value.ToString("R", CultureInfo.InvariantCulture);
+
+    private static float ReadValue(TextBox box, string name)
+    {
+        if (!float.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value))
+            throw new ArgumentException($"Enter a finite number for {name}, using a decimal point.");
+        return value;
+    }
+}

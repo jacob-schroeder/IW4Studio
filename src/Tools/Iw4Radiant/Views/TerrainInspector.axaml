@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.TerrainInspector">
+    <StackPanel Spacing="7">
+        <TextBlock Text="TERRAIN" FontWeight="SemiBold" Foreground="#D1A862" />
+        <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+            <TextBlock Text="Vertices per side" VerticalAlignment="Center" />
+            <NumericUpDown x:Name="TerrainCount" Grid.Column="1" Minimum="2" Maximum="16" FormatString="0" />
+            <TextBlock Grid.Row="1" Text="Sculpt radius" VerticalAlignment="Center" />
+            <NumericUpDown x:Name="RadiusValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="4096" Increment="16" FormatString="0" />
+            <TextBlock x:Name="StrengthCaption" Grid.Row="2" VerticalAlignment="Center" />
+            <NumericUpDown x:Name="StrengthValue" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="256" FormatString="0" />
+        </Grid>
+        <ComboBox x:Name="SculptModeBox" HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="Raise / lower" />
+            <ComboBoxItem Content="Smooth" />
+            <ComboBoxItem Content="Flatten" />
+        </ComboBox>
+        <Grid ColumnDefinitions="*,100">
+            <TextBlock Text="Flatten height (Z)" VerticalAlignment="Center" />
+            <TextBox x:Name="FlattenHeightBox" Grid.Column="1" />
+        </Grid>
+        <TextBlock Classes="caption" Text="Draw and sculpt in Top view. Shift lowers in Raise / lower mode." TextWrapping="Wrap" />
+        <TextBlock x:Name="VertexSelectionText" Classes="caption" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,*">
+            <Button x:Name="SmoothVerticesButton" Content="Smooth vertices" HorizontalAlignment="Stretch" Margin="0,0,3,0" />
+            <Button x:Name="FlattenVerticesButton" Grid.Column="1" Content="Flatten vertices" HorizontalAlignment="Stretch" />
+        </Grid>
+        <Grid ColumnDefinitions="*,100">
+            <TextBlock Text="Stitch tolerance" VerticalAlignment="Center" />
+            <TextBox x:Name="StitchToleranceBox" Grid.Column="1" />
+        </Grid>
+        <Button x:Name="StitchButton" Content="Stitch two terrain patches" HorizontalAlignment="Stretch" />
+        <TextBlock Classes="caption" Text="Select two whole patches with adjoining edges. Equal or nested edge subdivisions are supported." TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

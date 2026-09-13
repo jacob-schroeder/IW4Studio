@@ -1,0 +1,90 @@
+using System.Numerics;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+
+namespace Iw4Radiant.Views;
+
+public sealed class LightColorPicker : UserControl
+{
+    private readonly Slider _red = new() { Minimum = 0, Maximum = 1 };
+    private readonly Slider _green = new() { Minimum = 0, Maximum = 1 };
+    private readonly Slider _blue = new() { Minimum = 0, Maximum = 1 };
+    private readonly Border _preview = new() { Height = 26, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1) };
+    private readonly TextBlock _readout = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
+    private Vector3 _selectedColor;
+    private bool _updating;
+
+    public LightColorPicker()
+    {
+        var content = new StackPanel { Spacing = 4 };
+        content.Children.Add(_preview);
+        AddChannel(content, "R", _red);
+        AddChannel(content, "G", _green);
+        AddChannel(content, "B", _blue);
+        var swatches = new WrapPanel { Orientation = Orientation.Horizontal };
+        foreach (Color color in new[] { Colors.White, Colors.Red, Colors.Lime, Colors.DodgerBlue,
+                     Colors.Gold, Colors.Orange, Colors.Magenta, Colors.Black })
+        {
+            var button = new Button
+            {
+                Width = 26, Height = 24, Margin = new Thickness(0, 0, 4, 0),
+                Background = new SolidColorBrush(color), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
+            };
+            ToolTip.SetTip(button, color.ToString());
+            button.Click += (_, _) => SelectedColor = new Vector3(color.R, color.G, color.B) / 255;
+            swatches.Children.Add(button);
+        }
+        content.Children.Add(swatches);
+        content.Children.Add(_readout);
+        Content = content;
+        SelectedColor = Vector3.One;
+    }
+
+    internal Vector3 SelectedColor
+    {
+        get => _selectedColor;
+        set
+        {
+            _selectedColor = value;
+            float maximum = Math.Max(value.X, Math.Max(value.Y, value.Z));
+            Vector3 display = maximum > 0 ? value / maximum : Vector3.Zero;
+            _updating = true;
+            try
+            {
+                _red.Value = display.X;
+                _green.Value = display.Y;
+                _blue.Value = display.Z;
+            }
+            finally { _updating = false; }
+            RefreshColor();
+        }
+    }
+
+    private void AddChannel(StackPanel content, string label, Slider slider)
+    {
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("20,*") };
+        row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        Grid.SetColumn(slider, 1);
+        row.Children.Add(slider);
+        content.Children.Add(row);
+        slider.PropertyChanged += (_, change) =>
+        {
+            if (_updating || change.Property != Slider.ValueProperty) return;
+            _selectedColor = new Vector3((float)_red.Value, (float)_green.Value, (float)_blue.Value);
+            RefreshColor();
+        };
+    }
+
+    private void RefreshColor()
+    {
+        float maximum = Math.Max(_selectedColor.X, Math.Max(_selectedColor.Y, _selectedColor.Z));
+        Vector3 display = maximum > 0 ? _selectedColor / maximum : Vector3.Zero;
+        _preview.Background = new SolidColorBrush(Color.FromRgb(
+            (byte)Math.Clamp(MathF.Round(display.X * 255), 0, 255),
+            (byte)Math.Clamp(MathF.Round(display.Y * 255), 0, 255),
+            (byte)Math.Clamp(MathF.Round(display.Z * 255), 0, 255)));
+        _readout.Text = FormattableString.Invariant($"Stored RGB: {_selectedColor.X:G6} / {_selectedColor.Y:G6} / {_selectedColor.Z:G6}");
+    }
+}

@@ -55,25 +55,46 @@
             </MenuItem>
         </Menu>
         <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="8,6">
-            <StackPanel Orientation="Horizontal" Spacing="5">
+            <StackPanel Spacing="4">
+              <WrapPanel>
                 <Button x:Name="SelectTool" Content="Select · Q" Click="SelectTool_Click" />
+                <Button x:Name="FaceTool" Content="Face · S" Click="FaceTool_Click" />
+                <Button x:Name="VertexTool" Content="Vertex · E" Click="VertexTool_Click" />
+                <Button x:Name="ClipTool" Content="Clip · C" Click="ClipTool_Click" />
                 <Button x:Name="BrushTool" Content="Brush · B" Click="BrushTool_Click" />
                 <Button x:Name="TerrainTool" Content="Terrain · T" Click="TerrainTool_Click" />
                 <Button x:Name="SculptTool" Content="Sculpt · V" Click="SculptTool_Click" />
-                <Border Width="1" Background="#494B50" Margin="7,0" />
+                <TextBlock Text="Transform" VerticalAlignment="Center" Margin="14,0,6,0" />
+                <ComboBox x:Name="TransformCombo" Width="105" MinHeight="30" SelectionChanged="TransformMode_Changed" />
+              </WrapPanel>
+              <WrapPanel>
                 <TextBlock Text="Grid" VerticalAlignment="Center" />
-                <ComboBox x:Name="GridCombo" Width="70" MinHeight="30" SelectionChanged="Grid_Changed" />
+                <ComboBox x:Name="GridCombo" Width="70" MinHeight="30" Margin="6,0,0,0" SelectionChanged="Grid_Changed" />
                 <TextBlock Text="Base" VerticalAlignment="Center" Margin="8,0,0,0" />
                 <NumericUpDown x:Name="BaseValue" Width="90" Minimum="-65536" Maximum="65536" Value="0" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
-                <TextBlock Text="Depth" VerticalAlignment="Center" />
+                <TextBlock Text="Depth" VerticalAlignment="Center" Margin="8,0,4,0" />
                 <NumericUpDown x:Name="DepthValue" Width="90" Minimum="1" Maximum="65536" Value="64" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <TextBlock Text="Clip" VerticalAlignment="Center" Margin="14,0,6,0" />
+                <ComboBox x:Name="ClipCombo" Width="125" MinHeight="30" SelectionChanged="ClipMode_Changed" />
+                <Button Content="Apply clip" Click="ApplyClip_Click" />
                 <Button Content="Frame all" Click="FrameAll_Click" Margin="8,0,0,0" />
+              </WrapPanel>
             </StackPanel>
         </Border>
         <Grid Grid.Row="2" ColumnDefinitions="*,5,*,5,270" RowDefinitions="*,5,*">
             <Grid Grid.Column="0" Grid.Row="0" ClipToBounds="True">
                 <camera:CameraViewport x:Name="Camera" />
-                <Border Classes="viewportTitle"><TextBlock Text="CAMERA · PERSPECTIVE" /></Border>
+                <Border Classes="viewportTitle">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="CAMERA · PERSPECTIVE" />
+                        <TextBlock Classes="caption" Text="Right-drag to orbit · F to frame" />
+                    </StackPanel>
+                </Border>
+                <Border Background="#CC26282B" Padding="6,0" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <CheckBox x:Name="PreviewLights" Content="Preview lights" IsChecked="True"
+                              IsCheckedChanged="PreviewLights_Changed"
+                              ToolTip.Tip="Preview point and spot lights with surface shadows. Turn off to view textures without lighting. Bounced light is not included." />
+                </Border>
                 <Border x:Name="RendererErrorPanel" IsVisible="False" Background="#DD302327" Padding="12"
                         VerticalAlignment="Bottom" IsHitTestVisible="False">
                     <TextBlock x:Name="RendererErrorText" TextWrapping="Wrap" Foreground="#FFD2BF" />

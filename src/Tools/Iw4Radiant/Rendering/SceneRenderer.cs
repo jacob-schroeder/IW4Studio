@@ -1,6 +1,7 @@
 using System.Numerics;
 using Avalonia;
 using Avalonia.OpenGL;
+using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Silk.NET.OpenGL;
 
@@ -16,8 +17,10 @@ internal sealed class SceneRenderer
     private int _viewProjectionLocation, _texturedLocation, _litLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly SceneMaterialTextures _materialTextures = new();
+    private readonly SceneLighting _lighting = new();
+    private readonly SceneShadows _shadows = new();
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _outlineStart, _outlineCount, _axesStart, _axesCount;
-    private bool _sceneDirty = true, _texturesDirty = true;
+    private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
 
     internal string? Error { get; private set; } =
         "Camera is waiting for OpenGL. If it remains blank, a compatible OpenGL driver is required.";
@@ -32,11 +35,13 @@ internal sealed class SceneRenderer
         {
             _gl = GL.GetApi(gl.GetProcAddress);
             string header = _gl.GetStringS(StringName.Version).Contains("OpenGL ES", StringComparison.Ordinal)
-                ? "#version 300 es\nprecision highp float;\n" : "#version 150\n";
-            _program = CreateProgram(_gl, header);
+                ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 150\n";
+            _program = SceneShaderProgram.Create(_gl, header, "scene.vert", "scene.frag");
             _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
             _texturedLocation = _gl.GetUniformLocation(_program, "uTextured");
             _litLocation = _gl.GetUniformLocation(_program, "uLit");
+            _lighting.Initialize(_gl, _program);
+            _shadows.Initialize(_gl, _program, header);
             _gl.UseProgram(_program);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
             _lineTexture = _gl.GenTexture();
@@ -55,7 +60,7 @@ internal sealed class SceneRenderer
             _framebuffer = _gl.GenFramebuffer();
             _colorBuffer = _gl.GenRenderbuffer();
             _depthBuffer = _gl.GenRenderbuffer();
-            _sceneDirty = _texturesDirty = true;
+            _sceneDirty = _texturesDirty = _shadowsDirty = true;
             PublishStatus(null);
         }
         catch (Exception exception) when (IsRenderException(exception))
@@ -75,30 +80,39 @@ internal sealed class SceneRenderer
     }
 
     internal unsafe void Render(PixelSize size, int framebuffer, Matrix4x4 viewProjection,
-        MapDocument document, object? selection, Func<string, string?>? resolveTexturePath)
+        MapDocument document, EditorSelection selection, TransformMode transformMode, EditorTool editorTool,
+        Func<string, string?>? resolveTexturePath, bool previewLighting)
     {
         if (_gl is not { } gl || _program == 0)
             return;
         try
         {
-            PrepareFramebuffer(gl, size);
-            gl.Disable(EnableCap.ScissorTest);
-            gl.Disable(EnableCap.Blend);
-            gl.Disable(EnableCap.CullFace);
-            gl.ColorMask(true, true, true, true);
-            gl.DepthMask(true);
-            gl.Viewport(0, 0, (uint)size.Width, (uint)size.Height);
-            gl.ClearColor(0.075f, 0.09f, 0.11f, 1);
-            gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
             if (_texturesDirty)
             {
                 _materialTextures.Reload(gl);
                 _texturesDirty = false;
             }
             if (_sceneDirty)
-                UploadScene(gl, document, selection);
+                UploadScene(gl, document, selection, transformMode, editorTool);
+            if (previewLighting && _shadowsDirty)
+            {
+                _shadows.Update(gl, _lighting.Lights, _vertexArray, _batches);
+                _shadowsDirty = false;
+            }
+            PrepareFramebuffer(gl, size);
+            gl.Disable(EnableCap.ScissorTest);
+            gl.Disable(EnableCap.Blend);
+            gl.Disable(EnableCap.CullFace);
+            gl.FrontFace(FrontFaceDirection.Ccw);
+            gl.ColorMask(true, true, true, true);
+            gl.DepthMask(true);
+            gl.Viewport(0, 0, (uint)size.Width, (uint)size.Height);
+            gl.ClearColor(0.075f, 0.09f, 0.11f, 1);
+            gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
             gl.UseProgram(_program);
             gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
+            _lighting.Bind(gl, _shadows.IsAvailable);
+            _shadows.Bind(gl);
             gl.BindVertexArray(_vertexArray);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -110,24 +124,9 @@ internal sealed class SceneRenderer
 
             gl.Enable(EnableCap.PolygonOffsetFill);
             gl.PolygonOffset(1, 1);
-            foreach (var batch in _batches)
-            {
-                uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveTexturePath);
-                if (texture == 0)
-                {
-                    gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
-                    gl.Uniform1(_litLocation, 0);
-                    gl.Uniform1(_texturedLocation, 0);
-                    gl.DrawArrays(PrimitiveType.Lines, batch.WireStart, (uint)batch.WireCount);
-                    continue;
-                }
-                gl.BindTexture(TextureTarget.Texture2D, texture);
-                gl.Uniform1(_litLocation, 1);
-                gl.Uniform1(_texturedLocation, 1);
-                gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
-            }
+            RenderSurfaces(gl, resolveTexturePath, previewLighting);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
-            gl.Uniform1(_litLocation, 1);
+            gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
             gl.DrawArrays(PrimitiveType.Triangles, _glyphStart, (uint)_glyphCount);
             gl.Disable(EnableCap.PolygonOffsetFill);
@@ -143,7 +142,12 @@ internal sealed class SceneRenderer
             gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, (uint)framebuffer);
             gl.BlitFramebuffer(0, 0, size.Width, size.Height, 0, 0, size.Width, size.Height,
                 ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
-            PublishStatus(_materialTextures.Error);
+            string? lightingNotice = null;
+            if (previewLighting)
+                lightingNotice = _lighting.Notice is { } lightNotice && _shadows.Notice is { } shadowNotice
+                    ? $"{lightNotice}\n{shadowNotice}" : _lighting.Notice ?? _shadows.Notice;
+            PublishStatus(_materialTextures.Error is { } textureError && lightingNotice is not null
+                ? $"{textureError}\n{lightingNotice}" : _materialTextures.Error ?? lightingNotice);
         }
         catch (Exception exception) when (IsRenderException(exception))
         {
@@ -155,11 +159,36 @@ internal sealed class SceneRenderer
             gl.Disable(EnableCap.DepthTest);
             gl.BindVertexArray(0);
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+            gl.ActiveTexture(TextureUnit.Texture2);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture1);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.UseProgram(0);
             gl.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
             gl.BindFramebuffer(FramebufferTarget.Framebuffer, (uint)framebuffer);
+        }
+    }
+
+    private void RenderSurfaces(GL gl, Func<string, string?>? resolveTexturePath, bool previewLighting)
+    {
+        foreach (var batch in _batches)
+        {
+            uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveTexturePath);
+            if (texture == 0)
+            {
+                gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+                gl.Uniform1(_litLocation, 0);
+                gl.Uniform1(_texturedLocation, 0);
+                gl.DrawArrays(PrimitiveType.Lines, batch.WireStart, (uint)batch.WireCount);
+                continue;
+            }
+            gl.BindTexture(TextureTarget.Texture2D, texture);
+            gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+            gl.Uniform1(_texturedLocation, 1);
+            gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
         }
     }
 
@@ -182,9 +211,11 @@ internal sealed class SceneRenderer
         _renderSize = size;
     }
 
-    private unsafe void UploadScene(GL gl, MapDocument document, object? selection)
+    private unsafe void UploadScene(GL gl, MapDocument document, EditorSelection selection,
+        TransformMode transformMode, EditorTool editorTool)
     {
-        var scene = new SceneGeometry(document, selection);
+        var scene = new SceneGeometry(document, selection, transformMode, editorTool);
+        _lighting.Update(gl, document);
         _batches.Clear();
         _batches.AddRange(scene.Batches);
         _glyphStart = scene.GlyphStart;
@@ -209,55 +240,7 @@ internal sealed class SceneRenderer
         gl.VertexAttribPointer(3, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
         gl.BindVertexArray(0);
         _sceneDirty = false;
-    }
-
-    private static uint CreateProgram(GL gl, string header)
-    {
-        uint vertex = 0, fragment = 0, program = 0;
-        try
-        {
-            vertex = Compile(ShaderType.VertexShader, "scene.vert");
-            fragment = Compile(ShaderType.FragmentShader, "scene.frag");
-            program = gl.CreateProgram();
-            gl.AttachShader(program, vertex);
-            gl.AttachShader(program, fragment);
-            gl.BindAttribLocation(program, 0, "aPosition");
-            gl.BindAttribLocation(program, 1, "aNormal");
-            gl.BindAttribLocation(program, 2, "aTexCoord");
-            gl.BindAttribLocation(program, 3, "aColor");
-            gl.LinkProgram(program);
-            gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
-            if (linked == 0)
-                throw new InvalidOperationException($"Scene shader link failed: {gl.GetProgramInfoLog(program)}");
-            return program;
-        }
-        catch
-        {
-            if (program != 0)
-                gl.DeleteProgram(program);
-            throw;
-        }
-        finally
-        {
-            if (vertex != 0)
-                gl.DeleteShader(vertex);
-            if (fragment != 0)
-                gl.DeleteShader(fragment);
-        }
-
-        uint Compile(ShaderType type, string filename)
-        {
-            string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", filename));
-            uint shader = gl.CreateShader(type);
-            gl.ShaderSource(shader, header + source);
-            gl.CompileShader(shader);
-            gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
-            if (compiled != 0)
-                return shader;
-            string error = gl.GetShaderInfoLog(shader);
-            gl.DeleteShader(shader);
-            throw new InvalidOperationException($"{filename}: {error}");
-        }
+        _shadowsDirty = true;
     }
 
     internal void ReleaseResources()
@@ -265,6 +248,8 @@ internal sealed class SceneRenderer
         if (_gl is { } gl)
         {
             _materialTextures.Clear(gl);
+            _lighting.Clear(gl);
+            _shadows.Clear(gl);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
             if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
             if (_program != 0) gl.DeleteProgram(_program);
@@ -282,9 +267,11 @@ internal sealed class SceneRenderer
     {
         _program = _vertexArray = _vertexBuffer = _framebuffer = _colorBuffer = _depthBuffer = _lineTexture = 0;
         _materialTextures.ForgetHandles();
+        _lighting.ForgetHandle();
+        _shadows.ForgetHandles();
         _batches.Clear();
         _renderSize = default;
-        _sceneDirty = _texturesDirty = true;
+        _sceneDirty = _texturesDirty = _shadowsDirty = true;
     }
 
     private void PublishStatus(string? error)
@@ -295,6 +282,6 @@ internal sealed class SceneRenderer
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    internal static bool IsRenderException(Exception exception) => exception is IOException or
+    internal static bool IsRenderException(Exception exception) => exception is IOException or FormatException or
         InvalidOperationException or ArgumentException or NotSupportedException or OverflowException;
 }

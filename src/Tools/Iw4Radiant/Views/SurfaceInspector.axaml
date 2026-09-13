@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.SurfaceInspector">
+    <StackPanel Spacing="8">
+        <TextBlock Text="SURFACES" FontWeight="SemiBold" Foreground="#D1A862" />
+        <TextBlock x:Name="SurfaceSummary" Text="Select a brush or face." TextWrapping="Wrap" />
+        <TextBlock x:Name="ProjectionInfo" Classes="caption" TextWrapping="Wrap" />
+        <StackPanel x:Name="ProjectionFields" Spacing="6" IsEnabled="False">
+            <TextBlock Classes="caption" Text="Width / height · world units per repeat" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*">
+                <TextBox x:Name="WidthValue" PlaceholderText="Width" Margin="0,0,3,0"
+                         ToolTip.Tip="World units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
+                <TextBox x:Name="HeightValue" Grid.Column="1" PlaceholderText="Height"
+                         ToolTip.Tip="World units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
+            </Grid>
+            <TextBlock Classes="caption" Text="Shift S / T · world units" />
+            <Grid ColumnDefinitions="*,*">
+                <TextBox x:Name="ShiftXValue" PlaceholderText="S" Margin="0,0,3,0" />
+                <TextBox x:Name="ShiftYValue" Grid.Column="1" PlaceholderText="T" />
+            </Grid>
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" RowSpacing="4">
+                <TextBlock Classes="caption" Text="Rotation · degrees" />
+                <TextBlock Grid.Column="1" Classes="caption" Text="Skew" />
+                <TextBox x:Name="RotationValue" Grid.Row="1" PlaceholderText="Rotation" Margin="0,0,3,0" />
+                <TextBox x:Name="SkewValue" Grid.Row="1" Grid.Column="1" PlaceholderText="Skew" />
+            </Grid>
+            <Button x:Name="ApplyProjectionButton" Content="Apply to selected surfaces" HorizontalAlignment="Stretch" />
+            <TextBlock Classes="caption" Text="Fit · repeats across S / T" />
+            <Grid ColumnDefinitions="*,*,Auto">
+                <TextBox x:Name="RepeatsXValue" Text="1" PlaceholderText="S repeats" Margin="0,0,3,0" />
+                <TextBox x:Name="RepeatsYValue" Grid.Column="1" Text="1" PlaceholderText="T repeats" Margin="0,0,6,0" />
+                <Button x:Name="FitButton" Grid.Column="2" Content="Fit" />
+            </Grid>
+        </StackPanel>
+        <CheckBox x:Name="TextureLockValue"
+                  ToolTip.Tip="Keep texture coordinates attached to the brush during moves, rotations and scaling. Some vertex edits require turning this off because the new face shape cannot preserve every UV.">
+            <TextBlock Text="Lock textures while transforming" TextWrapping="Wrap" />
+        </CheckBox>
+    </StackPanel>
+</UserControl>

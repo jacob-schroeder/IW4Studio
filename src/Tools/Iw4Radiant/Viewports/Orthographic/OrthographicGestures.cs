@@ -4,36 +4,36 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
-using Vector = Avalonia.Vector;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
 internal sealed class OrthographicGestures
 {
-    private enum Gesture { None, Pan, Move, Resize, Brush, Terrain, Sculpt }
-
+    private enum Gesture { None, Pan, Transform, Marquee, Brush, Terrain, Sculpt, Clip }
     private readonly Control _viewport;
     private readonly OrthographicProjection _projection;
+    private readonly OrthographicTransform _transform;
+    private readonly OrthographicTerrainStroke _stroke = new();
     private IPointer? _pointer;
     private MouseButton _button;
     private Gesture _gesture;
-    private MapDocument? _gestureDocument;
-    private object? _gestureSelection;
+    private MapDocument? _gestureDocument, _clipDocument;
+    private object[] _gestureItems = [], _selectionBefore = [], _marqueeCandidates = [];
+    private EditorTool _gestureTool;
     private Point _startScreen, _lastScreen, _cursorScreen;
-    private Vector2 _startWorld, _currentWorld, _lastSculptWorld;
-    private Vector3 _translation;
-    private (Vector3 Min, Vector3 Max) _originalBounds;
-    private int _resizeCorner, _moveAxis;
-    private bool _editStarted, _changed, _pointerInside;
+    private Vector2 _startWorld, _currentWorld;
+    private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle;
 
     internal OrthographicGestures(Control viewport, OrthographicProjection projection)
     {
         _viewport = viewport;
         _projection = projection;
+        _transform = new(projection);
     }
 
     internal EditorSession? Session { get; set; }
     internal event Action<string>? CursorStatusChanged;
+    internal event Action? ClipStarted;
     internal bool IsActive => _gesture != Gesture.None;
     internal bool IsCreating => _gesture is Gesture.Brush or Gesture.Terrain;
     internal bool IsCreatingTerrain => _gesture == Gesture.Terrain;
@@ -41,279 +41,228 @@ internal sealed class OrthographicGestures
     internal Point CursorScreen => _cursorScreen;
     internal Vector2 StartWorld => _startWorld;
     internal Vector2 CurrentWorld => _currentWorld;
+    internal Rect? MarqueeBounds => _gesture == Gesture.Marquee && Dragged ? OrthographicGeometry.Rectangle(_startScreen, _cursorScreen) : null;
+    internal bool HasClipPreview => _clipDocument is not null;
+    internal Vector2 ClipStart { get; private set; }
+    internal Vector2 ClipEnd { get; private set; }
+    private bool Dragged => OrthographicGeometry.Distance(_cursorScreen, _startScreen) >= 3;
 
     internal void SessionChanged()
     {
-        // Opening/undoing from another view invalidates the objects held by a gesture.
-        if (_gesture != Gesture.None && Session is { } session)
+        if (Session is { } session)
         {
-            if (!ReferenceEquals(_gestureDocument, session.Document))
-                EndGesture(cancel: false, completeEdit: false);
-            else if (_gestureSelection is not null && !ReferenceEquals(_gestureSelection, session.Selection))
-                EndGesture(cancel: true);
+            if (_clipDocument is not null && (!ReferenceEquals(_clipDocument, session.Document) || session.Tool != EditorTool.Clip))
+                _clipDocument = null;
+            if (IsActive && !_changingSelection)
+            {
+                if (!ReferenceEquals(_gestureDocument, session.Document)) EndGesture(cancel: false, completeEdit: false);
+                else if (_gestureTool != session.Tool || _gestureItems.Length != session.Selection.Count ||
+                         _gestureItems.Any(item => !session.Selection.Contains(item))) EndGesture(cancel: true);
+            }
         }
         _viewport.InvalidateVisual();
     }
 
     internal void PointerPressed(PointerPressedEventArgs e)
     {
-        if (Session is not { } session || _gesture != Gesture.None) return;
+        try { Press(e); }
+        catch (Exception exception) when (IsInputError(exception)) { Fail(exception); e.Handled = true; }
+    }
+
+    private void Press(PointerPressedEventArgs e)
+    {
+        if (Session is not { } session || IsActive) return;
         PointerPointProperties properties = e.GetCurrentPoint(_viewport).Properties;
         if (!properties.IsLeftButtonPressed && !properties.IsMiddleButtonPressed && !properties.IsRightButtonPressed) return;
         _viewport.Focus(NavigationMethod.Pointer, e.KeyModifiers);
         _startScreen = _lastScreen = _cursorScreen = e.GetPosition(_viewport);
         _startWorld = _currentWorld = Snap(_projection.ToWorld(_startScreen));
-        _translation = Vector3.Zero;
         _editStarted = _changed = false;
-        _moveAxis = 0;
-        _button = properties.IsMiddleButtonPressed ? MouseButton.Middle :
-            properties.IsRightButtonPressed ? MouseButton.Right : MouseButton.Left;
-        if (_button == MouseButton.Left && session.Tool is EditorTool.Brush or EditorTool.Terrain &&
-            string.IsNullOrWhiteSpace(session.Material))
+        _selectionBefore = session.Selection.Items.ToArray();
+        _toggle = (e.KeyModifiers & (KeyModifiers.Shift | KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        _button = properties.IsMiddleButtonPressed ? MouseButton.Middle : properties.IsRightButtonPressed ? MouseButton.Right : MouseButton.Left;
+        if (_button != MouseButton.Left) _gesture = Gesture.Pan;
+        else if (session.Tool is EditorTool.Brush or EditorTool.Terrain)
         {
-            CursorStatusChanged?.Invoke("Browse an asset folder and choose a material before creating geometry.");
-            e.Handled = true;
-            return;
-        }
-        if (_button != MouseButton.Left)
-            _gesture = Gesture.Pan;
-        else if (session.Tool == EditorTool.Brush)
-            _gesture = Gesture.Brush;
-        else if (session.Tool == EditorTool.Terrain)
-        {
-            if (_projection.Plane != OrthoPlane.Top)
+            if (string.IsNullOrWhiteSpace(session.Material))
             {
-                CursorStatusChanged?.Invoke("Create terrain in the Top view by dragging an XY rectangle.");
+                CursorStatusChanged?.Invoke("Browse an asset folder and choose a material before creating geometry.");
                 e.Handled = true;
                 return;
             }
-            _gesture = Gesture.Terrain;
+            if (session.Tool == EditorTool.Terrain && !RequireTopView(e)) return;
+            _gesture = session.Tool == EditorTool.Brush ? Gesture.Brush : Gesture.Terrain;
         }
         else if (session.Tool == EditorTool.Sculpt)
         {
-            if (_projection.Plane != OrthoPlane.Top)
-            {
-                CursorStatusChanged?.Invoke("Sculpt terrain in the Top view; Shift lowers the surface.");
-                e.Handled = true;
-                return;
-            }
-            if (session.Selection is not MapTerrain)
-                session.Select(OrthographicGeometry.HitTest(session, _projection, _startScreen, terrainsOnly: true));
-            if (session.Selection is not MapTerrain) return;
+            if (!RequireTopView(e)) return;
+            if (!session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>().Any())
+                Select(OrthographicGeometry.HitTest(session, _projection, _startScreen, terrainsOnly: true));
+            if (!session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>().Any()) return;
             _gesture = Gesture.Sculpt;
-            _lastSculptWorld = _projection.ToWorld(_startScreen);
         }
-        else
-            BeginSelectionGesture(_startScreen);
-        if (_gesture == Gesture.None) return;
+        else if (session.Tool == EditorTool.Clip)
+        {
+            ClipStarted?.Invoke();
+            _gesture = Gesture.Clip;
+            _clipDocument = session.Document;
+            ClipStart = ClipEnd = _startWorld;
+        }
+        else BeginSelection(session);
+        e.Handled = true;
+        if (!IsActive) return;
         _gestureDocument = session.Document;
-        _gestureSelection = session.Selection;
+        _gestureTool = session.Tool;
+        _gestureItems = session.Selection.Items.ToArray();
         _pointer = e.Pointer;
         e.Pointer.Capture(_viewport);
         _viewport.Cursor = new Cursor(_gesture == Gesture.Pan ? StandardCursorType.SizeAll : StandardCursorType.Cross);
-        if (_gesture == Gesture.Sculpt) SculptAt(_lastSculptWorld, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        if (_gesture == Gesture.Sculpt)
+            _changed |= _stroke.Begin(session, _projection.ToWorld(_startScreen), e.KeyModifiers.HasFlag(KeyModifiers.Shift), StartEdit);
         _viewport.InvalidateVisual();
-        e.Handled = true;
     }
 
-    private void BeginSelectionGesture(Point point)
+    private bool RequireTopView(PointerPressedEventArgs e)
     {
-        if (Session is not { } session) return;
-        if (session.CanTransformSelection && session.SelectionBounds is { } bounds)
+        if (_projection.Plane == OrthoPlane.Top) return true;
+        CursorStatusChanged?.Invoke("Create and sculpt terrain in the Top view.");
+        e.Handled = true;
+        return false;
+    }
+
+    private void BeginSelection(EditorSession session)
+    {
+        if (!_toggle && _transform.TryBegin(session, _startScreen)) { _gesture = Gesture.Transform; return; }
+        object? hit = OrthographicSelection.HitTest(session, _projection, _startScreen);
+        if (hit is null && session.Tool == EditorTool.Vertex)
         {
-            Rect rect = _projection.ScreenBounds(bounds.Min, bounds.Max);
-            if (session.Selection is MapBrush)
+            object? owner = OrthographicGeometry.HitTest(session, _projection, _startScreen);
+            if (owner is MapBrush or MapTerrain)
             {
-                Point[] corners = OrthographicGeometry.Corners(rect);
-                for (int i = 0; i < corners.Length; i++)
-                    if (OrthographicGeometry.Distance(point, corners[i]) <= 7)
-                    {
-                        _resizeCorner = i;
-                        _originalBounds = bounds;
-                        _gesture = Gesture.Resize;
-                        return;
-                    }
-            }
-            Point center = rect.Center;
-            if (OrthographicGeometry.Distance(point, center) <= 7)
-            {
-                _gesture = Gesture.Move;
-                return;
-            }
-            if (OrthographicGeometry.DistanceToSegment(point, center, center + new Vector(44, 0)) <= 6)
-                _moveAxis = 1;
-            else if (OrthographicGeometry.DistanceToSegment(point, center, center - new Vector(0, 44)) <= 6)
-                _moveAxis = 2;
-            if (_moveAxis != 0)
-            {
-                _gesture = Gesture.Move;
+                Select(owner, _toggle, _toggle);
                 return;
             }
         }
-        session.Select(OrthographicGeometry.HitTest(session, _projection, point));
-        if (session.CanTransformSelection) _gesture = Gesture.Move;
+        if (hit is null)
+        {
+            _marqueeCandidates = OrthographicSelection.MarqueeCandidates(session);
+            _gesture = Gesture.Marquee;
+            return;
+        }
+        if (_toggle || !session.Selection.Contains(hit)) Select(hit, _toggle, _toggle);
+        if (!_toggle && session.CanTransformSelection && session.TransformMode == TransformMode.Move &&
+            session.Tool is EditorTool.Select or EditorTool.Vertex)
+        {
+            _transform.Begin(session, _startScreen);
+            _gesture = Gesture.Transform;
+        }
     }
 
     internal void PointerMoved(PointerEventArgs e)
     {
+        try { Move(e); }
+        catch (Exception exception) when (IsInputError(exception)) { Fail(exception); e.Handled = true; }
+    }
+
+    private void Move(PointerEventArgs e)
+    {
         _cursorScreen = e.GetPosition(_viewport);
         _pointerInside = new Rect(_viewport.Bounds.Size).Contains(_cursorScreen);
         Vector2 world = _projection.ToWorld(_cursorScreen);
-        var labels = _projection.Plane switch
-        {
-            OrthoPlane.Top => ("X", "Y"), OrthoPlane.Front => ("X", "Z"), _ => ("Y", "Z")
-        };
+        var labels = _projection.Plane switch { OrthoPlane.Top => ("X", "Y"), OrthoPlane.Front => ("X", "Z"), _ => ("Y", "Z") };
         CursorStatusChanged?.Invoke(FormattableString.Invariant($"{labels.Item1}: {world.X:0.##}   {labels.Item2}: {world.Y:0.##}"));
         if (Session is not { } session || !ReferenceEquals(_pointer, e.Pointer))
         {
             if (Session?.Tool == EditorTool.Sculpt) _viewport.InvalidateVisual();
             return;
         }
-        if (_gesture == Gesture.Pan)
-        {
-            _projection.Pan(_cursorScreen - _lastScreen);
-        }
+        if (_gesture == Gesture.Pan) _projection.Pan(_cursorScreen - _lastScreen);
         else if (_gesture == Gesture.Sculpt)
-        {
-            float spacing = Math.Max(1, session.SculptRadius * 0.15f);
-            float distance = Vector2.Distance(_lastSculptWorld, world);
-            if (distance >= spacing)
-            {
-                Vector2 direction = Vector2.Normalize(world - _lastSculptWorld);
-                int stamps = Math.Min(256, (int)(distance / spacing));
-                for (int i = 0; i < stamps; i++)
-                {
-                    _lastSculptWorld += direction * spacing;
-                    SculptAt(_lastSculptWorld, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-                }
-            }
-        }
-        else if (OrthographicGeometry.Distance(_cursorScreen, _startScreen) >= 3 || _editStarted)
+            _changed |= _stroke.Move(session, world, e.KeyModifiers.HasFlag(KeyModifiers.Shift), StartEdit);
+        else if (Dragged || _editStarted)
         {
             _currentWorld = Snap(world);
-            if (_gesture == Gesture.Move)
-            {
-                Vector2 displacement = Snap(world - _projection.ToWorld(_startScreen));
-                if (_moveAxis == 1) displacement.Y = 0;
-                if (_moveAxis == 2) displacement.X = 0;
-                Vector3 translation = _projection.Unproject(displacement, 0);
-                Vector3 delta = translation - _translation;
-                if (delta != Vector3.Zero)
-                {
-                    StartEdit();
-                    session.TranslateSelection(delta);
-                    _translation = translation;
-                    _changed = translation != Vector3.Zero;
-                    session.Refresh();
-                }
-            }
-            else if (_gesture == Gesture.Resize) ResizeSelection();
+            if (_gesture == Gesture.Transform) _changed = _transform.Apply(session, _cursorScreen, StartEdit);
+            else if (_gesture == Gesture.Clip) ClipEnd = _currentWorld;
         }
         _lastScreen = _cursorScreen;
         _viewport.InvalidateVisual();
         e.Handled = true;
     }
 
-    private void ResizeSelection()
-    {
-        if (Session?.Selection is not MapBrush brush) return;
-        Vector2 min = _projection.Project(_originalBounds.Min), max = _projection.Project(_originalBounds.Max);
-        float grid = Session.GridSize;
-        if (_resizeCorner is 0 or 3) min.X = Math.Min(_currentWorld.X, max.X - grid);
-        else max.X = Math.Max(_currentWorld.X, min.X + grid);
-        if (_resizeCorner is 0 or 1) max.Y = Math.Max(_currentWorld.Y, min.Y + grid);
-        else min.Y = Math.Min(_currentWorld.Y, max.Y - grid);
-        Vector3 minimum = _projection.Unproject(min, _projection.MissingAxis(_originalBounds.Min));
-        Vector3 maximum = _projection.Unproject(max, _projection.MissingAxis(_originalBounds.Max));
-        var current = brush.GetBounds();
-        if (Vector3.DistanceSquared(minimum, current.Min) < 0.00001f &&
-            Vector3.DistanceSquared(maximum, current.Max) < 0.00001f) return;
-        StartEdit();
-        brush.Resize(minimum, maximum);
-        _changed = Vector3.DistanceSquared(minimum, _originalBounds.Min) > 0.00001f ||
-            Vector3.DistanceSquared(maximum, _originalBounds.Max) > 0.00001f;
-        Session.Refresh();
-    }
-
-    private void SculptAt(Vector2 world, bool lower)
-    {
-        if (Session?.Selection is not MapTerrain terrain || Session.SculptRadius <= 0) return;
-        bool changed = false;
-        for (int i = 0; i < terrain.Vertices.Length; i++)
-        {
-            Vector3 vertex = terrain.Vertices[i];
-            float distance = Vector2.Distance(new Vector2(vertex.X, vertex.Y), world);
-            if (distance >= Session.SculptRadius) continue;
-            float falloff = 1 - distance / Session.SculptRadius;
-            float height = vertex.Z + Session.SculptStrength * falloff * falloff * (lower ? -1 : 1);
-            if (!float.IsFinite(height) || height == vertex.Z) continue;
-            StartEdit();
-            terrain.Vertices[i].Z = height;
-            changed = _changed = true;
-        }
-        if (changed) Session.Refresh();
-    }
-
-    private void StartEdit()
-    {
-        if (_editStarted || Session is null) return;
-        Session.BeginEdit();
-        _editStarted = true;
-    }
-
     internal void PointerReleased(PointerReleasedEventArgs e)
     {
         if (!ReferenceEquals(e.Pointer, _pointer) || e.InitialPressMouseButton != _button) return;
-        if (_gesture is Gesture.Brush or Gesture.Terrain && Session is { } session &&
-            OrthographicGeometry.Distance(e.GetPosition(_viewport), _startScreen) >= 3)
+        try
         {
-            _currentWorld = Snap(_projection.ToWorld(e.GetPosition(_viewport)));
-            Vector2 min = Vector2.Min(_startWorld, _currentWorld), max = Vector2.Max(_startWorld, _currentWorld);
-            if (max.X - min.X >= session.GridSize && max.Y - min.Y >= session.GridSize)
+            // Apply the release position even when the platform coalesces the last move event.
+            Move(e);
+            if (Session is { } session)
             {
-                StartEdit();
-                if (_gesture == Gesture.Brush)
+                if (_gesture is Gesture.Brush or Gesture.Terrain && Dragged)
                 {
-                    float bottom = session.Snap(session.BrushBottom);
-                    float top = Math.Max(bottom + session.GridSize, session.Snap(bottom + session.BrushHeight));
-                    var brush = MapBrush.CreateBox(_projection.Unproject(min, bottom), _projection.Unproject(max, top), session.Material);
-                    session.Document.World.Brushes.Add(brush);
-                    _gestureSelection = brush;
-                    session.Select(brush);
-                }
-                else
-                {
-                    int count = Math.Clamp(session.TerrainVertices, 2, 16);
-                    float spacing = (max.X - min.X) / (count - 1);
-                    var terrain = MapTerrain.Create(new Vector3(min.X, min.Y, session.BrushBottom), spacing, count, session.Material);
-                    for (int x = 0; x < count; x++)
-                    for (int y = 0; y < count; y++)
+                    Vector2 min = Vector2.Min(_startWorld, _currentWorld), max = Vector2.Max(_startWorld, _currentWorld);
+                    if (max.X - min.X >= session.GridSize && max.Y - min.Y >= session.GridSize)
                     {
-                        int index = x * count + y;
-                        float offset = y * (max.Y - min.Y) / (count - 1);
-                        terrain.Vertices[index].Y = min.Y + offset;
-                        terrain.TextureCoordinates[index].Y = offset / 128;
+                        StartEdit();
+                        Select(OrthographicCreation.Create(session, _projection, min, max, _gesture == Gesture.Terrain));
+                        _changed = true;
                     }
-                    session.Document.World.Terrains.Add(terrain);
-                    _gestureSelection = terrain;
-                    session.Select(terrain);
                 }
-                _changed = true;
+                else if (_gesture == Gesture.Marquee)
+                {
+                    object[] hits = MarqueeBounds is { } rectangle ?
+                        OrthographicSelection.InRectangle(_marqueeCandidates, _projection, rectangle).ToArray() : [];
+                    _changingSelection = true;
+                    try
+                    {
+                        session.Selection.SetRange(_toggle ? _selectionBefore : []);
+                        foreach (object hit in hits) session.Selection.Set(hit, additive: true, toggle: _toggle);
+                        session.Refresh();
+                    }
+                    finally { _changingSelection = false; }
+                }
+                else if (_gesture == Gesture.Clip && ClipStart == ClipEnd) _clipDocument = null;
             }
+            EndGesture(cancel: false);
         }
-        EndGesture(cancel: false);
+        catch (Exception exception) when (IsInputError(exception)) { Fail(exception); }
         e.Handled = true;
+    }
+
+    internal bool CommitClip()
+    {
+        if (!HasClipPreview || Session is not { } session || IsActive) return false;
+        try
+        {
+            Vector2 edge = ClipEnd - ClipStart;
+            if (edge.LengthSquared() < 0.0001f) return false;
+            Vector3 normal = Vector3.Normalize(_projection.Unproject(new Vector2(-edge.Y, edge.X), 0));
+            var plane = new Plane(normal, -Vector3.Dot(normal, _projection.Unproject(ClipStart, 0)));
+            int count = SelectionClipping.Apply(session, plane);
+            _clipDocument = null;
+            CursorStatusChanged?.Invoke($"Clipped {count} brush(es).");
+            _viewport.InvalidateVisual();
+        }
+        catch (Exception exception) when (IsInputError(exception)) { Fail(exception); }
+        return true;
+    }
+
+    internal void CancelGesture()
+    {
+        _clipDocument = null;
+        EndGesture(cancel: true);
     }
 
     internal void EndGesture(bool cancel, bool completeEdit = true)
     {
         IPointer? pointer = _pointer;
-        bool editing = _editStarted;
-        bool changed = _changed;
+        bool editing = _editStarted, changed = _changed;
+        if (cancel && _gesture == Gesture.Clip) _clipDocument = null;
         _pointer = null;
         _gesture = Gesture.None;
         _gestureDocument = null;
-        _gestureSelection = null;
+        _gestureItems = _selectionBefore = _marqueeCandidates = [];
         _editStarted = _changed = false;
         _viewport.Cursor = null;
         if (editing && completeEdit && Session is { } session)
@@ -325,11 +274,43 @@ internal sealed class OrthographicGestures
         _viewport.InvalidateVisual();
     }
 
+    private void Select(object? item, bool additive = false, bool toggle = false)
+    {
+        _changingSelection = true;
+        try { Session?.Select(item, additive, toggle); }
+        finally { _changingSelection = false; }
+        _gestureItems = Session?.Selection.Items.ToArray() ?? [];
+    }
+
+    private void StartEdit()
+    {
+        if (_editStarted || Session is null) return;
+        Session.BeginEdit();
+        _editStarted = true;
+    }
+
+    private void Fail(Exception exception)
+    {
+        CancelGesture();
+        CursorStatusChanged?.Invoke(exception.Message);
+    }
+
+    private static bool IsInputError(Exception exception) => exception is ArgumentException or InvalidOperationException or
+        NotSupportedException or FormatException or OverflowException;
+
     internal void PointerExited()
     {
         _pointerInside = false;
         _viewport.InvalidateVisual();
     }
 
-    private Vector2 Snap(Vector2 point) => Session is { } session ? new(session.Snap(point.X), session.Snap(point.Y)) : point;
+    private Vector2 Snap(Vector2 point)
+    {
+        if (!float.IsFinite(point.X) || !float.IsFinite(point.Y))
+            throw new ArgumentException("The pointer position exceeds the supported map coordinates.");
+        if (Session is not { } session) return point;
+        if (!float.IsFinite(session.GridSize) || session.GridSize <= 0)
+            throw new ArgumentException("Grid size must be positive and finite.");
+        return new(session.Snap(point.X), session.Snap(point.Y));
+    }
 }

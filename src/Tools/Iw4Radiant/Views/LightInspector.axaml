@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Iw4Radiant.Views"
+             x:Class="Iw4Radiant.Views.LightInspector">
+    <StackPanel Spacing="7">
+        <TextBlock Text="LIGHT" FontWeight="SemiBold" Foreground="#D1A862" />
+        <TextBlock x:Name="LightError" Foreground="#E5B477" TextWrapping="Wrap" />
+        <StackPanel x:Name="LightFields" Spacing="7">
+            <TextBlock Classes="caption" Text="Color · RGB sliders and swatches" />
+            <views:LightColorPicker x:Name="ColorPicker" />
+            <Grid ColumnDefinitions="*,110" RowDefinitions="Auto,Auto" RowSpacing="6">
+                <TextBlock Text="Radius" VerticalAlignment="Center" />
+                <TextBox x:Name="RadiusBox" Grid.Column="1" />
+                <TextBlock Grid.Row="1" Text="Intensity" VerticalAlignment="Center" />
+                <TextBox x:Name="IntensityBox" Grid.Row="1" Grid.Column="1" />
+            </Grid>
+            <TextBlock Classes="caption" Text="Light definition" />
+            <TextBox x:Name="DefinitionBox" />
+            <TextBlock Classes="caption" Text="Aim target · targetname" />
+            <TextBox x:Name="TargetBox" PlaceholderText="Empty for an ordinary point light" />
+            <Button x:Name="CreateTargetButton" Content="Create aim target" HorizontalAlignment="Stretch" />
+            <TextBlock Classes="caption" Text="Move the named target entity to aim the spotlight." TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,110" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                <TextBlock Text="Outer FOV (degrees)" VerticalAlignment="Center" />
+                <TextBox x:Name="OuterFovBox" Grid.Column="1" PlaceholderText="From target" />
+                <TextBlock Grid.Row="1" Text="Inner FOV (degrees)" VerticalAlignment="Center" />
+                <TextBox x:Name="InnerFovBox" Grid.Row="1" Grid.Column="1" />
+                <TextBlock Grid.Row="2" Text="Cone exponent" VerticalAlignment="Center" />
+                <TextBox x:Name="ExponentBox" Grid.Row="2" Grid.Column="1" />
+            </Grid>
+            <CheckBox x:Name="PrimaryOmniBox" Content="Primary omni" />
+            <CheckBox x:Name="PrimarySpotBox" Content="Primary spot" />
+            <Button x:Name="ApplyLightButton" Content="Apply light properties" HorizontalAlignment="Stretch" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

@@ -19,7 +19,7 @@ public sealed class OrthoViewport : Control
         _gestures = new OrthographicGestures(this, _projection);
         Focusable = true;
         ClipToBounds = true;
-        PointerCaptureLost += (_, _) => _gestures.EndGesture(cancel: true);
+        PointerCaptureLost += (_, _) => { if (_gestures.IsActive) _gestures.CancelGesture(); };
     }
 
     internal EditorSession? Session
@@ -28,7 +28,7 @@ public sealed class OrthoViewport : Control
         set
         {
             if (ReferenceEquals(Session, value)) return;
-            _gestures.EndGesture(cancel: true);
+            _gestures.CancelGesture();
             if (Session is { } previous) previous.Changed -= SessionChanged;
             _gestures.Session = value;
             if (Session is { } current) current.Changed += SessionChanged;
@@ -42,7 +42,7 @@ public sealed class OrthoViewport : Control
         set
         {
             if (Plane == value) return;
-            _gestures.EndGesture(cancel: true);
+            _gestures.CancelGesture();
             _projection.SetPlane(value);
             InvalidateVisual();
         }
@@ -54,12 +54,20 @@ public sealed class OrthoViewport : Control
         remove => _gestures.CursorStatusChanged -= value;
     }
 
+    internal event Action? ClipStarted
+    {
+        add => _gestures.ClipStarted += value;
+        remove => _gestures.ClipStarted -= value;
+    }
+
     internal void CompleteGesture() => _gestures.EndGesture(cancel: false);
+    internal void CancelGesture() => _gestures.CancelGesture();
+    internal bool CommitClip() => _gestures.CommitClip();
 
     public void FrameAll()
     {
         if (Session is not { } session) return;
-        _gestures.EndGesture(cancel: true);
+        _gestures.CancelGesture();
         var bounds = session.Document.Brushes.Select(brush => brush.GetBounds())
             .Concat(session.Document.Terrains.Where(terrain => terrain.Vertices.Length > 0)
                 .Select(terrain => terrain.GetBounds()))
@@ -78,7 +86,7 @@ public sealed class OrthoViewport : Control
 
     public void FrameSelection()
     {
-        _gestures.EndGesture(cancel: true);
+        _gestures.CancelGesture();
         if (Session?.SelectionBounds is { } bounds) Frame(bounds.Min, bounds.Max);
         else FrameAll();
     }
@@ -142,9 +150,13 @@ public sealed class OrthoViewport : Control
         base.OnKeyDown(e);
         if (e.Key == Key.Escape)
         {
-            if (_gestures.IsActive) _gestures.EndGesture(cancel: true);
+            if (_gestures.IsActive || _gestures.HasClipPreview) _gestures.CancelGesture();
             else Session?.Select(null);
             e.Handled = true;
+        }
+        else if (e.Key == Key.Enter && _gestures.HasClipPreview)
+        {
+            e.Handled = CommitClip();
         }
         else if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.None)
         {
@@ -155,7 +167,7 @@ public sealed class OrthoViewport : Control
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        _gestures.EndGesture(cancel: true);
+        _gestures.CancelGesture();
         base.OnDetachedFromVisualTree(e);
     }
 }

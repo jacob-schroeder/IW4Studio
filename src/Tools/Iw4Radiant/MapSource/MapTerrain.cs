@@ -43,8 +43,38 @@ internal sealed class MapTerrain
 
     public void Translate(Vector3 offset)
     {
-        for (int i = 0; i < Vertices.Length; i++)
-            Vertices[i] += offset;
+        Transform(Matrix4x4.CreateTranslation(offset));
+    }
+
+    public bool Transform(Matrix4x4 transform, IReadOnlyCollection<int>? vertexIndices = null)
+    {
+        if (!float.IsFinite(transform.M11) || !float.IsFinite(transform.M12) || !float.IsFinite(transform.M13) ||
+            !float.IsFinite(transform.M21) || !float.IsFinite(transform.M22) || !float.IsFinite(transform.M23) ||
+            !float.IsFinite(transform.M31) || !float.IsFinite(transform.M32) || !float.IsFinite(transform.M33) ||
+            !float.IsFinite(transform.M41) || !float.IsFinite(transform.M42) || !float.IsFinite(transform.M43) ||
+            transform.M14 != 0 || transform.M24 != 0 || transform.M34 != 0 || transform.M44 != 1)
+            throw new ArgumentException("Terrain transforms must be finite affine matrices.", nameof(transform));
+
+        int[] indices = vertexIndices is null
+            ? Enumerable.Range(0, Vertices.Length).ToArray()
+            : vertexIndices.Distinct().ToArray();
+        var positions = new Vector3[indices.Length];
+        bool changed = false;
+        for (int i = 0; i < indices.Length; i++)
+        {
+            int index = indices[i];
+            if ((uint)index >= (uint)Vertices.Length)
+                throw new ArgumentOutOfRangeException(nameof(vertexIndices), "A selected terrain vertex no longer exists.");
+            Vector3 position = Vector3.Transform(Vertices[index], transform);
+            if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+                throw new InvalidOperationException("The terrain transform would produce a nonfinite vertex.");
+            positions[i] = position;
+            changed |= position != Vertices[index];
+        }
+        if (!changed) return false;
+        for (int i = 0; i < indices.Length; i++)
+            Vertices[indices[i]] = positions[i];
+        return true;
     }
 
     public MapTerrain Clone()

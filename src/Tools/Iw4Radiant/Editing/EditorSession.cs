@@ -1,31 +1,38 @@
 using System.Globalization;
 using System.Numerics;
-
 using Iw4Radiant.MapSource;
 
 namespace Iw4Radiant.Editing;
 
 internal sealed class EditorSession
 {
-    private readonly List<(MapDocument Document, long Revision)> _undo = [];
-    private readonly List<(MapDocument Document, long Revision)> _redo = [];
+    private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _undo = [];
+    private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _redo = [];
     private MapDocument? _beforeEdit;
+    private SelectionPath[] _beforeSelection = [];
     private long _revision, _savedRevision, _nextRevision = 1;
 
     public MapDocument Document { get; private set; } = MapDocument.Create();
-    public object? Selection { get; private set; }
+    public EditorSelection Selection { get; } = new();
     public string? FilePath { get; private set; }
     public string Material { get; set; } = "";
     public EditorTool Tool { get; set; }
+    public TransformMode TransformMode { get; set; }
+    public TerrainSculptMode SculptMode { get; set; }
+    public ClipMode ClipMode { get; set; }
+    public bool TextureLock { get; set; } = true;
     public float GridSize { get; set; } = 16;
+    public float AngleSnap { get; set; } = 15;
+    public float ScaleSnap { get; set; } = 0.1f;
     public float BrushBottom { get; set; }
     public float BrushHeight { get; set; } = 64;
     public int TerrainVertices { get; set; } = 5;
     public float SculptRadius { get; set; } = 128;
     public float SculptStrength { get; set; } = 8;
+    public float FlattenHeight { get; set; }
     public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
-    public bool CanTransformSelection => Selection is MapBrush or MapTerrain ||
-        Selection is MapEntity entity && entity.ClassName != "worldspawn" && entity.PreservedPrimitives.Count == 0;
+    public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(SelectionGeometry.CanTransform);
+    public (Vector3 Min, Vector3 Max)? SelectionBounds => SelectionGeometry.Bounds(Selection.Items);
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public event EventHandler? Changed;
@@ -33,9 +40,15 @@ internal sealed class EditorSession
     public void Refresh() => Changed?.Invoke(this, EventArgs.Empty);
     public float Snap(float value) => MathF.Round(value / GridSize, MidpointRounding.AwayFromZero) * GridSize;
 
-    public void Select(object? value)
+    public void Select(object? value, bool additive = false, bool toggle = false)
     {
-        Selection = value;
+        Selection.Set(value, additive, toggle);
+        Refresh();
+    }
+
+    public void SelectRange(IEnumerable<object> values)
+    {
+        Selection.SetRange(values);
         Refresh();
     }
 
@@ -43,10 +56,11 @@ internal sealed class EditorSession
     {
         Document = document;
         FilePath = path;
-        Selection = null;
+        Selection.Clear();
         _undo.Clear();
         _redo.Clear();
         _beforeEdit = null;
+        _beforeSelection = [];
         _revision = _savedRevision = 0;
         Refresh();
     }
@@ -60,25 +74,27 @@ internal sealed class EditorSession
 
     public void BeginEdit()
     {
-        _beforeEdit ??= Document.Clone();
+        if (_beforeEdit is not null) return;
+        _beforeSelection = Selection.Capture(Document);
+        _beforeEdit = Document.Clone();
     }
 
     public void CompleteEdit(bool changed)
     {
         if (_beforeEdit is { } before && changed)
         {
-            _undo.Add((before, _revision));
-            if (_undo.Count > 32)
-                _undo.RemoveAt(0);
+            _undo.Add((before, _revision, _beforeSelection));
+            if (_undo.Count > 32) _undo.RemoveAt(0);
             _redo.Clear();
             _revision = _nextRevision++;
         }
         else if (_beforeEdit is { } unchanged)
         {
-            Selection = MatchingSelection(unchanged);
             Document = unchanged;
+            Selection.Restore(Document, _beforeSelection);
         }
         _beforeEdit = null;
+        _beforeSelection = [];
         Refresh();
     }
 
@@ -86,10 +102,11 @@ internal sealed class EditorSession
     {
         if (_beforeEdit is { } before)
         {
-            Selection = MatchingSelection(before);
             Document = before;
+            Selection.Restore(Document, _beforeSelection);
         }
         _beforeEdit = null;
+        _beforeSelection = [];
         Refresh();
     }
 
@@ -111,103 +128,28 @@ internal sealed class EditorSession
     public void Undo()
     {
         if (_beforeEdit is not null) CancelEdit();
-        if (_undo.Count == 0)
-            return;
-        _redo.Add((Document, _revision));
-        (Document, _revision) = _undo[^1];
+        if (_undo.Count == 0) return;
+        _redo.Add((Document, _revision, Selection.Capture(Document)));
+        var previous = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
-        Selection = null;
+        Document = previous.Document;
+        _revision = previous.Revision;
+        Selection.Restore(Document, previous.Selection);
         Refresh();
     }
 
     public void Redo()
     {
         if (_beforeEdit is not null) CancelEdit();
-        if (_redo.Count == 0)
-            return;
-        _undo.Add((Document, _revision));
-        (Document, _revision) = _redo[^1];
+        if (_redo.Count == 0) return;
+        _undo.Add((Document, _revision, Selection.Capture(Document)));
+        var next = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
-        Selection = null;
+        Document = next.Document;
+        _revision = next.Revision;
+        Selection.Restore(Document, next.Selection);
         Refresh();
     }
-
-    public void DeleteSelection()
-    {
-        if (Selection is null || ReferenceEquals(Selection, Document.World))
-            return;
-        Edit(() =>
-        {
-            foreach (var entity in Document.Entities)
-            {
-                if (Selection is MapBrush brush) entity.Brushes.Remove(brush);
-                if (Selection is MapTerrain terrain) entity.Terrains.Remove(terrain);
-            }
-            if (Selection is MapEntity selectedEntity) Document.Entities.Remove(selectedEntity);
-            Selection = null;
-        });
-    }
-
-    public void DuplicateSelection()
-    {
-        if (!CanTransformSelection)
-            return;
-        Edit(() =>
-        {
-            foreach (var entity in Document.Entities.ToArray())
-            {
-                if (Selection is MapBrush brush && entity.Brushes.Contains(brush))
-                {
-                    var clone = brush.Clone();
-                    clone.Translate(new Vector3(GridSize, GridSize, 0));
-                    entity.Brushes.Add(clone);
-                    Selection = clone;
-                    break;
-                }
-                if (Selection is MapTerrain terrain && entity.Terrains.Contains(terrain))
-                {
-                    var clone = terrain.Clone();
-                    clone.Translate(new Vector3(GridSize, GridSize, 0));
-                    entity.Terrains.Add(clone);
-                    Selection = clone;
-                    break;
-                }
-            }
-            if (Selection is MapEntity selectedEntity)
-            {
-                var clone = selectedEntity.Clone();
-                Document.Entities.Add(clone);
-                Selection = clone;
-                TranslateSelection(new Vector3(GridSize, GridSize, 0));
-            }
-        });
-    }
-
-    public void ApplyMaterial(string material)
-    {
-        if (string.IsNullOrWhiteSpace(material) || material.Any(char.IsWhiteSpace) ||
-            material.Any(char.IsControl) || material.Contains("//", StringComparison.Ordinal) ||
-            material.Contains("/*", StringComparison.Ordinal) || material.IndexOfAny(['"', '{', '}', '(', ')', ';']) >= 0)
-            throw new ArgumentException("A material must be a single Radiant asset name.");
-        Material = material;
-        if (Selection is MapBrush or MapTerrain)
-            Edit(() =>
-            {
-                if (Selection is MapBrush brush)
-                    foreach (var face in brush.Faces) face.Material = material;
-                if (Selection is MapTerrain terrain) terrain.Material = material;
-            });
-        else
-            Refresh();
-    }
-
-    public (Vector3 Min, Vector3 Max)? SelectionBounds => Selection switch
-    {
-        MapBrush brush => brush.GetBounds(),
-        MapTerrain terrain => terrain.GetBounds(),
-        MapEntity entity => EntityBounds(entity),
-        _ => null
-    };
 
     public static (Vector3 Min, Vector3 Max) EntityBounds(MapEntity entity)
     {
@@ -217,41 +159,6 @@ internal sealed class EditorSession
             return (EntityOrigin(entity) - new Vector3(8), EntityOrigin(entity) + new Vector3(8));
         return (bounds.Select(value => value.Min).Aggregate(Vector3.Min),
             bounds.Select(value => value.Max).Aggregate(Vector3.Max));
-    }
-
-    public void TranslateSelection(Vector3 offset)
-    {
-        if (!CanTransformSelection) return;
-        if (Selection is MapBrush brush) brush.Translate(offset);
-        if (Selection is MapTerrain terrain) terrain.Translate(offset);
-        if (Selection is MapEntity entity && !ReferenceEquals(entity, Document.World))
-        {
-            Vector3 origin = EntityOrigin(entity) + offset;
-            entity.Properties["origin"] = FormattableString.Invariant($"{origin.X:G9} {origin.Y:G9} {origin.Z:G9}");
-            foreach (var ownedBrush in entity.Brushes) ownedBrush.Translate(offset);
-            foreach (var ownedTerrain in entity.Terrains) ownedTerrain.Translate(offset);
-        }
-    }
-
-    private object? MatchingSelection(MapDocument target)
-    {
-        for (int entityIndex = 0; entityIndex < Math.Min(Document.Entities.Count, target.Entities.Count); entityIndex++)
-        {
-            var entity = Document.Entities[entityIndex];
-            var targetEntity = target.Entities[entityIndex];
-            if (ReferenceEquals(entity, Selection)) return targetEntity;
-            if (Selection is MapBrush brush)
-            {
-                int index = entity.Brushes.IndexOf(brush);
-                if (index >= 0 && index < targetEntity.Brushes.Count) return targetEntity.Brushes[index];
-            }
-            if (Selection is MapTerrain terrain)
-            {
-                int index = entity.Terrains.IndexOf(terrain);
-                if (index >= 0 && index < targetEntity.Terrains.Count) return targetEntity.Terrains[index];
-            }
-        }
-        return null;
     }
 
     public static Vector3 EntityOrigin(MapEntity entity)

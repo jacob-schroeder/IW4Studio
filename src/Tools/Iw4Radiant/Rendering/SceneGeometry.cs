@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.Numerics;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Editing;
 
 namespace Iw4Radiant.Rendering;
 
@@ -17,8 +17,15 @@ internal sealed class SceneGeometry
     internal int AxesStart { get; }
     internal int AxesCount { get; }
 
-    internal SceneGeometry(MapDocument document, object? selection)
+    internal SceneGeometry(MapDocument document, EditorSelection selection, TransformMode transformMode, EditorTool tool)
     {
+        var selectedObjects = new HashSet<object>(selection.Items, ReferenceEqualityComparer.Instance);
+        foreach (MapEntity entity in selection.Items.OfType<MapEntity>())
+        {
+            foreach (MapBrush brush in entity.Brushes) selectedObjects.Add(brush);
+            foreach (MapTerrain terrain in entity.Terrains) selectedObjects.Add(terrain);
+        }
+        var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines)>(StringComparer.Ordinal);
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
@@ -28,7 +35,7 @@ internal sealed class SceneGeometry
         {
             var geometry = GetMaterialGeometry(polygon.Face.Material);
             AddPolygon(polygon, geometry.Triangles, Vector3.One,
-                ReferenceEquals(selection, brush) ? highlight : null, geometry.Lines);
+                selectedObjects.Contains(brush) || selectedFaces.Contains(polygon.Face) ? highlight : null, geometry.Lines);
         }
         foreach (var terrain in document.Terrains)
         {
@@ -50,7 +57,7 @@ internal sealed class SceneGeometry
                 void AddEdge(Vector3 a, Vector3 b)
                 {
                     AddLine(geometry.Lines, a, b, wireColor);
-                    if (ReferenceEquals(selection, terrain))
+                    if (selectedObjects.Contains(terrain))
                         AddLine(outlines, a, b, highlight);
                 }
 
@@ -76,7 +83,7 @@ internal sealed class SceneGeometry
         {
             Vector3 color = entity.ClassName == "light" ? new(1, 0.85f, 0.35f) : new(0.35f, 0.8f, 0.95f);
             foreach (var polygon in PointEntityGeometry.CreateBrush(entity).GetPolygons())
-                AddPolygon(polygon, all, color, ReferenceEquals(selection, entity) ? highlight : color * 0.6f);
+                AddPolygon(polygon, all, color, selectedObjects.Contains(entity) ? highlight : color * 0.6f);
         }
         GlyphCount = all.Count - GlyphStart;
         GridStart = all.Count;
@@ -93,12 +100,24 @@ internal sealed class SceneGeometry
         all.AddRange(outlines);
         OutlineCount = all.Count - OutlineStart;
         AxesStart = all.Count;
-        if (selection is MapBrush selectedBrush)
-            AddAxes(selectedBrush.GetBounds());
-        else if (selection is MapTerrain selectedTerrain && selectedTerrain.Vertices.Length != 0)
-            AddAxes(selectedTerrain.GetBounds());
-        else if (selection is MapEntity selectedEntity && PointEntityGeometry.IsPointEntity(selectedEntity))
-            AddAxes(PointEntityGeometry.CreateBrush(selectedEntity).GetBounds());
+        foreach (MapEntity light in selection.Items.OfType<MapEntity>().Where(entity => entity.ClassName == "light"))
+            foreach (var line in LightInfluenceGeometry.GetLines(document, light))
+                AddLine(all, line.A, line.B, new Vector3(1, 0.85f, 0.35f));
+        if (tool == EditorTool.Vertex)
+            foreach (object handle in SelectionGeometry.GetVertexHandles(selection))
+            {
+                if (SelectionGeometry.Bounds(handle) is not { } pointBounds) continue;
+                Vector3 point = pointBounds.Min;
+                Vector3 color = selection.Contains(handle) ? highlight : new Vector3(0.65f, 0.9f, 1);
+                const float radius = 3;
+                AddLine(all, point - Vector3.UnitX * radius, point + Vector3.UnitX * radius, color);
+                AddLine(all, point - Vector3.UnitY * radius, point + Vector3.UnitY * radius, color);
+                AddLine(all, point - Vector3.UnitZ * radius, point + Vector3.UnitZ * radius, color);
+            }
+        if (tool is EditorTool.Select or EditorTool.Vertex && selection.Count > 0 &&
+            selection.Items.All(SelectionGeometry.CanTransform) && SelectionGeometry.Bounds(selection.Items) is { } selectionBounds)
+            foreach (var line in TransformGizmoGeometry.GetLines(selectionBounds, transformMode))
+                AddLine(all, line.A, line.B, line.Color);
         AxesCount = all.Count - AxesStart;
         Vertices = all.ToArray();
 
@@ -106,7 +125,7 @@ internal sealed class SceneGeometry
             List<SceneVertex>? wireframe = null)
         {
             Vector3 normal = polygon.Face.Normal;
-            var projection = BrushProjection(polygon.Face);
+            var projection = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
             for (int i = 1; i < polygon.Vertices.Length - 1; i++)
             {
                 Add(polygon.Vertices[0]);
@@ -133,21 +152,6 @@ internal sealed class SceneGeometry
             return geometry;
         }
 
-        void AddAxes((Vector3 Min, Vector3 Max) bounds)
-        {
-            Vector3 center = (bounds.Min + bounds.Max) / 2;
-            float length = Math.Clamp((bounds.Max - bounds.Min).Length() * 0.35f, 48, 256);
-            Axis(Vector3.UnitX, Vector3.UnitY, new Vector3(1, 0.25f, 0.25f));
-            Axis(Vector3.UnitY, Vector3.UnitZ, new Vector3(0.3f, 0.95f, 0.35f));
-            Axis(Vector3.UnitZ, Vector3.UnitX, new Vector3(0.3f, 0.6f, 1));
-            void Axis(Vector3 direction, Vector3 side, Vector3 color)
-            {
-                Vector3 tip = center + direction * length;
-                AddLine(all, center, tip, color);
-                AddLine(all, tip, tip - direction * length * 0.2f + side * length * 0.08f, color);
-                AddLine(all, tip, tip - direction * length * 0.2f - side * length * 0.08f, color);
-            }
-        }
     }
 
     private static void AddLine(List<SceneVertex> vertices, Vector3 a, Vector3 b, Vector3 color)
@@ -156,20 +160,4 @@ internal sealed class SceneGeometry
         vertices.Add(new SceneVertex(b, Vector3.UnitZ, Vector2.Zero, color));
     }
 
-    private static (Vector3 U, Vector3 V, Vector2 Offset) BrushProjection(MapFace face)
-    {
-        Vector3 normal = Vector3.Abs(face.Normal);
-        Vector3 u = normal.Z >= normal.X && normal.Z >= normal.Y ? Vector3.UnitX :
-            normal.X >= normal.Y ? Vector3.UnitY : Vector3.UnitX;
-        Vector3 v = normal.Z >= normal.X && normal.Z >= normal.Y ? -Vector3.UnitY : -Vector3.UnitZ;
-        string[] values = face.Projection.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (values.Length < 5)
-            return (u / 64, v / 64, Vector2.Zero);
-        float Read(int index, float fallback) => float.TryParse(values[index], NumberStyles.Float,
-            CultureInfo.InvariantCulture, out float value) && float.IsFinite(value) ? value : fallback;
-        float width = Read(0, 64), height = Read(1, 64), angle = Read(4, 0) * MathF.PI / 180;
-        return ((u * MathF.Cos(angle) - v * MathF.Sin(angle)) / (MathF.Abs(width) < 0.001f ? 64 : width),
-            (u * MathF.Sin(angle) + v * MathF.Cos(angle)) / (MathF.Abs(height) < 0.001f ? 64 : height),
-            new Vector2(Read(2, 0), Read(3, 0)));
-    }
 }

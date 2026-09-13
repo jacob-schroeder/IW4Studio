@@ -5,5 +5,8 @@ internal enum EditorTool
     Select,
     Brush,
     Terrain,
-    Sculpt
+    Sculpt,
+    Face,
+    Vertex,
+    Clip
 }

@@ -8,7 +8,7 @@ namespace Iw4Radiant.Views;
 
 public partial class MaterialBrowser : UserControl
 {
-    private readonly Dictionary<string, string> _materials = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, MaterialThumbnail> _materials = new(StringComparer.Ordinal);
     private Bitmap? _preview;
 
     public MaterialBrowser() => InitializeComponent();
@@ -23,9 +23,17 @@ public partial class MaterialBrowser : UserControl
     }
 
     internal event Action? CatalogChanged;
-    internal string? ResolveTexturePath(string name) => _materials.GetValueOrDefault(name);
+    internal string? ResolveTexturePath(string name) => _materials.GetValueOrDefault(name)?.ImagePath;
 
-    internal void ReleasePreview()
+    internal void ReleaseImages()
+    {
+        MaterialList.ItemsSource = null;
+        ReleasePreview();
+        foreach (var material in _materials.Values) material.Preview.Dispose();
+        _materials.Clear();
+    }
+
+    private void ReleasePreview()
     {
         MaterialPreview.Source = null;
         _preview?.Dispose();
@@ -43,24 +51,50 @@ public partial class MaterialBrowser : UserControl
         try
         {
             dialogs.SetBusy(true);
-            var materials = await Task.Run(() => MaterialCatalog.Read(root));
-            _materials.Clear();
-            foreach (var material in materials) _materials.Add(material.Key, material.Value);
+            var (materials, skipped) = await Task.Run(() => LoadThumbnails(root));
+            ReleaseImages();
+            foreach (var material in materials) _materials.Add(material.Name, material);
             session.Material = "";
             MaterialName.Text = "";
             MaterialFilter.Text = "";
             FilterMaterials();
             CatalogChanged?.Invoke();
-            setStatus($"Loaded materials from {root}.");
+            setStatus($"Loaded {materials.Count} material previews from {root}." +
+                (skipped > 0 ? $" {skipped} images could not be read." : ""));
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { dialogs.SetBusy(false); await dialogs.MessageAsync("Cannot read materials", exception.Message); }
         finally { dialogs.SetBusy(false); }
     }
+
+    private static (List<MaterialThumbnail> Materials, int Skipped) LoadThumbnails(string root)
+    {
+        var thumbnails = new List<MaterialThumbnail>();
+        int skipped = 0;
+        try
+        {
+            foreach (var material in MaterialCatalog.Read(root))
+            {
+                try
+                {
+                    var preview = MaterialImages.Load(material.Value, 96);
+                    thumbnails.Add(new MaterialThumbnail(material.Key, material.Value, preview));
+                }
+                catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { skipped++; }
+            }
+            return (thumbnails, skipped);
+        }
+        catch
+        {
+            foreach (var thumbnail in thumbnails) thumbnail.Preview.Dispose();
+            throw;
+        }
+    }
+
     private void FilterMaterials()
     {
         string filter = MaterialFilter.Text ?? "";
-        string[] matches = _materials.Keys.Where(name => name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-            .Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        MaterialThumbnail[] matches = _materials.Values.Where(material => material.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         MaterialList.ItemsSource = matches.Take(2000).ToArray();
         MaterialInfo.Text = $"{_materials.Count} available materials" +
             (matches.Length > 2000 ? " · showing first 2,000; filter to narrow" : "");
@@ -69,15 +103,15 @@ public partial class MaterialBrowser : UserControl
     {
         ReleasePreview();
         PreviewInfo.Text = "Choose an available material to preview it.";
-        if (MaterialList.SelectedItem is not string name || !_materials.TryGetValue(name, out string? path)) return;
-        MaterialName.Text = name;
+        if (MaterialList.SelectedItem is not MaterialThumbnail material) return;
+        MaterialName.Text = material.Name;
         session.Material = "";
         try
         {
-            _preview = MaterialImages.Load(path, 256);
+            _preview = MaterialImages.Load(material.ImagePath, 256);
             MaterialPreview.Source = _preview;
-            PreviewInfo.Text = Path.GetFileName(path);
-            session.Material = name;
+            PreviewInfo.Text = Path.GetFileName(material.ImagePath);
+            session.Material = material.Name;
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { PreviewInfo.Text = exception.Message; }
     }
@@ -87,10 +121,10 @@ public partial class MaterialBrowser : UserControl
         try
         {
             string name = (MaterialName.Text ?? "").Trim();
-            if (!_materials.TryGetValue(name, out string? path) || !File.Exists(path))
+            if (!_materials.TryGetValue(name, out var material) || !File.Exists(material.ImagePath))
                 throw new ArgumentException("Choose a material with an available image from the browser.");
-            using var image = MaterialImages.Load(path, 256);
-            session.ApplyMaterial(name);
+            using var image = MaterialImages.Load(material.ImagePath, 256);
+            SelectionEditing.ApplyMaterial(session, name);
         }
         catch (ArgumentException exception) { await dialogs.MessageAsync("Material name", exception.Message); }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { await dialogs.MessageAsync("Cannot read material image", exception.Message); }

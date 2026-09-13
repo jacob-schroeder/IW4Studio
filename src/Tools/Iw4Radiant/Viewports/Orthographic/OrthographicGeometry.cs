@@ -63,7 +63,7 @@ internal static class OrthographicGeometry
     internal static double Distance(Point a, Point b) =>
         Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 
-    private static bool Contains(Point[] polygon, Point point)
+    internal static bool Contains(Point[] polygon, Point point)
     {
         bool inside = false;
         for (int i = 0, j = polygon.Length - 1; i < polygon.Length; j = i++)
