@@ -1,36 +1,54 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Iw4Radiant.Views.TerrainInspector">
-    <StackPanel Spacing="7">
-        <TextBlock Text="TERRAIN" FontWeight="SemiBold" Foreground="#D1A862" />
-        <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-            <TextBlock Text="Vertices per side" VerticalAlignment="Center" />
-            <NumericUpDown x:Name="TerrainCount" Grid.Column="1" Minimum="2" Maximum="16" FormatString="0" />
-            <TextBlock Grid.Row="1" Text="Sculpt radius" VerticalAlignment="Center" />
-            <NumericUpDown x:Name="RadiusValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="4096" Increment="16" FormatString="0" />
-            <TextBlock x:Name="StrengthCaption" Grid.Row="2" VerticalAlignment="Center" />
-            <NumericUpDown x:Name="StrengthValue" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="256" FormatString="0" />
+    <StackPanel Spacing="10">
+        <StackPanel x:Name="CreationFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Create terrain" Classes="panelTitle" />
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <TextBlock Text="Vertices per side" Classes="fieldLabel" />
+                <NumericUpDown x:Name="TerrainCount" Grid.Column="1" Minimum="2" Maximum="16" FormatString="0"
+                               ToolTip.Tip="Number of vertices per side for new terrain patches. Draw in Top view." />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="SculptFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Sculpt" Classes="panelTitle" />
+            <ComboBox x:Name="SculptModeBox" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Sculpt in Top view. Hold Shift to lower in Raise / lower mode.">
+                <ComboBoxItem Content="Raise / lower" />
+                <ComboBoxItem Content="Smooth" />
+                <ComboBoxItem Content="Flatten" />
+            </ComboBox>
+            <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Radius" Classes="fieldLabel" />
+                <NumericUpDown x:Name="RadiusValue" Grid.Column="1" Minimum="1" Maximum="4096" Increment="16" FormatString="0" />
+                <TextBlock x:Name="StrengthCaption" Grid.Row="1" Classes="fieldLabel" />
+                <NumericUpDown x:Name="StrengthValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="256" FormatString="0" />
+            </Grid>
+        </StackPanel>
+        <Grid x:Name="HeightFields" ColumnDefinitions="*,100" ColumnSpacing="5" IsVisible="False">
+            <TextBlock Text="Flatten height (Z)" Classes="fieldLabel" />
+            <TextBox x:Name="FlattenHeightBox" Grid.Column="1" ToolTip.Tip="Height for Flatten sculpting or Flatten vertices." />
         </Grid>
-        <ComboBox x:Name="SculptModeBox" HorizontalAlignment="Stretch">
-            <ComboBoxItem Content="Raise / lower" />
-            <ComboBoxItem Content="Smooth" />
-            <ComboBoxItem Content="Flatten" />
-        </ComboBox>
-        <Grid ColumnDefinitions="*,100">
-            <TextBlock Text="Flatten height (Z)" VerticalAlignment="Center" />
-            <TextBox x:Name="FlattenHeightBox" Grid.Column="1" />
-        </Grid>
-        <TextBlock Classes="caption" Text="Draw and sculpt in Top view. Shift lowers in Raise / lower mode." TextWrapping="Wrap" />
-        <TextBlock x:Name="VertexSelectionText" Classes="caption" TextWrapping="Wrap" />
-        <Grid ColumnDefinitions="*,*">
-            <Button x:Name="SmoothVerticesButton" Content="Smooth vertices" HorizontalAlignment="Stretch" Margin="0,0,3,0" />
-            <Button x:Name="FlattenVerticesButton" Grid.Column="1" Content="Flatten vertices" HorizontalAlignment="Stretch" />
-        </Grid>
-        <Grid ColumnDefinitions="*,100">
-            <TextBlock Text="Stitch tolerance" VerticalAlignment="Center" />
-            <TextBox x:Name="StitchToleranceBox" Grid.Column="1" />
-        </Grid>
-        <Button x:Name="StitchButton" Content="Stitch two terrain patches" HorizontalAlignment="Stretch" />
-        <TextBlock Classes="caption" Text="Select two whole patches with adjoining edges. Equal or nested edge subdivisions are supported." TextWrapping="Wrap" />
+        <StackPanel x:Name="VertexFields" Spacing="8" IsVisible="False">
+            <TextBlock x:Name="VertexSelectionText" Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                <Button x:Name="SmoothVerticesButton" Content="Smooth" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Smooth the selected terrain vertices." />
+                <Button x:Name="FlattenVerticesButton" Grid.Column="1" Content="Flatten" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Flatten the selected terrain vertices to the specified height." />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="StitchFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Stitch patches" Classes="panelTitle" />
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <TextBlock Text="Tolerance" Classes="fieldLabel" />
+                <TextBox x:Name="StitchToleranceBox" Grid.Column="1" />
+            </Grid>
+            <Button x:Name="StitchButton" Content="Stitch two patches" Classes="panelAction" HorizontalAlignment="Stretch"
+                    ToolTip.Tip="Select two whole terrain patches with adjoining edges. Equal or nested edge subdivisions are supported." />
+            <TextBlock x:Name="StitchSelectionText" Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock x:Name="TerrainContextText" Classes="caption" TextWrapping="Wrap" IsVisible="False"
+                   Text="Choose Terrain or Sculpt, or select a terrain patch or vertex." />
     </StackPanel>
 </UserControl>

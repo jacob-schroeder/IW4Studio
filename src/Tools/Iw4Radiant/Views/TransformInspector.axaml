@@ -1,20 +1,28 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Iw4Radiant.Views.TransformInspector">
-    <StackPanel Spacing="7">
-        <TextBlock Text="TRANSFORM" FontWeight="SemiBold" Foreground="#D1A862" />
+    <StackPanel Spacing="8">
+        <TextBlock Text="Transform" Classes="panelTitle" />
         <TextBlock x:Name="TransformCaption" Classes="caption" TextWrapping="Wrap" />
-        <Grid ColumnDefinitions="*,*,*">
-            <TextBox x:Name="XValue" PlaceholderText="X" Margin="0,0,3,0" />
-            <TextBox x:Name="YValue" Grid.Column="1" PlaceholderText="Y" Margin="0,0,3,0" />
-            <TextBox x:Name="ZValue" Grid.Column="2" PlaceholderText="Z" />
+        <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="4" RowSpacing="4">
+            <TextBlock Text="X" Classes="caption" />
+            <TextBlock Grid.Column="1" Text="Y" Classes="caption" />
+            <TextBlock Grid.Column="2" Text="Z" Classes="caption" />
+            <TextBox x:Name="XValue" Grid.Row="1" ToolTip.Tip="Transform along or around the X axis." />
+            <TextBox x:Name="YValue" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Transform along or around the Y axis." />
+            <TextBox x:Name="ZValue" Grid.Row="1" Grid.Column="2" ToolTip.Tip="Transform along or around the Z axis." />
         </Grid>
-        <Button x:Name="ApplyTransformButton" HorizontalAlignment="Stretch" />
-        <TextBlock x:Name="PivotText" Classes="caption" TextWrapping="Wrap" />
-        <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" RowSpacing="6">
-            <TextBlock Text="Angle snap (degrees)" VerticalAlignment="Center" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+            <Button x:Name="ApplyTransformButton" Classes="panelAction" HorizontalAlignment="Stretch" />
+            <Button x:Name="ResetTransformButton" Grid.Column="1" Content="Reset"
+                    ToolTip.Tip="Reset the transform to zero offset or rotation, or a scale of one. Does not edit the map." />
+        </Grid>
+        <TextBlock x:Name="PivotText" Classes="caption" TextWrapping="Wrap"
+                   ToolTip.Tip="Rotation and scale use the center of the selection bounds." />
+        <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+            <TextBlock Text="Angle snap (°)" Classes="fieldLabel" />
             <NumericUpDown x:Name="AngleSnapValue" Grid.Column="1" Minimum="0.001" Maximum="360" Increment="1" FormatString="0.###" />
-            <TextBlock Grid.Row="1" Text="Scale snap" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Text="Scale snap" Classes="fieldLabel" />
             <NumericUpDown x:Name="ScaleSnapValue" Grid.Row="1" Grid.Column="1" Minimum="0.001" Maximum="10" Increment="0.05" FormatString="0.###" />
         </Grid>
     </StackPanel>

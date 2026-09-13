@@ -1,40 +1,108 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Iw4Radiant.Views.SelectionInspector">
-    <ScrollViewer Background="#292B2F">
-        <StackPanel Margin="12" Spacing="9">
-            <TextBlock Text="INSPECTOR" FontWeight="SemiBold" Foreground="#D1A862" />
-            <TextBlock x:Name="SelectionText" Text="No selection" TextWrapping="Wrap" />
-            <TextBlock Classes="caption" Text="Bounds minimum · X / Y / Z" />
-            <Grid ColumnDefinitions="*,*,*">
-                <TextBox x:Name="MinX" Grid.Column="0" PlaceholderText="X" Margin="0,0,3,0" />
-                <TextBox x:Name="MinY" Grid.Column="1" PlaceholderText="Y" Margin="0,0,3,0" />
-                <TextBox x:Name="MinZ" Grid.Column="2" PlaceholderText="Z" />
-            </Grid>
-            <TextBlock Classes="caption" Text="Size · X / Y / Z" />
-            <Grid ColumnDefinitions="*,*,*">
-                <TextBox x:Name="SizeX" Grid.Column="0" PlaceholderText="X" Margin="0,0,3,0" />
-                <TextBox x:Name="SizeY" Grid.Column="1" PlaceholderText="Y" Margin="0,0,3,0" />
-                <TextBox x:Name="SizeZ" Grid.Column="2" PlaceholderText="Z" />
-            </Grid>
-            <Button x:Name="ApplyBoundsButton" Content="Apply brush bounds" HorizontalAlignment="Stretch" />
-            <Separator />
-            <views:TransformInspector x:Name="Transforms" />
-            <Separator />
-            <views:SurfaceInspector x:Name="Surfaces" />
-            <Separator />
-            <views:LightInspector x:Name="Lights" />
-            <views:TerrainInspector x:Name="Terrain" />
-            <Separator />
-            <DockPanel>
-                <Button x:Name="WorldButton" DockPanel.Dock="Right" Content="World" />
-                <TextBlock Text="ENTITY PROPERTIES" FontWeight="SemiBold" Foreground="#D1A862" VerticalAlignment="Center" />
-            </DockPanel>
-            <ComboBox x:Name="EntityList" HorizontalAlignment="Stretch" />
-            <TextBox x:Name="PropertiesBox" AcceptsReturn="True" MinHeight="120" TextWrapping="NoWrap"
-                     FontFamily="monospace" PlaceholderText="Select an entity. One key=value per line." />
-            <Button x:Name="ApplyPropertiesButton" Content="Apply entity properties" HorizontalAlignment="Stretch" />
-        </StackPanel>
-    </ScrollViewer>
+    <UserControl.Styles>
+        <Style Selector="TabItem">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="7,0" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Expander">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+    </UserControl.Styles>
+    <Grid RowDefinitions="Auto,*" Background="#292B2F">
+        <Border Padding="12,10" BorderBrush="#3A3D42" BorderThickness="0,0,0,1">
+            <StackPanel Spacing="5">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <materialIcons:MaterialIcon Kind="TuneVariant" Width="15" Height="15" />
+                    <TextBlock Text="Inspector" Classes="panelTitle" />
+                </StackPanel>
+                <TextBlock x:Name="SelectionText" Text="No selection" TextWrapping="Wrap" Classes="caption" />
+            </StackPanel>
+        </Border>
+        <TabControl x:Name="InspectorTabs" Grid.Row="1" Padding="0">
+            <TabItem x:Name="SelectionTab" Header="Selection">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12" Spacing="10">
+                        <TextBlock Text="Bounds" Classes="panelTitle"
+                                   ToolTip.Tip="Bounds describe the current selection. Select one whole brush to resize it." />
+                        <Grid ColumnDefinitions="48,*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="4">
+                            <TextBlock Grid.Column="1" Text="X" Classes="caption" />
+                            <TextBlock Grid.Column="2" Text="Y" Classes="caption" />
+                            <TextBlock Grid.Column="3" Text="Z" Classes="caption" />
+                            <TextBlock Grid.Row="1" Text="Min" Classes="fieldLabel" />
+                            <TextBox x:Name="MinX" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Minimum X" />
+                            <TextBox x:Name="MinY" Grid.Row="1" Grid.Column="2" ToolTip.Tip="Minimum Y" />
+                            <TextBox x:Name="MinZ" Grid.Row="1" Grid.Column="3" ToolTip.Tip="Minimum Z" />
+                            <TextBlock Grid.Row="2" Text="Size" Classes="fieldLabel" />
+                            <TextBox x:Name="SizeX" Grid.Row="2" Grid.Column="1" ToolTip.Tip="Size X" />
+                            <TextBox x:Name="SizeY" Grid.Row="2" Grid.Column="2" ToolTip.Tip="Size Y" />
+                            <TextBox x:Name="SizeZ" Grid.Row="2" Grid.Column="3" ToolTip.Tip="Size Z" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                            <Button x:Name="ApplyBoundsButton" Content="Apply bounds" Classes="panelAction" HorizontalAlignment="Stretch"
+                                    ToolTip.Tip="Resize the selected brush to these bounds." />
+                            <Button x:Name="RevertBoundsButton" Grid.Column="1" Content="Revert"
+                                    ToolTip.Tip="Restore the current selection bounds without editing the map." />
+                        </Grid>
+                        <Separator />
+                        <views:TransformInspector x:Name="Transforms" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="SurfaceTab" Header="Surface">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <views:SurfaceInspector x:Name="Surfaces" Margin="12" />
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="EntityTab" Header="Entity">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12" Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                            <ComboBox x:Name="EntityList" HorizontalAlignment="Stretch" ToolTip.Tip="Select an entity to inspect." />
+                            <Button x:Name="WorldButton" Grid.Column="1" Content="World" ToolTip.Tip="Select the worldspawn entity." />
+                        </Grid>
+                        <TextBlock x:Name="EntitySelectionInfo" Text="Edits apply to the active entity only."
+                                   Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+                        <views:LightInspector x:Name="Lights" />
+                        <Expander x:Name="PropertiesExpander" Header="Entity properties" IsExpanded="False">
+                            <StackPanel Spacing="7" Margin="0,8,0,0">
+                                <TextBox x:Name="PropertiesBox" AcceptsReturn="True" MinHeight="180" TextWrapping="NoWrap"
+                                         FontFamily="monospace" PlaceholderText="Select an entity."
+                                         ToolTip.Tip="One key=value pair per line. Property names must be unique and classname must remain present."
+                                         ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                    <Button x:Name="ApplyPropertiesButton" Content="Apply properties" Classes="panelAction" HorizontalAlignment="Stretch" />
+                                    <Button x:Name="RevertPropertiesButton" Grid.Column="1" Content="Revert"
+                                            ToolTip.Tip="Restore the entity's current properties without editing the map." />
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="TerrainTab" Header="Terrain" IsVisible="False">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <views:TerrainInspector x:Name="Terrain" Margin="12" />
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="EnvironmentTab" ToolTip.Tip="Environment · sunlight and skies" AutomationProperties.Name="Environment">
+                <TabItem.Header>
+                    <materialIcons:MaterialIcon Kind="WeatherSunny" Width="16" Height="16" />
+                </TabItem.Header>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12" Spacing="12">
+                        <views:SunlightInspector x:Name="Sunlight" />
+                        <Separator />
+                        <views:SkyInspector x:Name="Skies" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
 </UserControl>

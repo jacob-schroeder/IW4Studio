@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.OpenGL;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 
 namespace Iw4Radiant.Rendering;
@@ -16,9 +17,13 @@ internal sealed class SceneRenderer
     private PixelSize _renderSize;
     private int _viewProjectionLocation, _texturedLocation, _litLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
+    private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
     private readonly SceneMaterialTextures _materialTextures = new();
     private readonly SceneLighting _lighting = new();
     private readonly SceneShadows _shadows = new();
+    private readonly SceneSunlight _sunlight = new();
+    private readonly SceneSkies _skies = new();
+    private (Vector3 Min, Vector3 Max)? _surfaceBounds;
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _outlineStart, _outlineCount, _axesStart, _axesCount;
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
 
@@ -27,7 +32,7 @@ internal sealed class SceneRenderer
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
-    internal void ReloadTextures() => _texturesDirty = true;
+    internal void ReloadTextures() => _texturesDirty = _sceneDirty = true;
 
     internal unsafe void Initialize(GlInterface gl)
     {
@@ -42,6 +47,8 @@ internal sealed class SceneRenderer
             _litLocation = _gl.GetUniformLocation(_program, "uLit");
             _lighting.Initialize(_gl, _program);
             _shadows.Initialize(_gl, _program, header);
+            _sunlight.Initialize(_gl, _program, header);
+            _skies.Initialize(_gl, header);
             _gl.UseProgram(_program);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
             _lineTexture = _gl.GenTexture();
@@ -79,9 +86,9 @@ internal sealed class SceneRenderer
         PublishStatus("OpenGL context lost. Reopen the window to restore the camera viewport.");
     }
 
-    internal unsafe void Render(PixelSize size, int framebuffer, Matrix4x4 viewProjection,
+    internal unsafe void Render(PixelSize size, int framebuffer, Matrix4x4 viewProjection, Vector3 eye,
         MapDocument document, EditorSelection selection, TransformMode transformMode, EditorTool editorTool,
-        Func<string, string?>? resolveTexturePath, bool previewLighting)
+        Func<string, MaterialSource?>? resolveMaterial, bool previewLighting)
     {
         if (_gl is not { } gl || _program == 0)
             return;
@@ -90,13 +97,16 @@ internal sealed class SceneRenderer
             if (_texturesDirty)
             {
                 _materialTextures.Reload(gl);
+                _skies.Reload(gl);
                 _texturesDirty = false;
             }
             if (_sceneDirty)
-                UploadScene(gl, document, selection, transformMode, editorTool);
+                UploadScene(gl, document, selection, transformMode, editorTool, resolveMaterial);
             if (previewLighting && _shadowsDirty)
             {
-                _shadows.Update(gl, _lighting.Lights, _vertexArray, _batches);
+                _shadows.Update(gl, _lighting.Lights, _vertexArray, _surfaceBatches);
+                _sunlight.Update(gl, document.World, _surfaceBounds, _vertexArray, _surfaceBatches,
+                    name => resolveMaterial?.Invoke(name)?.IsSky == true);
                 _shadowsDirty = false;
             }
             PrepareFramebuffer(gl, size);
@@ -113,6 +123,7 @@ internal sealed class SceneRenderer
             gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
             _lighting.Bind(gl, _shadows.IsAvailable);
             _shadows.Bind(gl);
+            _sunlight.Bind(gl);
             gl.BindVertexArray(_vertexArray);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -124,7 +135,8 @@ internal sealed class SceneRenderer
 
             gl.Enable(EnableCap.PolygonOffsetFill);
             gl.PolygonOffset(1, 1);
-            RenderSurfaces(gl, resolveTexturePath, previewLighting);
+            RenderSurfaces(gl, resolveMaterial, previewLighting);
+            _skies.Render(gl, viewProjection, eye, _vertexArray, _batches, resolveMaterial);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
@@ -142,12 +154,11 @@ internal sealed class SceneRenderer
             gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, (uint)framebuffer);
             gl.BlitFramebuffer(0, 0, size.Width, size.Height, 0, 0, size.Width, size.Height,
                 ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
-            string? lightingNotice = null;
-            if (previewLighting)
-                lightingNotice = _lighting.Notice is { } lightNotice && _shadows.Notice is { } shadowNotice
-                    ? $"{lightNotice}\n{shadowNotice}" : _lighting.Notice ?? _shadows.Notice;
-            PublishStatus(_materialTextures.Error is { } textureError && lightingNotice is not null
-                ? $"{textureError}\n{lightingNotice}" : _materialTextures.Error ?? lightingNotice);
+            string?[] notices = [_materialTextures.Error, _skies.Notice,
+                previewLighting ? _lighting.GetNotice(_sunlight.IsAvailable) : null,
+                previewLighting ? _shadows.Notice : null, previewLighting ? _sunlight.Notice : null];
+            string notice = string.Join('\n', notices.Where(value => !string.IsNullOrEmpty(value)));
+            PublishStatus(notice.Length == 0 ? null : notice);
         }
         catch (Exception exception) when (IsRenderException(exception))
         {
@@ -159,12 +170,15 @@ internal sealed class SceneRenderer
             gl.Disable(EnableCap.DepthTest);
             gl.BindVertexArray(0);
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+            gl.ActiveTexture(TextureUnit.Texture3);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture2);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture1);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.BindTexture(TextureTarget.TextureCubeMap, 0);
             gl.UseProgram(0);
             gl.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
@@ -172,11 +186,11 @@ internal sealed class SceneRenderer
         }
     }
 
-    private void RenderSurfaces(GL gl, Func<string, string?>? resolveTexturePath, bool previewLighting)
+    private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting)
     {
-        foreach (var batch in _batches)
+        foreach (var batch in _surfaceBatches)
         {
-            uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveTexturePath);
+            uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
             if (texture == 0)
             {
                 gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -212,12 +226,14 @@ internal sealed class SceneRenderer
     }
 
     private unsafe void UploadScene(GL gl, MapDocument document, EditorSelection selection,
-        TransformMode transformMode, EditorTool editorTool)
+        TransformMode transformMode, EditorTool editorTool, Func<string, MaterialSource?>? resolveMaterial)
     {
         var scene = new SceneGeometry(document, selection, transformMode, editorTool);
         _lighting.Update(gl, document);
         _batches.Clear();
         _batches.AddRange(scene.Batches);
+        _surfaceBatches.Clear();
+        _surfaceBatches.AddRange(scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky != true));
         _glyphStart = scene.GlyphStart;
         _glyphCount = scene.GlyphCount;
         _gridStart = scene.GridStart;
@@ -226,10 +242,20 @@ internal sealed class SceneRenderer
         _outlineCount = scene.OutlineCount;
         _axesStart = scene.AxesStart;
         _axesCount = scene.AxesCount;
-        _materialTextures.RemoveUnused(gl, scene.Batches.Select(batch => batch.Material));
+        _materialTextures.RemoveUnused(gl, _surfaceBatches.Select(batch => batch.Material));
+        _skies.RemoveUnused(gl, scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky == true)
+            .Select(batch => batch.Material));
         gl.BindVertexArray(_vertexArray);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
         SceneVertex[] data = scene.Vertices;
+        _surfaceBounds = null;
+        foreach (var batch in _surfaceBatches)
+        for (int index = batch.Start; index < batch.Start + batch.Count; index++)
+        {
+            Vector3 position = data[index].Position;
+            _surfaceBounds = _surfaceBounds is { } bounds
+                ? (Vector3.Min(bounds.Min, position), Vector3.Max(bounds.Max, position)) : (position, position);
+        }
         fixed (SceneVertex* pointer = data)
             gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(data.Length * sizeof(SceneVertex)), pointer, BufferUsageARB.StaticDraw);
         for (uint attribute = 0; attribute < 4; attribute++)
@@ -250,6 +276,8 @@ internal sealed class SceneRenderer
             _materialTextures.Clear(gl);
             _lighting.Clear(gl);
             _shadows.Clear(gl);
+            _sunlight.Clear(gl);
+            _skies.Clear(gl);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
             if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
             if (_program != 0) gl.DeleteProgram(_program);
@@ -269,7 +297,11 @@ internal sealed class SceneRenderer
         _materialTextures.ForgetHandles();
         _lighting.ForgetHandle();
         _shadows.ForgetHandles();
+        _sunlight.ForgetHandles();
+        _skies.ForgetHandles();
         _batches.Clear();
+        _surfaceBatches.Clear();
+        _surfaceBounds = null;
         _renderSize = default;
         _sceneDirty = _texturesDirty = _shadowsDirty = true;
     }

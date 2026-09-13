@@ -1,29 +1,12 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="using:Iw4Radiant.Views"
-        xmlns:camera="using:Iw4Radiant.Viewports.Camera"
-        xmlns:ortho="using:Iw4Radiant.Viewports.Orthographic"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="Iw4Radiant.Views.MainWindow"
         Title="Iw4Radiant"
         Width="1500" Height="980" MinWidth="1050" MinHeight="720"
-        Background="#26282B" FontSize="12">
-    <Window.Styles>
-        <Style Selector="Button"><Setter Property="Padding" Value="10,5" /></Style>
-        <Style Selector="NumericUpDown"><Setter Property="ShowButtonSpinner" Value="False" /></Style>
-        <Style Selector="TextBox"><Setter Property="MinHeight" Value="28" /></Style>
-        <Style Selector="TextBlock.caption">
-            <Setter Property="Foreground" Value="#A8ABB1" />
-            <Setter Property="FontSize" Value="11" />
-        </Style>
-        <Style Selector="Border.viewportTitle">
-            <Setter Property="Background" Value="#CC26282B" />
-            <Setter Property="Padding" Value="8,4" />
-            <Setter Property="HorizontalAlignment" Value="Left" />
-            <Setter Property="VerticalAlignment" Value="Top" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-        </Style>
-    </Window.Styles>
-    <Grid RowDefinitions="Auto,Auto,*,5,174,Auto">
+        Background="#202226" FontSize="12">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <Menu Grid.Row="0" Background="#202225">
             <MenuItem Header="_File">
                 <MenuItem Header="_New map" Click="New_Click" InputGesture="Ctrl+N" />
@@ -42,6 +25,18 @@
                 <MenuItem Header="_Delete selection" Click="Delete_Click" InputGesture="Delete" />
             </MenuItem>
             <MenuItem Header="_View">
+                <MenuItem Header="Two views" Click="TwoViews_Click" />
+                <MenuItem Header="Four views" Click="FourViewsMenu_Click" />
+                <MenuItem Header="Maximize / restore active view" Click="Maximize_Click" InputGesture="Ctrl+Space" />
+                <MenuItem Header="2D plane">
+                    <MenuItem Header="Top · XY" Tag="Top" Click="Plane_Click" />
+                    <MenuItem Header="Front · XZ" Tag="Front" Click="Plane_Click" />
+                    <MenuItem Header="Side · YZ" Tag="Side" Click="Plane_Click" />
+                </MenuItem>
+                <MenuItem Header="Show / hide materials" Click="Materials_Click" />
+                <MenuItem Header="Show / hide inspector" Click="Inspector_Click" />
+                <MenuItem Header="Environment · sunlight and skies" Click="Environment_Click" />
+                <Separator />
                 <MenuItem Header="Frame _all views" Click="FrameAll_Click" />
                 <MenuItem Header="Frame _selection" Click="FrameSelection_Click" InputGesture="F" />
             </MenuItem>
@@ -54,69 +49,102 @@
                 <MenuItem Header="_Controls and prototype scope" Click="Help_Click" />
             </MenuItem>
         </Menu>
-        <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="8,6">
+        <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="6,4">
             <StackPanel Spacing="4">
               <WrapPanel>
-                <Button x:Name="SelectTool" Content="Select · Q" Click="SelectTool_Click" />
-                <Button x:Name="FaceTool" Content="Face · S" Click="FaceTool_Click" />
-                <Button x:Name="VertexTool" Content="Vertex · E" Click="VertexTool_Click" />
-                <Button x:Name="ClipTool" Content="Clip · C" Click="ClipTool_Click" />
-                <Button x:Name="BrushTool" Content="Brush · B" Click="BrushTool_Click" />
-                <Button x:Name="TerrainTool" Content="Terrain · T" Click="TerrainTool_Click" />
-                <Button x:Name="SculptTool" Content="Sculpt · V" Click="SculptTool_Click" />
-                <TextBlock Text="Transform" VerticalAlignment="Center" Margin="14,0,6,0" />
+                <Button Classes="toolbarButton" Click="New_Click" ToolTip.Tip="New map (Ctrl/Cmd+N)" AutomationProperties.Name="New map">
+                    <materialIcons:MaterialIcon Kind="FileDocumentOutline" Width="18" Height="18" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Open_Click" ToolTip.Tip="Open map (Ctrl/Cmd+O)" AutomationProperties.Name="Open map">
+                    <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="18" Height="18" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Save_Click" ToolTip.Tip="Save map (Ctrl/Cmd+S)" AutomationProperties.Name="Save map">
+                    <materialIcons:MaterialIcon Kind="ContentSave" Width="18" Height="18" />
+                </Button>
+                <Border Classes="toolbarSeparator" />
+                <Button x:Name="UndoToolbar" Classes="toolbarButton" Click="Undo_Click" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
+                    <materialIcons:MaterialIcon Kind="Undo" Width="18" Height="18" />
+                </Button>
+                <Button x:Name="RedoToolbar" Classes="toolbarButton" Click="Redo_Click" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)" AutomationProperties.Name="Redo">
+                    <materialIcons:MaterialIcon Kind="Redo" Width="18" Height="18" />
+                </Button>
+                <Border Classes="toolbarSeparator" />
+                <ToggleButton x:Name="SelectTool" Classes="toolbarButton" Click="SelectTool_Click" ToolTip.Tip="Select objects (Q)" AutomationProperties.Name="Select objects">
+                    <materialIcons:MaterialIcon Kind="CursorDefaultOutline" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="FaceTool" Classes="toolbarButton" Click="FaceTool_Click" ToolTip.Tip="Select faces (S)" AutomationProperties.Name="Select faces">
+                    <materialIcons:MaterialIcon Kind="VectorPolygon" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="VertexTool" Classes="toolbarButton" Click="VertexTool_Click" ToolTip.Tip="Edit vertices (E)" AutomationProperties.Name="Edit vertices">
+                    <materialIcons:MaterialIcon Kind="VectorPoint" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="ClipTool" Classes="toolbarButton" Click="ClipTool_Click" ToolTip.Tip="Clip brushes (C)" AutomationProperties.Name="Clip brushes">
+                    <materialIcons:MaterialIcon Kind="ContentCut" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="BrushTool" Classes="toolbarButton" Click="BrushTool_Click" ToolTip.Tip="Create brush (B)" AutomationProperties.Name="Create brush">
+                    <materialIcons:MaterialIcon Kind="CubeOutline" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="TerrainTool" Classes="toolbarButton" Click="TerrainTool_Click" ToolTip.Tip="Create terrain (T)" AutomationProperties.Name="Create terrain">
+                    <materialIcons:MaterialIcon Kind="Terrain" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
+                    <materialIcons:MaterialIcon Kind="Brush" Width="18" Height="18" />
+                </ToggleButton>
+                <Border Classes="toolbarSeparator" />
+                <TextBlock Text="Transform" VerticalAlignment="Center" Margin="0,0,6,0" />
                 <ComboBox x:Name="TransformCombo" Width="105" MinHeight="30" SelectionChanged="TransformMode_Changed" />
-              </WrapPanel>
-              <WrapPanel>
-                <TextBlock Text="Grid" VerticalAlignment="Center" />
+                <TextBlock Text="Grid" VerticalAlignment="Center" Margin="10,0,0,0" />
                 <ComboBox x:Name="GridCombo" Width="70" MinHeight="30" Margin="6,0,0,0" SelectionChanged="Grid_Changed" />
+                <Border Classes="toolbarSeparator" />
+                <Button Classes="toolbarButton" Click="FrameAll_Click" ToolTip.Tip="Frame all views" AutomationProperties.Name="Frame all views">
+                    <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="18" Height="18" />
+                </Button>
+                <Button Classes="toolbarButton" Click="FrameSelection_Click" ToolTip.Tip="Frame selection in all views" AutomationProperties.Name="Frame selection in all views">
+                    <materialIcons:MaterialIcon Kind="FocusField" Width="18" Height="18" />
+                </Button>
+                <Border Classes="toolbarSeparator" />
+                <ToggleButton x:Name="FourViewsButton" Classes="toolbarButton" Click="FourViews_Click" ToolTip.Tip="Toggle two / four views" AutomationProperties.Name="Four views">
+                    <materialIcons:MaterialIcon Kind="ViewGridOutline" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="MaximizeButton" Classes="toolbarButton" Click="Maximize_Click" ToolTip.Tip="Maximize / restore active view (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize active view">
+                    <materialIcons:MaterialIcon Kind="Fullscreen" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide materials" AutomationProperties.Name="Show materials">
+                    <materialIcons:MaterialIcon Kind="TextureBox" Width="18" Height="18" />
+                </ToggleButton>
+                <ToggleButton x:Name="InspectorButton" Classes="toolbarButton" Click="Inspector_Click" ToolTip.Tip="Show / hide inspector" AutomationProperties.Name="Show inspector">
+                    <materialIcons:MaterialIcon Kind="TuneVariant" Width="18" Height="18" />
+                </ToggleButton>
+                <Button Classes="toolbarButton" Click="Environment_Click" ToolTip.Tip="Environment · sunlight and skies" AutomationProperties.Name="Environment">
+                    <materialIcons:MaterialIcon Kind="WeatherSunny" Width="18" Height="18" />
+                </Button>
+              </WrapPanel>
+              <Border x:Name="ToolOptions" Classes="toolOptionsBar">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+               <StackPanel x:Name="CreationOptions" Orientation="Horizontal">
                 <TextBlock Text="Base" VerticalAlignment="Center" Margin="8,0,0,0" />
                 <NumericUpDown x:Name="BaseValue" Width="90" Minimum="-65536" Maximum="65536" Value="0" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
                 <TextBlock Text="Depth" VerticalAlignment="Center" Margin="8,0,4,0" />
                 <NumericUpDown x:Name="DepthValue" Width="90" Minimum="1" Maximum="65536" Value="64" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <TextBlock Text="Drag to preview · release to create · Esc cancels" Classes="caption" VerticalAlignment="Center" Margin="12,0,0,0" />
+               </StackPanel>
+               <StackPanel x:Name="ClipOptions" Orientation="Horizontal">
                 <TextBlock Text="Clip" VerticalAlignment="Center" Margin="14,0,6,0" />
                 <ComboBox x:Name="ClipCombo" Width="125" MinHeight="30" SelectionChanged="ClipMode_Changed" />
-                <Button Content="Apply clip" Click="ApplyClip_Click" />
-                <Button Content="Frame all" Click="FrameAll_Click" Margin="8,0,0,0" />
-              </WrapPanel>
+                <Button x:Name="ApplyClipButton" Content="Apply" Classes="panelAction" Click="ApplyClip_Click" />
+                <Button x:Name="CancelClipButton" Content="Cancel" Click="CancelClip_Click" />
+                <TextBlock x:Name="ClipHint" Classes="caption" VerticalAlignment="Center" Margin="8,0,0,0" />
+               </StackPanel>
+              </StackPanel>
+              </Border>
             </StackPanel>
         </Border>
-        <Grid Grid.Row="2" ColumnDefinitions="*,5,*,5,270" RowDefinitions="*,5,*">
-            <Grid Grid.Column="0" Grid.Row="0" ClipToBounds="True">
-                <camera:CameraViewport x:Name="Camera" />
-                <Border Classes="viewportTitle">
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="CAMERA · PERSPECTIVE" />
-                        <TextBlock Classes="caption" Text="Right-drag to orbit · F to frame" />
-                    </StackPanel>
-                </Border>
-                <Border Background="#CC26282B" Padding="6,0" HorizontalAlignment="Right" VerticalAlignment="Top">
-                    <CheckBox x:Name="PreviewLights" Content="Preview lights" IsChecked="True"
-                              IsCheckedChanged="PreviewLights_Changed"
-                              ToolTip.Tip="Preview point and spot lights with surface shadows. Turn off to view textures without lighting. Bounced light is not included." />
-                </Border>
-                <Border x:Name="RendererErrorPanel" IsVisible="False" Background="#DD302327" Padding="12"
-                        VerticalAlignment="Bottom" IsHitTestVisible="False">
-                    <TextBlock x:Name="RendererErrorText" TextWrapping="Wrap" Foreground="#FFD2BF" />
-                </Border>
-            </Grid>
-            <Grid Grid.Column="2" Grid.Row="0" ClipToBounds="True">
-                <ortho:OrthoViewport x:Name="TopView" Plane="Top" />
-            </Grid>
-            <Grid Grid.Column="0" Grid.Row="2" ClipToBounds="True">
-                <ortho:OrthoViewport x:Name="FrontView" Plane="Front" />
-            </Grid>
-            <Grid Grid.Column="2" Grid.Row="2" ClipToBounds="True">
-                <ortho:OrthoViewport x:Name="SideView" Plane="Side" />
-            </Grid>
-            <GridSplitter Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" Background="#3A3C40" />
-            <GridSplitter Grid.Row="1" Grid.ColumnSpan="3" ResizeDirection="Rows" Background="#3A3C40" />
-            <GridSplitter Grid.Column="3" Grid.RowSpan="3" ResizeDirection="Columns" Background="#3A3C40" />
-            <views:SelectionInspector x:Name="Inspector" Grid.Column="4" Grid.RowSpan="3" />
+        <Grid x:Name="EditorArea" Grid.Row="2" ColumnDefinitions="*,5,300">
+            <views:ViewportWorkspace x:Name="Workspace" />
+            <GridSplitter x:Name="InspectorSplitter" Grid.Column="1" ResizeDirection="Columns" />
+            <views:SelectionInspector x:Name="Inspector" Grid.Column="2" />
         </Grid>
-        <GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="#3A3C40" />
-        <views:MaterialBrowser x:Name="Materials" Grid.Row="4" />
-        <Border Grid.Row="5" BorderBrush="#404247" BorderThickness="0,1,0,0" Padding="8,5">
+        <Border Grid.Row="3" BorderBrush="#34383E" BorderThickness="0,1,0,0" Padding="8,3">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock x:Name="StatusText" Text="B: draw a brush · Q: select/move · right or middle drag: pan · wheel: zoom" TextTrimming="CharacterEllipsis" />
                 <TextBlock x:Name="CountText" Grid.Column="1" Foreground="#A8ABB1" Margin="16,0,0,0" />

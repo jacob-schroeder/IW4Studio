@@ -29,7 +29,7 @@ internal sealed class SceneGeometry
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines)>(StringComparer.Ordinal);
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
-        var wireColor = new Vector3(0.55f, 0.6f, 0.66f);
+        var wireColor = new Vector3(0.48f, 0.51f, 0.55f);
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         {
@@ -89,7 +89,7 @@ internal sealed class SceneGeometry
         GridStart = all.Count;
         for (int offset = -8192; offset <= 8192; offset += 128)
         {
-            Vector3 color = offset % 1024 == 0 ? new(0.22f, 0.25f, 0.28f) : new(0.14f, 0.17f, 0.2f);
+            Vector3 color = offset % 1024 == 0 ? new(0.2f, 0.22f, 0.25f) : new(0.13f, 0.15f, 0.18f);
             AddLine(all, new Vector3(offset, -8192, 0), new Vector3(offset, 8192, 0),
                 offset == 0 ? new Vector3(0.22f, 0.4f, 0.27f) : color);
             AddLine(all, new Vector3(-8192, offset, 0), new Vector3(8192, offset, 0),

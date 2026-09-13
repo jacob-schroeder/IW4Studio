@@ -1,36 +1,51 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Iw4Radiant.Views.LightInspector">
-    <StackPanel Spacing="7">
-        <TextBlock Text="LIGHT" FontWeight="SemiBold" Foreground="#D1A862" />
+    <StackPanel Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="LightbulbOutline" Width="15" Height="15" />
+            <TextBlock Text="Light" Classes="panelTitle" />
+        </StackPanel>
         <TextBlock x:Name="LightError" Foreground="#E5B477" TextWrapping="Wrap" />
-        <StackPanel x:Name="LightFields" Spacing="7">
-            <TextBlock Classes="caption" Text="Color · RGB sliders and swatches" />
-            <views:LightColorPicker x:Name="ColorPicker" />
-            <Grid ColumnDefinitions="*,110" RowDefinitions="Auto,Auto" RowSpacing="6">
-                <TextBlock Text="Radius" VerticalAlignment="Center" />
+        <StackPanel x:Name="LightFields" Spacing="8">
+            <views:LightColorPicker x:Name="ColorPicker" ToolTip.Tip="Adjust RGB channels or choose a color swatch." />
+            <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Radius" Classes="fieldLabel" />
                 <TextBox x:Name="RadiusBox" Grid.Column="1" />
-                <TextBlock Grid.Row="1" Text="Intensity" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Text="Intensity" Classes="fieldLabel" />
                 <TextBox x:Name="IntensityBox" Grid.Row="1" Grid.Column="1" />
             </Grid>
-            <TextBlock Classes="caption" Text="Light definition" />
-            <TextBox x:Name="DefinitionBox" />
-            <TextBlock Classes="caption" Text="Aim target · targetname" />
-            <TextBox x:Name="TargetBox" PlaceholderText="Empty for an ordinary point light" />
-            <Button x:Name="CreateTargetButton" Content="Create aim target" HorizontalAlignment="Stretch" />
-            <TextBlock Classes="caption" Text="Move the named target entity to aim the spotlight." TextWrapping="Wrap" />
-            <Grid ColumnDefinitions="*,110" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-                <TextBlock Text="Outer FOV (degrees)" VerticalAlignment="Center" />
-                <TextBox x:Name="OuterFovBox" Grid.Column="1" PlaceholderText="From target" />
-                <TextBlock Grid.Row="1" Text="Inner FOV (degrees)" VerticalAlignment="Center" />
-                <TextBox x:Name="InnerFovBox" Grid.Row="1" Grid.Column="1" />
-                <TextBlock Grid.Row="2" Text="Cone exponent" VerticalAlignment="Center" />
-                <TextBox x:Name="ExponentBox" Grid.Row="2" Grid.Column="1" />
+            <Expander x:Name="TargetExpander" Header="Target &amp; cone" IsExpanded="False">
+                <StackPanel Spacing="7" Margin="0,8,0,0">
+                    <TextBlock Classes="caption" Text="Target name" />
+                    <TextBox x:Name="TargetBox" PlaceholderText="Point light (no target)"
+                             ToolTip.Tip="Targetname of the entity used to aim this spotlight. Move the target entity to change the direction." />
+                    <Button x:Name="CreateTargetButton" Content="Create aim target" HorizontalAlignment="Stretch"
+                            ToolTip.Tip="Apply these light values and create a named aim target 128 units along X." />
+                    <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                        <TextBlock Text="Outer FOV (°)" Classes="fieldLabel" />
+                        <TextBox x:Name="OuterFovBox" Grid.Column="1" PlaceholderText="From target" />
+                        <TextBlock Grid.Row="1" Text="Inner FOV (°)" Classes="fieldLabel" />
+                        <TextBox x:Name="InnerFovBox" Grid.Row="1" Grid.Column="1" />
+                        <TextBlock Grid.Row="2" Text="Cone exponent" Classes="fieldLabel" />
+                        <TextBox x:Name="ExponentBox" Grid.Row="2" Grid.Column="1" />
+                    </Grid>
+                </StackPanel>
+            </Expander>
+            <Expander x:Name="DefinitionExpander" Header="Definition &amp; flags" IsExpanded="False">
+                <StackPanel Spacing="7" Margin="0,8,0,0">
+                    <TextBox x:Name="DefinitionBox" ToolTip.Tip="Light definition." />
+                    <CheckBox x:Name="PrimaryOmniBox" Content="Primary omni" />
+                    <CheckBox x:Name="PrimarySpotBox" Content="Primary spot" />
+                </StackPanel>
+            </Expander>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                <Button x:Name="ApplyLightButton" Content="Apply light" Classes="panelAction" HorizontalAlignment="Stretch" />
+                <Button x:Name="RevertLightButton" Grid.Column="1" Content="Revert"
+                        ToolTip.Tip="Restore this light's current values without editing the map." />
             </Grid>
-            <CheckBox x:Name="PrimaryOmniBox" Content="Primary omni" />
-            <CheckBox x:Name="PrimarySpotBox" Content="Primary spot" />
-            <Button x:Name="ApplyLightButton" Content="Apply light properties" HorizontalAlignment="Stretch" />
         </StackPanel>
     </StackPanel>
 </UserControl>

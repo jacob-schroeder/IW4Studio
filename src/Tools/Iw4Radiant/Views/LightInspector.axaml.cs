@@ -13,10 +13,18 @@ public partial class LightInspector : UserControl
 
     public LightInspector() => InitializeComponent();
 
+    internal bool HasSourceError => IsVisible && !LightFields.IsVisible;
+
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
         ApplyLightButton.Click += async (_, _) => await ApplyAsync(session, dialogs, finishGestures, createTarget: false);
         CreateTargetButton.Click += async (_, _) => await ApplyAsync(session, dialogs, finishGestures, createTarget: true);
+        RevertLightButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput) return;
+            _displayedEntity = null;
+            RefreshSelection(session);
+        };
     }
 
     internal void RefreshSelection(EditorSession session)
@@ -88,6 +96,7 @@ public partial class LightInspector : UserControl
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            TargetExpander.IsExpanded = DefinitionExpander.IsExpanded = true;
             await dialogs.MessageAsync("Light properties", exception.Message);
         }
         finally

@@ -59,14 +59,27 @@ internal static class SelectionEditing
 
     internal static void ApplyMaterial(EditorSession session, string material)
     {
+        MapFace[] faces = SurfaceEditing.GetFaces(session.Selection).Select(face => face.Face).ToArray();
+        MapTerrain[] terrains = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>()
+            .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains)).Distinct().ToArray();
+        ApplyMaterial(session, material, faces, terrains);
+    }
+
+    internal static void ApplyMaterial(EditorSession session, string material, MapFace[] faces) =>
+        ApplyMaterial(session, material, faces, []);
+
+    internal static void ValidateMaterial(string material)
+    {
         if (string.IsNullOrWhiteSpace(material) || material.Any(char.IsWhiteSpace) || material.Any(char.IsControl) ||
             material.Contains("//", StringComparison.Ordinal) || material.Contains("/*", StringComparison.Ordinal) ||
             material.IndexOfAny(['"', '{', '}', '(', ')', ';']) >= 0)
             throw new ArgumentException("A material must be a single Radiant asset name.");
+    }
+
+    private static void ApplyMaterial(EditorSession session, string material, MapFace[] faces, MapTerrain[] terrains)
+    {
+        ValidateMaterial(material);
         session.Material = material;
-        MapFace[] faces = SurfaceEditing.GetFaces(session.Selection).Select(face => face.Face).ToArray();
-        MapTerrain[] terrains = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>()
-            .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains)).Distinct().ToArray();
         if (faces.All(face => face.Material == material) && terrains.All(terrain => terrain.Material == material))
         {
             session.Refresh();

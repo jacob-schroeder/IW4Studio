@@ -11,10 +11,15 @@ internal sealed class SceneLighting
     private SceneLight[] _lights = [];
     private int _maximumTextureSize;
     private int _countLocation, _dataLocation;
+    private string? _capacityNotice, _omissionNotice;
 
     internal IReadOnlyList<SceneLight> Lights => _lights;
 
-    internal string? Notice { get; private set; } = NoLightsNotice;
+    internal string? GetNotice(bool sunlightAvailable)
+    {
+        string? notice = _capacityNotice ?? (_lights.Length == 0 && !sunlightAvailable ? NoLightsNotice : null);
+        return _omissionNotice is null ? notice : notice is null ? _omissionNotice : $"{notice} {_omissionNotice}";
+    }
 
     internal void Initialize(GL gl, uint program)
     {
@@ -54,10 +59,10 @@ internal sealed class SceneLighting
                 firstError ??= error;
             }
         }
-        string? capacityNotice = null;
+        _capacityNotice = null;
         if (lights.Count > _maximumTextureSize)
         {
-            capacityNotice = $"Light preview unavailable: {lights.Count} lights exceed this GPU's limit of {_maximumTextureSize}. Turn off Preview lights to view textures.";
+            _capacityNotice = $"Light preview unavailable: {lights.Count} lights exceed this GPU's limit of {_maximumTextureSize}. Turn off Preview lights to view textures.";
             lights.Clear();
         }
         _lights = lights.ToArray();
@@ -87,12 +92,7 @@ internal sealed class SceneLighting
         {
             gl.ActiveTexture(TextureUnit.Texture0);
         }
-        Notice = capacityNotice ?? (_lights.Length == 0 ? NoLightsNotice : null);
-        if (omitted != 0)
-        {
-            string omissions = $"{omitted} {(omitted == 1 ? "light" : "lights")} omitted. {firstError}";
-            Notice = Notice is null ? omissions : $"{Notice} {omissions}";
-        }
+        _omissionNotice = omitted == 0 ? null : $"{omitted} {(omitted == 1 ? "light" : "lights")} omitted. {firstError}";
     }
 
     internal void Bind(GL gl, bool shadowsAvailable)
@@ -121,5 +121,6 @@ internal sealed class SceneLighting
     {
         _texture = 0;
         _lights = [];
+        _capacityNotice = _omissionNotice = null;
     }
 }

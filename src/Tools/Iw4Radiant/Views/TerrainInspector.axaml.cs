@@ -39,10 +39,18 @@ public partial class TerrainInspector : UserControl
             SculptModeBox.SelectedIndex = (int)session.SculptMode;
             if (!FlattenHeightBox.IsKeyboardFocusWithin) FlattenHeightBox.Text = Number(session.FlattenHeight);
             int count = session.Selection.Items.OfType<TerrainVertexSelection>().Count();
-            VertexSelectionText.Text = count == 0 ? "Select terrain vertices for exact height edits." :
-                $"{count} terrain {(count == 1 ? "vertex" : "vertices")} selected.";
+            CreationFields.IsVisible = session.Tool == EditorTool.Terrain;
+            SculptFields.IsVisible = session.Tool == EditorTool.Sculpt;
+            HeightFields.IsVisible = count > 0 || session.Tool == EditorTool.Sculpt && session.SculptMode == TerrainSculptMode.Flatten;
+            VertexFields.IsVisible = count > 0;
+            StitchFields.IsVisible = session.Selection.Items.Any(item => item is MapTerrain);
+            TerrainContextText.IsVisible = !CreationFields.IsVisible && !SculptFields.IsVisible &&
+                !VertexFields.IsVisible && !StitchFields.IsVisible;
+            VertexSelectionText.Text = $"{count} terrain {(count == 1 ? "vertex" : "vertices")} selected.";
             SmoothVerticesButton.IsEnabled = FlattenVerticesButton.IsEnabled = count > 0;
             StitchButton.IsEnabled = session.Selection.Count == 2 && session.Selection.Items.All(item => item is MapTerrain);
+            StitchSelectionText.IsVisible = !StitchButton.IsEnabled;
+            StitchSelectionText.Text = "Select two whole terrain patches to stitch.";
         }
         finally { _updating = false; }
     }

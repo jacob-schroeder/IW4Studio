@@ -23,13 +23,26 @@ public partial class MaterialBrowser : UserControl
     }
 
     internal event Action? CatalogChanged;
-    internal string? ResolveTexturePath(string name) => _materials.GetValueOrDefault(name)?.ImagePath;
+    internal MaterialSource? ResolveMaterial(string name) => _materials.GetValueOrDefault(name)?.Material;
+    internal IReadOnlyList<MaterialSource> AvailableSkies => _materials.Values
+        .Where(material => material.IsSky && material.Preview is not null)
+        .Select(material => material.Material).OrderBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    internal void ChooseMaterial(string name)
+    {
+        if (!_materials.TryGetValue(name, out var material) || material.Preview is null)
+            throw new ArgumentException($"Material '{name}' has no available preview.");
+        MaterialFilter.Text = name;
+        FilterMaterials();
+        MaterialList.SelectedItem = material;
+        MaterialList.ScrollIntoView(material);
+    }
 
     internal void ReleaseImages()
     {
         MaterialList.ItemsSource = null;
         ReleasePreview();
-        foreach (var material in _materials.Values) material.Preview.Dispose();
+        foreach (var material in _materials.Values) material.Preview?.Dispose();
         _materials.Clear();
     }
 
@@ -59,7 +72,7 @@ public partial class MaterialBrowser : UserControl
             MaterialFilter.Text = "";
             FilterMaterials();
             CatalogChanged?.Invoke();
-            setStatus($"Loaded {materials.Count} material previews from {root}." +
+            setStatus($"Loaded {materials.Count(material => material.Preview is not null)} material previews from {root}." +
                 (skipped > 0 ? $" {skipped} images could not be read." : ""));
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { dialogs.SetBusy(false); await dialogs.MessageAsync("Cannot read materials", exception.Message); }
@@ -77,15 +90,20 @@ public partial class MaterialBrowser : UserControl
                 try
                 {
                     var preview = MaterialImages.Load(material.Value, 96);
-                    thumbnails.Add(new MaterialThumbnail(material.Key, material.Value, preview));
+                    thumbnails.Add(new MaterialThumbnail(material.Value, preview));
                 }
-                catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { skipped++; }
+                catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+                {
+                    skipped++;
+                    if (material.Value.IsSky)
+                        thumbnails.Add(new MaterialThumbnail(material.Value, null));
+                }
             }
             return (thumbnails, skipped);
         }
         catch
         {
-            foreach (var thumbnail in thumbnails) thumbnail.Preview.Dispose();
+            foreach (var thumbnail in thumbnails) thumbnail.Preview?.Dispose();
             throw;
         }
     }
@@ -93,38 +111,52 @@ public partial class MaterialBrowser : UserControl
     private void FilterMaterials()
     {
         string filter = MaterialFilter.Text ?? "";
-        MaterialThumbnail[] matches = _materials.Values.Where(material => material.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        int available = _materials.Values.Count(material => material.Preview is not null);
+        MaterialThumbnail[] matches = _materials.Values.Where(material => material.Preview is not null &&
+                material.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(material => material.Name.Equals(filter, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         MaterialList.ItemsSource = matches.Take(2000).ToArray();
-        MaterialInfo.Text = $"{_materials.Count} available materials" +
-            (matches.Length > 2000 ? " · showing first 2,000; filter to narrow" : "");
+        MaterialInfo.Text = (matches.Length == available
+            ? $"{available} materials"
+            : $"{matches.Length} of {available} materials") +
+            (matches.Length > 2000 ? " · first 2,000 shown; narrow search" : "");
     }
     private void PreviewMaterial(EditorSession session)
     {
         ReleasePreview();
-        PreviewInfo.Text = "Choose an available material to preview it.";
+        PreviewInfo.Text = "Choose a material to preview.";
         if (MaterialList.SelectedItem is not MaterialThumbnail material) return;
         MaterialName.Text = material.Name;
         session.Material = "";
         try
         {
-            _preview = MaterialImages.Load(material.ImagePath, 256);
+            _preview = MaterialImages.Load(material.Material, 256);
             MaterialPreview.Source = _preview;
-            PreviewInfo.Text = Path.GetFileName(material.ImagePath);
+            PreviewInfo.Text = Path.GetFileName(material.Material.ImagePath) + (material.IsSky ? " · Sky cube, +X face" : "");
             session.Material = material.Name;
         }
-        catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { PreviewInfo.Text = exception.Message; }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            PreviewInfo.Text = exception.Message;
+            PreviewToggle.IsChecked = true;
+        }
     }
     private async Task ApplyMaterialAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
+        if (dialogs.BlocksInput) return;
         finishGestures();
         try
         {
             string name = (MaterialName.Text ?? "").Trim();
-            if (!_materials.TryGetValue(name, out var material) || !File.Exists(material.ImagePath))
+            if (!_materials.TryGetValue(name, out var material) || !File.Exists(material.Material.ImagePath))
                 throw new ArgumentException("Choose a material with an available image from the browser.");
-            using var image = MaterialImages.Load(material.ImagePath, 256);
-            SelectionEditing.ApplyMaterial(session, name);
+            if (material.IsSky) SkyEditing.Apply(session, material.Material);
+            else
+            {
+                using var image = MaterialImages.Load(material.Material, 256);
+                SelectionEditing.ApplyMaterial(session, name);
+            }
         }
         catch (ArgumentException exception) { await dialogs.MessageAsync("Material name", exception.Message); }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { await dialogs.MessageAsync("Cannot read material image", exception.Message); }

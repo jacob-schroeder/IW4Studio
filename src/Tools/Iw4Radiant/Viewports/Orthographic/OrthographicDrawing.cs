@@ -10,17 +10,15 @@ namespace Iw4Radiant.Viewports.Orthographic;
 
 internal sealed class OrthographicDrawing
 {
-    private static readonly IBrush BackgroundBrush = Brush("#171D24");
-    private static readonly IBrush CaptionBrush = Brush("#202831");
-    private static readonly IBrush TextBrush = Brush("#CDD5DF");
-    private static readonly IBrush MutedBrush = Brush("#748190");
+    private static readonly IBrush BackgroundBrush = Brush("#1B1D21");
+    private static readonly IBrush MutedBrush = Brush("#91959E");
     private static readonly IBrush SelectionBrush = Brush("#F2B65B");
     private static readonly IBrush SelectionFill = Brush("#19F2B65B");
-    private static readonly Pen MinorGrid = new(Brush("#242D37"));
-    private static readonly Pen MajorGrid = new(Brush("#34404C"));
-    private static readonly Pen BrushPen = new(Brush("#91A4B7"));
-    private static readonly Pen TerrainPen = new(Brush("#79AD8C"));
-    private static readonly Pen EntityPen = new(Brush("#A791CF"), 1.5);
+    private static readonly Pen MinorGrid = new(Brush("#26292E"));
+    private static readonly Pen MajorGrid = new(Brush("#33373E"));
+    private static readonly Pen BrushPen = new(Brush("#9AA0AA"));
+    private static readonly Pen TerrainPen = new(Brush("#84988B"));
+    private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
     private static readonly Pen SelectedPen = new(SelectionBrush, 1.8);
     private static readonly Pen XAxisPen = new(Brush("#BD6165"), 1.5);
     private static readonly Pen YAxisPen = new(Brush("#74AD82"), 1.5);
@@ -79,17 +77,8 @@ internal sealed class OrthographicDrawing
                 context.DrawLine(SelectedPen, gestures.CursorScreen - new Vector(0, 4), gestures.CursorScreen + new Vector(0, 4));
             }
         }
-        context.DrawRectangle(CaptionBrush, null, new Rect(0, 0, _projection.Size.Width, 25));
-        DrawText(context, _projection.Plane switch
-        {
-            OrthoPlane.Top => "TOP  ·  XY",
-            OrthoPlane.Front => "FRONT  ·  XZ",
-            _ => "SIDE  ·  YZ"
-        }, new Point(10, 5), TextBrush);
-        string detail = $"GRID {session?.GridSize ?? 16:G}  ·  {_projection.Zoom * 100:0}%";
-        DrawText(context, detail, new Point(Math.Max(125, _projection.Size.Width - 155), 5), MutedBrush);
         if (focused)
-            context.DrawRectangle(null, new Pen(Brush("#59758C")), new Rect(_projection.Size).Deflate(0.5));
+            context.DrawRectangle(null, new Pen(Brush("#6F7787")), new Rect(_projection.Size).Deflate(0.5));
     }
 
     private void DrawGrid(DrawingContext context, float gridSize)
@@ -105,14 +94,14 @@ internal sealed class OrthographicDrawing
             double x = _projection.ToScreen(new Vector2((float)(i * step), 0)).X;
             bool major = i % 8 == 0;
             context.DrawLine(major ? MajorGrid : MinorGrid, new Point(x, 0), new Point(x, _projection.Size.Height));
-            if (major) DrawText(context, (i * step).ToString("G", CultureInfo.InvariantCulture), new Point(x + 3, 29), MutedBrush, 10);
+            if (major) DrawText(context, (i * step).ToString("G", CultureInfo.InvariantCulture), new Point(x + 3, 4), MutedBrush, 10);
         }
         for (double i = firstY; i <= lastY; i++)
         {
             double y = _projection.ToScreen(new Vector2(0, (float)(i * step))).Y;
             bool major = i % 8 == 0;
             context.DrawLine(major ? MajorGrid : MinorGrid, new Point(0, y), new Point(_projection.Size.Width, y));
-            if (major && y > 42) DrawText(context, (i * step).ToString("G", CultureInfo.InvariantCulture), new Point(4, y + 2), MutedBrush, 10);
+            if (major && y > 16) DrawText(context, (i * step).ToString("G", CultureInfo.InvariantCulture), new Point(4, y + 2), MutedBrush, 10);
         }
         Point origin = _projection.ToScreen(Vector2.Zero);
         context.DrawLine(HorizontalAxisPen, new Point(0, origin.Y), new Point(_projection.Size.Width, origin.Y));
@@ -195,7 +184,7 @@ internal sealed class OrthographicDrawing
             Vector direction = new(left.X * 18, -left.Y * 18);
             if (session.ClipMode != ClipMode.KeepBack) context.DrawLine(SelectedPen, center, center + direction);
             if (session.ClipMode != ClipMode.KeepFront) context.DrawLine(SelectedPen, center, center - direction);
-            DrawText(context, "Enter: clip · Esc: cancel", end + new Vector(8, 8), SelectionBrush);
+            DrawText(context, "Preview · Enter: apply · Esc: cancel", end + new Vector(8, 8), SelectionBrush);
         }
     }
 

@@ -6,6 +6,13 @@ namespace Iw4Radiant.Editing;
 
 internal static class EntityOrientation
 {
+    internal static Vector3 Forward(Vector3 angles)
+    {
+        var (sp, cp) = SinCos(angles.X);
+        var (sy, cy) = SinCos(angles.Y);
+        return new Vector3((float)(cp * cy), (float)(cp * sy), (float)-sp);
+    }
+
     internal static void Transform(MapEntity entity, Matrix4x4 transform)
     {
         if (!Matrix4x4.Decompose(transform, out _, out Quaternion rotation, out _) ||

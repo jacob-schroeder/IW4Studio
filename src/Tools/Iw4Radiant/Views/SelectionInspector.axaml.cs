@@ -16,12 +16,40 @@ public partial class SelectionInspector : UserControl
 
     public SelectionInspector() => InitializeComponent();
 
-    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    internal void ShowTool(EditorTool tool)
+    {
+        if (IsKeyboardFocusWithin) return;
+        InspectorTabs.SelectedItem = tool switch
+        {
+            EditorTool.Face => SurfaceTab,
+            EditorTool.Terrain or EditorTool.Sculpt => TerrainTab,
+            _ => SelectionTab
+        };
+    }
+
+    internal void ShowEntity()
+    {
+        if (!IsKeyboardFocusWithin) InspectorTabs.SelectedItem = EntityTab;
+    }
+
+    internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
+    internal void ReleaseImages() => Skies.ReleaseImages();
+
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials)
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
         Surfaces.InitializeActions(session, dialogs, finishGestures);
         Lights.InitializeActions(session, dialogs, finishGestures);
         Terrain.InitializeActions(session, dialogs, finishGestures);
+        Sunlight.InitializeActions(session, dialogs, finishGestures);
+        Skies.InitializeActions(session, dialogs, finishGestures, materials);
+        Sunlight.EditSourceRequested += () =>
+        {
+            finishGestures();
+            session.Select(session.Document.World);
+            InspectorTabs.SelectedItem = EntityTab;
+            PropertiesExpander.IsExpanded = true;
+        };
         WorldButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput) return;
@@ -31,6 +59,14 @@ public partial class SelectionInspector : UserControl
         EntityList.SelectionChanged += (_, _) => SelectEntity(session, dialogs, finishGestures);
         ApplyBoundsButton.Click += async (_, _) => await ApplyBoundsAsync(session, dialogs, finishGestures);
         ApplyPropertiesButton.Click += async (_, _) => await ApplyPropertiesAsync(session, dialogs, finishGestures);
+        RevertBoundsButton.Click += (_, _) =>
+        {
+            if (!dialogs.BlocksInput) ShowBounds(session.SelectionBounds);
+        };
+        RevertPropertiesButton.Click += (_, _) =>
+        {
+            if (!dialogs.BlocksInput) ShowEntityProperties(session.Selection.Active as MapEntity);
+        };
     }
 
     internal void RefreshSelection(EditorSession session)
@@ -41,23 +77,18 @@ public partial class SelectionInspector : UserControl
             bool changed = !_shownSelection.SequenceEqual(session.Selection.Items);
             _shownSelection = session.Selection.Items.ToArray();
             MapEntity? entity = session.Selection.Active as MapEntity;
+            bool entityChanged = !ReferenceEquals(entity, _shownEntity);
             SelectionText.Text = SelectionSummary(session.Selection);
+            EntitySelectionInfo.IsVisible = entity is not null && session.Selection.Count > 1;
             bool wholeBrush = session.Selection.Count == 1 && session.Selection.Active is MapBrush;
-            ApplyBoundsButton.IsEnabled = wholeBrush;
+            ApplyBoundsButton.IsEnabled = RevertBoundsButton.IsEnabled = wholeBrush;
             foreach (TextBox box in BoundsBoxes()) box.IsReadOnly = !wholeBrush;
             var selectionBounds = session.SelectionBounds;
-            if (selectionBounds is { } bounds && (changed || !BoundsInputFocused()))
-            {
-                SetVector(bounds.Min, MinX, MinY, MinZ);
-                SetVector(bounds.Max - bounds.Min, SizeX, SizeY, SizeZ);
-            }
-            else if (selectionBounds is null)
-                foreach (TextBox box in BoundsBoxes()) box.Text = "";
-            ApplyPropertiesButton.IsEnabled = entity is not null;
+            if (selectionBounds is null || changed || !BoundsInputFocused()) ShowBounds(selectionBounds);
+            ApplyPropertiesButton.IsEnabled = RevertPropertiesButton.IsEnabled = entity is not null;
             PropertiesBox.IsReadOnly = entity is null;
-            if (!ReferenceEquals(entity, _shownEntity) || !PropertiesBox.IsKeyboardFocusWithin)
-                PropertiesBox.Text = entity is not null
-                    ? string.Join('\n', entity.Properties.Select(pair => $"{pair.Key}={pair.Value}")) : "";
+            if (entityChanged || !PropertiesBox.IsKeyboardFocusWithin)
+                ShowEntityProperties(entity);
             _shownEntity = entity;
             if (!ReferenceEquals(_listedDocument, session.Document) || _listedEntityCount != session.Document.Entities.Count)
             {
@@ -74,8 +105,15 @@ public partial class SelectionInspector : UserControl
                 EntityList.SelectedItem = entityItems.FirstOrDefault(item => ReferenceEquals(item.Tag, entity));
             Transforms.RefreshSelection(session);
             Surfaces.RefreshSelection(session);
+            bool hadLightError = Lights.HasSourceError;
             Lights.RefreshSelection(session);
+            if (Lights.HasSourceError && (entityChanged || !hadLightError)) PropertiesExpander.IsExpanded = true;
             Terrain.RefreshSelection(session);
+            Sunlight.RefreshWorld(session);
+            Skies.RefreshSelection(session);
+            TerrainTab.IsVisible = session.Tool is EditorTool.Terrain or EditorTool.Sculpt ||
+                session.Selection.Items.Any(item => item is MapTerrain or TerrainVertexSelection) ||
+                ReferenceEquals(InspectorTabs.SelectedItem, TerrainTab);
         }
         finally { _updating = false; }
     }
@@ -108,6 +146,20 @@ public partial class SelectionInspector : UserControl
 
     private TextBox[] BoundsBoxes() => [MinX, MinY, MinZ, SizeX, SizeY, SizeZ];
     private bool BoundsInputFocused() => BoundsBoxes().Any(box => box.IsKeyboardFocusWithin);
+
+    private void ShowBounds((Vector3 Min, Vector3 Max)? selectionBounds)
+    {
+        if (selectionBounds is { } bounds)
+        {
+            SetVector(bounds.Min, MinX, MinY, MinZ);
+            SetVector(bounds.Max - bounds.Min, SizeX, SizeY, SizeZ);
+        }
+        else
+            foreach (TextBox box in BoundsBoxes()) box.Text = "";
+    }
+
+    private void ShowEntityProperties(MapEntity? entity) => PropertiesBox.Text = entity is not null
+        ? string.Join('\n', entity.Properties.Select(pair => $"{pair.Key}={pair.Value}")) : "";
 
     private static void SetVector(Vector3 value, TextBox x, TextBox y, TextBox z)
     {

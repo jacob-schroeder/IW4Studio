@@ -2,52 +2,82 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.MaterialBrowser">
-    <Grid ColumnDefinitions="310,*,210" Background="#222427">
-        <StackPanel Margin="10" Spacing="6">
-            <TextBlock Text="MATERIALS" FontWeight="SemiBold" Foreground="#D1A862" />
-            <DockPanel LastChildFill="True">
-                <Button x:Name="BrowseButton" DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0" />
-                <TextBox x:Name="MaterialFilter" PlaceholderText="Filter material names" />
-            </DockPanel>
-            <TextBox x:Name="MaterialName" PlaceholderText="Choose an available material" />
-            <Button x:Name="ApplyMaterialButton" Content="Apply to selection / use for new geometry" HorizontalAlignment="Stretch" />
-            <TextBlock x:Name="MaterialInfo" Classes="caption" Text="Browse a raw asset or image folder." TextWrapping="Wrap" />
-        </StackPanel>
-        <ListBox x:Name="MaterialList" Grid.Column="1" Margin="0,8"
-                 Background="Transparent" BorderThickness="0"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto">
-            <ListBox.ItemsPanel>
-                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.Styles>
-                <Style Selector="ListBoxItem">
-                    <Setter Property="Width" Value="132" />
-                    <Setter Property="Height" Value="132" />
-                    <Setter Property="Padding" Value="4" />
-                    <Setter Property="Margin" Value="2" />
-                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                </Style>
-            </ListBox.Styles>
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="views:MaterialThumbnail">
-                    <Grid RowDefinitions="92,*" ToolTip.Tip="{CompiledBinding Name}">
-                        <Border Background="#34363A" CornerRadius="3">
-                            <Image Source="{CompiledBinding Preview}" Stretch="Uniform" Margin="4" />
-                        </Border>
-                        <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" Margin="0,4,0,0"
-                                   TextAlignment="Center" TextWrapping="Wrap" MaxLines="2"
-                                   TextTrimming="CharacterEllipsis" />
-                    </Grid>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-        <Grid Grid.Column="2" Margin="10" RowDefinitions="*,Auto">
-            <Border Background="#34363A" BorderBrush="#4A4C50" BorderThickness="1">
-                <Image x:Name="MaterialPreview" Stretch="Uniform" />
-            </Border>
-            <TextBlock x:Name="PreviewInfo" Grid.Row="1" Classes="caption" Text="DDS · PNG · JPEG · BMP previews" Margin="0,5,0,0" TextWrapping="Wrap" />
+    <Grid RowDefinitions="Auto,*,Auto" Background="#222427">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,5" ColumnSpacing="6">
+            <TextBlock Text="Materials" Classes="panelTitle" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <TextBox x:Name="MaterialFilter" Grid.Column="1" Classes="compact" MinWidth="60"
+                     PlaceholderText="Search materials" ToolTip.Tip="Filter the loaded material names" />
+            <Button x:Name="BrowseButton" Grid.Column="2" Classes="panelAction" Content="Browse…"
+                    ToolTip.Tip="Load previews from a raw asset or texture folder" />
+            <ToggleButton x:Name="PreviewToggle" Grid.Column="3" Classes="compact" Content="Preview"
+                          IsChecked="False" ToolTip.Tip="Show the selected image and its details" />
         </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">
+            <ListBox x:Name="MaterialList" Background="Transparent" BorderThickness="0" Padding="0"
+                     ToolTip.Tip="Choose a material for new geometry. Use Apply to Selection to change existing geometry."
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Width" Value="{Binding #ThumbnailSize.Value}" />
+                        <Setter Property="Height" Value="{Binding #ThumbnailSize.Value}" />
+                        <Setter Property="Padding" Value="3" />
+                        <Setter Property="Margin" Value="2" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="views:MaterialThumbnail">
+                        <Grid RowDefinitions="*,Auto" ToolTip.Tip="{CompiledBinding Name}">
+                            <Border Background="#303237" CornerRadius="2">
+                                <Image Source="{CompiledBinding Preview}" Stretch="Uniform" Margin="2" />
+                            </Border>
+                            <Border Background="#DC202226" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Padding="3,1" IsVisible="{CompiledBinding IsSky}">
+                                <TextBlock Text="Sky · +X" FontSize="10" ToolTip.Tip="The cubemap's actual +X face" />
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" Margin="0,3,0,0"
+                                       TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <Grid Grid.Column="1" Width="168" Margin="6,2,4,2" RowDefinitions="*,Auto"
+                  IsVisible="{Binding #PreviewToggle.IsChecked}">
+                <Border Background="#303237" BorderBrush="#45484E" BorderThickness="1" CornerRadius="2">
+                    <Image x:Name="MaterialPreview" Stretch="Uniform" Margin="4" />
+                </Border>
+                <TextBlock x:Name="PreviewInfo" Grid.Row="1" Classes="caption" Margin="0,4,0,0"
+                           Text="Choose a material to preview." TextWrapping="Wrap" MaxLines="3"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #PreviewInfo.Text}" />
+            </Grid>
+        </Grid>
+        <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,4,8,3">
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="2">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                    <TextBlock Text="New geometry" Classes="fieldLabel" VerticalAlignment="Center"
+                               ToolTip.Tip="The material used for new geometry" />
+                    <TextBox x:Name="MaterialName" Grid.Column="1" Classes="compact"
+                             PlaceholderText="Choose a material"
+                             ToolTip.Tip="Choose a thumbnail for new geometry, or enter a loaded material name and apply it to the selection." />
+                    <Button x:Name="ApplyMaterialButton" Grid.Column="2" Classes="panelAction"
+                            Content="Apply to Selection" ToolTip.Tip="Apply this material to the selected surfaces and use it for new geometry" />
+                </Grid>
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                    <TextBlock x:Name="MaterialInfo" Classes="caption" VerticalAlignment="Center"
+                               Text="Browse raw assets or a texture folder." TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding #MaterialInfo.Text}" />
+                    <TextBlock Grid.Column="1" Text="Size" Classes="caption" VerticalAlignment="Center" />
+                    <Slider x:Name="ThumbnailSize" Grid.Column="2" Width="64" Height="18" MinHeight="0"
+                            Minimum="64" Maximum="112" Value="80" SmallChange="16" LargeChange="16"
+                            TickFrequency="16" IsSnapToTickEnabled="True"
+                            ToolTip.Tip="Thumbnail size" />
+                </Grid>
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>

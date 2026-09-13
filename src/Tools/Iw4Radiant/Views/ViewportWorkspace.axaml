@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Iw4Radiant.Views"
+             xmlns:camera="using:Iw4Radiant.Viewports.Camera"
+             xmlns:ortho="using:Iw4Radiant.Viewports.Orthographic"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="Iw4Radiant.Views.ViewportWorkspace">
+    <Grid x:Name="LayoutGrid" ColumnDefinitions="*,5,1.2*" RowDefinitions="*,5,220">
+        <Border x:Name="CameraPanel" Classes="viewportPanel" Grid.Column="2">
+            <Grid RowDefinitions="30,*">
+                <Border Classes="panelHeader">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="7,0,2,0">
+                        <TextBlock Text="Camera" VerticalAlignment="Center" />
+                        <ToggleButton x:Name="FlyCamera" Grid.Column="1" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
+                                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                      IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."
+                                      AutomationProperties.Name="Fly camera" />
+                        <ToggleButton x:Name="PreviewLights" Grid.Column="2" Classes="viewportAction" IsChecked="True"
+                                      IsCheckedChanged="PreviewLights_Changed" ToolTip.Tip="Preview sunlight, point and spot lights with shadows" AutomationProperties.Name="Preview lights">
+                            <icons:MaterialIcon Kind="LightbulbOutline" Width="16" Height="16" />
+                        </ToggleButton>
+                        <Button Grid.Column="3" Classes="viewportAction" Tag="0" Click="Maximize_Click" ToolTip.Tip="Maximize / restore camera (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize or restore camera">
+                            <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
+                        </Button>
+                    </Grid>
+                </Border>
+                <Grid Grid.Row="1" ClipToBounds="True">
+                    <camera:CameraViewport x:Name="CameraView" />
+                    <Border Background="#BF1B1D21" Padding="7,4" VerticalAlignment="Top" HorizontalAlignment="Left"
+                            IsHitTestVisible="False">
+                        <TextBlock x:Name="CameraControlsHint" FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />
+                    </Border>
+                    <Border x:Name="RendererErrorPanel" Background="#E52A2425" Padding="9" IsVisible="False"
+                            VerticalAlignment="Bottom" IsHitTestVisible="False">
+                        <TextBlock x:Name="RendererErrorText" TextWrapping="Wrap" Foreground="#E5B8AC" FontSize="11" />
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+        <Border x:Name="TopPanel" Classes="viewportPanel" Grid.RowSpan="3">
+            <Grid RowDefinitions="30,*">
+                <Border Classes="panelHeader">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Button Content="Top · XY ↻" Classes="viewportLabel" HorizontalAlignment="Left" Click="CyclePlane_Click" ToolTip.Tip="Cycle XY / XZ / YZ (Ctrl/Cmd+Tab)" />
+                        <Button Grid.Column="1" Classes="viewportAction" Tag="1" Click="Maximize_Click" ToolTip.Tip="Maximize / restore top view" AutomationProperties.Name="Maximize or restore top view">
+                            <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
+                        </Button>
+                    </Grid>
+                </Border>
+                <ortho:OrthoViewport x:Name="TopView" Grid.Row="1" Plane="Top" />
+            </Grid>
+        </Border>
+        <Border x:Name="FrontPanel" Classes="viewportPanel" IsVisible="False">
+            <Grid RowDefinitions="30,*">
+                <Border Classes="panelHeader">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Button Content="Front · XZ ↻" Classes="viewportLabel" HorizontalAlignment="Left" Click="CyclePlane_Click" ToolTip.Tip="Cycle XY / XZ / YZ (Ctrl/Cmd+Tab)" />
+                        <Button Grid.Column="1" Classes="viewportAction" Tag="2" Click="Maximize_Click" ToolTip.Tip="Maximize / restore front view" AutomationProperties.Name="Maximize or restore front view">
+                            <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
+                        </Button>
+                    </Grid>
+                </Border>
+                <ortho:OrthoViewport x:Name="FrontView" Grid.Row="1" Plane="Front" />
+            </Grid>
+        </Border>
+        <Border x:Name="SidePanel" Classes="viewportPanel" IsVisible="False">
+            <Grid RowDefinitions="30,*">
+                <Border Classes="panelHeader">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Button Content="Side · YZ ↻" Classes="viewportLabel" HorizontalAlignment="Left" Click="CyclePlane_Click" ToolTip.Tip="Cycle XY / XZ / YZ (Ctrl/Cmd+Tab)" />
+                        <Button Grid.Column="1" Classes="viewportAction" Tag="3" Click="Maximize_Click" ToolTip.Tip="Maximize / restore side view" AutomationProperties.Name="Maximize or restore side view">
+                            <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
+                        </Button>
+                    </Grid>
+                </Border>
+                <ortho:OrthoViewport x:Name="SideView" Grid.Row="1" Plane="Side" />
+            </Grid>
+        </Border>
+        <GridSplitter x:Name="ColumnSplitter" Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" />
+        <GridSplitter x:Name="ViewRowSplitter" IsVisible="False" ResizeDirection="Rows" />
+        <GridSplitter x:Name="MaterialSplitter" Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" />
+        <views:MaterialBrowser x:Name="MaterialBrowserView" Grid.Column="2" Grid.Row="2" />
+    </Grid>
+</UserControl>

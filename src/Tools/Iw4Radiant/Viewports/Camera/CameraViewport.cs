@@ -3,15 +3,18 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
+using Avalonia.Rendering;
 using Iw4Radiant.Editing;
+using Iw4Radiant.Materials;
 using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Camera;
 
-public sealed class CameraViewport : OpenGlControlBase
+public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 {
     private EditorSession? _session;
     private readonly CameraNavigation _navigation = new();
+    private readonly CameraFlyMovement _flyMovement;
     private readonly SceneRenderer _renderer = new();
     private CameraTransformGesture? _transform;
     private IPointer? _dragPointer;
@@ -19,32 +22,31 @@ public sealed class CameraViewport : OpenGlControlBase
     private Point _lastPointer;
     private bool _panning;
     private bool _previewLighting = true;
+    private bool _flyMode;
 
     public CameraViewport()
     {
         Focusable = true;
         ClipToBounds = true;
+        _flyMovement = new CameraFlyMovement(this, _navigation);
         _renderer.StatusChanged += (_, _) => RendererStatusChanged?.Invoke(this, EventArgs.Empty);
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
-        PointerCaptureLost += (_, _) => FinishGesture(cancel: true);
+        PointerCaptureLost += (_, _) => { if (_dragPointer is not null) FinishGesture(cancel: true); };
         PointerWheelChanged += OnPointerWheelChanged;
         KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape && _dragPointer is not null)
-            {
-                FinishGesture(cancel: true);
-                InteractionStatusChanged?.Invoke("Gesture cancelled.");
-                e.Handled = true;
-            }
-            else if (e.Key == Key.F)
+            if (HandleNavigationKeyDown(e)) return;
+            if (e.Key == Key.F && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) == 0)
             {
                 FinishGesture();
                 FrameSelection();
                 e.Handled = true;
             }
         };
+        KeyUp += (_, e) => _flyMovement.KeyUp(e);
+        LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
         DetachedFromVisualTree += (_, _) => FinishGesture(cancel: true);
     }
@@ -66,10 +68,41 @@ public sealed class CameraViewport : OpenGlControlBase
         get => _previewLighting;
         set { _previewLighting = value; RequestNextFrameRendering(); }
     }
-    internal Func<string, string?>? ResolveTexturePath { get; set; }
+    internal bool FlyMode
+    {
+        get => _flyMode;
+        set
+        {
+            if (_flyMode == value) return;
+            FinishGesture(cancel: true);
+            _flyMode = value;
+            NavigationModeChanged?.Invoke();
+        }
+    }
+    internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
     internal string? RendererError => _renderer.Error;
     internal event EventHandler? RendererStatusChanged;
     internal event Action<string>? InteractionStatusChanged;
+    internal event Action? NavigationModeChanged;
+
+    internal bool HandleNavigationKeyDown(KeyEventArgs e)
+    {
+        if (!IsFocused || !IsEffectivelyVisible || !IsEffectivelyEnabled) return false;
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) != 0)
+        {
+            _flyMovement.Stop();
+            return false;
+        }
+        if (e.Key == Key.Escape && (_dragPointer is not null || FlyMode))
+        {
+            FinishGesture(cancel: true);
+            FlyMode = false;
+            InteractionStatusChanged?.Invoke("Camera orbit mode. Right-drag to orbit; Shift+right-drag to pan.");
+            e.Handled = true;
+            return true;
+        }
+        return FlyMode && _session is not null && _flyMovement.KeyDown(e, canMove: _transform is null);
+    }
 
     internal void RefreshScene()
     {
@@ -100,6 +133,12 @@ public sealed class CameraViewport : OpenGlControlBase
 
     internal void FinishGesture(bool cancel = false)
     {
+        _flyMovement.Stop();
+        FinishPointerGesture(cancel);
+    }
+
+    private void FinishPointerGesture(bool cancel = false)
+    {
         var transform = _transform;
         var pointer = _dragPointer;
         _transform = null;
@@ -112,6 +151,9 @@ public sealed class CameraViewport : OpenGlControlBase
 
     private float Aspect => (float)(Math.Max(1, Bounds.Width) / Math.Max(1, Bounds.Height));
 
+    // OpenGL is presented through a composition surface, which supplies no control hit area.
+    bool ICustomHitTest.HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
+
     protected override void OnOpenGlInit(GlInterface gl) => _renderer.Initialize(gl);
     protected override void OnOpenGlDeinit(GlInterface gl) => _renderer.ReleaseResources();
     protected override void OnOpenGlLost() => _renderer.ContextLost();
@@ -121,8 +163,8 @@ public sealed class CameraViewport : OpenGlControlBase
         if (_session is not { } session) return;
         double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
-        _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height),
-            session.Document, session.Selection, session.TransformMode, session.Tool, ResolveTexturePath, PreviewLighting);
+        _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
+            session.Document, session.Selection, session.TransformMode, session.Tool, ResolveMaterial, PreviewLighting);
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -133,16 +175,17 @@ public sealed class CameraViewport : OpenGlControlBase
         Point point = e.GetPosition(this);
         if (properties.IsRightButtonPressed || properties.IsMiddleButtonPressed)
         {
-            FinishGesture(cancel: true);
+            FinishPointerGesture(cancel: true);
             _dragPointer = e.Pointer;
             _lastPointer = point;
-            _panning = properties.IsMiddleButtonPressed;
-            _dragButton = _panning ? MouseButton.Middle : MouseButton.Right;
+            _panning = properties.IsMiddleButtonPressed || (!FlyMode && e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            _dragButton = properties.IsMiddleButtonPressed ? MouseButton.Middle : MouseButton.Right;
             e.Pointer.Capture(this);
             e.Handled = true;
             return;
         }
         if (!properties.IsLeftButtonPressed || _dragPointer is not null) return;
+        _flyMovement.Stop();
         try
         {
             bool additive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
@@ -188,6 +231,7 @@ public sealed class CameraViewport : OpenGlControlBase
             Avalonia.Vector delta = position - _lastPointer;
             _lastPointer = position;
             if (_panning) _navigation.Pan((float)delta.X, (float)delta.Y, (float)Math.Max(1, Bounds.Height));
+            else if (FlyMode) _navigation.Look((float)delta.X, (float)delta.Y);
             else _navigation.Orbit((float)delta.X, (float)delta.Y);
             RequestNextFrameRendering();
         }
@@ -198,7 +242,7 @@ public sealed class CameraViewport : OpenGlControlBase
     {
         if (!ReferenceEquals(e.Pointer, _dragPointer) || e.InitialPressMouseButton != _dragButton) return;
         if (_transform is { } transform) UpdateTransform(transform, e.GetPosition(this));
-        FinishGesture();
+        FinishPointerGesture();
         e.Handled = true;
     }
 
@@ -220,7 +264,8 @@ public sealed class CameraViewport : OpenGlControlBase
         if (_transform is not null) { e.Handled = true; return; }
         double delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
         if (!double.IsFinite(delta)) return;
-        _navigation.Zoom((float)delta);
+        if (FlyMode) _navigation.MoveLocal(0, (float)delta * 32, 0);
+        else _navigation.Zoom((float)delta);
         RequestNextFrameRendering();
         e.Handled = true;
     }

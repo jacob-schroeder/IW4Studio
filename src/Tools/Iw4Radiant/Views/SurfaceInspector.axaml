@@ -1,40 +1,43 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Iw4Radiant.Views.SurfaceInspector">
-    <StackPanel Spacing="8">
-        <TextBlock Text="SURFACES" FontWeight="SemiBold" Foreground="#D1A862" />
-        <TextBlock x:Name="SurfaceSummary" Text="Select a brush or face." TextWrapping="Wrap" />
-        <TextBlock x:Name="ProjectionInfo" Classes="caption" TextWrapping="Wrap" />
-        <StackPanel x:Name="ProjectionFields" Spacing="6" IsEnabled="False">
-            <TextBlock Classes="caption" Text="Width / height · world units per repeat" TextWrapping="Wrap" />
-            <Grid ColumnDefinitions="*,*">
-                <TextBox x:Name="WidthValue" PlaceholderText="Width" Margin="0,0,3,0"
-                         ToolTip.Tip="World units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
-                <TextBox x:Name="HeightValue" Grid.Column="1" PlaceholderText="Height"
-                         ToolTip.Tip="World units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
+    <StackPanel Spacing="10">
+        <TextBlock x:Name="SurfaceSummary" Text="Select a brush or face." TextWrapping="Wrap" Classes="caption" />
+        <TextBlock x:Name="ProjectionInfo" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+        <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False">
+            <TextBlock Text="Projection" Classes="panelTitle" />
+            <Grid ColumnDefinitions="58,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="5">
+                <TextBlock Grid.Column="1" Classes="caption" Text="S / Width" />
+                <TextBlock Grid.Column="2" Classes="caption" Text="T / Height" />
+                <TextBlock Grid.Row="1" Classes="fieldLabel" Text="Repeat" ToolTip.Tip="World units per texture repeat." />
+                <TextBox x:Name="WidthValue" Grid.Row="1" Grid.Column="1" PlaceholderText="Width"
+                         ToolTip.Tip="Width in world units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
+                <TextBox x:Name="HeightValue" Grid.Row="1" Grid.Column="2" PlaceholderText="Height"
+                         ToolTip.Tip="Height in world units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
+                <TextBlock Grid.Row="2" Classes="fieldLabel" Text="Shift" ToolTip.Tip="Texture shift in world units." />
+                <TextBox x:Name="ShiftXValue" Grid.Row="2" Grid.Column="1" ToolTip.Tip="S shift in world units." />
+                <TextBox x:Name="ShiftYValue" Grid.Row="2" Grid.Column="2" ToolTip.Tip="T shift in world units." />
+                <TextBlock Grid.Row="3" Classes="fieldLabel" Text="Fit" ToolTip.Tip="Repeats across each face's S and T dimensions." />
+                <TextBox x:Name="RepeatsXValue" Grid.Row="3" Grid.Column="1" Text="1" ToolTip.Tip="S repeats for Fit." />
+                <TextBox x:Name="RepeatsYValue" Grid.Row="3" Grid.Column="2" Text="1" ToolTip.Tip="T repeats for Fit." />
             </Grid>
-            <TextBlock Classes="caption" Text="Shift S / T · world units" />
-            <Grid ColumnDefinitions="*,*">
-                <TextBox x:Name="ShiftXValue" PlaceholderText="S" Margin="0,0,3,0" />
-                <TextBox x:Name="ShiftYValue" Grid.Column="1" PlaceholderText="T" />
-            </Grid>
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" RowSpacing="4">
-                <TextBlock Classes="caption" Text="Rotation · degrees" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
+                <TextBlock Classes="caption" Text="Rotation (°)" />
                 <TextBlock Grid.Column="1" Classes="caption" Text="Skew" />
-                <TextBox x:Name="RotationValue" Grid.Row="1" PlaceholderText="Rotation" Margin="0,0,3,0" />
-                <TextBox x:Name="SkewValue" Grid.Row="1" Grid.Column="1" PlaceholderText="Skew" />
+                <TextBox x:Name="RotationValue" Grid.Row="1" ToolTip.Tip="Texture rotation in degrees." />
+                <TextBox x:Name="SkewValue" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Texture projection skew." />
             </Grid>
-            <Button x:Name="ApplyProjectionButton" Content="Apply to selected surfaces" HorizontalAlignment="Stretch" />
-            <TextBlock Classes="caption" Text="Fit · repeats across S / T" />
-            <Grid ColumnDefinitions="*,*,Auto">
-                <TextBox x:Name="RepeatsXValue" Text="1" PlaceholderText="S repeats" Margin="0,0,3,0" />
-                <TextBox x:Name="RepeatsYValue" Grid.Column="1" Text="1" PlaceholderText="T repeats" Margin="0,0,6,0" />
-                <Button x:Name="FitButton" Grid.Column="2" Content="Fit" />
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5">
+                <Button x:Name="ApplyProjectionButton" Content="Apply" Classes="panelAction" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Apply all six projection values to every selected surface." />
+                <Button x:Name="RevertProjectionButton" Grid.Column="1" Content="Revert"
+                        ToolTip.Tip="Restore the selected surface values and reset Fit repeats to one without editing the map." />
+                <Button x:Name="FitButton" Grid.Column="2" Content="Fit"
+                        ToolTip.Tip="Fit each selected face using its current projection and the S / T repeat counts." />
             </Grid>
         </StackPanel>
-        <CheckBox x:Name="TextureLockValue"
-                  ToolTip.Tip="Keep texture coordinates attached to the brush during moves, rotations and scaling. Some vertex edits require turning this off because the new face shape cannot preserve every UV.">
-            <TextBlock Text="Lock textures while transforming" TextWrapping="Wrap" />
-        </CheckBox>
+        <Separator />
+        <CheckBox x:Name="TextureLockValue" Content="Texture lock"
+                  ToolTip.Tip="Keep texture coordinates attached to the brush during moves, rotations and scaling. Some vertex edits require turning this off because the new face shape cannot preserve every UV." />
     </StackPanel>
 </UserControl>

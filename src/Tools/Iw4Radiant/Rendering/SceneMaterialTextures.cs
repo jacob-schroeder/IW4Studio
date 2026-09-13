@@ -32,17 +32,17 @@ internal sealed class SceneMaterialTextures
 
     internal void ForgetHandles() => _textures.Clear();
 
-    internal unsafe uint GetTexture(GL gl, string material, Func<string, string?>? resolveTexturePath)
+    internal unsafe uint GetTexture(GL gl, string material, Func<string, MaterialSource?>? resolveMaterial)
     {
         if (_textures.TryGetValue(material, out uint texture))
             return texture;
         texture = 0;
         try
         {
-            string? path = resolveTexturePath?.Invoke(material);
-            if (path is not null)
+            MaterialSource? source = resolveMaterial?.Invoke(material);
+            if (source is { IsSky: false })
             {
-                using var decoded = MaterialImages.Load(path, 1024);
+                using var decoded = MaterialImages.Load(source, 1024);
                 PixelSize size = decoded.PixelSize;
                 using var converted = new WriteableBitmap(size, new Avalonia.Vector(96, 96),
                     PixelFormat.Rgba8888, AlphaFormat.Unpremul);

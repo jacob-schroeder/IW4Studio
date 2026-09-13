@@ -3,10 +3,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media;
-using Avalonia.Threading;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Viewports.Orthographic;
 
 namespace Iw4Radiant.Views;
 
@@ -17,31 +16,36 @@ public partial class MainWindow : Window
     private readonly MapFileCommands _files;
     private bool _ready;
     private bool _updatingControls;
+    private bool _inspectorVisible = true;
+    private GridLength _inspectorWidth = new(300);
 
     public MainWindow()
     {
         InitializeComponent();
         _dialogs = new EditorDialogs(this, SetStatus);
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus);
-        Inspector.InitializeActions(_session, _dialogs, FinishGestures);
-        Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
-        Materials.CatalogChanged += Camera.ReloadTextures;
-        TopView.Session = FrontView.Session = SideView.Session = _session;
-        TopView.CursorStatusChanged += SetStatus;
-        FrontView.CursorStatusChanged += SetStatus;
-        SideView.CursorStatusChanged += SetStatus;
-        var gridViews = new[] { TopView, FrontView, SideView };
+        Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials);
+        Workspace.InitializeActions(_dialogs, FinishGestures);
+        Workspace.LayoutChanged += RefreshLayoutControls;
+        Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
+        Workspace.Materials.CatalogChanged += Workspace.Camera.ReloadTextures;
+        Workspace.Materials.CatalogChanged += () => Inspector.RefreshSelection(_session);
+        var gridViews = Workspace.GridViews;
         foreach (var view in gridViews)
+        {
+            view.Session = _session;
+            view.CursorStatusChanged += SetStatus;
+            view.ClipPreviewChanged += RefreshClipControls;
             view.ClipStarted += () =>
             {
                 if (_session.Tool != EditorTool.Clip) return;
                 foreach (var other in gridViews)
                     if (!ReferenceEquals(other, view)) other.CancelGesture();
             };
-        Camera.Session = _session;
-        Camera.InteractionStatusChanged += SetStatus;
-        Camera.ResolveTexturePath = Materials.ResolveTexturePath;
-        Camera.RendererStatusChanged += (_, _) => Dispatcher.UIThread.Post(UpdateRendererStatus);
+        }
+        Workspace.Camera.Session = _session;
+        Workspace.Camera.InteractionStatusChanged += SetStatus;
+        Workspace.Camera.ResolveMaterial = Workspace.Materials.ResolveMaterial;
         _session.Changed += (_, _) => RefreshEditor();
         GridCombo.ItemsSource = new[] { "1", "2", "4", "8", "16", "32", "64", "128" };
         GridCombo.SelectedItem = "16";
@@ -50,33 +54,31 @@ public partial class MainWindow : Window
         ClipCombo.ItemsSource = new[] { "Split both", "Keep left", "Keep right" };
         ClipCombo.SelectedIndex = 0;
         _ready = true;
-        UpdateRendererStatus();
+        RefreshLayoutControls();
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => Materials.ReleaseImages();
+        Closed += (_, _) => { Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); };
+        Deactivated += (_, _) => Workspace.Camera.FinishGesture(cancel: true);
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
-    }
-
-    private void UpdateRendererStatus()
-    {
-        RendererErrorText.Text = Camera.RendererError;
-        RendererErrorPanel.IsVisible = Camera.RendererError is not null;
     }
 
     private void RefreshEditor()
     {
         if (!_ready) return;
         Title = $"{(_session.IsDirty ? "*" : "")}{Path.GetFileName(_session.FilePath ?? "Untitled.map")} — Iw4Radiant";
-        Camera.RefreshScene();
-        UndoMenu.IsEnabled = _session.CanUndo;
-        RedoMenu.IsEnabled = _session.CanRedo;
-        (Button Button, EditorTool Tool)[] tools =
+        Workspace.Camera.RefreshScene();
+        UndoMenu.IsEnabled = UndoToolbar.IsEnabled = _session.CanUndo;
+        RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
+        (ToggleButton Button, EditorTool Tool)[] tools =
             [(SelectTool, EditorTool.Select), (BrushTool, EditorTool.Brush),
              (TerrainTool, EditorTool.Terrain), (SculptTool, EditorTool.Sculpt),
              (FaceTool, EditorTool.Face), (VertexTool, EditorTool.Vertex), (ClipTool, EditorTool.Clip)];
         foreach (var tool in tools)
-            tool.Button.Background = new SolidColorBrush(tool.Tool == _session.Tool
-                ? Color.Parse("#675435") : Color.Parse("#36383D"));
+            tool.Button.IsChecked = tool.Tool == _session.Tool;
+        CreationOptions.IsVisible = _session.Tool is EditorTool.Brush or EditorTool.Terrain;
+        ClipOptions.IsVisible = _session.Tool == EditorTool.Clip;
+        ToolOptions.IsVisible = CreationOptions.IsVisible || ClipOptions.IsVisible;
+        RefreshClipControls();
         Inspector.RefreshSelection(_session);
         _updatingControls = true;
         TransformCombo.SelectedIndex = (int)_session.TransformMode;
@@ -91,8 +93,8 @@ public partial class MainWindow : Window
     private void SetStatus(string message) => StatusText.Text = message;
     private void FinishGestures()
     {
-        TopView.CompleteGesture(); FrontView.CompleteGesture(); SideView.CompleteGesture();
-        Camera.FinishGesture();
+        foreach (var view in Workspace.GridViews) view.CompleteGesture();
+        Workspace.Camera.FinishGesture();
     }
     private void SetTool(EditorTool tool)
     {
@@ -100,7 +102,11 @@ public partial class MainWindow : Window
         if (_session.Tool != tool)
             _session.Selection.SetRange(_session.Selection.Items.Select(EditorSelection.Owner).Distinct().ToArray());
         _session.Tool = tool;
+        if (tool is EditorTool.Terrain or EditorTool.Sculpt) Workspace.ShowGrid(OrthoPlane.Top);
+        else if (tool is EditorTool.Brush or EditorTool.Clip) Workspace.ShowGrid(Workspace.ActivePlane);
+        else if (tool == EditorTool.Face) Workspace.ShowCamera();
         _session.Refresh();
+        Inspector.ShowTool(tool);
         SetStatus(tool switch
         {
             EditorTool.Brush => "Drag in a grid view to create a brush. Base and Depth set the third axis.",
@@ -135,14 +141,14 @@ public partial class MainWindow : Window
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         { await _dialogs.MessageAsync("Delete selection", exception.Message); }
     }
-    private void World_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Select(_session.Document.World); }
+    private void World_Click(object? sender, RoutedEventArgs e)
+    {
+        FinishGestures();
+        _session.Select(_session.Document.World);
+        Inspector.ShowEntity();
+    }
     private void Exit_Click(object? sender, RoutedEventArgs e) => Close();
     private void FrameAll_Click(object? sender, RoutedEventArgs e) => FrameAll();
-    private void PreviewLights_Changed(object? sender, RoutedEventArgs e)
-    {
-        if (_ready)
-            Camera.PreviewLighting = PreviewLights.IsChecked == true;
-    }
     private void TransformMode_Changed(object? sender, SelectionChangedEventArgs e)
     {
         if (!_ready || _updatingControls || TransformCombo.SelectedIndex < 0) return;
@@ -164,19 +170,80 @@ public partial class MainWindow : Window
     private void FrameSelection_Click(object? sender, RoutedEventArgs e)
     {
         FinishGestures();
-        Camera.FrameSelection(); TopView.FrameSelection(); FrontView.FrameSelection(); SideView.FrameSelection();
+        Workspace.Camera.FrameSelection();
+        foreach (var view in Workspace.GridViews) view.FrameSelection();
     }
 
     private void ApplyClip_Click(object? sender, RoutedEventArgs e)
     {
         if (_dialogs.BlocksInput) return;
-        if (!TopView.CommitClip() && !FrontView.CommitClip() && !SideView.CommitClip())
+        if (!Workspace.GridViews.Any(view => view.CommitClip()))
             SetStatus("Select brushes, choose Clip and drag a clip line in a grid view first.");
+    }
+    private void CancelClip_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        foreach (var view in Workspace.GridViews) view.CancelGesture();
+        SetStatus("Clip preview cancelled.");
+    }
+    private void RefreshClipControls()
+    {
+        if (!_ready) return;
+        bool ready = Workspace.GridViews.Any(view => view.HasClipPreview);
+        ApplyClipButton.IsEnabled = CancelClipButton.IsEnabled = ready;
+        ClipHint.Text = ready ? "Preview ready · Enter applies · Esc cancels" : "Drag a clip line in a grid view";
     }
     private void FrameAll()
     {
         FinishGestures();
-        Camera.FrameAll(); TopView.FrameAll(); FrontView.FrameAll(); SideView.FrameAll();
+        Workspace.Camera.FrameAll();
+        foreach (var view in Workspace.GridViews) view.FrameAll();
+    }
+
+    private void RefreshLayoutControls()
+    {
+        if (!_ready) return;
+        bool showInspector = _inspectorVisible && !Workspace.IsMaximized;
+        if (Inspector.IsVisible) _inspectorWidth = EditorArea.ColumnDefinitions[2].Width;
+        Inspector.IsVisible = InspectorSplitter.IsVisible = showInspector;
+        EditorArea.ColumnDefinitions[1].Width = new GridLength(showInspector ? 5 : 0);
+        EditorArea.ColumnDefinitions[2].MinWidth = showInspector ? 280 : 0;
+        EditorArea.ColumnDefinitions[2].Width = showInspector ? _inspectorWidth : new GridLength(0);
+        FourViewsButton.IsChecked = Workspace.FourViews;
+        MaximizeButton.IsChecked = Workspace.IsMaximized;
+        MaterialsButton.IsChecked = Workspace.MaterialsVisible && !Workspace.IsMaximized;
+        InspectorButton.IsChecked = showInspector;
+    }
+
+    private void FourViews_Click(object? sender, RoutedEventArgs e) => Workspace.SetFourViews(FourViewsButton.IsChecked == true);
+    private void TwoViews_Click(object? sender, RoutedEventArgs e) => Workspace.SetFourViews(false);
+    private void FourViewsMenu_Click(object? sender, RoutedEventArgs e) => Workspace.SetFourViews(true);
+    private void Maximize_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaximize();
+    private void Materials_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaterials();
+
+    private void Environment_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        _inspectorVisible = true;
+        if (Workspace.IsMaximized) Workspace.ToggleMaximize();
+        RefreshLayoutControls();
+        Inspector.ShowEnvironment();
+    }
+
+    private void Inspector_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        _inspectorVisible = Workspace.IsMaximized || !_inspectorVisible;
+        if (Workspace.IsMaximized) Workspace.ToggleMaximize();
+        RefreshLayoutControls();
+        Workspace.FocusActiveView();
+    }
+
+    private void Plane_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string name } && Enum.TryParse(name, out OrthoPlane plane)) Workspace.ShowGrid(plane);
     }
 
     private void Grid_Changed(object? sender, SelectionChangedEventArgs e)
@@ -215,6 +282,7 @@ public partial class MainWindow : Window
             _session.Document.Entities.Add(entity);
             _session.Select(entity);
         });
+        Inspector.ShowEntity();
     }
 
     private async void New_Click(object? sender, RoutedEventArgs e) => await _files.NewAsync();
@@ -223,24 +291,30 @@ public partial class MainWindow : Window
     private async void SaveAs_Click(object? sender, RoutedEventArgs e) => await _files.SaveAsync(true);
 
     private async void Help_Click(object? sender, RoutedEventArgs e) => await _dialogs.MessageAsync("Iw4Radiant controls",
+        "Workspace: use View for two/four views and XY/XZ/YZ. Ctrl/Cmd+Tab cycles the 2D plane; Ctrl/Cmd+Space maximizes/restores the active view. Toolbar toggles show materials and the inspector. Drag dividers to resize.\n" +
+        "Inspector: Selection, Surface and Entity tabs keep related controls together. Terrain appears for terrain tools or selections. Revert discards un-applied field changes; Apply edits the map.\n" +
         "Q: objects · S: faces · E: vertices · C: clipper · B: brush · T: terrain · V: sculpt\n" +
         "Selection: Shift-click adds/removes items. Drag empty grid space for a marquee. Choose Move/Rotate/Scale, then drag gizmos or enter numeric values in Transform.\n" +
         "Surfaces: choose Face and click in the camera. The material browser applies to selected faces; Surfaces adjusts repeat size, shift, rotation, skew and Fit. Texture lock follows brush transforms.\n" +
         "Vertices: select an object, then its vertex handles. Shift-click adds vertices. Invalid/collapsed brush edits are rejected.\n" +
-        "Clipper: select brushes, drag a line in a grid view, choose Split/Keep left/Keep right, then Apply clip or Enter. Escape discards the line.\n" +
+        "Clipper: select brushes, drag a line in a grid view, choose Split/Keep left/Keep right, then Apply or Enter. Cancel or Escape discards the preview.\n" +
         "Terrain: create/sculpt in XY; choose Raise/lower, Smooth or Flatten. Shift lowers. Select vertices for exact Smooth/Flatten, or two whole patches to Stitch their adjoining edges.\n" +
-        "Camera: right drag orbits, middle drag pans, wheel zooms. Click geometry to select. F frames selection.\n" +
-        "Lights: use the Light inspector for color, radius and intensity. Create an aim target for a spotlight and move that target to aim it; inner/outer FOV and exponent control its cone. Preview lights includes surface shadows.\n" +
+        "Camera: right-drag orbits; Shift+right-drag or middle-drag pans; scroll zooms. Click geometry to select. F frames selection.\n" +
+        "Fly: enable Fly in the camera header, then use WASD to move, Q/E down/up, right-drag to look, and Shift for speed. Scroll moves forward/back. Escape returns to orbit. Movement keys apply only while the camera is focused.\n" +
+        "Lights: select a light and open Entity for color, radius and intensity. Expand Target and cone to create a spotlight target. The camera bulb button toggles lighting and shadows.\n" +
+        "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
+        "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. Preview shows image details and Size adjusts the tiles.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
         "This prototype edits iwmap 4 source. Curves and other unsupported primitives are preserved but not rendered. " +
         "IW4 material JSON color maps, DDS and PNG/JPEG/BMP previews are supported; PS3 material programs are not executed. " +
         "Materials without a matching image are omitted. Unresolved map surfaces appear as wireframe. " +
-        "Lighting previews light_point_linear point/spot lights. Custom falloff assets, sunlight and bounced light are not previewed. " +
+        "Lighting previews light_point_linear point/spot lights and authored direct sunlight with shadows. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets, ambient/diffuse sky lighting and bounced light are not previewed. " +
         "Integrated geometry/lighting compilation and IW4 .d3dbsp/.ff export are not implemented yet.");
 
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (_dialogs.BlocksInput || e.Handled) return;
+        if (Workspace.Camera.HandleNavigationKeyDown(e)) return;
         bool command = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         if (command && e.Key is Key.N or Key.O or Key.S)
@@ -253,6 +327,8 @@ public partial class MainWindow : Window
             return;
         }
         if (e.Source is Control focused && IsTextEntry(focused)) return;
+        if (command && e.Key == Key.Space) { Workspace.ToggleMaximize(); e.Handled = true; return; }
+        if (command && e.Key == Key.Tab) { Workspace.CyclePlane(); e.Handled = true; return; }
         if (command && e.Key == Key.Z) { if (shift) Redo_Click(this, e); else Undo_Click(this, e); e.Handled = true; return; }
         if (command && e.Key == Key.Y) { Redo_Click(this, e); e.Handled = true; return; }
         if (command || e.KeyModifiers.HasFlag(KeyModifiers.Alt)) return;

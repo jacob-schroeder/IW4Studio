@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.SkyInspector">
+    <StackPanel Spacing="8">
+        <TextBlock Text="Skies" Classes="panelTitle" />
+        <ComboBox x:Name="SkyList" HorizontalAlignment="Stretch" PlaceholderText="Choose an authored sky"
+                  ToolTip.Tip="Choose a readable sky material from the loaded asset folder. This does not change map geometry." />
+        <Grid ColumnDefinitions="80,*" ColumnSpacing="8">
+            <Border Background="#1B1D21" Height="80" BorderBrush="#454A52" BorderThickness="1">
+                <Image x:Name="SkyPreview" Stretch="Uniform" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock x:Name="PreviewInfo" Classes="caption" Text="Choose a sky to preview." TextWrapping="Wrap" />
+                <Button x:Name="ChooseBrowserButton" Content="Choose in browser" IsEnabled="False" />
+            </StackPanel>
+        </Grid>
+        <TextBlock x:Name="SkyError" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+        <TextBlock x:Name="SelectionInfo" Classes="caption" TextWrapping="Wrap" />
+        <Button x:Name="ApplySkyButton" Content="Apply to selected faces" Classes="panelAction" HorizontalAlignment="Stretch" IsEnabled="False"
+                ToolTip.Tip="Apply this sky to selected world brush faces or every face of selected whole world brushes. Terrain and entity-owned brushes are unchanged." />
+        <TextBlock Text="Used in world" Classes="caption" />
+        <ListBox x:Name="UsedSkyList" MaxHeight="150" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+        <TextBlock x:Name="UsedSkyInfo" Classes="caption" TextWrapping="Wrap" />
+        <Button x:Name="SelectUsedFacesButton" Content="Select faces" HorizontalAlignment="Stretch" IsEnabled="False"
+                ToolTip.Tip="Select the world brush faces using the highlighted sky material." />
+        <Expander Header="Create enclosure" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <StackPanel Spacing="7" Margin="0,8,0,0">
+                <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                    <TextBlock Text="Padding" Classes="fieldLabel" />
+                    <TextBox x:Name="PaddingBox" Grid.Column="1" Text="128" ToolTip.Tip="Empty space between the selected geometry and the inner sky faces, in world units. Must be at least the grid size." />
+                </Grid>
+                <TextBlock x:Name="EnclosureInfo" Classes="caption" TextWrapping="Wrap" />
+                <Button x:Name="CreateEnclosureButton" Content="Create around selection" Classes="panelAction" HorizontalAlignment="Stretch" IsEnabled="False"
+                        ToolTip.Tip="Create six world brushes around the selected geometry using the chosen sky. Wall thickness is one grid unit. One Undo removes the enclosure." />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

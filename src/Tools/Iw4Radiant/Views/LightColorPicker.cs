@@ -8,18 +8,30 @@ namespace Iw4Radiant.Views;
 
 public sealed class LightColorPicker : UserControl
 {
-    private readonly Slider _red = new() { Minimum = 0, Maximum = 1 };
-    private readonly Slider _green = new() { Minimum = 0, Maximum = 1 };
-    private readonly Slider _blue = new() { Minimum = 0, Maximum = 1 };
-    private readonly Border _preview = new() { Height = 26, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1) };
-    private readonly TextBlock _readout = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
+    private readonly Slider _red = new() { Minimum = 0, Maximum = 1, Height = 22 };
+    private readonly Slider _green = new() { Minimum = 0, Maximum = 1, Height = 22 };
+    private readonly Slider _blue = new() { Minimum = 0, Maximum = 1, Height = 22 };
+    private readonly Border _preview = new()
+    {
+        Width = 38, Height = 24, CornerRadius = new CornerRadius(3),
+        BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
+    };
+    private readonly TextBlock _readout = new()
+    {
+        FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(8, 0, 0, 0)
+    };
     private Vector3 _selectedColor;
     private bool _updating;
 
     public LightColorPicker()
     {
         var content = new StackPanel { Spacing = 4 };
-        content.Children.Add(_preview);
+        var previewRow = new Grid { ColumnDefinitions = new ColumnDefinitions("38,*") };
+        previewRow.Children.Add(_preview);
+        Grid.SetColumn(_readout, 1);
+        previewRow.Children.Add(_readout);
+        content.Children.Add(previewRow);
         AddChannel(content, "R", _red);
         AddChannel(content, "G", _green);
         AddChannel(content, "B", _blue);
@@ -29,7 +41,8 @@ public sealed class LightColorPicker : UserControl
         {
             var button = new Button
             {
-                Width = 26, Height = 24, Margin = new Thickness(0, 0, 4, 0),
+                Width = 24, Height = 22, MinWidth = 0, MinHeight = 0,
+                Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 0),
                 Background = new SolidColorBrush(color), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
             };
             ToolTip.SetTip(button, color.ToString());
@@ -37,7 +50,6 @@ public sealed class LightColorPicker : UserControl
             swatches.Children.Add(button);
         }
         content.Children.Add(swatches);
-        content.Children.Add(_readout);
         Content = content;
         SelectedColor = Vector3.One;
     }
@@ -85,6 +97,6 @@ public sealed class LightColorPicker : UserControl
             (byte)Math.Clamp(MathF.Round(display.X * 255), 0, 255),
             (byte)Math.Clamp(MathF.Round(display.Y * 255), 0, 255),
             (byte)Math.Clamp(MathF.Round(display.Z * 255), 0, 255)));
-        _readout.Text = FormattableString.Invariant($"Stored RGB: {_selectedColor.X:G6} / {_selectedColor.Y:G6} / {_selectedColor.Z:G6}");
+        _readout.Text = FormattableString.Invariant($"RGB: {_selectedColor.X:G6} / {_selectedColor.Y:G6} / {_selectedColor.Z:G6}");
     }
 }

@@ -51,7 +51,9 @@ internal sealed class CameraNavigation
         }
     }
 
-    private Vector3 Eye => _target + _distance * new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw),
+    internal Vector3 Eye => _target + EyeOffset;
+
+    private Vector3 EyeOffset => _distance * new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw),
         MathF.Cos(_pitch) * MathF.Sin(_yaw), MathF.Sin(_pitch));
 
     internal Matrix4x4 ViewProjection(float aspect)
@@ -67,9 +69,7 @@ internal sealed class CameraNavigation
 
     internal void Pan(float deltaX, float deltaY, float viewportHeight)
     {
-        Vector3 forward = Vector3.Normalize(_target - Eye);
-        Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ));
-        Vector3 up = Vector3.Cross(right, forward);
+        var (_, right, up) = ViewAxes();
         float scale = 2 * _distance * MathF.Tan(FieldOfView / 2) / viewportHeight;
         _target += (-right * deltaX + up * deltaY) * scale;
     }
@@ -80,18 +80,36 @@ internal sealed class CameraNavigation
         _pitch = Math.Clamp(_pitch + deltaY * 0.008f, -1.5f, 1.5f);
     }
 
+    internal void Look(float deltaX, float deltaY)
+    {
+        Vector3 eye = Eye;
+        Orbit(deltaX, deltaY);
+        _target = eye - EyeOffset;
+    }
+
+    internal void MoveLocal(float right, float forward, float up)
+    {
+        var (viewForward, viewRight, _) = ViewAxes();
+        _target += viewRight * right + viewForward * forward + Vector3.UnitZ * up;
+    }
+
     internal void Zoom(float delta) =>
         _distance = Math.Clamp(_distance * MathF.Exp(-delta * 0.14f), 4, 1000000);
 
     internal (Vector3 Origin, Vector3 Direction) PickRay(float x, float y, float aspect)
     {
         Vector3 origin = Eye;
-        Vector3 forward = Vector3.Normalize(_target - origin);
-        Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ));
-        Vector3 up = Vector3.Cross(right, forward);
+        var (forward, right, up) = ViewAxes();
         float tangent = MathF.Tan(FieldOfView / 2);
         Vector3 direction = Vector3.Normalize(forward + right * x * tangent * aspect
             + up * y * tangent);
         return (origin, direction);
+    }
+
+    private (Vector3 Forward, Vector3 Right, Vector3 Up) ViewAxes()
+    {
+        Vector3 forward = Vector3.Normalize(_target - Eye);
+        Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ));
+        return (forward, right, Vector3.Cross(right, forward));
     }
 }

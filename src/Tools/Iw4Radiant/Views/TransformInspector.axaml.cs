@@ -16,6 +16,10 @@ public partial class TransformInspector : UserControl
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
         ApplyTransformButton.Click += async (_, _) => await ApplyAsync(session, dialogs, finishGestures);
+        ResetTransformButton.Click += (_, _) =>
+        {
+            if (!dialogs.BlocksInput) ResetValues(session.TransformMode);
+        };
         AngleSnapValue.ValueChanged += (_, _) => UpdateSnapping(session, dialogs, finishGestures);
         ScaleSnapValue.ValueChanged += (_, _) => UpdateSnapping(session, dialogs, finishGestures);
         RefreshSelection(session);
@@ -33,17 +37,17 @@ public partial class TransformInspector : UserControl
             _shownSelection = session.Selection.Items.ToArray();
             TransformCaption.Text = session.TransformMode switch
             {
-                TransformMode.Move => $"Move offset · X / Y / Z · grid {session.GridSize:G6}",
-                TransformMode.Rotate => "Rotation in degrees · X / Y / Z",
-                _ => "Scale multipliers · X / Y / Z"
+                TransformMode.Move => $"Move offset · grid {session.GridSize:G6}",
+                TransformMode.Rotate => "Rotation (°)",
+                _ => "Scale multipliers"
             };
             ApplyTransformButton.Content = $"Apply {session.TransformMode.ToString().ToLowerInvariant()}";
-            ApplyTransformButton.IsEnabled = session.CanTransformSelection;
+            ApplyTransformButton.IsEnabled = ResetTransformButton.IsEnabled = session.CanTransformSelection;
             XValue.IsEnabled = YValue.IsEnabled = ZValue.IsEnabled = session.CanTransformSelection;
             if (session.SelectionBounds is { } bounds)
             {
                 Vector3 pivot = bounds.Min * 0.5f + bounds.Max * 0.5f;
-                PivotText.Text = FormattableString.Invariant($"Rotation / scale pivot: {pivot.X:G6} / {pivot.Y:G6} / {pivot.Z:G6}");
+                PivotText.Text = FormattableString.Invariant($"Pivot: {pivot.X:G6} / {pivot.Y:G6} / {pivot.Z:G6}");
             }
             else PivotText.Text = "Select objects or vertices to transform.";
             if (!AngleSnapValue.IsKeyboardFocusWithin) AngleSnapValue.Value = (decimal)session.AngleSnap;

@@ -11,8 +11,32 @@ uniform sampler2D uLightData;
 uniform sampler2D uShadowAtlas;
 uniform ivec2 uShadowGrid;
 uniform int uShadowTileSize;
+uniform bool uSunEnabled;
+uniform vec3 uSunDirection;
+uniform vec3 uSunColor;
+uniform mat4 uSunViewProjection;
+uniform sampler2D uSunShadow;
 
 out vec4 fragmentColor;
+
+float sunVisibility(float diffuse)
+{
+    vec3 coordinate = (uSunViewProjection * vec4(vPosition, 1.0)).xyz * 0.5 + 0.5;
+    // Never illuminate a receiver outside the shadow map's covered world bounds.
+    if (any(lessThan(coordinate, vec3(0.0))) || any(greaterThan(coordinate, vec3(1.0))))
+        return 0.0;
+    ivec2 size = textureSize(uSunShadow, 0);
+    ivec2 pixel = ivec2(floor(coordinate.xy * vec2(size)));
+    float reference = coordinate.z - max(0.0001, 0.0005 * (1.0 - diffuse));
+    float visible = 0.0;
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++)
+    {
+        ivec2 samplePixel = clamp(pixel + ivec2(x, y), ivec2(0), size - ivec2(1));
+        visible += reference <= texelFetch(uSunShadow, samplePixel, 0).r ? 1.0 : 0.0;
+    }
+    return visible / 9.0;
+}
 
 float shadowVisibility(int lightIndex, vec3 fromLight, float radialDepth, float diffuse)
 {
@@ -67,6 +91,12 @@ void main()
         if (!gl_FrontFacing)
             normal = -normal;
         vec3 illumination = vec3(0.0);
+        if (uSunEnabled)
+        {
+            float diffuse = max(dot(normal, uSunDirection), 0.0);
+            if (diffuse > 0.0)
+                illumination += uSunColor * diffuse * sunVisibility(diffuse);
+        }
         for (int i = 0; i < uLightCount; i++)
         {
             vec4 lightPositionRadius = texelFetch(uLightData, ivec2(0, i), 0);

@@ -17,6 +17,13 @@ public partial class SurfaceInspector : UserControl
     {
         ApplyProjectionButton.Click += async (_, _) => await ApplyProjectionAsync(session, dialogs, finishGestures);
         FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
+        RevertProjectionButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput) return;
+            _shownReference = null;
+            RepeatsXValue.Text = RepeatsYValue.Text = "1";
+            RefreshSelection(session);
+        };
         TextureLockValue.IsCheckedChanged += (_, _) =>
         {
             if (_updating || dialogs.BlocksInput) return;
@@ -47,6 +54,7 @@ public partial class SurfaceInspector : UserControl
             if (reference is null)
             {
                 ProjectionInfo.Text = "";
+                ProjectionInfo.IsVisible = false;
                 foreach (var box in ProjectionBoxes()) box.Text = "";
                 return;
             }
@@ -57,7 +65,8 @@ public partial class SurfaceInspector : UserControl
                     (projection with { Suffix = "" }));
                 ProjectionInfo.Text = mixed
                     ? "Mixed projections. Fields show one selected surface; Apply replaces all six values on every selected surface."
-                    : "Apply sets these values on every selected surface. Fit uses each face's current projection.";
+                    : "";
+                ProjectionInfo.IsVisible = mixed;
                 if (changed || !ProjectionBoxes().Any(box => box.IsKeyboardFocusWithin))
                 {
                     SetValue(WidthValue, projection.Width);
@@ -72,6 +81,7 @@ public partial class SurfaceInspector : UserControl
             {
                 ProjectionFields.IsEnabled = false;
                 ProjectionInfo.Text = exception.Message;
+                ProjectionInfo.IsVisible = true;
                 foreach (var box in ProjectionBoxes()) box.Text = "";
             }
         }

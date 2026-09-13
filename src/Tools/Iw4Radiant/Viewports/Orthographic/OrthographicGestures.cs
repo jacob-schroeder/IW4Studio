@@ -34,6 +34,7 @@ internal sealed class OrthographicGestures
     internal EditorSession? Session { get; set; }
     internal event Action<string>? CursorStatusChanged;
     internal event Action? ClipStarted;
+    internal event Action? ClipPreviewChanged;
     internal bool IsActive => _gesture != Gesture.None;
     internal bool IsCreating => _gesture is Gesture.Brush or Gesture.Terrain;
     internal bool IsCreatingTerrain => _gesture == Gesture.Terrain;
@@ -43,6 +44,7 @@ internal sealed class OrthographicGestures
     internal Vector2 CurrentWorld => _currentWorld;
     internal Rect? MarqueeBounds => _gesture == Gesture.Marquee && Dragged ? OrthographicGeometry.Rectangle(_startScreen, _cursorScreen) : null;
     internal bool HasClipPreview => _clipDocument is not null;
+    internal bool CanCommitClip => HasClipPreview && !IsActive && (ClipEnd - ClipStart).LengthSquared() >= 0.0001f;
     internal Vector2 ClipStart { get; private set; }
     internal Vector2 ClipEnd { get; private set; }
     private bool Dragged => OrthographicGeometry.Distance(_cursorScreen, _startScreen) >= 3;
@@ -52,7 +54,7 @@ internal sealed class OrthographicGestures
         if (Session is { } session)
         {
             if (_clipDocument is not null && (!ReferenceEquals(_clipDocument, session.Document) || session.Tool != EditorTool.Clip))
-                _clipDocument = null;
+                ClearClipPreview();
             if (IsActive && !_changingSelection)
             {
                 if (!ReferenceEquals(_gestureDocument, session.Document)) EndGesture(cancel: false, completeEdit: false);
@@ -119,6 +121,7 @@ internal sealed class OrthographicGestures
         _viewport.Cursor = new Cursor(_gesture == Gesture.Pan ? StandardCursorType.SizeAll : StandardCursorType.Cross);
         if (_gesture == Gesture.Sculpt)
             _changed |= _stroke.Begin(session, _projection.ToWorld(_startScreen), e.KeyModifiers.HasFlag(KeyModifiers.Shift), StartEdit);
+        if (HasClipPreview) ClipPreviewChanged?.Invoke();
         _viewport.InvalidateVisual();
     }
 
@@ -222,7 +225,7 @@ internal sealed class OrthographicGestures
                     }
                     finally { _changingSelection = false; }
                 }
-                else if (_gesture == Gesture.Clip && ClipStart == ClipEnd) _clipDocument = null;
+                else if (_gesture == Gesture.Clip && ClipStart == ClipEnd) ClearClipPreview();
             }
             EndGesture(cancel: false);
         }
@@ -232,15 +235,14 @@ internal sealed class OrthographicGestures
 
     internal bool CommitClip()
     {
-        if (!HasClipPreview || Session is not { } session || IsActive) return false;
+        if (!CanCommitClip || Session is not { } session) return false;
         try
         {
             Vector2 edge = ClipEnd - ClipStart;
-            if (edge.LengthSquared() < 0.0001f) return false;
             Vector3 normal = Vector3.Normalize(_projection.Unproject(new Vector2(-edge.Y, edge.X), 0));
             var plane = new Plane(normal, -Vector3.Dot(normal, _projection.Unproject(ClipStart, 0)));
             int count = SelectionClipping.Apply(session, plane);
-            _clipDocument = null;
+            ClearClipPreview();
             CursorStatusChanged?.Invoke($"Clipped {count} brush(es).");
             _viewport.InvalidateVisual();
         }
@@ -250,15 +252,22 @@ internal sealed class OrthographicGestures
 
     internal void CancelGesture()
     {
-        _clipDocument = null;
+        ClearClipPreview();
         EndGesture(cancel: true);
+    }
+
+    private void ClearClipPreview()
+    {
+        if (_clipDocument is null) return;
+        _clipDocument = null;
+        ClipPreviewChanged?.Invoke();
     }
 
     internal void EndGesture(bool cancel, bool completeEdit = true)
     {
         IPointer? pointer = _pointer;
         bool editing = _editStarted, changed = _changed;
-        if (cancel && _gesture == Gesture.Clip) _clipDocument = null;
+        if (cancel && _gesture == Gesture.Clip) ClearClipPreview();
         _pointer = null;
         _gesture = Gesture.None;
         _gestureDocument = null;
@@ -271,6 +280,7 @@ internal sealed class OrthographicGestures
             else session.CompleteEdit(changed);
         }
         if (ReferenceEquals(pointer?.Captured, _viewport)) pointer.Capture(null);
+        if (HasClipPreview) ClipPreviewChanged?.Invoke();
         _viewport.InvalidateVisual();
     }
 

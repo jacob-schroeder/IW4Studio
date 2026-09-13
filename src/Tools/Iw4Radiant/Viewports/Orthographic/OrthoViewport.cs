@@ -60,6 +60,13 @@ public sealed class OrthoViewport : Control
         remove => _gestures.ClipStarted -= value;
     }
 
+    internal event Action? ClipPreviewChanged
+    {
+        add => _gestures.ClipPreviewChanged += value;
+        remove => _gestures.ClipPreviewChanged -= value;
+    }
+
+    internal bool HasClipPreview => _gestures.CanCommitClip;
     internal void CompleteGesture() => _gestures.EndGesture(cancel: false);
     internal void CancelGesture() => _gestures.CancelGesture();
     internal bool CommitClip() => _gestures.CommitClip();
