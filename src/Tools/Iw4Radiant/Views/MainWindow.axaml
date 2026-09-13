@@ -1,0 +1,105 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Iw4Radiant.Views"
+        xmlns:camera="using:Iw4Radiant.Viewports.Camera"
+        xmlns:ortho="using:Iw4Radiant.Viewports.Orthographic"
+        x:Class="Iw4Radiant.Views.MainWindow"
+        Title="Iw4Radiant"
+        Width="1500" Height="980" MinWidth="1050" MinHeight="720"
+        Background="#26282B" FontSize="12">
+    <Window.Styles>
+        <Style Selector="Button"><Setter Property="Padding" Value="10,5" /></Style>
+        <Style Selector="NumericUpDown"><Setter Property="ShowButtonSpinner" Value="False" /></Style>
+        <Style Selector="TextBox"><Setter Property="MinHeight" Value="28" /></Style>
+        <Style Selector="TextBlock.caption">
+            <Setter Property="Foreground" Value="#A8ABB1" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="Border.viewportTitle">
+            <Setter Property="Background" Value="#CC26282B" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="Auto,Auto,*,5,174,Auto">
+        <Menu Grid.Row="0" Background="#202225">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New map" Click="New_Click" InputGesture="Ctrl+N" />
+                <MenuItem Header="_Open .map…" Click="Open_Click" InputGesture="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="_Save" Click="Save_Click" InputGesture="Ctrl+S" />
+                <MenuItem Header="Save _As…" Click="SaveAs_Click" InputGesture="Ctrl+Shift+S" />
+                <Separator />
+                <MenuItem Header="_Exit" Click="Exit_Click" />
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem x:Name="UndoMenu" Header="_Undo" Click="Undo_Click" InputGesture="Ctrl+Z" />
+                <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGesture="Ctrl+Shift+Z" />
+                <Separator />
+                <MenuItem Header="_Duplicate selection" Click="Duplicate_Click" InputGesture="Space" />
+                <MenuItem Header="_Delete selection" Click="Delete_Click" InputGesture="Delete" />
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Frame _all views" Click="FrameAll_Click" />
+                <MenuItem Header="Frame _selection" Click="FrameSelection_Click" InputGesture="F" />
+            </MenuItem>
+            <MenuItem Header="_Entity">
+                <MenuItem Header="_Worldspawn properties" Click="World_Click" />
+                <MenuItem Header="Add _light" Click="Light_Click" />
+                <MenuItem Header="Add player _start" Click="Player_Click" />
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Controls and prototype scope" Click="Help_Click" />
+            </MenuItem>
+        </Menu>
+        <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="8,6">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+                <Button x:Name="SelectTool" Content="Select · Q" Click="SelectTool_Click" />
+                <Button x:Name="BrushTool" Content="Brush · B" Click="BrushTool_Click" />
+                <Button x:Name="TerrainTool" Content="Terrain · T" Click="TerrainTool_Click" />
+                <Button x:Name="SculptTool" Content="Sculpt · V" Click="SculptTool_Click" />
+                <Border Width="1" Background="#494B50" Margin="7,0" />
+                <TextBlock Text="Grid" VerticalAlignment="Center" />
+                <ComboBox x:Name="GridCombo" Width="70" MinHeight="30" SelectionChanged="Grid_Changed" />
+                <TextBlock Text="Base" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <NumericUpDown x:Name="BaseValue" Width="90" Minimum="-65536" Maximum="65536" Value="0" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <TextBlock Text="Depth" VerticalAlignment="Center" />
+                <NumericUpDown x:Name="DepthValue" Width="90" Minimum="1" Maximum="65536" Value="64" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <Button Content="Frame all" Click="FrameAll_Click" Margin="8,0,0,0" />
+            </StackPanel>
+        </Border>
+        <Grid Grid.Row="2" ColumnDefinitions="*,5,*,5,270" RowDefinitions="*,5,*">
+            <Grid Grid.Column="0" Grid.Row="0" ClipToBounds="True">
+                <camera:CameraViewport x:Name="Camera" />
+                <Border Classes="viewportTitle"><TextBlock Text="CAMERA · PERSPECTIVE" /></Border>
+                <Border x:Name="RendererErrorPanel" IsVisible="False" Background="#DD302327" Padding="12"
+                        VerticalAlignment="Bottom" IsHitTestVisible="False">
+                    <TextBlock x:Name="RendererErrorText" TextWrapping="Wrap" Foreground="#FFD2BF" />
+                </Border>
+            </Grid>
+            <Grid Grid.Column="2" Grid.Row="0" ClipToBounds="True">
+                <ortho:OrthoViewport x:Name="TopView" Plane="Top" />
+            </Grid>
+            <Grid Grid.Column="0" Grid.Row="2" ClipToBounds="True">
+                <ortho:OrthoViewport x:Name="FrontView" Plane="Front" />
+            </Grid>
+            <Grid Grid.Column="2" Grid.Row="2" ClipToBounds="True">
+                <ortho:OrthoViewport x:Name="SideView" Plane="Side" />
+            </Grid>
+            <GridSplitter Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" Background="#3A3C40" />
+            <GridSplitter Grid.Row="1" Grid.ColumnSpan="3" ResizeDirection="Rows" Background="#3A3C40" />
+            <GridSplitter Grid.Column="3" Grid.RowSpan="3" ResizeDirection="Columns" Background="#3A3C40" />
+            <views:SelectionInspector x:Name="Inspector" Grid.Column="4" Grid.RowSpan="3" />
+        </Grid>
+        <GridSplitter Grid.Row="3" ResizeDirection="Rows" Background="#3A3C40" />
+        <views:MaterialBrowser x:Name="Materials" Grid.Row="4" />
+        <Border Grid.Row="5" BorderBrush="#404247" BorderThickness="0,1,0,0" Padding="8,5">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="StatusText" Text="B: draw a brush · Q: select/move · right or middle drag: pan · wheel: zoom" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="CountText" Grid.Column="1" Foreground="#A8ABB1" Margin="16,0,0,0" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

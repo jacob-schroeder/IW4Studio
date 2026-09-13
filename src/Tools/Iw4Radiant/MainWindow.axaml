@@ -1,7 +1,0 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Iw4Radiant.MainWindow"
-        Title="Iw4Radiant"
-        Width="800"
-        Height="450">
-</Window>

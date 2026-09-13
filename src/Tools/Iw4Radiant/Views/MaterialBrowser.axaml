@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.MaterialBrowser">
+    <Grid ColumnDefinitions="310,*,210" Background="#222427">
+        <StackPanel Margin="10" Spacing="6">
+            <TextBlock Text="MATERIALS" FontWeight="SemiBold" Foreground="#D1A862" />
+            <DockPanel LastChildFill="True">
+                <Button x:Name="BrowseButton" DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0" />
+                <TextBox x:Name="MaterialFilter" PlaceholderText="Filter material names" />
+            </DockPanel>
+            <TextBox x:Name="MaterialName" PlaceholderText="Choose an available material" />
+            <Button x:Name="ApplyMaterialButton" Content="Apply to selection / use for new geometry" HorizontalAlignment="Stretch" />
+            <TextBlock x:Name="MaterialInfo" Classes="caption" Text="Browse a raw asset or image folder." TextWrapping="Wrap" />
+        </StackPanel>
+        <ListBox x:Name="MaterialList" Grid.Column="1" Margin="0,8" />
+        <Grid Grid.Column="2" Margin="10" RowDefinitions="*,Auto">
+            <Border Background="#34363A" BorderBrush="#4A4C50" BorderThickness="1">
+                <Image x:Name="MaterialPreview" Stretch="Uniform" />
+            </Border>
+            <TextBlock x:Name="PreviewInfo" Grid.Row="1" Classes="caption" Text="DDS · PNG · JPEG · BMP previews" Margin="0,5,0,0" TextWrapping="Wrap" />
+        </Grid>
+    </Grid>
+</UserControl>

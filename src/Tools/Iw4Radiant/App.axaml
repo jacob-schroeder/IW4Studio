@@ -1,7 +1,8 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Iw4Radiant.App"
-             RequestedThemeVariant="Default">
+             Name="Iw4Radiant"
+             RequestedThemeVariant="Dark">
     <Application.Styles>
         <FluentTheme />
     </Application.Styles>

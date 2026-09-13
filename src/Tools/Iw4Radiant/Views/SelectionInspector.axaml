@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.SelectionInspector">
+    <ScrollViewer Background="#292B2F">
+        <StackPanel Margin="12" Spacing="9">
+            <TextBlock Text="INSPECTOR" FontWeight="SemiBold" Foreground="#D1A862" />
+            <TextBlock x:Name="SelectionText" Text="No selection" TextWrapping="Wrap" />
+            <TextBlock Classes="caption" Text="Bounds minimum · X / Y / Z" />
+            <Grid ColumnDefinitions="*,*,*">
+                <TextBox x:Name="MinX" Grid.Column="0" PlaceholderText="X" Margin="0,0,3,0" />
+                <TextBox x:Name="MinY" Grid.Column="1" PlaceholderText="Y" Margin="0,0,3,0" />
+                <TextBox x:Name="MinZ" Grid.Column="2" PlaceholderText="Z" />
+            </Grid>
+            <TextBlock Classes="caption" Text="Size · X / Y / Z" />
+            <Grid ColumnDefinitions="*,*,*">
+                <TextBox x:Name="SizeX" Grid.Column="0" PlaceholderText="X" Margin="0,0,3,0" />
+                <TextBox x:Name="SizeY" Grid.Column="1" PlaceholderText="Y" Margin="0,0,3,0" />
+                <TextBox x:Name="SizeZ" Grid.Column="2" PlaceholderText="Z" />
+            </Grid>
+            <Button x:Name="ApplyBoundsButton" Content="Apply brush bounds" HorizontalAlignment="Stretch" />
+            <Separator />
+            <TextBlock Text="TERRAIN" FontWeight="SemiBold" Foreground="#D1A862" />
+            <Grid ColumnDefinitions="*,95" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                <TextBlock Text="Vertices per side" VerticalAlignment="Center" />
+                <NumericUpDown x:Name="TerrainCount" Grid.Column="1" Minimum="2" Maximum="16" Value="5" FormatString="0" />
+                <TextBlock Grid.Row="1" Text="Sculpt radius" VerticalAlignment="Center" />
+                <NumericUpDown x:Name="RadiusValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="4096" Value="128" Increment="16" FormatString="0" />
+                <TextBlock Grid.Row="2" Text="Sculpt strength" VerticalAlignment="Center" />
+                <NumericUpDown x:Name="StrengthValue" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="256" Value="8" FormatString="0" />
+            </Grid>
+            <TextBlock Classes="caption" Text="Draw terrain in XY. Sculpt raises vertices; hold Shift to lower." TextWrapping="Wrap" />
+            <Separator />
+            <DockPanel>
+                <Button x:Name="WorldButton" DockPanel.Dock="Right" Content="World" />
+                <TextBlock Text="ENTITY PROPERTIES" FontWeight="SemiBold" Foreground="#D1A862" VerticalAlignment="Center" />
+            </DockPanel>
+            <ComboBox x:Name="EntityList" HorizontalAlignment="Stretch" />
+            <TextBox x:Name="PropertiesBox" AcceptsReturn="True" MinHeight="120" TextWrapping="NoWrap"
+                     FontFamily="monospace" PlaceholderText="Select an entity. One key=value per line." />
+            <Button x:Name="ApplyPropertiesButton" Content="Apply entity properties" HorizontalAlignment="Stretch" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
