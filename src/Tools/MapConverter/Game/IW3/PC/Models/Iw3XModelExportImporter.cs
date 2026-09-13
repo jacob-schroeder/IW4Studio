@@ -182,11 +182,10 @@ internal static class Iw3XModelExportImporter
                 modelBounds,
                 boneBounds!);
 
-            // Static marks and collision-enabled scene DObj marks traverse LOD 0,
-            // independently of the LOD selected for collision traces.
+            // Static and scene DObj marks require a nonnegative collision LOD,
+            // then traverse LOD 0 independently of the selected trace LOD.
             bool compileCollisionTrees =
-                (lodIndex == 0 &&
-                 (forStaticWorld || collisionSource is { CollisionLod: >= 0 })) ||
+                (lodIndex == 0 && collisionSource is { CollisionLod: >= 0 }) ||
                 (collisionSource is not null &&
                  collisionSource.CollisionLod == lodIndex);
             XModelExportLodCompileResult compiled = metadata.IsAnimated

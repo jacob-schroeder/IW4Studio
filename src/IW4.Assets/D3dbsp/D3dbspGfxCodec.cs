@@ -266,6 +266,7 @@ internal static class D3dbspGfxCodec
             };
         }
 
+        Bounds surfaceWorld = worldBounds.ToBounds("Render surfaces");
         int staticModelCount = staticModelInstances.Count;
         if (staticModelCount != staticModelDrawInstances.Count)
         {
@@ -329,6 +330,7 @@ internal static class D3dbspGfxCodec
         GfxCell canonicalCell =
             ValidateCanonicalSourceSpatialRows(
                 file,
+                surfaceWorld,
                 world,
                 surfaceCount,
                 reflectionProbeImages.Count);
@@ -1304,6 +1306,7 @@ internal static class D3dbspGfxCodec
 
     private static GfxCell ValidateCanonicalSourceSpatialRows(
         D3dbspFile file,
+        Bounds surfaceBounds,
         Bounds worldBounds,
         int surfaceCount,
         int reflectionProbeCount)
@@ -1350,8 +1353,8 @@ internal static class D3dbspGfxCodec
         Vec3 sourceMins = ReadVec3(cell, 0);
         Vec3 sourceMaxs = ReadVec3(cell, 12);
         ValidateBounds(sourceMins, sourceMaxs, "Render cell");
-        Vec3 decodedMins = BoundsEndpoint(worldBounds, maximum: false, "Render world");
-        Vec3 decodedMaxs = BoundsEndpoint(worldBounds, maximum: true, "Render world");
+        Vec3 decodedMins = BoundsEndpoint(surfaceBounds, maximum: false, "Render surfaces");
+        Vec3 decodedMaxs = BoundsEndpoint(surfaceBounds, maximum: true, "Render surfaces");
         if (sourceMins.X > decodedMins.X ||
             sourceMins.Y > decodedMins.Y ||
             sourceMins.Z > decodedMins.Z ||
@@ -1363,23 +1366,16 @@ internal static class D3dbspGfxCodec
                 "The compiled render-cell bounds do not contain the canonical all-surface world bounds.");
         }
 
+        // Source cells cover compiled surfaces. Models imported from entities
+        // can extend beyond them and must remain inside the final render cell.
+        var cellBounds = new BoundsAccumulator();
+        cellBounds.Add(sourceMins);
+        cellBounds.Add(sourceMaxs);
+        cellBounds.Add(worldBounds);
+        Bounds expandedCell = cellBounds.ToBounds("Render cell including models");
         return new GfxCell
         {
-            Bounds = new Bounds
-            {
-                MidPoint = new Vec3
-                {
-                    X = (float)(((double)sourceMins.X + sourceMaxs.X) * 0.5),
-                    Y = (float)(((double)sourceMins.Y + sourceMaxs.Y) * 0.5),
-                    Z = (float)(((double)sourceMins.Z + sourceMaxs.Z) * 0.5)
-                },
-                HalfSize = new Vec3
-                {
-                    X = (float)(((double)sourceMaxs.X - sourceMins.X) * 0.5),
-                    Y = (float)(((double)sourceMaxs.Y - sourceMins.Y) * 0.5),
-                    Z = (float)(((double)sourceMaxs.Z - sourceMins.Z) * 0.5)
-                }
-            },
+            Bounds = expandedCell,
             ReflectionProbeCount = checked((byte)cellProbes.Length),
             Pad21 = [0, 0, 0],
             ReflectionProbes = Array.AsReadOnly(cellProbes)

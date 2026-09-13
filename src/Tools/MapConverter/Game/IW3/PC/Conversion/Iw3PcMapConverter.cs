@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.GfxMap;
@@ -1780,6 +1781,9 @@ internal static class Iw3PcMapConverter
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Extracted rawfile '{name}' was not found.", path);
             byte[] content = File.ReadAllBytes(path);
+            if (name.StartsWith("vision/", StringComparison.OrdinalIgnoreCase) &&
+                name.EndsWith(".vision", StringComparison.OrdinalIgnoreCase))
+                content = CompileVisionFile(content);
             if (electricBoxFallbackApplied && string.Equals(
                     name,
                     ElectricBoxRawFileName,
@@ -1810,6 +1814,128 @@ internal static class Iw3PcMapConverter
             });
         }
         return result.ToArray();
+    }
+
+    private static byte[] CompileVisionFile(byte[] content)
+    {
+        const int maxTokenLength = 1023;
+        // IW3 ignores these five fields. IW4 recognizes them, but supplies
+        // IW3-compatible film/light defaults when they are absent instead.
+        // Latin1 keeps offsets and untouched bytes exact, including comments.
+        string text = Encoding.Latin1.GetString(content);
+        var output = new StringBuilder(text.Length);
+        var assigned = new HashSet<string>(StringComparer.Ordinal);
+        int position = 0, copied = 0;
+        while (position < text.Length)
+        {
+            string field = ReadToken(out int start).ToLowerInvariant();
+            if (field.Length == 0)
+                break;
+            bool remove = field is "r_filmdesaturationdark" or "r_filmmediumtint" or
+                "r_primarylightusetweaks" or "r_primarylighttweakdiffusestrength" or
+                "r_primarylighttweakspecularstrength";
+            if (!assigned.Contains(field) && field is ("r_glow" or "r_glowbloomcutoff" or "r_glowbloomdesaturation" or
+                "r_glowbloomintensity0" or "r_glowbloomintensity1" or "r_glowradius0" or
+                "r_glowradius1" or "r_glowskybleedintensity0" or "r_glowskybleedintensity1" or
+                "r_filmenable" or "r_filmbrightness" or "r_filmcontrast" or "r_filmdesaturation" or
+                "r_filminvert" or "r_filmlighttint" or "r_filmdarktint"))
+            {
+                // Source-recognized fields consume one value token before
+                // skipping the line. Successfully assigned duplicates instead
+                // skip the raw line, without parsing its comments or quotes.
+                string value = ReadToken(out _, allowLineBreaks: false);
+                bool valid;
+                if (field is "r_glow" or "r_filmenable" or "r_filminvert")
+                    valid = Regex.IsMatch(value, @"\A[ \t\r\n\v\f]*[+-]?[0-9]");
+                else
+                {
+                    // Only sscanf's conversion count matters here. It accepts
+                    // numeric prefixes and trailing text, not just whole tokens.
+                    int count = field is "r_filmlighttint" or "r_filmdarktint" ? 3 : 1;
+                    valid = true;
+                    for (int index = 0; index < count; index++)
+                    {
+                        Match number = Regex.Match(value,
+                            @"\A[ \t\r\n\v\f]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]*)?");
+                        if (!number.Success)
+                        {
+                            valid = false;
+                            break;
+                        }
+                        value = value[number.Length..];
+                    }
+                }
+                if (valid)
+                    assigned.Add(field);
+            }
+            while (position < text.Length && text[position] is not ('\n' or '\0'))
+                position++;
+            if (remove)
+            {
+                output.Append(text, copied, start - copied);
+                copied = position;
+            }
+        }
+        if (copied == 0)
+            return content;
+        output.Append(text, copied, text.Length - copied);
+        return Encoding.Latin1.GetBytes(output.ToString());
+
+        string ReadToken(out int start, bool allowLineBreaks = true)
+        {
+            int originalPosition = position;
+            while (position < text.Length && text[position] != '\0')
+            {
+                if (text[position] <= ' ')
+                {
+                    if (!allowLineBreaks && text[position] == '\n')
+                    {
+                        position = originalPosition;
+                        start = position;
+                        return string.Empty;
+                    }
+                    position++;
+                    continue;
+                }
+                if (text.AsSpan(position).StartsWith("//"))
+                {
+                    while (position < text.Length && text[position] is not ('\n' or '\0'))
+                        position++;
+                    continue;
+                }
+                if (text.AsSpan(position).StartsWith("/*"))
+                {
+                    int end = text.IndexOf("*/", position + 2, StringComparison.Ordinal);
+                    int nul = text.IndexOf('\0', position + 2);
+                    position = nul >= 0 && (end < 0 || nul < end) ? nul :
+                        end < 0 ? text.Length : end + 2;
+                    continue;
+                }
+                break;
+            }
+            start = position;
+            if (position == text.Length || text[position] == '\0')
+                return string.Empty;
+            if (text[position] != '"')
+            {
+                while (position < text.Length && text[position] > ' ')
+                    position++;
+                return text.Substring(start, Math.Min(position - start, maxTokenLength));
+            }
+            position++;
+            var token = new StringBuilder();
+            while (position < text.Length && text[position] != '\0')
+            {
+                char next = text[position++];
+                if (next == '"')
+                    break;
+                if (next == '\\' && position < text.Length && text[position] is '"' or '\\')
+                    next = text[position++];
+                if (token.Length < maxTokenLength)
+                    token.Append(next);
+            }
+            return token.ToString();
+        }
     }
 
     private static byte[] DisableElectricBoxInitialization(byte[] content)

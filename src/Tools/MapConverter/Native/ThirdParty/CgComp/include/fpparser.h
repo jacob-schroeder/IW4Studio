@@ -36,8 +36,6 @@ private:
 
 	void SetNoneDestReg(struct nvfx_insn *insn);
 	
-	u8 IsPCDisablingInstruction(struct nvfx_insn *insn);
-
 	opcode FindOpcode(const char *mnemonic);
 
 	int GetConstRegType(int index);

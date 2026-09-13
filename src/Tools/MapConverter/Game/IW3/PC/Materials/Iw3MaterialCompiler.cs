@@ -773,14 +773,23 @@ internal static class Iw3MaterialCompiler
         // IW3 partitions lit/emissive materials before sorting their authored
         // keys. PS3 IW4 compares the key first, so a raw ordinal cast can make
         // its material comparator inconsistent. Native lit blends use 29;
-        // emissive blend/additive and 2d materials use 47.
+        // emissive blend/additive and 2d materials use 47; distortion uses 43.
         MaterialSortKey targetSortKey = sourceSortKey switch
         {
+            0 when emissive && techniqueSetName is
+                "distortion_scale" or "distortion_scale_zfeather" or
+                "sm2/distortion_scale" or "sm2/distortion_scale_zfeather" => MaterialSortKey.Distortion,
+            3 when lit => MaterialSortKey.OpaqueAmbient,
             4 when lit => MaterialSortKey.Opaque,
             4 when ui => MaterialSortKey.AdditiveBlend,
             5 when lit => MaterialSortKey.Sky,
+            10 when lit => MaterialSortKey.DecalBottom2,
+            11 when lit => MaterialSortKey.DecalBottom3,
             12 when lit => MaterialSortKey.DecalStatic,
             24 when lit => MaterialSortKey.DecalWeaponImpact,
+            24 when emissive && techniqueSetName is "effect_nofog" or "sm2/effect_nofog" =>
+                MaterialSortKey.EffectAutoSort,
+            29 when lit => MaterialSortKey.DecalTop1,
             36 when lit => MaterialSortKey.TransparentWater,
             38 when lit => MaterialSortKey.WindowInside,
             39 when lit => MaterialSortKey.WindowOutside,

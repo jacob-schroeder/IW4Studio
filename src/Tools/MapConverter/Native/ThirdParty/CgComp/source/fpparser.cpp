@@ -367,9 +367,10 @@ void CFPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 	if(strtok(NULL,","))
 		throw std::runtime_error("Too many fragment operands.");
 
-	// finally check for insns disabling perspective correction interpolation
-	// only at this point we know everyhting about the insn to decide.
-	insn->disable_pc = IsPCDisablingInstruction(insn);
+	// ARB fragment attributes already have perspective-correct values. Keep
+	// InitInstruction's disable_pc=0: the RSX bit scales texture-coordinate
+	// inputs by 1/clipW. Guessing it from the opcode changes ordinary MUL/DP
+	// arithmetic, including lightmap and detail-map coordinates.
 }
 
 opcode CFPParser::FindOpcode(const char *mnemonic)
@@ -722,22 +723,4 @@ void CFPParser::SetNoneDestReg(struct nvfx_insn *insn)
 	insn->dst.type = NVFXSR_NONE;
 	insn->dst.index = 0x3f;
 	insn->dst.is_fp16 = 0;		//always treat as fp32 (on RSX there's only RC)
-}
-
-u8 CFPParser::IsPCDisablingInstruction(struct nvfx_insn *insn)
-{
-	switch(insn->op) {
-		case OPCODE_DP2:
-		case OPCODE_DP2A:
-		case OPCODE_DP3:
-		case OPCODE_DP4:
-		case OPCODE_MUL:
-		case OPCODE_DIV:
-		case OPCODE_NRM3:
-			return 1;
-		case OPCODE_TEX:
-			if(insn->tex_target == PARAM_SAMPLERCUBE) return 1;
-		default:
-			return 0;
-	}
 }
