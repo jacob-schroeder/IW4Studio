@@ -1,3 +1,5 @@
+using IW4.Assets.Codecs.GfxMap;
+using IW4.Assets.D3dbsp;
 using System.Buffers.Binary;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.GfxMap;
@@ -7,22 +9,20 @@ using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Math;
 using IW4.FastFiles.Pointers;
 
-namespace IW4.Assets.D3dbsp;
+namespace IW4.Assets.Codecs.D3dbsp;
 
 internal static class D3dbspGfxCodec
 {
     private const int DiskTriangleSoupSize = 24;
     private const int DiskVertexSize = 68;
     private const int DiskModelSize = 48;
-    private const int PositionStride = 16;
-    private const int LayerStride = 28;
+    private const int PositionStride = WorldVertexCodec.PositionStride;
+    private const int LayerStride = WorldVertexCodec.LayerStride;
     internal const byte NoLightmapIndex = 0x1f;
     private const int SortKeyLitDecal = 0x06;
     private const int SortKeyEffectDecal = 0x27;
     private const int SortKeyEffectAuto = 0x30;
     private const int SortKeyDistortion = 0x2b;
-    internal const string FullbrightPrimaryLightmapImageName = "*lightmap0_primary";
-    internal const string FullbrightSecondaryLightmapImageName = "*lightmap0_secondary";
 
     public static IReadOnlyList<string> DecodeRenderMaterialNames(D3dbspFile file)
     {
@@ -137,26 +137,11 @@ internal static class D3dbspGfxCodec
             Span<byte> positionRow = packedPositions.AsSpan(
                 index * PositionStride,
                 PositionStride);
-            WriteSingleBigEndian(positionRow, 0, position.X);
-            WriteSingleBigEndian(positionRow, 4, position.Y);
-            WriteSingleBigEndian(positionRow, 8, position.Z);
-            WriteSingleBigEndian(
-                positionRow,
-                12,
-                CalculateBinormalSign(normal, tangent, binormal));
-
             Span<byte> layerRow = packedLayers.AsSpan(index * LayerStride, LayerStride);
             // DiskGfxVertex stores BGRA; the RSX U8N stream consumes RGBA.
-            layerRow[0] = source[26];
-            layerRow[1] = source[25];
-            layerRow[2] = source[24];
-            layerRow[3] = source[27];
-            WriteSingleBigEndian(layerRow, 4, ReadSingle(source, 28));
-            WriteSingleBigEndian(layerRow, 8, ReadSingle(source, 32));
-            WriteSingleBigEndian(layerRow, 12, ReadSingle(source, 36));
-            WriteSingleBigEndian(layerRow, 16, ReadSingle(source, 40));
-            BinaryPrimitives.WriteUInt32BigEndian(layerRow[20..], PackSignedNormal(normal));
-            BinaryPrimitives.WriteUInt32BigEndian(layerRow[24..], PackSignedNormal(tangent));
+            WorldVertexCodec.WriteVertex(positionRow, layerRow, position, normal, tangent, binormal,
+                source[26], source[25], source[24], source[27],
+                ReadSingle(source, 28), ReadSingle(source, 32), ReadSingle(source, 36), ReadSingle(source, 40));
         }
 
         var surfaces = new GfxSurface[surfaceCount];
@@ -439,18 +424,7 @@ internal static class D3dbspGfxCodec
         IReadOnlyList<GfxLightmapArray> outputLightmaps;
         if (needsFullbrightLightmap)
         {
-            outputLightmaps =
-            [
-                new GfxLightmapArray
-                {
-                    Primary = CreateFullbrightLightmapImage(
-                        FullbrightPrimaryLightmapImageName,
-                        primary: true),
-                    Secondary = CreateFullbrightLightmapImage(
-                        FullbrightSecondaryLightmapImageName,
-                        primary: false)
-                }
-            ];
+            outputLightmaps = [GfxLightmapCodec.CreateFullbright()];
         }
         else
         {
@@ -607,42 +581,6 @@ internal static class D3dbspGfxCodec
 
     private static uint DynamicEntityWordCount(ushort count) =>
         checked(((uint)count + 31) >> 5);
-
-    private static GfxImageAsset CreateFullbrightLightmapImage(
-        string name,
-        bool primary)
-    {
-        ushort width = primary ? (ushort)1024 : (ushort)512;
-        const ushort height = 1024;
-        int payloadByteCount = primary ? 1024 * 1024 : 512 * 1024 * 4;
-        var payload = new byte[payloadByteCount];
-        Array.Fill(payload, byte.MaxValue);
-        return new GfxImageAsset
-        {
-            Format = (byte)(primary
-                ? GfxImageBaseFormat.B8
-                : GfxImageBaseFormat.A8R8G8B8),
-            LevelCount = 1,
-            DimensionCount = GfxImageDimension.TwoDimensional,
-            TextureControl1 = primary ? 0x0001a9ffu : 0x0001aae4u,
-            Width = width,
-            Height = height,
-            Depth = 1,
-            MemoryLocation = GfxImageMemoryLocation.Local,
-            MapType = MapType.TwoDimensional,
-            TextureSemantic = TextureSemantic.Function,
-            Category = ImageCategory.Lightmap,
-            CardMemory = checked((uint)payload.Length),
-            BaseWidth = width,
-            BaseHeight = height,
-            BaseDepth = 1,
-            BaseLevelCount = 1,
-            Cached = GfxImageCached.No,
-            PayloadByteCount = payload.Length,
-            PayloadBytes = payload,
-            Name = name
-        };
-    }
 
     public static (
         byte[] Triangles,
@@ -1391,34 +1329,6 @@ internal static class D3dbspGfxCodec
         return new Bounds { MidPoint = midpoint, HalfSize = halfSize };
     }
 
-    private static uint PackSignedNormal(Vec3 value)
-    {
-        RequireFinite(value, "Packed normal");
-        int x = QuantizeNormal(value.X, 1023);
-        int y = QuantizeNormal(value.Y, 1023);
-        int z = QuantizeNormal(value.Z, 511);
-        return (uint)(x & 0x7ff) |
-            ((uint)(y & 0x7ff) << 11) |
-            ((uint)(z & 0x3ff) << 22);
-    }
-
-    private static float CalculateBinormalSign(
-        Vec3 normal,
-        Vec3 tangent,
-        Vec3 binormal)
-    {
-        RequireFinite(binormal, "Render vertex binormal");
-        float crossX = normal.Y * tangent.Z - normal.Z * tangent.Y;
-        float crossY = normal.Z * tangent.X - normal.X * tangent.Z;
-        float crossZ = normal.X * tangent.Y - normal.Y * tangent.X;
-        float dot = crossX * binormal.X + crossY * binormal.Y + crossZ * binormal.Z;
-        return dot < 0.0f ? -1.0f : 1.0f;
-    }
-
-    private static int QuantizeNormal(float value, int scale) => checked((int)System.Math.Round(
-        System.Math.Clamp((double)value, -1.0, 1.0) * scale,
-        MidpointRounding.AwayFromZero));
-
     private static int GetElementCount(
         ReadOnlySpan<byte> data,
         int elementSize,
@@ -1464,13 +1374,6 @@ internal static class D3dbspGfxCodec
 
     private static float ReadSingle(ReadOnlySpan<byte> data, int offset) =>
         BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(data[offset..]));
-
-    private static void WriteSingleBigEndian(Span<byte> data, int offset, float value)
-    {
-        if (!float.IsFinite(value))
-            throw new InvalidDataException("A render vertex contains a non-finite scalar.");
-        BinaryPrimitives.WriteSingleBigEndian(data[offset..], value == 0.0f ? 0.0f : value);
-    }
 
     private static int FindMaterialIndex(
         IReadOnlyList<ClipMaterial> materials,

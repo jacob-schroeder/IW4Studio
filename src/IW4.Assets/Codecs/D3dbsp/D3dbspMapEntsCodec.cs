@@ -1,3 +1,4 @@
+using IW4.Assets.D3dbsp;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Numerics;
@@ -9,7 +10,7 @@ using IW4.Assets.Assets.Physics;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Math;
 
-namespace IW4.Assets.D3dbsp;
+namespace IW4.Assets.Codecs.D3dbsp;
 
 internal sealed record D3dbspStaticModelEntity(
     string ModelName,

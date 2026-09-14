@@ -52,10 +52,13 @@ internal static class MaterialCatalog
         foreach (string path in jsonFiles)
         {
             string name = Path.ChangeExtension(Path.GetRelativePath(materialRoot, path), null).Replace('\\', '/');
-            var (colorMap, isSky, samplerState, surface) = ReadMaterial(path);
+            var (colorMap, isSky, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = ReadMaterial(path);
             string? image = colorMap is null ? null : ResolveImage(colorMap);
             if (image is not null || isSky)
-                materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState) { Surface = surface };
+                materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState)
+                {
+                    Surface = surface, GameFlags = gameFlags, SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet
+                };
         }
         return Ordered(materials);
 
@@ -76,7 +79,7 @@ internal static class MaterialCatalog
         values.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
-    private static (string? Image, bool IsSky, MaterialSamplerState SamplerState, MaterialSurfaceState Surface) ReadMaterial(string path)
+    private static (string? Image, bool IsSky, MaterialSamplerState SamplerState, MaterialSurfaceState Surface, MaterialGameFlags GameFlags, MaterialSurfaceTypeBits SurfaceTypeBits, string TechniqueSet) ReadMaterial(string path)
     {
         try
         {
@@ -86,11 +89,15 @@ internal static class MaterialCatalog
             if (root.ValueKind != JsonValueKind.Object)
                 throw Invalid("Expected a material JSON object");
             RequireString("_game", "iw4");
+            RequireString("_platform", "ps3");
             RequireString("_type", "material");
             MaterialSurfaceState surface = MaterialSurfaceState.Read(root);
+            string techniqueSet = root.GetProperty("techniqueSet").GetString() ?? throw Invalid("Expected a techniqueSet name");
             if (root.TryGetProperty("_version", out var version) &&
                 (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number != 1))
                 throw Invalid("Expected material version 1");
+            MaterialSurfaceTypeBits surfaceTypeBits = root.TryGetProperty("surfaceTypeBits", out var surfaceTypes)
+                ? (MaterialSurfaceTypeBits)surfaceTypes.GetUInt32() : MaterialSurfaceTypeBits.None;
             MaterialGameFlags gameFlags = MaterialGameFlags.None;
             if (root.TryGetProperty("gameFlags", out var flags))
             {
@@ -108,7 +115,7 @@ internal static class MaterialCatalog
             if (!root.TryGetProperty("textures", out var textures))
             {
                 if (hasSkyFlag) throw Invalid("A sky requires a color-map texture");
-                return (null, false, MaterialSamplerState.None, surface);
+                return (null, false, MaterialSamplerState.None, surface, gameFlags, surfaceTypeBits, techniqueSet);
             }
             if (textures.ValueKind != JsonValueKind.Array)
                 throw Invalid("Expected a textures array");
@@ -133,11 +140,11 @@ internal static class MaterialCatalog
                 if (!hasSkyFlag && colorMap is not null) break;
             }
             if (colorMap is not { } selected)
-                return (null, false, MaterialSamplerState.None, surface);
+                return (null, false, MaterialSamplerState.None, surface, gameFlags, surfaceTypeBits, techniqueSet);
             bool hasSampler = selected.TryGetProperty("samplerState", out var sampler);
-            if (isSky && (!hasSampler || sampler.ValueKind != JsonValueKind.Object))
+            if (!hasSampler || sampler.ValueKind != JsonValueKind.Object)
                 throw Invalid("Expected a colorMap samplerState object");
-            MaterialSamplerState samplerState = !isSky ? ImagePreviewSampler : ReadSamplerValue("filter") switch
+            MaterialSamplerState samplerState = ReadSamplerValue("filter") switch
             {
                 "disabled" => MaterialSamplerState.FilterDisabled,
                 "nearest" => MaterialSamplerState.FilterNearest,
@@ -146,25 +153,22 @@ internal static class MaterialCatalog
                 "aniso4x" => MaterialSamplerState.FilterAnisotropic4X,
                 _ => throw Invalid("Unsupported colorMap filter")
             };
-            if (isSky)
+            samplerState |= ReadSamplerValue("mipMap") switch
             {
-                samplerState |= ReadSamplerValue("mipMap") switch
-                {
-                    "disabled" => MaterialSamplerState.MipMapDisabled,
-                    "nearest" => MaterialSamplerState.MipMapNearest,
-                    "linear" => MaterialSamplerState.MipMapLinear,
-                    _ => throw Invalid("Unsupported colorMap mipMap")
-                };
-                if (ReadClamp("clampU")) samplerState |= MaterialSamplerState.ClampU;
-                if (ReadClamp("clampV")) samplerState |= MaterialSamplerState.ClampV;
-                if (ReadClamp("clampW")) samplerState |= MaterialSamplerState.ClampW;
-            }
+                "disabled" => MaterialSamplerState.MipMapDisabled,
+                "nearest" => MaterialSamplerState.MipMapNearest,
+                "linear" => MaterialSamplerState.MipMapLinear,
+                _ => throw Invalid("Unsupported colorMap mipMap")
+            };
+            if (ReadClamp("clampU")) samplerState |= MaterialSamplerState.ClampU;
+            if (ReadClamp("clampV")) samplerState |= MaterialSamplerState.ClampV;
+            if (ReadClamp("clampW")) samplerState |= MaterialSamplerState.ClampW;
             if (!selected.TryGetProperty("image", out var image) || image.ValueKind == JsonValueKind.Null)
-                return (null, isSky, samplerState, surface);
+                return (null, isSky, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet);
             if (image.ValueKind != JsonValueKind.String)
                 throw Invalid("Expected a colorMap image name");
             string? imageName = image.GetString();
-            return (string.IsNullOrWhiteSpace(imageName) ? null : imageName, isSky, samplerState, surface);
+            return (string.IsNullOrWhiteSpace(imageName) ? null : imageName, isSky, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet);
 
             string ReadSamplerValue(string property)
             {
@@ -191,6 +195,10 @@ internal static class MaterialCatalog
         catch (JsonException exception)
         {
             throw new InvalidDataException($"Material '{path}' contains invalid JSON: {exception.Message}", exception);
+        }
+        catch (Exception exception) when (exception is KeyNotFoundException or InvalidOperationException or FormatException or OverflowException)
+        {
+            throw new InvalidDataException($"Material '{path}' has missing or invalid native fields: {exception.Message}", exception);
         }
 
         InvalidDataException Invalid(string reason) => new($"Material '{path}': {reason}.");

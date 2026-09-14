@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.D3dbsp;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Assets.Assets.GfxMap;

@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.GfxMap;
 using System.Numerics;
 using IW4.Assets.Assets.ComWorld;
 using IW4.Render.Execution;
@@ -304,9 +305,9 @@ internal static class
         float colorScale) => Row(
             sceneLightIndex,
             rowIndex,
-            GammaColorTransfer.ToLinear(light.Color.X * colorScale),
-            GammaColorTransfer.ToLinear(light.Color.Y * colorScale),
-            GammaColorTransfer.ToLinear(light.Color.Z * colorScale),
+            GfxColorCodec.GammaToLinear(light.Color.X * colorScale),
+            GfxColorCodec.GammaToLinear(light.Color.Y * colorScale),
+            GfxColorCodec.GammaToLinear(light.Color.Z * colorScale),
             1f);
 
     private static DirectCodeConstantRow Row(

@@ -1,8 +1,9 @@
+using IW4.Assets.Assets.XModel;
 using System.Buffers.Binary;
 using System.Numerics;
 using IW4.Assets.Math;
 
-namespace IW4.Assets.Assets.XModel;
+namespace IW4.Assets.Codecs.XModel;
 
 /// <summary>
 /// The fixed PS3 XSurface streams used by MTL_WORLDVERT_TEX_2_NRM_2.

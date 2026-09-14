@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.GfxMap;
 using System.Numerics;
 
 using IW4.Render.Execution;
@@ -46,7 +47,7 @@ internal static class MapRenderEditorDirectCodeConstantProducers
         Vector3 color = lighting.DirectionalSunColor;
         Vector3 diffuse = color * diffuseColorScale;
         Vector3 specularGamma = color * specularColorScale;
-        specular = new(GammaColorTransfer.ToLinear(specularGamma.X), GammaColorTransfer.ToLinear(specularGamma.Y), GammaColorTransfer.ToLinear(specularGamma.Z));
-        return new(GammaColorTransfer.ToLinear(diffuse.X), GammaColorTransfer.ToLinear(diffuse.Y), GammaColorTransfer.ToLinear(diffuse.Z));
+        specular = new(GfxColorCodec.GammaToLinear(specularGamma.X), GfxColorCodec.GammaToLinear(specularGamma.Y), GfxColorCodec.GammaToLinear(specularGamma.Z));
+        return new(GfxColorCodec.GammaToLinear(diffuse.X), GfxColorCodec.GammaToLinear(diffuse.Y), GfxColorCodec.GammaToLinear(diffuse.Z));
     }
 }

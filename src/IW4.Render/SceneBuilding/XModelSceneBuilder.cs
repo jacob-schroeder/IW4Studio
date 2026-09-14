@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.XModel;
 using System.Numerics;
 using IW4.AssetExchange.XModel;
 using IW4.Assets.Assets;

@@ -53,7 +53,7 @@ internal static class TerrainPainting
     internal static void AddOverlay(EditorSession session, Func<string, bool> supportsAlpha)
     {
         if (!supportsAlpha(session.Material))
-            throw new ArgumentException("Choose a material with supported alpha blending in the material browser before adding an overlay.");
+            throw new ArgumentException("Choose an alpha-blended material with a wc_ technique set in the browser before adding a paintable overlay.");
         MapTerrain[] terrains = session.Selection.Items.OfType<MapTerrain>().Where(terrain => !terrain.IsCurve &&
             session.Visibility.CanSelect(session.Document, terrain)).ToArray();
         if (terrains.Length == 0 || terrains.Length != session.Selection.Count)
@@ -62,6 +62,7 @@ internal static class TerrainPainting
         {
             MapTerrain overlay = terrain.Clone();
             overlay.Material = session.Material;
+            TerrainContents.SetNonColliding(overlay, true);
             for (int index = 0; index < overlay.Colors.Length; index++) overlay.Colors[index].W = 0;
             return (Owner: session.Document.Entities.First(entity => entity.Terrains.Contains(terrain)), Overlay: overlay);
         }).ToArray();

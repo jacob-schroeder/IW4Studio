@@ -12,7 +12,7 @@ internal sealed record GameplayEntityType(string Name, string Category, string D
 
 internal static class GameplayEntityEditing
 {
-    // Native class names and authored fields observed in the official PS3 mp_rust MapEnts.
+    // Native gameplay classes and compiler-owned lighting markers.
     internal static IReadOnlyList<GameplayEntityType> Types { get; } =
     [
         new("mp_dm_spawn", "Spawns", "Free-for-all spawn. Set position and facing angles."),
@@ -23,6 +23,7 @@ internal static class GameplayEntityEditing
         new("mp_sd_spawn_attacker", "Spawns", "Search and Destroy attacker spawn. Set position and facing angles."),
         new("mp_sd_spawn_defender", "Spawns", "Search and Destroy defender spawn. Set position and facing angles."),
         new("mp_global_intermission", "Spawns", "Intermission camera position and facing angles."),
+        new("reflection_probe", "Lighting", "Bakes reflections from the surrounding map for shiny surfaces. Place where reflections should be sampled."),
         new("script_origin", "Script", "Named script position. Set targetname for map scripts to find it."),
         new("script_struct", "Script", "Script data marker. Set targetname and map-specific script fields in Entity properties."),
         new("script_model", "Script", "Convert selected XModel instances to script_model, preserving their model and transform."),

@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.D3dbsp;
 using System.Globalization;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.ColMap;
@@ -28,6 +29,7 @@ public sealed record D3dbspLinkRequest(
 {
     public bool WorldOnly { get; init; }
     public bool UseSourceMaterials { get; init; }
+    public bool UseCompiledLighting { get; init; }
     public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<MaterialAsset> AvailableMaterials { get; init; } = [];
     public IReadOnlyList<GfxLightmapArray> Lightmaps { get; init; } = [];
@@ -92,7 +94,7 @@ public static class D3dbspAssetLinker
             throw new ArgumentException("Static script-model selection requires world-only source-material linking.", nameof(request));
         ValidateSuppliedLighting(request);
         bool forceFullbright = request.ForceFullbright ||
-            (request.WorldOnly && request.Lightmaps.Count == 0);
+            (request.WorldOnly && request.Lightmaps.Count == 0 && !request.UseCompiledLighting);
         IReadOnlyList<IReadOnlyList<DynEntityDef>> dynamicEntityDefinitions =
             FreezeDynamicEntityDefinitions(
                 request.WorldOnly ? null : request.DynamicEntityDefinitions);
@@ -128,6 +130,8 @@ public static class D3dbspAssetLinker
                 ? []
                 : D3dbspImageCodec.DecodeLightBytes(
                     file.GetOptionalData(D3dbspLumpType.LightBytes));
+        if (request.UseCompiledLighting && lightmaps.Count == 0)
+            throw new InvalidDataException("Compiled lighting was requested, but the BSP contains no lightmap arrays.");
         (
             IReadOnlyList<GfxImageAsset?> reflectionProbeImages,
             IReadOnlyList<GfxReflectionProbe> reflectionProbeOrigins) =
@@ -1162,7 +1166,8 @@ public static class D3dbspAssetLinker
             // IW4 world geometry uses the 3D default material; the bare
             // $default asset is the 2D engine/UI fallback.
             "$default" => "w/$default3d",
-            _ when name[0] == '$' || name.StartsWith("w/", StringComparison.Ordinal) => name,
+            _ when name[0] == '$' || name.StartsWith("w/", StringComparison.Ordinal) ||
+                   name.StartsWith("wc/", StringComparison.Ordinal) => name,
             _ => "w/" + name
         };
         return new MaterialAsset
@@ -1186,6 +1191,8 @@ public static class D3dbspAssetLinker
     {
         ArgumentNullException.ThrowIfNull(request.Lightmaps);
         ArgumentNullException.ThrowIfNull(request.OutdoorLookupMatrix);
+        if (request.UseCompiledLighting && (request.ForceFullbright || request.Lightmaps.Count != 0))
+            throw new ArgumentException("Compiled lighting cannot be combined with forced fullbright or supplied lightmaps.", nameof(request));
         if (request.Lightmaps.Count > D3dbspGfxCodec.NoLightmapIndex)
         {
             throw new ArgumentException(

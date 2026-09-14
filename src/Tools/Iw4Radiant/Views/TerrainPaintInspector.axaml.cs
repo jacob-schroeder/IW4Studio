@@ -10,19 +10,25 @@ public partial class TerrainPaintInspector : UserControl
 {
     private bool _updating;
     private Func<string, bool> _supportsAlpha = _ => false;
+    private Func<string, bool> _supportsVertexColor = _ => false;
+    private Action? _finishGestures;
 
     public TerrainPaintInspector() => InitializeComponent();
 
-    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, Func<string, bool> supportsAlpha)
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor)
     {
         _supportsAlpha = supportsAlpha;
+        _supportsVertexColor = supportsVertexColor;
+        _finishGestures = finishGestures;
         foreach (NumericUpDown input in new[] { RedValue, GreenValue, BlueValue, AlphaValue, OpacityValue, RadiusValue })
             input.ValueChanged += (_, _) => UpdateSettings(session, dialogs, finishGestures);
         PaintColorButton.Click += (_, _) => BeginPainting(session, dialogs, finishGestures, TerrainSculptMode.PaintColor);
         PaintAlphaButton.Click += (_, _) => BeginPainting(session, dialogs, finishGestures, TerrainSculptMode.PaintAlpha);
         FillColorButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () => TerrainPainting.Fill(session, alphaOnly: false));
         FillAlphaButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () => TerrainPainting.Fill(session, alphaOnly: true));
-        OverlayButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () => TerrainPainting.AddOverlay(session, _supportsAlpha));
+        OverlayButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures,
+            () => TerrainPainting.AddOverlay(session, name => _supportsAlpha(name) && _supportsVertexColor(name)));
         RefreshSelection(session);
     }
 
@@ -40,12 +46,22 @@ public partial class TerrainPaintInspector : UserControl
             if (!RadiusValue.IsKeyboardFocusWithin) RadiusValue.Value = (decimal)session.SculptRadius;
             ColorPreview.Background = new SolidColorBrush(Color.FromRgb((byte)(session.PaintColor.X * 255),
                 (byte)(session.PaintColor.Y * 255), (byte)(session.PaintColor.Z * 255)));
-            bool selected = TerrainPainting.SelectedTerrains(session).Length > 0;
-            PaintColorButton.IsEnabled = PaintAlphaButton.IsEnabled = FillColorButton.IsEnabled = FillAlphaButton.IsEnabled = selected;
-            PaintHint.Text = selected ? "Drag in Top view to paint the selected patches. Shift removes tint or erases alpha. Fill affects selected vertices, or the whole selected patch. Alpha is visible with alpha-blended materials." :
-                "Select terrain patches, curve patches, or their vertices to paint or fill color and alpha.";
-            bool supported = _supportsAlpha(session.Material);
-            OverlayMaterialText.Text = supported ? $"Overlay material: {session.Material}" : "Choose a material with supported alpha blending in the browser.";
+            MapTerrain[] terrains = TerrainPainting.SelectedTerrains(session);
+            bool paintable = terrains.Length > 0 && terrains.All(terrain => _supportsVertexColor(terrain.Material));
+            PaintColorButton.IsEnabled = PaintAlphaButton.IsEnabled = FillColorButton.IsEnabled = FillAlphaButton.IsEnabled = paintable;
+            PaintHint.Text = terrains.Length == 0 ? "Select terrain patches, curve patches, or their vertices to paint or fill color and alpha." :
+                paintable ? "Drag in Top view to paint the selected patches. Shift removes tint or erases alpha. Fill affects selected vertices, or the whole selected patch. Alpha is visible with alpha-blended materials." :
+                "Choose a material with a wc_ technique set for every selected patch to paint vertex color or alpha.";
+            if (!paintable && session.Tool == EditorTool.Sculpt &&
+                session.SculptMode is TerrainSculptMode.PaintColor or TerrainSculptMode.PaintAlpha)
+            {
+                _finishGestures?.Invoke();
+                session.Tool = EditorTool.Select;
+                session.Refresh();
+            }
+            bool supported = _supportsAlpha(session.Material) && _supportsVertexColor(session.Material);
+            OverlayMaterialText.Text = supported ? $"Overlay material: {session.Material}" :
+                "Choose an alpha-blended material with a wc_ technique set in the browser.";
             OverlayButton.IsEnabled = supported && session.Selection.Count > 0 &&
                 session.Selection.Items.All(item => item is MapTerrain { IsCurve: false });
         }
@@ -83,7 +99,8 @@ public partial class TerrainPaintInspector : UserControl
     {
         if (dialogs.BlocksInput) return;
         try { finishGestures(); action(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or
+            NotSupportedException or InvalidDataException or FormatException)
         { await dialogs.MessageAsync("Terrain painting", exception.Message); }
     }
 }

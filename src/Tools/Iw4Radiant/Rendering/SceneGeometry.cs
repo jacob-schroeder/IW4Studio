@@ -1,6 +1,7 @@
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Editing;
+using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Rendering;
 
@@ -31,13 +32,21 @@ internal sealed class SceneGeometry
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines)>(StringComparer.Ordinal);
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
+        var clipColor = new Vector3(0.85f, 0.35f, 0.85f);
         var wireColor = new Vector3(0.48f, 0.51f, 0.55f);
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         {
+            bool selected = selectedObjects.Contains(brush) || selectedFaces.Contains(polygon.Face);
+            if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material))
+            {
+                for (int index = 0; index < polygon.Vertices.Length; index++)
+                    AddLine(outlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
+                        selected ? highlight : clipColor);
+                continue;
+            }
             var geometry = GetMaterialGeometry(polygon.Face.Material);
-            AddPolygon(polygon, geometry.Triangles, Vector3.One,
-                selectedObjects.Contains(brush) || selectedFaces.Contains(polygon.Face) ? highlight : null, geometry.Lines);
+            AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines);
         }
         foreach (var terrain in document.Terrains)
         {

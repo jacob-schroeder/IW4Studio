@@ -8,6 +8,9 @@ namespace Iw4Radiant.Views;
 public partial class TerrainInspector : UserControl
 {
     private bool _updating;
+    private bool _collisionEdited;
+    private MapTerrain[] _shownCollisionTerrains = [];
+    private bool[] _shownCollisionValues = [];
 
     public TerrainInspector() => InitializeComponent();
 
@@ -22,6 +25,20 @@ public partial class TerrainInspector : UserControl
         SmoothVerticesButton.Click += async (_, _) => await EditVerticesAsync(session, dialogs, finishGestures, flatten: false);
         FlattenVerticesButton.Click += async (_, _) => await EditVerticesAsync(session, dialogs, finishGestures, flatten: true);
         StitchButton.Click += async (_, _) => await StitchAsync(session, dialogs, finishGestures);
+        SolidCollisionValue.IsCheckedChanged += (_, _) =>
+        {
+            if (_updating || dialogs.BlocksInput) return;
+            _collisionEdited = true;
+            ApplyCollisionButton.IsEnabled = SolidCollisionValue.IsChecked is not null;
+            RevertCollisionButton.IsEnabled = true;
+        };
+        ApplyCollisionButton.Click += async (_, _) => await ApplyCollisionAsync(session, dialogs, finishGestures);
+        RevertCollisionButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput) return;
+            _collisionEdited = false;
+            RefreshSelection(session);
+        };
         RefreshSelection(session);
     }
 
@@ -46,8 +63,9 @@ public partial class TerrainInspector : UserControl
             HeightFields.IsVisible = !painting && (count > 0 || session.Tool == EditorTool.Sculpt && session.SculptMode == TerrainSculptMode.Flatten);
             VertexFields.IsVisible = !painting && count > 0;
             StitchFields.IsVisible = !painting && session.Selection.Items.Any(item => item is MapTerrain { IsCurve: false });
+            RefreshCollision(session);
             TerrainContextText.IsVisible = !CreationFields.IsVisible && !SculptFields.IsVisible &&
-                !VertexFields.IsVisible && !StitchFields.IsVisible;
+                !VertexFields.IsVisible && !StitchFields.IsVisible && !CollisionFields.IsVisible;
             VertexSelectionText.Text = $"{count} terrain {(count == 1 ? "vertex" : "vertices")} selected.";
             SmoothVerticesButton.IsEnabled = FlattenVerticesButton.IsEnabled = count > 0;
             StitchButton.IsEnabled = session.Selection.Count == 2 && session.Selection.Items.All(item => item is MapTerrain { IsCurve: false });
@@ -55,6 +73,79 @@ public partial class TerrainInspector : UserControl
             StitchSelectionText.Text = "Select two whole terrain patches to stitch.";
         }
         finally { _updating = false; }
+    }
+
+    private void RefreshCollision(EditorSession session)
+    {
+        MapTerrain[] terrains = session.Selection.Items.OfType<MapTerrain>().Where(terrain => !terrain.IsCurve).ToArray();
+        CollisionFields.IsVisible = terrains.Length != 0;
+        bool wholeMeshes = terrains.Length != 0 && terrains.Length == session.Selection.Count;
+        SolidCollisionValue.IsEnabled = wholeMeshes;
+        ApplyCollisionButton.IsEnabled = RevertCollisionButton.IsEnabled = false;
+        if (!wholeMeshes)
+        {
+            _shownCollisionTerrains = [];
+            _shownCollisionValues = [];
+            _collisionEdited = false;
+            SolidCollisionValue.IsChecked = null;
+            CollisionSelectionText.Text = "Select whole terrain meshes to edit collision.";
+            return;
+        }
+        try
+        {
+            bool[] values = terrains.Select(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray();
+            if (!_shownCollisionTerrains.SequenceEqual(terrains) || !_shownCollisionValues.SequenceEqual(values))
+                _collisionEdited = false;
+            _shownCollisionTerrains = terrains;
+            _shownCollisionValues = values;
+            bool mixed = values.Any(value => value != values[0]);
+            if (!_collisionEdited) SolidCollisionValue.IsChecked = mixed ? null : values[0];
+            ApplyCollisionButton.IsEnabled = _collisionEdited && SolidCollisionValue.IsChecked is not null;
+            RevertCollisionButton.IsEnabled = _collisionEdited;
+            CollisionSelectionText.Text = mixed
+                ? "Mixed collision. Choose a value and Apply to all selected meshes."
+                : "Apply changes the selected whole meshes. Vertex alpha does not change collision.";
+        }
+        catch (Exception exception) when (exception is NotSupportedException or InvalidDataException or FormatException)
+        {
+            _collisionEdited = false;
+            SolidCollisionValue.IsChecked = null;
+            SolidCollisionValue.IsEnabled = false;
+            CollisionSelectionText.Text = exception.Message;
+        }
+    }
+
+    private async Task ApplyCollisionAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    {
+        if (_updating || dialogs.BlocksInput) return;
+        try
+        {
+            if (SolidCollisionValue.IsChecked is not { } solid)
+                throw new ArgumentException("Choose whether the selected terrain meshes have solid collision.");
+            _updating = true;
+            finishGestures();
+            MapTerrain[] terrains = session.Selection.Items.OfType<MapTerrain>().Where(terrain => !terrain.IsCurve).ToArray();
+            if (terrains.Length == 0 || terrains.Length != session.Selection.Count)
+                throw new ArgumentException("Select whole terrain meshes to edit collision.");
+            // Validate every selected mesh before starting an undoable edit. The
+            // owning directive editor preserves native detail/layer attributes.
+            bool[] values = terrains.Select(TerrainContents.ReadNonColliding).ToArray();
+            if (values.Any(nonColliding => nonColliding == solid))
+                session.Edit(() =>
+                {
+                    foreach (MapTerrain terrain in terrains)
+                        TerrainContents.SetNonColliding(terrain, !solid);
+                });
+            _collisionEdited = false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or
+            NotSupportedException or InvalidDataException or FormatException)
+        { await dialogs.MessageAsync("Terrain collision", exception.Message); }
+        finally
+        {
+            _updating = false;
+            RefreshSelection(session);
+        }
     }
 
     private void UpdateSettings(EditorSession session, EditorDialogs dialogs, Action finishGestures)

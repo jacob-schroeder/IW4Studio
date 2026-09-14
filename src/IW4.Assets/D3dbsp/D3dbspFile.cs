@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.D3dbsp;
 using System.Buffers.Binary;
 
 namespace IW4.Assets.D3dbsp;

@@ -39,6 +39,16 @@ public partial class MaterialBrowser : UserControl
         MaterialList.ScrollIntoView(material);
     }
 
+    internal void UsePlayerClip(EditorSession session)
+    {
+        MaterialList.SelectedItem = null;
+        ReleasePreview();
+        MaterialName.Text = ClipBrushMaterial.PlayerClip;
+        PreviewInfo.Text = "Player clip · invisible in game; blocks players. Magenta outlines show the editable volume.";
+        session.Material = ClipBrushMaterial.PlayerClip;
+        session.Refresh();
+    }
+
     internal void ReleaseImages()
     {
         MaterialList.ItemsSource = null;
@@ -154,6 +164,12 @@ public partial class MaterialBrowser : UserControl
         try
         {
             string name = (MaterialName.Text ?? "").Trim();
+            if (ClipBrushMaterial.IsPlayerClip(name))
+            {
+                PlayerClipEditing.Apply(session);
+                UsePlayerClip(session);
+                return;
+            }
             if (!_materials.TryGetValue(name, out var material) || !File.Exists(material.Material.ImagePath))
                 throw new ArgumentException("Choose a material with an available image from the browser.");
             if (material.IsSky) SkyEditing.Apply(session, material.Material);

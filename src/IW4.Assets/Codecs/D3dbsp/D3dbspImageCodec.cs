@@ -1,8 +1,10 @@
+using IW4.Assets.Codecs.GfxMap;
+using IW4.Assets.D3dbsp;
 using System.Buffers.Binary;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
 
-namespace IW4.Assets.D3dbsp;
+namespace IW4.Assets.Codecs.D3dbsp;
 
 internal readonly record struct D3dbspLightmapTile(
     int RuntimeLightmapIndex,
@@ -23,23 +25,23 @@ internal readonly record struct D3dbspLightmapTile(
 
 internal static class D3dbspImageCodec
 {
-    private const int LightmapPrimaryWidth = 1024;
-    private const int LightmapPrimaryHeight = 1024;
-    private const int LightmapSecondaryWidth = 512;
-    private const int LightmapSecondaryPlaneHeight = 512;
-    private const int LightmapSecondaryHeight = 1024;
+    private const int LightmapPrimaryWidth = GfxLightmapCodec.PrimaryWidth;
+    private const int LightmapPrimaryHeight = GfxLightmapCodec.PrimaryHeight;
+    private const int LightmapSecondaryWidth = GfxLightmapCodec.SecondaryWidth;
+    private const int LightmapSecondaryPlaneHeight = GfxLightmapCodec.SecondaryPlaneHeight;
+    private const int LightmapSecondaryHeight = GfxLightmapCodec.SecondaryHeight;
     private const int LightmapPrimaryByteCount = 1024 * 1024;
     private const int LightmapSecondaryPlaneByteCount = 512 * 512 * 4;
     private const int LightmapSecondaryByteCount = 2 * LightmapSecondaryPlaneByteCount;
     private const int LightmapByteCount = LightmapPrimaryByteCount + LightmapSecondaryByteCount;
 
-    private const int ReflectionProbeEdgeLength = 64;
-    private const int ReflectionProbeMipCount = 7;
-    private const int ReflectionProbeFaceCount = 6;
+    private const int ReflectionProbeEdgeLength = GfxReflectionProbeCodec.ReflectionProbeEdgeLength;
+    private const int ReflectionProbeMipCount = GfxReflectionProbeCodec.ReflectionProbeMipCount;
+    private const int ReflectionProbeFaceCount = GfxReflectionProbeCodec.ReflectionProbeFaceCount;
     private const int ReflectionProbeTopMipByteCount = 64 * 64 * 4;
-    private const int ReflectionProbeFacePixelByteCount = 21_844;
-    private const int ReflectionProbeFaceStride = 21_888;
-    private const int ReflectionProbeRuntimeByteCount = ReflectionProbeFaceCount * ReflectionProbeFaceStride;
+    private const int ReflectionProbeFacePixelByteCount = GfxReflectionProbeCodec.ReflectionProbeFacePixelByteCount;
+    private const int ReflectionProbeFaceStride = GfxReflectionProbeCodec.ReflectionProbeFaceStride;
+    private const int ReflectionProbeRuntimeByteCount = GfxReflectionProbeCodec.ReflectionProbeRuntimeByteCount;
     private const int ReflectionProbeDiskPixelByteCount = 131_064;
     private const int ReflectionProbeDiskRowByteCount = 131_140;
     private const int ReflectionProbeColorCorrectionNameByteCount = 64;
@@ -199,36 +201,8 @@ internal static class D3dbspImageCodec
             ReadOnlySpan<byte> row = data.Slice(
                 checked(index * LightmapByteCount),
                 LightmapByteCount);
-            byte[] secondaryLinear = row[..LightmapSecondaryByteCount].ToArray();
-            GfxImagePixelLayout.ReverseFourBytePixelOrder(secondaryLinear);
-            byte[] primaryLinear = row[LightmapSecondaryByteCount..].ToArray();
-            lightmaps[index] = new GfxLightmapArray
-            {
-                Primary = CreateTwoDimensionalImage(
-                    $"*lightmap{index}_primary",
-                    GfxImageBaseFormat.B8,
-                    textureControl1: 0x0001A9FF,
-                    LightmapPrimaryWidth,
-                    LightmapPrimaryHeight,
-                    ImageCategory.Lightmap,
-                    FromLinearPixels(
-                        primaryLinear,
-                        LightmapPrimaryWidth,
-                        LightmapPrimaryHeight,
-                        bytesPerPixel: 1)),
-                Secondary = CreateTwoDimensionalImage(
-                    $"*lightmap{index}_secondary",
-                    GfxImageBaseFormat.A8R8G8B8,
-                    textureControl1: 0x0001AAE4,
-                    LightmapSecondaryWidth,
-                    LightmapSecondaryHeight,
-                    ImageCategory.Lightmap,
-                    FromLinearPixels(
-                        secondaryLinear,
-                        LightmapSecondaryWidth,
-                        LightmapSecondaryHeight,
-                        bytesPerPixel: 4))
-            };
+            lightmaps[index] = GfxLightmapCodec.Create(index,
+                row[LightmapSecondaryByteCount..], row[..LightmapSecondaryByteCount]);
         }
 
         return Array.AsReadOnly(lightmaps);
@@ -305,9 +279,7 @@ internal static class D3dbspImageCodec
 
         var images = new GfxImageAsset?[authoredCount + 1];
         var origins = new GfxReflectionProbe[authoredCount + 1];
-        images[0] = CreateReflectionProbeImage(
-            0,
-            CreateDefaultReflectionProbePixels());
+        images[0] = GfxReflectionProbeCodec.CreateDefaultImage();
         origins[0] = new GfxReflectionProbe(0, 0, 0);
 
         for (int authoredIndex = 0; authoredIndex < authoredCount; authoredIndex++)
@@ -320,7 +292,7 @@ internal static class D3dbspImageCodec
                 ReadFiniteSingle(row, 0, runtimeIndex),
                 ReadFiniteSingle(row, 4, runtimeIndex),
                 ReadFiniteSingle(row, 8, runtimeIndex));
-            images[runtimeIndex] = CreateReflectionProbeImage(
+            images[runtimeIndex] = GfxReflectionProbeCodec.CreateImage(
                 runtimeIndex,
                 DecodeReflectionProbePixels(
                     row[(12 + ReflectionProbeColorCorrectionNameByteCount)..]));
@@ -415,13 +387,6 @@ internal static class D3dbspImageCodec
             : GfxImagePixelLayout.DeswizzleMorton2D(source, width, height, bytesPerPixel);
     }
 
-    private static byte[] FromLinearPixels(
-        ReadOnlySpan<byte> pixels,
-        int width,
-        int height,
-        int bytesPerPixel) =>
-        GfxImagePixelLayout.SwizzleMorton2D(pixels, width, height, bytesPerPixel);
-
     private static void CopyRectangle(
         ReadOnlySpan<byte> source,
         int sourceWidth,
@@ -443,64 +408,6 @@ internal static class D3dbspImageCodec
                 .CopyTo(destination.Slice(checked(row * rowByteCount), rowByteCount));
         }
     }
-
-    private static GfxImageAsset CreateTwoDimensionalImage(
-        string name,
-        GfxImageBaseFormat format,
-        uint textureControl1,
-        ushort width,
-        ushort height,
-        ImageCategory category,
-        byte[] payload) => new()
-    {
-        Format = (byte)format,
-        LevelCount = 1,
-        DimensionCount = GfxImageDimension.TwoDimensional,
-        TextureControl1 = textureControl1,
-        Width = width,
-        Height = height,
-        Depth = 1,
-        MemoryLocation = GfxImageMemoryLocation.Local,
-        MapType = MapType.TwoDimensional,
-        TextureSemantic = TextureSemantic.Function,
-        Category = category,
-        CardMemory = checked((uint)payload.Length),
-        BaseWidth = width,
-        BaseHeight = height,
-        BaseDepth = 1,
-        BaseLevelCount = 1,
-        Cached = GfxImageCached.No,
-        PayloadByteCount = payload.Length,
-        PayloadBytes = payload,
-        Name = name
-    };
-
-    private static GfxImageAsset CreateReflectionProbeImage(
-        int index,
-        byte[] payload) => new()
-    {
-        Format = (byte)GfxImageBaseFormat.A8R8G8B8,
-        LevelCount = ReflectionProbeMipCount,
-        DimensionCount = GfxImageDimension.TwoDimensional,
-        MultiFaceControl = 1,
-        TextureControl1 = 0x0001AAE4,
-        Width = ReflectionProbeEdgeLength,
-        Height = ReflectionProbeEdgeLength,
-        Depth = 1,
-        MemoryLocation = GfxImageMemoryLocation.Local,
-        MapType = MapType.Cube,
-        TextureSemantic = TextureSemantic.Function,
-        Category = ImageCategory.AutoGenerated,
-        CardMemory = checked((uint)payload.Length),
-        BaseWidth = ReflectionProbeEdgeLength,
-        BaseHeight = ReflectionProbeEdgeLength,
-        BaseDepth = 1,
-        BaseLevelCount = ReflectionProbeMipCount,
-        Cached = GfxImageCached.No,
-        PayloadByteCount = payload.Length,
-        PayloadBytes = payload,
-        Name = $"*reflection_probe{index}"
-    };
 
     private static void EncodeReflectionProbePixels(
         GfxImageAsset image,
@@ -574,19 +481,6 @@ internal static class D3dbspImageCodec
         }
 
         return payload;
-    }
-
-    private static byte[] CreateDefaultReflectionProbePixels()
-    {
-        var diskPixels = new byte[ReflectionProbeDiskPixelByteCount];
-        for (int offset = 0; offset < diskPixels.Length; offset += 4)
-        {
-            diskPixels[offset] = 0;
-            diskPixels[offset + 1] = 0;
-            diskPixels[offset + 2] = byte.MaxValue;
-            diskPixels[offset + 3] = byte.MaxValue;
-        }
-        return DecodeReflectionProbePixels(diskPixels);
     }
 
     private static float ReadFiniteSingle(

@@ -10,6 +10,19 @@
                                ToolTip.Tip="Number of vertices per side for new terrain patches. Draw in Top view." />
             </Grid>
         </StackPanel>
+        <StackPanel x:Name="CollisionFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Terrain collision" Classes="panelTitle" />
+            <CheckBox x:Name="SolidCollisionValue" IsThreeState="True"
+                      ToolTip.Tip="Keep solid collision on the base terrain. Turn it off for visual overlays and decals.">
+                <TextBlock Text="Solid collision (players and projectiles)" TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock x:Name="CollisionSelectionText" Classes="caption" TextWrapping="Wrap" />
+            <TextBlock Text="Mesh collision acts from the front side. Use closed brushes for barriers that block from both sides." Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                <Button x:Name="ApplyCollisionButton" Content="Apply" Classes="panelAction" HorizontalAlignment="Stretch" />
+                <Button x:Name="RevertCollisionButton" Grid.Column="1" Content="Revert" HorizontalAlignment="Stretch" />
+            </Grid>
+        </StackPanel>
         <StackPanel x:Name="SculptFields" Spacing="8" IsVisible="False">
             <TextBlock Text="Sculpt" Classes="panelTitle" />
             <ComboBox x:Name="SculptModeBox" HorizontalAlignment="Stretch"

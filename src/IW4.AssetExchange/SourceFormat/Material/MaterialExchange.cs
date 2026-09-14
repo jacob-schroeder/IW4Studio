@@ -8,8 +8,8 @@ using IW4.Assets.Assets.Material;
 namespace IW4.AssetExchange.SourceFormat.Material;
 
 /// <summary>
-/// Writes PS3 IW4 materials in the OpenAssetTools material-v1 JSON source
-/// format. State bits are decoded from the proven console load-bit words.
+/// Writes version-one IW4 material JSON with explicit PS3 platform semantics.
+/// State bits are decoded from the proven console load-bit words.
 /// </summary>
 public sealed class MaterialExchange
 {
@@ -426,10 +426,8 @@ public sealed class MaterialExchange
         using (var writer = new Utf8JsonWriter(stream, JsonOptions))
         {
             writer.WriteStartObject();
-            writer.WriteString(
-                "$schema",
-                "http://openassettools.dev/schema/material.v1.json");
             writer.WriteString("_game", "iw4");
+            writer.WriteString("_platform", "ps3");
             writer.WriteString("_type", "material");
             writer.WriteNumber("_version", 1);
 
@@ -807,8 +805,7 @@ public sealed class MaterialExchange
             0 => "offset0",
             1 => "offset1",
             2 => "offset2",
-            3 => throw new NotSupportedException(
-                $"Material '{assetName}' state-bit row {index} uses PS3 polygon-offset inherit, which OAT IW4 material-v1 names as the different PC shadowmap mode."),
+            3 => "inherit",
             _ => throw StateValueError(
                 assetName,
                 index,

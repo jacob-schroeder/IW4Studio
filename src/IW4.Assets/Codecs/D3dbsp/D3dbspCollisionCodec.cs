@@ -1,10 +1,11 @@
+using IW4.Assets.D3dbsp;
 using System.Buffers.Binary;
 using System.Text;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Math;
 
-namespace IW4.Assets.D3dbsp;
+namespace IW4.Assets.Codecs.D3dbsp;
 
 internal static class D3dbspCollisionCodec
 {

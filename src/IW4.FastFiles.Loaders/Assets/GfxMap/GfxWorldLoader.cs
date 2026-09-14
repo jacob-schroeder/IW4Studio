@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.GfxMap;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Assets.Image;
 using IW4.FastFiles.Loaders.Assets.Material;

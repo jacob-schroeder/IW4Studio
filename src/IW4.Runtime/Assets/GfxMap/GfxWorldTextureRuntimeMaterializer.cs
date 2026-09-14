@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.GfxMap;
 using IW4.Assets.Zone;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;

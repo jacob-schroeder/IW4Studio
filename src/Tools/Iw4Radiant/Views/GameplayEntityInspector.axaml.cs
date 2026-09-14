@@ -13,7 +13,7 @@ public partial class GameplayEntityInspector : UserControl
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
-        Category.ItemsSource = new[] { "All types", "Spawns", "Script", "Triggers" };
+        Category.ItemsSource = new[] { "All types", "Spawns", "Lighting", "Script", "Triggers" };
         Category.SelectedIndex = 0;
         EntityFilter.TextChanged += (_, _) => FilterTypes();
         Category.SelectionChanged += (_, _) => FilterTypes();

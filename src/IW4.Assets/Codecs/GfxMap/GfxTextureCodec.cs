@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
 
-namespace IW4.Assets.Assets.GfxMap;
+namespace IW4.Assets.Codecs.GfxMap;
 
 /// <summary>
 /// Binary contract shared by the PS3 GfxWorld loader and renderer-owned

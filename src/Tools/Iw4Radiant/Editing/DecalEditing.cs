@@ -25,6 +25,7 @@ internal static class DecalEditing
             foreach (MapTerrain mesh in ProjectFace(polygon, width, height, rotation, offset, session.Material))
             {
                 mesh.Directives.AddRange(selected.Brush.Directives);
+                TerrainContents.SetNonColliding(mesh, true);
                 additions.Add((owner, mesh));
             }
         }

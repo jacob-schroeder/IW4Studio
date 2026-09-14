@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Media;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Materials;
 using Iw4Radiant.Rendering;
 using Vector = Avalonia.Vector;
 
@@ -18,6 +19,7 @@ internal sealed class OrthographicDrawing
     private static readonly Pen MinorGrid = new(Brush("#26292E"));
     private static readonly Pen MajorGrid = new(Brush("#33373E"));
     private static readonly Pen BrushPen = new(Brush("#9AA0AA"));
+    private static readonly Pen ClipBrushPen = new(Brush("#D959D9"));
     private static readonly Pen TerrainPen = new(Brush("#84988B"));
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
     private static readonly Pen TargetPen = new(Brush("#6DB8C4"), 1.2);
@@ -48,7 +50,7 @@ internal sealed class OrthographicDrawing
                 {
                     bool faceSelected = scene.Selection.Contains(new BrushFaceSelection(brush, polygon.Face));
                     DrawPolygon(context, polygon.Vertices.Select(_projection.ToScreen).ToArray(), faceSelected ? SelectionFill : null,
-                        selected || faceSelected ? SelectedPen : BrushPen);
+                        selected || faceSelected ? SelectedPen : ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) ? ClipBrushPen : BrushPen);
                 }
             }
             foreach (var terrain in scene.Document.Terrains)

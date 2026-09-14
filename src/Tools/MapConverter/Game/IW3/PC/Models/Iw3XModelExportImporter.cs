@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.XModel;
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;

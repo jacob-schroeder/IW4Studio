@@ -26,7 +26,8 @@ public partial class MainWindow : Window
         _dialogs = new EditorDialogs(this, SetStatus);
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus);
         Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials,
-            () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true);
+            () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
+            name => ResolveMaterial(name)?.UsesVertexColor == true);
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.LayoutChanged += RefreshLayoutControls;
         Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
@@ -75,6 +76,7 @@ public partial class MainWindow : Window
         Workspace.Camera.RefreshScene();
         UndoMenu.IsEnabled = UndoToolbar.IsEnabled = _session.CanUndo;
         RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
+        ApplyPlayerClipMenu.IsEnabled = PlayerClipEditing.CanApply(_session);
         (ToggleButton Button, EditorTool Tool)[] tools =
             [(SelectTool, EditorTool.Select), (BrushTool, EditorTool.Brush),
              (TerrainTool, EditorTool.Terrain), (SculptTool, EditorTool.Sculpt),
@@ -330,6 +332,7 @@ public partial class MainWindow : Window
         "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. Preview shows image details and Size adjusts the tiles.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
         "Models and prefabs: open Create or the asset browser tabs. Choose Place, then click a camera surface or grid; Shift repeats and Escape cancels. Models support surface alignment, Drop, Find and Replace. Prefabs use native .map files with Edit source, Reload, Make unique and Explode.\n" +
+        "Player collision: Create → Player clip draws an invisible brush or converts selected whole world brushes. Shape a separate volume around a model; magenta outlines mark clip brushes. Model collision alone does not block players. Choose a material thumbnail to resume ordinary brush creation.\n" +
         "Geometry: Create opens native patches, bevels, caps, cylinders, arches and stairs; select a curve to refine or edit its control points.\n" +
         "Organization: use Layers for native layer/group authoring, hide/freeze/isolate and restore. Hidden objects are excluded from viewports; frozen objects cannot be selected or edited.\n" +
         "Terrain detail: fill or brush-paint vertex color and alpha, add a blend overlay with an available alpha material, or project a native mesh decal from a selected brush face.\n" +
@@ -338,7 +341,8 @@ public partial class MainWindow : Window
         "IW4 material JSON color maps, DDS and PNG/JPEG/BMP previews are supported; PS3 material programs are not executed. " +
         "Materials without a matching image are omitted. Unresolved map surfaces appear as wireframe. " +
         "Lighting previews light_point_linear point/spot lights and authored direct sunlight with shadows. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets, ambient/diffuse sky lighting and bounced light are not previewed. " +
-        "Integrated geometry/lighting compilation and IW4 .d3dbsp/.ff export are not implemented yet.");
+        "Build → Build PS3 map compiles a saved map into .d3dbsp and .ff using D3dbspLinker. " +
+        Compilation.MapCompiler.Scope);
 
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {

@@ -24,7 +24,8 @@ public partial class DecalInspector : UserControl
                 finishGestures();
                 DecalEditing.Project(session, width, height, rotation, offset, _supportsAlpha);
             }
-            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or
+                NotSupportedException or InvalidDataException or FormatException)
             { await dialogs.MessageAsync("Project decal", exception.Message); }
         };
         RefreshSelection(session);

@@ -58,6 +58,7 @@ internal static class SurfaceRaycast
 
         void Consider(Vector3 a, Vector3 b, Vector3 c, string material)
         {
+            if (ClipBrushMaterial.IsPlayerClip(material)) return;
             if (resolveMaterial?.Invoke(material) is { IsSky: true }) return;
             if (!RayTriangle(origin, direction, a, b, c, out float distance, out Vector3 triangleNormal) || distance >= closest) return;
             closest = distance;

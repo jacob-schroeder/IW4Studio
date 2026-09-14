@@ -50,8 +50,10 @@ static int ToFastFile(
     IReadOnlyList<string> optionsAndDependencies)
 {
     bool forceFullbright = false;
+    bool useCompiledLighting = false;
     bool worldOnly = false;
     bool useSourceMaterials = false;
+    bool stockBootstrap = false;
     var lightmapImageNames = new List<(string PrimaryImageName, string SecondaryImageName)>();
     string? outdoorImageName = null;
     float[]? outdoorLookupMatrix = null;
@@ -78,6 +80,13 @@ static int ToFastFile(
             forceFullbright = true;
             continue;
         }
+        if (string.Equals(value, "--compiled-lighting", StringComparison.Ordinal))
+        {
+            if (useCompiledLighting)
+                throw new ArgumentException("The --compiled-lighting option may be supplied only once.");
+            useCompiledLighting = true;
+            continue;
+        }
         if (string.Equals(value, "--world-only", StringComparison.Ordinal))
         {
             if (worldOnly)
@@ -90,6 +99,13 @@ static int ToFastFile(
             if (useSourceMaterials)
                 throw new ArgumentException("The --source-materials option may be supplied only once.");
             useSourceMaterials = true;
+            continue;
+        }
+        if (string.Equals(value, "--stock-bootstrap", StringComparison.Ordinal))
+        {
+            if (stockBootstrap)
+                throw new ArgumentException("The --stock-bootstrap option may be supplied only once.");
+            stockBootstrap = true;
             continue;
         }
         if (string.Equals(value, "--lightmap", StringComparison.Ordinal))
@@ -236,6 +252,8 @@ static int ToFastFile(
 
     if (useSourceMaterials && !worldOnly)
         throw new ArgumentException("The --source-materials option requires --world-only.");
+    if (useCompiledLighting && (forceFullbright || lightmapImageNames.Count != 0))
+        throw new ArgumentException("The --compiled-lighting option cannot be combined with --fullbright or --lightmap.");
     if (staticScriptModelNames.Count != 0 && (!worldOnly || !useSourceMaterials))
         throw new ArgumentException("The --static-script-model option requires --world-only and --source-materials.");
 
@@ -245,8 +263,10 @@ static int ToFastFile(
         assetName,
         output,
         forceFullbright,
+        useCompiledLighting,
         worldOnly,
         useSourceMaterials,
+        stockBootstrap,
         dependencies,
         providerFastFiles,
         additionalXModelNames,
@@ -346,8 +366,10 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [--world-only [--source-materials]] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only [--source-materials]] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
     Console.Error.WriteLine("  Lighting images must be owned by --provider-fastfile inputs; --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
+    Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps in world-only builds and requires at least one lightmap array.");
+    Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");
     Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
     return 2;
 }

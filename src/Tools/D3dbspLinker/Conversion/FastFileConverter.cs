@@ -10,6 +10,7 @@ using IW4.Assets.Assets.Sound;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.D3dbsp;
+using IW4.FastFiles.Database.Streaming;
 using IW4.FastFiles.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.D3dbsp;
@@ -120,8 +121,10 @@ internal static class FastFileConverter
         string assetName,
         string output,
         bool forceFullbright,
+        bool useCompiledLighting,
         bool worldOnly,
         bool useSourceMaterials,
+        bool stockBootstrap,
         IReadOnlyList<string> dependencyFastFiles,
         IReadOnlyList<string> providerFastFiles,
         IReadOnlyList<string> additionalXModelNames,
@@ -205,12 +208,15 @@ internal static class FastFileConverter
         if (File.Exists(outputPath))
             throw new IOException($"Output file '{outputPath}' already exists.");
 
-        // The world-only template supplies its own model graph; native comma
-        // dependencies must not trigger unrelated startup-zone preloads.
-        using FastFileWorkspace template = worldOnly
-            ? new FastFileDocumentService().Open(
-                new FastFileDocumentOpenRequest(templatePath, Isolated.Instance))
-            : FastFileInspector.Open(templatePath);
+        // Official map templates reference model geometry in shared startup
+        // zones. Resolve those through the existing native lifecycle; converted
+        // world-only templates continue to supply their own complete graph.
+        using FastFileWorkspace template = stockBootstrap
+            ? new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(
+                templatePath, new ZonePlan(FastFileOpenProfiles.ResolveForTarget(templatePath))))
+            : worldOnly
+                ? new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(templatePath, Isolated.Instance))
+                : FastFileInspector.Open(templatePath);
         GfxWorldAsset templateWorld =
             FastFileInspector.GetSingle<GfxWorldAsset>(template) ??
             throw new InvalidDataException(
@@ -263,6 +269,7 @@ internal static class FastFileConverter
             {
                 WorldOnly = worldOnly,
                 UseSourceMaterials = useSourceMaterials,
+                UseCompiledLighting = useCompiledLighting,
                 StaticScriptModelNames = staticScriptModelNames,
                 AvailableMaterials = availableMaterials.Values.ToArray(),
                 Lightmaps = lightmaps,
@@ -561,6 +568,25 @@ internal static class FastFileConverter
                 "Fastfile link failed: " + string.Join("; ", link.Errors));
         }
 
+        if (stockBootstrap)
+        {
+            string[] unsupportedPackages = link.ImageStreamLanguageTables
+                .SelectMany(table => table.ImageStreamEntries)
+                .Where(entry => !entry.IsEmpty && entry.FileIndex is not (>= 1 and <= 4))
+                .Select(entry => DbHeaderImageStreamEntry.GetPackageFileName(entry.FileIndex, outputPath))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (unsupportedPackages.Length != 0)
+            {
+                throw new InvalidDataException(
+                    "The linked map requires image packages that this stock-bootstrap build does not provide: " +
+                    string.Join(", ", unsupportedPackages) +
+                    ". Choose asset providers whose selected images are resident or use the installed " +
+                    "PS3 imagefile1.pak through imagefile4.pak.");
+            }
+        }
+
         FastFilePackagingResult package = new FastFilePackager().PackageGreenfield(
             decodedBytes,
             link.LanguageMask,
@@ -616,7 +642,7 @@ internal static class FastFileConverter
             .Single()
             .WorldDraw
             .LightmapCount;
-        Console.WriteLine(forceFullbright || (worldOnly && lightmaps.Length == 0)
+        Console.WriteLine(forceFullbright || (worldOnly && lightmaps.Length == 0 && !useCompiledLighting)
             ? $"lighting-mode: forced fullbright; discarded {graph.DiscardedLightByteCount} compiled light bytes"
             : $"lighting-mode: authored; linked {linkedLightmapCount} lightmap arrays");
         Console.WriteLine($"available-providers: {baseAssets.Providers.Count}");

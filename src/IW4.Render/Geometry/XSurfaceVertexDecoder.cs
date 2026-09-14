@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.XModel;
 using System.Buffers.Binary;
 using IW4.Assets.Assets.GfxMap;
 using System.Numerics;

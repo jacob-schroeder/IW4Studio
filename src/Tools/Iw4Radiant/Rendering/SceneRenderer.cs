@@ -15,7 +15,7 @@ internal sealed class SceneRenderer
     private uint _framebuffer, _colorBuffer, _depthBuffer;
     private uint _lineTexture;
     private PixelSize _renderSize;
-    private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation;
+    private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
     private readonly Dictionary<string, MaterialSurfaceState> _surfaceStates = new(StringComparer.Ordinal);
@@ -48,6 +48,8 @@ internal sealed class SceneRenderer
             _texturedLocation = _gl.GetUniformLocation(_program, "uTextured");
             _litLocation = _gl.GetUniformLocation(_program, "uLit");
             _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
+            _premultiplyAlphaLocation = _gl.GetUniformLocation(_program, "uPremultiplyAlpha");
+            _ignoreVertexColorLocation = _gl.GetUniformLocation(_program, "uIgnoreVertexColor");
             _lighting.Initialize(_gl, _program);
             _shadows.Initialize(_gl, _program, header);
             _sunlight.Initialize(_gl, _program, header);
@@ -138,6 +140,7 @@ internal sealed class SceneRenderer
             gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
             gl.Uniform1(_alphaTestLocation, 0);
+            gl.Uniform1(_premultiplyAlphaLocation, 0);
             gl.DrawArrays(PrimitiveType.Lines, _gridStart, (uint)_gridCount);
 
             gl.Enable(EnableCap.PolygonOffsetFill);
@@ -176,6 +179,7 @@ internal sealed class SceneRenderer
         finally
         {
             gl.Disable(EnableCap.Blend);
+            gl.Disable(EnableCap.CullFace);
             gl.DepthMask(true);
             gl.ColorMask(true, true, true, true);
             gl.Disable(EnableCap.PolygonOffsetFill);
@@ -220,7 +224,7 @@ internal sealed class SceneRenderer
                 textures.Add(batch.Material, texture);
                 continue;
             }
-            SceneMaterialDrawing.Apply(gl, state, _alphaTestLocation);
+            SceneMaterialDrawing.Apply(gl, state, _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
             gl.BindTexture(TextureTarget.Texture2D, texture);
             gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
             gl.Uniform1(_texturedLocation, 1);
@@ -236,7 +240,7 @@ internal sealed class SceneRenderer
                 if (!textures.TryGetValue(triangle.Material, out uint texture)) continue;
                 if (material != triangle.Material)
                 {
-                    SceneMaterialDrawing.Apply(gl, _surfaceStates[triangle.Material], _alphaTestLocation);
+                    SceneMaterialDrawing.Apply(gl, _surfaceStates[triangle.Material], _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
                     gl.BindTexture(TextureTarget.Texture2D, texture);
                     gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
                     gl.Uniform1(_texturedLocation, 1);
@@ -251,9 +255,13 @@ internal sealed class SceneRenderer
     private void ResetSurfaceState(GL gl)
     {
         gl.Disable(EnableCap.Blend);
+        gl.Disable(EnableCap.CullFace);
+        gl.Enable(EnableCap.DepthTest);
+        gl.DepthFunc(DepthFunction.Lequal);
         gl.DepthMask(true);
         gl.Uniform1(_alphaTestLocation, 0);
-        gl.PolygonOffset(1, 1);
+        gl.Uniform1(_premultiplyAlphaLocation, 0);
+        gl.Disable(EnableCap.PolygonOffsetFill);
     }
 
     private void PrepareFramebuffer(GL gl, PixelSize size)

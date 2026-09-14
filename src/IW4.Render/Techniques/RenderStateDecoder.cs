@@ -1,5 +1,6 @@
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
+using IW4.Assets.Codecs.Material;
 
 namespace IW4.Render.Techniques;
 
@@ -225,9 +226,7 @@ public static class RenderStateDecoder
         }
         else
         {
-            ulong index = (uint)polygonOffset;
-            polygonOffsetFactor = -(float)index;
-            polygonOffsetUnits = (float)index * -50f;
+            (polygonOffsetFactor, polygonOffsetUnits) = GfxPolygonOffsetCodec.Decode(polygonOffset);
             polygonOffsetMode = polygonOffset == GfxPolygonOffset.Disabled
                 ? RenderPolygonOffsetMode.Disabled
                 : RenderPolygonOffsetMode.Explicit;

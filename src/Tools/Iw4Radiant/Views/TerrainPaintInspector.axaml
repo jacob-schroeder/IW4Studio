@@ -29,7 +29,7 @@
         <TextBlock x:Name="PaintHint" Classes="caption" TextWrapping="Wrap" />
         <Expander Header="Blend a terrain overlay" IsExpanded="False">
             <StackPanel Spacing="8" Margin="0,8,0,0">
-                <TextBlock Text="Select a whole terrain mesh and choose an alpha-blended material. Add an overlay, then paint alpha in Top view to reveal it over the base terrain." Classes="caption" TextWrapping="Wrap" />
+                <TextBlock Text="Select a whole terrain mesh and choose an alpha-blended material with a wc_ technique set. Add an overlay, then paint alpha in Top view to reveal it over the base terrain." Classes="caption" TextWrapping="Wrap" />
                 <TextBlock x:Name="OverlayMaterialText" Classes="caption" TextWrapping="Wrap" />
                 <Button x:Name="OverlayButton" Content="Add paintable overlay" HorizontalAlignment="Stretch" />
             </StackPanel>

@@ -8,6 +8,8 @@ in vec4 vColor;
 uniform sampler2D uTexture;
 uniform bool uTextured;
 uniform bool uLit;
+uniform bool uPremultiplyAlpha;
+uniform bool uIgnoreVertexColor;
 uniform int uLightCount;
 uniform sampler2D uLightData;
 uniform sampler2D uShadowAtlas;
@@ -21,21 +23,23 @@ uniform sampler2D uSunShadow;
 
 out vec4 fragmentColor;
 
-float sunVisibility(float diffuse)
+float sunVisibility(vec3 coordinate, vec2 depthGradient)
 {
-    vec3 coordinate = (uSunViewProjection * vec4(vPosition, 1.0)).xyz * 0.5 + 0.5;
     // Never illuminate a receiver outside the shadow map's covered world bounds.
     if (any(lessThan(coordinate, vec3(0.0))) || any(greaterThan(coordinate, vec3(1.0))))
         return 0.0;
     ivec2 size = textureSize(uSunShadow, 0);
     ivec2 pixel = ivec2(floor(coordinate.xy * vec2(size)));
-    float reference = coordinate.z - max(0.0001, 0.0005 * (1.0 - diffuse));
+    float reference = coordinate.z - 0.00001;
     float visible = 0.0;
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++)
     {
         ivec2 samplePixel = clamp(pixel + ivec2(x, y), ivec2(0), size - ivec2(1));
-        visible += reference <= texelFetch(uSunShadow, samplePixel, 0).r ? 1.0 : 0.0;
+        // Compare at this tap's position on the receiving triangle, not the center pixel's depth.
+        vec2 offset = (vec2(samplePixel) + 0.5) / vec2(size) - coordinate.xy;
+        float receiverDepth = reference + dot(depthGradient, offset);
+        visible += receiverDepth <= texelFetch(uSunShadow, samplePixel, 0).r ? 1.0 : 0.0;
     }
     return visible / 9.0;
 }
@@ -84,7 +88,12 @@ float shadowVisibility(int lightIndex, vec3 fromLight, float radialDepth, float 
 
 void main()
 {
-    vec4 surface = vColor;
+    // Derivatives must precede alpha discard and divergent lighting branches.
+    vec3 sunCoordinate = (uSunViewProjection * vec4(vPosition, 1.0)).xyz * 0.5 + 0.5;
+    vec3 receiverPlane = cross(dFdx(sunCoordinate), dFdy(sunCoordinate));
+    vec2 sunDepthGradient = abs(receiverPlane.z) > 1e-20
+        ? -receiverPlane.xy / receiverPlane.z : vec2(0.0);
+    vec4 surface = uTextured && uIgnoreVertexColor ? vec4(1.0) : vColor;
     if (uTextured)
         surface *= texture(uTexture, vTexCoord);
     applyMaterialAlpha(surface.a);
@@ -99,7 +108,7 @@ void main()
         {
             float diffuse = max(dot(normal, uSunDirection), 0.0);
             if (diffuse > 0.0)
-                illumination += uSunColor * diffuse * sunVisibility(diffuse);
+                illumination += uSunColor * diffuse * sunVisibility(sunCoordinate, sunDepthGradient);
         }
         for (int i = 0; i < uLightCount; i++)
         {
@@ -130,5 +139,5 @@ void main()
         }
         color *= illumination;
     }
-    fragmentColor = vec4(color, surface.a);
+    fragmentColor = vec4(uPremultiplyAlpha ? color * surface.a : color, surface.a);
 }

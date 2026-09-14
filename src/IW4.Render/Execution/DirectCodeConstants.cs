@@ -1,3 +1,4 @@
+using IW4.Assets.Codecs.GfxMap;
 using IW4.Assets.Assets.TechniqueSet;
 using IW4.Render.Execution.Fog;
 using IW4.Render.Shaders;
@@ -303,9 +304,9 @@ internal static class FrameDirectCodeConstants
     private static ShaderConstantValue Linearize(
         ShaderConstantValue gamma) =>
         new(
-            GammaColorTransfer.ToLinear(gamma.X),
-            GammaColorTransfer.ToLinear(gamma.Y),
-            GammaColorTransfer.ToLinear(gamma.Z),
+            GfxColorCodec.GammaToLinear(gamma.X),
+            GfxColorCodec.GammaToLinear(gamma.Y),
+            GfxColorCodec.GammaToLinear(gamma.Z),
             gamma.W);
 
     private static ShaderConstantValue NormalizeDirection(

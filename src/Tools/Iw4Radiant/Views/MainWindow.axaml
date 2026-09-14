@@ -45,6 +45,12 @@
                 <MenuItem Header="_Prefabs…" Click="Prefabs_Click" />
                 <MenuItem Header="_Curves, arches and stairs…" Click="Geometry_Click" />
                 <MenuItem Header="_Gameplay entities…" Click="Gameplay_Click" />
+                <MenuItem Header="Player clip">
+                    <MenuItem Header="Draw player-clip brush" Click="DrawPlayerClip_Click"
+                              ToolTip.Tip="Draw an invisible volume that blocks players. Shape it around a model in the grid views." />
+                    <MenuItem x:Name="ApplyPlayerClipMenu" Header="Make selected brushes player clip" Click="ApplyPlayerClip_Click"
+                              ToolTip.Tip="Make every face of the selected world brushes invisible player collision. The brushes remain editable." />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Organize">
                 <MenuItem Header="_Layers, groups and visibility…" Click="Organization_Click" />
@@ -53,6 +59,9 @@
                 <MenuItem Header="_Worldspawn properties" Click="World_Click" />
                 <MenuItem Header="Add _light" Click="Light_Click" />
                 <MenuItem Header="Add player _start" Click="Player_Click" />
+            </MenuItem>
+            <MenuItem Header="_Build">
+                <MenuItem Header="Build PS3 map…" Click="Build_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Controls and prototype scope" Click="Help_Click" />
@@ -69,6 +78,10 @@
                 </Button>
                 <Button Classes="toolbarButton" Click="Save_Click" ToolTip.Tip="Save map (Ctrl/Cmd+S)" AutomationProperties.Name="Save map">
                     <materialIcons:MaterialIcon Kind="ContentSave" Width="18" Height="18" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Build_Click" ToolTip.Tip="Build PS3 map" AutomationProperties.Name="Build PS3 map"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <materialIcons:MaterialIcon Kind="Hammer" Width="18" Height="18" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
                 <Button x:Name="UndoToolbar" Classes="toolbarButton" Click="Undo_Click" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">

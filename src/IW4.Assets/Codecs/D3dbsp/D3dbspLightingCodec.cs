@@ -1,7 +1,9 @@
+using IW4.Assets.Codecs.GfxMap;
+using IW4.Assets.D3dbsp;
 using System.Buffers.Binary;
 using IW4.Assets.Assets.GfxMap;
 
-namespace IW4.Assets.D3dbsp;
+namespace IW4.Assets.Codecs.D3dbsp;
 
 internal static class D3dbspLightingCodec
 {
@@ -563,74 +565,9 @@ internal static class D3dbspLightingCodec
         }
 
         for (int index = sourceColorCount; index < colors.Length; index++)
-            colors[index] = CreateDefaultLightGridColors();
+            colors[index] = GfxLightGridCodec.CreateDefault();
         return colors;
     }
-
-    private static GfxLightGridColors CreateDefaultLightGridColors()
-    {
-        // linker_pc evaluates these expressions with x87 precision around explicit float spills.
-        // Double intermediates reproduce those stable bytes on every .NET target.
-        const double gridStep = 0.6666666865348816;
-        const double rotatedXFromX = 0.4714045226573944;
-        const double rotatedYZFromX = -0.2357022613286972;
-        const double rotatedYZFromY = 0.40824827551841736;
-        const double rotatedFromZ = 0.3333333432674408;
-        var rgbBytes = new byte[GfxLightGridColors.SerializedSize];
-        int basisIndex = 0;
-        for (int z = 0; z < 4; z++)
-        {
-            float deltaZ = (float)(z * gridStep - 1.0);
-            for (int y = 0; y < 4; y++)
-            {
-                float deltaY = (float)(y * gridStep - 1.0);
-                for (int x = 0; x < 4; x++)
-                {
-                    if (x > 0 && x < 3 && y > 0 && y < 3 && z > 0 && z < 3)
-                        continue;
-
-                    float deltaX = (float)(x * gridStep - 1.0);
-                    float rotatedX = (float)(
-                        (double)deltaX * rotatedXFromX +
-                        (double)deltaZ * rotatedFromZ);
-                    float rotatedY = (float)(
-                        (double)deltaX * rotatedYZFromX +
-                        (double)deltaY * rotatedYZFromY +
-                        (double)deltaZ * rotatedFromZ);
-                    float rotatedZ = (float)(
-                        (double)deltaX * rotatedYZFromX +
-                        (double)deltaY * -rotatedYZFromY +
-                        (double)deltaZ * rotatedFromZ);
-                    float length = MathF.Max(
-                        MathF.Abs(rotatedX),
-                        MathF.Max(MathF.Abs(rotatedY), MathF.Abs(rotatedZ)));
-                    if (length <= 0.0f)
-                        throw new InvalidDataException("Default light-grid basis has a zero-length projection.");
-
-                    float scale = (float)(1.0 / length);
-                    float projectedX = (float)((double)rotatedX * scale);
-                    float projectedY = (float)((double)rotatedY * scale);
-                    float projectedZ = (float)((double)rotatedZ * scale);
-                    int outputOffset = basisIndex * 3;
-                    rgbBytes[outputOffset] = PackDefaultLightGridColor(projectedX);
-                    rgbBytes[outputOffset + 1] = PackDefaultLightGridColor(projectedY);
-                    rgbBytes[outputOffset + 2] = PackDefaultLightGridColor(projectedZ);
-                    basisIndex++;
-                }
-            }
-        }
-
-        if (basisIndex * 3 != rgbBytes.Length)
-        {
-            throw new InvalidDataException(
-                $"Default light-grid generation produced {basisIndex} samples instead of {rgbBytes.Length / 3}.");
-        }
-
-        return new GfxLightGridColors(rgbBytes);
-    }
-
-    private static byte PackDefaultLightGridColor(float projected) =>
-        (byte)(((double)projected * 0.5 + 0.5) * 255.0);
 
     private static void ValidateLightGridDimensions(GfxLightGrid lightGrid) =>
         ValidateLightGridDimensions(

@@ -37,7 +37,7 @@ public partial class SelectionInspector : UserControl
     internal void ReleaseImages() => Skies.ReleaseImages();
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials,
-        Func<OrthoPlane> editPlane, Func<string, bool> supportsAlpha)
+        Func<OrthoPlane> editPlane, Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor)
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
         Surfaces.InitializeActions(session, dialogs, finishGestures);
@@ -49,7 +49,7 @@ public partial class SelectionInspector : UserControl
         Organization.InitializeActions(session, dialogs, finishGestures);
         Gameplay.InitializeActions(session, dialogs, finishGestures);
         Gameplay.PlacementRequested += name => PlacementRequested?.Invoke(name);
-        TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
+        TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha, supportsVertexColor);
         Decals.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
         Sunlight.EditSourceRequested += () =>
         {

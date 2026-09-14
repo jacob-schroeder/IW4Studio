@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../IW4.AssetExchange/IW4.AssetExchange.csproj" />
+    <ProjectReference Include="../../IW4.Unlinker/IW4.Unlinker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
