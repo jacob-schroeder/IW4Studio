@@ -13,6 +13,7 @@ public partial class MapBuildWindow : Window
     private readonly MapDocument? _document;
     private readonly string? _sourcePath;
     private readonly IReadOnlyDictionary<string, MaterialSource>? _materials;
+    private readonly IReadOnlyDictionary<string, XModelSource>? _models;
     private readonly ObservableCollection<string> _providers = [];
     private CancellationTokenSource? _buildCancellation;
 
@@ -31,12 +32,14 @@ public partial class MapBuildWindow : Window
     }
 
     internal MapBuildWindow(MapDocument document, string sourcePath,
-        IReadOnlyDictionary<string, MaterialSource> materials, string linkerPath, string templatePath,
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
+        string linkerPath, string templatePath,
         IReadOnlyList<string> providerPaths, string outputFolder) : this()
     {
         _document = document;
         _sourcePath = sourcePath;
         _materials = materials;
+        _models = models;
         SourceName.Text = Path.GetFileName(sourcePath);
         GameModesText.Text = "Game modes: " + MapCompiler.GetGameModeSummary(document);
         GameModesText.IsVisible = true;
@@ -108,7 +111,7 @@ public partial class MapBuildWindow : Window
     private async void Build_Click(object? sender, RoutedEventArgs e)
     {
         if (_buildCancellation is not null || CompletedDirectory is not null ||
-            _document is null || _sourcePath is null || _materials is null) return;
+            _document is null || _sourcePath is null || _materials is null || _models is null) return;
         using var cancellation = new CancellationTokenSource();
         _buildCancellation = cancellation;
         BuildInputs.IsEnabled = BuildButton.IsEnabled = false;
@@ -118,7 +121,7 @@ public partial class MapBuildWindow : Window
         try
         {
             var progress = new Progress<string>(AppendProgress);
-            CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, _sourcePath, _materials,
+            CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, _sourcePath, _materials, _models,
                 LinkerPath, TemplatePath, ProviderPaths, OutputFolder, progress, cancellation.Token);
             BuildStatus.Text = "Build complete";
             AppendProgress($"Build complete: {CompletedDirectory}");

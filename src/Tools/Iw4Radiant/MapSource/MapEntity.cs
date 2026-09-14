@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Numerics;
+
 namespace Iw4Radiant.MapSource;
 
 internal sealed class MapEntity
@@ -9,6 +12,19 @@ internal sealed class MapEntity
     // Unsupported source primitives are retained verbatim so opening a map does not discard them.
     public List<string> PreservedPrimitives { get; } = [];
     public string ClassName => Properties.GetValueOrDefault("classname", "entity");
+
+    internal bool TryGetOrigin(out Vector3 origin)
+    {
+        origin = default;
+        if (!Properties.TryGetValue("origin", out string? text)) return false;
+        string[] parts = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 3 || !float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
+            !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float y) ||
+            !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float z) ||
+            !float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z)) return false;
+        origin = new Vector3(x, y, z);
+        return true;
+    }
 
     public MapEntity Clone()
     {

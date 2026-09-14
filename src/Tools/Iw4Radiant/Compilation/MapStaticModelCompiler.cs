@@ -34,9 +34,7 @@ internal static class MapStaticModelCompiler
                 if (key is not ("classname" or "model" or "origin" or "angles" or "angle" or
                     "modelscale" or "modelscale_vec" or "spawnflags" or "gndLt"))
                     throw new NotSupportedException($"Static model '{name}' property '{key}' is not supported by compilation.");
-            if (source.Properties.TryGetValue("spawnflags", out string? flags) &&
-                (!int.TryParse(flags, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) || value is not (0 or 2)))
-                throw new NotSupportedException($"Static model '{name}' supports only spawnflags 0 or 2 (no cast shadow).");
+            _ = CastsShadow(source);
 
             Vector3 scale = XModelGeometry.Scale(source);
             if (scale.X != scale.Y || scale.X != scale.Z)
@@ -58,5 +56,13 @@ internal static class MapStaticModelCompiler
             EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback).GetBytes(text + '\0');
         return D3dbspFile.Create(compiled.Lumps.Select(lump =>
             (lump.Type, lump.Type == D3dbspLumpType.Entities ? entities : lump.Data)).ToArray());
+    }
+
+    internal static bool CastsShadow(MapEntity source)
+    {
+        if (!source.Properties.TryGetValue("spawnflags", out string? flags)) return true;
+        if (!int.TryParse(flags, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) || value is not (0 or 2))
+            throw new NotSupportedException($"Static model '{source.Properties.GetValueOrDefault("model")}' supports only spawnflags 0 or 2 (no cast shadow).");
+        return value == 0;
     }
 }

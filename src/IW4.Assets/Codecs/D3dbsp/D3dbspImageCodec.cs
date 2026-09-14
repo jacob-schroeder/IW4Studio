@@ -1,4 +1,5 @@
 using IW4.Assets.Codecs.GfxMap;
+using IW4.Assets.Codecs.Image;
 using IW4.Assets.D3dbsp;
 using System.Buffers.Binary;
 using IW4.Assets.Assets.GfxMap;
@@ -201,8 +202,10 @@ internal static class D3dbspImageCodec
             ReadOnlySpan<byte> row = data.Slice(
                 checked(index * LightmapByteCount),
                 LightmapByteCount);
+            byte[] secondaryRgba = row[..LightmapSecondaryByteCount].ToArray();
+            GfxImageChannelCodec.BgraToRgba(secondaryRgba);
             lightmaps[index] = GfxLightmapCodec.Create(index,
-                row[LightmapSecondaryByteCount..], row[..LightmapSecondaryByteCount]);
+                row[LightmapSecondaryByteCount..], secondaryRgba);
         }
 
         return Array.AsReadOnly(lightmaps);

@@ -44,7 +44,7 @@ float sunVisibility(vec3 coordinate, vec2 depthGradient)
     return visible / 9.0;
 }
 
-float shadowVisibility(int lightIndex, vec3 fromLight, float radialDepth, float diffuse)
+float shadowVisibility(int lightIndex, vec3 fromLight, float radius, float diffuse, vec3 receiverPlane)
 {
     // Cube-view ordering and orientation match SceneShadows.ViewProjection.
     vec3 magnitude = abs(fromLight);
@@ -74,14 +74,30 @@ float shadowVisibility(int lightIndex, vec3 fromLight, float radialDepth, float 
     ivec2 first = ivec2(tile % uShadowGrid.x, tile / uShadowGrid.x) * uShadowTileSize;
     ivec2 last = first + ivec2(uShadowTileSize - 1);
     ivec2 pixel = first + ivec2(floor(uv * float(uShadowTileSize)));
-    float reference = radialDepth - max(0.0005, 0.002 * (1.0 - diffuse));
+    float radialDepth = length(fromLight) / radius;
+    float bias = max(0.0005, 0.002 * (1.0 - diffuse));
+    float planeDistance = dot(receiverPlane, fromLight);
     float visible = 0.0;
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++)
     {
         // Clamp PCF taps to this face so adjacent lights cannot bleed together.
         ivec2 samplePixel = clamp(pixel + ivec2(x, y), first, last);
-        visible += reference <= texelFetch(uShadowAtlas, samplePixel, 0).r ? 1.0 : 0.0;
+        vec2 tap = (vec2(samplePixel - first) + 0.5) / float(uShadowTileSize) * 2.0 - 1.0;
+        vec3 ray;
+        if (face == 0) ray = vec3(1.0, -tap.y, -tap.x);
+        else if (face == 1) ray = vec3(-1.0, -tap.y, tap.x);
+        else if (face == 2) ray = vec3(tap.x, 1.0, tap.y);
+        else if (face == 3) ray = vec3(tap.x, -1.0, -tap.y);
+        else if (face == 4) ray = vec3(tap.x, -tap.y, 1.0);
+        else ray = vec3(-tap.x, -tap.y, -1.0);
+        // Radial depth is nonlinear in cube UV. Intersect this tap's ray with
+        // the receiving triangle to compare the same world position as the atlas.
+        float denominator = dot(receiverPlane, ray);
+        float receiverDepth = radialDepth;
+        if (abs(denominator) > 1e-20 && planeDistance / denominator > 0.0)
+            receiverDepth = planeDistance / denominator * length(ray) / radius;
+        visible += receiverDepth - bias <= texelFetch(uShadowAtlas, samplePixel, 0).r ? 1.0 : 0.0;
     }
     return visible / 9.0;
 }
@@ -93,6 +109,7 @@ void main()
     vec3 receiverPlane = cross(dFdx(sunCoordinate), dFdy(sunCoordinate));
     vec2 sunDepthGradient = abs(receiverPlane.z) > 1e-20
         ? -receiverPlane.xy / receiverPlane.z : vec2(0.0);
+    vec3 localReceiverPlane = cross(dFdx(vPosition), dFdy(vPosition));
     vec4 surface = uTextured && uIgnoreVertexColor ? vec4(1.0) : vColor;
     if (uTextured)
         surface *= texture(uTexture, vTexCoord);
@@ -134,7 +151,7 @@ void main()
             float diffuse = max(dot(normal, toLight / max(distanceToLight, 0.0001)), 0.0);
             if (diffuse <= 0.0)
                 continue;
-            float visibility = shadowVisibility(i, -toLight, distanceToLight / lightPositionRadius.w, diffuse);
+            float visibility = shadowVisibility(i, -toLight, lightPositionRadius.w, diffuse, localReceiverPlane);
             illumination += lightColorExponent.rgb * attenuation * diffuse * visibility;
         }
         color *= illumination;

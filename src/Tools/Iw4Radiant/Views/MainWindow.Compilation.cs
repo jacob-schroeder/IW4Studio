@@ -1,4 +1,5 @@
 using Avalonia.Interactivity;
+using Iw4Radiant.Compilation;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 
@@ -19,9 +20,15 @@ public partial class MainWindow
         try
         {
             MapDocument document = _session.Document.Clone();
+            var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
+            foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapStaticModelCompiler.CastsShadow(entity))
+                         .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
+                models.Add(name, Workspace.Models.ResolveModel(name) ??
+                    throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));
             var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
             foreach (string name in document.World.Brushes.SelectMany(brush => brush.Faces)
                          .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
+                         .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
                          .Distinct(StringComparer.Ordinal))
             {
                 if (ClipBrushMaterial.IsPlayerClip(name)) continue;
@@ -31,7 +38,7 @@ public partial class MainWindow
             string sourceFolder = Path.GetDirectoryName(sourcePath) ??
                 throw new InvalidDataException("The saved map has no containing directory.");
             string buildFolder = Path.Combine(sourceFolder, "map_build");
-            var dialog = new MapBuildWindow(document, sourcePath, materials,
+            var dialog = new MapBuildWindow(document, sourcePath, materials, models,
                 _buildLinkerPath ?? FindBuildLinker() ?? "", _buildTemplatePath, _buildProviderPaths,
                 _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder));
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));

@@ -9,7 +9,7 @@ internal static class LightInfluenceGeometry
 
     internal static IEnumerable<(Vector3 A, Vector3 B)> GetLines(EditorScene scene, MapEntity entity)
     {
-        if (!SceneLight.TryCreate(scene, entity, out SceneLight light, out _)) yield break;
+        if (!MapLight.TryCreate(entity, scene.ResolveTargets(entity), out MapLight light, out _)) yield break;
         if (!light.IsSpotlight)
         {
             foreach (var line in Ring(light.Origin, Vector3.UnitX, Vector3.UnitY, light.Radius)) yield return line;

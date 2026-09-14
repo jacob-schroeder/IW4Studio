@@ -7,8 +7,8 @@ namespace Iw4Radiant.Compilation.Lighting;
 
 internal static class BrushLightmapCompiler
 {
-    // One secondary luxel covers eight map units; primary sun visibility has twice the resolution.
-    private const float LuxelSize = 8;
+    // One secondary luxel covers four map units; primary sun visibility has twice the resolution.
+    private const float LuxelSize = 4;
     private const int Border = 2;
 
     internal static (IReadOnlyList<GfxLightmapArray> Lightmaps, Vector2[][] FaceUvs, byte[] FaceLightmapIndices)
@@ -19,6 +19,12 @@ internal static class BrushLightmapCompiler
         var faceIndices = new byte[scene.Polygons.Count];
         byte[] primary = new byte[GfxLightmapCodec.PrimaryWidth * GfxLightmapCodec.PrimaryHeight];
         byte[] secondary = new byte[GfxLightmapCodec.SecondaryWidth * GfxLightmapCodec.SecondaryHeight * 4];
+        var parallelOptions = new ParallelOptions
+        {
+            CancellationToken = scene.CancellationToken,
+            // Leave CPU capacity for the editor and other applications during a bake.
+            MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 2)
+        };
         int cursorX = 0, cursorY = 0, rowHeight = 0;
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
         {
@@ -59,32 +65,46 @@ internal static class BrushLightmapCompiler
                     (cursorX + Border + (coordinates[vertex].X - minimum.X) / LuxelSize + 0.5f) / GfxLightmapCodec.SecondaryWidth,
                     (cursorY + Border + (coordinates[vertex].Y - minimum.Y) / LuxelSize + 0.5f) / GfxLightmapCodec.SecondaryPlaneHeight);
 
-            for (int y = 0; y < height; y++)
+            Parallel.For(0, height, parallelOptions, y =>
             {
                 scene.CancellationToken.ThrowIfCancellationRequested();
                 for (int x = 0; x < width; x++)
                 {
-                    Vector3 point = Position(x, y);
-                    Vector3 ambient = scene.Ambient(point, polygon.Sample(point).Normal);
+                    Vector3 irradiance = Vector3.Zero;
+                    for (int sy = 0; sy < 2; sy++)
+                    for (int sx = 0; sx < 2; sx++)
+                    {
+                        Vector3 point = Position(x + (sx - 0.5f) * 0.5f, y + (sy - 0.5f) * 0.5f);
+                        irradiance += scene.DiffuseIrradiance(point, polygon.Sample(point).Normal);
+                    }
+                    // Filter irradiance in linear light, before the native square-root encoding.
+                    irradiance *= 0.25f;
                     int upper = ((cursorY + y) * GfxLightmapCodec.SecondaryWidth + cursorX + x) * 4;
                     int lower = upper + GfxLightmapCodec.SecondaryWidth * GfxLightmapCodec.SecondaryPlaneHeight * 4;
                     // Native lm_* reconstructs upper.rgb * normal.z plus lower.rgb *
                     // directional weight, then squares the result. Sun is added separately
-                    // using the primary visibility image. This bake stores diffuse sky in
-                    // the upper term and leaves the additional directional term empty.
-                    secondary[upper] = EncodeAmbient(ambient.X);
-                    secondary[upper + 1] = EncodeAmbient(ambient.Y);
-                    secondary[upper + 2] = EncodeAmbient(ambient.Z);
+                    // using the primary visibility image. This bake stores diffuse sky
+                    // and local lights in the upper term; the directional term is empty.
+                    secondary[upper] = EncodeIrradiance(irradiance.X);
+                    secondary[upper + 1] = EncodeIrradiance(irradiance.Y);
+                    secondary[upper + 2] = EncodeIrradiance(irradiance.Z);
                     secondary[upper + 3] = secondary[lower + 3] = 128;
                     for (int py = 0; py < 2; py++)
                     for (int px = 0; px < 2; px++)
                     {
-                        Vector3 sample = Position(x + (px - 0.5f) * 0.5f, y + (py - 0.5f) * 0.5f);
+                        float visibility = 0;
+                        for (int sy = 0; sy < 2; sy++)
+                        for (int sx = 0; sx < 2; sx++)
+                        {
+                            Vector3 sample = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
+                                y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
+                            visibility += scene.SunVisibility(sample, normal);
+                        }
                         int offset = ((cursorY + y) * 2 + py) * GfxLightmapCodec.PrimaryWidth + (cursorX + x) * 2 + px;
-                        primary[offset] = (byte)Math.Clamp(MathF.Round(scene.SunVisibility(sample, normal) * 255), 0, 255);
+                        primary[offset] = (byte)Math.Clamp(MathF.Round(visibility * 0.25f * 255), 0, 255);
                     }
                 }
-            }
+            });
             cursorX += width;
             rowHeight = Math.Max(rowHeight, height);
 
@@ -118,10 +138,10 @@ internal static class BrushLightmapCompiler
         }
     }
 
-    private static byte EncodeAmbient(float value)
+    private static byte EncodeIrradiance(float value)
     {
         if (!float.IsFinite(value) || value < 0)
-            throw new NotSupportedException("Calculated sky lighting exceeds the native lightmap's encoded range.");
+            throw new NotSupportedException("Calculated diffuse lighting exceeds the native lightmap's encoded range.");
         return (byte)MathF.Round(255 * MathF.Sqrt(Math.Clamp(value, 0, 1)));
     }
 }

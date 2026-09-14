@@ -1,6 +1,7 @@
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.Codecs.Image;
 namespace IW4.Assets.Codecs.GfxMap;
 
 public static class GfxLightmapCodec
@@ -28,7 +29,7 @@ public static class GfxLightmapCodec
         if (primaryLinear.Length != PrimaryWidth * PrimaryHeight || secondaryLinearRgba.Length != SecondaryWidth * SecondaryHeight * 4)
             throw new ArgumentException("A lightmap requires one 1024x1024 luminance plane and two 512x512 RGBA planes.");
         byte[] secondary = secondaryLinearRgba.ToArray();
-        GfxImagePixelLayout.ReverseFourBytePixelOrder(secondary);
+        GfxImageChannelCodec.RgbaToArgb(secondary);
         return new GfxLightmapArray
         {
             Primary = CreateImage($"*lightmap{index}_primary", true,

@@ -1,25 +1,29 @@
 using System.Numerics;
-using Iw4Radiant.Editing;
-using Iw4Radiant.MapSource;
 
-namespace Iw4Radiant.Rendering;
+namespace Iw4Radiant.MapSource;
 
-internal readonly record struct SceneLight(Vector3 Origin, float Radius, Vector3 Color, Vector3 Direction,
+// The preview and compiler approximate light_point_linear analytically; they do not sample its asset.
+internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 Color, Vector3 Direction,
     float InnerAngle, float OuterAngle, float Exponent, bool IsSpotlight)
 {
-    internal static bool TryCreate(EditorScene scene, MapEntity entity, out SceneLight light, out string? error)
+    internal static bool TryCreate(MapEntity entity, IReadOnlyList<MapEntity> resolvedTargets,
+        out MapLight light, out string? error)
     {
         light = default;
         if (!MapLightProperties.TryRead(entity, out MapLightProperties properties, out error)) return false;
         if (properties.Definition != MapLightDefaults.Definition)
         {
-            error = $"Light definition '{properties.Definition}' is not supported by the preview.";
+            error = $"Light definition '{properties.Definition}' is not supported. Use '{MapLightDefaults.Definition}'.";
             return false;
         }
         float maximum = Math.Max(properties.Color.X, Math.Max(properties.Color.Y, properties.Color.Z));
         if (properties.Radius == 0 || properties.Intensity == 0 || maximum == 0) return false;
 
-        Vector3 origin = EditorSession.EntityOrigin(entity);
+        if (!entity.TryGetOrigin(out Vector3 origin))
+        {
+            error = "Light origin must contain three finite numbers.";
+            return false;
+        }
         Vector3 direction = Vector3.Zero;
         float innerAngle = 0, outerAngle = MathF.PI;
         if (properties.IsSpotlight)
@@ -29,14 +33,17 @@ internal readonly record struct SceneLight(Vector3 Origin, float Radius, Vector3
                 error = "The spotlight needs a target entity to determine its direction.";
                 return false;
             }
-            IReadOnlyList<MapEntity> targets = scene.ResolveTargets(entity);
-            if (targets.Count != 1)
+            if (resolvedTargets.Count != 1)
             {
-                error = targets.Count == 0 ? $"Light target '{properties.Target}' was not found." :
+                error = resolvedTargets.Count == 0 ? $"Light target '{properties.Target}' was not found." :
                     $"Light target '{properties.Target}' matches multiple entities.";
                 return false;
             }
-            Vector3 target = EditorSession.EntityOrigin(targets[0]);
+            if (!resolvedTargets[0].TryGetOrigin(out Vector3 target))
+            {
+                error = $"Light target '{properties.Target}' origin must contain three finite numbers.";
+                return false;
+            }
             double dx = (double)target.X - origin.X, dy = (double)target.Y - origin.Y, dz = (double)target.Z - origin.Z;
             double distance = Math.Sqrt(dx * dx + dy * dy + dz * dz);
             if (distance == 0)
@@ -57,12 +64,12 @@ internal readonly record struct SceneLight(Vector3 Origin, float Radius, Vector3
             outerAngle = (float)outer;
             if (innerAngle >= outerAngle)
             {
-                error = "The inner and outer spotlight FOVs are too close to distinguish in the preview.";
+                error = "The inner and outer spotlight FOVs are too close to distinguish.";
                 return false;
             }
         }
         Vector3 color = properties.Color / maximum * properties.Intensity;
-        light = new SceneLight(origin, properties.Radius, color, direction, innerAngle, outerAngle,
+        light = new MapLight(origin, properties.Radius, color, direction, innerAngle, outerAngle,
             properties.Exponent, properties.IsSpotlight);
         return true;
     }

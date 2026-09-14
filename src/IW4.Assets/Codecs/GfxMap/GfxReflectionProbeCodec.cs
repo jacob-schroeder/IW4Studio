@@ -1,5 +1,6 @@
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.Codecs.Image;
 namespace IW4.Assets.Codecs.GfxMap;
 
 public static class GfxReflectionProbeCodec
@@ -41,7 +42,7 @@ public static class GfxReflectionProbeCodec
             for (int face = 0; face < ReflectionProbeFaceCount; face++)
             {
                 byte[] linear = rgbaMips[mip].Slice(face * faceBytes, faceBytes).ToArray();
-                GfxImagePixelLayout.ReverseFourBytePixelOrder(linear);
+                GfxImageChannelCodec.RgbaToArgb(linear);
                 GfxImagePixelLayout.SwizzleMorton2D(linear, edge, edge, 4)
                     .CopyTo(payload, face * ReflectionProbeFaceStride + faceMipOffset);
             }

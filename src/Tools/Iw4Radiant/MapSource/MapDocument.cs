@@ -8,6 +8,13 @@ internal sealed class MapDocument
     public IEnumerable<MapTerrain> Terrains => Entities.SelectMany(entity => entity.Terrains);
     public MapEntity World => Entities.First(entity => entity.ClassName == "worldspawn");
 
+    internal IReadOnlyList<MapEntity> ResolveTargets(MapEntity source)
+    {
+        if (!source.Properties.TryGetValue("target", out string? target) || target.Length == 0) return [];
+        return Entities.Where(entity => string.Equals(entity.Properties.GetValueOrDefault("targetname"), target,
+            StringComparison.Ordinal)).ToArray();
+    }
+
     public static MapDocument Create()
     {
         var document = new MapDocument();

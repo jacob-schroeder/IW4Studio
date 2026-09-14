@@ -8,7 +8,8 @@ namespace Iw4Radiant.Compilation;
 internal static class MapBuildPipeline
 {
     internal static async Task<string> BuildAsync(MapDocument document, string sourcePath,
-        IReadOnlyDictionary<string, MaterialSource> materials, string linkerPath, string templatePath,
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
+        string linkerPath, string templatePath,
         IReadOnlyList<string> providerPaths, string outputFolder, IProgress<string> progress,
         CancellationToken cancellationToken)
     {
@@ -27,7 +28,7 @@ internal static class MapBuildPipeline
         Directory.CreateDirectory(staging);
         try
         {
-            progress.Report("Compiling geometry and collision; baking sunlight and reflections…");
+            progress.Report("Compiling geometry and collision; baking sunlight, local lights and reflections…");
             string bspPath = Path.Combine(staging, mapName + ".d3dbsp");
             string fastFilePath = Path.Combine(staging, mapName + ".ff");
             await Task.Run(() =>
@@ -35,7 +36,7 @@ internal static class MapBuildPipeline
                 cancellationToken.ThrowIfCancellationRequested();
                 string savedSource = Path.Combine(staging, mapName + ".map");
                 MapFile.Write(document, savedSource);
-                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, cancellationToken);
+                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 bsp.Write(bspPath);
             }, cancellationToken);

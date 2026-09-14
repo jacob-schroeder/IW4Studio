@@ -1,4 +1,5 @@
 using System.Numerics;
+using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 
@@ -42,7 +43,7 @@ internal sealed class SceneShadows
         }
     }
 
-    internal unsafe void Update(GL gl, IReadOnlyList<SceneLight> lights, uint vertexArray,
+    internal unsafe void Update(GL gl, IReadOnlyList<MapLight> lights, uint vertexArray,
         IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches,
         Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
     {
@@ -78,7 +79,7 @@ internal sealed class SceneShadows
             gl.Enable(EnableCap.ScissorTest);
             for (int lightIndex = 0; lightIndex < lights.Count; lightIndex++)
             {
-                SceneLight light = lights[lightIndex];
+                MapLight light = lights[lightIndex];
                 gl.Uniform4(_lightPositionLocation, light.Origin.X, light.Origin.Y, light.Origin.Z, light.Radius);
                 for (int face = 0; face < 6; face++)
                 {
@@ -152,7 +153,7 @@ internal sealed class SceneShadows
         _height = height;
     }
 
-    private static Matrix4x4 ViewProjection(SceneLight light, int face)
+    private static Matrix4x4 ViewProjection(MapLight light, int face)
     {
         (Vector3 direction, Vector3 up) = face switch
         {

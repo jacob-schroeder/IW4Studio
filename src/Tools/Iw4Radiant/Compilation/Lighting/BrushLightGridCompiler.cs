@@ -27,7 +27,7 @@ internal static class BrushLightGridCompiler
         var colors = new List<GfxLightGridColors>
         {
             new(new byte[GfxLightGridColors.SerializedSize]),
-            Encode(scene.AmbientDirections((scene.Minimum + scene.Maximum) * 0.5f))
+            Encode(scene.DiffuseIrradianceDirections((scene.Minimum + scene.Maximum) * 0.5f))
         };
         var colorIndices = new Dictionary<string, ushort>(StringComparer.Ordinal);
         for (ushort index = 0; index < colors.Count; index++) colorIndices[Convert.ToHexString(colors[index].RgbBytes.ToArray())] = index;
@@ -44,7 +44,7 @@ internal static class BrushLightGridCompiler
                 entries.Add(new GfxLightGridEntry(0, 0, 1));
                 continue;
             }
-            GfxLightGridColors sample = Encode(scene.AmbientDirections(point));
+            GfxLightGridColors sample = Encode(scene.DiffuseIrradianceDirections(point));
             string key = Convert.ToHexString(sample.RgbBytes.ToArray());
             if (!colorIndices.TryGetValue(key, out ushort colorIndex))
             {

@@ -8,12 +8,12 @@ internal sealed class SceneLighting
 {
     private const string NoLightsNotice = "No lights to preview. Add a light or turn off Preview lights.";
     private uint _texture;
-    private SceneLight[] _lights = [];
+    private MapLight[] _lights = [];
     private int _maximumTextureSize;
     private int _countLocation, _dataLocation;
     private string? _capacityNotice, _omissionNotice;
 
-    internal IReadOnlyList<SceneLight> Lights => _lights;
+    internal IReadOnlyList<MapLight> Lights => _lights;
 
     internal string? GetNotice(bool sunlightAvailable)
     {
@@ -44,14 +44,14 @@ internal sealed class SceneLighting
 
     internal unsafe void Update(GL gl, EditorScene scene)
     {
-        List<SceneLight> lights = [];
+        List<MapLight> lights = [];
         int omitted = 0;
         string? firstError = null;
         foreach (MapEntity entity in scene.Document.Entities)
         {
             if (entity.ClassName != "light")
                 continue;
-            if (SceneLight.TryCreate(scene, entity, out SceneLight light, out string? error))
+            if (MapLight.TryCreate(entity, scene.ResolveTargets(entity), out MapLight light, out string? error))
                 lights.Add(light);
             else if (error is not null)
             {
@@ -71,7 +71,7 @@ internal sealed class SceneLighting
         Vector4[] data = new Vector4[Math.Max(_lights.Length, 1) * 4];
         for (int index = 0; index < _lights.Length; index++)
         {
-            SceneLight light = _lights[index];
+            MapLight light = _lights[index];
             data[index * 4] = new Vector4(light.Origin, light.Radius);
             data[index * 4 + 1] = new Vector4(light.Color, light.Exponent);
             data[index * 4 + 2] = new Vector4(light.Direction, light.OuterAngle);

@@ -46,6 +46,8 @@
                 <Button x:Name="RevertLightButton" Grid.Column="1" Content="Revert"
                         ToolTip.Tip="Restore this light's current values without editing the map." />
             </Grid>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="Build bakes light_point_linear point and targeted spot lights into surfaces, model lighting and reflections. Leave Primary omni/spot unchecked. Lighting changes require a rebuild." />
         </StackPanel>
     </StackPanel>
 </UserControl>

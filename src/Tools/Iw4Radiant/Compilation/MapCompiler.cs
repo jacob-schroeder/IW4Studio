@@ -28,10 +28,12 @@ internal static class MapCompiler
     }
 
     internal const string Scope = "Brushes, solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
-        "Requires authored sunlight and a reflection probe. One render cell; curves, prefabs, brush entities, breakable glass and bounced lighting are not compiled yet.";
+        "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
+        "One render cell; primary local lights, curves, prefabs, brush entities, breakable glass and bounced lighting are not compiled yet.";
 
     internal static D3dbspFile Compile(MapDocument document, string assetName,
-        IReadOnlyDictionary<string, MaterialSource> materials, CancellationToken cancellationToken = default)
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
+        CancellationToken cancellationToken = default)
     {
         Vector3[] probeOrigins = Validate(document, assetName, materials);
         ClipMaterial[] clipMaterials = document.World.Brushes.SelectMany(brush => brush.Faces)
@@ -64,7 +66,7 @@ internal static class MapCompiler
         collision = TerrainCollisionCompiler.Append(collision,
             document.World.Terrains.Where(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray());
         var sun = BrushRenderCompiler.CompileSun(document, assetName);
-        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, sun, materials, probeOrigins, cancellationToken);
+        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, sun, materials, models, probeOrigins, cancellationToken);
         return MapStaticModelCompiler.Append(document, D3dbspUnlinker.Unlink([
             collision, sun, graphics, entities,
             new GameWorldMpAsset { Name = assetName, GlassData = new GGlassData() },
@@ -127,11 +129,17 @@ internal static class MapCompiler
             if (entity.Brushes.Count != 0 || entity.ClassName is not
                 ("info_player_start" or "mp_dm_spawn" or "mp_tdm_spawn" or
                  "mp_tdm_spawn_allies_start" or "mp_tdm_spawn_axis_start" or "mp_global_intermission" or
-                 "misc_model" or "reflection_probe"))
+                 "misc_model" or "reflection_probe" or "light" or "info_null"))
                 throw new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation.");
-            if (!TryPosition(entity, out Vector3 origin))
+            if (!entity.TryGetOrigin(out Vector3 origin))
                 throw new InvalidDataException($"Entity '{entity.ClassName}' needs a finite three-component origin.");
             if (entity.ClassName == "misc_model") continue;
+            if (entity.ClassName == "info_null")
+            {
+                ValidateLightTarget(document, entity);
+                continue;
+            }
+            if (entity.ClassName == "light") ValidateLight(document, entity);
             if (entity.Properties.ContainsKey("model"))
                 throw new NotSupportedException($"Entity '{entity.ClassName}' has a model reference; use misc_model for compiled static models.");
             foreach (MapBrush brush in document.World.Brushes)
@@ -160,6 +168,31 @@ internal static class MapCompiler
         }
     }
 
+    private static void ValidateLight(MapDocument document, MapEntity entity)
+    {
+        foreach (string key in entity.Properties.Keys)
+            if (key is not ("classname" or "origin" or "angles" or "angle" or "targetname" or "target" or
+                "def" or "radius" or "intensity" or "_color" or "fov_outer" or "fov_inner" or "exponent" or "spawnflags"))
+                throw new NotSupportedException($"Light property '{key}' is not supported by static light compilation.");
+        if (!MapLightProperties.TryRead(entity, out MapLightProperties properties, out string? error))
+            throw new InvalidDataException(error);
+        if (properties.SpawnFlags != 0)
+            throw new NotSupportedException("Local lights currently bake static illumination. Clear Primary omni/spot and other light spawnflags before building.");
+        if (!MapLight.TryCreate(entity, document.ResolveTargets(entity), out _, out error) && error is not null)
+            throw new InvalidDataException(error);
+    }
+
+    private static void ValidateLightTarget(MapDocument document, MapEntity entity)
+    {
+        string? name = entity.Properties.GetValueOrDefault("targetname");
+        if (string.IsNullOrWhiteSpace(name) || !document.Entities.Any(light => light.ClassName == "light" &&
+            document.ResolveTargets(light).Contains(entity)))
+            throw new NotSupportedException("An info_null must be a named light aim target before compilation. Use Create aim target in the Light inspector.");
+        foreach (string key in entity.Properties.Keys)
+            if (key is not ("classname" or "origin" or "angles" or "angle" or "targetname"))
+                throw new NotSupportedException($"Light aim target property '{key}' is not supported by compilation.");
+    }
+
     private static void ValidateDirectives(IEnumerable<string> directives)
     {
         foreach (string directive in directives)
@@ -177,6 +210,9 @@ internal static class MapCompiler
         source.Entities.Clear();
         foreach (MapEntity entity in document.Entities)
         {
+            // Static light entities and their aim markers are consumed by the bake;
+            // retaining them in MapEnts would imply runtime light/script behavior.
+            if (entity.ClassName is "light" or "info_null") continue;
             var point = new MapEntity();
             foreach (var property in entity.Properties) point.Properties.Add(property.Key, property.Value);
             source.Entities.Add(point);
@@ -189,20 +225,5 @@ internal static class MapCompiler
             StageCount = 1,
             Stages = [new Stage { StageName = "stage 0", TriggerIndex = 1024, SunPrimaryLightIndex = 1 }]
         };
-    }
-
-    private static bool TryPosition(MapEntity entity, out Vector3 origin)
-    {
-        origin = default;
-        if (!entity.Properties.TryGetValue("origin", out string? text)) return false;
-        string[] parts = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 3) return false;
-        for (int index = 0; index < 3; index++)
-        {
-            if (!float.TryParse(parts[index], System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value)) return false;
-            origin[index] = value;
-        }
-        return true;
     }
 }

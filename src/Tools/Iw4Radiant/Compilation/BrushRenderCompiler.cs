@@ -43,13 +43,14 @@ internal static class BrushRenderCompiler
 
     internal static GfxWorldAsset Compile(
         MapDocument document, string assetName, ClipMapAsset clip, ComWorldAsset com,
-        IReadOnlyDictionary<string, MaterialSource> materialSources, IReadOnlyList<Vector3> probeOrigins,
+        IReadOnlyDictionary<string, MaterialSource> materialSources, IReadOnlyDictionary<string, XModelSource> models,
+        IReadOnlyList<Vector3> probeOrigins,
         CancellationToken cancellationToken)
     {
         MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document);
         if (polygons.Length is 0 or > ushort.MaxValue)
             throw new InvalidDataException("Compilation requires between 1 and 65535 renderable brush faces or mesh triangles.");
-        var lightingScene = new BrushLightingScene(document, polygons, materialSources, cancellationToken);
+        var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, cancellationToken);
         var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene);
         GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene);
         var (probeImages, probes) = BrushReflectionCompiler.CaptureProbes(lightingScene, probeOrigins);

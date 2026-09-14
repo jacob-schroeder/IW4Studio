@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
@@ -212,15 +211,6 @@ internal sealed class EditorSession
             bounds.Select(value => value.Max).Aggregate(Vector3.Max));
     }
 
-    public static Vector3 EntityOrigin(MapEntity entity)
-    {
-        string[] parts = entity.Properties.GetValueOrDefault("origin", "0 0 0")
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 3 && float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) &&
-            float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float y) &&
-            float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float z) &&
-            float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(z))
-            return new Vector3(x, y, z);
-        return Vector3.Zero;
-    }
+    public static Vector3 EntityOrigin(MapEntity entity) =>
+        entity.TryGetOrigin(out Vector3 origin) ? origin : Vector3.Zero;
 }
