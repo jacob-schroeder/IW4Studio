@@ -1,4 +1,5 @@
 using System.Numerics;
+using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 
 namespace Iw4Radiant.Rendering;
@@ -7,7 +8,7 @@ internal sealed class SceneShadows
 {
     private const int PreferredFaceSize = 256;
     private uint _program, _framebuffer, _texture;
-    private int _viewProjectionLocation, _lightPositionLocation;
+    private int _viewProjectionLocation, _lightPositionLocation, _alphaTestLocation;
     private int _atlasLocation, _gridLocation, _tileSizeLocation;
     private int _maximumTextureSize, _width, _height, _columns, _rows, _tileSize;
 
@@ -19,6 +20,9 @@ internal sealed class SceneShadows
         _program = SceneShaderProgram.Create(gl, shaderHeader, "shadow.vert", "shadow.frag");
         _viewProjectionLocation = gl.GetUniformLocation(_program, "uViewProjection");
         _lightPositionLocation = gl.GetUniformLocation(_program, "uLightPositionRadius");
+        _alphaTestLocation = gl.GetUniformLocation(_program, "uAlphaTest");
+        gl.UseProgram(_program);
+        gl.Uniform1(gl.GetUniformLocation(_program, "uTexture"), 0);
         _atlasLocation = gl.GetUniformLocation(sceneProgram, "uShadowAtlas");
         _gridLocation = gl.GetUniformLocation(sceneProgram, "uShadowGrid");
         _tileSizeLocation = gl.GetUniformLocation(sceneProgram, "uShadowTileSize");
@@ -39,7 +43,8 @@ internal sealed class SceneShadows
     }
 
     internal unsafe void Update(GL gl, IReadOnlyList<SceneLight> lights, uint vertexArray,
-        IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches)
+        IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches,
+        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
     {
         IsAvailable = false;
         Notice = null;
@@ -84,7 +89,8 @@ internal sealed class SceneShadows
                     Matrix4x4 viewProjection = ViewProjection(light, face);
                     gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
                     foreach (var batch in batches)
-                        gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+                        if (SceneMaterialDrawing.BindShadow(gl, _alphaTestLocation, batch.Material, resolveMaterial, textures))
+                            gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
                 }
             }
             IsAvailable = true;

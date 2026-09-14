@@ -7,7 +7,7 @@ namespace Iw4Radiant.Rendering;
 internal readonly record struct SceneLight(Vector3 Origin, float Radius, Vector3 Color, Vector3 Direction,
     float InnerAngle, float OuterAngle, float Exponent, bool IsSpotlight)
 {
-    internal static bool TryCreate(MapDocument document, MapEntity entity, out SceneLight light, out string? error)
+    internal static bool TryCreate(EditorScene scene, MapEntity entity, out SceneLight light, out string? error)
     {
         light = default;
         if (!MapLightProperties.TryRead(entity, out MapLightProperties properties, out error)) return false;
@@ -29,11 +29,10 @@ internal readonly record struct SceneLight(Vector3 Origin, float Radius, Vector3
                 error = "The spotlight needs a target entity to determine its direction.";
                 return false;
             }
-            MapEntity[] targets = document.Entities.Where(candidate =>
-                candidate.Properties.GetValueOrDefault("targetname") == properties.Target).Take(2).ToArray();
-            if (targets.Length != 1)
+            IReadOnlyList<MapEntity> targets = scene.ResolveTargets(entity);
+            if (targets.Count != 1)
             {
-                error = targets.Length == 0 ? $"Light target '{properties.Target}' was not found." :
+                error = targets.Count == 0 ? $"Light target '{properties.Target}' was not found." :
                     $"Light target '{properties.Target}' matches multiple entities.";
                 return false;
             }

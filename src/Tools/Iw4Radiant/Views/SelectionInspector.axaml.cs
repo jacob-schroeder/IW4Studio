@@ -3,6 +3,7 @@ using System.Numerics;
 using Avalonia.Controls;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Viewports.Orthographic;
 
 namespace Iw4Radiant.Views;
 
@@ -15,6 +16,7 @@ public partial class SelectionInspector : UserControl
     private bool _updating;
 
     public SelectionInspector() => InitializeComponent();
+    internal event Action<string>? PlacementRequested;
 
     internal void ShowTool(EditorTool tool)
     {
@@ -27,15 +29,15 @@ public partial class SelectionInspector : UserControl
         };
     }
 
-    internal void ShowEntity()
-    {
-        if (!IsKeyboardFocusWithin) InspectorTabs.SelectedItem = EntityTab;
-    }
+    internal void ShowEntity() => InspectorTabs.SelectedItem = EntityTab;
 
     internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
+    internal void ShowGeometry() => InspectorTabs.SelectedItem = GeometryTab;
+    internal void ShowOrganization() => InspectorTabs.SelectedItem = OrganizationTab;
     internal void ReleaseImages() => Skies.ReleaseImages();
 
-    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials)
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials,
+        Func<OrthoPlane> editPlane, Func<string, bool> supportsAlpha)
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
         Surfaces.InitializeActions(session, dialogs, finishGestures);
@@ -43,6 +45,12 @@ public partial class SelectionInspector : UserControl
         Terrain.InitializeActions(session, dialogs, finishGestures);
         Sunlight.InitializeActions(session, dialogs, finishGestures);
         Skies.InitializeActions(session, dialogs, finishGestures, materials);
+        Geometry.InitializeActions(session, dialogs, finishGestures, editPlane);
+        Organization.InitializeActions(session, dialogs, finishGestures);
+        Gameplay.InitializeActions(session, dialogs, finishGestures);
+        Gameplay.PlacementRequested += name => PlacementRequested?.Invoke(name);
+        TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
+        Decals.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
         Sunlight.EditSourceRequested += () =>
         {
             finishGestures();
@@ -102,18 +110,30 @@ public partial class SelectionInspector : UserControl
                 _listedEntityCount = session.Document.Entities.Count;
             }
             if (EntityList.ItemsSource is ComboBoxItem[] entityItems)
+            {
+                for (int index = 0; index < entityItems.Length; index++)
+                    if (entityItems[index].Tag is MapEntity listed)
+                    {
+                        entityItems[index].Content = $"{index}: {listed.ClassName}" +
+                            (listed.Properties.TryGetValue("targetname", out string? name) ? $" · {name}" : "");
+                        entityItems[index].IsEnabled = ReferenceEquals(listed, session.Document.World) ||
+                            session.Visibility.CanSelect(session.Document, listed);
+                    }
                 EntityList.SelectedItem = entityItems.FirstOrDefault(item => ReferenceEquals(item.Tag, entity));
+            }
             Transforms.RefreshSelection(session);
             Surfaces.RefreshSelection(session);
             bool hadLightError = Lights.HasSourceError;
             Lights.RefreshSelection(session);
             if (Lights.HasSourceError && (entityChanged || !hadLightError)) PropertiesExpander.IsExpanded = true;
             Terrain.RefreshSelection(session);
+            Geometry.RefreshSelection(session);
+            Organization.RefreshSelection(session);
+            Gameplay.RefreshSelection(session);
+            TerrainPaint.RefreshSelection(session);
+            Decals.RefreshSelection(session);
             Sunlight.RefreshWorld(session);
             Skies.RefreshSelection(session);
-            TerrainTab.IsVisible = session.Tool is EditorTool.Terrain or EditorTool.Sculpt ||
-                session.Selection.Items.Any(item => item is MapTerrain or TerrainVertexSelection) ||
-                ReferenceEquals(InspectorTabs.SelectedItem, TerrainTab);
         }
         finally { _updating = false; }
     }
@@ -136,7 +156,7 @@ public partial class SelectionInspector : UserControl
     private static string Describe(object? selected) => selected switch
     {
         MapBrush brush => $"Brush · {brush.Faces.Count} planes",
-        MapTerrain terrain => $"Terrain · {terrain.Width} × {terrain.Height} vertices\n{terrain.Material}",
+        MapTerrain terrain => $"{(terrain.IsCurve ? "Curve" : "Terrain")} · {terrain.Width} × {terrain.Height} {(terrain.IsCurve ? "controls" : "vertices")}\n{terrain.Material}",
         MapEntity entity => $"Entity · {entity.ClassName}",
         BrushFaceSelection face => $"Brush face {face.Brush.Faces.IndexOf(face.Face) + 1} · {face.Face.Material}",
         BrushVertexSelection vertex => FormattableString.Invariant($"Brush vertex · {vertex.Position.X:G6} / {vertex.Position.Y:G6} / {vertex.Position.Z:G6}"),

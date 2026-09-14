@@ -1,16 +1,24 @@
 using System.Globalization;
 using System.Numerics;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Editing;
 
 internal sealed class EditorSession
 {
+    internal EditorSession() => Scene = new EditorScene(this);
+    internal EditorVisibility Visibility { get; } = new();
+    internal PrefabLibrary Prefabs { get; } = new();
+    internal EditorScene Scene { get; }
     private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _undo = [];
     private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _redo = [];
     private MapDocument? _beforeEdit;
     private SelectionPath[] _beforeSelection = [];
     private long _revision, _savedRevision, _nextRevision = 1;
+    private Action<Vector3, Vector3?>? _place;
+    internal string? PlacementLabel { get; private set; }
+    internal bool HasPlacement => _place is not null;
 
     public MapDocument Document { get; private set; } = MapDocument.Create();
     public EditorSelection Selection { get; } = new();
@@ -30,32 +38,69 @@ internal sealed class EditorSession
     public float SculptRadius { get; set; } = 128;
     public float SculptStrength { get; set; } = 8;
     public float FlattenHeight { get; set; }
+    internal Vector4 PaintColor { get; set; } = Vector4.One;
+    internal float PaintOpacity { get; set; } = 0.25f;
+    internal float PaintAlpha { get; set; } = 1;
     public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
-    public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(SelectionGeometry.CanTransform);
-    public (Vector3 Min, Vector3 Max)? SelectionBounds => SelectionGeometry.Bounds(Selection.Items);
+    public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(item =>
+        Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item));
+    public (Vector3 Min, Vector3 Max)? SelectionBounds => Scene.Bounds(Selection.Items);
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public event EventHandler? Changed;
 
-    public void Refresh() => Changed?.Invoke(this, EventArgs.Empty);
+    public void Refresh()
+    {
+        Visibility.Invalidate();
+        Selection.SetRange(Selection.Items.Where(item => ReferenceEquals(item, Document.World) ||
+            Visibility.CanSelect(Document, item)).ToArray());
+        Scene.Invalidate();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
     public float Snap(float value) => MathF.Round(value / GridSize, MidpointRounding.AwayFromZero) * GridSize;
 
     public void Select(object? value, bool additive = false, bool toggle = false)
     {
+        if (value is not null && !ReferenceEquals(value, Document.World) && !Visibility.CanSelect(Document, value)) return;
         Selection.Set(value, additive, toggle);
         Refresh();
     }
 
     public void SelectRange(IEnumerable<object> values)
     {
-        Selection.SetRange(values);
+        Selection.SetRange(values.Where(item => ReferenceEquals(item, Document.World) || Visibility.CanSelect(Document, item)));
         Refresh();
+    }
+
+    internal void BeginPlacement(string label, Action<Vector3, Vector3?> place)
+    {
+        _place = place;
+        PlacementLabel = label;
+        Refresh();
+    }
+
+    internal void CancelPlacement()
+    {
+        _place = null;
+        PlacementLabel = null;
+        Refresh();
+    }
+
+    internal void Place(Vector3 position, Vector3? normal, bool repeat)
+    {
+        if (_place is not { } place) return;
+        place(position, normal);
+        if (!repeat) CancelPlacement();
     }
 
     public void Replace(MapDocument document, string? path)
     {
         Document = document;
+        _place = null;
+        PlacementLabel = null;
         FilePath = path;
+        Visibility.Clear();
+        Prefabs.Reload(document, path);
         Selection.Clear();
         _undo.Clear();
         _redo.Clear();
@@ -91,6 +136,7 @@ internal sealed class EditorSession
         else if (_beforeEdit is { } unchanged)
         {
             Document = unchanged;
+            Visibility.Clear();
             Selection.Restore(Document, _beforeSelection);
         }
         _beforeEdit = null;
@@ -103,6 +149,7 @@ internal sealed class EditorSession
         if (_beforeEdit is { } before)
         {
             Document = before;
+            Visibility.Clear();
             Selection.Restore(Document, _beforeSelection);
         }
         _beforeEdit = null;
@@ -133,6 +180,7 @@ internal sealed class EditorSession
         var previous = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
         Document = previous.Document;
+        Visibility.Clear();
         _revision = previous.Revision;
         Selection.Restore(Document, previous.Selection);
         Refresh();
@@ -146,6 +194,7 @@ internal sealed class EditorSession
         var next = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         Document = next.Document;
+        Visibility.Clear();
         _revision = next.Revision;
         Selection.Restore(Document, next.Selection);
         Refresh();
@@ -153,6 +202,8 @@ internal sealed class EditorSession
 
     public static (Vector3 Min, Vector3 Max) EntityBounds(MapEntity entity)
     {
+        if (PointEntityGeometry.IsPointEntity(entity) && PointEntityGeometry.TryRadiusBounds(entity, out var radiusBounds))
+            return radiusBounds;
         var bounds = entity.Brushes.Select(brush => brush.GetBounds())
             .Concat(entity.Terrains.Select(terrain => terrain.GetBounds())).ToArray();
         if (bounds.Length == 0)

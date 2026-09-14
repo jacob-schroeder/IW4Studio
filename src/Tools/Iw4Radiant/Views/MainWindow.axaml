@@ -33,12 +33,21 @@
                     <MenuItem Header="Front · XZ" Tag="Front" Click="Plane_Click" />
                     <MenuItem Header="Side · YZ" Tag="Side" Click="Plane_Click" />
                 </MenuItem>
-                <MenuItem Header="Show / hide materials" Click="Materials_Click" />
+                <MenuItem Header="Show / hide asset browser" Click="Materials_Click" />
                 <MenuItem Header="Show / hide inspector" Click="Inspector_Click" />
                 <MenuItem Header="Environment · sunlight and skies" Click="Environment_Click" />
                 <Separator />
                 <MenuItem Header="Frame _all views" Click="FrameAll_Click" />
                 <MenuItem Header="Frame _selection" Click="FrameSelection_Click" InputGesture="F" />
+            </MenuItem>
+            <MenuItem Header="_Create">
+                <MenuItem Header="_Models…" Click="Models_Click" />
+                <MenuItem Header="_Prefabs…" Click="Prefabs_Click" />
+                <MenuItem Header="_Curves, arches and stairs…" Click="Geometry_Click" />
+                <MenuItem Header="_Gameplay entities…" Click="Gameplay_Click" />
+            </MenuItem>
+            <MenuItem Header="_Organize">
+                <MenuItem Header="_Layers, groups and visibility…" Click="Organization_Click" />
             </MenuItem>
             <MenuItem Header="_Entity">
                 <MenuItem Header="_Worldspawn properties" Click="World_Click" />
@@ -109,7 +118,7 @@
                 <ToggleButton x:Name="MaximizeButton" Classes="toolbarButton" Click="Maximize_Click" ToolTip.Tip="Maximize / restore active view (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize active view">
                     <materialIcons:MaterialIcon Kind="Fullscreen" Width="18" Height="18" />
                 </ToggleButton>
-                <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide materials" AutomationProperties.Name="Show materials">
+                <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide asset browser" AutomationProperties.Name="Show asset browser">
                     <materialIcons:MaterialIcon Kind="TextureBox" Width="18" Height="18" />
                 </ToggleButton>
                 <ToggleButton x:Name="InspectorButton" Classes="toolbarButton" Click="Inspector_Click" ToolTip.Tip="Show / hide inspector" AutomationProperties.Name="Show inspector">

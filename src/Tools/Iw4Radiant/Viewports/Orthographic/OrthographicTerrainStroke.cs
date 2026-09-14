@@ -36,7 +36,10 @@ internal sealed class OrthographicTerrainStroke
 
     private static bool Stamp(EditorSession session, Vector2 point, bool lower, Action beginEdit)
     {
-        var terrains = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>().Distinct().ToArray();
+        bool painting = session.SculptMode is TerrainSculptMode.PaintColor or TerrainSculptMode.PaintAlpha;
+        var terrains = painting ? TerrainPainting.SelectedTerrains(session) :
+            session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>().Where(terrain => !terrain.IsCurve &&
+                session.Visibility.CanSelect(session.Document, terrain)).Distinct().ToArray();
         if (terrains.Length == 0) return false;
         beginEdit();
         bool changed = false;
@@ -49,6 +52,10 @@ internal sealed class OrthographicTerrainStroke
                     Math.Clamp(session.SculptStrength / 100f, 0, 1)),
                 TerrainSculptMode.Flatten => TerrainEditing.Flatten(terrain, point, session.SculptRadius,
                     session.FlattenHeight, Math.Clamp(session.SculptStrength / 100f, 0, 1)),
+                TerrainSculptMode.PaintColor => TerrainPainting.Dab(terrain, point, session.SculptRadius,
+                    lower ? Vector4.One : session.PaintColor, session.PaintOpacity, alphaOnly: false),
+                TerrainSculptMode.PaintAlpha => TerrainPainting.Dab(terrain, point, session.SculptRadius,
+                    session.PaintColor with { W = lower ? 0 : session.PaintAlpha }, session.PaintOpacity, alphaOnly: true),
                 _ => false
             };
         return changed;

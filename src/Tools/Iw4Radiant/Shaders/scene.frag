@@ -1,7 +1,9 @@
 in vec3 vNormal;
 in vec3 vPosition;
 in vec2 vTexCoord;
-in vec3 vColor;
+in vec4 vColor;
+
+#include "material-alpha.glsl"
 
 uniform sampler2D uTexture;
 uniform bool uTextured;
@@ -82,9 +84,11 @@ float shadowVisibility(int lightIndex, vec3 fromLight, float radialDepth, float 
 
 void main()
 {
-    vec3 color = vColor;
+    vec4 surface = vColor;
     if (uTextured)
-        color *= texture(uTexture, vTexCoord).rgb;
+        surface *= texture(uTexture, vTexCoord);
+    applyMaterialAlpha(surface.a);
+    vec3 color = surface.rgb;
     if (uLit)
     {
         vec3 normal = normalize(vNormal);
@@ -126,5 +130,5 @@ void main()
         }
         color *= illumination;
     }
-    fragmentColor = vec4(color, 1.0);
+    fragmentColor = vec4(color, surface.a);
 }

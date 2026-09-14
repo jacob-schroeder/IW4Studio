@@ -1,0 +1,281 @@
+using System.Numerics;
+using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
+
+namespace Iw4Radiant.Editing;
+
+internal sealed class PrefabLibrary
+{
+    private const int MaximumDepth = 32, MaximumInstances = 4096;
+    private readonly Dictionary<MapEntity, (string Signature, MapDocument? Preview, Dictionary<MapEntity, TargetScope>? Scopes, string? Error)> _previews = [];
+    private readonly Dictionary<string, MapDocument> _sources = new(StringComparer.Ordinal);
+
+    internal static bool IsPrefab(MapEntity entity) => entity.ClassName == "misc_prefab";
+
+    internal void Reload(MapDocument document, string? mapPath)
+    {
+        _previews.Clear();
+        _sources.Clear();
+        foreach (MapEntity entity in document.Entities.Where(IsPrefab)) GetPreview(entity, mapPath);
+    }
+
+    internal MapDocument? GetPreview(MapEntity instance, string? mapPath)
+    {
+        string signature = string.Join('\n', new[] { mapPath ?? "", instance.Properties.GetValueOrDefault("model", ""),
+            instance.Properties.GetValueOrDefault("origin", ""), instance.Properties.GetValueOrDefault("angles", ""),
+            instance.Properties.GetValueOrDefault("angle", ""), instance.Properties.GetValueOrDefault("modelscale", ""),
+            instance.Properties.GetValueOrDefault("modelscale_vec", "") });
+        if (_previews.TryGetValue(instance, out var cached) && cached.Signature == signature) return cached.Preview;
+        try
+        {
+            string source = GetSourcePath(instance, mapPath);
+            var chain = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (mapPath is not null) chain.Add(CanonicalPath(mapPath));
+            int count = 0;
+            var scopes = new Dictionary<MapEntity, TargetScope>();
+            MapDocument preview = Expand(source, SourceRoot(mapPath ?? source), chain, ref count, scopes);
+            Matrix4x4 transform = InstanceTransform(instance);
+            foreach (MapEntity entity in preview.Entities) SelectionTransforms.ApplyEntity(entity, transform, textureLock: true);
+            _previews[instance] = (signature, preview, scopes, null);
+            return preview;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException or ArgumentException or InvalidOperationException)
+        {
+            _previews[instance] = (signature, null, null, exception.Message);
+            return null;
+        }
+    }
+
+    internal IReadOnlyList<MapEntity> ResolveTargets(MapEntity instance, string? mapPath, MapEntity source)
+    {
+        if (!source.Properties.TryGetValue("target", out string? target) || target.Length == 0 ||
+            GetPreview(instance, mapPath) is null || _previews[instance].Scopes is not { } scopes ||
+            !scopes.TryGetValue(source, out TargetScope? scope)) return [];
+        for (; scope is not null; scope = scope.Parent)
+        {
+            if (scope.Targets.TryGetValue(target, out MapEntity[]? matches)) return matches;
+            if (scope.DescendantTargets.TryGetValue(target, out matches)) return matches;
+        }
+        return [];
+    }
+
+    internal string? Error(MapEntity instance, string? mapPath)
+    {
+        GetPreview(instance, mapPath);
+        return _previews.GetValueOrDefault(instance).Error;
+    }
+
+    internal string GetSourcePath(MapEntity instance, string? mapPath)
+    {
+        if (!IsPrefab(instance)) throw new ArgumentException("Select a prefab instance.");
+        if (mapPath is null) throw new ArgumentException("Save the current map before resolving or placing prefab references.");
+        return ResolveSourcePath(instance, SourceRoot(mapPath));
+    }
+
+    private static string ResolveSourcePath(MapEntity instance, string root)
+    {
+        string reference = instance.Properties.GetValueOrDefault("model", "").Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(reference) || Path.IsPathRooted(reference) || reference.Contains(':') ||
+            reference.Split('/').Any(segment => segment == ".."))
+            throw new ArgumentException("Prefab models must be relative .map paths within the map source folder.");
+        string path = Path.GetFullPath(Path.Combine(root, reference));
+        RequireWithin(root, path);
+        if (!string.Equals(Path.GetExtension(path), ".map", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("A prefab must reference a .map source file.");
+        return path;
+    }
+
+    internal static string SourceRoot(string mapPath)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(mapPath)) ?? throw new ArgumentException("The map path has no folder.");
+        for (DirectoryInfo? parent = new(directory); parent is not null; parent = parent.Parent)
+            if (parent.Name.Equals("map_source", StringComparison.OrdinalIgnoreCase)) return parent.FullName;
+        for (DirectoryInfo? parent = new(directory); parent is not null; parent = parent.Parent)
+            if (parent.Name.Equals("prefabs", StringComparison.OrdinalIgnoreCase) && parent.Parent is { } root) return root.FullName;
+        return directory;
+    }
+
+    internal static string Reference(string mapPath, string sourcePath)
+    {
+        string root = SourceRoot(mapPath), path = Path.GetFullPath(sourcePath);
+        RequireWithin(root, path);
+        if (!Path.GetExtension(path).Equals(".map", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("A prefab must be saved as a .map source file.");
+        if (CanonicalPath(mapPath).Equals(CanonicalPath(path), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("A map cannot reference itself as a prefab.");
+        return Path.GetRelativePath(root, path).Replace('\\', '/');
+    }
+
+    internal MapEntity Place(EditorSession session, string path, Vector3 origin)
+    {
+        if (session.FilePath is not { } mapPath) throw new ArgumentException("Save the current map before placing a prefab.");
+        var instance = new MapEntity();
+        instance.Properties["classname"] = "misc_prefab";
+        instance.Properties["model"] = Reference(mapPath, path);
+        instance.Properties["origin"] = FormattableString.Invariant($"{origin.X:G9} {origin.Y:G9} {origin.Z:G9}");
+        if (GetPreview(instance, mapPath) is null) throw new ArgumentException(Error(instance, mapPath));
+        session.Edit(() => { session.Document.Entities.Add(instance); session.Selection.Set(instance); });
+        return instance;
+    }
+
+    internal static MapDocument SelectionDocument(EditorSession session)
+    {
+        if (session.Selection.Count == 0 || session.Selection.Items.Any(item => item is not (MapBrush or MapTerrain or MapEntity)))
+            throw new ArgumentException("Select whole brushes, terrain patches or entities to save as a prefab.");
+        var result = MapDocument.Create();
+        result.Header.Clear();
+        result.Header.AddRange(session.Document.Header);
+        var selected = session.Selection.Items.ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (MapEntity entity in session.Document.Entities)
+        {
+            if (selected.Contains(entity))
+            {
+                if (entity.ClassName == "worldspawn") throw new ArgumentException("Select the world's objects instead of worldspawn.");
+                result.Entities.Add(entity.Clone());
+                continue;
+            }
+            MapBrush[] brushes = entity.Brushes.Where(selected.Contains).ToArray();
+            MapTerrain[] terrains = entity.Terrains.Where(selected.Contains).ToArray();
+            if (brushes.Length == 0 && terrains.Length == 0) continue;
+            MapEntity copy = entity.ClassName == "worldspawn" ? result.World : entity.Clone();
+            if (entity.ClassName != "worldspawn")
+            {
+                copy.Brushes.Clear(); copy.Terrains.Clear(); copy.PreservedPrimitives.Clear();
+                result.Entities.Add(copy);
+            }
+            copy.Brushes.AddRange(brushes.Select(brush => brush.Clone()));
+            copy.Terrains.AddRange(terrains.Select(terrain => terrain.Clone()));
+        }
+        Vector3 center = session.SelectionBounds is { } bounds ? bounds.Min + (bounds.Max - bounds.Min) / 2 : Vector3.Zero;
+        Matrix4x4 transform = Matrix4x4.CreateTranslation(-center);
+        foreach (MapEntity entity in result.Entities) SelectionTransforms.ApplyEntity(entity, transform, textureLock: true);
+        return result;
+    }
+
+    internal void ValidateSave(MapDocument prefab, string path, string? currentMapPath)
+    {
+        if (currentMapPath is null) throw new ArgumentException("Save the current map before creating a reusable prefab.");
+        Reference(currentMapPath, path);
+        // Saving into another folder changes the reference root outside map_source. Rebase all existing references first.
+        foreach (MapEntity nested in prefab.Entities.Where(IsPrefab))
+        {
+            string source = GetSourcePath(nested, currentMapPath);
+            nested.Properties["model"] = Reference(path, source);
+        }
+        var chain = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { CanonicalPath(path), CanonicalPath(currentMapPath) };
+        int count = 0;
+        foreach (MapEntity nested in prefab.Entities.Where(IsPrefab)) Expand(GetSourcePath(nested, path), SourceRoot(path), chain, ref count);
+    }
+
+    internal void ValidateMapSave(MapDocument document, string? currentPath, string destination)
+    {
+        MapEntity[] instances = document.Entities.Where(IsPrefab).ToArray();
+        if (instances.Length == 0 || currentPath is not null &&
+            CanonicalPath(currentPath).Equals(CanonicalPath(destination), StringComparison.OrdinalIgnoreCase)) return;
+        string root = SourceRoot(destination);
+        if (currentPath is not null && !CanonicalPath(SourceRoot(currentPath)).Equals(CanonicalPath(root), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("This map contains prefab references. Save it within the same map_source folder (or the same source folder) so all nested references and undo history remain valid.");
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string output = CanonicalPath(destination);
+        foreach (MapEntity instance in instances) Visit(ResolveSourcePath(instance, root), 0);
+
+        void Visit(string path, int depth)
+        {
+            string canonical = CanonicalPath(path);
+            if (canonical.Equals(output, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("This destination is referenced by the map's prefab hierarchy. Choose another filename to avoid overwriting a prefab and creating a reference cycle.");
+            if (!visited.Add(canonical)) return;
+            if (depth >= MaximumDepth || visited.Count > MaximumInstances)
+                throw new FormatException("The prefab nesting is too large to verify this save destination safely.");
+            MapDocument source;
+            try { source = MapFile.Read(path); }
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) { return; }
+            foreach (MapEntity nested in source.Entities.Where(IsPrefab)) Visit(ResolveSourcePath(nested, root), depth + 1);
+        }
+    }
+
+    internal void Explode(EditorSession session, MapEntity instance)
+    {
+        MapDocument source = (GetPreview(instance, session.FilePath) ?? throw new ArgumentException(Error(instance, session.FilePath))).Clone();
+        session.Edit(() =>
+        {
+            foreach (object item in MapOrganization.Objects(source)) MapOrganization.Assign(item, MapOrganization.Layer(instance));
+            session.Document.World.Brushes.AddRange(source.World.Brushes);
+            session.Document.World.Terrains.AddRange(source.World.Terrains);
+            var added = source.World.Brushes.Cast<object>().Concat(source.World.Terrains).ToList();
+            foreach (MapEntity entity in source.Entities.Skip(1)) { session.Document.Entities.Add(entity); added.Add(entity); }
+            session.Document.Entities.Remove(instance);
+            session.Selection.SetRange(added);
+        });
+    }
+
+    private MapDocument Expand(string path, string referenceRoot, HashSet<string> chain, ref int count,
+        Dictionary<MapEntity, TargetScope>? scopes = null, TargetScope? parentScope = null)
+    {
+        string canonical = CanonicalPath(path);
+        if (chain.Count >= MaximumDepth || ++count > MaximumInstances) throw new FormatException("The prefab nesting is too large to expand safely.");
+        if (!chain.Add(canonical)) throw new FormatException($"Prefab reference cycle at {Path.GetFileName(path)}.");
+        try
+        {
+            if (!_sources.TryGetValue(canonical, out MapDocument? source))
+                _sources.Add(canonical, source = MapFile.Read(path));
+            var result = source.Clone();
+            if (result.Entities.Any(entity => entity.PreservedPrimitives.Count > 0))
+                throw new FormatException($"{Path.GetFileName(path)} contains unsupported primitives; open its source to inspect them before placing or exploding it.");
+            TargetScope? scope = scopes is null ? null : new TargetScope(parentScope);
+            if (scope is not null && scopes is not null)
+            {
+                MapEntity[] direct = result.Entities.Where(entity => !IsPrefab(entity)).ToArray();
+                foreach (MapEntity entity in direct) scopes.Add(entity, scope);
+                IndexTargets(direct, scope.Targets);
+            }
+            foreach (MapEntity instance in result.Entities.Where(IsPrefab).ToArray())
+            {
+                MapDocument child = Expand(ResolveSourcePath(instance, referenceRoot), referenceRoot, chain, ref count, scopes, scope);
+                Matrix4x4 transform = InstanceTransform(instance);
+                foreach (MapEntity entity in child.Entities) SelectionTransforms.ApplyEntity(entity, transform, textureLock: true);
+                result.World.Brushes.AddRange(child.World.Brushes);
+                result.World.Terrains.AddRange(child.World.Terrains);
+                result.Entities.AddRange(child.Entities.Skip(1));
+                result.Entities.Remove(instance);
+            }
+            if (scope is not null && scopes is not null)
+                IndexTargets(result.Entities.Where(entity => !ReferenceEquals(scopes[entity], scope)), scope.DescendantTargets);
+            return result;
+        }
+        finally { chain.Remove(canonical); }
+    }
+
+    private static void IndexTargets(IEnumerable<MapEntity> entities, Dictionary<string, MapEntity[]> targets)
+    {
+        foreach (var group in entities.Where(entity => entity.Properties.ContainsKey("targetname"))
+                     .GroupBy(entity => entity.Properties["targetname"], StringComparer.Ordinal))
+            targets.Add(group.Key, group.ToArray());
+    }
+
+    private sealed class TargetScope(TargetScope? parent)
+    {
+        internal TargetScope? Parent { get; } = parent;
+        internal Dictionary<string, MapEntity[]> Targets { get; } = new(StringComparer.Ordinal);
+        internal Dictionary<string, MapEntity[]> DescendantTargets { get; } = new(StringComparer.Ordinal);
+    }
+
+    private static Matrix4x4 InstanceTransform(MapEntity instance)
+    {
+        Vector3 scale = XModelGeometry.Scale(instance);
+        if (scale.X != scale.Y || scale.X != scale.Z) throw new ArgumentException("Prefab instances require a uniform modelscale.");
+        return Matrix4x4.CreateScale(scale) * EntityOrientation.Rotation(instance) * Matrix4x4.CreateTranslation(EditorSession.EntityOrigin(instance));
+    }
+
+    private static void RequireWithin(string root, string path)
+    {
+        if (!path.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new ArgumentException("Keep prefabs inside the current map_source folder (or the saved map's folder), so their references remain portable.");
+    }
+
+    private static string CanonicalPath(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        return File.Exists(fullPath) ? new FileInfo(fullPath).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? fullPath : fullPath;
+    }
+}

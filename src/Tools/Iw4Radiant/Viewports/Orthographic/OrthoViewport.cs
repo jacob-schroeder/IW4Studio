@@ -75,20 +75,13 @@ public sealed class OrthoViewport : Control
     {
         if (Session is not { } session) return;
         _gestures.CancelGesture();
-        var bounds = session.Document.Brushes.Select(brush => brush.GetBounds())
-            .Concat(session.Document.Terrains.Where(terrain => terrain.Vertices.Length > 0)
-                .Select(terrain => terrain.GetBounds()))
-            .Concat(OrthographicGeometry.PointEntities(session.Document).Select(entity =>
-                (EditorSession.EntityOrigin(entity) - new Vector3(8),
-                 EditorSession.EntityOrigin(entity) + new Vector3(8)))).ToArray();
-        if (bounds.Length == 0)
+        if (session.Scene.VisibleBounds is not { } bounds)
         {
             _projection.Reset();
             InvalidateVisual();
             return;
         }
-        Frame(bounds.Select(bound => bound.Item1).Aggregate(Vector3.Min),
-            bounds.Select(bound => bound.Item2).Aggregate(Vector3.Max));
+        Frame(bounds.Min, bounds.Max);
     }
 
     public void FrameSelection()
@@ -157,7 +150,8 @@ public sealed class OrthoViewport : Control
         base.OnKeyDown(e);
         if (e.Key == Key.Escape)
         {
-            if (_gestures.IsActive || _gestures.HasClipPreview) _gestures.CancelGesture();
+            if (Session?.HasPlacement == true) Session.CancelPlacement();
+            else if (_gestures.IsActive || _gestures.HasClipPreview) _gestures.CancelGesture();
             else Session?.Select(null);
             e.Handled = true;
         }

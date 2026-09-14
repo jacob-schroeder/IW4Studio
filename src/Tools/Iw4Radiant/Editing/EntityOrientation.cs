@@ -13,6 +13,14 @@ internal static class EntityOrientation
         return new Vector3((float)(cp * cy), (float)(cp * sy), (float)-sp);
     }
 
+    internal static Matrix4x4 Rotation(MapEntity entity)
+    {
+        var (forward, side, up) = Axes(Read(entity));
+        return new Matrix4x4((float)forward.X, (float)forward.Y, (float)forward.Z, 0,
+            (float)side.X, (float)side.Y, (float)side.Z, 0,
+            (float)up.X, (float)up.Y, (float)up.Z, 0, 0, 0, 0, 1);
+    }
+
     internal static void Transform(MapEntity entity, Matrix4x4 transform)
     {
         if (!Matrix4x4.Decompose(transform, out _, out Quaternion rotation, out _) ||
@@ -21,12 +29,10 @@ internal static class EntityOrientation
         // Radiant uses pitch/yaw/roll with Z up and pitch increasing toward -Z.
         // Compose in double precision so tiny rotations and near-pole components
         // survive until the resulting map angles are rounded to their float format.
-        var (sp, cp) = SinCos(angles.X);
-        var (sy, cy) = SinCos(angles.Y);
-        var (sr, cr) = SinCos(angles.Z);
-        var forward = Rotate((cp * cy, cp * sy, -sp), rotation);
-        var side = Rotate((sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, sr * cp), rotation);
-        var up = Rotate((cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp), rotation);
+        var axes = Axes(angles);
+        var forward = Rotate(axes.Forward, rotation);
+        var side = Rotate(axes.Side, rotation);
+        var up = Rotate(axes.Up, rotation);
         const double degrees = 180 / Math.PI;
         double horizontal = Math.Sqrt(forward.X * forward.X + forward.Y * forward.Y);
         float pitch = (float)(Math.Atan2(-forward.Z, horizontal) * degrees);
@@ -46,6 +52,17 @@ internal static class EntityOrientation
         }
     }
 
+    private static ((double X, double Y, double Z) Forward, (double X, double Y, double Z) Side,
+        (double X, double Y, double Z) Up) Axes(Vector3 angles)
+    {
+        var (sp, cp) = SinCos(angles.X);
+        var (sy, cy) = SinCos(angles.Y);
+        var (sr, cr) = SinCos(angles.Z);
+        return ((cp * cy, cp * sy, -sp),
+            (sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, sr * cp),
+            (cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp));
+    }
+
     private static (double Sin, double Cos) SinCos(float angle) => (angle % 360) switch
     {
         0 => (0, 1), 90 or -270 => (1, 0), 180 or -180 => (0, -1), 270 or -90 => (-1, 0),
@@ -63,7 +80,7 @@ internal static class EntityOrientation
             value.Z + w * tz + x * ty - y * tx);
     }
 
-    private static Vector3 Read(MapEntity entity)
+    internal static Vector3 Read(MapEntity entity)
     {
         if (entity.Properties.TryGetValue("angles", out string? text))
         {

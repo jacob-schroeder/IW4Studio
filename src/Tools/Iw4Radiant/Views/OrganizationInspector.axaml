@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.OrganizationInspector">
+    <StackPanel Spacing="8">
+        <TextBlock Text="Layers" Classes="panelTitle" />
+        <ComboBox x:Name="LayerBox" HorizontalAlignment="Stretch" ToolTip.Tip="Layer paths may contain / to create a hierarchy." />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+            <Button x:Name="AssignLayerButton" Content="Assign selection" HorizontalAlignment="Stretch" />
+            <Button x:Name="SelectLayerButton" Content="Select layer" Grid.Column="1" HorizontalAlignment="Stretch" />
+        </Grid>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+            <CheckBox x:Name="HideLayerCheck" Content="Hide layer" />
+            <CheckBox x:Name="FreezeLayerCheck" Content="Freeze layer" Grid.Column="1" />
+        </Grid>
+        <TextBox x:Name="LayerNameBox" PlaceholderText="New layer name" />
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
+            <Button x:Name="CreateLayerButton" Content="Create" HorizontalAlignment="Stretch" />
+            <Button x:Name="RenameLayerButton" Content="Rename" Grid.Column="1" HorizontalAlignment="Stretch" />
+            <Button x:Name="DeleteLayerButton" Content="Remove" Grid.Column="2" HorizontalAlignment="Stretch" />
+        </Grid>
+        <TextBlock Text="Groups" Classes="panelTitle" Margin="0,6,0,0" />
+        <ComboBox x:Name="GroupBox" HorizontalAlignment="Stretch" />
+        <TextBox x:Name="GroupNameBox" PlaceholderText="Group name (optional)" />
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
+            <Button x:Name="GroupButton" Content="Group" HorizontalAlignment="Stretch" ToolTip.Tip="Group selected world brushes and terrain patches." />
+            <Button x:Name="SelectGroupButton" Content="Select" Grid.Column="1" HorizontalAlignment="Stretch" />
+            <Button x:Name="UngroupButton" Content="Ungroup" Grid.Column="2" HorizontalAlignment="Stretch" />
+        </Grid>
+        <TextBlock Text="Selection visibility" Classes="panelTitle" Margin="0,6,0,0" />
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
+            <Button x:Name="HideButton" Content="Hide" HorizontalAlignment="Stretch" />
+            <Button x:Name="IsolateButton" Content="Isolate" Grid.Column="1" HorizontalAlignment="Stretch" />
+            <Button x:Name="FreezeButton" Content="Freeze" Grid.Column="2" HorizontalAlignment="Stretch" />
+        </Grid>
+        <Button x:Name="RestoreButton" Content="Restore selection visibility" HorizontalAlignment="Stretch" />
+        <TextBlock Text="Layers and brush groups save with the map. Selection visibility lasts until restored or the document changes. Use layers for point entities and prefab instances."
+                   Classes="caption" TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

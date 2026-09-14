@@ -18,18 +18,19 @@ public partial class MainWindow : Window
     private bool _updatingControls;
     private bool _inspectorVisible = true;
     private GridLength _inspectorWidth = new(300);
+    private EditorTool _shownTool;
 
     public MainWindow()
     {
         InitializeComponent();
         _dialogs = new EditorDialogs(this, SetStatus);
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus);
-        Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials);
+        Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials,
+            () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true);
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.LayoutChanged += RefreshLayoutControls;
         Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
-        Workspace.Materials.CatalogChanged += Workspace.Camera.ReloadTextures;
-        Workspace.Materials.CatalogChanged += () => Inspector.RefreshSelection(_session);
+        InitializeAuthoring();
         var gridViews = Workspace.GridViews;
         foreach (var view in gridViews)
         {
@@ -45,7 +46,7 @@ public partial class MainWindow : Window
         }
         Workspace.Camera.Session = _session;
         Workspace.Camera.InteractionStatusChanged += SetStatus;
-        Workspace.Camera.ResolveMaterial = Workspace.Materials.ResolveMaterial;
+        Workspace.Camera.ResolveMaterial = ResolveMaterial;
         _session.Changed += (_, _) => RefreshEditor();
         GridCombo.ItemsSource = new[] { "1", "2", "4", "8", "16", "32", "64", "128" };
         GridCombo.SelectedItem = "16";
@@ -57,7 +58,7 @@ public partial class MainWindow : Window
         RefreshLayoutControls();
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => { Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); };
+        Closed += (_, _) => { Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); };
         Deactivated += (_, _) => Workspace.Camera.FinishGesture(cancel: true);
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
@@ -65,6 +66,11 @@ public partial class MainWindow : Window
     private void RefreshEditor()
     {
         if (!_ready) return;
+        if (_shownTool != _session.Tool)
+        {
+            _shownTool = _session.Tool;
+            if (_shownTool is EditorTool.Terrain or EditorTool.Sculpt) Workspace.ShowGrid(OrthoPlane.Top);
+        }
         Title = $"{(_session.IsDirty ? "*" : "")}{Path.GetFileName(_session.FilePath ?? "Untitled.map")} — Iw4Radiant";
         Workspace.Camera.RefreshScene();
         UndoMenu.IsEnabled = UndoToolbar.IsEnabled = _session.CanUndo;
@@ -80,12 +86,14 @@ public partial class MainWindow : Window
         ToolOptions.IsVisible = CreationOptions.IsVisible || ClipOptions.IsVisible;
         RefreshClipControls();
         Inspector.RefreshSelection(_session);
+        Workspace.Prefabs.RefreshSelection(_session);
         _updatingControls = true;
         TransformCombo.SelectedIndex = (int)_session.TransformMode;
         ClipCombo.SelectedIndex = (int)_session.ClipMode;
         _updatingControls = false;
         int preserved = _session.Document.Entities.Sum(entity => entity.PreservedPrimitives.Count);
-        CountText.Text = $"{_session.Document.Brushes.Count()} brushes · {_session.Document.Terrains.Count()} terrain · " +
+        CountText.Text = $"{_session.Document.Brushes.Count()} brushes · {_session.Document.Terrains.Count(t => !t.IsCurve)} terrain · " +
+            $"{_session.Document.Terrains.Count(t => t.IsCurve)} curves · " +
             $"{_session.Document.Entities.Count} entities · {_session.Selection.Count} selected" +
             (preserved > 0 ? $" · {preserved} preserved primitives" : "");
     }
@@ -99,6 +107,7 @@ public partial class MainWindow : Window
     private void SetTool(EditorTool tool)
     {
         FinishGestures();
+        if (_session.HasPlacement) _session.CancelPlacement();
         if (_session.Tool != tool)
             _session.Selection.SetRange(_session.Selection.Items.Select(EditorSelection.Owner).Distinct().ToArray());
         _session.Tool = tool;
@@ -220,6 +229,21 @@ public partial class MainWindow : Window
     private void FourViewsMenu_Click(object? sender, RoutedEventArgs e) => Workspace.SetFourViews(true);
     private void Maximize_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaximize();
     private void Materials_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaterials();
+    private void Models_Click(object? sender, RoutedEventArgs e) => Workspace.ShowModels();
+    private void Prefabs_Click(object? sender, RoutedEventArgs e) => Workspace.ShowPrefabs();
+    private void Geometry_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowGeometry);
+    private void Gameplay_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowEntity);
+    private void Organization_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowOrganization);
+
+    private void ShowInspectorSection(Action show)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        _inspectorVisible = true;
+        if (Workspace.IsMaximized) Workspace.ToggleMaximize();
+        RefreshLayoutControls();
+        show();
+    }
 
     private void Environment_Click(object? sender, RoutedEventArgs e)
     {
@@ -305,7 +329,12 @@ public partial class MainWindow : Window
         "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
         "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. Preview shows image details and Size adjusts the tiles.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
-        "This prototype edits iwmap 4 source. Curves and other unsupported primitives are preserved but not rendered. " +
+        "Models and prefabs: open Create or the asset browser tabs. Choose Place, then click a camera surface or grid; Shift repeats and Escape cancels. Models support surface alignment, Drop, Find and Replace. Prefabs use native .map files with Edit source, Reload, Make unique and Explode.\n" +
+        "Geometry: Create opens native patches, bevels, caps, cylinders, arches and stairs; select a curve to refine or edit its control points.\n" +
+        "Organization: use Layers for native layer/group authoring, hide/freeze/isolate and restore. Hidden objects are excluded from viewports; frozen objects cannot be selected or edited.\n" +
+        "Terrain detail: fill or brush-paint vertex color and alpha, add a blend overlay with an available alpha material, or project a native mesh decal from a selected brush face.\n" +
+        "Gameplay: Entity contains verified IW4 spawns, triggers and script objects. Select a source and destination to connect target to targetname; links are visible in the viewports.\n\n" +
+        "This editor uses iwmap 4 source. Unrecognized primitives are preserved on save. " +
         "IW4 material JSON color maps, DDS and PNG/JPEG/BMP previews are supported; PS3 material programs are not executed. " +
         "Materials without a matching image are omitted. Unresolved map surfaces appear as wireframe. " +
         "Lighting previews light_point_linear point/spot lights and authored direct sunlight with shadows. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets, ambient/diffuse sky lighting and bounced light are not previewed. " +
@@ -314,6 +343,13 @@ public partial class MainWindow : Window
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (_dialogs.BlocksInput || e.Handled) return;
+        if (e.Key == Key.Escape && _session.HasPlacement)
+        {
+            _session.CancelPlacement();
+            SetStatus("Placement cancelled.");
+            e.Handled = true;
+            return;
+        }
         if (Workspace.Camera.HandleNavigationKeyDown(e)) return;
         bool command = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);

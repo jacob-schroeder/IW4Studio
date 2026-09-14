@@ -4,10 +4,10 @@ namespace Iw4Radiant.Editing;
 
 internal static class SurfaceEditing
 {
-    internal static IEnumerable<BrushFaceSelection> GetFaces(EditorSelection selection)
+    internal static IEnumerable<BrushFaceSelection> GetFaces(EditorSession session)
     {
         var seen = new HashSet<MapFace>(ReferenceEqualityComparer.Instance);
-        foreach (object item in selection.Items)
+        foreach (object item in session.Selection.Items)
         {
             IEnumerable<BrushFaceSelection> faces = item switch
             {
@@ -18,13 +18,13 @@ internal static class SurfaceEditing
                 _ => []
             };
             foreach (var face in faces)
-                if (seen.Add(face.Face)) yield return face;
+                if (session.Visibility.CanSelect(session.Document, face.Brush) && seen.Add(face.Face)) yield return face;
         }
     }
 
     internal static void ApplyProjection(EditorSession session, SurfaceProjection edits)
     {
-        var faces = GetFaces(session.Selection).ToArray();
+        var faces = GetFaces(session).ToArray();
         if (faces.Length == 0)
             throw new ArgumentException("Select brush faces or brushes to edit their surface projection.");
         var changes = faces.Select(selection =>
@@ -42,7 +42,7 @@ internal static class SurfaceEditing
 
     internal static void Fit(EditorSession session, float repeatsX, float repeatsY)
     {
-        var faces = GetFaces(session.Selection).ToArray();
+        var faces = GetFaces(session).ToArray();
         if (faces.Length == 0)
             throw new ArgumentException("Select brush faces or brushes to fit their textures.");
         var changes = faces.Select(selection =>

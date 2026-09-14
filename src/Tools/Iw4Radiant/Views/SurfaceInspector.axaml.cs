@@ -39,7 +39,7 @@ public partial class SurfaceInspector : UserControl
         _updating = true;
         try
         {
-            var faces = SurfaceEditing.GetFaces(session.Selection).Select(selection => selection.Face).ToArray();
+            var faces = SurfaceEditing.GetFaces(session).Select(selection => selection.Face).ToArray();
             MapFace? reference = session.Selection.Active is BrushFaceSelection active && faces.Contains(active.Face)
                 ? active.Face : faces.FirstOrDefault();
             bool changed = !_shownFaces.SequenceEqual(faces) || !ReferenceEquals(_shownReference, reference);

@@ -2,6 +2,7 @@ using System.Numerics;
 using Avalonia;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
@@ -16,6 +17,7 @@ internal static class OrthographicSelection
             float depth = float.NegativeInfinity;
             foreach (object handle in SelectionGeometry.GetVertexHandles(session.Selection))
             {
+                if (!session.Visibility.CanSelect(session.Document, handle)) continue;
                 if (SelectionGeometry.Bounds(handle) is not { } bounds) continue;
                 double candidate = OrthographicGeometry.Distance(point, projection.ToScreen(bounds.Min));
                 float candidateDepth = projection.MissingAxis(bounds.Min);
@@ -27,12 +29,13 @@ internal static class OrthographicSelection
             return closest;
         }
         if (session.Tool != EditorTool.Face) return OrthographicGeometry.HitTest(session, projection, point);
-        BrushFaceSelection? best = null;
+        object? best = null;
         double bestDistance = double.PositiveInfinity;
         float bestDepth = float.NegativeInfinity;
-        foreach (MapBrush brush in session.Document.Brushes)
+        foreach (MapBrush brush in session.Scene.Document.Brushes)
         foreach (MapPolygon polygon in brush.GetPolygons())
         {
+            if (!session.Scene.CanSelect(brush)) continue;
             Point[] points = polygon.Vertices.Select(projection.ToScreen).ToArray();
             double distance = OrthographicGeometry.Contains(points, point) ? 0 : points.Select((p, i) =>
                 OrthographicGeometry.DistanceToSegment(point, p, points[(i + 1) % points.Length])).DefaultIfEmpty(double.PositiveInfinity).Min();
@@ -43,27 +46,31 @@ internal static class OrthographicSelection
                 Vector3.Dot(normal, polygon.Face.A - projection.Unproject(projection.ToWorld(point), 0)) / denominator :
                 polygon.Vertices.Select(projection.MissingAxis).Average();
             if (distance == bestDistance && depth <= bestDepth) continue;
-            best = new(brush, polygon.Face);
+            best = session.Scene.Owner(new BrushFaceSelection(brush, polygon.Face));
             bestDistance = distance;
             bestDepth = depth;
         }
         return best;
     }
 
-    internal static object[] MarqueeCandidates(EditorSession session) => session.Tool switch
+    internal static object[] MarqueeCandidates(EditorSession session)
     {
-        EditorTool.Vertex => SelectionGeometry.GetVertexHandles(session.Selection).ToArray(),
-        EditorTool.Face => session.Document.Brushes.SelectMany(brush => brush.GetPolygons()
-            .Select(polygon => (object)new BrushFaceSelection(brush, polygon.Face))).ToArray(),
-        _ => session.Document.Brushes.Cast<object>().Concat(session.Document.Terrains)
-            .Concat(OrthographicGeometry.PointEntities(session.Document)).ToArray()
-    };
+        IEnumerable<object> candidates = session.Tool switch
+        {
+            EditorTool.Vertex => SelectionGeometry.GetVertexHandles(session.Selection),
+            EditorTool.Face => session.Scene.Document.Brushes.SelectMany(brush => brush.GetPolygons()
+                .Select(polygon => (object)new BrushFaceSelection(brush, polygon.Face))),
+            _ => session.Scene.Document.Brushes.Cast<object>().Concat(session.Scene.Document.Terrains)
+                .Concat(session.Scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
+        };
+        return candidates.Where(session.Scene.CanSelect).Select(session.Scene.Owner).Distinct().ToArray();
+    }
 
-    internal static IEnumerable<object> InRectangle(IEnumerable<object> candidates, OrthographicProjection projection, Rect rectangle)
+    internal static IEnumerable<object> InRectangle(EditorSession session, IEnumerable<object> candidates, OrthographicProjection projection, Rect rectangle)
     {
         foreach (object item in candidates)
         {
-            if (SelectionGeometry.Bounds(item) is not { } bounds) continue;
+            if (!session.Scene.CanSelect(item) || session.Scene.Bounds(item) is not { } bounds) continue;
             Rect projected = projection.ScreenBounds(bounds.Min, bounds.Max);
             if (projected.Right >= rectangle.Left && projected.Left <= rectangle.Right &&
                 projected.Bottom >= rectangle.Top && projected.Top <= rectangle.Bottom)

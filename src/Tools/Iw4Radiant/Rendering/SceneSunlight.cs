@@ -1,5 +1,6 @@
 using System.Numerics;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 
 namespace Iw4Radiant.Rendering;
@@ -8,7 +9,7 @@ internal sealed class SceneSunlight
 {
     private const int PreferredShadowSize = 2048;
     private uint _program, _framebuffer, _texture;
-    private int _shadowProjectionLocation, _enabledLocation, _directionLocation, _colorLocation;
+    private int _shadowProjectionLocation, _enabledLocation, _directionLocation, _colorLocation, _alphaTestLocation;
     private int _sceneProjectionLocation, _textureLocation, _maximumTextureSize, _shadowSize;
     private Matrix4x4 _viewProjection;
     private Vector3 _direction, _color;
@@ -20,6 +21,9 @@ internal sealed class SceneSunlight
     {
         _program = SceneShaderProgram.Create(gl, shaderHeader, "shadow.vert", "sun-shadow.frag");
         _shadowProjectionLocation = gl.GetUniformLocation(_program, "uViewProjection");
+        _alphaTestLocation = gl.GetUniformLocation(_program, "uAlphaTest");
+        gl.UseProgram(_program);
+        gl.Uniform1(gl.GetUniformLocation(_program, "uTexture"), 0);
         _enabledLocation = gl.GetUniformLocation(sceneProgram, "uSunEnabled");
         _directionLocation = gl.GetUniformLocation(sceneProgram, "uSunDirection");
         _colorLocation = gl.GetUniformLocation(sceneProgram, "uSunColor");
@@ -31,7 +35,7 @@ internal sealed class SceneSunlight
 
     internal unsafe void Update(GL gl, MapEntity world, (Vector3 Min, Vector3 Max)? worldBounds, uint vertexArray,
         IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches,
-        Func<string, bool> materialIsSky)
+        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
     {
         IsAvailable = false;
         Notice = null;
@@ -78,7 +82,9 @@ internal sealed class SceneSunlight
             gl.UniformMatrix4(_shadowProjectionLocation, 1, false, (float*)&projection);
             gl.BindVertexArray(vertexArray);
             foreach (var batch in batches)
-                if (!materialIsSky(batch.Material)) gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+                if (resolveMaterial?.Invoke(batch.Material)?.IsSky != true &&
+                    SceneMaterialDrawing.BindShadow(gl, _alphaTestLocation, batch.Material, resolveMaterial, textures))
+                    gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
             IsAvailable = true;
         }
         catch (Exception exception) when (SceneRenderer.IsRenderException(exception))

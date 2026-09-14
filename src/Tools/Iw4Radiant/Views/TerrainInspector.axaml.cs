@@ -31,24 +31,26 @@ public partial class TerrainInspector : UserControl
         _updating = true;
         try
         {
+            bool painting = session.Tool == EditorTool.Sculpt && session.SculptMode is TerrainSculptMode.PaintColor or TerrainSculptMode.PaintAlpha;
             if (!TerrainCount.IsKeyboardFocusWithin) TerrainCount.Value = session.TerrainVertices;
             if (!RadiusValue.IsKeyboardFocusWithin) RadiusValue.Value = (decimal)session.SculptRadius;
             StrengthCaption.Text = session.SculptMode == TerrainSculptMode.RaiseLower ? "Strength (units)" : "Strength (%)";
-            StrengthValue.Maximum = session.SculptMode == TerrainSculptMode.RaiseLower ? 256 : 100;
+            StrengthValue.Maximum = session.SculptMode is TerrainSculptMode.Smooth or TerrainSculptMode.Flatten ? 100 : 256;
             if (!StrengthValue.IsKeyboardFocusWithin) StrengthValue.Value = (decimal)session.SculptStrength;
             SculptModeBox.SelectedIndex = (int)session.SculptMode;
             if (!FlattenHeightBox.IsKeyboardFocusWithin) FlattenHeightBox.Text = Number(session.FlattenHeight);
             int count = session.Selection.Items.OfType<TerrainVertexSelection>().Count();
             CreationFields.IsVisible = session.Tool == EditorTool.Terrain;
             SculptFields.IsVisible = session.Tool == EditorTool.Sculpt;
-            HeightFields.IsVisible = count > 0 || session.Tool == EditorTool.Sculpt && session.SculptMode == TerrainSculptMode.Flatten;
-            VertexFields.IsVisible = count > 0;
-            StitchFields.IsVisible = session.Selection.Items.Any(item => item is MapTerrain);
+            SculptParameters.IsVisible = !painting;
+            HeightFields.IsVisible = !painting && (count > 0 || session.Tool == EditorTool.Sculpt && session.SculptMode == TerrainSculptMode.Flatten);
+            VertexFields.IsVisible = !painting && count > 0;
+            StitchFields.IsVisible = !painting && session.Selection.Items.Any(item => item is MapTerrain { IsCurve: false });
             TerrainContextText.IsVisible = !CreationFields.IsVisible && !SculptFields.IsVisible &&
                 !VertexFields.IsVisible && !StitchFields.IsVisible;
             VertexSelectionText.Text = $"{count} terrain {(count == 1 ? "vertex" : "vertices")} selected.";
             SmoothVerticesButton.IsEnabled = FlattenVerticesButton.IsEnabled = count > 0;
-            StitchButton.IsEnabled = session.Selection.Count == 2 && session.Selection.Items.All(item => item is MapTerrain);
+            StitchButton.IsEnabled = session.Selection.Count == 2 && session.Selection.Items.All(item => item is MapTerrain { IsCurve: false });
             StitchSelectionText.IsVisible = !StitchButton.IsEnabled;
             StitchSelectionText.Text = "Select two whole terrain patches to stitch.";
         }
@@ -63,10 +65,14 @@ public partial class TerrainInspector : UserControl
         {
             finishGestures();
             if (TerrainCount.Value is { } count) session.TerrainVertices = Math.Clamp((int)count, 2, 16);
-            if (RadiusValue.Value is { } radius) session.SculptRadius = (float)radius;
-            if (StrengthValue.Value is { } strength) session.SculptStrength = (float)strength;
             if (SculptModeBox.SelectedIndex >= 0) session.SculptMode = (TerrainSculptMode)SculptModeBox.SelectedIndex;
-            if (session.SculptMode != TerrainSculptMode.RaiseLower) session.SculptStrength = Math.Min(session.SculptStrength, 100);
+            if (session.SculptMode is not (TerrainSculptMode.PaintColor or TerrainSculptMode.PaintAlpha))
+            {
+                if (RadiusValue.Value is { } radius) session.SculptRadius = (float)radius;
+                if (StrengthValue.Value is { } strength) session.SculptStrength = (float)strength;
+            }
+            if (session.SculptMode is TerrainSculptMode.Smooth or TerrainSculptMode.Flatten)
+                session.SculptStrength = Math.Min(session.SculptStrength, 100);
             session.Refresh();
         }
         finally { _updating = false; }

@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Iw4Radiant.Views"
+             x:Class="Iw4Radiant.Views.XModelBrowser">
+    <Grid RowDefinitions="Auto,*,Auto" Background="#222427">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6" Margin="8,5">
+            <TextBlock Text="Models" Classes="panelTitle" VerticalAlignment="Center" />
+            <TextBox x:Name="ModelFilter" Grid.Column="1" Classes="compact" PlaceholderText="Search XModels" />
+            <Button x:Name="BrowseButton" Grid.Column="2" Classes="panelAction" Content="Browse raw…" />
+            <Button x:Name="PreviewButton" Grid.Column="3" Classes="panelAction" Content="Large preview" IsEnabled="False" />
+        </Grid>
+        <ListBox x:Name="ModelList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                    <Setter Property="Width" Value="110" /><Setter Property="Height" Value="110" />
+                    <Setter Property="Padding" Value="3" /><Setter Property="Margin" Value="2" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="views:XModelThumbnail">
+                    <Grid RowDefinitions="*,Auto" ToolTip.Tip="{CompiledBinding Description}">
+                        <Border Background="#303237" CornerRadius="2"><Image Source="{CompiledBinding Preview}" Stretch="Uniform" /></Border>
+                        <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" Margin="0,3,0,0"
+                                   TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,4">
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                <WrapPanel Orientation="Horizontal">
+                    <Button x:Name="PlaceButton" Classes="panelAction" Content="Place model" IsEnabled="False" Margin="0,0,6,0" />
+                    <CheckBox x:Name="AlignSurface" Content="Align to surface" Margin="0,0,10,0" />
+                    <Button x:Name="DropButton" Classes="panelAction" Content="Drop selection" Margin="0,0,6,0" />
+                    <Button x:Name="FindButton" Classes="panelAction" Content="Find instances" IsEnabled="False" Margin="0,0,6,0" />
+                    <Button x:Name="ReplaceButton" Classes="panelAction" Content="Find / replace…" IsEnabled="False" />
+                </WrapPanel>
+                <TextBlock x:Name="ModelInfo" Grid.Row="1" Classes="caption" Text="Browse extracted raw assets to load real models and materials."
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

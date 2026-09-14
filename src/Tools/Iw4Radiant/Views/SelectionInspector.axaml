@@ -7,7 +7,7 @@
         <Style Selector="TabItem">
             <Setter Property="MinHeight" Value="32" />
             <Setter Property="MinWidth" Value="0" />
-            <Setter Property="Padding" Value="7,0" />
+            <Setter Property="Padding" Value="10,0" />
             <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="Expander">
@@ -26,7 +26,8 @@
             </StackPanel>
         </Border>
         <TabControl x:Name="InspectorTabs" Grid.Row="1" Padding="0">
-            <TabItem x:Name="SelectionTab" Header="Selection">
+            <TabItem x:Name="SelectionTab" ToolTip.Tip="Selection · bounds and transforms" AutomationProperties.Name="Selection">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="CursorDefaultOutline" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="12" Spacing="10">
                         <TextBlock Text="Bounds" Classes="panelTitle"
@@ -55,12 +56,23 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="SurfaceTab" Header="Surface">
+            <TabItem x:Name="GeometryTab" ToolTip.Tip="Geometry · curves, arches and stairs" AutomationProperties.Name="Geometry">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="VectorPolygon" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <views:SurfaceInspector x:Name="Surfaces" Margin="12" />
+                    <views:GeometryInspector x:Name="Geometry" Margin="12" />
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="EntityTab" Header="Entity">
+            <TabItem x:Name="SurfaceTab" ToolTip.Tip="Surfaces · texture alignment and decals" AutomationProperties.Name="Surfaces">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="TextureBox" Width="16" Height="16" /></TabItem.Header>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12" Spacing="10">
+                        <views:SurfaceInspector x:Name="Surfaces" />
+                        <views:DecalInspector x:Name="Decals" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="EntityTab" ToolTip.Tip="Entities · gameplay, links and lights" AutomationProperties.Name="Entities">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="CubeOutline" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="12" Spacing="10">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
@@ -69,6 +81,7 @@
                         </Grid>
                         <TextBlock x:Name="EntitySelectionInfo" Text="Edits apply to the active entity only."
                                    Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+                        <views:GameplayEntityInspector x:Name="Gameplay" />
                         <views:LightInspector x:Name="Lights" />
                         <Expander x:Name="PropertiesExpander" Header="Entity properties" IsExpanded="False">
                             <StackPanel Spacing="7" Margin="0,8,0,0">
@@ -86,9 +99,20 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="TerrainTab" Header="Terrain" IsVisible="False">
+            <TabItem x:Name="TerrainTab" ToolTip.Tip="Terrain · sculpting, color and alpha" AutomationProperties.Name="Terrain">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="Terrain" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <views:TerrainInspector x:Name="Terrain" Margin="12" />
+                    <StackPanel Margin="12" Spacing="12">
+                        <views:TerrainInspector x:Name="Terrain" />
+                        <Separator />
+                        <views:TerrainPaintInspector x:Name="TerrainPaint" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="OrganizationTab" ToolTip.Tip="Organization · layers, groups and visibility" AutomationProperties.Name="Organization">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="LayersOutline" Width="16" Height="16" /></TabItem.Header>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <views:OrganizationInspector x:Name="Organization" Margin="12" />
                 </ScrollViewer>
             </TabItem>
             <TabItem x:Name="EnvironmentTab" ToolTip.Tip="Environment · sunlight and skies" AutomationProperties.Name="Environment">

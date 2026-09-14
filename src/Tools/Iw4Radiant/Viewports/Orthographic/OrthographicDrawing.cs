@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Media;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
 using Vector = Avalonia.Vector;
 
 namespace Iw4Radiant.Viewports.Orthographic;
@@ -19,6 +20,7 @@ internal sealed class OrthographicDrawing
     private static readonly Pen BrushPen = new(Brush("#9AA0AA"));
     private static readonly Pen TerrainPen = new(Brush("#84988B"));
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
+    private static readonly Pen TargetPen = new(Brush("#6DB8C4"), 1.2);
     private static readonly Pen SelectedPen = new(SelectionBrush, 1.8);
     private static readonly Pen XAxisPen = new(Brush("#BD6165"), 1.5);
     private static readonly Pen YAxisPen = new(Brush("#74AD82"), 1.5);
@@ -34,7 +36,8 @@ internal sealed class OrthographicDrawing
         DrawGrid(context, session?.GridSize ?? 16);
         if (session is not null)
         {
-            foreach (var brush in session.Document.Brushes)
+            EditorScene scene = session.Scene;
+            foreach (var brush in scene.Document.Brushes)
             {
                 bool selected = IsWholeSelected(session, brush);
                 IReadOnlyList<MapPolygon> polygons = brush.GetPolygons();
@@ -43,24 +46,51 @@ internal sealed class OrthographicDrawing
                         SelectionFill, null);
                 foreach (var polygon in polygons)
                 {
-                    bool faceSelected = session.Selection.Contains(new BrushFaceSelection(brush, polygon.Face));
+                    bool faceSelected = scene.Selection.Contains(new BrushFaceSelection(brush, polygon.Face));
                     DrawPolygon(context, polygon.Vertices.Select(_projection.ToScreen).ToArray(), faceSelected ? SelectionFill : null,
                         selected || faceSelected ? SelectedPen : BrushPen);
                 }
             }
-            foreach (var terrain in session.Document.Terrains)
-                DrawTerrain(context, terrain, IsWholeSelected(session, terrain));
-            foreach (var entity in OrthographicGeometry.PointEntities(session.Document))
+            foreach (var terrain in scene.Document.Terrains)
+                DrawTerrain(context, terrain.GetSurface(), IsWholeSelected(session, terrain), !terrain.IsCurve);
+            foreach (var entity in scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
             {
                 Vector3 origin = EditorSession.EntityOrigin(entity);
-                Rect rect = _projection.ScreenBounds(origin - new Vector3(8), origin + new Vector3(8));
-                bool selected = session.Selection.Contains(entity);
-                context.DrawRectangle(selected ? SelectionFill : null, selected ? SelectedPen : EntityPen, rect);
+                bool selected = scene.Selection.Contains(entity);
+                if (XModelGeometry.IsModel(entity))
+                {
+                    if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                    {
+                        Pen pen = selected ? SelectedPen : EntityPen;
+                        foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                        {
+                            Point a = _projection.ToScreen(triangle.A.Position), b = _projection.ToScreen(triangle.B.Position), c = _projection.ToScreen(triangle.C.Position);
+                            context.DrawLine(pen, a, b); context.DrawLine(pen, b, c); context.DrawLine(pen, c, a);
+                        }
+                        if (selected) DrawText(context, model.Name, _projection.ToScreen(origin) + new Vector(7, 7), SelectionBrush);
+                    }
+                    continue;
+                }
+                if (scene.Bounds(entity) is not { } entityBounds) continue;
+                Rect rect = _projection.ScreenBounds(entityBounds.Min, entityBounds.Max);
+                if (entity.ClassName == "trigger_radius")
+                    foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
+                        context.DrawLine(selected ? SelectedPen : EntityPen, _projection.ToScreen(line.A), _projection.ToScreen(line.B));
+                else
+                    context.DrawRectangle(selected ? SelectionFill : null, selected ? SelectedPen : EntityPen, rect);
                 Point center = _projection.ToScreen(origin);
                 context.DrawLine(EntityPen, center - new Vector(4, 0), center + new Vector(4, 0));
                 context.DrawLine(EntityPen, center - new Vector(0, 4), center + new Vector(0, 4));
                 DrawText(context, entity.ClassName, new Point(rect.Right + 5, rect.Top - 2), MutedBrush);
+                if (entity.Properties.ContainsKey("angles") || entity.Properties.ContainsKey("angle"))
+                    try
+                    {
+                        Point forward = _projection.ToScreen(origin + EntityOrientation.Forward(EntityOrientation.Read(entity)) * 32);
+                        DrawArrow(context, center, forward, selected ? SelectedPen : EntityPen);
+                    }
+                    catch (ArgumentException) { }
             }
+            DrawTargets(context, scene);
             if (session.SelectionBounds is { } bounds)
                 DrawSelection(context, session, bounds.Min, bounds.Max);
             if (session.Tool == EditorTool.Vertex) DrawVertices(context, session);
@@ -108,7 +138,7 @@ internal sealed class OrthographicDrawing
         context.DrawLine(VerticalAxisPen, new Point(origin.X, 0), new Point(origin.X, _projection.Size.Height));
     }
 
-    private void DrawTerrain(DrawingContext context, MapTerrain terrain, bool selected)
+    private void DrawTerrain(DrawingContext context, MapTerrain terrain, bool selected, bool showPoints)
     {
         Pen pen = selected ? SelectedPen : TerrainPen;
         for (int x = 0; x < terrain.Width; x++)
@@ -120,7 +150,7 @@ internal sealed class OrthographicDrawing
                 context.DrawLine(pen, p, _projection.ToScreen(terrain.Vertices[index + terrain.Height]));
             if (y + 1 < terrain.Height)
                 context.DrawLine(pen, p, _projection.ToScreen(terrain.Vertices[index + 1]));
-            if (selected)
+            if (selected && showPoints)
                 context.DrawRectangle(SelectionBrush, null, new Rect(p.X - 2, p.Y - 2, 4, 4));
         }
     }
@@ -163,6 +193,7 @@ internal sealed class OrthographicDrawing
     {
         foreach (object handle in SelectionGeometry.GetVertexHandles(session.Selection))
         {
+            if (!session.Visibility.CanSelect(session.Document, handle)) continue;
             if (SelectionGeometry.Bounds(handle) is not { } bounds) continue;
             Point point = _projection.ToScreen(bounds.Min);
             context.DrawRectangle(session.Selection.Contains(handle) ? SelectionBrush : BackgroundBrush, SelectedPen,
@@ -188,9 +219,29 @@ internal sealed class OrthographicDrawing
         }
     }
 
-    private static bool IsWholeSelected(EditorSession session, object item) => session.Selection.Contains(item) ||
-        session.Selection.Items.OfType<MapEntity>().Any(entity => item is MapBrush brush && entity.Brushes.Contains(brush) ||
+    private static bool IsWholeSelected(EditorSession session, object item) => session.Scene.Selection.Contains(item) ||
+        session.Scene.Selection.Items.OfType<MapEntity>().Any(entity => item is MapBrush brush && entity.Brushes.Contains(brush) ||
             item is MapTerrain terrain && entity.Terrains.Contains(terrain));
+
+    private void DrawTargets(DrawingContext context, EditorScene scene)
+    {
+        foreach (MapEntity source in scene.Document.Entities)
+            foreach (MapEntity target in scene.ResolveTargets(source))
+                DrawArrow(context, _projection.ToScreen(EditorSession.EntityOrigin(source)),
+                    _projection.ToScreen(EditorSession.EntityOrigin(target)), TargetPen);
+    }
+
+    private static void DrawArrow(DrawingContext context, Point start, Point end, Pen pen)
+    {
+        Vector delta = end - start;
+        if (delta.Length < 0.001) return;
+        context.DrawLine(pen, start, end);
+        Vector direction = delta / delta.Length;
+        Vector side = new(-direction.Y, direction.X);
+        Point back = end - direction * Math.Min(8, delta.Length * 0.3);
+        context.DrawLine(pen, end, back + side * 3);
+        context.DrawLine(pen, end, back - side * 3);
+    }
 
     private void DrawCreation(DrawingContext context, EditorSession session, OrthographicGestures gestures)
     {

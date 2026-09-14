@@ -6,4 +6,7 @@ internal sealed record MaterialSource(
     string Name,
     string ImagePath,
     bool IsSky,
-    MaterialSamplerState SamplerState);
+    MaterialSamplerState SamplerState)
+{
+    internal MaterialSurfaceState Surface { get; init; } = MaterialSurfaceState.Opaque;
+}

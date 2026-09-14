@@ -17,8 +17,10 @@
                 <ComboBoxItem Content="Raise / lower" />
                 <ComboBoxItem Content="Smooth" />
                 <ComboBoxItem Content="Flatten" />
+                <ComboBoxItem Content="Paint color" />
+                <ComboBoxItem Content="Paint alpha" />
             </ComboBox>
-            <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+            <Grid x:Name="SculptParameters" ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
                 <TextBlock Text="Radius" Classes="fieldLabel" />
                 <NumericUpDown x:Name="RadiusValue" Grid.Column="1" Minimum="1" Maximum="4096" Increment="16" FormatString="0" />
                 <TextBlock x:Name="StrengthCaption" Grid.Row="1" Classes="fieldLabel" />

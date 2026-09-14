@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.DecalInspector">
+    <Expander Header="Project decal" IsExpanded="False">
+        <StackPanel Spacing="8" Margin="0,8,0,0">
+            <TextBlock Text="In Face mode, select one or more brush faces. Choose an alpha-blended material, then project a decal centered on each face." Classes="caption" TextWrapping="Wrap" />
+            <TextBlock x:Name="DecalMaterialText" Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Width" Classes="fieldLabel" />
+                <TextBox x:Name="WidthBox" Grid.Column="1" Text="128" />
+                <TextBlock Text="Height" Grid.Row="1" Classes="fieldLabel" />
+                <TextBox x:Name="HeightBox" Grid.Row="1" Grid.Column="1" Text="128" />
+                <TextBlock Text="Rotation (°)" Grid.Row="2" Classes="fieldLabel" />
+                <TextBox x:Name="RotationBox" Grid.Row="2" Grid.Column="1" Text="0" />
+                <TextBlock Text="Horizontal offset" Grid.Row="3" Classes="fieldLabel" />
+                <TextBox x:Name="OffsetUBox" Grid.Row="3" Grid.Column="1" Text="0" />
+                <TextBlock Text="Vertical offset" Grid.Row="4" Classes="fieldLabel" />
+                <TextBox x:Name="OffsetVBox" Grid.Row="4" Grid.Column="1" Text="0" />
+            </Grid>
+            <Button x:Name="ProjectButton" Content="Project onto selected faces" HorizontalAlignment="Stretch" Classes="panelAction" />
+            <TextBlock Text="The decal is clipped at face edges. The resulting mesh remains selectable, transformable, and editable." Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+    </Expander>
+</UserControl>

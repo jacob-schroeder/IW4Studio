@@ -4,6 +4,8 @@ namespace Iw4Radiant.MapSource;
 
 internal sealed class MapTerrain
 {
+    // Native iwmap curves share the mesh attributes, but the vertices are quadratic control points.
+    public bool IsCurve { get; set; }
     public string Material { get; set; } = "";
     public string Lightmap { get; set; } = "lightmap_gray";
     public List<string> Directives { get; } = [];
@@ -18,6 +20,8 @@ internal sealed class MapTerrain
     public Vector2[] LightmapCoordinates { get; set; } = [];
     public Vector4[] Colors { get; set; } = [];
     public int[] EdgeFlags { get; set; } = [];
+
+    public MapTerrain GetSurface() => IsCurve ? PatchGeometry.Evaluate(this) : this;
 
     public IEnumerable<(int A, int B, int C)> GetTriangles()
     {
@@ -81,6 +85,7 @@ internal sealed class MapTerrain
     {
         var copy = new MapTerrain
         {
+            IsCurve = IsCurve,
             Material = Material, Lightmap = Lightmap, Smoothing = Smoothing,
             Width = Width, Height = Height, LightmapSize = LightmapSize, Subdivision = Subdivision,
             Vertices = (Vector3[])Vertices.Clone(), TextureCoordinates = (Vector2[])TextureCoordinates.Clone(),

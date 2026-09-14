@@ -42,16 +42,16 @@ internal sealed class SceneLighting
         }
     }
 
-    internal unsafe void Update(GL gl, MapDocument document)
+    internal unsafe void Update(GL gl, EditorScene scene)
     {
         List<SceneLight> lights = [];
         int omitted = 0;
         string? firstError = null;
-        foreach (MapEntity entity in document.Entities)
+        foreach (MapEntity entity in scene.Document.Entities)
         {
             if (entity.ClassName != "light")
                 continue;
-            if (SceneLight.TryCreate(document, entity, out SceneLight light, out string? error))
+            if (SceneLight.TryCreate(scene, entity, out SceneLight light, out string? error))
                 lights.Add(light);
             else if (error is not null)
             {

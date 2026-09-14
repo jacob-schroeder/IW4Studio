@@ -23,6 +23,7 @@ public partial class MaterialBrowser : UserControl
     }
 
     internal event Action? CatalogChanged;
+    internal event Func<string, Task>? FolderLoaded;
     internal MaterialSource? ResolveMaterial(string name) => _materials.GetValueOrDefault(name)?.Material;
     internal IReadOnlyList<MaterialSource> AvailableSkies => _materials.Values
         .Where(material => material.IsSky && material.Preview is not null)
@@ -61,6 +62,7 @@ public partial class MaterialBrowser : UserControl
         var folders = await dialogs.ShowModalAsync(() => owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             { Title = "Choose raw assets or a texture folder", AllowMultiple = false }));
         if (folders.Count == 0 || folders[0].TryGetLocalPath() is not { } root) return;
+        bool loaded = false;
         try
         {
             dialogs.SetBusy(true);
@@ -72,11 +74,13 @@ public partial class MaterialBrowser : UserControl
             MaterialFilter.Text = "";
             FilterMaterials();
             CatalogChanged?.Invoke();
+            loaded = true;
             setStatus($"Loaded {materials.Count(material => material.Preview is not null)} material previews from {root}." +
                 (skipped > 0 ? $" {skipped} images could not be read." : ""));
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { dialogs.SetBusy(false); await dialogs.MessageAsync("Cannot read materials", exception.Message); }
         finally { dialogs.SetBusy(false); }
+        if (loaded && FolderLoaded is { } loadRelatedAssets) await loadRelatedAssets(root);
     }
 
     private static (List<MaterialThumbnail> Materials, int Skipped) LoadThumbnails(string root)
@@ -141,6 +145,7 @@ public partial class MaterialBrowser : UserControl
             PreviewInfo.Text = exception.Message;
             PreviewToggle.IsChecked = true;
         }
+        session.Refresh();
     }
     private async Task ApplyMaterialAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {

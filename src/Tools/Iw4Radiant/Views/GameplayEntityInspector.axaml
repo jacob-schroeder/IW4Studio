@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:editing="using:Iw4Radiant.Editing"
+             x:Class="Iw4Radiant.Views.GameplayEntityInspector">
+    <StackPanel Spacing="8">
+        <Expander Header="Create gameplay entity" IsExpanded="False">
+            <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBox x:Name="EntityFilter" PlaceholderText="Search native IW4 entity types" />
+                <ComboBox x:Name="Category" HorizontalAlignment="Stretch" />
+                <ListBox x:Name="EntityTypes" MaxHeight="150" MinHeight="72" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate><DataTemplate x:DataType="editing:GameplayEntityType">
+                        <TextBlock Text="{CompiledBinding Label}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="TypeDescription" Classes="caption" TextWrapping="Wrap" />
+                <Button x:Name="CreateButton" Classes="panelAction" Content="Place entity" HorizontalAlignment="Stretch" />
+            </StackPanel>
+        </Expander>
+        <Expander Header="Gameplay fields and links" IsExpanded="True">
+            <StackPanel Spacing="7" Margin="0,8,0,0">
+                <TextBlock x:Name="FieldInfo" Classes="caption" TextWrapping="Wrap" Text="Select an entity to edit its gameplay fields." />
+                <Grid x:Name="Fields" ColumnDefinitions="76,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                    <TextBlock Text="Name" Classes="fieldLabel" /><TextBox x:Name="TargetName" Grid.Column="1" ToolTip.Tip="Native targetname; renaming a unique name updates incoming target links." />
+                    <TextBlock Grid.Row="1" Text="Target" Classes="fieldLabel" /><TextBox x:Name="Target" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Native target; refers to another entity's targetname." />
+                    <TextBlock Grid.Row="2" Text="Angles" Classes="fieldLabel" /><TextBox x:Name="Angles" Grid.Row="2" Grid.Column="1" ToolTip.Tip="Pitch yaw roll in degrees." />
+                    <TextBlock Grid.Row="3" Text="Spawnflags" Classes="fieldLabel" /><TextBox x:Name="SpawnFlags" Grid.Row="3" Grid.Column="1" ToolTip.Tip="Native unsigned spawnflags; use the flags required by the entity and your scripts." />
+                </Grid>
+                <Grid x:Name="RadiusFields" IsVisible="False" ColumnDefinitions="76,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                    <TextBlock Text="Radius" Classes="fieldLabel" /><TextBox x:Name="Radius" Grid.Column="1" />
+                    <TextBlock Grid.Row="1" Text="Height" Classes="fieldLabel" /><TextBox x:Name="HeightValue" Grid.Row="1" Grid.Column="1" />
+                </Grid>
+                <Grid x:Name="DamageFields" IsVisible="False" ColumnDefinitions="76,*" ColumnSpacing="5">
+                    <TextBlock Text="Damage" Classes="fieldLabel" /><TextBox x:Name="Damage" Grid.Column="1" ToolTip.Tip="Native trigger_hurt dmg value." />
+                </Grid>
+                <Button x:Name="ApplyButton" Content="Apply gameplay fields" Classes="panelAction" HorizontalAlignment="Stretch" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                    <Button x:Name="ConnectButton" Content="Connect to active" Classes="panelAction" HorizontalAlignment="Stretch" ToolTip.Tip="Select source entities, then add the destination last. Replaces their target with the active destination's name." />
+                    <Button x:Name="DisconnectButton" Grid.Column="1" Content="Disconnect" HorizontalAlignment="Stretch" ToolTip.Tip="Remove target links from selected source entities." />
+                </Grid>
+                <TextBlock x:Name="LinkInfo" Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

@@ -51,7 +51,9 @@ internal static class MapWriter
             count != terrain.TextureCoordinates.Length || count != terrain.LightmapCoordinates.Length ||
             count != terrain.Colors.Length || count != terrain.EdgeFlags.Length)
             throw new FormatException("Terrain dimensions and vertex attributes do not match.");
-        output.AppendLine("{").AppendLine(" mesh").AppendLine(" {");
+        if (terrain.IsCurve && (terrain.Width < 3 || terrain.Height < 3 || terrain.Width % 2 == 0 || terrain.Height % 2 == 0))
+            throw new FormatException("Curves need odd control dimensions of at least three in each direction.");
+        output.AppendLine("{").AppendLine(terrain.IsCurve ? " curve" : " mesh").AppendLine(" {");
         foreach (string directive in terrain.Directives)
             output.AppendLine(directive);
         output.Append("  ").AppendLine(Name(terrain.Material));

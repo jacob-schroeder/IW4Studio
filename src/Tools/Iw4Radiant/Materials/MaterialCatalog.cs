@@ -52,10 +52,10 @@ internal static class MaterialCatalog
         foreach (string path in jsonFiles)
         {
             string name = Path.ChangeExtension(Path.GetRelativePath(materialRoot, path), null).Replace('\\', '/');
-            var (colorMap, isSky, samplerState) = ReadMaterial(path);
+            var (colorMap, isSky, samplerState, surface) = ReadMaterial(path);
             string? image = colorMap is null ? null : ResolveImage(colorMap);
             if (image is not null || isSky)
-                materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState);
+                materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState) { Surface = surface };
         }
         return Ordered(materials);
 
@@ -76,7 +76,7 @@ internal static class MaterialCatalog
         values.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
-    private static (string? Image, bool IsSky, MaterialSamplerState SamplerState) ReadMaterial(string path)
+    private static (string? Image, bool IsSky, MaterialSamplerState SamplerState, MaterialSurfaceState Surface) ReadMaterial(string path)
     {
         try
         {
@@ -87,6 +87,7 @@ internal static class MaterialCatalog
                 throw Invalid("Expected a material JSON object");
             RequireString("_game", "iw4");
             RequireString("_type", "material");
+            MaterialSurfaceState surface = MaterialSurfaceState.Read(root);
             if (root.TryGetProperty("_version", out var version) &&
                 (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number != 1))
                 throw Invalid("Expected material version 1");
@@ -107,7 +108,7 @@ internal static class MaterialCatalog
             if (!root.TryGetProperty("textures", out var textures))
             {
                 if (hasSkyFlag) throw Invalid("A sky requires a color-map texture");
-                return (null, false, MaterialSamplerState.None);
+                return (null, false, MaterialSamplerState.None, surface);
             }
             if (textures.ValueKind != JsonValueKind.Array)
                 throw Invalid("Expected a textures array");
@@ -132,7 +133,7 @@ internal static class MaterialCatalog
                 if (!hasSkyFlag && colorMap is not null) break;
             }
             if (colorMap is not { } selected)
-                return (null, false, MaterialSamplerState.None);
+                return (null, false, MaterialSamplerState.None, surface);
             bool hasSampler = selected.TryGetProperty("samplerState", out var sampler);
             if (isSky && (!hasSampler || sampler.ValueKind != JsonValueKind.Object))
                 throw Invalid("Expected a colorMap samplerState object");
@@ -159,11 +160,11 @@ internal static class MaterialCatalog
                 if (ReadClamp("clampW")) samplerState |= MaterialSamplerState.ClampW;
             }
             if (!selected.TryGetProperty("image", out var image) || image.ValueKind == JsonValueKind.Null)
-                return (null, isSky, samplerState);
+                return (null, isSky, samplerState, surface);
             if (image.ValueKind != JsonValueKind.String)
                 throw Invalid("Expected a colorMap image name");
             string? imageName = image.GetString();
-            return (string.IsNullOrWhiteSpace(imageName) ? null : imageName, isSky, samplerState);
+            return (string.IsNullOrWhiteSpace(imageName) ? null : imageName, isSky, samplerState, surface);
 
             string ReadSamplerValue(string property)
             {

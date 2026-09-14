@@ -83,6 +83,15 @@ internal sealed class OrthographicGestures
         _selectionBefore = session.Selection.Items.ToArray();
         _toggle = (e.KeyModifiers & (KeyModifiers.Shift | KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         _button = properties.IsMiddleButtonPressed ? MouseButton.Middle : properties.IsRightButtonPressed ? MouseButton.Right : MouseButton.Left;
+        if (_button == MouseButton.Left && session.HasPlacement)
+        {
+            string? label = session.PlacementLabel;
+            session.Place(_projection.Unproject(_startWorld, session.Snap(session.BrushBottom)), null,
+                (e.KeyModifiers & KeyModifiers.Shift) != 0);
+            CursorStatusChanged?.Invoke($"Placed {label}." + (session.HasPlacement ? " Click to place another; Esc cancels." : ""));
+            e.Handled = true;
+            return;
+        }
         if (_button != MouseButton.Left) _gesture = Gesture.Pan;
         else if (session.Tool is EditorTool.Brush or EditorTool.Terrain)
         {
@@ -173,7 +182,8 @@ internal sealed class OrthographicGestures
         _pointerInside = new Rect(_viewport.Bounds.Size).Contains(_cursorScreen);
         Vector2 world = _projection.ToWorld(_cursorScreen);
         var labels = _projection.Plane switch { OrthoPlane.Top => ("X", "Y"), OrthoPlane.Front => ("X", "Z"), _ => ("Y", "Z") };
-        CursorStatusChanged?.Invoke(FormattableString.Invariant($"{labels.Item1}: {world.X:0.##}   {labels.Item2}: {world.Y:0.##}"));
+        CursorStatusChanged?.Invoke((Session?.HasPlacement == true ? $"Place {Session.PlacementLabel} · click, Shift to repeat, Esc to cancel · " : "") +
+            FormattableString.Invariant($"{labels.Item1}: {world.X:0.##}   {labels.Item2}: {world.Y:0.##}"));
         if (Session is not { } session || !ReferenceEquals(_pointer, e.Pointer))
         {
             if (Session?.Tool == EditorTool.Sculpt) _viewport.InvalidateVisual();
@@ -215,7 +225,7 @@ internal sealed class OrthographicGestures
                 else if (_gesture == Gesture.Marquee)
                 {
                     object[] hits = MarqueeBounds is { } rectangle ?
-                        OrthographicSelection.InRectangle(_marqueeCandidates, _projection, rectangle).ToArray() : [];
+                        OrthographicSelection.InRectangle(session, _marqueeCandidates, _projection, rectangle).ToArray() : [];
                     _changingSelection = true;
                     try
                     {

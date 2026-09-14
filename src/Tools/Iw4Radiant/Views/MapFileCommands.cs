@@ -41,6 +41,17 @@ internal sealed class MapFileCommands
             FileTypeFilter = [new FilePickerFileType("Radiant source") { Patterns = ["*.map"] }]
         }));
         if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
+        await LoadAsync(path);
+    }
+
+    internal async Task OpenPathAsync(string path)
+    {
+        if (_dialogs.BlocksInput || !await ConfirmDiscardAsync()) return;
+        await LoadAsync(path);
+    }
+
+    private async Task LoadAsync(string path)
+    {
         try
         {
             _dialogs.SetBusy(true);
@@ -73,6 +84,7 @@ internal sealed class MapFileCommands
         try
         {
             _dialogs.SetBusy(true);
+            _session.Prefabs.ValidateMapSave(_session.Document, _session.FilePath, path);
             await Task.Run(() => MapFile.Write(_session.Document, path));
             _session.MarkSaved(path);
             _setStatus($"Saved {Path.GetFileName(path)}.");

@@ -17,8 +17,10 @@ internal sealed class SceneGeometry
     internal int AxesStart { get; }
     internal int AxesCount { get; }
 
-    internal SceneGeometry(MapDocument document, EditorSelection selection, TransformMode transformMode, EditorTool tool)
+    internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool)
     {
+        MapDocument document = editor.Document;
+        EditorSelection selection = editor.Selection;
         var selectedObjects = new HashSet<object>(selection.Items, ReferenceEqualityComparer.Instance);
         foreach (MapEntity entity in selection.Items.OfType<MapEntity>())
         {
@@ -39,10 +41,11 @@ internal sealed class SceneGeometry
         }
         foreach (var terrain in document.Terrains)
         {
+            MapTerrain surface = terrain.GetSurface();
             var geometry = GetMaterialGeometry(terrain.Material);
-            foreach (var (a, b, c) in terrain.GetTriangles())
+            foreach (var (a, b, c) in surface.GetTriangles())
             {
-                Vector3 p0 = terrain.Vertices[a], p1 = terrain.Vertices[b], p2 = terrain.Vertices[c];
+                Vector3 p0 = surface.Vertices[a], p1 = surface.Vertices[b], p2 = surface.Vertices[c];
                 Vector3 cross = Vector3.Cross(p1 - p0, p2 - p0);
                 if (cross.LengthSquared() < 0.000001f)
                     continue;
@@ -63,12 +66,25 @@ internal sealed class SceneGeometry
 
                 void Add(int index)
                 {
-                    Vector4 color = terrain.Colors.Length > index ? terrain.Colors[index] : Vector4.One;
-                    Vector2 uv = terrain.TextureCoordinates.Length > index ? terrain.TextureCoordinates[index] : Vector2.Zero;
-                    geometry.Triangles.Add(new SceneVertex(terrain.Vertices[index], normal, uv, new Vector3(color.X, color.Y, color.Z)));
+                    Vector4 color = surface.Colors[index];
+                    Vector2 uv = surface.TextureCoordinates[index];
+                    geometry.Triangles.Add(new SceneVertex(surface.Vertices[index], normal, uv, color));
                 }
             }
         }
+        foreach (MapEntity entity in document.Entities.Where(XModelGeometry.IsModel))
+            if (editor.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                {
+                    var geometry = GetMaterialGeometry(triangle.Material);
+                    geometry.Triangles.AddRange([triangle.A, triangle.B, triangle.C]);
+                    foreach (var edge in new[] { (triangle.A.Position, triangle.B.Position),
+                                 (triangle.B.Position, triangle.C.Position), (triangle.C.Position, triangle.A.Position) })
+                    {
+                        AddLine(geometry.Lines, edge.Item1, edge.Item2, wireColor);
+                        if (selectedObjects.Contains(entity)) AddLine(outlines, edge.Item1, edge.Item2, highlight);
+                    }
+                }
         var all = new List<SceneVertex>();
         foreach (var material in materials)
         {
@@ -79,9 +95,15 @@ internal sealed class SceneGeometry
             Batches.Add((material.Key, start, material.Value.Triangles.Count, wireStart, material.Value.Lines.Count));
         }
         GlyphStart = all.Count;
-        foreach (var entity in document.Entities.Where(PointEntityGeometry.IsPointEntity))
+        foreach (var entity in document.Entities.Where(entity => PointEntityGeometry.IsPointEntity(entity) && !XModelGeometry.IsModel(entity)))
         {
             Vector3 color = entity.ClassName == "light" ? new(1, 0.85f, 0.35f) : new(0.35f, 0.8f, 0.95f);
+            if (entity.ClassName == "trigger_radius")
+            {
+                foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
+                    AddLine(outlines, line.A, line.B, selectedObjects.Contains(entity) ? highlight : color);
+                continue;
+            }
             foreach (var polygon in PointEntityGeometry.CreateBrush(entity).GetPolygons())
                 AddPolygon(polygon, all, color, selectedObjects.Contains(entity) ? highlight : color * 0.6f);
         }
@@ -100,8 +122,9 @@ internal sealed class SceneGeometry
         all.AddRange(outlines);
         OutlineCount = all.Count - OutlineStart;
         AxesStart = all.Count;
+        AddEntityConnections(all, document, selection, editor);
         foreach (MapEntity light in selection.Items.OfType<MapEntity>().Where(entity => entity.ClassName == "light"))
-            foreach (var line in LightInfluenceGeometry.GetLines(document, light))
+            foreach (var line in LightInfluenceGeometry.GetLines(editor, light))
                 AddLine(all, line.A, line.B, new Vector3(1, 0.85f, 0.35f));
         if (tool == EditorTool.Vertex)
             foreach (object handle in SelectionGeometry.GetVertexHandles(selection))
@@ -115,7 +138,7 @@ internal sealed class SceneGeometry
                 AddLine(all, point - Vector3.UnitZ * radius, point + Vector3.UnitZ * radius, color);
             }
         if (tool is EditorTool.Select or EditorTool.Vertex && selection.Count > 0 &&
-            selection.Items.All(SelectionGeometry.CanTransform) && SelectionGeometry.Bounds(selection.Items) is { } selectionBounds)
+            selection.Items.All(SelectionGeometry.CanTransform) && editor.Bounds(selection.Items) is { } selectionBounds)
             foreach (var line in TransformGizmoGeometry.GetLines(selectionBounds, transformMode))
                 AddLine(all, line.A, line.B, line.Color);
         AxesCount = all.Count - AxesStart;
@@ -158,6 +181,29 @@ internal sealed class SceneGeometry
     {
         vertices.Add(new SceneVertex(a, Vector3.UnitZ, Vector2.Zero, color));
         vertices.Add(new SceneVertex(b, Vector3.UnitZ, Vector2.Zero, color));
+    }
+
+    private static void AddEntityConnections(List<SceneVertex> vertices, MapDocument document, EditorSelection selection, EditorScene editor)
+    {
+        foreach (MapEntity source in document.Entities)
+        {
+            foreach (MapEntity destination in editor.ResolveTargets(source))
+            {
+                if (!selection.Contains(source) && !selection.Contains(destination)) continue;
+                if (editor.Bounds(source) is not { } sourceBounds || editor.Bounds(destination) is not { } destinationBounds) continue;
+                Vector3 start = sourceBounds.Min / 2 + sourceBounds.Max / 2, end = destinationBounds.Min / 2 + destinationBounds.Max / 2;
+                Vector3 direction = end - start;
+                float length = direction.Length();
+                if (!float.IsFinite(length) || length < 0.001f) continue;
+                direction /= length;
+                Vector3 side = Vector3.Normalize(Vector3.Cross(direction, MathF.Abs(direction.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitY));
+                float arrow = Math.Min(12, length * 0.2f);
+                Vector3 color = new(0.35f, 0.9f, 0.7f);
+                AddLine(vertices, start, end, color);
+                AddLine(vertices, end, end - direction * arrow + side * arrow * 0.4f, color);
+                AddLine(vertices, end, end - direction * arrow - side * arrow * 0.4f, color);
+            }
+        }
     }
 
 }

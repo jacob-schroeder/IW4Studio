@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using Avalonia.Rendering;
+using System.Numerics;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.Rendering;
@@ -120,14 +121,14 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal void FrameAll()
     {
         FinishGesture();
-        if (_session is { } session) _navigation.FrameAll(session.Document, Aspect);
+        if (_session is { } session) _navigation.FrameBounds(session.Scene.VisibleBounds, Aspect);
         RequestNextFrameRendering();
     }
 
     internal void FrameSelection()
     {
         FinishGesture();
-        if (_session is { } session) _navigation.FrameSelection(session.Document, session.Selection, Aspect);
+        if (_session is { } session) _navigation.FrameBounds(session.SelectionBounds ?? session.Scene.VisibleBounds, Aspect);
         RequestNextFrameRendering();
     }
 
@@ -164,7 +165,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
-            session.Document, session.Selection, session.TransformMode, session.Tool, ResolveMaterial, PreviewLighting);
+            session, ResolveMaterial, PreviewLighting);
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -188,9 +189,25 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         _flyMovement.Stop();
         try
         {
+            if (session.HasPlacement)
+            {
+                var (origin, direction) = _navigation.PickRay((float)(point.X / Math.Max(1, Bounds.Width) * 2 - 1),
+                    (float)(1 - point.Y / Math.Max(1, Bounds.Height) * 2), Aspect);
+                if (SurfaceRaycast.TryHit(session.Scene.Document, origin, direction,
+                        name => session.Scene.ResolveModel?.Invoke(name), ResolveMaterial, null,
+                        out Vector3 hit, out Vector3 normal))
+                {
+                    string? label = session.PlacementLabel;
+                    session.Place(hit, normal, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                    InteractionStatusChanged?.Invoke($"Placed {label}." + (session.HasPlacement ? " Click to place another; Esc cancels." : ""));
+                }
+                else InteractionStatusChanged?.Invoke("Click an existing surface to place here, or click a grid view to use the grid plane.");
+                e.Handled = true;
+                return;
+            }
             bool additive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
             object? vertex = session.Tool == EditorTool.Vertex
-                ? CameraPicking.PickVertex(session.Selection, _navigation, point, Bounds.Size) : null;
+                ? CameraPicking.PickVertex(session, _navigation, point, Bounds.Size) : null;
             int axis = !additive && vertex is null && (session.Tool is EditorTool.Select or EditorTool.Vertex) && session.CanTransformSelection &&
                 session.SelectionBounds is { } bounds
                 ? CameraPicking.PickGizmo(bounds, session.TransformMode, _navigation, point, Bounds.Size) : 0;
@@ -204,7 +221,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             }
             else
             {
-                object? picked = vertex ?? CameraPicking.Pick(session.Document, _navigation, point, Bounds.Size, session.Tool);
+                object? picked = vertex ?? CameraPicking.Pick(session.Scene, _navigation, point, Bounds.Size, session.Tool);
                 session.Select(picked, additive, toggle: additive);
                 if (session.Tool == EditorTool.Vertex && picked is not null)
                     InteractionStatusChanged?.Invoke(picked is BrushVertexSelection or TerrainVertexSelection
@@ -270,5 +287,5 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         e.Handled = true;
     }
 
-    private static bool IsEditError(Exception exception) => exception is ArgumentException or FormatException or InvalidOperationException;
+    private static bool IsEditError(Exception exception) => exception is ArgumentException or FormatException or InvalidOperationException or IOException;
 }

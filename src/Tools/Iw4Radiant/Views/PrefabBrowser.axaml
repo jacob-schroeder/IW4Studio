@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Iw4Radiant.Views"
+             x:Class="Iw4Radiant.Views.PrefabBrowser">
+    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="*,*,180" Margin="8" ColumnSpacing="10" RowSpacing="6">
+        <Grid Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="5">
+            <TextBox x:Name="SearchBox" PlaceholderText="Search prefabs" />
+            <Button x:Name="FolderButton" Grid.Column="1" Content="Folder…" />
+        </Grid>
+        <TextBlock x:Name="FolderText" Grid.Row="2" Grid.ColumnSpan="3" Classes="caption" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <Button x:Name="SaveSelectionButton" Grid.Column="2" Content="Save selection…" HorizontalAlignment="Stretch" ToolTip.Tip="Save selection as a reusable prefab" />
+        <ListBox x:Name="PrefabList" Grid.Row="1" />
+        <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="*,Auto" RowSpacing="4">
+            <views:PrefabPreview x:Name="Preview" MinHeight="90" />
+            <TextBlock x:Name="PreviewText" Grid.Row="1" Classes="caption" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #PreviewText.Text}" />
+        </Grid>
+        <ScrollViewer Grid.Row="1" Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="5">
+                <Button x:Name="PlaceButton" Content="Place in view" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Click a grid or camera surface to place the prefab. Hold Shift to place copies. Escape cancels." />
+                <Button x:Name="OpenSourceButton" Content="Open browser source" HorizontalAlignment="Stretch" />
+                <TextBlock x:Name="InstanceText" Classes="caption" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                    <Button x:Name="EditInstanceButton" Content="Edit source" HorizontalAlignment="Stretch" />
+                    <Button x:Name="ReloadButton" Grid.Column="1" Content="Reload" HorizontalAlignment="Stretch" />
+                </Grid>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                    <Button x:Name="UniqueButton" Content="Unique…" HorizontalAlignment="Stretch" ToolTip.Tip="Save a unique source for this instance" />
+                    <Button x:Name="ExplodeButton" Grid.Column="1" Content="Explode" HorizontalAlignment="Stretch" />
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

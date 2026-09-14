@@ -72,7 +72,7 @@
                                Text="Browse raw assets or a texture folder." TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding #MaterialInfo.Text}" />
                     <TextBlock Grid.Column="1" Text="Size" Classes="caption" VerticalAlignment="Center" />
-                    <Slider x:Name="ThumbnailSize" Grid.Column="2" Width="64" Height="18" MinHeight="0"
+                    <Slider x:Name="ThumbnailSize" Grid.Column="2" Width="64"
                             Minimum="64" Maximum="112" Value="80" SmallChange="16" LargeChange="16"
                             TickFrequency="16" IsSnapToTickEnabled="True"
                             ToolTip.Tip="Thumbnail size" />

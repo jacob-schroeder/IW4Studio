@@ -79,6 +79,10 @@
         <GridSplitter x:Name="ColumnSplitter" Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" />
         <GridSplitter x:Name="ViewRowSplitter" IsVisible="False" ResizeDirection="Rows" />
         <GridSplitter x:Name="MaterialSplitter" Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" />
-        <views:MaterialBrowser x:Name="MaterialBrowserView" Grid.Column="2" Grid.Row="2" />
+        <TabControl x:Name="AssetBrowserTabs" Grid.Column="2" Grid.Row="2" Padding="0">
+            <TabItem Header="Materials"><views:MaterialBrowser x:Name="MaterialBrowserView" /></TabItem>
+            <TabItem Header="Models"><views:XModelBrowser x:Name="XModelBrowserView" /></TabItem>
+            <TabItem Header="Prefabs"><views:PrefabBrowser x:Name="PrefabBrowserView" /></TabItem>
+        </TabControl>
     </Grid>
 </UserControl>

@@ -17,8 +17,8 @@ public partial class ViewportWorkspace : UserControl
     private bool _fourViews, _maximized, _materialsVisible = true;
     private GridLength[] _twoColumns = [new(1, GridUnitType.Star), new(5), new(1.2, GridUnitType.Star)];
     private GridLength[] _fourColumns = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star)];
-    private GridLength[] _twoRows = [new(1, GridUnitType.Star), new(5), new(220)];
-    private GridLength[] _fourRows = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star), new(5), new(200)];
+    private GridLength[] _twoRows = [new(1, GridUnitType.Star), new(5), new(270)];
+    private GridLength[] _fourRows = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star), new(5), new(250)];
 
     public ViewportWorkspace()
     {
@@ -48,6 +48,8 @@ public partial class ViewportWorkspace : UserControl
 
     internal CameraViewport Camera => CameraView;
     internal MaterialBrowser Materials => MaterialBrowserView;
+    internal XModelBrowser Models => XModelBrowserView;
+    internal PrefabBrowser Prefabs => PrefabBrowserView;
     internal IReadOnlyList<OrthoViewport> GridViews { get; }
     internal bool FourViews => _fourViews;
     internal bool IsMaximized => _maximized;
@@ -91,6 +93,20 @@ public partial class ViewportWorkspace : UserControl
         _maximized = false;
         ApplyLayout();
         FocusActiveView();
+    }
+
+    internal void ShowModels() => ShowBrowser(1);
+    internal void ShowPrefabs() => ShowBrowser(2);
+
+    private void ShowBrowser(int index)
+    {
+        if (_dialogs?.BlocksInput == true) return;
+        _finishGestures?.Invoke();
+        SaveLayout();
+        _materialsVisible = true;
+        _maximized = false;
+        AssetBrowserTabs.SelectedIndex = index;
+        ApplyLayout();
     }
 
     internal void ShowGrid(OrthoPlane plane)
@@ -154,7 +170,7 @@ public partial class ViewportWorkspace : UserControl
         }
         ColumnSplitter.IsVisible = !_maximized;
         ViewRowSplitter.IsVisible = !_maximized && _fourViews;
-        MaterialSplitter.IsVisible = Materials.IsVisible = !_maximized && _materialsVisible;
+        MaterialSplitter.IsVisible = AssetBrowserTabs.IsVisible = !_maximized && _materialsVisible;
         LayoutGrid.ColumnDefinitions.Clear();
         LayoutGrid.RowDefinitions.Clear();
         foreach (GridLength width in _maximized ? [new GridLength(1, GridUnitType.Star)] : _fourViews ? _fourColumns : _twoColumns)
@@ -164,7 +180,7 @@ public partial class ViewportWorkspace : UserControl
         for (int i = 0; i < heights.Length; i++)
             LayoutGrid.RowDefinitions.Add(new RowDefinition(heights[i])
             {
-                MinHeight = heights[i].IsStar ? 120 : !_maximized && _materialsVisible && i == heights.Length - 1 ? 170 : 0
+                MinHeight = heights[i].IsStar ? 120 : !_maximized && _materialsVisible && i == heights.Length - 1 ? 220 : 0
             });
         if (_maximized)
             _views.First(entry => ReferenceEquals(entry.View, _activeView)).Panel.IsVisible = true;
@@ -176,7 +192,7 @@ public partial class ViewportWorkspace : UserControl
             Place(ColumnSplitter, 1, 0, rowSpan: 3);
             Place(ViewRowSplitter, 0, 1, columnSpan: 3);
             Place(MaterialSplitter, 0, 3, columnSpan: 3);
-            Place(Materials, 0, 4, columnSpan: 3);
+            Place(AssetBrowserTabs, 0, 4, columnSpan: 3);
         }
         else
         {
@@ -185,7 +201,7 @@ public partial class ViewportWorkspace : UserControl
             Place(CameraPanel, 2, 0); CameraPanel.IsVisible = true;
             Place(ColumnSplitter, 1, 0, rowSpan: 3);
             Place(MaterialSplitter, 2, 1);
-            Place(Materials, 2, 2);
+            Place(AssetBrowserTabs, 2, 2);
         }
         foreach (var entry in _views)
             if (!entry.Panel.IsVisible && entry.View is OrthoViewport grid) grid.CancelGesture();

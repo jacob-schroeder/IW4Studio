@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.TerrainPaintInspector">
+    <StackPanel Spacing="8">
+        <TextBlock Text="Terrain color &amp; alpha" Classes="panelTitle" />
+        <Grid ColumnDefinitions="*,*,*,38" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+            <TextBlock Text="Red" Classes="fieldLabel" />
+            <TextBlock Text="Green" Grid.Column="1" Classes="fieldLabel" />
+            <TextBlock Text="Blue" Grid.Column="2" Classes="fieldLabel" />
+            <NumericUpDown x:Name="RedValue" Grid.Row="1" Minimum="0" Maximum="255" Value="255" FormatString="0" />
+            <NumericUpDown x:Name="GreenValue" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="255" Value="255" FormatString="0" />
+            <NumericUpDown x:Name="BlueValue" Grid.Row="1" Grid.Column="2" Minimum="0" Maximum="255" Value="255" FormatString="0" />
+            <Border x:Name="ColorPreview" Grid.Row="1" Grid.Column="3" Background="White" CornerRadius="3" BorderBrush="#626875" BorderThickness="1" />
+        </Grid>
+        <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+            <TextBlock Text="Alpha (%)" Classes="fieldLabel" />
+            <NumericUpDown x:Name="AlphaValue" Grid.Column="1" Minimum="0" Maximum="100" Value="100" FormatString="0" />
+            <TextBlock Text="Brush opacity (%)" Grid.Row="1" Classes="fieldLabel" />
+            <NumericUpDown x:Name="OpacityValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="100" Value="25" FormatString="0" />
+            <TextBlock Text="Brush radius" Grid.Row="2" Classes="fieldLabel" />
+            <NumericUpDown x:Name="RadiusValue" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="4096" Value="128" Increment="16" FormatString="0" />
+        </Grid>
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+            <Button x:Name="PaintColorButton" Content="Paint color" HorizontalAlignment="Stretch" Classes="panelAction" />
+            <Button x:Name="PaintAlphaButton" Grid.Column="1" Content="Paint alpha" HorizontalAlignment="Stretch" Classes="panelAction" />
+            <Button x:Name="FillColorButton" Grid.Row="1" Content="Fill selected color" HorizontalAlignment="Stretch" />
+            <Button x:Name="FillAlphaButton" Grid.Row="1" Grid.Column="1" Content="Fill selected alpha" HorizontalAlignment="Stretch" />
+        </Grid>
+        <TextBlock x:Name="PaintHint" Classes="caption" TextWrapping="Wrap" />
+        <Expander Header="Blend a terrain overlay" IsExpanded="False">
+            <StackPanel Spacing="8" Margin="0,8,0,0">
+                <TextBlock Text="Select a whole terrain mesh and choose an alpha-blended material. Add an overlay, then paint alpha in Top view to reveal it over the base terrain." Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="OverlayMaterialText" Classes="caption" TextWrapping="Wrap" />
+                <Button x:Name="OverlayButton" Content="Add paintable overlay" HorizontalAlignment="Stretch" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

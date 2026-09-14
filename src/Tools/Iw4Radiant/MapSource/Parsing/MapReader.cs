@@ -91,7 +91,7 @@ internal sealed class MapReader
         _position = begin;
         if (_position == end)
             throw Error(open, "Empty primitive block.");
-        if (Current.Value == "mesh")
+        if (Current.Value is "mesh" or "curve")
         {
             MapTerrain? terrain = ReadTerrain(end);
             if (terrain is null)
@@ -149,9 +149,9 @@ internal sealed class MapReader
 
     private MapTerrain? ReadTerrain(int primitiveEnd)
     {
-        Expect("mesh");
+        bool isCurve = Take().Value == "curve";
         Expect("{");
-        var terrain = new MapTerrain();
+        var terrain = new MapTerrain { IsCurve = isCurve };
         while (HasToken && Current.Value is "layer" or "contents" or "toolFlags")
             terrain.Directives.Add(ReadLine());
         MapToken material = Take();
@@ -176,6 +176,8 @@ internal sealed class MapReader
         terrain.Height = ReadInt(dimensions);
         terrain.LightmapSize = ReadFloat(dimensions);
         terrain.Subdivision = ReadInt(dimensions);
+        if (isCurve && (terrain.Width < 3 || terrain.Height < 3 || terrain.Width % 2 == 0 || terrain.Height % 2 == 0))
+            return null;
         if (HasToken && Current.LogicalLine == dimensions.LogicalLine && Current.Value != "(")
             return null;
         long count = (long)terrain.Width * terrain.Height;

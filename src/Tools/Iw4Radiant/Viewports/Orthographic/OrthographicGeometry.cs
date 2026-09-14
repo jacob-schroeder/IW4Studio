@@ -2,6 +2,7 @@ using System.Numerics;
 using Avalonia;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
 using Vector = Avalonia.Vector;
 
 namespace Iw4Radiant.Viewports.Orthographic;
@@ -11,11 +12,12 @@ internal static class OrthographicGeometry
     internal static object? HitTest(EditorSession? session, OrthographicProjection projection, Point point, bool terrainsOnly = false)
     {
         if (session is null) return null;
+        EditorScene scene = session.Scene;
         object? best = null;
         double bestScore = double.PositiveInfinity;
         void Consider(object item, Point[] polygon)
         {
-            if (polygon.Length == 0) return;
+            if (polygon.Length == 0 || !scene.CanSelect(item)) return;
             double distance = double.PositiveInfinity;
             for (int i = 0; i < polygon.Length; i++)
                 distance = Math.Min(distance, DistanceToSegment(point, polygon[i], polygon[(i + 1) % polygon.Length]));
@@ -23,30 +25,38 @@ internal static class OrthographicGeometry
             if (score < bestScore)
             {
                 bestScore = score;
-                best = item;
+                best = scene.Owner(item);
             }
         }
         if (!terrainsOnly)
-            foreach (var brush in session.Document.Brushes)
+            foreach (var brush in scene.Document.Brushes)
                 Consider(brush, ConvexHull(brush.GetPolygons().SelectMany(polygon => polygon.Vertices).Select(projection.ToScreen)));
-        foreach (var terrain in session.Document.Terrains)
+        foreach (var terrain in scene.Document.Terrains)
         {
+            if (terrainsOnly && scene.Owner(terrain) is not MapTerrain) continue;
+            if (terrainsOnly && terrain.IsCurve && session.SculptMode is not (TerrainSculptMode.PaintColor or TerrainSculptMode.PaintAlpha)) continue;
+            MapTerrain surface = terrain.GetSurface();
             // Triangles also pick folded or nonrectangular native terrain correctly.
-            foreach (var (a, b, c) in terrain.GetTriangles())
-                Consider(terrain, [projection.ToScreen(terrain.Vertices[a]), projection.ToScreen(terrain.Vertices[b]), projection.ToScreen(terrain.Vertices[c])]);
+            foreach (var (a, b, c) in surface.GetTriangles())
+                Consider(terrain, [projection.ToScreen(surface.Vertices[a]), projection.ToScreen(surface.Vertices[b]), projection.ToScreen(surface.Vertices[c])]);
         }
         if (!terrainsOnly)
-            foreach (var entity in PointEntities(session.Document))
+            foreach (var entity in scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
             {
-                Vector3 origin = EditorSession.EntityOrigin(entity);
-                Consider(entity, Corners(projection.ScreenBounds(origin - new Vector3(8), origin + new Vector3(8))));
+                if (XModelGeometry.IsModel(entity))
+                {
+                    if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                        foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                            Consider(entity, [projection.ToScreen(triangle.A.Position), projection.ToScreen(triangle.B.Position), projection.ToScreen(triangle.C.Position)]);
+                }
+                else if (entity.ClassName == "trigger_radius")
+                    Consider(entity, ConvexHull(PointEntityGeometry.GetRadiusLines(entity)
+                        .SelectMany(line => new[] { projection.ToScreen(line.A), projection.ToScreen(line.B) })));
+                else if (scene.Bounds(entity) is { } bounds)
+                    Consider(entity, Corners(projection.ScreenBounds(bounds.Min, bounds.Max)));
             }
         return best;
     }
-
-    internal static IEnumerable<MapEntity> PointEntities(MapDocument document) => document.Entities.Where(entity =>
-        entity.ClassName != "worldspawn" && entity.Brushes.Count == 0 && entity.Terrains.Count == 0 &&
-        entity.PreservedPrimitives.Count == 0);
 
     internal static Rect Rectangle(Point a, Point b) => new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
     internal static Point[] Corners(Rect rect) => [rect.TopLeft, rect.TopRight, rect.BottomRight, rect.BottomLeft];

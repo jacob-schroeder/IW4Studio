@@ -59,14 +59,16 @@ internal static class SelectionEditing
 
     internal static void ApplyMaterial(EditorSession session, string material)
     {
-        MapFace[] faces = SurfaceEditing.GetFaces(session.Selection).Select(face => face.Face).ToArray();
+        MapFace[] faces = SurfaceEditing.GetFaces(session).Select(face => face.Face).ToArray();
         MapTerrain[] terrains = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>()
-            .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains)).Distinct().ToArray();
+            .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains))
+            .Where(terrain => session.Visibility.CanSelect(session.Document, terrain)).Distinct().ToArray();
         ApplyMaterial(session, material, faces, terrains);
     }
 
-    internal static void ApplyMaterial(EditorSession session, string material, MapFace[] faces) =>
-        ApplyMaterial(session, material, faces, []);
+    internal static void ApplyMaterial(EditorSession session, string material, BrushFaceSelection[] faces) =>
+        ApplyMaterial(session, material, faces.Where(face => session.Visibility.CanSelect(session.Document, face.Brush))
+            .Select(face => face.Face).Distinct().ToArray(), []);
 
     internal static void ValidateMaterial(string material)
     {
@@ -96,6 +98,7 @@ internal static class SelectionEditing
     {
         if (session.Selection.Items.Any(item => item is BrushFaceSelection or BrushVertexSelection or TerrainVertexSelection))
             throw new ArgumentException("Select whole objects to duplicate or delete. Use the clipper to remove part of a brush.");
-        return session.Selection.Items.Where(SelectionGeometry.CanTransform).ToArray();
+        return session.Selection.Items.Where(item => SelectionGeometry.CanTransform(item) &&
+            session.Visibility.CanSelect(session.Document, item)).ToArray();
     }
 }

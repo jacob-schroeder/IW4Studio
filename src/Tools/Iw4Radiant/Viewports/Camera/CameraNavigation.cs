@@ -1,7 +1,4 @@
 using System.Numerics;
-using Iw4Radiant.Editing;
-using Iw4Radiant.MapSource;
-using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Camera;
 
@@ -11,43 +8,18 @@ internal sealed class CameraNavigation
     private Vector3 _target;
     private float _yaw = -MathF.PI * 0.3f, _pitch = MathF.PI * 0.22f, _distance = 1024;
 
-    internal void FrameAll(MapDocument document, float aspect)
+    internal void FrameBounds((Vector3 Min, Vector3 Max)? bounds, float aspect)
     {
-        var vertices = document.Brushes.SelectMany(brush => brush.GetPolygons())
-            .SelectMany(polygon => polygon.Vertices)
-            .Concat(document.Terrains.SelectMany(terrain => terrain.Vertices))
-            .Concat(document.Entities.Where(PointEntityGeometry.IsPointEntity)
-                .SelectMany(entity => PointEntityGeometry.CreateBrush(entity).GetPolygons())
-                .SelectMany(polygon => polygon.Vertices));
-        Frame(vertices, aspect);
-    }
-
-    internal void FrameSelection(MapDocument document, EditorSelection selection, float aspect)
-    {
-        if (SelectionGeometry.Bounds(selection.Items) is { } bounds)
-            Frame([bounds.Min, bounds.Max], aspect);
-        else
-            FrameAll(document, aspect);
-    }
-
-    private void Frame(IEnumerable<Vector3> vertices, float aspect)
-    {
-        Vector3 minimum = new(float.PositiveInfinity), maximum = new(float.NegativeInfinity);
-        foreach (var vertex in vertices)
-        {
-            minimum = Vector3.Min(minimum, vertex);
-            maximum = Vector3.Max(maximum, vertex);
-        }
-        if (!float.IsFinite(minimum.X))
+        if (bounds is not { } finite || !float.IsFinite(finite.Min.X) || !float.IsFinite(finite.Max.X))
         {
             _target = Vector3.Zero;
             _distance = 1024;
         }
         else
         {
-            _target = (minimum + maximum) / 2;
+            _target = (finite.Min + finite.Max) / 2;
             float halfAngle = MathF.Atan(MathF.Tan(FieldOfView / 2) * Math.Clamp(aspect, 0.1f, 1));
-            _distance = Math.Clamp(Vector3.Distance(minimum, maximum) * 0.6f / MathF.Sin(halfAngle), 32, 1000000);
+            _distance = Math.Clamp(Vector3.Distance(finite.Min, finite.Max) * 0.6f / MathF.Sin(halfAngle), 32, 1000000);
         }
     }
 

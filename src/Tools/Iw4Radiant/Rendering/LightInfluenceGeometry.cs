@@ -7,9 +7,9 @@ internal static class LightInfluenceGeometry
 {
     private const int Segments = 48;
 
-    internal static IEnumerable<(Vector3 A, Vector3 B)> GetLines(MapDocument document, MapEntity entity)
+    internal static IEnumerable<(Vector3 A, Vector3 B)> GetLines(EditorScene scene, MapEntity entity)
     {
-        if (!SceneLight.TryCreate(document, entity, out SceneLight light, out _)) yield break;
+        if (!SceneLight.TryCreate(scene, entity, out SceneLight light, out _)) yield break;
         if (!light.IsSpotlight)
         {
             foreach (var line in Ring(light.Origin, Vector3.UnitX, Vector3.UnitY, light.Radius)) yield return line;

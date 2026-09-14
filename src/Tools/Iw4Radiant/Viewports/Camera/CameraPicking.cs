@@ -8,7 +8,7 @@ namespace Iw4Radiant.Viewports.Camera;
 
 internal static class CameraPicking
 {
-    internal static object? Pick(MapDocument document, CameraNavigation camera, Point point, Size size, EditorTool tool)
+    internal static object? Pick(EditorScene scene, CameraNavigation camera, Point point, Size size, EditorTool tool)
     {
         if (size.Width <= 0 || size.Height <= 0)
             return null;
@@ -16,51 +16,56 @@ internal static class CameraPicking
         var (origin, direction) = camera.PickRay(x, y, (float)(size.Width / size.Height));
         float closest = float.PositiveInfinity;
         object? result = null;
+        MapDocument document = scene.Document;
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         for (int i = 1; i < polygon.Vertices.Length - 1; i++)
             Consider(tool == EditorTool.Face ? new BrushFaceSelection(brush, polygon.Face) : brush,
                 polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1]);
         foreach (var terrain in document.Terrains)
-        foreach (var (a, b, c) in terrain.GetTriangles())
-            Consider(terrain, terrain.Vertices[a], terrain.Vertices[b], terrain.Vertices[c]);
+        {
+            MapTerrain surface = terrain.GetSurface();
+            foreach (var (a, b, c) in surface.GetTriangles())
+                Consider(terrain, surface.Vertices[a], surface.Vertices[b], surface.Vertices[c]);
+        }
         foreach (var entity in document.Entities.Where(PointEntityGeometry.IsPointEntity))
-        foreach (var polygon in PointEntityGeometry.CreateBrush(entity).GetPolygons())
-        for (int i = 1; i < polygon.Vertices.Length - 1; i++)
-            Consider(entity, polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1]);
+        {
+            if (XModelGeometry.IsModel(entity))
+            {
+                if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                    foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                        Consider(entity, triangle.A.Position, triangle.B.Position, triangle.C.Position);
+            }
+            else if (entity.ClassName == "trigger_radius")
+                foreach (var triangle in PointEntityGeometry.GetRadiusTriangles(entity))
+                    Consider(entity, triangle.A, triangle.B, triangle.C);
+            else
+                foreach (var polygon in PointEntityGeometry.CreateBrush(entity).GetPolygons())
+                    for (int i = 1; i < polygon.Vertices.Length - 1; i++)
+                        Consider(entity, polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1]);
+        }
         return result;
 
         void Consider(object item, Vector3 a, Vector3 b, Vector3 c)
         {
-            Vector3 edge1 = b - a, edge2 = c - a;
-            Vector3 p = Vector3.Cross(direction, edge2);
-            float determinant = Vector3.Dot(edge1, p);
-            if (MathF.Abs(determinant) < 0.000001f)
-                return;
-            Vector3 t = origin - a;
-            float u = Vector3.Dot(t, p) / determinant;
-            if (u < 0 || u > 1)
-                return;
-            Vector3 q = Vector3.Cross(t, edge1);
-            float v = Vector3.Dot(direction, q) / determinant;
-            if (v < 0 || u + v > 1)
-                return;
-            float distance = Vector3.Dot(edge2, q) / determinant;
-            if (distance >= 0.5f && distance < closest)
+            if (!scene.CanSelect(item)) return;
+            if (SurfaceRaycast.RayTriangle(origin, direction, a, b, c, out float distance, out _) &&
+                distance >= 0.5f && distance < closest)
             {
                 closest = distance;
-                result = item;
+                result = scene.Owner(item);
             }
         }
     }
 
-    internal static object? PickVertex(EditorSelection selection, CameraNavigation camera, Point point, Size size)
+    internal static object? PickVertex(EditorSession session, CameraNavigation camera, Point point, Size size)
     {
         float closestDepth = float.PositiveInfinity;
         double closestScreen = 9 * 9;
         object? result = null;
-        foreach (object handle in SelectionGeometry.GetVertexHandles(selection))
-            if (SelectionGeometry.Bounds(handle) is { } bounds) Consider(handle, bounds.Min);
+        foreach (object handle in SelectionGeometry.GetVertexHandles(session.Selection))
+            if (session.Visibility.CanSelect(session.Document, handle) && SelectionGeometry.Bounds(handle) is { } bounds)
+                Consider(handle, bounds.Min);
         return result;
 
         void Consider(object item, Vector3 position)

@@ -41,6 +41,10 @@ internal static class SceneShaderProgram
         uint Compile(ShaderType type, string filename)
         {
             string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", filename));
+            const string alphaInclude = "#include \"material-alpha.glsl\"";
+            if (source.Contains(alphaInclude, StringComparison.Ordinal))
+                source = source.Replace(alphaInclude,
+                    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "material-alpha.glsl")), StringComparison.Ordinal);
             uint shader = gl.CreateShader(type);
             gl.ShaderSource(shader, header + source);
             gl.CompileShader(shader);

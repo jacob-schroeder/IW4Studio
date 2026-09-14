@@ -9,7 +9,7 @@ internal static class SkyEditing
     internal static BrushFaceSelection[] SelectedWorldFaces(EditorSession session)
     {
         var brushes = session.Document.World.Brushes.ToHashSet();
-        return SurfaceEditing.GetFaces(session.Selection).Where(face => brushes.Contains(face.Brush)).ToArray();
+        return SurfaceEditing.GetFaces(session).Where(face => brushes.Contains(face.Brush)).ToArray();
     }
 
     internal static void Apply(EditorSession session, MaterialSource material)
@@ -17,7 +17,7 @@ internal static class SkyEditing
         var faces = SelectedWorldFaces(session);
         if (faces.Length == 0) throw new ArgumentException("Select world brush faces or world brushes to apply a sky.");
         RequireReadableSky(material);
-        SelectionEditing.ApplyMaterial(session, material.Name, faces.Select(face => face.Face).ToArray());
+        SelectionEditing.ApplyMaterial(session, material.Name, faces);
     }
 
     internal static (Vector3 Min, Vector3 Max)? EnclosureBounds(EditorSession session)
