@@ -228,6 +228,16 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             DockLayout.State.Right.PropertyChanged += DockRegion_PropertyChanged;
 
             AppendInitialOutput();
+            foreach (WorkspaceZone zone in Workspace.LoadedZones)
+            {
+                foreach (string warning in zone.LoadResult.Warnings)
+                {
+                    ConsoleOutput.Append(
+                        ConsoleOutputLevel.Warning,
+                        "Fastfile Load",
+                        $"{zone.LoadResult.SourceName}: {warning}");
+                }
+            }
             Diagnostics.ReplaceBySource(
                 "Workspace",
                 [

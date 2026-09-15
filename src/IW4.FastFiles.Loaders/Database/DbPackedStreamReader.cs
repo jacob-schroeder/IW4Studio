@@ -1,5 +1,6 @@
 using System.Buffers;
 using IW4.FastFiles.Loaders.Compression;
+using IW4.Runtime.Diagnostics;
 using IW4.Runtime.IO;
 
 namespace IW4.FastFiles.Loaders.Database;
@@ -9,46 +10,46 @@ public sealed class DbPackedStreamReader
     private const ushort ZoneBlockTerminator = 1;
     private const int FullBlockSize = 0x10000;
 
-    public byte[] ReadZone(FastFileCursor cursor, uint fileSize)
+    public byte[] ReadZone(
+        FastFileCursor cursor,
+        uint declaredFileSize,
+        LoadDiagnostics diagnostics)
     {
-        if (fileSize > int.MaxValue)
-            throw new InvalidDataException($"FileSize 0x{fileSize:X} does not fit in this reader.");
+        ArgumentNullException.ThrowIfNull(diagnostics);
 
         var output = new ArrayBufferWriter<byte>();
-        int packedEnd = checked((int)fileSize);
-        if (packedEnd < cursor.Offset + sizeof(ushort) || packedEnd > cursor.Length)
+        int availableEnd = cursor.Length;
+        if (availableEnd < cursor.Offset + sizeof(ushort))
         {
             throw new InvalidDataException(
-                $"Packed stream end 0x{packedEnd:X} is outside the available file range " +
-                $"0x{cursor.Offset:X}..0x{cursor.Length:X}.");
+                $"Packed stream has no complete block-size word in the available file range " +
+                $"0x{cursor.Offset:X}..0x{availableEnd:X}.");
         }
 
         bool sawTerminator = false;
-        while (cursor.Offset < packedEnd)
+        while (cursor.Offset < availableEnd)
         {
-            if (cursor.Offset > packedEnd - sizeof(ushort))
+            if (cursor.Offset > availableEnd - sizeof(ushort))
                 throw new InvalidDataException("Packed stream ends in a truncated block-size word.");
             ushort blockSize = cursor.ReadUInt16();
 
             if (blockSize == ZoneBlockTerminator)
             {
-                if (cursor.Offset != packedEnd)
-                {
-                    throw new InvalidDataException(
-                        $"Packed stream terminator ended at 0x{cursor.Offset:X}, " +
-                        $"but DB header FileSize ends at 0x{packedEnd:X}.");
-                }
+                if ((uint)cursor.Offset != declaredFileSize)
+                    diagnostics.Warn(
+                        $"DB header FileSize 0x{declaredFileSize:X} does not match " +
+                        $"the actual packed stream end 0x{cursor.Offset:X}.");
                 sawTerminator = true;
                 TryConsumeTrailingTerminatorWord(cursor);
                 break;
             }
 
             int compressedSize = blockSize == 0 ? FullBlockSize : blockSize;
-            if (compressedSize > packedEnd - cursor.Offset)
+            if (compressedSize > availableEnd - cursor.Offset)
             {
                 throw new InvalidDataException(
                     $"Packed block at 0x{cursor.Offset - sizeof(ushort):X} declares 0x{compressedSize:X} " +
-                    $"payload byte(s) past FileSize 0x{packedEnd:X}.");
+                    $"payload byte(s) past the actual file end 0x{availableEnd:X}.");
             }
             ReadOnlyMemory<byte> compressed = cursor.ReadMemory(compressedSize);
 
@@ -76,7 +77,8 @@ public sealed class DbPackedStreamReader
         }
 
         if (!sawTerminator)
-            throw new InvalidDataException($"Packed stream has no terminator at FileSize 0x{packedEnd:X}.");
+            throw new InvalidDataException(
+                $"Packed stream has no terminator in the available file range ending at 0x{availableEnd:X}.");
         return output.WrittenSpan.ToArray();
     }
 

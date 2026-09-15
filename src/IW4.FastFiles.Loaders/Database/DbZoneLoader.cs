@@ -279,14 +279,10 @@ public sealed class DbZoneLoader
         byte[] buffer = _fileSystem.Sys_ReadToEnd(file.SysFile);
         var cursor = new FastFileCursor(buffer);
         DbHeader header = _dbHeaderReader.Read(cursor, context);
-        if (header.FileSize < cursor.Offset || header.FileSize > buffer.Length)
-        {
-            throw new InvalidDataException(
-                $"DBFile '{file.Name}' declares packed end 0x{header.FileSize:X}, " +
-                $"outside source range 0x{cursor.Offset:X}..0x{buffer.Length:X}.");
-        }
-
-        byte[] zoneBytes = _packedStreamReader.ReadZone(cursor, header.FileSize);
+        byte[] zoneBytes = _packedStreamReader.ReadZone(
+            cursor,
+            header.FileSize,
+            context.Diagnostics);
         context.DecodedZoneBytes = zoneBytes;
 
         var zoneCursor = new FastFileCursor(zoneBytes, decodedTapeBaseOffset: 0);
