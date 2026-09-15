@@ -1,4 +1,5 @@
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Iw4Radiant.Compilation;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
@@ -12,6 +13,41 @@ public partial class MainWindow
     private string[] _buildProviderPaths = [];
     private string? _buildOutputFolder;
 
+    private async void BuildD3dbsp_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        try
+        {
+            var file = await _dialogs.ShowModalAsync(async () =>
+            {
+                string? folder = Path.GetDirectoryName(_session.FilePath);
+                return await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Build .d3dbsp",
+                    SuggestedFileName = Path.GetFileNameWithoutExtension(_session.FilePath ?? "mp_untitled.map"),
+                    DefaultExtension = "d3dbsp", ShowOverwritePrompt = true,
+                    SuggestedStartLocation = folder is null ? null : await StorageProvider.TryGetFolderFromPathAsync(folder),
+                    FileTypeChoices = [new FilePickerFileType("Compiled IW4 map") { Patterns = ["*.d3dbsp"] }]
+                });
+            });
+            if (file is null) return;
+            string path = file.TryGetLocalPath() ?? throw new NotSupportedException("Choose a local folder for the compiled map.");
+            if (!Path.GetExtension(path).Equals(".d3dbsp", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Choose a filename ending in .d3dbsp.");
+            MapDocument document = _session.Document.Clone();
+            var (materials, models) = ResolveBuildAssets(document);
+            var dialog = new MapBuildWindow(document, path, materials, models);
+            await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
+            if (dialog.CompletedBspPath is { } completedPath)
+                SetStatus($"Built .d3dbsp: {completedPath}");
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            await _dialogs.MessageAsync("Cannot build .d3dbsp", exception.Message);
+        }
+    }
+
     private async void Build_Click(object? sender, RoutedEventArgs e)
     {
         if (_dialogs.BlocksInput) return;
@@ -20,21 +56,7 @@ public partial class MainWindow
         try
         {
             MapDocument document = _session.Document.Clone();
-            var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
-            foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapStaticModelCompiler.CastsShadow(entity))
-                         .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
-                models.Add(name, Workspace.Models.ResolveModel(name) ??
-                    throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));
-            var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
-            foreach (string name in document.World.Brushes.SelectMany(brush => brush.Faces)
-                         .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
-                         .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
-                         .Distinct(StringComparer.Ordinal))
-            {
-                if (ClipBrushMaterial.IsPlayerClip(name)) continue;
-                materials.Add(name, ResolveMaterial(name) ??
-                    throw new InvalidDataException($"Material '{name}' is unavailable. Load it in the asset browser before building."));
-            }
+            var (materials, models) = ResolveBuildAssets(document);
             string sourceFolder = Path.GetDirectoryName(sourcePath) ??
                 throw new InvalidDataException("The saved map has no containing directory.");
             string buildFolder = Path.Combine(sourceFolder, "map_build");
@@ -53,6 +75,27 @@ public partial class MainWindow
         {
             await _dialogs.MessageAsync("Cannot build map", exception.Message);
         }
+    }
+
+    private (Dictionary<string, MaterialSource> Materials, Dictionary<string, XModelSource> Models)
+        ResolveBuildAssets(MapDocument document)
+    {
+        var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
+        foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapStaticModelCompiler.CastsShadow(entity))
+                     .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
+            models.Add(name, Workspace.Models.ResolveModel(name) ??
+                throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));
+        var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
+        foreach (string name in document.World.Brushes.SelectMany(brush => brush.Faces)
+                     .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
+                     .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            if (ClipBrushMaterial.IsPlayerClip(name)) continue;
+            materials.Add(name, ResolveMaterial(name) ??
+                throw new InvalidDataException($"Material '{name}' is unavailable. Load it in the asset browser before building."));
+        }
+        return (materials, models);
     }
 
     private static string? FindBuildLinker()

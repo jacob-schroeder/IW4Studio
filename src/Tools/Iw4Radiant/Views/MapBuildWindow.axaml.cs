@@ -12,6 +12,7 @@ public partial class MapBuildWindow : Window
 {
     private readonly MapDocument? _document;
     private readonly string? _sourcePath;
+    private readonly string? _bspPath;
     private readonly IReadOnlyDictionary<string, MaterialSource>? _materials;
     private readonly IReadOnlyDictionary<string, XModelSource>? _models;
     private readonly ObservableCollection<string> _providers = [];
@@ -31,18 +32,38 @@ public partial class MapBuildWindow : Window
         };
     }
 
+    private MapBuildWindow(MapDocument document,
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models) : this()
+    {
+        _document = document;
+        _materials = materials;
+        _models = models;
+        GameModesText.Text = "Game modes: " + MapCompiler.GetGameModeSummary(document);
+        GameModesText.IsVisible = true;
+    }
+
+    internal MapBuildWindow(MapDocument document, string bspPath,
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models)
+        : this(document, materials, models)
+    {
+        _bspPath = bspPath;
+        Title = "Build .d3dbsp";
+        MinWidth = 500;
+        MinHeight = 320;
+        Width = 600;
+        Height = 420;
+        SourceName.Text = Path.GetFileName(bspPath);
+        BuildInputs.IsVisible = BuildButton.IsVisible = false;
+        Opened += (_, _) => Build_Click(this, new RoutedEventArgs());
+    }
+
     internal MapBuildWindow(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
         string linkerPath, string templatePath,
-        IReadOnlyList<string> providerPaths, string outputFolder) : this()
+        IReadOnlyList<string> providerPaths, string outputFolder) : this(document, materials, models)
     {
-        _document = document;
         _sourcePath = sourcePath;
-        _materials = materials;
-        _models = models;
         SourceName.Text = Path.GetFileName(sourcePath);
-        GameModesText.Text = "Game modes: " + MapCompiler.GetGameModeSummary(document);
-        GameModesText.IsVisible = true;
         LinkerPathBox.Text = linkerPath;
         TemplatePathBox.Text = templatePath;
         OutputFolderBox.Text = outputFolder;
@@ -51,6 +72,7 @@ public partial class MapBuildWindow : Window
     }
 
     internal string? CompletedDirectory { get; private set; }
+    internal string? CompletedBspPath { get; private set; }
     internal string LinkerPath => LinkerPathBox.Text?.Trim() ?? "";
     internal string TemplatePath => TemplatePathBox.Text?.Trim() ?? "";
     internal string OutputFolder => OutputFolderBox.Text?.Trim() ?? "";
@@ -110,8 +132,8 @@ public partial class MapBuildWindow : Window
 
     private async void Build_Click(object? sender, RoutedEventArgs e)
     {
-        if (_buildCancellation is not null || CompletedDirectory is not null ||
-            _document is null || _sourcePath is null || _materials is null || _models is null) return;
+        if (_buildCancellation is not null || CompletedDirectory is not null || CompletedBspPath is not null ||
+            _document is null || (_sourcePath is null && _bspPath is null) || _materials is null || _models is null) return;
         using var cancellation = new CancellationTokenSource();
         _buildCancellation = cancellation;
         BuildInputs.IsEnabled = BuildButton.IsEnabled = false;
@@ -121,10 +143,17 @@ public partial class MapBuildWindow : Window
         try
         {
             var progress = new Progress<string>(AppendProgress);
-            CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, _sourcePath, _materials, _models,
-                LinkerPath, TemplatePath, ProviderPaths, OutputFolder, progress, cancellation.Token);
+            if (_bspPath is { } bspPath)
+            {
+                AppendProgress("Compiling geometry and collision; baking sunlight, local lights and reflections…");
+                await MapBuildPipeline.BuildBspAsync(_document, bspPath, _materials, _models, cancellation.Token);
+                CompletedBspPath = bspPath;
+            }
+            else if (_sourcePath is { } sourcePath)
+                CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, sourcePath, _materials, _models,
+                    LinkerPath, TemplatePath, ProviderPaths, OutputFolder, progress, cancellation.Token);
             BuildStatus.Text = "Build complete";
-            AppendProgress($"Build complete: {CompletedDirectory}");
+            AppendProgress($"Build complete: {CompletedBspPath ?? CompletedDirectory}");
             BuildButton.IsVisible = false;
         }
         catch (OperationCanceledException)
@@ -140,10 +169,11 @@ public partial class MapBuildWindow : Window
         finally
         {
             _buildCancellation = null;
-            BuildInputs.IsEnabled = BuildButton.IsEnabled = CompletedDirectory is null;
+            BuildInputs.IsEnabled = BuildButton.IsEnabled = CompletedDirectory is null && CompletedBspPath is null;
             CloseButton.IsEnabled = true;
             CloseButton.Content = "Close";
         }
+        if (CompletedBspPath is not null) Close();
     }
 
     private void AppendProgress(string message)

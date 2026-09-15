@@ -61,6 +61,7 @@
                 <MenuItem Header="Add player _start" Click="Player_Click" />
             </MenuItem>
             <MenuItem Header="_Build">
+                <MenuItem Header="Build .d3dbsp…" Click="BuildD3dbsp_Click" />
                 <MenuItem Header="Build PS3 map…" Click="Build_Click" />
             </MenuItem>
             <MenuItem Header="_Help">

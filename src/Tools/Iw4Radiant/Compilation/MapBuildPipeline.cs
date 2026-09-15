@@ -7,6 +7,33 @@ namespace Iw4Radiant.Compilation;
 
 internal static class MapBuildPipeline
 {
+    internal static Task BuildBspAsync(MapDocument document, string outputPath,
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
+        CancellationToken cancellationToken) => Task.Run(() =>
+    {
+        string destination = Path.GetFullPath(outputPath);
+        string directory = Path.GetDirectoryName(destination) ?? throw new InvalidDataException("Choose a folder for the compiled map.");
+        if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("The selected output folder no longer exists.");
+        string assetName = $"maps/mp/{Path.GetFileNameWithoutExtension(destination)}.d3dbsp";
+        cancellationToken.ThrowIfCancellationRequested();
+        var bsp = MapCompiler.Compile(document, assetName, materials, models, cancellationToken);
+        string temporary = Path.Combine(directory,
+            $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bsp.Write(temporary);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporary, destination, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }, cancellationToken);
+
     internal static async Task<string> BuildAsync(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
         string linkerPath, string templatePath,
