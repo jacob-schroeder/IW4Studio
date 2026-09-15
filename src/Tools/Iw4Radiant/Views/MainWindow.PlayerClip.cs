@@ -8,7 +8,9 @@ public partial class MainWindow
     private void DrawPlayerClip_Click(object? sender, RoutedEventArgs e)
     {
         if (_dialogs.BlocksInput) return;
-        SetTool(EditorTool.Brush);
+        SetTool(EditorTool.Select);
+        _session.Select(null);
+        Workspace.ShowGrid(Workspace.ActivePlane);
         Workspace.Materials.UsePlayerClip(_session);
         SetStatus("Draw player clip in a grid view · Set Base and Depth, then shape the brush around the model · Invisible in game; blocks players");
         Workspace.FocusActiveView();

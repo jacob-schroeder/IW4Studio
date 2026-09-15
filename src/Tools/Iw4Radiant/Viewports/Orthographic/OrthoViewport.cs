@@ -67,6 +67,7 @@ public sealed class OrthoViewport : Control
     }
 
     internal bool HasClipPreview => _gestures.CanCommitClip;
+    internal bool HasActiveGesture => _gestures.IsActive || _gestures.HasClipPreview;
     internal void CompleteGesture() => _gestures.EndGesture(cancel: false);
     internal void CancelGesture() => _gestures.CancelGesture();
     internal bool CommitClip() => _gestures.CommitClip();
@@ -150,19 +151,14 @@ public sealed class OrthoViewport : Control
         base.OnKeyDown(e);
         if (e.Key == Key.Escape)
         {
-            if (Session?.HasPlacement == true) Session.CancelPlacement();
-            else if (_gestures.IsActive || _gestures.HasClipPreview) _gestures.CancelGesture();
+            if (HasActiveGesture) _gestures.CancelGesture();
+            else if (Session?.HasPlacement == true) Session.CancelPlacement();
             else Session?.Select(null);
             e.Handled = true;
         }
         else if (e.Key == Key.Enter && _gestures.HasClipPreview)
         {
             e.Handled = CommitClip();
-        }
-        else if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.None)
-        {
-            FrameSelection();
-            e.Handled = true;
         }
     }
 

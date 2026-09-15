@@ -11,6 +11,8 @@ internal sealed class EditorVisibility
     private readonly Dictionary<object, MapEntity> _owners = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<object, string> _objectLayers = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, (bool Hidden, bool Frozen)> _layerFlags = new(StringComparer.Ordinal);
+    private readonly Dictionary<object, EditorFilter> _categories = new(ReferenceEqualityComparer.Instance);
+    internal EditorFilter ExcludedKinds { get; set; }
 
     internal bool IsActive => _hidden.Count > 0 || _frozen.Count > 0 || _isolated is not null;
     internal bool IsVisible(MapDocument document, object item)
@@ -18,7 +20,8 @@ internal sealed class EditorVisibility
         object owner = EditorSelection.Owner(item);
         Ensure(document);
         MapEntity? entity = owner as MapEntity ?? _owners.GetValueOrDefault(owner);
-        return !Flags(owner).Hidden && (entity is null || entity.ClassName == "worldspawn" || !Flags(entity).Hidden) && !_hidden.Contains(owner) &&
+        return !IsFiltered(owner) && (entity is null || !IsFiltered(entity)) &&
+            !Flags(owner).Hidden && (entity is null || entity.ClassName == "worldspawn" || !Flags(entity).Hidden) && !_hidden.Contains(owner) &&
             (entity is null || !_hidden.Contains(entity)) &&
             (_isolated is null || _isolated.Contains(owner) || entity is not null && _isolated.Contains(entity) ||
              owner is MapEntity parent && parent.Brushes.Cast<object>().Concat(parent.Terrains).Any(_isolated.Contains));
@@ -38,7 +41,36 @@ internal sealed class EditorVisibility
     internal void Freeze(IEnumerable<object> items) => _frozen.UnionWith(items.Select(EditorSelection.Owner));
     internal void Isolate(IEnumerable<object> items) => _isolated = new(items.Select(EditorSelection.Owner), ReferenceEqualityComparer.Instance);
     internal void Clear() { _hidden.Clear(); _frozen.Clear(); _isolated = null; Invalidate(); }
-    internal void Invalidate() { _document = null; _owners.Clear(); _objectLayers.Clear(); _layerFlags.Clear(); }
+    internal void Invalidate() { _document = null; _owners.Clear(); _objectLayers.Clear(); _layerFlags.Clear(); _categories.Clear(); }
+
+    private bool IsFiltered(object item)
+    {
+        if (ExcludedKinds == EditorFilter.None) return false;
+        if (!_categories.TryGetValue(item, out EditorFilter category))
+        {
+            category = item switch
+            {
+                MapBrush brush when brush.Faces.Count > 0 && brush.Faces.All(face => Materials.ClipBrushMaterial.IsPlayerClip(face.Material)) => EditorFilter.PlayerClip,
+                MapBrush brush => BrushContents.Read(brush) switch
+                {
+                    BrushKind.Detail => EditorFilter.Detail,
+                    BrushKind.NonColliding => EditorFilter.NonColliding,
+                    BrushKind.WeaponClip => EditorFilter.WeaponClip,
+                    _ => EditorFilter.Structural
+                },
+                MapTerrain terrain => terrain.IsCurve ? EditorFilter.Curves : EditorFilter.Terrain,
+                MapEntity entity when entity.ClassName == "worldspawn" => EditorFilter.None,
+                MapEntity entity when entity.ClassName == "misc_prefab" => EditorFilter.Prefabs,
+                MapEntity entity when entity.ClassName is "misc_model" or "script_model" => EditorFilter.Models,
+                MapEntity entity when entity.ClassName == "light" => EditorFilter.Lights,
+                MapEntity entity when entity.Brushes.Count > 0 || entity.Terrains.Count > 0 => EditorFilter.BrushEntities,
+                MapEntity => EditorFilter.OtherEntities,
+                _ => EditorFilter.None
+            };
+            _categories.Add(item, category);
+        }
+        return (ExcludedKinds & category) != 0;
+    }
 
     private void Ensure(MapDocument document)
     {

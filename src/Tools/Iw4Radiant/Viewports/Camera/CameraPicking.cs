@@ -9,24 +9,27 @@ namespace Iw4Radiant.Viewports.Camera;
 internal static class CameraPicking
 {
     internal static object? Pick(EditorScene scene, CameraNavigation camera, Point point, Size size, EditorTool tool)
+        => PickAll(scene, camera, point, size, tool).FirstOrDefault().Item;
+
+    internal static IReadOnlyList<(object Item, string Label)> PickAll(EditorScene scene, CameraNavigation camera,
+        Point point, Size size, EditorTool tool)
     {
         if (size.Width <= 0 || size.Height <= 0)
-            return null;
+            return [];
         float x = (float)(point.X / size.Width * 2 - 1), y = (float)(1 - point.Y / size.Height * 2);
         var (origin, direction) = camera.PickRay(x, y, (float)(size.Width / size.Height));
-        float closest = float.PositiveInfinity;
-        object? result = null;
+        var hits = new Dictionary<object, (float Distance, string Label)>();
         MapDocument document = scene.Document;
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         for (int i = 1; i < polygon.Vertices.Length - 1; i++)
             Consider(tool == EditorTool.Face ? new BrushFaceSelection(brush, polygon.Face) : brush,
-                polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1]);
+                polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1], polygon.Face.Material);
         foreach (var terrain in document.Terrains)
         {
             MapTerrain surface = terrain.GetSurface();
             foreach (var (a, b, c) in surface.GetTriangles())
-                Consider(terrain, surface.Vertices[a], surface.Vertices[b], surface.Vertices[c]);
+                Consider(terrain, surface.Vertices[a], surface.Vertices[b], surface.Vertices[c], terrain.Material);
         }
         foreach (var entity in document.Entities.Where(PointEntityGeometry.IsPointEntity))
         {
@@ -44,16 +47,25 @@ internal static class CameraPicking
                     for (int i = 1; i < polygon.Vertices.Length - 1; i++)
                         Consider(entity, polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1]);
         }
-        return result;
+        return hits.OrderBy(hit => hit.Value.Distance).Select(hit => (hit.Key, hit.Value.Label)).ToArray();
 
-        void Consider(object item, Vector3 a, Vector3 b, Vector3 c)
+        void Consider(object item, Vector3 a, Vector3 b, Vector3 c, string? material = null)
         {
             if (!scene.CanSelect(item)) return;
+            object owner = scene.Owner(item);
             if (SurfaceRaycast.RayTriangle(origin, direction, a, b, c, out float distance, out _) &&
-                distance >= 0.5f && distance < closest)
+                distance >= 0.5f && (!hits.TryGetValue(owner, out var previous) || distance < previous.Distance))
             {
-                closest = distance;
-                result = scene.Owner(item);
+                string label = owner switch
+                {
+                    MapEntity entity when PrefabLibrary.IsPrefab(entity) => $"Prefab — {entity.Properties.GetValueOrDefault("model", "")}",
+                    MapEntity entity when XModelGeometry.IsModel(entity) => $"Model — {entity.Properties.GetValueOrDefault("model", "")}",
+                    MapEntity entity => entity.ClassName + (material is null ? "" : $" — {material}"),
+                    BrushFaceSelection => $"Face — {material}",
+                    MapTerrain terrain => $"{(terrain.IsCurve ? "Patch" : "Terrain")} — {material}",
+                    _ => $"Brush — {material}"
+                };
+                hits[owner] = (distance, label);
             }
         }
     }

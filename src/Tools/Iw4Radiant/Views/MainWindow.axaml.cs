@@ -47,9 +47,10 @@ public partial class MainWindow : Window
         }
         Workspace.Camera.Session = _session;
         Workspace.Camera.InteractionStatusChanged += SetStatus;
+        Workspace.Camera.BrushKindRequested += ApplyBrushKind;
         Workspace.Camera.ResolveMaterial = ResolveMaterial;
         _session.Changed += (_, _) => RefreshEditor();
-        GridCombo.ItemsSource = new[] { "1", "2", "4", "8", "16", "32", "64", "128" };
+        GridCombo.ItemsSource = GridSizes;
         GridCombo.SelectedItem = "16";
         TransformCombo.ItemsSource = new[] { "Move", "Rotate", "Scale" };
         TransformCombo.SelectedIndex = 0;
@@ -78,12 +79,12 @@ public partial class MainWindow : Window
         RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
         ApplyPlayerClipMenu.IsEnabled = PlayerClipEditing.CanApply(_session);
         (ToggleButton Button, EditorTool Tool)[] tools =
-            [(SelectTool, EditorTool.Select), (BrushTool, EditorTool.Brush),
-             (TerrainTool, EditorTool.Terrain), (SculptTool, EditorTool.Sculpt),
+            [(TerrainTool, EditorTool.Terrain), (SculptTool, EditorTool.Sculpt),
              (FaceTool, EditorTool.Face), (VertexTool, EditorTool.Vertex), (ClipTool, EditorTool.Clip)];
         foreach (var tool in tools)
             tool.Button.IsChecked = tool.Tool == _session.Tool;
-        CreationOptions.IsVisible = _session.Tool is EditorTool.Brush or EditorTool.Terrain;
+        CreationOptions.IsVisible = _session.Tool is EditorTool.Terrain or EditorTool.Select;
+        CreationOptions.IsEnabled = _session.Tool == EditorTool.Terrain || _session.Selection.Count == 0;
         ClipOptions.IsVisible = _session.Tool == EditorTool.Clip;
         ToolOptions.IsVisible = CreationOptions.IsVisible || ClipOptions.IsVisible;
         RefreshClipControls();
@@ -114,28 +115,30 @@ public partial class MainWindow : Window
             _session.Selection.SetRange(_session.Selection.Items.Select(EditorSelection.Owner).Distinct().ToArray());
         _session.Tool = tool;
         if (tool is EditorTool.Terrain or EditorTool.Sculpt) Workspace.ShowGrid(OrthoPlane.Top);
-        else if (tool is EditorTool.Brush or EditorTool.Clip) Workspace.ShowGrid(Workspace.ActivePlane);
+        else if (tool == EditorTool.Clip) Workspace.ShowGrid(Workspace.ActivePlane);
         else if (tool == EditorTool.Face) Workspace.ShowCamera();
         _session.Refresh();
         Inspector.ShowTool(tool);
         SetStatus(tool switch
         {
-            EditorTool.Brush => "Drag in a grid view to create a brush. Base and Depth set the third axis.",
             EditorTool.Terrain => "Drag a rectangle in XY to create terrain. Vertices per side controls the grid.",
             EditorTool.Sculpt => "Select terrain, choose Raise/lower, Smooth or Flatten in the inspector, then drag in XY. Escape cancels.",
-            EditorTool.Face => "Click a face in the camera; Shift-click adds faces. Apply materials in the browser and adjust UVs in Surfaces.",
-            EditorTool.Vertex => "Select a brush or terrain, then pick vertices. Shift-click adds vertices; drag a handle or use numeric transforms.",
+            EditorTool.Face => "Shift-click a face in the camera to select or deselect it. Apply materials in the browser and adjust UVs in Surface.",
+            EditorTool.Vertex => "Shift-click vertices to select or deselect them; drag a selected handle or use numeric transforms.",
             EditorTool.Clip => "Select brushes, drag a clip line in a grid view, then choose Apply clip or press Enter. Left/right follows the line direction; Escape cancels.",
-            _ => "Click to select; Shift-click adds objects. Drag empty grid space for a marquee. Choose Move, Rotate or Scale for the gizmos."
+            _ => "Drag in a grid to create a brush when nothing is selected. Shift-click or Shift-drag to select/deselect; Esc clears selection."
         });
     }
-    private void SelectTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Select);
-    private void BrushTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Brush);
-    private void TerrainTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Terrain);
-    private void SculptTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Sculpt);
-    private void FaceTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Face);
-    private void VertexTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Vertex);
-    private void ClipTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Clip);
+    private void TerrainTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Terrain);
+    private void SculptTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Sculpt);
+    private void FaceTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Face);
+    private void VertexTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Vertex);
+    private void ClipTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Clip);
+    private void ToggleTool(EditorTool tool) => SetTool(_session.Tool == tool ? EditorTool.Select : tool);
+    private void ActivateTool(EditorTool tool)
+    {
+        if (_session.Tool != tool || _session.HasPlacement) SetTool(tool);
+    }
     private void Undo_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Undo(); }
     private void Redo_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Redo(); }
     private async void Duplicate_Click(object? sender, RoutedEventArgs e)
@@ -279,6 +282,7 @@ public partial class MainWindow : Window
         _session.GridSize = float.Parse(value, CultureInfo.InvariantCulture);
         BaseValue.Increment = DepthValue.Increment = (decimal)_session.GridSize;
         _session.Refresh();
+        SetStatus($"Grid: {value} · [ decreases · ] increases");
     }
     private void ToolSettings_Changed(object? sender, NumericUpDownValueChangedEventArgs e)
     {
@@ -319,17 +323,18 @@ public partial class MainWindow : Window
     private async void Help_Click(object? sender, RoutedEventArgs e) => await _dialogs.MessageAsync("Iw4Radiant controls",
         "Workspace: use View for two/four views and XY/XZ/YZ. Ctrl/Cmd+Tab cycles the 2D plane; Ctrl/Cmd+Space maximizes/restores the active view. Toolbar toggles show materials and the inspector. Drag dividers to resize.\n" +
         "Inspector: Selection, Surface and Entity tabs keep related controls together. Terrain appears for terrain tools or selections. Revert discards un-applied field changes; Apply edits the map.\n" +
-        "Q: objects · S: faces · E: vertices · C: clipper · B: brush · T: terrain · V: sculpt\n" +
-        "Selection: Shift-click adds/removes items. Drag empty grid space for a marquee. Choose Move/Rotate/Scale, then drag gizmos or enter numeric values in Transform.\n" +
-        "Surfaces: choose Face and click in the camera. The material browser applies to selected faces; Surfaces adjusts repeat size, shift, rotation, skew and Fit. Texture lock follows brush transforms.\n" +
-        "Vertices: select an object, then its vertex handles. Shift-click adds vertices. Invalid/collapsed brush edits are rejected.\n" +
+        "Q/Esc: default brush workflow · S: faces · E: vertices · X: clipper · T: terrain · V: sculpt. Click an active tool again to leave it.\n" +
+        "Selection: Shift-click selects/deselects. Shift-drag paints selection or deselection, starting with the first object. Plain left-drag draws a brush when nothing is selected; otherwise it moves the selected geometry. Escape clears selection.\n" +
+        "Surfaces: choose Face and Shift-click in the camera. Surface adjusts horizontal/vertical shift and repeat size, rotation, skew and Fit. Texture lock follows brush transforms.\n" +
+        "Vertices: Shift-click an object's vertex handles. Drag selected handles to edit. Invalid/collapsed brush edits are rejected.\n" +
         "Clipper: select brushes, drag a line in a grid view, choose Split/Keep left/Keep right, then Apply or Enter. Cancel or Escape discards the preview.\n" +
         "Terrain: create/sculpt in XY; choose Raise/lower, Smooth or Flatten. Shift lowers. Select vertices for exact Smooth/Flatten, or two whole patches to Stitch their adjoining edges.\n" +
-        "Camera: right-drag orbits; Shift+right-drag or middle-drag pans; scroll zooms. Click geometry to select. F frames selection.\n" +
+        "Camera: Shift-click selects; right-click lists overlapping objects and their materials. Right-drag orbits; Shift+right-drag or middle-drag pans; scroll zooms. Hold right and use WASD to move, Q/E down/up. End frames selection in camera and 2D views.\n" +
         "Fly: enable Fly in the camera header, then use WASD to move, Q/E down/up, right-drag to look, and Shift for speed. Scroll moves forward/back. Escape returns to orbit. Movement keys apply only while the camera is focused.\n" +
         "Lights: select a light and open Entity for color, radius and intensity. Expand Target and cone to create a spotlight target. The camera bulb button toggles lighting and shadows.\n" +
         "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
-        "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. Preview shows image details and Size adjusts the tiles.\n" +
+        "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. In Use shows map materials and combines with search. Preview shows image details and Size adjusts the tiles.\n" +
+        "Grid: [ decreases and ] increases. Keys 1–9 choose 1, 2, 4, 8, 16, 32, 64, 256 and 512. The grid list also includes 0.25, 0.5 and 128. F opens visibility filters; M opens map statistics.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
         "Models and prefabs: open Create or the asset browser tabs. Choose Place, then click a camera surface or grid; Shift repeats and Escape cancels. Models support surface alignment, Drop, Find and Replace. Prefabs use native .map files with Edit source, Reload, Make unique and Explode.\n" +
         "Player collision: Create → Player clip draws an invisible brush or converts selected whole world brushes. Shape a separate volume around a model; magenta outlines mark clip brushes. Model collision alone does not block players. Choose a material thumbnail to resume ordinary brush creation.\n" +
@@ -375,13 +380,31 @@ public partial class MainWindow : Window
         if (e.Key == Key.Space && e.Source is Control source && IsButtonInput(source)) return;
         switch (e.Key)
         {
-            case Key.Q: SetTool(EditorTool.Select); break;
-            case Key.B: SetTool(EditorTool.Brush); break;
-            case Key.T: SetTool(EditorTool.Terrain); break;
-            case Key.V: SetTool(EditorTool.Sculpt); break;
-            case Key.S: SetTool(EditorTool.Face); break;
-            case Key.E: SetTool(EditorTool.Vertex); break;
-            case Key.C: SetTool(EditorTool.Clip); break;
+            case Key.Q: ActivateTool(EditorTool.Select); break;
+            case Key.T: ActivateTool(EditorTool.Terrain); break;
+            case Key.V: ActivateTool(EditorTool.Sculpt); break;
+            case Key.S: ActivateTool(EditorTool.Face); break;
+            case Key.E: ActivateTool(EditorTool.Vertex); break;
+            case Key.X: ActivateTool(EditorTool.Clip); break;
+            case Key.F: Filters_Click(this, e); break;
+            case Key.M: Statistics_Click(this, e); break;
+            case Key.End: FrameSelection_Click(this, e); break;
+            case Key.OemOpenBrackets: ChangeGrid(-1); break;
+            case Key.OemCloseBrackets: ChangeGrid(1); break;
+            case Key.D1: GridCombo.SelectedItem = "1"; break;
+            case Key.D2: GridCombo.SelectedItem = "2"; break;
+            case Key.D3: GridCombo.SelectedItem = "4"; break;
+            case Key.D4: GridCombo.SelectedItem = "8"; break;
+            case Key.D5: GridCombo.SelectedItem = "16"; break;
+            case Key.D6: GridCombo.SelectedItem = "32"; break;
+            case Key.D7: GridCombo.SelectedItem = "64"; break;
+            case Key.D8: GridCombo.SelectedItem = "256"; break;
+            case Key.D9: GridCombo.SelectedItem = "512"; break;
+            case Key.Escape:
+                if (Workspace.Camera.HasPointerGesture || Workspace.GridViews.Any(view => view.HasActiveGesture)) return;
+                _session.Select(null);
+                SetTool(EditorTool.Select);
+                break;
             case Key.Delete: case Key.Back: Delete_Click(this, e); break;
             case Key.Space: Duplicate_Click(this, e); break;
             default: return;

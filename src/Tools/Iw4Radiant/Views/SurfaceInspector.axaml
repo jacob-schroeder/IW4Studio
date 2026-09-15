@@ -3,37 +3,58 @@
              x:Class="Iw4Radiant.Views.SurfaceInspector">
     <StackPanel Spacing="10">
         <TextBlock x:Name="SurfaceSummary" Text="Select a brush or face." TextWrapping="Wrap" Classes="caption" />
+        <StackPanel Spacing="4">
+            <TextBlock Text="Texture" Classes="panelTitle" />
+            <TextBox x:Name="TextureName" IsReadOnly="True" PlaceholderText="No selected surface"
+                     ToolTip.Tip="The selected surfaces' material. Choose a material in the browser and use Apply to Selection to replace it." />
+        </StackPanel>
         <TextBlock x:Name="ProjectionInfo" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
         <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False">
-            <TextBlock Text="Projection" Classes="panelTitle" />
-            <Grid ColumnDefinitions="58,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="5">
-                <TextBlock Grid.Column="1" Classes="caption" Text="S / Width" />
-                <TextBlock Grid.Column="2" Classes="caption" Text="T / Height" />
-                <TextBlock Grid.Row="1" Classes="fieldLabel" Text="Repeat" ToolTip.Tip="World units per texture repeat." />
-                <TextBox x:Name="WidthValue" Grid.Row="1" Grid.Column="1" PlaceholderText="Width"
-                         ToolTip.Tip="Width in world units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
-                <TextBox x:Name="HeightValue" Grid.Row="1" Grid.Column="2" PlaceholderText="Height"
-                         ToolTip.Tip="Height in world units per repeat. Negative values mirror; zero uses Radiant's default of 128." />
-                <TextBlock Grid.Row="2" Classes="fieldLabel" Text="Shift" ToolTip.Tip="Texture shift in world units." />
-                <TextBox x:Name="ShiftXValue" Grid.Row="2" Grid.Column="1" ToolTip.Tip="S shift in world units." />
-                <TextBox x:Name="ShiftYValue" Grid.Row="2" Grid.Column="2" ToolTip.Tip="T shift in world units." />
-                <TextBlock Grid.Row="3" Classes="fieldLabel" Text="Fit" ToolTip.Tip="Repeats across each face's S and T dimensions." />
-                <TextBox x:Name="RepeatsXValue" Grid.Row="3" Grid.Column="1" Text="1" ToolTip.Tip="S repeats for Fit." />
-                <TextBox x:Name="RepeatsYValue" Grid.Row="3" Grid.Column="2" Text="1" ToolTip.Tip="T repeats for Fit." />
+            <TextBlock Text="Texture alignment" Classes="panelTitle" />
+            <Grid ColumnDefinitions="*,78,24,24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="5">
+                <TextBlock Classes="fieldLabel" Text="Horizontal shift" />
+                <TextBox x:Name="ShiftXValue" Grid.Column="1" ToolTip.Tip="Horizontal (S) shift in world units." />
+                <Button x:Name="ShiftXDecrease" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease horizontal shift by 1. Apply to commit." />
+                <Button x:Name="ShiftXIncrease" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase horizontal shift by 1. Apply to commit." />
+                <TextBlock Grid.Row="1" Classes="fieldLabel" Text="Vertical shift" />
+                <TextBox x:Name="ShiftYValue" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Vertical (T) shift in world units." />
+                <Button x:Name="ShiftYDecrease" Grid.Row="1" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease vertical shift by 1. Apply to commit." />
+                <Button x:Name="ShiftYIncrease" Grid.Row="1" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase vertical shift by 1. Apply to commit." />
+                <TextBlock Grid.Row="2" Classes="fieldLabel" Text="Horizontal repeat" />
+                <TextBox x:Name="WidthValue" Grid.Row="2" Grid.Column="1"
+                         ToolTip.Tip="Horizontal size in world units per texture repeat. Negative values mirror; zero uses Radiant's default of 128." />
+                <Button x:Name="WidthDecrease" Grid.Row="2" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease horizontal repeat size by 1. Apply to commit." />
+                <Button x:Name="WidthIncrease" Grid.Row="2" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase horizontal repeat size by 1. Apply to commit." />
+                <TextBlock Grid.Row="3" Classes="fieldLabel" Text="Vertical repeat" />
+                <TextBox x:Name="HeightValue" Grid.Row="3" Grid.Column="1"
+                         ToolTip.Tip="Vertical size in world units per texture repeat. Negative values mirror; zero uses Radiant's default of 128." />
+                <Button x:Name="HeightDecrease" Grid.Row="3" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease vertical repeat size by 1. Apply to commit." />
+                <Button x:Name="HeightIncrease" Grid.Row="3" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase vertical repeat size by 1. Apply to commit." />
+                <TextBlock Grid.Row="4" Classes="fieldLabel" Text="Rotation (°)" />
+                <TextBox x:Name="RotationValue" Grid.Row="4" Grid.Column="1" ToolTip.Tip="Texture rotation in degrees." />
+                <Button x:Name="RotationDecrease" Grid.Row="4" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Rotate by −15°. Apply to commit." />
+                <Button x:Name="RotationIncrease" Grid.Row="4" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Rotate by 15°. Apply to commit." />
+                <TextBlock Grid.Row="5" Classes="fieldLabel" Text="Skew" />
+                <TextBox x:Name="SkewValue" Grid.Row="5" Grid.Column="1" ToolTip.Tip="Texture projection skew." />
+                <Button x:Name="SkewDecrease" Grid.Row="5" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease skew by 0.1. Apply to commit." />
+                <Button x:Name="SkewIncrease" Grid.Row="5" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase skew by 0.1. Apply to commit." />
             </Grid>
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
-                <TextBlock Classes="caption" Text="Rotation (°)" />
-                <TextBlock Grid.Column="1" Classes="caption" Text="Skew" />
-                <TextBox x:Name="RotationValue" Grid.Row="1" ToolTip.Tip="Texture rotation in degrees." />
-                <TextBox x:Name="SkewValue" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Texture projection skew." />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5">
+            <TextBlock Text="Repeat size and shift use world units. Adjust values, then Apply." Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
                 <Button x:Name="ApplyProjectionButton" Content="Apply" Classes="panelAction" HorizontalAlignment="Stretch"
                         ToolTip.Tip="Apply all six projection values to every selected surface." />
                 <Button x:Name="RevertProjectionButton" Grid.Column="1" Content="Revert"
                         ToolTip.Tip="Restore the selected surface values and reset Fit repeats to one without editing the map." />
-                <Button x:Name="FitButton" Grid.Column="2" Content="Fit"
-                        ToolTip.Tip="Fit each selected face using its current projection and the S / T repeat counts." />
+            </Grid>
+            <Separator />
+            <TextBlock Text="Fit texture" Classes="panelTitle" />
+            <Grid ColumnDefinitions="*,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
+                <TextBlock Classes="caption" Text="Horizontal repeats" />
+                <TextBlock Grid.Column="1" Classes="caption" Text="Vertical repeats" />
+                <TextBox x:Name="RepeatsXValue" Grid.Row="1" Text="1" ToolTip.Tip="Number of horizontal (S) repeats across each face for Fit." />
+                <TextBox x:Name="RepeatsYValue" Grid.Row="1" Grid.Column="1" Text="1" ToolTip.Tip="Number of vertical (T) repeats across each face for Fit." />
+                <Button x:Name="FitButton" Grid.Row="1" Grid.Column="2" Content="Fit"
+                        ToolTip.Tip="Fit each selected face immediately using its current map projection and these repeat counts. Apply alignment edits first to include them." />
             </Grid>
         </StackPanel>
         <Separator />

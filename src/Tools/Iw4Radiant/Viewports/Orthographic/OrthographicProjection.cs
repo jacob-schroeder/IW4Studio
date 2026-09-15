@@ -12,6 +12,7 @@ internal sealed class OrthographicProjection
     internal OrthoPlane Plane { get; private set; }
     internal Size Size { get; set; }
     internal double Zoom => _zoom;
+    private double MinimumZoom => Math.Max(1, Math.Min(Size.Width, Size.Height) - 112) / 262144;
 
     internal void SetPlane(OrthoPlane plane)
     {
@@ -31,7 +32,7 @@ internal sealed class OrthographicProjection
     internal void ZoomAt(Point position, double wheelDelta)
     {
         Vector2 before = ToWorld(position);
-        _zoom = Math.Clamp(_zoom * Math.Exp(wheelDelta * 0.16), 0.015, 12);
+        _zoom = Math.Clamp(_zoom * Math.Exp(wheelDelta * 0.16), MinimumZoom, 64);
         _center += before - ToWorld(position);
     }
 
@@ -40,7 +41,7 @@ internal sealed class OrthographicProjection
         Vector2 min = Project(minimum), max = Project(maximum);
         _center = (min + max) / 2;
         _zoom = Math.Clamp(Math.Min(Math.Max(1, Size.Width - 112) / Math.Max(64, max.X - min.X),
-            Math.Max(1, Size.Height - 112) / Math.Max(64, max.Y - min.Y)), 0.015, 12);
+            Math.Max(1, Size.Height - 112) / Math.Max(64, max.Y - min.Y)), MinimumZoom, 64);
     }
 
     internal Vector2 Project(Vector3 point) => Plane switch

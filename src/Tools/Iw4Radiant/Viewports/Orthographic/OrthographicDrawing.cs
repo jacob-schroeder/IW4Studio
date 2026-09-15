@@ -115,7 +115,7 @@ internal sealed class OrthographicDrawing
 
     private void DrawGrid(DrawingContext context, float gridSize)
     {
-        float step = Math.Max(1, gridSize);
+        double step = Math.Max(0.25, gridSize);
         while (step * _projection.Zoom < 12) step *= 2;
         Vector2 minimum = _projection.ToWorld(new Point(0, _projection.Size.Height));
         Vector2 maximum = _projection.ToWorld(new Point(_projection.Size.Width, 0));

@@ -9,11 +9,12 @@ namespace Iw4Radiant.Viewports.Orthographic;
 
 internal sealed class OrthographicGestures
 {
-    private enum Gesture { None, Pan, Transform, Marquee, Brush, Terrain, Sculpt, Clip }
+    private enum Gesture { None, Pan, Transform, Marquee, PaintSelection, Brush, Terrain, Sculpt, Clip }
     private readonly Control _viewport;
     private readonly OrthographicProjection _projection;
     private readonly OrthographicTransform _transform;
     private readonly OrthographicTerrainStroke _stroke = new();
+    private readonly HashSet<object> _paintVisited = [];
     private IPointer? _pointer;
     private MouseButton _button;
     private Gesture _gesture;
@@ -22,7 +23,7 @@ internal sealed class OrthographicGestures
     private EditorTool _gestureTool;
     private Point _startScreen, _lastScreen, _cursorScreen;
     private Vector2 _startWorld, _currentWorld;
-    private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle;
+    private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle, _paintSelecting;
 
     internal OrthographicGestures(Control viewport, OrthographicProjection projection)
     {
@@ -81,7 +82,7 @@ internal sealed class OrthographicGestures
         _startWorld = _currentWorld = Snap(_projection.ToWorld(_startScreen));
         _editStarted = _changed = false;
         _selectionBefore = session.Selection.Items.ToArray();
-        _toggle = (e.KeyModifiers & (KeyModifiers.Shift | KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        _toggle = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         _button = properties.IsMiddleButtonPressed ? MouseButton.Middle : properties.IsRightButtonPressed ? MouseButton.Right : MouseButton.Left;
         if (_button == MouseButton.Left && session.HasPlacement)
         {
@@ -93,7 +94,15 @@ internal sealed class OrthographicGestures
             return;
         }
         if (_button != MouseButton.Left) _gesture = Gesture.Pan;
-        else if (session.Tool is EditorTool.Brush or EditorTool.Terrain)
+        else if (_toggle && session.Tool is EditorTool.Select or EditorTool.Terrain or EditorTool.Clip)
+        {
+            object? hit = OrthographicGeometry.HitTest(session, _projection, _startScreen);
+            _gesture = Gesture.PaintSelection;
+            _paintSelecting = hit is null || !session.Selection.Contains(hit);
+            if (hit is not null) PaintSelection([hit]);
+        }
+        else if (session.Tool == EditorTool.Terrain || session.Tool == EditorTool.Select &&
+                 session.Selection.Count == 0 && e.KeyModifiers == KeyModifiers.None)
         {
             if (string.IsNullOrWhiteSpace(session.Material))
             {
@@ -102,7 +111,7 @@ internal sealed class OrthographicGestures
                 return;
             }
             if (session.Tool == EditorTool.Terrain && !RequireTopView(e)) return;
-            _gesture = session.Tool == EditorTool.Brush ? Gesture.Brush : Gesture.Terrain;
+            _gesture = session.Tool == EditorTool.Terrain ? Gesture.Terrain : Gesture.Brush;
         }
         else if (session.Tool == EditorTool.Sculpt)
         {
@@ -146,12 +155,22 @@ internal sealed class OrthographicGestures
     {
         if (!_toggle && _transform.TryBegin(session, _startScreen)) { _gesture = Gesture.Transform; return; }
         object? hit = OrthographicSelection.HitTest(session, _projection, _startScreen);
+        if (!_toggle)
+        {
+            if (hit is not null && session.Selection.Contains(hit) && session.CanTransformSelection &&
+                session.TransformMode == TransformMode.Move && session.Tool is EditorTool.Select or EditorTool.Vertex)
+            {
+                _transform.Begin(session, _startScreen);
+                _gesture = Gesture.Transform;
+            }
+            return;
+        }
         if (hit is null && session.Tool == EditorTool.Vertex)
         {
             object? owner = OrthographicGeometry.HitTest(session, _projection, _startScreen);
             if (owner is MapBrush or MapTerrain)
             {
-                Select(owner, _toggle, _toggle);
+                Select(owner, additive: true, toggle: true);
                 return;
             }
         }
@@ -161,13 +180,7 @@ internal sealed class OrthographicGestures
             _gesture = Gesture.Marquee;
             return;
         }
-        if (_toggle || !session.Selection.Contains(hit)) Select(hit, _toggle, _toggle);
-        if (!_toggle && session.CanTransformSelection && session.TransformMode == TransformMode.Move &&
-            session.Tool is EditorTool.Select or EditorTool.Vertex)
-        {
-            _transform.Begin(session, _startScreen);
-            _gesture = Gesture.Transform;
-        }
+        Select(hit, additive: true, toggle: true);
     }
 
     internal void PointerMoved(PointerEventArgs e)
@@ -190,6 +203,8 @@ internal sealed class OrthographicGestures
             return;
         }
         if (_gesture == Gesture.Pan) _projection.Pan(_cursorScreen - _lastScreen);
+        else if (_gesture == Gesture.PaintSelection && Dragged)
+            PaintSelection(OrthographicGeometry.HitTestSegment(session, _projection, _lastScreen, _cursorScreen).ToArray());
         else if (_gesture == Gesture.Sculpt)
             _changed |= _stroke.Move(session, world, e.KeyModifiers.HasFlag(KeyModifiers.Shift), StartEdit);
         else if (Dragged || _editStarted)
@@ -229,8 +244,8 @@ internal sealed class OrthographicGestures
                     _changingSelection = true;
                     try
                     {
-                        session.Selection.SetRange(_toggle ? _selectionBefore : []);
-                        foreach (object hit in hits) session.Selection.Set(hit, additive: true, toggle: _toggle);
+                        session.Selection.SetRange(_selectionBefore);
+                        foreach (object hit in hits) session.Selection.Set(hit, additive: true, toggle: true);
                         session.Refresh();
                     }
                     finally { _changingSelection = false; }
@@ -277,11 +292,14 @@ internal sealed class OrthographicGestures
     {
         IPointer? pointer = _pointer;
         bool editing = _editStarted, changed = _changed;
+        object[]? restoreSelection = cancel && completeEdit && _gesture == Gesture.PaintSelection &&
+            ReferenceEquals(_gestureDocument, Session?.Document) ? _selectionBefore : null;
         if (cancel && _gesture == Gesture.Clip) ClearClipPreview();
         _pointer = null;
         _gesture = Gesture.None;
         _gestureDocument = null;
         _gestureItems = _selectionBefore = _marqueeCandidates = [];
+        _paintVisited.Clear();
         _editStarted = _changed = false;
         _viewport.Cursor = null;
         if (editing && completeEdit && Session is { } session)
@@ -289,9 +307,29 @@ internal sealed class OrthographicGestures
             if (cancel) session.CancelEdit();
             else session.CompleteEdit(changed);
         }
+        if (restoreSelection is not null) Session?.SelectRange(restoreSelection);
         if (ReferenceEquals(pointer?.Captured, _viewport)) pointer.Capture(null);
         if (HasClipPreview) ClipPreviewChanged?.Invoke();
         _viewport.InvalidateVisual();
+    }
+
+    private void PaintSelection(IEnumerable<object> hits)
+    {
+        if (Session is not { } session) return;
+        bool changed = false;
+        _changingSelection = true;
+        try
+        {
+            foreach (object hit in hits)
+            {
+                if (!_paintVisited.Add(hit) || session.Selection.Contains(hit) == _paintSelecting) continue;
+                session.Selection.Set(hit, additive: true, toggle: !_paintSelecting);
+                changed = true;
+            }
+            if (changed) session.Refresh();
+        }
+        finally { _changingSelection = false; }
+        _gestureItems = session.Selection.Items.ToArray();
     }
 
     private void Select(object? item, bool additive = false, bool toggle = false)

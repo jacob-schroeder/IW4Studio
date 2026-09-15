@@ -36,9 +36,11 @@
                 <MenuItem Header="Show / hide asset browser" Click="Materials_Click" />
                 <MenuItem Header="Show / hide inspector" Click="Inspector_Click" />
                 <MenuItem Header="Environment · sunlight and skies" Click="Environment_Click" />
+                <MenuItem Header="_Filters…" Click="Filters_Click" InputGesture="F" />
+                <MenuItem Header="Map _statistics…" Click="Statistics_Click" InputGesture="M" />
                 <Separator />
                 <MenuItem Header="Frame _all views" Click="FrameAll_Click" />
-                <MenuItem Header="Frame _selection" Click="FrameSelection_Click" InputGesture="F" />
+                <MenuItem Header="Frame _selection in all views" Click="FrameSelection_Click" InputGesture="End" />
             </MenuItem>
             <MenuItem Header="_Create">
                 <MenuItem Header="_Models…" Click="Models_Click" />
@@ -92,20 +94,14 @@
                     <materialIcons:MaterialIcon Kind="Redo" Width="18" Height="18" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
-                <ToggleButton x:Name="SelectTool" Classes="toolbarButton" Click="SelectTool_Click" ToolTip.Tip="Select objects (Q)" AutomationProperties.Name="Select objects">
-                    <materialIcons:MaterialIcon Kind="CursorDefaultOutline" Width="18" Height="18" />
-                </ToggleButton>
                 <ToggleButton x:Name="FaceTool" Classes="toolbarButton" Click="FaceTool_Click" ToolTip.Tip="Select faces (S)" AutomationProperties.Name="Select faces">
                     <materialIcons:MaterialIcon Kind="VectorPolygon" Width="18" Height="18" />
                 </ToggleButton>
                 <ToggleButton x:Name="VertexTool" Classes="toolbarButton" Click="VertexTool_Click" ToolTip.Tip="Edit vertices (E)" AutomationProperties.Name="Edit vertices">
                     <materialIcons:MaterialIcon Kind="VectorPoint" Width="18" Height="18" />
                 </ToggleButton>
-                <ToggleButton x:Name="ClipTool" Classes="toolbarButton" Click="ClipTool_Click" ToolTip.Tip="Clip brushes (C)" AutomationProperties.Name="Clip brushes">
+                <ToggleButton x:Name="ClipTool" Classes="toolbarButton" Click="ClipTool_Click" ToolTip.Tip="Clip brushes (X)" AutomationProperties.Name="Clip brushes">
                     <materialIcons:MaterialIcon Kind="ContentCut" Width="18" Height="18" />
-                </ToggleButton>
-                <ToggleButton x:Name="BrushTool" Classes="toolbarButton" Click="BrushTool_Click" ToolTip.Tip="Create brush (B)" AutomationProperties.Name="Create brush">
-                    <materialIcons:MaterialIcon Kind="CubeOutline" Width="18" Height="18" />
                 </ToggleButton>
                 <ToggleButton x:Name="TerrainTool" Classes="toolbarButton" Click="TerrainTool_Click" ToolTip.Tip="Create terrain (T)" AutomationProperties.Name="Create terrain">
                     <materialIcons:MaterialIcon Kind="Terrain" Width="18" Height="18" />
@@ -122,7 +118,7 @@
                 <Button Classes="toolbarButton" Click="FrameAll_Click" ToolTip.Tip="Frame all views" AutomationProperties.Name="Frame all views">
                     <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="18" Height="18" />
                 </Button>
-                <Button Classes="toolbarButton" Click="FrameSelection_Click" ToolTip.Tip="Frame selection in all views" AutomationProperties.Name="Frame selection in all views">
+                <Button Classes="toolbarButton" Click="FrameSelection_Click" ToolTip.Tip="Frame selection in all views (End)" AutomationProperties.Name="Frame selection in all views">
                     <materialIcons:MaterialIcon Kind="FocusField" Width="18" Height="18" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
@@ -148,7 +144,7 @@
                 <TextBlock Text="Base" VerticalAlignment="Center" Margin="8,0,0,0" />
                 <NumericUpDown x:Name="BaseValue" Width="90" Minimum="-65536" Maximum="65536" Value="0" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
                 <TextBlock Text="Depth" VerticalAlignment="Center" Margin="8,0,4,0" />
-                <NumericUpDown x:Name="DepthValue" Width="90" Minimum="1" Maximum="65536" Value="64" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <NumericUpDown x:Name="DepthValue" Width="90" Minimum="0.25" Maximum="65536" Value="64" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
                 <TextBlock Text="Drag to preview · release to create · Esc cancels" Classes="caption" VerticalAlignment="Center" Margin="12,0,0,0" />
                </StackPanel>
                <StackPanel x:Name="ClipOptions" Orientation="Horizontal">
@@ -169,7 +165,7 @@
         </Grid>
         <Border Grid.Row="3" BorderBrush="#34383E" BorderThickness="0,1,0,0" Padding="8,3">
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock x:Name="StatusText" Text="B: draw a brush · Q: select/move · right or middle drag: pan · wheel: zoom" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="StatusText" Text="Drag to draw · Shift-click/drag to select · Esc deselects · End frames" TextTrimming="CharacterEllipsis" />
                 <TextBlock x:Name="CountText" Grid.Column="1" Foreground="#A8ABB1" Margin="16,0,0,0" />
             </Grid>
         </Border>

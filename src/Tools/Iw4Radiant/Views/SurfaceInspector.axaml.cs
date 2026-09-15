@@ -8,6 +8,7 @@ namespace Iw4Radiant.Views;
 public partial class SurfaceInspector : UserControl
 {
     private MapFace[] _shownFaces = [];
+    private string[] _shownProjections = [];
     private MapFace? _shownReference;
     private bool _updating;
 
@@ -15,6 +16,12 @@ public partial class SurfaceInspector : UserControl
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
+        WireAdjustment(ShiftXDecrease, ShiftXIncrease, ShiftXValue, "horizontal shift", 1);
+        WireAdjustment(ShiftYDecrease, ShiftYIncrease, ShiftYValue, "vertical shift", 1);
+        WireAdjustment(WidthDecrease, WidthIncrease, WidthValue, "horizontal repeat size", 1);
+        WireAdjustment(HeightDecrease, HeightIncrease, HeightValue, "vertical repeat size", 1);
+        WireAdjustment(RotationDecrease, RotationIncrease, RotationValue, "rotation", 15);
+        WireAdjustment(SkewDecrease, SkewIncrease, SkewValue, "skew", 0.1f);
         ApplyProjectionButton.Click += async (_, _) => await ApplyProjectionAsync(session, dialogs, finishGestures);
         FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
         RevertProjectionButton.Click += (_, _) =>
@@ -32,6 +39,24 @@ public partial class SurfaceInspector : UserControl
             session.TextureLock = textureLock;
             session.Refresh();
         };
+
+        void WireAdjustment(Button decrease, Button increase, TextBox box, string name, float step)
+        {
+            decrease.Click += async (_, _) => await AdjustAsync(-step);
+            increase.Click += async (_, _) => await AdjustAsync(step);
+
+            async Task AdjustAsync(float amount)
+            {
+                if (dialogs.BlocksInput) return;
+                try
+                {
+                    float value = ReadValue(box, name) + amount;
+                    if (!float.IsFinite(value)) throw new ArgumentException($"The {name} exceeds the supported numeric range.");
+                    SetValue(box, value);
+                }
+                catch (ArgumentException exception) { await dialogs.MessageAsync("Surface projection", exception.Message); }
+            }
+        }
     }
 
     internal void RefreshSelection(EditorSession session)
@@ -42,15 +67,19 @@ public partial class SurfaceInspector : UserControl
             var faces = SurfaceEditing.GetFaces(session).Select(selection => selection.Face).ToArray();
             MapFace? reference = session.Selection.Active is BrushFaceSelection active && faces.Contains(active.Face)
                 ? active.Face : faces.FirstOrDefault();
-            bool changed = !_shownFaces.SequenceEqual(faces) || !ReferenceEquals(_shownReference, reference);
+            string[] projections = faces.Select(face => face.Projection).ToArray();
+            bool changed = !_shownFaces.SequenceEqual(faces) || !ReferenceEquals(_shownReference, reference) ||
+                !_shownProjections.SequenceEqual(projections);
             _shownFaces = faces;
+            _shownProjections = projections;
             _shownReference = reference;
             TextureLockValue.IsChecked = session.TextureLock;
             ProjectionFields.IsEnabled = reference is not null;
             SurfaceSummary.Text = faces.Length == 0 ? "Select a brush or face." :
-                $"{faces.Length} selected surface{(faces.Length == 1 ? "" : "s")} · " +
-                (faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).Count() == 1
-                    ? reference?.Material : "Mixed materials");
+                $"{faces.Length} selected surface{(faces.Length == 1 ? "" : "s")}";
+            bool mixedMaterials = faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).Count() > 1;
+            TextureName.Text = mixedMaterials ? "" : reference?.Material ?? "";
+            TextureName.PlaceholderText = mixedMaterials ? "Mixed materials" : "No selected surface";
             if (reference is null)
             {
                 ProjectionInfo.Text = "";
@@ -67,7 +96,7 @@ public partial class SurfaceInspector : UserControl
                     ? "Mixed projections. Fields show one selected surface; Apply replaces all six values on every selected surface."
                     : "";
                 ProjectionInfo.IsVisible = mixed;
-                if (changed || !ProjectionBoxes().Any(box => box.IsKeyboardFocusWithin))
+                if (changed)
                 {
                     SetValue(WidthValue, projection.Width);
                     SetValue(HeightValue, projection.Height);

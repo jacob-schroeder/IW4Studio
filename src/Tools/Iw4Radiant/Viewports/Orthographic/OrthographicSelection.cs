@@ -2,7 +2,6 @@ using System.Numerics;
 using Avalonia;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
-using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
@@ -55,14 +54,9 @@ internal static class OrthographicSelection
 
     internal static object[] MarqueeCandidates(EditorSession session)
     {
-        IEnumerable<object> candidates = session.Tool switch
-        {
-            EditorTool.Vertex => SelectionGeometry.GetVertexHandles(session.Selection),
-            EditorTool.Face => session.Scene.Document.Brushes.SelectMany(brush => brush.GetPolygons()
-                .Select(polygon => (object)new BrushFaceSelection(brush, polygon.Face))),
-            _ => session.Scene.Document.Brushes.Cast<object>().Concat(session.Scene.Document.Terrains)
-                .Concat(session.Scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
-        };
+        IEnumerable<object> candidates = session.Tool == EditorTool.Vertex ? SelectionGeometry.GetVertexHandles(session.Selection) :
+            session.Scene.Document.Brushes.SelectMany(brush => brush.GetPolygons()
+                .Select(polygon => (object)new BrushFaceSelection(brush, polygon.Face)));
         return candidates.Where(session.Scene.CanSelect).Select(session.Scene.Owner).Distinct().ToArray();
     }
 

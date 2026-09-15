@@ -56,7 +56,7 @@ internal sealed class CameraFlyMovement
 
     private void OnTick(object? sender, EventArgs e)
     {
-        if (!_viewport.FlyMode || !_viewport.IsFocused || !_viewport.IsEffectivelyVisible || !_viewport.IsEffectivelyEnabled)
+        if (!_viewport.CanFlyMove || !_viewport.IsFocused || !_viewport.IsEffectivelyVisible || !_viewport.IsEffectivelyEnabled)
         {
             Stop();
             return;
@@ -71,6 +71,7 @@ internal sealed class CameraFlyMovement
         if (length == 0) return;
         float step = elapsed * (_fast ? 1024 : 256) / length;
         _navigation.MoveLocal(right * step, forward * step, up * step);
+        _viewport.FlyMovementApplied();
         _viewport.RequestNextFrameRendering();
     }
 

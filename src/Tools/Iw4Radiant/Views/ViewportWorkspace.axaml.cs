@@ -231,8 +231,8 @@ public partial class ViewportWorkspace : UserControl
     {
         FlyCamera.IsChecked = CameraView.FlyMode;
         CameraControlsHint.Text = CameraView.FlyMode
-            ? "Fly · WASD move · Q/E down/up · Right-drag look\nShift faster · Scroll move · F frame · Esc orbit"
-            : "Right-drag orbit · Shift+right-drag or middle-drag pan\nScroll zoom · F frame · Fly to move through the map";
+            ? "Fly · WASD move · Q/E down/up · Right-drag look\nShift faster · Scroll move · End frame · Esc orbit"
+            : "Right-drag orbit · Shift+right-drag or middle-drag pan\nHold right + WASD move · Scroll zoom · End frame · Right-click objects";
     }
 
     private void Maximize_Click(object? sender, RoutedEventArgs e)

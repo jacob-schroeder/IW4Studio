@@ -3,13 +3,15 @@
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.MaterialBrowser">
     <Grid RowDefinitions="Auto,*,Auto" Background="#222427">
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,5" ColumnSpacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,5" ColumnSpacing="6">
             <TextBlock Text="Materials" Classes="panelTitle" VerticalAlignment="Center" Margin="0,0,4,0" />
             <TextBox x:Name="MaterialFilter" Grid.Column="1" Classes="compact" MinWidth="60"
                      PlaceholderText="Search materials" ToolTip.Tip="Filter the loaded material names" />
-            <Button x:Name="BrowseButton" Grid.Column="2" Classes="panelAction" Content="Browse…"
+            <ToggleButton x:Name="InUseToggle" Grid.Column="2" Classes="compact" Content="In Use"
+                          ToolTip.Tip="Show loaded materials used by this map's brushes, terrain and resolved prefabs. Combines with search." />
+            <Button x:Name="BrowseButton" Grid.Column="3" Classes="panelAction" Content="Browse…"
                     ToolTip.Tip="Load previews from a raw asset or texture folder" />
-            <ToggleButton x:Name="PreviewToggle" Grid.Column="3" Classes="compact" Content="Preview"
+            <ToggleButton x:Name="PreviewToggle" Grid.Column="4" Classes="compact" Content="Preview"
                           IsChecked="False" ToolTip.Tip="Show the selected image and its details" />
         </Grid>
         <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">

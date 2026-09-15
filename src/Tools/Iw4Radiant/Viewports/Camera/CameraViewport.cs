@@ -7,6 +7,7 @@ using Avalonia.Rendering;
 using System.Numerics;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
+using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Camera;
@@ -21,7 +22,12 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private IPointer? _dragPointer;
     private MouseButton _dragButton;
     private Point _lastPointer;
+    private Point _pressPoint;
     private bool _panning;
+    private bool _navigationMoved;
+    private readonly HashSet<object> _painted = new(ReferenceEqualityComparer.Instance);
+    private bool? _paintSelecting;
+    private ContextMenu? _objectMenu;
     private bool _previewLighting = true;
     private bool _flyMode;
 
@@ -36,20 +42,11 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         PointerReleased += OnPointerReleased;
         PointerCaptureLost += (_, _) => { if (_dragPointer is not null) FinishGesture(cancel: true); };
         PointerWheelChanged += OnPointerWheelChanged;
-        KeyDown += (_, e) =>
-        {
-            if (HandleNavigationKeyDown(e)) return;
-            if (e.Key == Key.F && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) == 0)
-            {
-                FinishGesture();
-                FrameSelection();
-                e.Handled = true;
-            }
-        };
+        KeyDown += (_, e) => HandleNavigationKeyDown(e);
         KeyUp += (_, e) => _flyMovement.KeyUp(e);
         LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
-        DetachedFromVisualTree += (_, _) => FinishGesture(cancel: true);
+        DetachedFromVisualTree += (_, _) => { FinishGesture(cancel: true); _objectMenu?.Close(); };
     }
 
     internal EditorSession? Session
@@ -59,6 +56,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             if (ReferenceEquals(_session, value)) return;
             FinishGesture(cancel: true);
+            _objectMenu?.Close();
             _session = value;
             RefreshScene();
         }
@@ -85,6 +83,9 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal event EventHandler? RendererStatusChanged;
     internal event Action<string>? InteractionStatusChanged;
     internal event Action? NavigationModeChanged;
+    internal event Action<BrushKind>? BrushKindRequested;
+    internal bool HasPointerGesture => _dragPointer is not null;
+    internal bool CanFlyMove => FlyMode || _dragPointer is not null && _dragButton == MouseButton.Right;
 
     internal bool HandleNavigationKeyDown(KeyEventArgs e)
     {
@@ -98,12 +99,14 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             FinishGesture(cancel: true);
             FlyMode = false;
-            InteractionStatusChanged?.Invoke("Camera orbit mode. Right-drag to orbit; Shift+right-drag to pan.");
+            InteractionStatusChanged?.Invoke("Camera orbit mode. Right-drag to orbit; Shift+right-drag to pan; hold right mouse and use WASD to move.");
             e.Handled = true;
             return true;
         }
-        return FlyMode && _session is not null && _flyMovement.KeyDown(e, canMove: _transform is null);
+        return CanFlyMove && _session is not null && _flyMovement.KeyDown(e, canMove: _transform is null);
     }
+
+    internal void FlyMovementApplied() => _navigationMoved = true;
 
     internal void RefreshScene()
     {
@@ -140,10 +143,13 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void FinishPointerGesture(bool cancel = false)
     {
+        if (!FlyMode) _flyMovement.Stop();
         var transform = _transform;
         var pointer = _dragPointer;
         _transform = null;
         _dragPointer = null;
+        _painted.Clear();
+        _paintSelecting = null;
         // Clear ownership before releasing capture or refreshing the editor: either
         // operation can synchronously reenter this control.
         pointer?.Capture(null);
@@ -174,13 +180,16 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         Focus(NavigationMethod.Pointer, e.KeyModifiers);
         var properties = e.GetCurrentPoint(this).Properties;
         Point point = e.GetPosition(this);
-        if (properties.IsRightButtonPressed || properties.IsMiddleButtonPressed)
+        if (properties.PointerUpdateKind is PointerUpdateKind.RightButtonPressed or PointerUpdateKind.MiddleButtonPressed)
         {
             FinishPointerGesture(cancel: true);
+            _objectMenu?.Close();
             _dragPointer = e.Pointer;
-            _lastPointer = point;
-            _panning = properties.IsMiddleButtonPressed || (!FlyMode && e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-            _dragButton = properties.IsMiddleButtonPressed ? MouseButton.Middle : MouseButton.Right;
+            _lastPointer = _pressPoint = point;
+            _navigationMoved = false;
+            bool middle = properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed;
+            _panning = middle || e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            _dragButton = middle ? MouseButton.Middle : MouseButton.Right;
             e.Pointer.Capture(this);
             e.Handled = true;
             return;
@@ -219,14 +228,21 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                 e.Pointer.Capture(this);
                 InteractionStatusChanged?.Invoke("Drag the handle to transform. Escape cancels.");
             }
-            else
+            else if (additive)
             {
                 object? picked = vertex ?? CameraPicking.Pick(session.Scene, _navigation, point, Bounds.Size, session.Tool);
-                session.Select(picked, additive, toggle: additive);
+                if (session.Tool == EditorTool.Select)
+                {
+                    _dragPointer = e.Pointer;
+                    _dragButton = MouseButton.Left;
+                    e.Pointer.Capture(this);
+                    PaintSelection(session, picked);
+                }
+                else if (picked is not null) session.Select(picked, additive: true, toggle: true);
                 if (session.Tool == EditorTool.Vertex && picked is not null)
                     InteractionStatusChanged?.Invoke(picked is BrushVertexSelection or TerrainVertexSelection
-                        ? "Vertex selected. Drag a transform handle; Shift-click adds vertices."
-                        : "Click a vertex handle to select it; Shift-click adds vertices.");
+                        ? "Drag a transform handle; Shift-click toggles vertices."
+                        : "Shift-click a vertex handle to toggle its selection.");
             }
         }
         catch (Exception exception) when (IsEditError(exception))
@@ -243,8 +259,13 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         Point position = e.GetPosition(this);
         if (_transform is { } transform)
             UpdateTransform(transform, position);
+        else if (_dragButton == MouseButton.Left)
+            UpdateSelectionPaint(position);
         else
         {
+            Avalonia.Vector fromPress = position - _pressPoint;
+            if (!_navigationMoved && fromPress.SquaredLength < 16) return;
+            _navigationMoved = true;
             Avalonia.Vector delta = position - _lastPointer;
             _lastPointer = position;
             if (_panning) _navigation.Pan((float)delta.X, (float)delta.Y, (float)Math.Max(1, Bounds.Height));
@@ -258,9 +279,48 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!ReferenceEquals(e.Pointer, _dragPointer) || e.InitialPressMouseButton != _dragButton) return;
-        if (_transform is { } transform) UpdateTransform(transform, e.GetPosition(this));
+        Point point = e.GetPosition(this);
+        Avalonia.Vector fromPress = point - _pressPoint;
+        bool showMenu = _dragButton == MouseButton.Right && !_navigationMoved && fromPress.SquaredLength < 16;
+        if (_transform is { } transform) UpdateTransform(transform, point);
+        else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
         FinishPointerGesture();
+        if (showMenu && _session is { } session)
+        {
+            try
+            {
+                _objectMenu = CameraObjectMenu.Open(this, session,
+                    CameraPicking.PickAll(session.Scene, _navigation, point, Bounds.Size, EditorTool.Select),
+                    kind => BrushKindRequested?.Invoke(kind));
+            }
+            catch (Exception exception) when (IsEditError(exception))
+            {
+                InteractionStatusChanged?.Invoke(exception.Message);
+            }
+        }
         e.Handled = true;
+    }
+
+    private void PaintSelection(EditorSession session, object? picked)
+    {
+        if (picked is null || !_painted.Add(picked)) return;
+        bool selected = session.Selection.Contains(picked);
+        _paintSelecting ??= !selected;
+        if (selected != _paintSelecting.Value) session.Select(picked, additive: true, toggle: true);
+    }
+
+    private void UpdateSelectionPaint(Point point)
+    {
+        if (_session is not { Tool: EditorTool.Select } session) return;
+        try
+        {
+            PaintSelection(session, CameraPicking.Pick(session.Scene, _navigation, point, Bounds.Size, session.Tool));
+        }
+        catch (Exception exception) when (IsEditError(exception))
+        {
+            FinishGesture(cancel: true);
+            InteractionStatusChanged?.Invoke(exception.Message);
+        }
     }
 
     private void UpdateTransform(CameraTransformGesture transform, Point position)
@@ -280,7 +340,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         if (_transform is not null) { e.Handled = true; return; }
         double delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
-        if (!double.IsFinite(delta)) return;
+        if (!double.IsFinite(delta) || delta == 0) return;
+        if (_dragPointer is not null) _navigationMoved = true;
         if (FlyMode) _navigation.MoveLocal(0, (float)delta * 32, 0);
         else _navigation.Zoom((float)delta);
         RequestNextFrameRendering();

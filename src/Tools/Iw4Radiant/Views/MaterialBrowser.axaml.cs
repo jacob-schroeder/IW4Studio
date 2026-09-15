@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Iw4Radiant.Editing;
+using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Views;
@@ -9,6 +10,8 @@ namespace Iw4Radiant.Views;
 public partial class MaterialBrowser : UserControl
 {
     private readonly Dictionary<string, MaterialThumbnail> _materials = new(StringComparer.Ordinal);
+    private HashSet<string> _usedMaterials = new(StringComparer.Ordinal);
+    private bool _filtering;
     private Bitmap? _preview;
 
     public MaterialBrowser() => InitializeComponent();
@@ -18,7 +21,19 @@ public partial class MaterialBrowser : UserControl
     {
         BrowseButton.Click += async (_, _) => await BrowseAsync(owner, session, dialogs, finishGestures, setStatus);
         MaterialFilter.TextChanged += (_, _) => FilterMaterials();
-        MaterialList.SelectionChanged += (_, _) => PreviewMaterial(session);
+        InUseToggle.IsCheckedChanged += (_, _) =>
+        {
+            if (InUseToggle.IsChecked == true) RefreshUsedMaterials(session);
+            FilterMaterials();
+        };
+        session.Changed += (_, _) =>
+        {
+            if (InUseToggle.IsChecked == true && RefreshUsedMaterials(session)) FilterMaterials();
+        };
+        MaterialList.SelectionChanged += (_, _) =>
+        {
+            if (!_filtering) PreviewMaterial(session);
+        };
         ApplyMaterialButton.Click += async (_, _) => await ApplyMaterialAsync(session, dialogs, finishGestures);
     }
 
@@ -33,6 +48,7 @@ public partial class MaterialBrowser : UserControl
     {
         if (!_materials.TryGetValue(name, out var material) || material.Preview is null)
             throw new ArgumentException($"Material '{name}' has no available preview.");
+        if (InUseToggle.IsChecked == true && !_usedMaterials.Contains(name)) InUseToggle.IsChecked = false;
         MaterialFilter.Text = name;
         FilterMaterials();
         MaterialList.SelectedItem = material;
@@ -122,18 +138,50 @@ public partial class MaterialBrowser : UserControl
         }
     }
 
+    private bool RefreshUsedMaterials(EditorSession session)
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        Add(session.Document);
+        foreach (var instance in session.Document.Entities.Where(PrefabLibrary.IsPrefab))
+            if (session.Prefabs.GetPreview(instance, session.FilePath) is { } preview) Add(preview);
+        if (_usedMaterials.SetEquals(used)) return false;
+        _usedMaterials = used;
+        return true;
+
+        void Add(MapDocument document)
+        {
+            used.UnionWith(document.Brushes.SelectMany(brush => brush.Faces).Select(face => face.Material));
+            used.UnionWith(document.Terrains.Select(terrain => terrain.Material));
+        }
+    }
+
     private void FilterMaterials()
     {
         string filter = MaterialFilter.Text ?? "";
+        bool inUse = InUseToggle.IsChecked == true;
         int available = _materials.Values.Count(material => material.Preview is not null);
         MaterialThumbnail[] matches = _materials.Values.Where(material => material.Preview is not null &&
+                (!inUse || _usedMaterials.Contains(material.Name)) &&
                 material.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(material => material.Name.Equals(filter, StringComparison.OrdinalIgnoreCase))
             .ThenBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
-        MaterialList.ItemsSource = matches.Take(2000).ToArray();
+        var shown = matches.Take(2000).ToArray();
+        var selected = MaterialList.SelectedItem as MaterialThumbnail;
+        _filtering = true;
+        try
+        {
+            MaterialList.ItemsSource = shown;
+            MaterialList.SelectedItem = selected is not null && shown.Contains(selected) ? selected : null;
+        }
+        finally { _filtering = false; }
+        if (selected is not null && MaterialList.SelectedItem is null)
+        {
+            ReleasePreview();
+            PreviewInfo.Text = "Choose a material to preview.";
+        }
         MaterialInfo.Text = (matches.Length == available
             ? $"{available} materials"
-            : $"{matches.Length} of {available} materials") +
+            : $"{matches.Length} of {available} materials") + (inUse ? " · in use" : "") +
             (matches.Length > 2000 ? " · first 2,000 shown; narrow search" : "");
     }
     private void PreviewMaterial(EditorSession session)
