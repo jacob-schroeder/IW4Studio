@@ -24,12 +24,15 @@ jobs:
           - platform: win_x64
             runner: windows-latest
             runtime: win-x64
+            asset: iw4studio-win_x64.zip
           - platform: macos_x64
             runner: macos-15-intel
             runtime: osx-x64
+            asset: iw4studio-macos_x64.tar.gz
           - platform: macos_arm64
             runner: macos-15
             runtime: osx-arm64
+            asset: iw4studio-macos_arm64.tar.gz
 
     steps:
       - name: Check out repository
@@ -47,7 +50,7 @@ jobs:
           --configuration Release
           --runtime ${{ matrix.runtime }}
           --self-contained true
-          --output artifact/release/iw4studio/${{ matrix.platform }}
+          --output publish
           -p:ContinuousIntegrationBuild=true
           -p:PublishTrimmed=true
           -p:TrimMode=partial
@@ -58,7 +61,22 @@ jobs:
 
       - name: Remove symbol files
         shell: bash
-        run: find artifact -type f -iname '*.pdb' -delete
+        run: find publish -type f -iname '*.pdb' -delete
+
+      - name: Package Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $destination = "artifact/release/iw4studio/${{ matrix.platform }}/${{ matrix.asset }}"
+          New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+          Compress-Archive -Path "publish/*" -DestinationPath $destination -CompressionLevel Optimal
+
+      - name: Package macOS build
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p "artifact/release/iw4studio/${{ matrix.platform }}"
+          tar -czf "artifact/release/iw4studio/${{ matrix.platform }}/${{ matrix.asset }}" -C publish .
 
       - name: Stage platform build
         uses: actions/upload-artifact@v4
@@ -68,11 +86,35 @@ jobs:
           if-no-files-found: error
 
   package:
-    name: Package IW4Studio
+    name: Release IW4Studio
     needs: publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
+      - name: Download platform builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: iw4studio-build-${{ github.run_attempt }}-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$release_tag" \
+            "release-assets/release/iw4studio/win_x64/iw4studio-win_x64.zip" \
+            "release-assets/release/iw4studio/macos_x64/iw4studio-macos_x64.tar.gz" \
+            "release-assets/release/iw4studio/macos_arm64/iw4studio-macos_arm64.tar.gz" \
+            --target "$GITHUB_SHA" \
+            --title "IW4Studio Build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --notes "Automated Release build from commit ${GITHUB_SHA}." \
+            --latest
+
       - name: Merge platform builds
         uses: actions/upload-artifact/merge@v4
         with:
