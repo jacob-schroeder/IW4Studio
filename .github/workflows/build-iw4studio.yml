@@ -113,6 +113,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "IW4Studio Build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
             --notes "Automated Release build from commit ${GITHUB_SHA}." \
+            --repo "$GITHUB_REPOSITORY" \
             --latest
 
       - name: Merge platform builds
