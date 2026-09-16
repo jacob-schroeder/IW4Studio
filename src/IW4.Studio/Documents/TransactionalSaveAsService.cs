@@ -60,8 +60,8 @@ public sealed class SaveAsResult
 /// <summary>
 /// Narrow filesystem boundary for the transactional publication protocol.
 /// Save As assumes its destination directory is not concurrently mutated by a
-/// hostile same-user process. Files stay open from exclusive creation through
-/// validation, publication, or rollback.
+/// hostile same-user process. Files are created exclusively, then retained
+/// read-only through validation, publication, or rollback.
 /// </summary>
 public interface ITransactionalSaveFileSystem
 {
@@ -99,7 +99,7 @@ public sealed class TransactionalSaveDirectory
 }
 
 /// <summary>
-/// An operation-created file retained open until publication or rollback.
+/// An operation-created file retained read-only until publication or rollback.
 /// </summary>
 public sealed class TransactionalSaveFile : IDisposable
 {
@@ -131,9 +131,6 @@ public sealed class TransactionalSaveFile : IDisposable
     public string Path { get; private set; }
     public long Length { get; }
     public ReadOnlyMemory<byte> ContentSha256 => _contentSha256;
-
-    internal FileStream Stream => _stream ??
-        throw new ObjectDisposedException(nameof(TransactionalSaveFile));
 
     internal void MoveTo(string path)
     {
@@ -195,18 +192,31 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
         string path = Path.Combine(directory.Path, fileName);
         byte[] contentSha256 = SHA256.HashData(bytes);
         FileStream? stream = null;
+        bool created = false;
         try
         {
-            stream = new FileStream(
+            using (var writer = new FileStream(
                 path,
                 FileMode.CreateNew,
-                FileAccess.ReadWrite,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.WriteThrough))
+            {
+                created = true;
+                writer.Write(bytes);
+                writer.Flush(flushToDisk: true);
+            }
+
+            // Candidate validation reopens this file through the loader. On
+            // Windows, that reader cannot share a retained write handle.
+            stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
                 FileShare.Read | FileShare.Delete,
                 bufferSize: 81920,
-                FileOptions.WriteThrough);
-            stream.Write(bytes);
-            stream.Flush(flushToDisk: true);
-            stream.Position = 0;
+                FileOptions.None);
             var file = new TransactionalSaveFile(
                 path,
                 bytes.Length,
@@ -217,18 +227,15 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
         }
         catch
         {
-            if (stream is not null)
+            try
             {
-                try
-                {
+                stream?.Dispose();
+                if (created)
                     File.Delete(path);
-                }
-                finally
-                {
-                    stream.Dispose();
-                }
             }
-
+            catch (IOException)
+            {
+            }
             throw;
         }
     }
@@ -283,7 +290,6 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
 
     private static void VerifyOperationCreatedFile(TransactionalSaveFile file)
     {
-        file.Stream.Flush(flushToDisk: true);
         var info = new FileInfo(file.Path);
         if (!info.Exists || info.Length != file.Length)
         {
