@@ -87,8 +87,11 @@ public sealed class DbPackedStreamReader
         }
 
         if (!sawTerminator)
-            throw new InvalidDataException(
-                $"Packed stream has no terminator in the available file range ending at 0x{availableEnd:X}.");
+        {
+            diagnostics.Warn(
+                $"Packed stream has no terminator in the available file range ending at 0x{availableEnd:X}; " +
+                "continuing with all complete packed blocks.");
+        }
         return output.WrittenSpan.ToArray();
     }
 
