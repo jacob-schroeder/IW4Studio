@@ -60,17 +60,27 @@ public sealed class DbPackedStreamReader
                 continue;
             }
 
+            int frameOffset = cursor.Offset - compressedSize - sizeof(ushort);
             try
             {
                 int decompressedSize = Deflate.DecompressPs3HeaderlessZlib(
                     compressed,
-                    output.GetSpan(FullBlockSize)[..FullBlockSize]);
+                    output.GetSpan(FullBlockSize)[..FullBlockSize],
+                    out uint storedAdler,
+                    out uint calculatedAdler);
                 output.Advance(decompressedSize);
+                if (calculatedAdler != storedAdler)
+                {
+                    diagnostics.Warn(
+                        $"Compressed PS3 packed-zone frame at 0x{frameOffset:X} has an Adler-32 mismatch: " +
+                        $"stored 0x{storedAdler:X8}, calculated 0x{calculatedAdler:X8}; " +
+                        "continuing with inflated data.");
+                }
             }
             catch (InvalidDataException exception)
             {
                 throw new InvalidDataException(
-                    $"Compressed PS3 packed-zone frame at 0x{cursor.Offset - compressedSize - sizeof(ushort):X} is invalid: " +
+                    $"Compressed PS3 packed-zone frame at 0x{frameOffset:X} is invalid: " +
                     exception.Message,
                     exception);
             }

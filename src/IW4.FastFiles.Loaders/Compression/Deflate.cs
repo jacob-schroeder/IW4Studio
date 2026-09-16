@@ -16,11 +16,14 @@ internal static class Deflate
     /// PS3 packed-zone compressed frames are zlib streams with only the
     /// two-byte CMF/FLG header replaced by the outer big-endian size word.
     /// The four-byte big-endian Adler-32 trailer remains inside that declared
-    /// frame size.
+    /// frame size. The caller receives both checksum values so it can report
+    /// a mismatch without discarding an otherwise decoded frame.
     /// </summary>
     public static int DecompressPs3HeaderlessZlib(
         ReadOnlyMemory<byte> data,
-        Span<byte> destination)
+        Span<byte> destination,
+        out uint storedAdler,
+        out uint calculatedAdler)
     {
         if (data.Length <= AdlerTrailerSize)
         {
@@ -35,7 +38,7 @@ internal static class Deflate
         }
 
         int deflateLength = data.Length - AdlerTrailerSize;
-        uint expectedAdler = BinaryPrimitives.ReadUInt32BigEndian(
+        storedAdler = BinaryPrimitives.ReadUInt32BigEndian(
             data.Span.Slice(deflateLength, AdlerTrailerSize));
         using Stream input = OpenReadOnlyStream(data[..deflateLength]);
         using var stream = new System.IO.Compression.DeflateStream(
@@ -64,12 +67,7 @@ internal static class Deflate
                 $"the native output window is 0x{MaximumDecodedFrameSize:X}.");
         }
 
-        uint actualAdler = ComputeAdler32(destination[..decodedLength]);
-        if (actualAdler != expectedAdler)
-        {
-            throw new InvalidDataException(
-                $"PS3 packed-zone Adler-32 mismatch: stored 0x{expectedAdler:X8}, calculated 0x{actualAdler:X8}.");
-        }
+        calculatedAdler = ComputeAdler32(destination[..decodedLength]);
 
         return decodedLength;
     }
