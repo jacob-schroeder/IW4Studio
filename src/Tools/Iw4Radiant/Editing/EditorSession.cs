@@ -12,6 +12,7 @@ internal sealed class EditorSession
     internal EditorScene Scene { get; }
     private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _undo = [];
     private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _redo = [];
+    private readonly Dictionary<MapTerrain, HashSet<int>> _lockedPatchVertices = new(ReferenceEqualityComparer.Instance);
     private MapDocument? _beforeEdit;
     private SelectionPath[] _beforeSelection = [];
     private long _revision, _savedRevision, _nextRevision = 1;
@@ -27,7 +28,12 @@ internal sealed class EditorSession
     public TransformMode TransformMode { get; set; }
     public TerrainSculptMode SculptMode { get; set; }
     public ClipMode ClipMode { get; set; }
+    public AxisLock AxisLock { get; set; }
+    public SelectionVolumeMode SelectionVolumeMode { get; set; }
     public bool TextureLock { get; set; } = true;
+    public bool CubicClipEnabled { get; set; }
+    public float CubicClipDistance { get; set; } = 4096;
+    public bool AlphaPreviewEnabled { get; set; } = true;
     public float GridSize { get; set; } = 16;
     public float AngleSnap { get; set; } = 15;
     public float ScaleSnap { get; set; } = 0.1f;
@@ -42,11 +48,37 @@ internal sealed class EditorSession
     internal float PaintAlpha { get; set; } = 1;
     public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
     public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(item =>
-        Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item));
+        Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item)) &&
+        Selection.Items.Any(item => item is not TerrainVertexSelection vertex || !IsPatchVertexLocked(vertex));
     public (Vector3 Min, Vector3 Max)? SelectionBounds => Scene.Bounds(Selection.Items);
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public event EventHandler? Changed;
+
+    internal bool IsPatchVertexLocked(TerrainVertexSelection vertex) =>
+        _lockedPatchVertices.TryGetValue(vertex.Terrain, out var indices) && indices.Contains(vertex.Index);
+
+    internal void SetPatchVertexLock(IEnumerable<TerrainVertexSelection> vertices, bool locked)
+    {
+        foreach (var group in vertices.GroupBy(vertex => vertex.Terrain))
+        {
+            if (!_lockedPatchVertices.TryGetValue(group.Key, out var indices))
+            {
+                if (!locked) continue;
+                _lockedPatchVertices.Add(group.Key, indices = []);
+            }
+            foreach (TerrainVertexSelection vertex in group)
+                if (locked) indices.Add(vertex.Index); else indices.Remove(vertex.Index);
+            if (indices.Count == 0) _lockedPatchVertices.Remove(group.Key);
+        }
+        Refresh();
+    }
+
+    internal void ClearPatchVertexLocks(IEnumerable<MapTerrain>? patches = null)
+    {
+        if (patches is null) _lockedPatchVertices.Clear();
+        else foreach (MapTerrain patch in patches) _lockedPatchVertices.Remove(patch);
+    }
 
     public void Refresh()
     {
@@ -99,6 +131,7 @@ internal sealed class EditorSession
         PlacementLabel = null;
         FilePath = path;
         Visibility.Clear();
+        ClearPatchVertexLocks();
         Prefabs.Reload(document, path);
         Selection.Clear();
         _undo.Clear();
@@ -136,6 +169,7 @@ internal sealed class EditorSession
         {
             Document = unchanged;
             Visibility.Clear();
+            ClearPatchVertexLocks();
             Selection.Restore(Document, _beforeSelection);
         }
         _beforeEdit = null;
@@ -149,6 +183,7 @@ internal sealed class EditorSession
         {
             Document = before;
             Visibility.Clear();
+            ClearPatchVertexLocks();
             Selection.Restore(Document, _beforeSelection);
         }
         _beforeEdit = null;
@@ -180,6 +215,7 @@ internal sealed class EditorSession
         _undo.RemoveAt(_undo.Count - 1);
         Document = previous.Document;
         Visibility.Clear();
+        ClearPatchVertexLocks();
         _revision = previous.Revision;
         Selection.Restore(Document, previous.Selection);
         Refresh();
@@ -194,6 +230,7 @@ internal sealed class EditorSession
         _redo.RemoveAt(_redo.Count - 1);
         Document = next.Document;
         Visibility.Clear();
+        ClearPatchVertexLocks();
         _revision = next.Revision;
         Selection.Restore(Document, next.Selection);
         Refresh();

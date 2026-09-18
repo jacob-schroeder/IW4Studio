@@ -33,13 +33,11 @@ internal static class CameraPicking
         }
         foreach (var entity in document.Entities.Where(PointEntityGeometry.IsPointEntity))
         {
-            if (XModelGeometry.IsModel(entity))
-            {
-                if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
-                    foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
-                        Consider(entity, triangle.A.Position, triangle.B.Position, triangle.C.Position);
-            }
-            else if (entity.ClassName == "trigger_radius")
+            bool modelEntity = XModelGeometry.IsModel(entity);
+            if (modelEntity && scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                    Consider(entity, triangle.A.Position, triangle.B.Position, triangle.C.Position);
+            else if (!modelEntity && entity.ClassName == "trigger_radius")
                 foreach (var triangle in PointEntityGeometry.GetRadiusTriangles(entity))
                     Consider(entity, triangle.A, triangle.B, triangle.C);
             else

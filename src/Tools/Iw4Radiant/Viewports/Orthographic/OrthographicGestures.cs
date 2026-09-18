@@ -24,6 +24,7 @@ internal sealed class OrthographicGestures
     private Point _startScreen, _lastScreen, _cursorScreen;
     private Vector2 _startWorld, _currentWorld;
     private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle, _paintSelecting;
+    private SelectionVolumeMode _selectionVolumeMode;
 
     internal OrthographicGestures(Control viewport, OrthographicProjection projection)
     {
@@ -100,6 +101,13 @@ internal sealed class OrthographicGestures
             _gesture = Gesture.PaintSelection;
             _paintSelecting = hit is null || !session.Selection.Contains(hit);
             if (hit is not null) PaintSelection([hit]);
+        }
+        else if (session.Tool == EditorTool.Select && session.SelectionVolumeMode != SelectionVolumeMode.None &&
+                 e.KeyModifiers == KeyModifiers.None)
+        {
+            _selectionVolumeMode = session.SelectionVolumeMode;
+            _marqueeCandidates = OrthographicSelection.MarqueeCandidates(session);
+            _gesture = Gesture.Marquee;
         }
         else if (session.Tool == EditorTool.Terrain || session.Tool == EditorTool.Select &&
                  session.Selection.Count == 0 && e.KeyModifiers == KeyModifiers.None)
@@ -240,12 +248,18 @@ internal sealed class OrthographicGestures
                 else if (_gesture == Gesture.Marquee)
                 {
                     object[] hits = MarqueeBounds is { } rectangle ?
-                        OrthographicSelection.InRectangle(session, _marqueeCandidates, _projection, rectangle).ToArray() : [];
+                        OrthographicSelection.InRectangle(session, _marqueeCandidates, _projection, rectangle,
+                            _selectionVolumeMode == SelectionVolumeMode.None ? SelectionVolumeMode.PartialTall : _selectionVolumeMode).ToArray() : [];
                     _changingSelection = true;
                     try
                     {
-                        session.Selection.SetRange(_selectionBefore);
-                        foreach (object hit in hits) session.Selection.Set(hit, additive: true, toggle: true);
+                        if (_selectionVolumeMode == SelectionVolumeMode.None)
+                        {
+                            session.Selection.SetRange(_selectionBefore);
+                            foreach (object hit in hits) session.Selection.Set(hit, additive: true, toggle: true);
+                        }
+                        else session.Selection.SetRange(hits);
+                        session.SelectionVolumeMode = SelectionVolumeMode.None;
                         session.Refresh();
                     }
                     finally { _changingSelection = false; }
@@ -292,6 +306,8 @@ internal sealed class OrthographicGestures
     {
         IPointer? pointer = _pointer;
         bool editing = _editStarted, changed = _changed;
+        bool clearSelectionVolume = _selectionVolumeMode != SelectionVolumeMode.None &&
+            Session?.SelectionVolumeMode != SelectionVolumeMode.None;
         object[]? restoreSelection = cancel && completeEdit && _gesture == Gesture.PaintSelection &&
             ReferenceEquals(_gestureDocument, Session?.Document) ? _selectionBefore : null;
         if (cancel && _gesture == Gesture.Clip) ClearClipPreview();
@@ -299,6 +315,7 @@ internal sealed class OrthographicGestures
         _gesture = Gesture.None;
         _gestureDocument = null;
         _gestureItems = _selectionBefore = _marqueeCandidates = [];
+        _selectionVolumeMode = SelectionVolumeMode.None;
         _paintVisited.Clear();
         _editStarted = _changed = false;
         _viewport.Cursor = null;
@@ -306,6 +323,11 @@ internal sealed class OrthographicGestures
         {
             if (cancel) session.CancelEdit();
             else session.CompleteEdit(changed);
+        }
+        if (clearSelectionVolume && Session is { } current)
+        {
+            current.SelectionVolumeMode = SelectionVolumeMode.None;
+            current.Refresh();
         }
         if (restoreSelection is not null) Session?.SelectRange(restoreSelection);
         if (ReferenceEquals(pointer?.Captured, _viewport)) pointer.Capture(null);

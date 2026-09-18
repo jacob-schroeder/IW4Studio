@@ -14,6 +14,7 @@ internal static class BrushCollisionCompiler
         MapDocument document,
         string assetName,
         IReadOnlyList<ClipMaterial> materials,
+        IReadOnlyDictionary<string, ClipMaterial> baseMaterials,
         MapEntsAsset mapEnts)
     {
         IReadOnlyList<MapBrush> sourceBrushes = document.World.Brushes;
@@ -22,8 +23,8 @@ internal static class BrushCollisionCompiler
         if (materials.Count is 0 or > short.MaxValue)
             throw new NotSupportedException("Brush collision requires between 1 and 32767 materials.");
         var materialIndices = materials.Select((material, index) =>
-                (Name: material.Name ?? throw new InvalidDataException("A collision material has no name."), Index: index))
-            .ToDictionary(item => item.Name, item => item.Index, StringComparer.Ordinal);
+                (Name: material.Name ?? throw new InvalidDataException("A collision material has no name."), material.Contents, Index: index))
+            .ToDictionary(item => (item.Name, item.Contents), item => item.Index);
 
         var planes = new List<CPlane>();
         var sides = new List<CBrushSide>();
@@ -38,14 +39,14 @@ internal static class BrushCollisionCompiler
             MapBrush source = sourceBrushes[brushIndex];
             BrushGeometry.Validate(source);
             IReadOnlyList<MapPolygon> polygons = source.GetPolygons();
+            if (!baseMaterials.TryGetValue(polygons[0].Face.Material, out ClipMaterial? baseMaterial))
+                throw new InvalidDataException($"Brush {brushIndex} material '{polygons[0].Face.Material}' is missing.");
+            int brushContents = BrushContents.Compile(BrushContents.ReadForCompilation(source), baseMaterial.Contents);
             var faceMaterials = polygons.Select(polygon =>
-                materialIndices.TryGetValue(polygon.Face.Material, out int index)
+                materialIndices.TryGetValue((polygon.Face.Material, brushContents), out int index)
                     ? index
                     : throw new InvalidDataException($"Brush {brushIndex} material '{polygon.Face.Material}' is missing."))
                 .ToArray();
-            int brushContents = materials[faceMaterials[0]].Contents;
-            if (faceMaterials.Any(index => materials[index].Contents != brushContents))
-                throw new NotSupportedException($"Brush {brushIndex} has faces with different collision contents.");
             contents[brushIndex] = unchecked((uint)brushContents);
             combinedContents |= contents[brushIndex];
             (Vector3 min, Vector3 max) = source.GetBounds();

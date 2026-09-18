@@ -10,6 +10,9 @@ uniform bool uTextured;
 uniform bool uLit;
 uniform bool uPremultiplyAlpha;
 uniform bool uIgnoreVertexColor;
+uniform bool uCubicClip;
+uniform vec3 uCubicClipCenter;
+uniform float uCubicClipDistance;
 uniform int uLightCount;
 uniform sampler2D uLightData;
 uniform sampler2D uShadowAtlas;
@@ -110,6 +113,8 @@ void main()
     vec2 sunDepthGradient = abs(receiverPlane.z) > 1e-20
         ? -receiverPlane.xy / receiverPlane.z : vec2(0.0);
     vec3 localReceiverPlane = cross(dFdx(vPosition), dFdy(vPosition));
+    if (uCubicClip && any(greaterThan(abs(vPosition - uCubicClipCenter), vec3(uCubicClipDistance))))
+        discard;
     vec4 surface = uTextured && uIgnoreVertexColor ? vec4(1.0) : vColor;
     if (uTextured)
         surface *= texture(uTexture, vTexCoord);

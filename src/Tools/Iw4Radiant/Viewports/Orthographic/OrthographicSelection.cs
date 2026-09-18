@@ -54,20 +54,49 @@ internal static class OrthographicSelection
 
     internal static object[] MarqueeCandidates(EditorSession session)
     {
-        IEnumerable<object> candidates = session.Tool == EditorTool.Vertex ? SelectionGeometry.GetVertexHandles(session.Selection) :
-            session.Scene.Document.Brushes.SelectMany(brush => brush.GetPolygons()
-                .Select(polygon => (object)new BrushFaceSelection(brush, polygon.Face)));
+        IEnumerable<object> candidates = session.Tool switch
+        {
+            EditorTool.Vertex => SelectionGeometry.GetVertexHandles(session.Selection),
+            EditorTool.Select => session.Scene.Document.Brushes.Cast<object>()
+                .Concat(session.Scene.Document.Terrains)
+                .Concat(session.Scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity)),
+            _ => session.Scene.Document.Brushes.SelectMany(brush => brush.GetPolygons()
+                .Select(polygon => (object)new BrushFaceSelection(brush, polygon.Face)))
+        };
         return candidates.Where(session.Scene.CanSelect).Select(session.Scene.Owner).Distinct().ToArray();
     }
 
-    internal static IEnumerable<object> InRectangle(EditorSession session, IEnumerable<object> candidates, OrthographicProjection projection, Rect rectangle)
+    internal static IEnumerable<object> InRectangle(EditorSession session, IEnumerable<object> candidates,
+        OrthographicProjection projection, Rect rectangle, SelectionVolumeMode mode = SelectionVolumeMode.PartialTall)
     {
+        Vector2 worldA = projection.ToWorld(rectangle.TopLeft), worldB = projection.ToWorld(rectangle.BottomRight);
+        Vector2 worldMin = Vector2.Min(worldA, worldB), worldMax = Vector2.Max(worldA, worldB);
+        float depthMin = session.Snap(session.BrushBottom);
+        float depthMax = Math.Max(depthMin + session.GridSize, session.Snap(depthMin + session.BrushHeight));
+        Vector3 volumeMin = Vector3.Min(projection.Unproject(worldMin, depthMin), projection.Unproject(worldMax, depthMax));
+        Vector3 volumeMax = Vector3.Max(projection.Unproject(worldMin, depthMin), projection.Unproject(worldMax, depthMax));
         foreach (object item in candidates)
         {
             if (!session.Scene.CanSelect(item) || session.Scene.Bounds(item) is not { } bounds) continue;
             Rect projected = projection.ScreenBounds(bounds.Min, bounds.Max);
-            if (projected.Right >= rectangle.Left && projected.Left <= rectangle.Right &&
-                projected.Bottom >= rectangle.Top && projected.Top <= rectangle.Bottom)
+            bool projectedIntersects = projected.Right >= rectangle.Left && projected.Left <= rectangle.Right &&
+                projected.Bottom >= rectangle.Top && projected.Top <= rectangle.Bottom;
+            bool projectedInside = projected.Left >= rectangle.Left && projected.Right <= rectangle.Right &&
+                projected.Top >= rectangle.Top && projected.Bottom <= rectangle.Bottom;
+            bool volumeIntersects = bounds.Max.X >= volumeMin.X && bounds.Min.X <= volumeMax.X &&
+                bounds.Max.Y >= volumeMin.Y && bounds.Min.Y <= volumeMax.Y &&
+                bounds.Max.Z >= volumeMin.Z && bounds.Min.Z <= volumeMax.Z;
+            bool volumeInside = bounds.Min.X >= volumeMin.X && bounds.Max.X <= volumeMax.X &&
+                bounds.Min.Y >= volumeMin.Y && bounds.Max.Y <= volumeMax.Y &&
+                bounds.Min.Z >= volumeMin.Z && bounds.Max.Z <= volumeMax.Z;
+            if (mode switch
+                {
+                    SelectionVolumeMode.CompleteTall => projectedInside,
+                    SelectionVolumeMode.PartialTall => projectedIntersects,
+                    SelectionVolumeMode.Touching => volumeIntersects,
+                    SelectionVolumeMode.Inside => volumeInside,
+                    _ => projectedIntersects
+                })
                 yield return item;
         }
     }

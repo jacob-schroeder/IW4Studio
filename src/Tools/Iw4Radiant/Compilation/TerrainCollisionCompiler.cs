@@ -16,9 +16,11 @@ internal static class TerrainCollisionCompiler
         if (source.NumNodes != 1 || source.NumLeafs != 3 || source.NumSubModels != 1 || source.TriCount != 0)
             throw new InvalidOperationException("Terrain compilation requires the single-cell brush collision graph.");
 
+        // A material name can have brush-content variants. MapCompiler orders
+        // the base row first, which is the row used by solid terrain.
         var materialIndices = source.Materials.Select((material, index) => (material.Name, Index: index))
-            .ToDictionary(item => item.Name ?? throw new InvalidDataException("A collision material has no name."),
-                item => checked((ushort)item.Index), StringComparer.Ordinal);
+            .GroupBy(item => item.Name ?? throw new InvalidDataException("A collision material has no name."), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => checked((ushort)group.First().Index), StringComparer.Ordinal);
         var vertices = new List<Vector3>();
         var vertexIndices = new Dictionary<Vector3, ushort>();
         var indices = new List<ushort>();

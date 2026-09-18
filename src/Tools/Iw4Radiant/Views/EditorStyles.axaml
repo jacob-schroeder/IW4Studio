@@ -95,9 +95,10 @@
         <Setter Property="BorderBrush" Value="#63758C" />
     </Style>
     <Style Selector=":is(Button).toolbarButton">
-        <Setter Property="Width" Value="30" />
-        <Setter Property="Height" Value="30" />
-        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Width" Value="26" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="MinWidth" Value="26" />
+        <Setter Property="MinHeight" Value="26" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="1,0" />
         <Setter Property="Background" Value="Transparent" />
@@ -106,9 +107,14 @@
     </Style>
     <Style Selector="Border.toolbarSeparator">
         <Setter Property="Width" Value="1" />
-        <Setter Property="Height" Value="20" />
-        <Setter Property="Margin" Value="7,0" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Margin" Value="5,0" />
         <Setter Property="Background" Value="#34383E" />
+    </Style>
+    <Style Selector="ComboBox.toolbarCombo">
+        <Setter Property="Height" Value="26" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="Padding" Value="5,2" />
     </Style>
     <Style Selector=":is(Button).viewportAction">
         <Setter Property="Width" Value="24" />

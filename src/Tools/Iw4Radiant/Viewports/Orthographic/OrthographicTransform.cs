@@ -84,7 +84,8 @@ internal sealed class OrthographicTransform
             displacement = new(session.Snap(displacement.X), session.Snap(displacement.Y));
             if (_axis == 1) displacement.Y = 0;
             if (_axis == 2) displacement.X = 0;
-            return Matrix4x4.CreateTranslation(_projection.Unproject(displacement, 0));
+            Vector3 translation = SelectionTransforms.ApplyAxisLocks(session, _projection.Unproject(displacement, 0));
+            return Matrix4x4.CreateTranslation(translation);
         }
         Matrix4x4 linear;
         if (_mode == TransformMode.Rotate)

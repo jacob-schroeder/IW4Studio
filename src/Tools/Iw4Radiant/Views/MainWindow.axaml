@@ -72,72 +72,90 @@
         </Menu>
         <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="6,4">
             <StackPanel Spacing="4">
-              <WrapPanel>
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+              <StackPanel Orientation="Horizontal">
                 <Button Classes="toolbarButton" Click="New_Click" ToolTip.Tip="New map (Ctrl/Cmd+N)" AutomationProperties.Name="New map">
-                    <materialIcons:MaterialIcon Kind="FileDocumentOutline" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="FileDocumentOutline" Width="16" Height="16" />
                 </Button>
                 <Button Classes="toolbarButton" Click="Open_Click" ToolTip.Tip="Open map (Ctrl/Cmd+O)" AutomationProperties.Name="Open map">
-                    <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16" />
                 </Button>
                 <Button Classes="toolbarButton" Click="Save_Click" ToolTip.Tip="Save map (Ctrl/Cmd+S)" AutomationProperties.Name="Save map">
-                    <materialIcons:MaterialIcon Kind="ContentSave" Width="18" Height="18" />
-                </Button>
-                <Button Classes="toolbarButton" Click="Build_Click" ToolTip.Tip="Build PS3 map" AutomationProperties.Name="Build PS3 map"
-                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
-                    <materialIcons:MaterialIcon Kind="Hammer" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
                 <Button x:Name="UndoToolbar" Classes="toolbarButton" Click="Undo_Click" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
-                    <materialIcons:MaterialIcon Kind="Undo" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
                 </Button>
                 <Button x:Name="RedoToolbar" Classes="toolbarButton" Click="Redo_Click" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)" AutomationProperties.Name="Redo">
-                    <materialIcons:MaterialIcon Kind="Redo" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="Redo" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Duplicate_Click" ToolTip.Tip="Duplicate selection (Space)" AutomationProperties.Name="Duplicate selection">
+                    <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Delete_Click" ToolTip.Tip="Delete selection (Delete)" AutomationProperties.Name="Delete selection">
+                    <materialIcons:MaterialIcon Kind="DeleteOutline" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
                 <ToggleButton x:Name="FaceTool" Classes="toolbarButton" Click="FaceTool_Click" ToolTip.Tip="Select faces (S)" AutomationProperties.Name="Select faces">
-                    <materialIcons:MaterialIcon Kind="VectorPolygon" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="VectorPolygon" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="VertexTool" Classes="toolbarButton" Click="VertexTool_Click" ToolTip.Tip="Edit vertices (E)" AutomationProperties.Name="Edit vertices">
-                    <materialIcons:MaterialIcon Kind="VectorPoint" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="VectorPoint" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="ClipTool" Classes="toolbarButton" Click="ClipTool_Click" ToolTip.Tip="Clip brushes (X)" AutomationProperties.Name="Clip brushes">
-                    <materialIcons:MaterialIcon Kind="ContentCut" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="ContentCut" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="TerrainTool" Classes="toolbarButton" Click="TerrainTool_Click" ToolTip.Tip="Create terrain (T)" AutomationProperties.Name="Create terrain">
-                    <materialIcons:MaterialIcon Kind="Terrain" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="Terrain" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
-                    <materialIcons:MaterialIcon Kind="Brush" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
                 </ToggleButton>
                 <Border Classes="toolbarSeparator" />
                 <TextBlock Text="Transform" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <ComboBox x:Name="TransformCombo" Width="105" MinHeight="30" SelectionChanged="TransformMode_Changed" />
+                <ComboBox x:Name="TransformCombo" Classes="toolbarCombo" Width="98" SelectionChanged="TransformMode_Changed" />
                 <TextBlock Text="Grid" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <ComboBox x:Name="GridCombo" Width="70" MinHeight="30" Margin="6,0,0,0" SelectionChanged="Grid_Changed" />
+                <ComboBox x:Name="GridCombo" Classes="toolbarCombo" Width="64" Margin="6,0,0,0" SelectionChanged="Grid_Changed" />
                 <Border Classes="toolbarSeparator" />
                 <Button Classes="toolbarButton" Click="FrameAll_Click" ToolTip.Tip="Frame all views" AutomationProperties.Name="Frame all views">
-                    <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16" />
                 </Button>
                 <Button Classes="toolbarButton" Click="FrameSelection_Click" ToolTip.Tip="Frame selection in all views (End)" AutomationProperties.Name="Frame selection in all views">
-                    <materialIcons:MaterialIcon Kind="FocusField" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="FocusField" Width="16" Height="16" />
+                </Button>
+                <Border Classes="toolbarSeparator" />
+                <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide asset browser" AutomationProperties.Name="Show asset browser">
+                    <materialIcons:MaterialIcon Kind="TextureBox" Width="16" Height="16" />
+                </ToggleButton>
+                <Button Classes="toolbarButton" Click="Models_Click" ToolTip.Tip="Models" AutomationProperties.Name="Models">
+                    <materialIcons:MaterialIcon Kind="CubeOutline" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Prefabs_Click" ToolTip.Tip="Prefabs" AutomationProperties.Name="Prefabs">
+                    <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Gameplay_Click" ToolTip.Tip="Gameplay entities" AutomationProperties.Name="Gameplay entities">
+                    <materialIcons:MaterialIcon Kind="AccountMultipleOutline" Width="16" Height="16" />
+                </Button>
+                <ToggleButton x:Name="InspectorButton" Classes="toolbarButton" Click="Inspector_Click" ToolTip.Tip="Show / hide inspector" AutomationProperties.Name="Show inspector">
+                    <materialIcons:MaterialIcon Kind="TuneVariant" Width="16" Height="16" />
+                </ToggleButton>
+                <Button Classes="toolbarButton" Click="Environment_Click" ToolTip.Tip="Environment · sunlight and skies" AutomationProperties.Name="Environment">
+                    <materialIcons:MaterialIcon Kind="WeatherSunny" Width="16" Height="16" />
+                </Button>
+                <Border Classes="toolbarSeparator" />
+                <Button Classes="toolbarButton" Click="Build_Click" ToolTip.Tip="Build PS3 map" AutomationProperties.Name="Build PS3 map">
+                    <materialIcons:MaterialIcon Kind="Hammer" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
                 <ToggleButton x:Name="FourViewsButton" Classes="toolbarButton" Click="FourViews_Click" ToolTip.Tip="Toggle two / four views" AutomationProperties.Name="Four views">
-                    <materialIcons:MaterialIcon Kind="ViewGridOutline" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="ViewGridOutline" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="MaximizeButton" Classes="toolbarButton" Click="Maximize_Click" ToolTip.Tip="Maximize / restore active view (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize active view">
-                    <materialIcons:MaterialIcon Kind="Fullscreen" Width="18" Height="18" />
+                    <materialIcons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
                 </ToggleButton>
-                <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide asset browser" AutomationProperties.Name="Show asset browser">
-                    <materialIcons:MaterialIcon Kind="TextureBox" Width="18" Height="18" />
-                </ToggleButton>
-                <ToggleButton x:Name="InspectorButton" Classes="toolbarButton" Click="Inspector_Click" ToolTip.Tip="Show / hide inspector" AutomationProperties.Name="Show inspector">
-                    <materialIcons:MaterialIcon Kind="TuneVariant" Width="18" Height="18" />
-                </ToggleButton>
-                <Button Classes="toolbarButton" Click="Environment_Click" ToolTip.Tip="Environment · sunlight and skies" AutomationProperties.Name="Environment">
-                    <materialIcons:MaterialIcon Kind="WeatherSunny" Width="18" Height="18" />
-                </Button>
-              </WrapPanel>
+              </StackPanel>
+              </ScrollViewer>
               <Border x:Name="ToolOptions" Classes="toolOptionsBar">
               <StackPanel Orientation="Horizontal" Spacing="8">
                <StackPanel x:Name="CreationOptions" Orientation="Horizontal">

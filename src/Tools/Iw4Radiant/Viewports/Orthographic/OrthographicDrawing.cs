@@ -16,12 +16,14 @@ internal sealed class OrthographicDrawing
     private static readonly IBrush MutedBrush = Brush("#91959E");
     private static readonly IBrush SelectionBrush = Brush("#F2B65B");
     private static readonly IBrush SelectionFill = Brush("#19F2B65B");
+    private static readonly IBrush MissingModelFill = Brush("#FF0000");
     private static readonly Pen MinorGrid = new(Brush("#26292E"));
     private static readonly Pen MajorGrid = new(Brush("#33373E"));
     private static readonly Pen BrushPen = new(Brush("#9AA0AA"));
     private static readonly Pen ClipBrushPen = new(Brush("#D959D9"));
     private static readonly Pen TerrainPen = new(Brush("#84988B"));
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
+    private static readonly Pen MissingModelPen = new(Brush("#7A0000"), 1.5);
     private static readonly Pen TargetPen = new(Brush("#6DB8C4"), 1.2);
     private static readonly Pen SelectedPen = new(SelectionBrush, 1.8);
     private static readonly Pen XAxisPen = new(Brush("#BD6165"), 1.5);
@@ -59,6 +61,7 @@ internal sealed class OrthographicDrawing
             {
                 Vector3 origin = EditorSession.EntityOrigin(entity);
                 bool selected = scene.Selection.Contains(entity);
+                bool missingModel = false;
                 if (XModelGeometry.IsModel(entity))
                 {
                     if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
@@ -70,16 +73,18 @@ internal sealed class OrthographicDrawing
                             context.DrawLine(pen, a, b); context.DrawLine(pen, b, c); context.DrawLine(pen, c, a);
                         }
                         if (selected) DrawText(context, model.Name, _projection.ToScreen(origin) + new Vector(7, 7), SelectionBrush);
+                        continue;
                     }
-                    continue;
+                    missingModel = true;
                 }
                 if (scene.Bounds(entity) is not { } entityBounds) continue;
                 Rect rect = _projection.ScreenBounds(entityBounds.Min, entityBounds.Max);
-                if (entity.ClassName == "trigger_radius")
+                if (!missingModel && entity.ClassName == "trigger_radius")
                     foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
                         context.DrawLine(selected ? SelectedPen : EntityPen, _projection.ToScreen(line.A), _projection.ToScreen(line.B));
                 else
-                    context.DrawRectangle(selected ? SelectionFill : null, selected ? SelectedPen : EntityPen, rect);
+                    context.DrawRectangle(missingModel ? MissingModelFill : selected ? SelectionFill : null,
+                        selected ? SelectedPen : missingModel ? MissingModelPen : EntityPen, rect);
                 Point center = _projection.ToScreen(origin);
                 context.DrawLine(EntityPen, center - new Vector(4, 0), center + new Vector(4, 0));
                 context.DrawLine(EntityPen, center - new Vector(0, 4), center + new Vector(0, 4));

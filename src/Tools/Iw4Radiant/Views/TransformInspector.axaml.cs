@@ -83,7 +83,7 @@ public partial class TransformInspector : UserControl
             Matrix4x4 matrix;
             if (mode == TransformMode.Move)
             {
-                values = Snap(values, session.GridSize);
+                values = SelectionTransforms.ApplyAxisLocks(session, Snap(values, session.GridSize));
                 if (values == Vector3.Zero) return;
                 matrix = Matrix4x4.CreateTranslation(values);
             }

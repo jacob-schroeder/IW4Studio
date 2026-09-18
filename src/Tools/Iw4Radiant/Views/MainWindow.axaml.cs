@@ -344,7 +344,7 @@ public partial class MainWindow : Window
         "Gameplay: Entity contains verified IW4 spawns, triggers and script objects. Select a source and destination to connect target to targetname; links are visible in the viewports.\n\n" +
         "This editor uses iwmap 4 source. Unrecognized primitives are preserved on save. " +
         "IW4 material JSON color maps, DDS and PNG/JPEG/BMP previews are supported; PS3 material programs are not executed. " +
-        "Materials without a matching image are omitted. Unresolved map surfaces appear as wireframe. " +
+        "Materials without a matching image remain unavailable. Unresolved ordinary map surfaces use a tiled DEFAULT fallback; unavailable skies remain omitted. " +
         "Lighting previews light_point_linear point/spot lights and authored direct sunlight with shadows. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets, ambient/diffuse sky lighting and bounced light are not previewed. " +
         "Build → Build PS3 map compiles a saved map into .d3dbsp and .ff using D3dbspLinker. " +
         Compilation.MapCompiler.Scope);

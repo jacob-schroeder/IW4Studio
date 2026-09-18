@@ -83,14 +83,12 @@ internal static class OrthographicGeometry
             foreach (var entity in scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
             {
                 if (!scene.CanSelect(entity)) continue;
-                if (XModelGeometry.IsModel(entity))
-                {
-                    if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
-                        foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
-                            yield return (scene.Owner(entity), [projection.ToScreen(triangle.A.Position),
-                                projection.ToScreen(triangle.B.Position), projection.ToScreen(triangle.C.Position)]);
-                }
-                else if (entity.ClassName == "trigger_radius")
+                bool modelEntity = XModelGeometry.IsModel(entity);
+                if (modelEntity && scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                    foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                        yield return (scene.Owner(entity), [projection.ToScreen(triangle.A.Position),
+                            projection.ToScreen(triangle.B.Position), projection.ToScreen(triangle.C.Position)]);
+                else if (!modelEntity && entity.ClassName == "trigger_radius")
                     yield return (scene.Owner(entity), ConvexHull(PointEntityGeometry.GetRadiusLines(entity)
                         .SelectMany(line => new[] { projection.ToScreen(line.A), projection.ToScreen(line.B) })));
                 else if (scene.Bounds(entity) is { } bounds)

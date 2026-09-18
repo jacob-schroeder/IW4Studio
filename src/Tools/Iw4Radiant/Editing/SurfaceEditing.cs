@@ -4,6 +4,8 @@ namespace Iw4Radiant.Editing;
 
 internal static class SurfaceEditing
 {
+    internal enum TextureTransform { FlipU, FlipV, Rotate90 }
+
     internal static IEnumerable<BrushFaceSelection> GetFaces(EditorSession session)
     {
         var seen = new HashSet<MapFace>(ReferenceEqualityComparer.Instance);
@@ -56,5 +58,36 @@ internal static class SurfaceEditing
         {
             foreach (var change in changes) change.Face.Projection = change.Projection;
         });
+    }
+
+    internal static void TransformTexture(EditorSession session, TextureTransform transform)
+    {
+        MapFace[] faces = GetFaces(session).Select(selection => selection.Face).ToArray();
+        if (faces.Length == 0)
+            throw new ArgumentException("Select brush faces or brushes before transforming their textures.");
+        var changes = faces.Select(face =>
+        {
+            SurfaceProjection projection = SurfaceProjection.Parse(face.Projection);
+            projection = transform switch
+            {
+                TextureTransform.FlipU => projection with { Width = projection.Width == 0 ? -128 : -projection.Width },
+                TextureTransform.FlipV => projection with { Height = projection.Height == 0 ? -128 : -projection.Height },
+                TextureTransform.Rotate90 => projection with { Rotation = NormalizeRotation(projection.Rotation + 90) },
+                _ => throw new ArgumentOutOfRangeException(nameof(transform))
+            };
+            _ = projection.GetMapping(face.Normal);
+            return (Face: face, Projection: projection.Format());
+        }).Where(change => change.Face.Projection != change.Projection).ToArray();
+        if (changes.Length == 0) return;
+        session.Edit(() =>
+        {
+            foreach (var change in changes) change.Face.Projection = change.Projection;
+        });
+    }
+
+    private static float NormalizeRotation(float rotation)
+    {
+        rotation %= 360;
+        return rotation < 0 ? rotation + 360 : rotation;
     }
 }

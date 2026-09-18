@@ -8,6 +8,41 @@ internal static class SelectionTransforms
 {
     internal static void Translate(EditorSession session, Vector3 delta) => Apply(session, Matrix4x4.CreateTranslation(delta));
 
+    internal static Vector3 ApplyAxisLocks(EditorSession session, Vector3 delta)
+    {
+        if ((session.AxisLock & AxisLock.X) != 0) delta.X = 0;
+        if ((session.AxisLock & AxisLock.Y) != 0) delta.Y = 0;
+        if ((session.AxisLock & AxisLock.Z) != 0) delta.Z = 0;
+        return delta;
+    }
+
+    internal static void Flip(EditorSession session, int axis)
+    {
+        if (session.Selection.Items.Any(item => EditorSelection.Owner(item) is MapEntity))
+            throw new ArgumentException("Flip supports selected brushes, terrain, patches, and their vertices. Model and entity reflections are not representable in IW map source.");
+        ApplyAroundSelection(session, Matrix4x4.CreateScale(axis == 0 ? -1 : 1, axis == 1 ? -1 : 1, axis == 2 ? -1 : 1));
+    }
+
+    internal static void Rotate90(EditorSession session, int axis)
+    {
+        Matrix4x4 rotation = axis switch
+        {
+            0 => Matrix4x4.CreateRotationX(MathF.PI / 2),
+            1 => Matrix4x4.CreateRotationY(MathF.PI / 2),
+            2 => Matrix4x4.CreateRotationZ(MathF.PI / 2),
+            _ => throw new ArgumentOutOfRangeException(nameof(axis))
+        };
+        ApplyAroundSelection(session, rotation);
+    }
+
+    private static void ApplyAroundSelection(EditorSession session, Matrix4x4 operation)
+    {
+        if (!session.CanTransformSelection || session.SelectionBounds is not { } bounds)
+            throw new ArgumentException("Select whole objects or editable vertices first.");
+        Vector3 pivot = bounds.Min / 2 + bounds.Max / 2;
+        session.Edit(() => Apply(session, Matrix4x4.CreateTranslation(-pivot) * operation * Matrix4x4.CreateTranslation(pivot)));
+    }
+
     // The caller owns the edit transaction, so drag updates produce a single undo step.
     internal static void Apply(EditorSession session, Matrix4x4 transform)
     {
@@ -32,7 +67,7 @@ internal static class SelectionTransforms
             foreach (BrushVertexSelection vertex in group) vertex.Position = positions[vertex.Position];
         }
         foreach (var group in items.OfType<TerrainVertexSelection>().GroupBy(vertex => vertex.Terrain))
-            group.Key.Transform(transform, group.Select(vertex => vertex.Index).ToArray());
+            group.Key.Transform(transform, group.Where(vertex => !session.IsPatchVertexLocked(vertex)).Select(vertex => vertex.Index).ToArray());
     }
 
     internal static void ApplyEntity(MapEntity entity, Matrix4x4 transform, bool textureLock)

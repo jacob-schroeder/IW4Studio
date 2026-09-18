@@ -27,7 +27,7 @@ internal static class MapCompiler
             "Free-for-all spawns are required before building.";
     }
 
-    internal const string Scope = "Brushes, solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
+    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
         "One render cell; primary local lights, curves, prefabs, brush entities, breakable glass and bounced lighting are not compiled yet.";
 
@@ -36,7 +36,7 @@ internal static class MapCompiler
         CancellationToken cancellationToken = default)
     {
         Vector3[] probeOrigins = Validate(document, assetName, materials);
-        ClipMaterial[] clipMaterials = document.World.Brushes.SelectMany(brush => brush.Faces)
+        ClipMaterial[] baseMaterials = document.World.Brushes.SelectMany(brush => brush.Faces)
             .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .Select(name =>
@@ -57,12 +57,30 @@ internal static class MapCompiler
                 return new ClipMaterial { Name = name, Contents = material.IsSky ? 0x800 : 1,
                     SurfaceFlags = material.IsSky ? 0x34 : material.GetSurfaceTypeFlags() };
             }).ToArray();
-        foreach (MapBrush brush in document.World.Brushes)
-            if (!brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)) &&
-                brush.Faces.Select(face => materials[face.Material].IsSky).Distinct().Count() != 1)
-                throw new NotSupportedException("Apply sky materials to every face of a sky brush. Mixed sky and solid faces are not supported by compilation yet.");
+        var baseMaterialsByName = baseMaterials.ToDictionary(material =>
+            material.Name ?? throw new InvalidDataException("A collision material has no name."), StringComparer.Ordinal);
+        ClipMaterial[] clipMaterials = document.World.Brushes.SelectMany(brush =>
+            {
+                BrushKind kind = BrushContents.ReadForCompilation(brush);
+                return brush.Faces.Select(face =>
+                {
+                    ClipMaterial material = baseMaterialsByName[face.Material];
+                    return (face.Material, Contents: BrushContents.Compile(kind, material.Contents));
+                });
+            })
+            .Concat(document.World.Terrains.Select(terrain =>
+                (terrain.Material, baseMaterialsByName[terrain.Material].Contents)))
+            .Distinct()
+            .OrderBy(item => item.Material, StringComparer.Ordinal).ThenBy(item => item.Contents)
+            .Select(item => new ClipMaterial
+            {
+                Name = item.Material,
+                Contents = item.Contents,
+                SurfaceFlags = baseMaterialsByName[item.Material].SurfaceFlags
+            }).ToArray();
         MapEntsAsset entities = CompileEntities(document, assetName);
-        ClipMapAsset collision = BrushCollisionCompiler.Compile(document, assetName, clipMaterials, entities);
+        ClipMapAsset collision = BrushCollisionCompiler.Compile(document, assetName, clipMaterials,
+            baseMaterialsByName, entities);
         collision = TerrainCollisionCompiler.Append(collision,
             document.World.Terrains.Where(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray());
         var sun = BrushRenderCompiler.CompileSun(document, assetName);
@@ -91,10 +109,18 @@ internal static class MapCompiler
         foreach (MapBrush brush in document.World.Brushes)
         {
             BrushGeometry.Validate(brush);
-            ValidateDirectives(brush.Directives);
+            BrushKind kind = BrushContents.ReadForCompilation(brush);
+            ValidateDirectives(brush.Directives, brushContents: true);
             if (brush.Faces.Any(face => ClipBrushMaterial.IsPlayerClip(face.Material)) &&
                 !brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)))
                 throw new NotSupportedException("Apply clip_player to every face of a player clip brush. Mixed player clip and visible faces are not supported by compilation.");
+            bool playerClip = brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material));
+            bool anySky = brush.Faces.Any(face => materials.TryGetValue(face.Material, out var material) && material.IsSky);
+            bool sky = brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky);
+            if (anySky && !sky)
+                throw new NotSupportedException("Apply sky materials to every face of a sky brush. Mixed sky and solid faces are not supported by compilation yet.");
+            if (kind != BrushKind.Structural && (playerClip || sky))
+                throw new NotSupportedException("Brush contents directives require visible, non-sky world materials. Player clip and sky already define their native contents.");
             foreach (MapFace face in brush.Faces)
             {
                 var projection = SurfaceProjection.Parse(face.Projection);
@@ -145,6 +171,8 @@ internal static class MapCompiler
             foreach (MapBrush brush in document.World.Brushes)
                 if (!brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky) &&
                     !(entity.ClassName == "reflection_probe" && brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material))) &&
+                    (brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)) ||
+                     BrushContents.BlocksPlayer(BrushContents.ReadForCompilation(brush))) &&
                     brush.Faces.All(face => BrushGeometry.Dot(face.Normal, origin - face.A) <= BrushGeometry.PlaneTolerance))
                     throw new InvalidDataException($"Entity '{entity.ClassName}' at {entity.Properties["origin"]} is inside a blocking brush. Move it into playable space.");
             if (entity.ClassName == "reflection_probe")
@@ -193,12 +221,13 @@ internal static class MapCompiler
                 throw new NotSupportedException($"Light aim target property '{key}' is not supported by compilation.");
     }
 
-    private static void ValidateDirectives(IEnumerable<string> directives)
+    private static void ValidateDirectives(IEnumerable<string> directives, bool brushContents = false)
     {
         foreach (string directive in directives)
         {
             var tokens = MapTokenizer.Tokenize(directive);
             if (tokens.Count == 2 && !tokens[0].Quoted && tokens[0].Value == "layer" && tokens[1].Quoted) continue;
+            if (brushContents && tokens.Count > 0 && !tokens[0].Quoted && tokens[0].Value == "contents") continue;
             throw new NotSupportedException($"Source directive '{directive}' is not supported by compilation.");
         }
     }

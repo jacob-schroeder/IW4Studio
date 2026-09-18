@@ -84,7 +84,9 @@ internal sealed class CameraTransformGesture
                 if (!float.IsFinite(_session.GridSize) || _session.GridSize <= 0)
                     throw new ArgumentException("Grid size must be positive and finite.");
                 amount = _session.Snap(distance);
-                target = Matrix4x4.CreateTranslation(_direction * amount);
+                Vector3 translation = SelectionTransforms.ApplyAxisLocks(_session, _direction * amount);
+                amount = Vector3.Dot(translation, _direction);
+                target = Matrix4x4.CreateTranslation(translation);
                 units = " units";
             }
             else

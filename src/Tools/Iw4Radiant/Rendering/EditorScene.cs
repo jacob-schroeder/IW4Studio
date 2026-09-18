@@ -32,6 +32,7 @@ internal sealed class EditorScene(EditorSession session)
     }
 
     internal bool CanSelect(object item) => session.Visibility.CanSelect(session.Document, Owner(item));
+    internal bool IsPatchVertexLocked(TerrainVertexSelection vertex) => session.IsPatchVertexLocked(vertex);
 
     internal IReadOnlyList<MapEntity> ResolveTargets(MapEntity source)
     {
@@ -64,7 +65,8 @@ internal sealed class EditorScene(EditorSession session)
                 .Concat(preview.Entities.Where(PointEntityGeometry.IsPointEntity)));
         }
         if (XModelGeometry.IsModel(entity))
-            return ResolveModel?.Invoke(entity.Properties["model"]) is { } model ? XModelGeometry.Bounds(entity, model) : null;
+            return ResolveModel?.Invoke(entity.Properties["model"]) is { } model
+                ? XModelGeometry.Bounds(entity, model) : EditorSession.EntityBounds(entity);
         return EditorSession.EntityBounds(entity);
     }
 
@@ -104,10 +106,7 @@ internal sealed class EditorScene(EditorSession session)
         void Add(MapEntity source, MapEntity? instance)
         {
             if (XModelGeometry.IsModel(source) && ResolveModel?.Invoke(source.Properties["model"]) is null)
-            {
                 notices.Add($"Model unavailable: {source.Properties["model"]}");
-                return;
-            }
             var entity = new MapEntity();
             foreach (var pair in source.Properties) entity.Properties.Add(pair.Key, pair.Value);
             entity.Directives.AddRange(source.Directives);

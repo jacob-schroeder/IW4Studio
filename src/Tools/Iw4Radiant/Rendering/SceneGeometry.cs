@@ -104,10 +104,13 @@ internal sealed class SceneGeometry
             Batches.Add((material.Key, start, material.Value.Triangles.Count, wireStart, material.Value.Lines.Count));
         }
         GlyphStart = all.Count;
-        foreach (var entity in document.Entities.Where(entity => PointEntityGeometry.IsPointEntity(entity) && !XModelGeometry.IsModel(entity)))
+        foreach (var entity in document.Entities.Where(entity => PointEntityGeometry.IsPointEntity(entity) &&
+                     (!XModelGeometry.IsModel(entity) || editor.ResolveModel?.Invoke(entity.Properties["model"]) is null)))
         {
-            Vector3 color = entity.ClassName == "light" ? new(1, 0.85f, 0.35f) : new(0.35f, 0.8f, 0.95f);
-            if (entity.ClassName == "trigger_radius")
+            bool missingModel = XModelGeometry.IsModel(entity);
+            Vector3 color = missingModel ? Vector3.UnitX :
+                entity.ClassName == "light" ? new(1, 0.85f, 0.35f) : new(0.35f, 0.8f, 0.95f);
+            if (!missingModel && entity.ClassName == "trigger_radius")
             {
                 foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
                     AddLine(outlines, line.A, line.B, selectedObjects.Contains(entity) ? highlight : color);
@@ -140,7 +143,9 @@ internal sealed class SceneGeometry
             {
                 if (SelectionGeometry.Bounds(handle) is not { } pointBounds) continue;
                 Vector3 point = pointBounds.Min;
-                Vector3 color = selection.Contains(handle) ? highlight : new Vector3(0.65f, 0.9f, 1);
+                Vector3 color = handle is TerrainVertexSelection terrainVertex && editor.IsPatchVertexLocked(terrainVertex)
+                    ? new Vector3(1, 0.2f, 0.2f)
+                    : selection.Contains(handle) ? highlight : new Vector3(0.65f, 0.9f, 1);
                 const float radius = 3;
                 AddLine(all, point - Vector3.UnitX * radius, point + Vector3.UnitX * radius, color);
                 AddLine(all, point - Vector3.UnitY * radius, point + Vector3.UnitY * radius, color);

@@ -1,6 +1,7 @@
 using System.Numerics;
 using Avalonia;
 using Avalonia.OpenGL;
+using IW4.Assets.Assets.Material;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
@@ -15,7 +16,8 @@ internal sealed class SceneRenderer
     private uint _framebuffer, _colorBuffer, _depthBuffer;
     private uint _lineTexture;
     private PixelSize _renderSize;
-    private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation;
+    private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
+        _ignoreVertexColorLocation, _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
     private readonly Dictionary<string, MaterialSurfaceState> _surfaceStates = new(StringComparer.Ordinal);
@@ -50,6 +52,9 @@ internal sealed class SceneRenderer
             _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
             _premultiplyAlphaLocation = _gl.GetUniformLocation(_program, "uPremultiplyAlpha");
             _ignoreVertexColorLocation = _gl.GetUniformLocation(_program, "uIgnoreVertexColor");
+            _cubicClipLocation = _gl.GetUniformLocation(_program, "uCubicClip");
+            _cubicClipCenterLocation = _gl.GetUniformLocation(_program, "uCubicClipCenter");
+            _cubicClipDistanceLocation = _gl.GetUniformLocation(_program, "uCubicClipDistance");
             _lighting.Initialize(_gl, _program);
             _shadows.Initialize(_gl, _program, header);
             _sunlight.Initialize(_gl, _program, header);
@@ -129,6 +134,9 @@ internal sealed class SceneRenderer
             gl.ColorMask(true, true, true, false);
             gl.UseProgram(_program);
             gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
+            gl.Uniform1(_cubicClipLocation, session.CubicClipEnabled ? 1 : 0);
+            gl.Uniform3(_cubicClipCenterLocation, eye.X, eye.Y, eye.Z);
+            gl.Uniform1(_cubicClipDistanceLocation, session.CubicClipDistance);
             _lighting.Bind(gl, _shadows.IsAvailable);
             _shadows.Bind(gl);
             _sunlight.Bind(gl);
@@ -145,13 +153,13 @@ internal sealed class SceneRenderer
 
             gl.Enable(EnableCap.PolygonOffsetFill);
             gl.PolygonOffset(1, 1);
-            RenderSurfaces(gl, resolveMaterial, previewLighting, eye, transparent: false);
+            RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: false);
             _skies.Render(gl, viewProjection, eye, _vertexArray, _batches, resolveMaterial);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
             gl.DrawArrays(PrimitiveType.Triangles, _glyphStart, (uint)_glyphCount);
-            RenderSurfaces(gl, resolveMaterial, previewLighting, eye, transparent: true);
+            RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Disable(EnableCap.PolygonOffsetFill);
             gl.Uniform1(_litLocation, 0);
@@ -202,13 +210,15 @@ internal sealed class SceneRenderer
         }
     }
 
-    private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting, Vector3 eye, bool transparent)
+    private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting,
+        bool previewAlpha, Vector3 eye, bool transparent)
     {
         var textures = new Dictionary<string, uint>(StringComparer.Ordinal);
         foreach (var batch in _surfaceBatches)
         {
             MaterialSurfaceState state = _surfaceStates[batch.Material];
-            if ((state.IsBlended || !state.DepthWrite) != transparent) continue;
+            bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
+            if (drawTransparent != transparent) continue;
             uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
             if (texture == 0)
             {
@@ -224,7 +234,8 @@ internal sealed class SceneRenderer
                 textures.Add(batch.Material, texture);
                 continue;
             }
-            SceneMaterialDrawing.Apply(gl, state, _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
+            SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state),
+                _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
             gl.BindTexture(TextureTarget.Texture2D, texture);
             gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
             gl.Uniform1(_texturedLocation, 1);
@@ -251,6 +262,14 @@ internal sealed class SceneRenderer
         }
         ResetSurfaceState(gl);
     }
+
+    private static MaterialSurfaceState OpaquePreview(MaterialSurfaceState state) => state with
+    {
+        BlendOperation = GfxBlendOperation.Disabled,
+        Source = GfxBlend.One,
+        Destination = GfxBlend.Zero,
+        DepthWrite = true
+    };
 
     private void ResetSurfaceState(GL gl)
     {
