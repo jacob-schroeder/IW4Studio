@@ -38,7 +38,8 @@ public sealed class LinkAssetProvider
 {
     internal LinkAssetProvider(
         LinkAssetProviderSource source,
-        LinkAssetFreezeContext freezeContext)
+        LinkAssetFreezeContext freezeContext,
+        Action<string>? warningSink)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(freezeContext);
@@ -72,7 +73,12 @@ public sealed class LinkAssetProvider
         Plan = (serializedType, definition) switch
         {
             (XAssetType.RawFile, RawFileAsset rawFile) =>
-                RawFileLinkPlan.Freeze(key, serializedName, rawFile, freeze),
+                RawFileLinkPlan.Freeze(
+                    key,
+                    serializedName,
+                    rawFile,
+                    freeze,
+                    warningSink),
             (XAssetType.LightDef, LightDefAsset lightDef) =>
                 LightDefLinkPlan.Freeze(key, serializedName, lightDef, freeze),
             (XAssetType.Image, GfxImageAsset image) =>
@@ -287,12 +293,15 @@ public sealed class LinkAssetPool
     private readonly IReadOnlyList<LinkAssetProvider> _providers;
     private readonly LinkAssetFrozenIdentityCatalog _identityCatalog;
 
-    public LinkAssetPool(IEnumerable<LinkAssetProviderSource> providers)
+    public LinkAssetPool(
+        IEnumerable<LinkAssetProviderSource> providers,
+        Action<string>? warningSink = null)
     {
         (LinkAssetProvider[] frozen, LinkAssetFrozenIdentityCatalog catalog) =
             FreezeProviders(
                 providers,
-                new LinkAssetFrozenIdentityCatalog());
+                new LinkAssetFrozenIdentityCatalog(),
+                warningSink);
         _providers = Array.AsReadOnly(frozen);
         _identityCatalog = catalog;
     }
@@ -362,7 +371,8 @@ public sealed class LinkAssetPool
         LinkAssetProvider[] Providers,
         LinkAssetFrozenIdentityCatalog Catalog) FreezeProviders(
         IEnumerable<LinkAssetProviderSource> providers,
-        LinkAssetFrozenIdentityCatalog identityCatalog)
+        LinkAssetFrozenIdentityCatalog identityCatalog,
+        Action<string>? warningSink = null)
     {
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(identityCatalog);
@@ -375,7 +385,10 @@ public sealed class LinkAssetPool
         var freezeContext = new LinkAssetFreezeContext(identityCatalog);
         var frozen = new LinkAssetProvider[sources.Length];
         for (int index = 0; index < sources.Length; index++)
-            frozen[index] = new LinkAssetProvider(sources[index], freezeContext);
+            frozen[index] = new LinkAssetProvider(
+                sources[index],
+                freezeContext,
+                warningSink);
         freezeContext.Complete();
         return (frozen, freezeContext.Catalog);
     }

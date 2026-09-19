@@ -52,7 +52,8 @@ internal sealed class RawFileLinkPlan : AssetLinkPlan
         AssetKey key,
         string originalSerializedName,
         RawFileAsset definition,
-        LinkAssetFreezeScope freeze)
+        LinkAssetFreezeScope freeze,
+        Action<string>? warningSink = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         return Create(
@@ -61,7 +62,8 @@ internal sealed class RawFileLinkPlan : AssetLinkPlan
             definition.CompressedLen,
             definition.Len,
             definition.Buffer,
-            freeze);
+            freeze,
+            warningSink);
     }
 
     private static AssetLinkPlan Create(
@@ -70,7 +72,8 @@ internal sealed class RawFileLinkPlan : AssetLinkPlan
         int compressedLength,
         int uncompressedLength,
         byte[]? payload,
-        LinkAssetFreezeScope freeze)
+        LinkAssetFreezeScope freeze,
+        Action<string>? warningSink)
     {
         if (compressedLength < 0)
             throw new InvalidDataException("RawFile compressed length cannot be negative.");
@@ -110,7 +113,11 @@ internal sealed class RawFileLinkPlan : AssetLinkPlan
                     "Compressed RawFile payload length must equal compressedLen.");
             }
 
-            ValidateCompressedPayload(copiedPayload, uncompressedLength);
+            ValidateCompressedPayload(
+                copiedPayload,
+                uncompressedLength,
+                originalSerializedName,
+                warningSink);
         }
         else
         {
@@ -133,7 +140,9 @@ internal sealed class RawFileLinkPlan : AssetLinkPlan
 
     private static void ValidateCompressedPayload(
         byte[] payload,
-        int expectedLength)
+        int expectedLength,
+        string assetName,
+        Action<string>? warningSink)
     {
         try
         {
@@ -148,14 +157,17 @@ internal sealed class RawFileLinkPlan : AssetLinkPlan
             while ((read = zlib.Read(buffer)) != 0)
             {
                 inflatedLength += read;
-                if (inflatedLength > expectedLength)
-                {
-                    throw new InvalidDataException(
-                        "Compressed RawFile payload inflates beyond its declared length.");
-                }
             }
 
-            if (inflatedLength != expectedLength)
+            if (inflatedLength > expectedLength)
+            {
+                // PS3 accepts the complete zlib stream even when Len is short;
+                // preserve that payload and surface the metadata mismatch.
+                warningSink?.Invoke(
+                    $"RawFile '{assetName}': Compressed RawFile payload inflates beyond " +
+                    $"its declared length ({inflatedLength} bytes; declared {expectedLength}).");
+            }
+            else if (inflatedLength != expectedLength)
             {
                 throw new InvalidDataException(
                     $"Compressed RawFile payload inflates to {inflatedLength} bytes; " +

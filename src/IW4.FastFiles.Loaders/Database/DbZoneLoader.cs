@@ -384,7 +384,8 @@ public sealed class DbZoneLoader
             XAssetList: xassetList,
             LoadedAssets: Array.AsReadOnly(loadedAssets.ToArray()),
             ZoneBytes: loadState.ZoneBytes,
-            Warnings: Array.AsReadOnly(context.Diagnostics.Warnings.ToArray()),
+            // Linker freezing may append compatibility warnings after DB load.
+            Warnings: context.Diagnostics.Warnings,
             ZoneObjectFile: objectFile,
             LinkAssetImportResolver: context.ZoneObjectCapture?.ImportResolver);
 

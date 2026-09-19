@@ -174,7 +174,8 @@ public sealed class DbLoadSession : IDisposable
                 $"Target zone '{targetZone.SourceName}' is not active in the runtime registry.");
         LinkAssetPool result = FreezeProviders(
             registeredTarget.Contributions.ProviderContributions,
-            targetZone);
+            targetZone,
+            targetZone.Context.Diagnostics.Warn);
 
         if (AssetPool.Revision != revision)
         {
@@ -389,9 +390,12 @@ public sealed class DbLoadSession : IDisposable
 
     private LinkAssetPool FreezeProviders(
         IEnumerable<XAssetProviderContribution> providers,
-        LoadedXZone zone) => new(providers
-        .OrderBy(provider => provider.RegistrationSequence)
-        .Select(provider => CreateProviderSource(zone, provider)));
+        LoadedXZone zone,
+        Action<string>? warningSink = null) => new(
+            providers
+                .OrderBy(provider => provider.RegistrationSequence)
+                .Select(provider => CreateProviderSource(zone, provider)),
+            warningSink);
 
     private static LinkAssetProviderSource CreateProviderSource(
         LoadedXZone zone,
