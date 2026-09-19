@@ -6,7 +6,7 @@ It does not compile `.map` source files.
 Run it from the repository root:
 
 ```bash
-dotnet run --project src/Tools/D3dbspLinker/D3dbspLinker.csproj -- <command> <arguments>
+dotnet run --project tools/D3dbspLinker/D3dbspLinker.csproj -- <command> <arguments>
 ```
 
 Put quotes around paths that contain spaces.
@@ -35,7 +35,7 @@ Put quotes around paths that contain spaces.
 Example:
 
 ```bash
-dotnet run --project src/Tools/D3dbspLinker/D3dbspLinker.csproj -- \
+dotnet run --project tools/D3dbspLinker/D3dbspLinker.csproj -- \
   to-fastfile \
   my_map.d3dbsp \
   mp_terminal.ff \
@@ -49,7 +49,7 @@ dotnet run --project src/Tools/D3dbspLinker/D3dbspLinker.csproj -- \
 To convert it back:
 
 ```bash
-dotnet run --project src/Tools/D3dbspLinker/D3dbspLinker.csproj -- \
+dotnet run --project tools/D3dbspLinker/D3dbspLinker.csproj -- \
   to-d3dbsp my_map.ff recovered_map.d3dbsp
 ```
 

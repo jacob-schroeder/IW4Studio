@@ -1,15 +1,15 @@
-name: Build IW4Studio
+name: Build Iw4Radiant
 
 on:
   push:
     branches:
       - main
     paths:
-      - apps/IW4Studio/**
+      - apps/Iw4Radiant/**
+      - tools/D3dbspLinker/**
       - src/**
-      - Resources/**
       - global.json
-      - .github/workflows/build-iw4studio.yml
+      - .github/workflows/build-iw4radiant.yml
   workflow_dispatch:
 
 permissions:
@@ -21,7 +21,7 @@ env:
 
 jobs:
   version:
-    name: Resolve IW4Studio version
+    name: Resolve Iw4Radiant version
     runs-on: ubuntu-latest
     outputs:
       public_version: ${{ steps.version.outputs.public_version }}
@@ -36,9 +36,9 @@ jobs:
         id: version
         shell: bash
         run: |
-          version_line="$(sed -n 's:^[[:space:]]*<VersionPrefix>\([^<]*\)</VersionPrefix>[[:space:]]*$:\1:p' apps/IW4Studio/IW4.Studio.Desktop.csproj)"
+          version_line="$(sed -n 's:^[[:space:]]*<VersionPrefix>\([^<]*\)</VersionPrefix>[[:space:]]*$:\1:p' apps/Iw4Radiant/Iw4Radiant.csproj)"
           if [[ ! "$version_line" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected one major.minor VersionPrefix in apps/IW4Studio/IW4.Studio.Desktop.csproj." >&2
+            echo "Expected one major.minor VersionPrefix in apps/Iw4Radiant/Iw4Radiant.csproj." >&2
             exit 1
           fi
           public_version="${version_line}.${GITHUB_RUN_NUMBER}"
@@ -59,15 +59,15 @@ jobs:
           - platform: win_x64
             runner: windows-latest
             runtime: win-x64
-            asset: iw4studio-win_x64.zip
+            asset: iw4radiant-win_x64.zip
           - platform: macos_x64
             runner: macos-15-intel
             runtime: osx-x64
-            asset: iw4studio-macos_x64.tar.gz
+            asset: iw4radiant-macos_x64.tar.gz
           - platform: macos_arm64
             runner: macos-15
             runtime: osx-arm64
-            asset: iw4studio-macos_arm64.tar.gz
+            asset: iw4radiant-macos_arm64.tar.gz
 
     steps:
       - name: Check out repository
@@ -78,10 +78,27 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Publish desktop app
+      - name: Publish D3dbspLinker
         shell: bash
         run: >-
-          dotnet publish apps/IW4Studio/IW4.Studio.Desktop.csproj
+          dotnet publish tools/D3dbspLinker/D3dbspLinker.csproj
+          --configuration Release
+          --runtime ${{ matrix.runtime }}
+          --self-contained true
+          --output linker-publish
+          -p:ContinuousIntegrationBuild=true
+          -p:Version=${{ needs.version.outputs.public_version }}
+          -p:FileVersion=${{ needs.version.outputs.file_version }}
+          -p:InformationalVersion=${{ needs.version.outputs.informational_version }}
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Publish Radiant app
+        shell: bash
+        run: >-
+          dotnet publish apps/Iw4Radiant/Iw4Radiant.csproj
           --configuration Release
           --runtime ${{ matrix.runtime }}
           --self-contained true
@@ -90,12 +107,20 @@ jobs:
           -p:Version=${{ needs.version.outputs.public_version }}
           -p:FileVersion=${{ needs.version.outputs.file_version }}
           -p:InformationalVersion=${{ needs.version.outputs.informational_version }}
-          -p:PublishTrimmed=true
-          -p:TrimMode=partial
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:DebugSymbols=false
           -p:DebugType=None
+
+      - name: Add D3dbspLinker to app release
+        shell: bash
+        run: |
+          linker_name="D3dbspLinker"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            linker_name="D3dbspLinker.exe"
+          fi
+          test -f "linker-publish/${linker_name}"
+          cp "linker-publish/${linker_name}" "publish/${linker_name}"
 
       - name: Remove symbol files
         shell: bash
@@ -105,7 +130,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $destination = "artifact/release/iw4studio/${{ matrix.platform }}/${{ matrix.asset }}"
+          $destination = "artifact/release/iw4radiant/${{ matrix.platform }}/${{ matrix.asset }}"
           New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
           Compress-Archive -Path "publish/*" -DestinationPath $destination -CompressionLevel Optimal
 
@@ -113,18 +138,18 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          mkdir -p "artifact/release/iw4studio/${{ matrix.platform }}"
-          tar -czf "artifact/release/iw4studio/${{ matrix.platform }}/${{ matrix.asset }}" -C publish .
+          mkdir -p "artifact/release/iw4radiant/${{ matrix.platform }}"
+          tar -czf "artifact/release/iw4radiant/${{ matrix.platform }}/${{ matrix.asset }}" -C publish .
 
       - name: Stage platform build
         uses: actions/upload-artifact@v4
         with:
-          name: iw4studio-build-${{ github.run_attempt }}-${{ matrix.platform }}
+          name: iw4radiant-build-${{ github.run_attempt }}-${{ matrix.platform }}
           path: artifact
           if-no-files-found: error
 
   package:
-    name: Release IW4Studio
+    name: Release Iw4Radiant
     needs:
       - version
       - publish
@@ -136,7 +161,7 @@ jobs:
       - name: Download platform builds
         uses: actions/download-artifact@v4
         with:
-          pattern: iw4studio-build-${{ github.run_attempt }}-*
+          pattern: iw4radiant-build-${{ github.run_attempt }}-*
           path: release-assets
           merge-multiple: true
 
@@ -146,26 +171,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PUBLIC_VERSION: ${{ needs.version.outputs.public_version }}
         run: |
-          release_tag="iw4studio-v${PUBLIC_VERSION}"
+          release_tag="iw4radiant-v${PUBLIC_VERSION}"
           assets=(
-            "release-assets/release/iw4studio/win_x64/iw4studio-win_x64.zip"
-            "release-assets/release/iw4studio/macos_x64/iw4studio-macos_x64.tar.gz"
-            "release-assets/release/iw4studio/macos_arm64/iw4studio-macos_arm64.tar.gz"
+            "release-assets/release/iw4radiant/win_x64/iw4radiant-win_x64.zip"
+            "release-assets/release/iw4radiant/macos_x64/iw4radiant-macos_x64.tar.gz"
+            "release-assets/release/iw4radiant/macos_arm64/iw4radiant-macos_arm64.tar.gz"
           )
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$release_tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$release_tag" \
               --target "$GITHUB_SHA" \
-              --title "IW4Studio ${PUBLIC_VERSION}" \
-              --notes "Automated IW4Studio build from commit ${GITHUB_SHA}." \
+              --title "Iw4Radiant ${PUBLIC_VERSION}" \
+              --notes "Automated Iw4Radiant build from commit ${GITHUB_SHA}." \
               --prerelease \
               --latest=false \
               --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$release_tag" "${assets[@]}" \
               --target "$GITHUB_SHA" \
-              --title "IW4Studio ${PUBLIC_VERSION}" \
-              --notes "Automated IW4Studio build from commit ${GITHUB_SHA}." \
+              --title "Iw4Radiant ${PUBLIC_VERSION}" \
+              --notes "Automated Iw4Radiant build from commit ${GITHUB_SHA}." \
               --prerelease \
               --latest=false \
               --repo "$GITHUB_REPOSITORY"
@@ -174,6 +199,6 @@ jobs:
       - name: Merge platform builds
         uses: actions/upload-artifact/merge@v4
         with:
-          name: iw4studio-${{ needs.version.outputs.public_version }}-attempt-${{ github.run_attempt }}
-          pattern: iw4studio-build-${{ github.run_attempt }}-*
+          name: iw4radiant-${{ needs.version.outputs.public_version }}-attempt-${{ github.run_attempt }}
+          pattern: iw4radiant-build-${{ github.run_attempt }}-*
           delete-merged: true

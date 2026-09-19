@@ -6,6 +6,9 @@
 # Local agent instructions
 AGENTS.md
 
+# Local documentation
+/docs/
+
 # dotenv files
 .env
 

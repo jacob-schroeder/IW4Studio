@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <VersionPrefix>0.1</VersionPrefix>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,8 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../IW4.AssetExchange/IW4.AssetExchange.csproj" />
-    <ProjectReference Include="../../IW4.Unlinker/IW4.Unlinker.csproj" />
+    <ProjectReference Include="../../src/IW4.AssetExchange/IW4.AssetExchange.csproj" />
+    <ProjectReference Include="../../src/IW4.Unlinker/IW4.Unlinker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

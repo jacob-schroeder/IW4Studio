@@ -114,7 +114,7 @@ public partial class MainWindow
         }
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
-            string project = Path.Combine(directory.FullName, "src", "Tools", "D3dbspLinker");
+            string project = Path.Combine(directory.FullName, "tools", "D3dbspLinker");
             if (!File.Exists(Path.Combine(project, "D3dbspLinker.csproj"))) continue;
             foreach (string configuration in configurations)
             {

@@ -18,7 +18,7 @@ public static class AssemblyConst
             string versionString = "Unknown";
 
             if (version != null)
-                versionString = $"{version.Major}.{version.Minor}";
+                versionString = $"{version.Major}.{version.Minor}.{version.Build}";
 
             return versionString;
         }
