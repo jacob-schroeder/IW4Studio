@@ -3,12 +3,6 @@
         x:Class="Iw4Radiant.Views.MapBuildWindow"
         Title="Build PS3 map" Width="760" Height="760"
         MinWidth="640" MinHeight="680" WindowStartupLocation="CenterOwner">
-    <Window.Styles>
-        <Style Selector="Button">
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-    </Window.Styles>
     <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="14">
         <StackPanel Spacing="6">
             <TextBlock x:Name="SourceName" FontSize="17" FontWeight="SemiBold" />

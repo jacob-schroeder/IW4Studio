@@ -48,7 +48,8 @@ internal static class XModelGeometry
         XModelExportDocument document = source.Document;
         foreach (var triangle in document.Triangles)
             yield return (document.Materials[triangle.MaterialIndex].Name,
-                Vertex(triangle.First), Vertex(triangle.Second), Vertex(triangle.Third));
+                // XMODEL_EXPORT uses clockwise-front winding; Radiant expects counter-clockwise.
+                Vertex(triangle.First), Vertex(triangle.Third), Vertex(triangle.Second));
 
         SceneVertex Vertex(XModelExportCorner corner)
         {

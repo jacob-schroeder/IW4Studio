@@ -1,6 +1,7 @@
 using System.Numerics;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
+using Iw4Radiant;
 
 namespace Iw4Radiant.Views;
 
@@ -16,8 +17,13 @@ public partial class MainWindow
         Workspace.Prefabs.InitializeActions(this, _session, _dialogs, FinishGestures, _files.OpenPathAsync);
         Workspace.Materials.CatalogChanged += RefreshAssets;
         Workspace.Models.CatalogChanged += RefreshAssets;
+        var settings = RadiantSettings.Load();
+        bool suppressRelatedModelRestore = false;
         Workspace.Materials.FolderLoaded += async root =>
         {
+            settings.MaterialFolder = root;
+            settings.Save();
+            if (suppressRelatedModelRestore) return;
             if (Path.GetFileName(Path.TrimEndingDirectorySeparator(root)) is "images" or "materials")
                 root = Path.GetDirectoryName(root) ?? root;
             if (Directory.Exists(Path.Combine(root, "xmodel"))) await Workspace.Models.LoadFolderAsync(root);
@@ -25,6 +31,11 @@ public partial class MainWindow
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
         Workspace.Models.DropRequested += DropModels;
+        Workspace.Models.FolderLoaded += root =>
+        {
+            settings.XModelFolder = root;
+            settings.Save();
+        };
         Workspace.Prefabs.PlacementRequested += path =>
         {
             PrefabLibrary.Reference(_session.FilePath ?? throw new ArgumentException("Save the map before placing a prefab."), path);
@@ -32,6 +43,24 @@ public partial class MainWindow
         };
         _session.Scene.ResolveModel = Workspace.Models.ResolveModel;
         _session.Scene.ResolveMaterial = ResolveMaterial;
+        _ = RestoreAssetFoldersAsync(settings, () => suppressRelatedModelRestore = true,
+            () => suppressRelatedModelRestore = false);
+    }
+
+    private async Task RestoreAssetFoldersAsync(RadiantSettings settings, Action markExplicitModelsRestored,
+        Action clearExplicitModelsRestored)
+    {
+        try
+        {
+            if (settings.XModelFolder is { } models && Directory.Exists(models))
+                if (await Workspace.Models.LoadFolderAsync(models)) markExplicitModelsRestored();
+            if (settings.MaterialFolder is { } material && Directory.Exists(material))
+            {
+                bool loaded = await Workspace.Materials.LoadFolderAsync(material);
+                if (loaded) settings.MaterialFolder = material;
+            }
+        }
+        finally { clearExplicitModelsRestored(); }
     }
 
     private MaterialSource? ResolveMaterial(string name) =>

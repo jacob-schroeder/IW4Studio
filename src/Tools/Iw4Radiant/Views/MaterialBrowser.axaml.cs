@@ -13,12 +13,18 @@ public partial class MaterialBrowser : UserControl
     private HashSet<string> _usedMaterials = new(StringComparer.Ordinal);
     private bool _filtering;
     private Bitmap? _preview;
+    private EditorDialogs? _dialogs;
+    private EditorSession? _session;
+    private Action<string>? _setStatus;
 
     public MaterialBrowser() => InitializeComponent();
 
     internal void InitializeActions(Window owner, EditorSession session, EditorDialogs dialogs,
         Action finishGestures, Action<string> setStatus)
     {
+        _dialogs = dialogs;
+        _session = session;
+        _setStatus = setStatus;
         BrowseButton.Click += async (_, _) => await BrowseAsync(owner, session, dialogs, finishGestures, setStatus);
         MaterialFilter.TextChanged += (_, _) => FilterMaterials();
         InUseToggle.IsCheckedChanged += (_, _) =>
@@ -88,6 +94,12 @@ public partial class MaterialBrowser : UserControl
         var folders = await dialogs.ShowModalAsync(() => owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             { Title = "Choose raw assets or a texture folder", AllowMultiple = false }));
         if (folders.Count == 0 || folders[0].TryGetLocalPath() is not { } root) return;
+        await LoadFolderAsync(root);
+    }
+
+    internal async Task<bool> LoadFolderAsync(string root)
+    {
+        if (_dialogs is not { } dialogs || _session is not { } session || _setStatus is not { } setStatus) return false;
         bool loaded = false;
         try
         {
@@ -107,6 +119,7 @@ public partial class MaterialBrowser : UserControl
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { dialogs.SetBusy(false); await dialogs.MessageAsync("Cannot read materials", exception.Message); }
         finally { dialogs.SetBusy(false); }
         if (loaded && FolderLoaded is { } loadRelatedAssets) await loadRelatedAssets(root);
+        return loaded;
     }
 
     private static (List<MaterialThumbnail> Materials, int Skipped) LoadThumbnails(string root)

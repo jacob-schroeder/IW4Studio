@@ -4,7 +4,7 @@
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="Iw4Radiant.Views.MainWindow"
         Title="Iw4Radiant"
-        Width="1500" Height="980" MinWidth="1050" MinHeight="720"
+        Width="1500" Height="980" MinWidth="640" MinHeight="720"
         Background="#202226" FontSize="12">
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <Menu Grid.Row="0" Background="#202225">
@@ -122,9 +122,9 @@
             </MenuItem>
         </Menu>
         <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="6,4">
-            <StackPanel Spacing="4">
-              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-              <StackPanel Orientation="Horizontal">
+            <StackPanel>
+              <WrapPanel Orientation="Horizontal">
+               <StackPanel Classes="toolbarGroup">
                 <Button Classes="toolbarButton" Click="New_Click" ToolTip.Tip="New map (Ctrl/Cmd+N)" AutomationProperties.Name="New map">
                     <materialIcons:MaterialIcon Kind="FileDocumentOutline" Width="16" Height="16" />
                 </Button>
@@ -135,6 +135,8 @@
                     <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <Button x:Name="UndoToolbar" Classes="toolbarButton" Click="Undo_Click" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
                     <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
                 </Button>
@@ -148,6 +150,8 @@
                     <materialIcons:MaterialIcon Kind="DeleteOutline" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <ToggleButton x:Name="FaceTool" Classes="toolbarButton" Click="FaceTool_Click" ToolTip.Tip="Select faces (S)" AutomationProperties.Name="Select faces">
                     <materialIcons:MaterialIcon Kind="VectorPolygon" Width="16" Height="16" />
                 </ToggleButton>
@@ -164,11 +168,15 @@
                     <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
                 </ToggleButton>
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <TextBlock Text="Transform" VerticalAlignment="Center" Margin="0,0,6,0" />
                 <ComboBox x:Name="TransformCombo" Classes="toolbarCombo" Width="98" SelectionChanged="TransformMode_Changed" />
                 <TextBlock Text="Grid" VerticalAlignment="Center" Margin="10,0,0,0" />
                 <ComboBox x:Name="GridCombo" Classes="toolbarCombo" Width="64" Margin="6,0,0,0" SelectionChanged="Grid_Changed" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <Button Classes="toolbarButton" Click="FrameAll_Click" ToolTip.Tip="Frame all views" AutomationProperties.Name="Frame all views">
                     <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16" />
                 </Button>
@@ -176,6 +184,8 @@
                     <materialIcons:MaterialIcon Kind="FocusField" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide asset browser" AutomationProperties.Name="Show asset browser">
                     <materialIcons:MaterialIcon Kind="TextureBox" Width="16" Height="16" />
                 </ToggleButton>
@@ -195,6 +205,23 @@
                     <materialIcons:MaterialIcon Kind="WeatherSunny" Width="16" Height="16" />
                 </Button>
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
+                <Button Classes="toolbarButton" Click="Build_Click" ToolTip.Tip="Build PS3 map" AutomationProperties.Name="Build PS3 map">
+                    <materialIcons:MaterialIcon Kind="Hammer" Width="16" Height="16" />
+                </Button>
+                <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="FourViewsButton" Classes="toolbarButton" Click="FourViews_Click" ToolTip.Tip="Toggle two / four views" AutomationProperties.Name="Four views">
+                    <materialIcons:MaterialIcon Kind="ViewGridOutline" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="MaximizeButton" Classes="toolbarButton" Click="Maximize_Click" ToolTip.Tip="Maximize / restore active view (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize active view">
+                    <materialIcons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
+                </ToggleButton>
+                <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <Button x:Name="FlipXToolbar" Classes="toolbarButton" Content="FX" FontSize="9" Tag="0" Click="FlipSelection_Click" ToolTip.Tip="Flip selection across X" AutomationProperties.Name="Flip selection across X" />
                 <Button x:Name="FlipYToolbar" Classes="toolbarButton" Content="FY" FontSize="9" Tag="1" Click="FlipSelection_Click" ToolTip.Tip="Flip selection across Y" AutomationProperties.Name="Flip selection across Y" />
                 <Button x:Name="FlipZToolbar" Classes="toolbarButton" Content="FZ" FontSize="9" Tag="2" Click="FlipSelection_Click" ToolTip.Tip="Flip selection across Z" AutomationProperties.Name="Flip selection across Z" />
@@ -202,31 +229,43 @@
                 <Button x:Name="RotateYToolbar" Classes="toolbarButton" Content="RY" FontSize="9" Tag="1" Click="RotateSelection90_Click" ToolTip.Tip="Rotate selection 90° around Y" AutomationProperties.Name="Rotate selection 90 degrees around Y" />
                 <Button x:Name="RotateZToolbar" Classes="toolbarButton" Content="RZ" FontSize="9" Tag="2" Click="RotateSelection90_Click" ToolTip.Tip="Rotate selection 90° around Z" AutomationProperties.Name="Rotate selection 90 degrees around Z" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <Button x:Name="TextureFlipUToolbar" Classes="toolbarButton" Content="TU" FontSize="9" Tag="FlipU" Click="TextureTransform_Click" ToolTip.Tip="Flip texture horizontally" AutomationProperties.Name="Flip texture horizontally" />
                 <Button x:Name="TextureFlipVToolbar" Classes="toolbarButton" Content="TV" FontSize="9" Tag="FlipV" Click="TextureTransform_Click" ToolTip.Tip="Flip texture vertically" AutomationProperties.Name="Flip texture vertically" />
                 <Button x:Name="TextureRotateToolbar" Classes="toolbarButton" Content="TR" FontSize="9" Tag="Rotate90" Click="TextureTransform_Click" ToolTip.Tip="Rotate texture 90°" AutomationProperties.Name="Rotate texture 90 degrees" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <ToggleButton x:Name="CompleteTallToolbar" Classes="toolbarButton" Content="CT" FontSize="9" Tag="CompleteTall" Click="SelectionVolume_Click" ToolTip.Tip="Complete Tall: select objects fully inside the projected rectangle" AutomationProperties.Name="Complete Tall selection" />
                 <ToggleButton x:Name="PartialTallToolbar" Classes="toolbarButton" Content="PT" FontSize="9" Tag="PartialTall" Click="SelectionVolume_Click" ToolTip.Tip="Partial Tall: select objects intersecting the projected rectangle" AutomationProperties.Name="Partial Tall selection" />
                 <ToggleButton x:Name="TouchingToolbar" Classes="toolbarButton" Content="T" FontSize="9" Tag="Touching" Click="SelectionVolume_Click" ToolTip.Tip="Touching: select objects touching the finite selection volume" AutomationProperties.Name="Touching selection" />
                 <ToggleButton x:Name="InsideToolbar" Classes="toolbarButton" Content="I" FontSize="9" Tag="Inside" Click="SelectionVolume_Click" ToolTip.Tip="Inside: select objects contained by the finite selection volume" AutomationProperties.Name="Inside selection" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <Button x:Name="CsgMergeToolbar" Classes="toolbarButton" Content="CM" FontSize="9" Click="CsgMerge_Click" ToolTip.Tip="CSG merge two adjacent convex brushes" AutomationProperties.Name="CSG merge" />
                 <Button x:Name="CsgHollowToolbar" Classes="toolbarButton" Content="CH" FontSize="9" Click="CsgHollow_Click" ToolTip.Tip="Hollow an axis-aligned box using the current grid size" AutomationProperties.Name="CSG hollow" />
                 <Button x:Name="PatchWeldToolbar" Classes="toolbarButton" Content="PW" FontSize="9" Click="PatchWeld_Click" ToolTip.Tip="Weld selected patch control points" AutomationProperties.Name="Weld patch control points" />
                 <Button x:Name="PatchLockToolbar" Classes="toolbarButton" Content="PL" FontSize="9" Click="PatchLock_Click" ToolTip.Tip="Lock selected patch control points" AutomationProperties.Name="Lock patch control points" />
                 <Button x:Name="PatchUnlockToolbar" Classes="toolbarButton" Content="PU" FontSize="9" Click="PatchUnlock_Click" ToolTip.Tip="Unlock selected patch control points" AutomationProperties.Name="Unlock patch control points" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <ToggleButton x:Name="AxisLockXToolbar" Classes="toolbarButton" Content="LX" FontSize="9" Tag="X" Click="AxisLock_Click" ToolTip.Tip="Lock X movement" AutomationProperties.Name="Lock X movement" />
                 <ToggleButton x:Name="AxisLockYToolbar" Classes="toolbarButton" Content="LY" FontSize="9" Tag="Y" Click="AxisLock_Click" ToolTip.Tip="Lock Y movement" AutomationProperties.Name="Lock Y movement" />
                 <ToggleButton x:Name="AxisLockZToolbar" Classes="toolbarButton" Content="LZ" FontSize="9" Tag="Z" Click="AxisLock_Click" ToolTip.Tip="Lock Z movement" AutomationProperties.Name="Lock Z movement" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <ToggleButton x:Name="CubicClipToolbar" Classes="toolbarButton" Content="CC" FontSize="9" Click="CubicClip_Click" ToolTip.Tip="Toggle camera cubic clipping" AutomationProperties.Name="Cubic clipping" />
                 <Button x:Name="CubicClipNearToolbar" Classes="toolbarButton" Content="−" Tag="-1" Click="CubicClipDistance_Click" ToolTip.Tip="Decrease cubic clipping distance" AutomationProperties.Name="Decrease cubic clipping distance" />
                 <TextBlock x:Name="CubicClipDistanceText" Width="42" TextAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="Cubic clipping distance" />
                 <Button x:Name="CubicClipFarToolbar" Classes="toolbarButton" Content="+" Tag="1" Click="CubicClipDistance_Click" ToolTip.Tip="Increase cubic clipping distance" AutomationProperties.Name="Increase cubic clipping distance" />
                 <ToggleButton x:Name="AlphaPreviewToolbar" Classes="toolbarButton" Content="α" Click="AlphaPreview_Click" ToolTip.Tip="Toggle alpha-blended material preview" AutomationProperties.Name="Alpha blending preview" />
                 <Border Classes="toolbarSeparator" />
+               </StackPanel>
+               <StackPanel Classes="toolbarGroup">
                 <ToggleButton x:Name="BrushesVisibleToolbar" Classes="toolbarButton" Content="B" FontSize="9" Tag="Brushes" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide brushes" AutomationProperties.Name="Brush visibility" />
                 <ToggleButton x:Name="PatchesVisibleToolbar" Classes="toolbarButton" Content="P" FontSize="9" Tag="Patches" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide terrain and patches" AutomationProperties.Name="Patch visibility" />
                 <ToggleButton x:Name="ModelsVisibleToolbar" Classes="toolbarButton" Content="M" FontSize="9" Tag="Models" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide models and prefabs" AutomationProperties.Name="Model visibility" />
@@ -234,19 +273,8 @@
                 <Button Classes="toolbarButton" Click="Filters_Click" ToolTip.Tip="All visibility filters (F)" AutomationProperties.Name="All visibility filters">
                     <materialIcons:MaterialIcon Kind="FilterVariant" Width="16" Height="16" />
                 </Button>
-                <Border Classes="toolbarSeparator" />
-                <Button Classes="toolbarButton" Click="Build_Click" ToolTip.Tip="Build PS3 map" AutomationProperties.Name="Build PS3 map">
-                    <materialIcons:MaterialIcon Kind="Hammer" Width="16" Height="16" />
-                </Button>
-                <Border Classes="toolbarSeparator" />
-                <ToggleButton x:Name="FourViewsButton" Classes="toolbarButton" Click="FourViews_Click" ToolTip.Tip="Toggle two / four views" AutomationProperties.Name="Four views">
-                    <materialIcons:MaterialIcon Kind="ViewGridOutline" Width="16" Height="16" />
-                </ToggleButton>
-                <ToggleButton x:Name="MaximizeButton" Classes="toolbarButton" Click="Maximize_Click" ToolTip.Tip="Maximize / restore active view (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize active view">
-                    <materialIcons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
-                </ToggleButton>
-              </StackPanel>
-              </ScrollViewer>
+               </StackPanel>
+              </WrapPanel>
               <Border x:Name="ToolOptions" Classes="toolOptionsBar">
               <StackPanel Orientation="Horizontal" Spacing="8">
                <StackPanel x:Name="CreationOptions" Orientation="Horizontal">

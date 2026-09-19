@@ -22,6 +22,7 @@ public partial class XModelBrowser : UserControl
     public XModelBrowser() => InitializeComponent();
 
     internal event Action? CatalogChanged;
+    internal event Action<string>? FolderLoaded;
     internal event Action<XModelSource, bool>? PlacementRequested;
     internal event Action? DropRequested;
     internal XModelSource? ResolveModel(string name)
@@ -89,21 +90,23 @@ public partial class XModelBrowser : UserControl
         };
     }
 
-    internal async Task LoadFolderAsync(string root)
+    internal async Task<bool> LoadFolderAsync(string root)
     {
-        if (_dialogs is not { } dialogs) return;
+        if (_dialogs is not { } dialogs) return false;
         int revision = ++_loadRevision;
         try
         {
             dialogs.SetBusy(true);
             var catalog = await Task.Run(() => XModelCatalog.Read(root));
-            if (revision != _loadRevision) return;
+            if (revision != _loadRevision) return false;
             ReleaseImages();
             _catalog = catalog;
             ModelFilter.Text = "";
             await FilterModelsAsync();
             CatalogChanged?.Invoke();
             _setStatus?.Invoke($"Loaded {catalog.Models.Count} XModels from {root}. Search by name to browse matching thumbnails.");
+            FolderLoaded?.Invoke(root);
+            return true;
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
@@ -111,6 +114,7 @@ public partial class XModelBrowser : UserControl
             await dialogs.MessageAsync("Cannot load models", exception.Message);
         }
         finally { dialogs.SetBusy(false); }
+        return false;
     }
 
     internal void ReleaseImages()

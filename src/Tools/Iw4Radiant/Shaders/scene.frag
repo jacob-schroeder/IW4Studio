@@ -125,7 +125,7 @@ void main()
         vec3 normal = normalize(vNormal);
         if (!gl_FrontFacing)
             normal = -normal;
-        vec3 illumination = vec3(0.0);
+        vec3 illumination = vec3(0.25);
         if (uSunEnabled)
         {
             float diffuse = max(dot(normal, uSunDirection), 0.0);

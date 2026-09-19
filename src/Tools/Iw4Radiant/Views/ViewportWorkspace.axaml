@@ -12,7 +12,6 @@
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="7,0,2,0">
                         <TextBlock Text="Camera" VerticalAlignment="Center" />
                         <ToggleButton x:Name="FlyCamera" Grid.Column="1" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
-                                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                       IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."
                                       AutomationProperties.Name="Fly camera" />
                         <ToggleButton x:Name="PreviewLights" Grid.Column="2" Classes="viewportAction" IsChecked="True"
