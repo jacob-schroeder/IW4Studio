@@ -60,10 +60,6 @@ jobs:
             runner: windows-latest
             runtime: win-x64
             asset: iw4radiant-win_x64.zip
-          - platform: macos_x64
-            runner: macos-15-intel
-            runtime: osx-x64
-            asset: iw4radiant-macos_x64.tar.gz
           - platform: macos_arm64
             runner: macos-15
             runtime: osx-arm64
@@ -174,7 +170,6 @@ jobs:
           release_tag="iw4radiant-v${PUBLIC_VERSION}"
           assets=(
             "release-assets/release/iw4radiant/win_x64/iw4radiant-win_x64.zip"
-            "release-assets/release/iw4radiant/macos_x64/iw4radiant-macos_x64.tar.gz"
             "release-assets/release/iw4radiant/macos_arm64/iw4radiant-macos_arm64.tar.gz"
           )
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
