@@ -33,11 +33,15 @@ internal static class MapOrganization
     {
         foreach (string directive in Directives(EditorSelection.Owner(item)))
         {
-            var tokens = MapTokenizer.Tokenize(directive);
-            if (tokens.Count == 2 && tokens[0].Value == "layer" && tokens[1].Quoted)
-                return tokens[1].Value;
+            if (IsLayerDirective(directive)) return MapTokenizer.Tokenize(directive)[1].Value;
         }
         return GlobalLayer;
+    }
+
+    internal static bool IsLayerDirective(string directive)
+    {
+        var tokens = MapTokenizer.Tokenize(directive);
+        return tokens.Count == 2 && !tokens[0].Quoted && tokens[0].Value == "layer" && tokens[1].Quoted;
     }
 
     internal static void Assign(object item, string layer)

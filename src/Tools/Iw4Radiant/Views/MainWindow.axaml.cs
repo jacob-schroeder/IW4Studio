@@ -37,6 +37,17 @@ public partial class MainWindow : Window
         {
             view.Session = _session;
             view.CursorStatusChanged += SetStatus;
+            view.BrushKindRequested += ApplyBrushKind;
+            view.EntityInspectorRequested += entity =>
+            {
+                if (!ReferenceEquals(_session.Selection.Active, entity)) _session.Select(entity);
+                if (entity.ClassName == "func_group") Inspector.ShowOrganization();
+                else if (entity.ClassName == "misc_prefab") Workspace.ShowPrefabs();
+                else Inspector.ShowEntity();
+            };
+            view.ModelsRequested += Workspace.ShowModels;
+            view.PrefabsRequested += Workspace.ShowPrefabs;
+            view.OrganizationRequested += Inspector.ShowOrganization;
             view.ClipPreviewChanged += RefreshClipControls;
             view.ClipStarted += () =>
             {
@@ -84,10 +95,20 @@ public partial class MainWindow : Window
         foreach (var tool in tools)
             tool.Button.IsChecked = tool.Tool == _session.Tool;
         CreationOptions.IsVisible = _session.Tool is EditorTool.Terrain or EditorTool.Select;
-        CreationOptions.IsEnabled = _session.Tool == EditorTool.Terrain || _session.Selection.Count == 0;
+        CreationOptions.IsEnabled = _session.Tool == EditorTool.Terrain ||
+            _session.SelectionVolumeMode != SelectionVolumeMode.None || _session.Selection.Count == 0;
+        CreationHint.Text = _session.SelectionVolumeMode switch
+        {
+            SelectionVolumeMode.CompleteTall => "Drag to select objects fully inside the projected rectangle · Esc cancels",
+            SelectionVolumeMode.PartialTall => "Drag to select objects touching the projected rectangle · Esc cancels",
+            SelectionVolumeMode.Touching => "Base and Depth define the finite volume · drag to select touching objects",
+            SelectionVolumeMode.Inside => "Base and Depth define the finite volume · drag to select contained objects",
+            _ => "Drag to preview · release to create · Esc cancels"
+        };
         ClipOptions.IsVisible = _session.Tool == EditorTool.Clip;
         ToolOptions.IsVisible = CreationOptions.IsVisible || ClipOptions.IsVisible;
         RefreshClipControls();
+        RefreshPhaseBControls();
         Inspector.RefreshSelection(_session);
         Workspace.Prefabs.RefreshSelection(_session);
         _updatingControls = true;
@@ -106,11 +127,17 @@ public partial class MainWindow : Window
     {
         foreach (var view in Workspace.GridViews) view.CompleteGesture();
         Workspace.Camera.FinishGesture();
+        if (_session.SelectionVolumeMode != SelectionVolumeMode.None)
+        {
+            _session.SelectionVolumeMode = SelectionVolumeMode.None;
+            _session.Refresh();
+        }
     }
     private void SetTool(EditorTool tool)
     {
         FinishGestures();
         if (_session.HasPlacement) _session.CancelPlacement();
+        if (tool != EditorTool.Select) _session.SelectionVolumeMode = SelectionVolumeMode.None;
         if (_session.Tool != tool)
             _session.Selection.SetRange(_session.Selection.Items.Select(EditorSelection.Owner).Distinct().ToArray());
         _session.Tool = tool;
@@ -297,21 +324,8 @@ public partial class MainWindow : Window
     private void AddEntity(string className)
     {
         FinishGestures();
-        _session.Edit(() =>
-        {
-            var entity = new MapEntity();
-            entity.Properties["classname"] = className;
-            entity.Properties["origin"] = FormattableString.Invariant($"0 0 {_session.BrushBottom + _session.BrushHeight:G9}");
-            if (className == "light")
-            {
-                entity.Properties["def"] = MapLightDefaults.Definition;
-                entity.Properties["radius"] = MapLightDefaults.Radius.ToString(CultureInfo.InvariantCulture);
-                entity.Properties["intensity"] = MapLightDefaults.Intensity.ToString(CultureInfo.InvariantCulture);
-                entity.Properties["_color"] = MapLightDefaults.Color;
-            }
-            _session.Document.Entities.Add(entity);
-            _session.Select(entity);
-        });
+        GameplayEntityEditing.Place(_session, className,
+            new System.Numerics.Vector3(0, 0, _session.BrushBottom + _session.BrushHeight));
         Inspector.ShowEntity();
     }
 
@@ -335,6 +349,7 @@ public partial class MainWindow : Window
         "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
         "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. In Use shows map materials and combines with search. Preview shows image details and Size adjusts the tiles.\n" +
         "Grid: [ decreases and ] increases. Keys 1–9 choose 1, 2, 4, 8, 16, 32, 64, 256 and 512. The grid list also includes 0.25, 0.5 and 128. F opens visibility filters; M opens map statistics.\n" +
+        "Classic toolbar: Modify mirrors flip/rotate, texture projection, CSG and patch commands. CT/PT select through the map; Touching/Inside use Base and Depth as a finite selection volume. Axis locks constrain movement. Cubic clipping, alpha preview and quick category visibility affect only the editor view.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
         "Models and prefabs: open Create or the asset browser tabs. Choose Place, then click a camera surface or grid; Shift repeats and Escape cancels. Models support surface alignment, Drop, Find and Replace. Prefabs use native .map files with Edit source, Reload, Make unique and Explode.\n" +
         "Player collision: Create → Player clip draws an invisible brush or converts selected whole world brushes. Shape a separate volume around a model; magenta outlines mark clip brushes. Model collision alone does not block players. Choose a material thumbnail to resume ordinary brush creation.\n" +

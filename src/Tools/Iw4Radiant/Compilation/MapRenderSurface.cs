@@ -6,6 +6,7 @@ namespace Iw4Radiant.Compilation;
 internal sealed record MapRenderSurface(string Material, Vector3[] Vertices, Vector3 Normal,
     Vector3[] Normals, Vector3[] Tangents, Vector3[] Binormals, Vector2[] TextureCoordinates, Vector4[] Colors, int SourceIndex)
 {
+    internal int ModelIndex { get; init; }
     internal bool SharesBoundaryAt(MapRenderSurface other, Vector3 point)
     {
         if (Material != other.Material) return false;

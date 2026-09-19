@@ -9,6 +9,8 @@ using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.D3dbsp;
 using IW4.Unlinker.D3dbsp;
 using Iw4Radiant.Materials;
+using Iw4Radiant.Editing;
+using Iw4Radiant.Rendering;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.MapSource.Parsing;
 
@@ -29,14 +31,28 @@ internal static class MapCompiler
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
-        "One render cell; primary local lights, curves, prefabs, brush entities, breakable glass and bounced lighting are not compiled yet.";
+        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. One render cell; stage volumes, primary local lights, curves, breakable glass and bounced lighting are not compiled yet.";
+
+    internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
+        document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
 
     internal static D3dbspFile Compile(MapDocument document, string assetName,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? sourcePath = null)
     {
+        document = PrefabLibrary.ExpandForCompilation(document, sourcePath);
+        foreach (MapEntity group in document.Entities.Where(entity => entity.ClassName == "func_group").ToArray())
+        {
+            ValidateDirectives(group.Directives);
+            if (group.PreservedPrimitives.Count != 0)
+                throw new NotSupportedException("Editor groups containing preserved primitives cannot be compiled yet.");
+            foreach (string key in group.Properties.Keys)
+                if (key is not ("classname" or "targetname" or "origin" or "angles" or "angle"))
+                    throw new NotSupportedException($"Editor group property '{key}' has no proven world-geometry compilation rule.");
+            MapOrganization.Ungroup(document, group);
+        }
         Vector3[] probeOrigins = Validate(document, assetName, materials);
-        ClipMaterial[] baseMaterials = document.World.Brushes.SelectMany(brush => brush.Faces)
+        ClipMaterial[] baseMaterials = document.Brushes.SelectMany(brush => brush.Faces)
             .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .Select(name =>
@@ -59,7 +75,7 @@ internal static class MapCompiler
             }).ToArray();
         var baseMaterialsByName = baseMaterials.ToDictionary(material =>
             material.Name ?? throw new InvalidDataException("A collision material has no name."), StringComparer.Ordinal);
-        ClipMaterial[] clipMaterials = document.World.Brushes.SelectMany(brush =>
+        ClipMaterial[] clipMaterials = document.Brushes.SelectMany(brush =>
             {
                 BrushKind kind = BrushContents.ReadForCompilation(brush);
                 return brush.Faces.Select(face =>
@@ -106,7 +122,7 @@ internal static class MapCompiler
             throw new InvalidDataException("Create solid world brushes before building.");
         if (!document.Entities.Any(entity => entity.ClassName == "reflection_probe"))
             throw new InvalidDataException("Add a reflection_probe in Create → Gameplay entities → Lighting before building. It captures the map's reflections during compilation.");
-        foreach (MapBrush brush in document.World.Brushes)
+        foreach (MapBrush brush in document.Brushes)
         {
             BrushGeometry.Validate(brush);
             BrushKind kind = BrushContents.ReadForCompilation(brush);
@@ -152,14 +168,36 @@ internal static class MapCompiler
             }
             if (entity.Terrains.Count != 0)
                 throw new NotSupportedException("Terrain must belong to worldspawn before compilation.");
-            if (entity.Brushes.Count != 0 || entity.ClassName is not
-                ("info_player_start" or "mp_dm_spawn" or "mp_tdm_spawn" or
-                 "mp_tdm_spawn_allies_start" or "mp_tdm_spawn_axis_start" or "mp_global_intermission" or
-                 "misc_model" or "reflection_probe" or "light" or "info_null"))
+            GameplayEntityType? type = GameplayEntityEditing.Types.FirstOrDefault(type => type.Name == entity.ClassName);
+            if (type is null)
                 throw new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation.");
+            if (entity.ClassName == "stage")
+                throw new NotSupportedException("Authored stage volumes require matching MapEnts Stage rows, stage-local ComWorld sun lights and a stage-aware lighting bake. This compiler currently builds only stage 0; the source volume and lighting properties are preserved but cannot yet be compiled.");
             if (!entity.TryGetOrigin(out Vector3 origin))
                 throw new InvalidDataException($"Entity '{entity.ClassName}' needs a finite three-component origin.");
+            _ = EntityOrientation.Read(entity);
+            if (type.UsesBrushes)
+            {
+                if (entity.Brushes.Count == 0) throw new InvalidDataException($"Entity '{entity.ClassName}' needs at least one convex brush.");
+                if (entity.Properties.ContainsKey("model"))
+                    throw new InvalidDataException($"Entity '{entity.ClassName}' has a manual model reference. Remove it; compilation assigns its brush model.");
+                continue;
+            }
+            if (entity.Brushes.Count != 0)
+                throw new InvalidDataException($"Point entity '{entity.ClassName}' cannot own brushes.");
             if (entity.ClassName == "misc_model") continue;
+            if (entity.ClassName is "script_model" or "misc_turret")
+            {
+                if (!XModelGeometry.IsModel(entity) || string.IsNullOrWhiteSpace(entity.Properties.GetValueOrDefault("model")))
+                    throw new InvalidDataException($"A {entity.ClassName} requires a named XModel.");
+                if (XModelGeometry.Scale(entity) != Vector3.One)
+                    throw new NotSupportedException($"Runtime {entity.ClassName} scaling is not proven for this PS3 build. Set modelscale to 1 before compiling.");
+                if (entity.ClassName == "misc_turret" && string.IsNullOrWhiteSpace(entity.Properties.GetValueOrDefault("weaponinfo")))
+                    throw new InvalidDataException("A misc_turret requires a native weaponinfo asset name.");
+                continue;
+            }
+            if (entity.ClassName == "trigger_radius" && !GameplayEntityEditing.TryRadiusDimensions(entity, out _, out _))
+                throw new InvalidDataException("A trigger_radius requires positive finite radius and height.");
             if (entity.ClassName == "info_null")
             {
                 ValidateLightTarget(document, entity);
@@ -168,7 +206,7 @@ internal static class MapCompiler
             if (entity.ClassName == "light") ValidateLight(document, entity);
             if (entity.Properties.ContainsKey("model"))
                 throw new NotSupportedException($"Entity '{entity.ClassName}' has a model reference; use misc_model for compiled static models.");
-            foreach (MapBrush brush in document.World.Brushes)
+            foreach (MapBrush brush in document.World.Brushes.Where(_ => type.Category == "Spawns" || entity.ClassName == "reflection_probe"))
                 if (!brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky) &&
                     !(entity.ClassName == "reflection_probe" && brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material))) &&
                     (brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)) ||
@@ -226,8 +264,9 @@ internal static class MapCompiler
         foreach (string directive in directives)
         {
             var tokens = MapTokenizer.Tokenize(directive);
-            if (tokens.Count == 2 && !tokens[0].Quoted && tokens[0].Value == "layer" && tokens[1].Quoted) continue;
+            if (MapOrganization.IsLayerDirective(directive)) continue;
             if (brushContents && tokens.Count > 0 && !tokens[0].Quoted && tokens[0].Value == "contents") continue;
+            if (brushContents && MapToolFlags.ReadForCompilation(directive)) continue;
             throw new NotSupportedException($"Source directive '{directive}' is not supported by compilation.");
         }
     }
@@ -237,6 +276,7 @@ internal static class MapCompiler
         var source = MapDocument.Create();
         source.Header.Clear();
         source.Entities.Clear();
+        int brushModel = 0;
         foreach (MapEntity entity in document.Entities)
         {
             // Static light entities and their aim markers are consumed by the bake;
@@ -244,10 +284,13 @@ internal static class MapCompiler
             if (entity.ClassName is "light" or "info_null") continue;
             var point = new MapEntity();
             foreach (var property in entity.Properties) point.Properties.Add(property.Key, property.Value);
+            if (entity.Brushes.Count > 0 && entity != document.World)
+                point.Properties["model"] = $"*{++brushModel}";
             source.Entities.Add(point);
         }
         string text = MapWriter.Serialize(source);
-        byte[] bytes = Encoding.UTF8.GetBytes(text + '\0');
+        byte[] bytes = Encoding.GetEncoding(Encoding.Latin1.CodePage,
+            EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback).GetBytes(text + '\0');
         return new MapEntsAsset
         {
             Name = assetName, EntityString = text, EntityStringBytes = bytes, NumEntityChars = bytes.Length,

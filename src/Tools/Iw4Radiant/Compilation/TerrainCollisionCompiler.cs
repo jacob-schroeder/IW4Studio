@@ -13,7 +13,7 @@ internal static class TerrainCollisionCompiler
     {
         if (terrains.Count == 0)
             return source;
-        if (source.NumNodes != 1 || source.NumLeafs != 3 || source.NumSubModels != 1 || source.TriCount != 0)
+        if (source.NumNodes != 1 || source.NumLeafs != 3 || source.NumSubModels < 1 || source.TriCount != 0)
             throw new InvalidOperationException("Terrain compilation requires the single-cell brush collision graph.");
 
         // A material name can have brush-content variants. MapCompiler orders
@@ -28,7 +28,7 @@ internal static class TerrainCollisionCompiler
         var triangleMaterials = new List<ushort>();
         var edges = new Dictionary<(ushort, ushort), List<(int Triangle, int Edge)>>();
         Vector3 worldMin = new(float.PositiveInfinity), worldMax = new(float.NegativeInfinity);
-        foreach (var bounds in source.BrushBounds)
+        foreach (var bounds in source.LeafBrushes.Select(index => source.BrushBounds[index]))
         {
             Vector3 midpoint = ToVector3(bounds.MidPoint), halfSize = ToVector3(bounds.HalfSize);
             worldMin = Vector3.Min(worldMin, midpoint - halfSize);
@@ -250,9 +250,9 @@ internal static class TerrainCollisionCompiler
             Partitions = partitions.ToArray(),
             AabbTreeCount = trees.Count,
             AabbTrees = trees.ToArray(),
-            NumSubModels = 1,
+            NumSubModels = source.NumSubModels,
             CModels = [new CModel { Mins = modelBounds.MidPoint, Maxs = modelBounds.HalfSize,
-                Radius = modelExtent.Length(), Leaf = source.CModels[0].Leaf }],
+                Radius = modelExtent.Length(), Leaf = source.CModels[0].Leaf }, .. source.CModels.Skip(1)],
             NumBrushes = source.NumBrushes,
             Brushes = source.Brushes,
             BrushBounds = source.BrushBounds,

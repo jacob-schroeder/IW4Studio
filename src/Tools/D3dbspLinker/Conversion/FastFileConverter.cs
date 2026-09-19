@@ -9,6 +9,7 @@ using IW4.Assets.Assets.RawFile;
 using IW4.Assets.Assets.Sound;
 using IW4.Assets.Assets.StringTable;
 using IW4.Assets.Assets.XModel;
+using IW4.Assets.Assets.Weapon;
 using IW4.Assets.D3dbsp;
 using IW4.FastFiles.Database.Streaming;
 using IW4.FastFiles.Zone;
@@ -346,6 +347,13 @@ internal static class FastFileConverter
             additionalMaterialNames,
             XAssetType.Material,
             "requested Material");
+        string[] turretWeaponNames = worldOnly ? [] : D3dbspFile.Read(inputPath).GetEntities()
+            .Where(entity => entity.GetValueOrDefault("classname") == "misc_turret")
+            .Select(entity => entity.TryGetValue("weaponinfo", out string? name) && !string.IsNullOrWhiteSpace(name)
+                ? name : throw new InvalidDataException("A misc_turret requires a weaponinfo asset name."))
+            .Distinct(StringComparer.Ordinal).ToArray();
+        WeaponAsset[] turretWeapons = ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(template, templatePath,
+            [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
         FxEffectDefAsset[] additionalFx = ResolveOwnedAssetsAcrossFastFiles<FxEffectDefAsset>(
             template,
             templatePath,
@@ -439,7 +447,7 @@ internal static class FastFileConverter
         baseAssets = baseAssets.WithoutProviders(externalProviderKeys);
         existingKeys.ExceptWith(externalProviderKeys);
         existingFullProviderKeys.ExceptWith(externalProviderKeys);
-        if (worldOnly)
+        if (worldOnly || useSourceMaterials)
         {
             IEnumerable<AssetKey> requiredMaterialKeys = mapMaterialKeys;
             if (useSourceMaterials)
@@ -458,7 +466,7 @@ internal static class FastFileConverter
             if (missingWorldMaterials.Length != 0)
             {
                 throw new InvalidDataException(
-                    "World-only conversion requires full native IW4 world and model material providers for: " +
+                    "Conversion requires full native IW4 world and model material providers for: " +
                     string.Join(", ", missingWorldMaterials.Select(key => key.NormalizedName)) +
                     ". Supply a template or --provider-fastfile containing their owned material graphs " +
                     "(MapConverter: --bootstrap-fastfile).");
@@ -495,6 +503,8 @@ internal static class FastFileConverter
             newSources.Add(
                 new LinkAssetProviderSource(material).AsAuthoredDetached());
         }
+        foreach (WeaponAsset weapon in turretWeapons)
+            newSources.Add(new LinkAssetProviderSource(weapon).AsAuthoredDetached());
         foreach (FxEffectDefAsset effect in additionalFx)
         {
             newSources.Add(
@@ -518,6 +528,8 @@ internal static class FastFileConverter
             additionalXModelGraph.Models.Count + additionalMaterials.Length +
             additionalFx.Length + additionalSounds.Length + 1);
         roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
+        foreach (WeaponAsset weapon in turretWeapons)
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:weapon:{weapon.SerializedAssetName}", weapon));
         roots.Add(CreateNamedOwnedRoot(
             "d3dbsplinker:bootstrap:stringtable:dm",
             bootstrapStringTable));

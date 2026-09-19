@@ -7,13 +7,17 @@ namespace Iw4Radiant.Views;
 public partial class GameplayEntityInspector : UserControl
 {
     private MapEntity? _shownEntity;
+    private EditorSession? _session;
 
     public GameplayEntityInspector() => InitializeComponent();
     internal event Action<string>? PlacementRequested;
+    internal event Action? ModelBrowserRequested;
+    internal event Action? PrefabBrowserRequested;
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
-        Category.ItemsSource = new[] { "All types", "Spawns", "Lighting", "Script", "Triggers" };
+        _session = session;
+        Category.ItemsSource = GameplayEntityEditing.Types.Select(type => type.Category).Distinct().Prepend("All types").ToArray();
         Category.SelectedIndex = 0;
         EntityFilter.TextChanged += (_, _) => FilterTypes();
         Category.SelectionChanged += (_, _) => FilterTypes();
@@ -21,7 +25,16 @@ public partial class GameplayEntityInspector : UserControl
         {
             if (EntityTypes.SelectedItem is not GameplayEntityType type) return;
             TypeDescription.Text = type.Description;
-            CreateButton.Content = type.UsesBrushes ? "Create from selected brushes" : type.Name == "script_model" ? "Convert selected models" : "Place entity";
+            CreateButton.Content = type.Creation switch
+            {
+                GameplayEntityCreation.Brush => "Create from selected brushes",
+                GameplayEntityCreation.ConvertModels => "Convert selected models",
+                GameplayEntityCreation.ModelBrowser => "Choose model…",
+                GameplayEntityCreation.PrefabBrowser => "Choose prefab…",
+                GameplayEntityCreation.Group => "Group selection",
+                _ => "Place entity"
+            };
+            CreateButton.IsEnabled = GameplayEntityEditing.CanCreate(session, type);
         };
         FilterTypes();
         CreateButton.Click += async (_, _) =>
@@ -30,8 +43,11 @@ public partial class GameplayEntityInspector : UserControl
             finishGestures();
             await ActAsync(() =>
             {
-                if (type.UsesBrushes) GameplayEntityEditing.CreateBrushEntity(session, type.Name);
-                else if (type.Name == "script_model") GameplayEntityEditing.ConvertModels(session);
+                if (type.Creation == GameplayEntityCreation.Brush) GameplayEntityEditing.CreateBrushEntity(session, type.Name);
+                else if (type.Creation == GameplayEntityCreation.ConvertModels) GameplayEntityEditing.ConvertModels(session);
+                else if (type.Creation == GameplayEntityCreation.ModelBrowser) ModelBrowserRequested?.Invoke();
+                else if (type.Creation == GameplayEntityCreation.PrefabBrowser) PrefabBrowserRequested?.Invoke();
+                else if (type.Creation == GameplayEntityCreation.Group) GameplayEntityEditing.Group(session);
                 else PlacementRequested?.Invoke(type.Name);
             });
         };
@@ -93,6 +109,8 @@ public partial class GameplayEntityInspector : UserControl
         int selectedEntities = session.Selection.Items.OfType<MapEntity>().Count(candidate => candidate.ClassName != "worldspawn");
         ConnectButton.IsEnabled = selectedEntities >= 2 && selectedEntities == session.Selection.Count;
         DisconnectButton.IsEnabled = session.Selection.Items.OfType<MapEntity>().Any(candidate => candidate.Properties.ContainsKey("target"));
+        if (EntityTypes.SelectedItem is GameplayEntityType selectedType)
+            CreateButton.IsEnabled = GameplayEntityEditing.CanCreate(session, selectedType);
         string name = entity?.Properties.GetValueOrDefault("targetname", "") ?? "";
         string target = entity?.Properties.GetValueOrDefault("target", "") ?? "";
         int incoming = name.Length > 0 ? session.Document.Entities.Count(candidate => candidate.Properties.GetValueOrDefault("target") == name) : 0;
@@ -109,7 +127,7 @@ public partial class GameplayEntityInspector : UserControl
             (type.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) || type.Description.Contains(filter, StringComparison.OrdinalIgnoreCase))).ToArray();
         EntityTypes.ItemsSource = types;
         EntityTypes.SelectedIndex = types.Length > 0 ? 0 : -1;
-        CreateButton.IsEnabled = types.Length > 0;
+        CreateButton.IsEnabled = types.Length > 0 && _session is { } session && GameplayEntityEditing.CanCreate(session, types[0]);
         if (types.Length == 0) TypeDescription.Text = "No matching native entity types.";
     }
 }

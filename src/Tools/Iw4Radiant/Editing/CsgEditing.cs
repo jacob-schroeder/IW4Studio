@@ -115,7 +115,7 @@ internal static class CsgEditing
     }
 
     private static MapBrush[] SelectedBrushes(EditorSession session) => session.Selection.Items
-        .Select(EditorSelection.Owner).OfType<MapBrush>().Distinct(ReferenceEqualityComparer.Instance)
+        .OfType<MapBrush>().Distinct<MapBrush>(ReferenceEqualityComparer.Instance)
         .Where(brush => session.Visibility.CanSelect(session.Document, brush)).ToArray();
 
     private static MapEntity Owner(EditorSession session, MapBrush brush) =>

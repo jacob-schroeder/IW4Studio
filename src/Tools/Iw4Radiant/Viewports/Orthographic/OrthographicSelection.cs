@@ -2,6 +2,7 @@ using System.Numerics;
 using Avalonia;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 

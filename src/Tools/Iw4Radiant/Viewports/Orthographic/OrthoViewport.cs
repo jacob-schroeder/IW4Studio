@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Iw4Radiant.Editing;
+using Iw4Radiant.MapSource;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
@@ -12,11 +13,14 @@ public sealed class OrthoViewport : Control
     private readonly OrthographicProjection _projection = new();
     private readonly OrthographicDrawing _drawing;
     private readonly OrthographicGestures _gestures;
+    private ContextMenu? _objectMenu;
 
     public OrthoViewport()
     {
         _drawing = new OrthographicDrawing(_projection);
         _gestures = new OrthographicGestures(this, _projection);
+        _gestures.ContextMenuRequested += OpenObjectMenu;
+        _gestures.CursorStatusChanged += message => CursorStatusChanged?.Invoke(message);
         Focusable = true;
         ClipToBounds = true;
         PointerCaptureLost += (_, _) => { if (_gestures.IsActive) _gestures.CancelGesture(); };
@@ -29,6 +33,7 @@ public sealed class OrthoViewport : Control
         {
             if (ReferenceEquals(Session, value)) return;
             _gestures.CancelGesture();
+            _objectMenu?.Close();
             if (Session is { } previous) previous.Changed -= SessionChanged;
             _gestures.Session = value;
             if (Session is { } current) current.Changed += SessionChanged;
@@ -48,11 +53,7 @@ public sealed class OrthoViewport : Control
         }
     }
 
-    internal event Action<string>? CursorStatusChanged
-    {
-        add => _gestures.CursorStatusChanged += value;
-        remove => _gestures.CursorStatusChanged -= value;
-    }
+    internal event Action<string>? CursorStatusChanged;
 
     internal event Action? ClipStarted
     {
@@ -65,6 +66,12 @@ public sealed class OrthoViewport : Control
         add => _gestures.ClipPreviewChanged += value;
         remove => _gestures.ClipPreviewChanged -= value;
     }
+
+    internal event Action<BrushKind>? BrushKindRequested;
+    internal event Action<MapEntity>? EntityInspectorRequested;
+    internal event Action? ModelsRequested;
+    internal event Action? PrefabsRequested;
+    internal event Action? OrganizationRequested;
 
     internal bool HasClipPreview => _gestures.CanCommitClip;
     internal bool HasActiveGesture => _gestures.IsActive || _gestures.HasClipPreview;
@@ -98,7 +105,11 @@ public sealed class OrthoViewport : Control
         InvalidateVisual();
     }
 
-    private void SessionChanged(object? sender, EventArgs e) => _gestures.SessionChanged();
+    private void SessionChanged(object? sender, EventArgs e)
+    {
+        _objectMenu?.Close();
+        _gestures.SessionChanged();
+    }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -165,6 +176,21 @@ public sealed class OrthoViewport : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _gestures.CancelGesture();
+        _objectMenu?.Close();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OpenObjectMenu(Point point, Vector3 position)
+    {
+        if (Session is not { } session) return;
+        _objectMenu?.Close();
+        _objectMenu = OrthographicObjectMenu.Open(this, session,
+            OrthographicGeometry.HitTest(session, _projection, point), position,
+            kind => BrushKindRequested?.Invoke(kind),
+            entity => EntityInspectorRequested?.Invoke(entity),
+            () => ModelsRequested?.Invoke(),
+            () => PrefabsRequested?.Invoke(),
+            () => OrganizationRequested?.Invoke(),
+            message => CursorStatusChanged?.Invoke(message));
     }
 }

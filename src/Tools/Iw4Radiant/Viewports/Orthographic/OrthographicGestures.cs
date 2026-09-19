@@ -23,7 +23,7 @@ internal sealed class OrthographicGestures
     private EditorTool _gestureTool;
     private Point _startScreen, _lastScreen, _cursorScreen;
     private Vector2 _startWorld, _currentWorld;
-    private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle, _paintSelecting;
+    private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle, _paintSelecting, _panDragged;
     private SelectionVolumeMode _selectionVolumeMode;
 
     internal OrthographicGestures(Control viewport, OrthographicProjection projection)
@@ -37,6 +37,7 @@ internal sealed class OrthographicGestures
     internal event Action<string>? CursorStatusChanged;
     internal event Action? ClipStarted;
     internal event Action? ClipPreviewChanged;
+    internal event Action<Point, Vector3>? ContextMenuRequested;
     internal bool IsActive => _gesture != Gesture.None;
     internal bool IsCreating => _gesture is Gesture.Brush or Gesture.Terrain;
     internal bool IsCreatingTerrain => _gesture == Gesture.Terrain;
@@ -82,6 +83,7 @@ internal sealed class OrthographicGestures
         _startScreen = _lastScreen = _cursorScreen = e.GetPosition(_viewport);
         _startWorld = _currentWorld = Snap(_projection.ToWorld(_startScreen));
         _editStarted = _changed = false;
+        _panDragged = false;
         _selectionBefore = session.Selection.Items.ToArray();
         _toggle = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         _button = properties.IsMiddleButtonPressed ? MouseButton.Middle : properties.IsRightButtonPressed ? MouseButton.Right : MouseButton.Left;
@@ -210,7 +212,16 @@ internal sealed class OrthographicGestures
             if (Session?.Tool == EditorTool.Sculpt) _viewport.InvalidateVisual();
             return;
         }
-        if (_gesture == Gesture.Pan) _projection.Pan(_cursorScreen - _lastScreen);
+        if (_gesture == Gesture.Pan)
+        {
+            if (_button != MouseButton.Right || _panDragged)
+                _projection.Pan(_cursorScreen - _lastScreen);
+            else if (Dragged)
+            {
+                _panDragged = true;
+                _projection.Pan(_cursorScreen - _startScreen);
+            }
+        }
         else if (_gesture == Gesture.PaintSelection && Dragged)
             PaintSelection(OrthographicGeometry.HitTestSegment(session, _projection, _lastScreen, _cursorScreen).ToArray());
         else if (_gesture == Gesture.Sculpt)
@@ -229,10 +240,16 @@ internal sealed class OrthographicGestures
     internal void PointerReleased(PointerReleasedEventArgs e)
     {
         if (!ReferenceEquals(e.Pointer, _pointer) || e.InitialPressMouseButton != _button) return;
+        bool showContextMenu = false;
+        Point menuPoint = _startScreen;
+        Vector3 menuPosition = Session is { } current
+            ? _projection.Unproject(_startWorld, current.Snap(current.BrushBottom))
+            : default;
         try
         {
             // Apply the release position even when the platform coalesces the last move event.
             Move(e);
+            showContextMenu = _gesture == Gesture.Pan && _button == MouseButton.Right && !_panDragged;
             if (Session is { } session)
             {
                 if (_gesture is Gesture.Brush or Gesture.Terrain && Dragged)
@@ -267,6 +284,7 @@ internal sealed class OrthographicGestures
                 else if (_gesture == Gesture.Clip && ClipStart == ClipEnd) ClearClipPreview();
             }
             EndGesture(cancel: false);
+            if (showContextMenu && Session is not null) ContextMenuRequested?.Invoke(menuPoint, menuPosition);
         }
         catch (Exception exception) when (IsInputError(exception)) { Fail(exception); }
         e.Handled = true;

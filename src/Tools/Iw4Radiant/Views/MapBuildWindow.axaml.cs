@@ -43,10 +43,11 @@ public partial class MapBuildWindow : Window
     }
 
     internal MapBuildWindow(MapDocument document, string bspPath,
-        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models)
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models, string? sourcePath)
         : this(document, materials, models)
     {
         _bspPath = bspPath;
+        _sourcePath = sourcePath;
         Title = "Build .d3dbsp";
         MinWidth = 500;
         MinHeight = 320;
@@ -146,7 +147,7 @@ public partial class MapBuildWindow : Window
             if (_bspPath is { } bspPath)
             {
                 AppendProgress("Compiling geometry and collision; baking sunlight, local lights and reflections…");
-                await MapBuildPipeline.BuildBspAsync(_document, bspPath, _materials, _models, cancellation.Token);
+                await MapBuildPipeline.BuildBspAsync(_document, bspPath, _materials, _models, cancellation.Token, _sourcePath);
                 CompletedBspPath = bspPath;
             }
             else if (_sourcePath is { } sourcePath)

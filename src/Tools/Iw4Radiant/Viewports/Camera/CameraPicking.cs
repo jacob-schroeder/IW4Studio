@@ -8,10 +8,10 @@ namespace Iw4Radiant.Viewports.Camera;
 
 internal static class CameraPicking
 {
-    internal static object? Pick(EditorScene scene, CameraNavigation camera, Point point, Size size, EditorTool tool)
-        => PickAll(scene, camera, point, size, tool).FirstOrDefault().Item;
+    internal static object? Pick(EditorSession session, CameraNavigation camera, Point point, Size size, EditorTool tool)
+        => PickAll(session, camera, point, size, tool).FirstOrDefault().Item;
 
-    internal static IReadOnlyList<(object Item, string Label)> PickAll(EditorScene scene, CameraNavigation camera,
+    internal static IReadOnlyList<(object Item, string Label)> PickAll(EditorSession session, CameraNavigation camera,
         Point point, Size size, EditorTool tool)
     {
         if (size.Width <= 0 || size.Height <= 0)
@@ -19,6 +19,7 @@ internal static class CameraPicking
         float x = (float)(point.X / size.Width * 2 - 1), y = (float)(1 - point.Y / size.Height * 2);
         var (origin, direction) = camera.PickRay(x, y, (float)(size.Width / size.Height));
         var hits = new Dictionary<object, (float Distance, string Label)>();
+        EditorScene scene = session.Scene;
         MapDocument document = scene.Document;
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
@@ -52,6 +53,7 @@ internal static class CameraPicking
             if (!scene.CanSelect(item)) return;
             object owner = scene.Owner(item);
             if (SurfaceRaycast.RayTriangle(origin, direction, a, b, c, out float distance, out _) &&
+                InCubicClip(session, origin + direction * distance, origin) &&
                 distance >= 0.5f && (!hits.TryGetValue(owner, out var previous) || distance < previous.Distance))
             {
                 string label = owner switch
@@ -81,6 +83,7 @@ internal static class CameraPicking
         void Consider(object item, Vector3 position)
         {
             if (!Project(camera, position, size, out Point screen, out float depth)) return;
+            if (!InCubicClip(session, position, camera.Eye)) return;
             double distance = ((Avalonia.Vector)(screen - point)).SquaredLength;
             if (distance > closestScreen || Math.Abs(distance - closestScreen) < 0.25 && depth >= closestDepth) return;
             closestScreen = distance;
@@ -89,18 +92,20 @@ internal static class CameraPicking
         }
     }
 
-    internal static int PickGizmo((Vector3 Min, Vector3 Max) bounds, TransformMode mode,
+    internal static int PickGizmo(EditorSession session, (Vector3 Min, Vector3 Max) bounds, TransformMode mode,
         CameraNavigation camera, Point point, Size size)
     {
         double closest = 9;
         float closestDepth = float.PositiveInfinity;
         int result = 0;
         Vector3 center = bounds.Min + (bounds.Max - bounds.Min) / 2;
-        if (mode != TransformMode.Rotate && Project(camera, center, size, out Point screenCenter, out _) &&
+        if (mode != TransformMode.Rotate && InCubicClip(session, center, camera.Eye) &&
+            Project(camera, center, size, out Point screenCenter, out _) &&
             ((Avalonia.Vector)(point - screenCenter)).Length < 10)
             return 0;
         foreach (var line in TransformGizmoGeometry.GetLines(bounds, mode))
         {
+            if (!InCubicClip(session, line.A, camera.Eye) && !InCubicClip(session, line.B, camera.Eye)) continue;
             if (!Project(camera, line.A, size, out Point a, out float depthA) ||
                 !Project(camera, line.B, size, out Point b, out float depthB)) continue;
             Avalonia.Vector segment = b - a;
@@ -115,6 +120,14 @@ internal static class CameraPicking
             result = line.Axis;
         }
         return result;
+    }
+
+    internal static bool InCubicClip(EditorSession session, Vector3 position, Vector3 center)
+    {
+        if (!session.CubicClipEnabled) return true;
+        Vector3 offset = Vector3.Abs(position - center);
+        return offset.X <= session.CubicClipDistance && offset.Y <= session.CubicClipDistance &&
+            offset.Z <= session.CubicClipDistance;
     }
 
     internal static bool Project(CameraNavigation camera, Vector3 position, Size size, out Point point, out float depth)

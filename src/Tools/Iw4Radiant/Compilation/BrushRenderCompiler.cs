@@ -8,6 +8,7 @@ using IW4.Assets.Math;
 using Iw4Radiant.Compilation.Lighting;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Editing;
 using Bounds = IW4.Assets.Math.Bounds;
 
 namespace Iw4Radiant.Compilation;
@@ -48,6 +49,9 @@ internal static class BrushRenderCompiler
         CancellationToken cancellationToken)
     {
         MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document);
+        Matrix4x4[] modelTransforms = [Matrix4x4.Identity, .. MapCompiler.BrushEntities(document).Select(entity =>
+            Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) * Matrix4x4.Transpose(EntityOrientation.Rotation(entity)))];
+        int worldSurfaceCount = polygons.Count(polygon => polygon.ModelIndex == 0);
         if (polygons.Length is 0 or > ushort.MaxValue)
             throw new InvalidDataException("Compilation requires between 1 and 65535 renderable brush faces or mesh triangles.");
         var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, cancellationToken);
@@ -81,6 +85,7 @@ internal static class BrushRenderCompiler
         for (int faceIndex = 0; faceIndex < polygons.Length; faceIndex++)
         {
             MapRenderSurface polygon = polygons[faceIndex];
+            Matrix4x4 local = modelTransforms[polygon.ModelIndex];
             cancellationToken.ThrowIfCancellationRequested();
             bool isSky = materialSources[polygon.Material].IsSky;
             if (!materials.TryGetValue(polygon.Material, out MaterialAsset? material))
@@ -90,14 +95,15 @@ internal static class BrushRenderCompiler
                 throw new InvalidDataException($"Brush face {faceIndex} exceeds the v22 surface index range.");
             for (int vertexIndex = 0; vertexIndex < localVertexCount; vertexIndex++)
             {
-                Vector3 point = polygon.Vertices[vertexIndex];
+                Vector3 point = Vector3.Transform(polygon.Vertices[vertexIndex], local);
                 Vector2 uv = polygon.TextureCoordinates[vertexIndex];
                 Vector4 color = polygon.Colors[vertexIndex];
                 int index = checked(firstVertex + vertexIndex);
                 WorldVertexCodec.WriteVertex(
                     positions.AsSpan(index * WorldVertexCodec.PositionStride, WorldVertexCodec.PositionStride),
                     layers.AsSpan(index * WorldVertexCodec.LayerStride, WorldVertexCodec.LayerStride),
-                    ToVec3(point), ToVec3(polygon.Normals[vertexIndex]), ToVec3(polygon.Tangents[vertexIndex]), ToVec3(polygon.Binormals[vertexIndex]),
+                    ToVec3(point), ToVec3(Vector3.TransformNormal(polygon.Normals[vertexIndex], local)),
+                    ToVec3(Vector3.TransformNormal(polygon.Tangents[vertexIndex], local)), ToVec3(Vector3.TransformNormal(polygon.Binormals[vertexIndex], local)),
                     ColorByte(color.X), ColorByte(color.Y), ColorByte(color.Z), ColorByte(color.W), uv.X, uv.Y, faceUvs[faceIndex][vertexIndex].X, faceUvs[faceIndex][vertexIndex].Y);
             }
             int firstIndex = indices.Count;
@@ -124,13 +130,17 @@ internal static class BrushRenderCompiler
                     BaseIndex = firstIndex
                 }
             };
-            surfaceBounds[faceIndex] = new GfxSurfaceBounds { Bounds = GetBounds(polygon.Vertices) };
+            surfaceBounds[faceIndex] = new GfxSurfaceBounds { Bounds = GetBounds(polygon.Vertices.Select(point => Vector3.Transform(point, local))) };
             firstVertex = checked(firstVertex + localVertexCount);
         }
 
-        Bounds bounds = GetBounds(document.World.Brushes.SelectMany(brush => brush.GetVertices()).Concat(document.World.Terrains.SelectMany(terrain => terrain.Vertices)));
-        ushort[] surfaceIndices = Enumerable.Range(0, surfaces.Length).Select(index => checked((ushort)index)).ToArray();
-        uint surfaceCount = checked((uint)surfaces.Length);
+        // The canonical BSP cell must enclose both the authored placements and
+        // every stored surface (inline brush-model vertices are entity-local).
+        Bounds bounds = GetBounds(document.Brushes.SelectMany(brush => brush.GetVertices())
+            .Concat(document.Terrains.SelectMany(terrain => terrain.Vertices))
+            .Concat(polygons.SelectMany(polygon => polygon.Vertices.Select(point => Vector3.Transform(point, modelTransforms[polygon.ModelIndex])))));
+        ushort[] surfaceIndices = Enumerable.Range(0, worldSurfaceCount).Select(index => checked((ushort)index)).ToArray();
+        uint surfaceCount = checked((uint)worldSurfaceCount);
         uint surfaceWords = checked(4 * ((surfaceCount + 127) >> 7));
         ushort[] shadowSurfaces = surfaceIndices.Where(index =>
             (surfaces[index].Flags & GfxSurfaceFlags.CastsSunShadow) != 0).ToArray();
@@ -150,7 +160,7 @@ internal static class BrushRenderCompiler
             [
                 new GfxCellTree
                 {
-                    AabbTrees = [new GfxAabbTree { Bounds = bounds, SurfaceCount = checked((ushort)surfaces.Length) }]
+                    AabbTrees = [new GfxAabbTree { Bounds = bounds, SurfaceCount = checked((ushort)worldSurfaceCount) }]
                 }
             ],
             Cells = [new GfxCell { Bounds = bounds, ReflectionProbeCount = checked((byte)cellProbes.Length), ReflectionProbes = cellProbes }],
@@ -169,19 +179,23 @@ internal static class BrushRenderCompiler
                 Indices = indices
             },
             LightGrid = lightGrid,
-            ModelCount = 1,
-            Models =
-            [
-                new GfxBrushModel
+            ModelCount = clip.NumSubModels,
+            Models = Enumerable.Range(0, clip.NumSubModels).Select(index =>
+            {
+                CModel collision = clip.CModels[index];
+                var owned = polygons.Select((polygon, surface) => (polygon, surface)).Where(pair => pair.polygon.ModelIndex == index).ToArray();
+                Bounds modelBounds = index == 0 ? bounds : new Bounds { MidPoint = collision.Mins, HalfSize = collision.Maxs };
+                return new GfxBrushModel
                 {
-                    BoundsMins = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z],
-                    BoundsMaxs = [bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z],
-                    WritableMins = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z],
-                    WritableMaxs = [bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z],
-                    Radius = new Vector3(bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z).Length(),
-                    SurfaceCount = checked((ushort)surfaces.Length)
-                }
-            ],
+                    BoundsMins = [modelBounds.MidPoint.X, modelBounds.MidPoint.Y, modelBounds.MidPoint.Z],
+                    BoundsMaxs = [modelBounds.HalfSize.X, modelBounds.HalfSize.Y, modelBounds.HalfSize.Z],
+                    WritableMins = [modelBounds.MidPoint.X, modelBounds.MidPoint.Y, modelBounds.MidPoint.Z],
+                    WritableMaxs = [modelBounds.HalfSize.X, modelBounds.HalfSize.Y, modelBounds.HalfSize.Z],
+                    Radius = collision.Radius,
+                    StartSurfIndex = owned.Length == 0 ? (ushort)0 : checked((ushort)owned[0].surface),
+                    SurfaceCount = checked((ushort)owned.Length)
+                };
+            }).ToArray(),
             Mins = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z],
             Maxs = [bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z],
             Checksum = clip.Checksum,

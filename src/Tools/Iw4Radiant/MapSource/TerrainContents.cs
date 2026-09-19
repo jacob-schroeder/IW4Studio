@@ -14,6 +14,7 @@ internal static class TerrainContents
             List<MapToken> tokens = MapTokenizer.Tokenize(directive);
             if (tokens.Count == 2 && !tokens[0].Quoted && tokens[0].Value == "layer" && tokens[1].Quoted)
                 continue;
+            if (MapToolFlags.ReadForCompilation(directive)) continue;
             if (tokens.Count < 3 || tokens.Any(token => token.Quoted) ||
                 tokens[0].Value != "contents" || tokens[^1].Value != ";")
                 throw new NotSupportedException($"Terrain directive '{directive}' is not supported by compilation.");

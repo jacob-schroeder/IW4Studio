@@ -38,8 +38,25 @@ internal static class MapSurfaceCompiler
 
     internal static MapRenderSurface[] Compile(MapDocument document)
     {
+        var surfaces = CompileEntity(document.World).ToList();
+        int index = 0;
+        foreach (MapEntity entity in MapCompiler.BrushEntities(document))
+        {
+            index++;
+            if (entity.ClassName != "script_brushmodel") continue;
+            int first = surfaces.Count;
+            surfaces.AddRange(CompileEntity(entity).Select(surface => surface with
+            {
+                ModelIndex = index, SourceIndex = surface.SourceIndex + first
+            }));
+        }
+        return surfaces.ToArray();
+    }
+
+    private static MapRenderSurface[] CompileEntity(MapEntity entity)
+    {
         var surfaces = new List<MapRenderSurface>();
-        foreach (MapPolygon polygon in document.World.Brushes.SelectMany(brush => brush.GetPolygons()))
+        foreach (MapPolygon polygon in entity.Brushes.SelectMany(brush => brush.GetPolygons()))
         {
             if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material)) continue;
             Vector3 normal = polygon.Face.Normal;
@@ -61,11 +78,11 @@ internal static class MapSurfaceCompiler
                 Enumerable.Repeat(binormal, count).ToArray(), uv, Enumerable.Repeat(Vector4.One, count).ToArray(), surfaces.Count));
         }
 
-        var meshIndices = document.World.Terrains.Select((terrain, index) => (terrain, index: index + surfaces.Count))
+        var meshIndices = entity.Terrains.Select((terrain, index) => (terrain, index: index + surfaces.Count))
             .ToDictionary(pair => pair.terrain, pair => pair.index);
         // Equal positions on adjoining patches share a normal. Materials/smoothing groups stay independent.
         var smoothNormals = new Dictionary<(Vector3 Position, string Material, string Smoothing), Vector3>();
-        foreach (MapTerrain terrain in document.World.Terrains)
+        foreach (MapTerrain terrain in entity.Terrains)
         foreach (var (a, b, c) in terrain.GetTriangles())
         {
             Vector3 normal = Vector3.Cross(terrain.Vertices[b] - terrain.Vertices[a], terrain.Vertices[c] - terrain.Vertices[a]);
@@ -76,7 +93,7 @@ internal static class MapSurfaceCompiler
                 smoothNormals[key] = smoothNormals.GetValueOrDefault(key) + normal;
             }
         }
-        foreach (MapTerrain terrain in document.World.Terrains)
+        foreach (MapTerrain terrain in entity.Terrains)
         foreach (var (a, b, c) in terrain.GetTriangles())
         {
             Vector3 edgeU = terrain.Vertices[b] - terrain.Vertices[a], edgeV = terrain.Vertices[c] - terrain.Vertices[a];

@@ -9,14 +9,14 @@ internal static class MapBuildPipeline
 {
     internal static Task BuildBspAsync(MapDocument document, string outputPath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        CancellationToken cancellationToken) => Task.Run(() =>
+        CancellationToken cancellationToken, string? sourcePath) => Task.Run(() =>
     {
         string destination = Path.GetFullPath(outputPath);
         string directory = Path.GetDirectoryName(destination) ?? throw new InvalidDataException("Choose a folder for the compiled map.");
         if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("The selected output folder no longer exists.");
         string assetName = $"maps/mp/{Path.GetFileNameWithoutExtension(destination)}.d3dbsp";
         cancellationToken.ThrowIfCancellationRequested();
-        var bsp = MapCompiler.Compile(document, assetName, materials, models, cancellationToken);
+        var bsp = MapCompiler.Compile(document, assetName, materials, models, cancellationToken, sourcePath);
         string temporary = Path.Combine(directory,
             $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
         try
@@ -63,7 +63,7 @@ internal static class MapBuildPipeline
                 cancellationToken.ThrowIfCancellationRequested();
                 string savedSource = Path.Combine(staging, mapName + ".map");
                 MapFile.Write(document, savedSource);
-                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken);
+                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken, sourcePath);
                 cancellationToken.ThrowIfCancellationRequested();
                 bsp.Write(bspPath);
             }, cancellationToken);
@@ -97,7 +97,14 @@ internal static class MapBuildPipeline
         };
         if (managed) start.ArgumentList.Add(linkerPath);
         foreach (string value in new[] { "to-fastfile", bspPath, templatePath, assetName, fastFilePath,
-                     "--world-only", "--source-materials", "--compiled-lighting", "--stock-bootstrap" }) start.ArgumentList.Add(value);
+                     "--source-materials", "--compiled-lighting", "--stock-bootstrap" }) start.ArgumentList.Add(value);
+        foreach (string model in IW4.Assets.D3dbsp.D3dbspFile.Read(bspPath).GetEntities()
+                     .Where(entity => entity.GetValueOrDefault("classname") is "script_model" or "misc_turret")
+                     .Select(entity => entity["model"]).Distinct(StringComparer.Ordinal))
+        {
+            start.ArgumentList.Add("--xmodel");
+            start.ArgumentList.Add(model);
+        }
         foreach (string provider in providers)
         {
             start.ArgumentList.Add("--provider-fastfile");

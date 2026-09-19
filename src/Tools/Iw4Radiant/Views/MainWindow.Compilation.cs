@@ -1,6 +1,7 @@
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Iw4Radiant.Compilation;
+using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 
@@ -37,7 +38,7 @@ public partial class MainWindow
                 throw new InvalidDataException("Choose a filename ending in .d3dbsp.");
             MapDocument document = _session.Document.Clone();
             var (materials, models) = ResolveBuildAssets(document);
-            var dialog = new MapBuildWindow(document, path, materials, models);
+            var dialog = new MapBuildWindow(document, path, materials, models, _session.FilePath);
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
             if (dialog.CompletedBspPath is { } completedPath)
                 SetStatus($"Built .d3dbsp: {completedPath}");
@@ -80,14 +81,15 @@ public partial class MainWindow
     private (Dictionary<string, MaterialSource> Materials, Dictionary<string, XModelSource> Models)
         ResolveBuildAssets(MapDocument document)
     {
+        document = PrefabLibrary.ExpandForCompilation(document, _session.FilePath);
         var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
         foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapStaticModelCompiler.CastsShadow(entity))
                      .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
             models.Add(name, Workspace.Models.ResolveModel(name) ??
                 throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));
         var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
-        foreach (string name in document.World.Brushes.SelectMany(brush => brush.Faces)
-                     .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
+        foreach (string name in document.Brushes.SelectMany(brush => brush.Faces)
+                     .Select(face => face.Material).Concat(document.Terrains.Select(terrain => terrain.Material))
                      .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
                      .Distinct(StringComparer.Ordinal))
         {

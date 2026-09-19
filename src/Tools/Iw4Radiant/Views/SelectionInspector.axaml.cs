@@ -17,6 +17,8 @@ public partial class SelectionInspector : UserControl
 
     public SelectionInspector() => InitializeComponent();
     internal event Action<string>? PlacementRequested;
+    internal event Action? ModelBrowserRequested;
+    internal event Action? PrefabBrowserRequested;
 
     internal void ShowTool(EditorTool tool)
     {
@@ -29,7 +31,11 @@ public partial class SelectionInspector : UserControl
         };
     }
 
-    internal void ShowEntity() => InspectorTabs.SelectedItem = EntityTab;
+    internal void ShowEntity()
+    {
+        InspectorTabs.SelectedItem = EntityTab;
+        PropertiesExpander.IsExpanded = true;
+    }
 
     internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
     internal void ShowGeometry() => InspectorTabs.SelectedItem = GeometryTab;
@@ -49,6 +55,8 @@ public partial class SelectionInspector : UserControl
         Organization.InitializeActions(session, dialogs, finishGestures);
         Gameplay.InitializeActions(session, dialogs, finishGestures);
         Gameplay.PlacementRequested += name => PlacementRequested?.Invoke(name);
+        Gameplay.ModelBrowserRequested += () => ModelBrowserRequested?.Invoke();
+        Gameplay.PrefabBrowserRequested += () => PrefabBrowserRequested?.Invoke();
         TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha, supportsVertexColor);
         Decals.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
         Sunlight.EditSourceRequested += () =>

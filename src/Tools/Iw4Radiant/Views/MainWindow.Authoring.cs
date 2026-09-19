@@ -10,6 +10,8 @@ public partial class MainWindow
     {
         Inspector.PlacementRequested += className => BeginPlacement(className,
             (position, _) => GameplayEntityEditing.Place(_session, className, position));
+        Inspector.ModelBrowserRequested += Workspace.ShowModels;
+        Inspector.PrefabBrowserRequested += Workspace.ShowPrefabs;
         Workspace.Models.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
         Workspace.Prefabs.InitializeActions(this, _session, _dialogs, FinishGestures, _files.OpenPathAsync);
         Workspace.Materials.CatalogChanged += RefreshAssets;

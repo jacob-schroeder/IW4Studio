@@ -3,6 +3,7 @@ using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.MapEnts;
 using IW4.Assets.Assets.Physics;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Editing;
 using Bounds = IW4.Assets.Math.Bounds;
 using Vec3 = IW4.Assets.Math.Vec3;
 
@@ -17,9 +18,24 @@ internal static class BrushCollisionCompiler
         IReadOnlyDictionary<string, ClipMaterial> baseMaterials,
         MapEntsAsset mapEnts)
     {
-        IReadOnlyList<MapBrush> sourceBrushes = document.World.Brushes;
+        MapEntity[] entities = [document.World, .. MapCompiler.BrushEntities(document)];
+        var sourceBrushes = new List<MapBrush>(document.World.Brushes);
+        var modelBrushRanges = new List<(int First, int Count)> { (0, sourceBrushes.Count) };
+        foreach (MapEntity entity in entities.Skip(1))
+        {
+            int first = sourceBrushes.Count;
+            Matrix4x4 local = Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) *
+                Matrix4x4.Transpose(EntityOrientation.Rotation(entity));
+            foreach (MapBrush brush in entity.Brushes)
+            {
+                MapBrush copy = brush.Clone();
+                copy.Transform(local, textureLock: true);
+                sourceBrushes.Add(copy);
+            }
+            modelBrushRanges.Add((first, sourceBrushes.Count - first));
+        }
         if (sourceBrushes.Count is 0 or > short.MaxValue)
-            throw new NotSupportedException("A single-cell map requires between 1 and 32767 world brushes.");
+            throw new NotSupportedException("A single-cell map requires between 1 and 32767 total world/entity brushes.");
         if (materials.Count is 0 or > short.MaxValue)
             throw new NotSupportedException("Brush collision requires between 1 and 32767 materials.");
         var materialIndices = materials.Select((material, index) =>
@@ -48,11 +64,14 @@ internal static class BrushCollisionCompiler
                     : throw new InvalidDataException($"Brush {brushIndex} material '{polygon.Face.Material}' is missing."))
                 .ToArray();
             contents[brushIndex] = unchecked((uint)brushContents);
-            combinedContents |= contents[brushIndex];
+            if (brushIndex < document.World.Brushes.Count) combinedContents |= contents[brushIndex];
             (Vector3 min, Vector3 max) = source.GetBounds();
             bounds[brushIndex] = MakeBounds(min, max);
-            worldMin = Vector3.Min(worldMin, min);
-            worldMax = Vector3.Max(worldMax, max);
+            if (brushIndex < document.World.Brushes.Count)
+            {
+                worldMin = Vector3.Min(worldMin, min);
+                worldMax = Vector3.Max(worldMax, max);
+            }
 
             // Native side numbers interleave min/max by axis. The six material
             // and offset fields are stored separately as min XYZ, then max XYZ.
@@ -132,10 +151,45 @@ internal static class BrushCollisionCompiler
             throw new InvalidDataException("The map bounds leave no finite position for its collision root plane.");
         CPlane rootPlane = MakePlane(Vector3.UnitX, splitDistance);
         planes.Add(rootPlane);
-        ushort[] leafBrushes = Enumerable.Range(0, brushes.Length).Select(index => (ushort)index).ToArray();
+        ushort[] leafBrushes = Enumerable.Range(0, document.World.Brushes.Count).Select(index => (ushort)index).ToArray();
         Bounds leafBounds = MakeBounds(worldMin - new Vector3(0.125f), worldMax + new Vector3(0.125f));
         Bounds modelBounds = MakeBounds(worldMin - Vector3.One, worldMax + Vector3.One);
         Vector3 modelExtent = Vector3.Max(Vector3.Abs(worldMin - Vector3.One), Vector3.Abs(worldMax + Vector3.One));
+        var brushNodes = new List<CLeafBrushNode>
+        {
+            new() { Data = new CLeafBrushNodeData { Children = new CLeafBrushNodeChildren { ChildOffsets = [0, 0] } } },
+            new()
+            {
+                LeafBrushCount = checked((short)leafBrushes.Length), Contents = unchecked((int)combinedContents),
+                Data = new CLeafBrushNodeData { Brushes = leafBrushes, LeafUnionPad = new byte[8] }
+            }
+        };
+        var models = new List<CModel>
+        {
+            new() { Mins = modelBounds.MidPoint, Maxs = modelBounds.HalfSize, Radius = modelExtent.Length() }
+        };
+        foreach (var (first, count) in modelBrushRanges.Skip(1))
+        {
+            var vertices = sourceBrushes.Skip(first).Take(count).SelectMany(brush => brush.GetVertices()).ToArray();
+            Bounds model = MakeBounds(vertices.Aggregate(Vector3.Min), vertices.Aggregate(Vector3.Max));
+            int modelContents = unchecked((int)contents.Skip(first).Take(count).Aggregate(0u, (left, right) => left | right));
+            int node = brushNodes.Count;
+            brushNodes.Add(new CLeafBrushNode
+            {
+                LeafBrushCount = checked((short)count), Contents = modelContents,
+                Data = new CLeafBrushNodeData
+                {
+                    Brushes = Enumerable.Range(first, count).Select(index => checked((ushort)index)).ToArray(),
+                    LeafUnionPad = new byte[8]
+                }
+            });
+            models.Add(new CModel
+            {
+                Mins = model.MidPoint, Maxs = model.HalfSize,
+                Radius = vertices.Max(point => point.Length()),
+                Leaf = new CLeaf { Mins = model.MidPoint, Maxs = model.HalfSize, BrushContents = modelContents, LeafBrushNode = node }
+            });
+        }
         return new ClipMapAsset
         {
             Name = assetName,
@@ -162,27 +216,12 @@ internal static class BrushCollisionCompiler
                 },
                 new CLeaf()
             ],
-            LeafBrushNodesCount = 2,
-            LeafBrushNodes =
-            [
-                new CLeafBrushNode
-                {
-                    Data = new CLeafBrushNodeData
-                    {
-                        Children = new CLeafBrushNodeChildren { ChildOffsets = [0, 0] }
-                    }
-                },
-                new CLeafBrushNode
-                {
-                    LeafBrushCount = checked((short)leafBrushes.Length),
-                    Contents = unchecked((int)combinedContents),
-                    Data = new CLeafBrushNodeData { Brushes = leafBrushes, LeafUnionPad = new byte[8] }
-                }
-            ],
+            LeafBrushNodesCount = brushNodes.Count,
+            LeafBrushNodes = brushNodes,
             NumLeafBrushes = leafBrushes.Length,
             LeafBrushes = leafBrushes,
-            NumSubModels = 1,
-            CModels = [new CModel { Mins = modelBounds.MidPoint, Maxs = modelBounds.HalfSize, Radius = modelExtent.Length() }],
+            NumSubModels = models.Count,
+            CModels = models,
             NumBrushes = checked((ushort)brushes.Length),
             Brushes = brushes,
             BrushBounds = bounds,

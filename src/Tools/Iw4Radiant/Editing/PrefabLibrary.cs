@@ -12,6 +12,65 @@ internal sealed class PrefabLibrary
 
     internal static bool IsPrefab(MapEntity entity) => entity.ClassName == "misc_prefab";
 
+    internal static MapDocument ExpandForCompilation(MapDocument document, string? mapPath)
+    {
+        var library = new PrefabLibrary();
+        MapDocument result = document.Clone();
+        var targetResolutions = result.Entities.Where(entity => !IsPrefab(entity) && entity.Properties.ContainsKey("target"))
+            .ToDictionary(entity => entity, entity => result.ResolveTargets(entity).ToArray());
+        var targetNames = result.Entities.Where(entity => !IsPrefab(entity))
+            .Select(entity => entity.Properties.GetValueOrDefault("targetname", "")).Where(name => name.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (MapEntity instance in result.Entities.Where(IsPrefab).ToArray())
+        {
+            ValidateCompilationInstance(instance);
+            MapDocument preview = library.GetPreview(instance, mapPath) ?? throw new InvalidDataException(library.Error(instance, mapPath));
+            // Preview expansion intentionally consumes nested instances and prefab
+            // world settings. A build must diagnose unsupported source data first.
+            foreach (MapDocument sourceDocument in library._sources.Values)
+            {
+                foreach (MapEntity nested in sourceDocument.Entities.Where(IsPrefab)) ValidateCompilationInstance(nested);
+                if (sourceDocument.World.Directives.Any(directive => !MapOrganization.IsLayerDirective(directive)) ||
+                    sourceDocument.World.Properties.Keys.Any(key => key != "classname"))
+                    throw new NotSupportedException("Prefab world properties or directives have no proven compile-time inheritance rule. Move them to the parent world before building.");
+            }
+            MapDocument expanded = preview.Clone();
+            string[] names = expanded.Entities.Select(entity => entity.Properties.GetValueOrDefault("targetname", ""))
+                .Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+            if (names.Any(targetNames.Contains))
+                throw new NotSupportedException("A prefab targetname collides with another instance or the parent map. Native scoped name rewriting is not yet recovered. Make the source targetnames unique or explode the instance and resolve its links before building.");
+            var expandedEntities = preview.Entities.Zip(expanded.Entities)
+                .ToDictionary(pair => pair.First, pair => pair.Second);
+            foreach (MapEntity source in preview.Entities.Where(entity => entity.Properties.ContainsKey("target")))
+            {
+                targetResolutions.Add(expandedEntities[source], library.ResolveTargets(instance, mapPath, source)
+                    .Select(target => expandedEntities[target]).ToArray());
+            }
+            targetNames.UnionWith(names);
+            result.World.Brushes.AddRange(expanded.World.Brushes);
+            result.World.Terrains.AddRange(expanded.World.Terrains);
+            result.Entities.AddRange(expanded.Entities.Skip(1));
+            result.Entities.Remove(instance);
+        }
+        // Compare identities only after every instance has been inserted: flattening
+        // must not capture previously unresolved links in either direction, including
+        // links from the parent map or between separate prefab instances.
+        foreach (var (source, expected) in targetResolutions)
+            if (!new HashSet<MapEntity>(expected, ReferenceEqualityComparer.Instance).SetEquals(result.ResolveTargets(source)))
+                throw new NotSupportedException($"Target '{source.Properties["target"]}' changes resolution when prefabs are flattened. Explode the prefab and give scoped destinations unique targetnames before building.");
+        return result;
+    }
+
+    private static void ValidateCompilationInstance(MapEntity instance)
+    {
+        foreach (string key in instance.Properties.Keys)
+            if (key is not ("classname" or "model" or "origin" or "angles" or "angle" or "modelscale" or "modelscale_vec"))
+                throw new NotSupportedException($"Prefab instance property '{key}' has no proven compile-time expansion rule. Edit or explode the instance before building.");
+        if (instance.Brushes.Count != 0 || instance.Terrains.Count != 0 || instance.PreservedPrimitives.Count != 0 ||
+            instance.Directives.Any(directive => !MapOrganization.IsLayerDirective(directive)))
+            throw new NotSupportedException("Prefab instances with attached geometry or directives cannot be compiled by reference. Move that data to the prefab source before building.");
+    }
+
     internal void Reload(MapDocument document, string? mapPath)
     {
         _previews.Clear();

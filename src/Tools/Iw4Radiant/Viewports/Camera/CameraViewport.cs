@@ -204,7 +204,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                     (float)(1 - point.Y / Math.Max(1, Bounds.Height) * 2), Aspect);
                 if (SurfaceRaycast.TryHit(session.Scene.Document, origin, direction,
                         name => session.Scene.ResolveModel?.Invoke(name), ResolveMaterial, null,
-                        out Vector3 hit, out Vector3 normal))
+                        out Vector3 hit, out Vector3 normal) && CameraPicking.InCubicClip(session, hit, origin))
                 {
                     string? label = session.PlacementLabel;
                     session.Place(hit, normal, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
@@ -219,7 +219,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                 ? CameraPicking.PickVertex(session, _navigation, point, Bounds.Size) : null;
             int axis = !additive && vertex is null && (session.Tool is EditorTool.Select or EditorTool.Vertex) && session.CanTransformSelection &&
                 session.SelectionBounds is { } bounds
-                ? CameraPicking.PickGizmo(bounds, session.TransformMode, _navigation, point, Bounds.Size) : 0;
+                ? CameraPicking.PickGizmo(session, bounds, session.TransformMode, _navigation, point, Bounds.Size) : 0;
             if (axis != 0)
             {
                 _transform = new CameraTransformGesture(session, _navigation, axis, point, Bounds.Size);
@@ -230,7 +230,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             }
             else if (additive)
             {
-                object? picked = vertex ?? CameraPicking.Pick(session.Scene, _navigation, point, Bounds.Size, session.Tool);
+                object? picked = vertex ?? CameraPicking.Pick(session, _navigation, point, Bounds.Size, session.Tool);
                 if (session.Tool == EditorTool.Select)
                 {
                     _dragPointer = e.Pointer;
@@ -290,7 +290,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             try
             {
                 _objectMenu = CameraObjectMenu.Open(this, session,
-                    CameraPicking.PickAll(session.Scene, _navigation, point, Bounds.Size, EditorTool.Select),
+                    CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Select),
                     kind => BrushKindRequested?.Invoke(kind));
             }
             catch (Exception exception) when (IsEditError(exception))
@@ -314,7 +314,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         if (_session is not { Tool: EditorTool.Select } session) return;
         try
         {
-            PaintSelection(session, CameraPicking.Pick(session.Scene, _navigation, point, Bounds.Size, session.Tool));
+            PaintSelection(session, CameraPicking.Pick(session, _navigation, point, Bounds.Size, session.Tool));
         }
         catch (Exception exception) when (IsEditError(exception))
         {

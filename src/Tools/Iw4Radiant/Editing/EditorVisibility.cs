@@ -61,7 +61,7 @@ internal sealed class EditorVisibility
                 MapTerrain terrain => terrain.IsCurve ? EditorFilter.Curves : EditorFilter.Terrain,
                 MapEntity entity when entity.ClassName == "worldspawn" => EditorFilter.None,
                 MapEntity entity when entity.ClassName == "misc_prefab" => EditorFilter.Prefabs,
-                MapEntity entity when entity.ClassName is "misc_model" or "script_model" => EditorFilter.Models,
+                MapEntity entity when entity.ClassName is "misc_model" or "script_model" or "misc_turret" => EditorFilter.Models,
                 MapEntity entity when entity.ClassName == "light" => EditorFilter.Lights,
                 MapEntity entity when entity.Brushes.Count > 0 || entity.Terrains.Count > 0 => EditorFilter.BrushEntities,
                 MapEntity => EditorFilter.OtherEntities,

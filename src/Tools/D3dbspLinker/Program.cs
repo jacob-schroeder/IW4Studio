@@ -250,8 +250,6 @@ static int ToFastFile(
         dependencies.Add(value);
     }
 
-    if (useSourceMaterials && !worldOnly)
-        throw new ArgumentException("The --source-materials option requires --world-only.");
     if (useCompiledLighting && (forceFullbright || lightmapImageNames.Count != 0))
         throw new ArgumentException("The --compiled-lighting option cannot be combined with --fullbright or --lightmap.");
     if (staticScriptModelNames.Count != 0 && (!worldOnly || !useSourceMaterials))
@@ -366,9 +364,9 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only [--source-materials]] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
     Console.Error.WriteLine("  Lighting images must be owned by --provider-fastfile inputs; --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
-    Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps in world-only builds and requires at least one lightmap array.");
+    Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
     Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");
     Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
     return 2;
