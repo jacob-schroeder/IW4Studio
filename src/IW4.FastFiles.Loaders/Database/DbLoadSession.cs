@@ -136,12 +136,7 @@ public sealed class DbLoadSession : IDisposable
                     $"Zone '{zone.SourceName}' was loaded without canonical linker capture.");
             }
 
-            IReadOnlyList<ImageFileStreamLanguageReferences> imageStreamReferences =
-                FreezeImageStreamReferences(zone, provider.Asset);
-            sources[index] = new LinkAssetProviderSource(
-                provider.Asset,
-                zone.LinkAssetImportResolver,
-                imageStreamReferences);
+            sources[index] = CreateProviderSource(zone, provider);
         }
 
         LinkAssetPool result = new(sources);
@@ -399,9 +394,24 @@ public sealed class DbLoadSession : IDisposable
 
     private static LinkAssetProviderSource CreateProviderSource(
         LoadedXZone zone,
-        XAssetProviderContribution provider) => new(
-        provider.Asset,
-        zone.LinkAssetImportResolver ?? throw new InvalidOperationException(
-            $"Zone '{zone.SourceName}' was loaded without canonical linker capture."),
-        FreezeImageStreamReferences(zone, provider.Asset));
+        XAssetProviderContribution provider)
+    {
+        string serializedName = DbLoadExecutionContext.NormalizeLoadedAssetName(
+            provider.IsReferencePlaceholder
+                ? "," + provider.Name
+                : provider.Name);
+        bool nameWasNormalized = !string.Equals(
+            serializedName,
+            provider.Asset.SerializedAssetName,
+            StringComparison.Ordinal);
+        return new LinkAssetProviderSource(
+            provider.Asset,
+            zone.LinkAssetImportResolver ?? throw new InvalidOperationException(
+                $"Zone '{zone.SourceName}' was loaded without canonical linker capture."),
+            FreezeImageStreamReferences(zone, provider.Asset),
+            nameWasNormalized
+                ? LinkAssetProviderSourceDisposition.AuthoredDetached
+                : LinkAssetProviderSourceDisposition.PreserveImportedIdentity,
+            serializedName: serializedName);
+    }
 }

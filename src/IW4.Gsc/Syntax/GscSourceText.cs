@@ -13,6 +13,7 @@ public sealed class GscSourceText
         throwOnInvalidBytes: true);
 
     private readonly byte[] _bytes;
+    private readonly Encoding _encoding;
     private readonly int[] _byteCharacterStarts;
     private readonly int[] _byteCharacterEnds;
     private readonly int[] _lineStarts;
@@ -29,6 +30,7 @@ public sealed class GscSourceText
 
         Encoding strictEncoding = (Encoding)encoding.Clone();
         strictEncoding.EncoderFallback = EncoderFallback.ExceptionFallback;
+        _encoding = strictEncoding;
 
         Text = text;
         _bytes = strictEncoding.GetBytes(text);
@@ -46,6 +48,10 @@ public sealed class GscSourceText
     public int LineCount => _lineStarts.Length;
 
     internal ReadOnlySpan<byte> Bytes => _bytes;
+
+    internal int GetByteCount(string text) => _encoding.GetByteCount(text);
+
+    internal byte[] GetBytes(GscTextSpan span) => _encoding.GetBytes(GetText(span));
 
     public GscLinePosition GetLinePosition(int offset)
     {

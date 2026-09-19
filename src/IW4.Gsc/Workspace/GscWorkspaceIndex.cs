@@ -15,16 +15,20 @@ public sealed class GscWorkspaceIndex
     private readonly IReadOnlyDictionary<GscSymbolId, GscSymbolDefinition> _definitionsById;
     private readonly IReadOnlyList<GscIndexedDocument> _documents;
     private readonly IReadOnlyList<GscFunctionDefinition> _functions;
+    private readonly IReadOnlyDictionary<string, GscSourceText> _animationTrees;
 
     private GscWorkspaceIndex(
         IReadOnlyDictionary<GscScriptPath, GscWorkspaceSourceDocument> sources,
+        IReadOnlyDictionary<string, GscSourceText> animationTrees,
         CancellationToken cancellationToken)
     {
         _sources = new ReadOnlyDictionary<GscScriptPath, GscWorkspaceSourceDocument>(
             new Dictionary<GscScriptPath, GscWorkspaceSourceDocument>(sources));
+        _animationTrees = new ReadOnlyDictionary<string, GscSourceText>(
+            new Dictionary<string, GscSourceText>(animationTrees, StringComparer.OrdinalIgnoreCase));
 
         Dictionary<GscScriptPath, GscIndexedDocument> resolved =
-            GscWorkspaceResolver.Resolve(_sources, cancellationToken);
+            GscWorkspaceResolver.Resolve(_sources, _animationTrees, cancellationToken);
         _documentsByPath = new ReadOnlyDictionary<GscScriptPath, GscIndexedDocument>(resolved);
         _documents = Array.AsReadOnly(
             resolved.Values
@@ -46,7 +50,8 @@ public sealed class GscWorkspaceIndex
 
     public static GscWorkspaceIndex Create(
         IEnumerable<GscDocumentSnapshot> documents,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, GscSourceText>? animationTrees = null)
     {
         ArgumentNullException.ThrowIfNull(documents);
         var sources = new Dictionary<GscScriptPath, GscWorkspaceSourceDocument>();
@@ -65,7 +70,7 @@ public sealed class GscWorkspaceIndex
             }
         }
 
-        return new GscWorkspaceIndex(sources, cancellationToken);
+        return new GscWorkspaceIndex(sources, animationTrees ?? new Dictionary<string, GscSourceText>(), cancellationToken);
     }
 
     /// <summary>
@@ -106,7 +111,16 @@ public sealed class GscWorkspaceIndex
                 GscDocumentIndexer.Build(document, cancellationToken);
         }
 
-        return new GscWorkspaceIndex(sources, cancellationToken);
+        return new GscWorkspaceIndex(sources, _animationTrees, cancellationToken);
+    }
+
+    public GscWorkspaceIndex WithAnimationTrees(IReadOnlyDictionary<string, GscSourceText> replacements,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(replacements);
+        var trees = new Dictionary<string, GscSourceText>(_animationTrees, StringComparer.OrdinalIgnoreCase);
+        foreach (var replacement in replacements) trees[replacement.Key] = replacement.Value;
+        return new GscWorkspaceIndex(_sources, trees, cancellationToken);
     }
 
     public GscAnalysisResult GetAnalysis(GscScriptPath path) =>
@@ -225,7 +239,7 @@ public sealed class GscWorkspaceIndex
     }
 
     /// <summary>
-    /// Resolves signatures using the same local-or-qualified rule as binding.
+    /// Resolves signatures from the same declarations and direct includes as binding.
     /// </summary>
     public IReadOnlyList<GscFunctionDefinition> FindFunctionSignatures(
         GscScriptPath callingPath,
@@ -239,9 +253,14 @@ public sealed class GscWorkspaceIndex
             return [];
 
         string canonicalName = functionName.ToLowerInvariant();
+        IEnumerable<GscFunctionDefinition> candidates = targetDocument.Functions;
+        if (qualifiedTarget is null)
+            candidates = candidates.Concat(targetDocument.Includes.Select(include => include.TargetPath).Distinct()
+                .Where(_documentsByPath.ContainsKey)
+                .SelectMany(path => _documentsByPath[path].Functions));
         return Array.AsReadOnly(
-            targetDocument.Functions
-                .Where(function => function.Name == canonicalName)
+            candidates
+                .Where(function => function.Name == canonicalName && !function.DeveloperOnly)
                 .OrderBy(function => function.Location.Span.Start)
                 .ToArray());
     }

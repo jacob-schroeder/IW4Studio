@@ -17,4 +17,6 @@ internal sealed record GscPendingFunctionReference(
     string Name,
     string SourceName,
     GscWorkspaceReferenceKind Kind,
-    GscScriptPath? QualifiedTarget);
+    GscScriptPath? QualifiedTarget,
+    bool Native,
+    bool Developer);

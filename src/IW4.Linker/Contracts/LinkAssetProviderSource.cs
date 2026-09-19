@@ -72,12 +72,14 @@ public sealed class LinkAssetProviderSource
         IEnumerable<ImageFileStreamLanguageReferences>? imageStreamReferences = null,
         LinkAssetProviderSourceDisposition disposition =
             LinkAssetProviderSourceDisposition.PreserveImportedIdentity,
-        BaseAsset? importedDefinition = null)
+        BaseAsset? importedDefinition = null,
+        string? serializedName = null)
     {
         if (!Enum.IsDefined(disposition))
             throw new ArgumentOutOfRangeException(nameof(disposition));
 
         Definition = definition ?? throw new ArgumentNullException(nameof(definition));
+        SerializedName = serializedName ?? definition.SerializedAssetName;
         ImportResolver = importResolver;
         ImportedDefinition = importedDefinition ?? definition;
         ImageStreamReferences = imageStreamReferences is null
@@ -91,10 +93,17 @@ public sealed class LinkAssetProviderSource
     }
 
     public BaseAsset Definition { get; }
+    /// <summary>
+    /// Wire name frozen into the link plan. Loaded providers may supply a
+    /// normalized spelling while retaining the imported definition for all
+    /// other semantic fields and pointer identities.
+    /// </summary>
+    public string? SerializedName { get; }
     public ILinkAssetImportResolver? ImportResolver { get; }
     /// <summary>
     /// Transient original provider used only to resolve imported pointer
-    /// occurrences. Plans always serialize <see cref="Definition"/>.
+    /// occurrences. Plans serialize <see cref="Definition"/>'s semantic
+    /// content and <see cref="SerializedName"/> as its wire name.
     /// </summary>
     public BaseAsset ImportedDefinition { get; }
     public IReadOnlyList<ImageFileStreamLanguageReferences> ImageStreamReferences { get; }
@@ -113,5 +122,6 @@ public sealed class LinkAssetProviderSource
                 ImportResolver,
                 ImageStreamReferences,
                 LinkAssetProviderSourceDisposition.AuthoredDetached,
-                ImportedDefinition);
+                ImportedDefinition,
+                SerializedName);
 }

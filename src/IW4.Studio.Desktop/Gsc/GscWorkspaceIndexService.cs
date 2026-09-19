@@ -72,6 +72,13 @@ public sealed class GscWorkspaceIndexService
                             GscScriptPath.FromAssetName(document.AssetName),
                             document.Source)),
                     cancellationToken);
+            var authoredTrees = new Dictionary<string, GscSourceText>(StringComparer.OrdinalIgnoreCase);
+            foreach (RawFileAsset rawFile in appliedCapture.Definitions
+                         .Select(applied => applied.Definition).OfType<RawFileAsset>())
+                if (rawFile.Name is { } name && IsAnimationTreeAssetName(name))
+                    authoredTrees[name.Replace('\\', '/').ToLowerInvariant()] = CaptureSource(name, rawFile);
+            if (authoredTrees.Count != 0)
+                effectiveIndex = effectiveIndex.WithAnimationTrees(authoredTrees, cancellationToken);
             var captured = new GscWorkspaceSnapshot(
                 runtimeCapture.AssetPoolRevision,
                 appliedCapture.Revision,
@@ -102,6 +109,10 @@ public sealed class GscWorkspaceIndexService
                extension.Equals(".csc", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsAnimationTreeAssetName(string name) =>
+        name.Replace('\\', '/').StartsWith("animtrees/", StringComparison.OrdinalIgnoreCase) &&
+        name.EndsWith(".atr", StringComparison.OrdinalIgnoreCase);
+
     private RuntimeWorkspaceCapture GetRuntimeCapture(
         long expectedRevision,
         CancellationToken cancellationToken)
@@ -130,9 +141,13 @@ public sealed class GscWorkspaceIndexService
 
         XAssetSlot[] runtimeSlots = pool.Slots.ToArray();
         var capturedSlots = new List<GscWorkspaceRawFileSlot>();
+        var animationTrees = new Dictionary<string, GscSourceText>(StringComparer.OrdinalIgnoreCase);
         foreach (XAssetSlot slot in runtimeSlots)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (slot.AssetType == XAssetType.RawFile && IsAnimationTreeAssetName(slot.Name) &&
+                !slot.ActiveProvider.IsReferencePlaceholder)
+                animationTrees[slot.Name.Replace('\\', '/').ToLowerInvariant()] = CaptureSource(slot.Name, slot.ActiveProvider);
             if (slot.AssetType != XAssetType.RawFile || !IsScriptAssetName(slot.Name))
                 continue;
 
@@ -168,7 +183,8 @@ public sealed class GscWorkspaceIndexService
                 .Select(slot => new GscDocumentSnapshot(
                     GscScriptPath.FromAssetName(slot.AssetName),
                     slot.Source!)),
-            cancellationToken);
+            cancellationToken,
+            animationTrees);
         if (pool.Revision != expectedRevision)
         {
             throw new InvalidOperationException(

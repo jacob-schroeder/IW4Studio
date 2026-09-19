@@ -109,12 +109,16 @@ public sealed record LoadedXZone(
         XAssetProviderMaterialization provider = materialization.RootProvider
             ?? throw new InvalidDataException(
                 $"XAsset row {row.Index} has no captured root provider.");
+        string normalizedSerializedName =
+            DbLoadExecutionContext.NormalizeLoadedAssetName(provider.OriginalName);
+        CanonicalAssetFamily family =
+            CanonicalAssetFamily.FromSerializedType(row.Type);
         return new LinkRoot(
             entryId,
             row.Type,
             intent,
-            AssetKey.FromDefinition(provider.Asset),
-            provider.OriginalName,
+            AssetKey.FromWireName(family, normalizedSerializedName),
+            normalizedSerializedName,
             opaqueHeader: null);
     }
 }

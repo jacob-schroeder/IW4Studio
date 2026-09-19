@@ -45,13 +45,15 @@ public sealed class GscFunctionDefinition
     internal GscFunctionDefinition(
         GscSymbolDefinition symbol,
         IEnumerable<GscSymbolDefinition> parameters,
-        string declarationSignature)
+        string declarationSignature,
+        bool developerOnly)
     {
         Symbol = symbol ?? throw new ArgumentNullException(nameof(symbol));
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentException.ThrowIfNullOrWhiteSpace(declarationSignature);
         _parameters = Array.AsReadOnly(parameters.ToArray());
         DeclarationSignature = declarationSignature;
+        DeveloperOnly = developerOnly;
     }
 
     public GscSymbolDefinition Symbol { get; }
@@ -69,6 +71,8 @@ public sealed class GscFunctionDefinition
     /// parenthesis, excluding the body.
     /// </summary>
     public string DeclarationSignature { get; }
+
+    internal bool DeveloperOnly { get; }
 }
 
 public sealed class GscSymbolReference

@@ -1,4 +1,5 @@
 using IW4.Gsc.Analysis;
+using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Semantics;
 using IW4.Gsc.Syntax;
 
@@ -93,7 +94,8 @@ internal static class GscDocumentIndexer
             functions.Add(new GscFunctionDefinition(
                 functionDefinition,
                 parameters,
-                declarationSignature));
+                declarationSignature,
+                function.DeveloperOnly));
         }
 
         foreach (GscBoundReference reference in model.References)
@@ -131,7 +133,7 @@ internal static class GscDocumentIndexer
                     definitionBySymbol,
                     cancellationToken)
                 .ToArray(),
-            ExtractFunctionReferences(snapshot, model.SyntaxTree).ToArray());
+            ExtractFunctionReferences(snapshot, model.SyntaxTree.Root, developer: false, nativeKind: null).ToArray());
 
         GscSymbolDefinition AddDefinition(
             GscSymbol symbol,
@@ -293,47 +295,117 @@ internal static class GscDocumentIndexer
 
     private static IEnumerable<GscPendingFunctionReference> ExtractFunctionReferences(
         GscDocumentSnapshot snapshot,
-        GscSyntaxTree tree)
+        GscSyntaxNode root,
+        bool developer,
+        Iw4GscBuiltInKind? nativeKind)
     {
-        foreach (GscSyntaxNode node in DescendantNodes(tree.Root))
+        if (root.Production == GscProduction.TopLevelItemListAppend)
         {
-            GscSyntaxTokenElement nameToken;
-            GscScriptPath? target = null;
-            GscWorkspaceReferenceKind kind;
-            switch (node.Production)
+            // Top-level developer sections affect subsequent siblings, so process
+            // each item to completion before advancing the section state.
+            foreach (GscSyntaxNode item in GscSemanticSyntax.EnumerateTopLevelItems(root))
             {
-                case GscProduction.NamedFunctionLocal:
-                    nameToken = GscSemanticSyntax.Token(node.Children[0]);
-                    kind = GscWorkspaceReferenceKind.Call;
-                    break;
-
-                case GscProduction.NamedFunctionQualified:
-                    target = ResolveQualifiedTarget(snapshot, node.Children[0]);
-                    nameToken = GscSemanticSyntax.Token(node.Children[2]);
-                    kind = GscWorkspaceReferenceKind.Call;
-                    break;
-
-                case GscProduction.FunctionReferenceLocal:
-                    nameToken = GscSemanticSyntax.Token(node.Children[1]);
-                    kind = GscWorkspaceReferenceKind.FunctionReference;
-                    break;
-
-                case GscProduction.FunctionReferenceQualified:
-                    target = ResolveQualifiedTarget(snapshot, node.Children[0]);
-                    nameToken = GscSemanticSyntax.Token(node.Children[2]);
-                    kind = GscWorkspaceReferenceKind.FunctionReference;
-                    break;
-
-                default:
-                    continue;
+                if (item.Production == GscProduction.DeveloperSectionOpen) developer = true;
+                else if (item.Production == GscProduction.DeveloperSectionClose) developer = false;
+                else foreach (GscPendingFunctionReference reference in Traverse(item, developer, null))
+                    yield return reference;
             }
+            yield break;
+        }
+        foreach (GscPendingFunctionReference reference in Traverse(root, developer, nativeKind))
+            yield return reference;
 
-            yield return new GscPendingFunctionReference(
-                new GscSourceLocation(snapshot.Path, nameToken.Token.Span),
-                GscSemanticSyntax.IdentifierText(snapshot.Source, nameToken),
-                GscSemanticSyntax.Text(snapshot.Source, nameToken),
-                kind,
-                target);
+        IEnumerable<GscPendingFunctionReference> Traverse(
+            GscSyntaxNode start,
+            bool initialDeveloper,
+            Iw4GscBuiltInKind? initialNativeKind)
+        {
+            var pending = new Stack<(
+                GscSyntaxNode Node,
+                bool Developer,
+                Iw4GscBuiltInKind? NativeKind)>();
+            pending.Push((start, initialDeveloper, initialNativeKind));
+
+            while (pending.Count != 0)
+            {
+                (GscSyntaxNode node, bool nodeDeveloper, Iw4GscBuiltInKind? nodeNativeKind) = pending.Pop();
+                if (node.Production == GscProduction.DeveloperBlockStatement)
+                    nodeDeveloper = true;
+                if (Iw4GscBuiltInCatalog.ResolveCall(snapshot.Source, node) is { DeveloperOnly: true })
+                    nodeDeveloper = true;
+                if (node.Production is GscProduction.CallExpression or GscProduction.MethodCallExpression)
+                {
+                    nodeNativeKind = node.Production == GscProduction.CallExpression
+                        ? Iw4GscBuiltInKind.Function
+                        : Iw4GscBuiltInKind.Method;
+                }
+                if (node.Production is GscProduction.CallKindThread or
+                    GscProduction.CallKindChildThread or
+                    GscProduction.CallKindCallPointer)
+                {
+                    nodeNativeKind = null;
+                }
+                if (node.Production is GscProduction.FunctionReferenceLocal or
+                    GscProduction.FunctionReferenceQualified)
+                {
+                    nodeNativeKind = Iw4GscBuiltInKind.Function;
+                }
+
+                if (node.Production is GscProduction.NamedFunctionLocal or
+                    GscProduction.NamedFunctionQualified or
+                    GscProduction.FunctionReferenceLocal or
+                    GscProduction.FunctionReferenceQualified)
+                {
+                    GscSyntaxTokenElement nameToken;
+                    GscScriptPath? target = null;
+                    GscWorkspaceReferenceKind kind;
+                    switch (node.Production)
+                    {
+                        case GscProduction.NamedFunctionLocal:
+                            nameToken = GscSemanticSyntax.Token(node.Children[0]);
+                            kind = GscWorkspaceReferenceKind.Call;
+                            break;
+
+                        case GscProduction.NamedFunctionQualified:
+                            target = ResolveQualifiedTarget(snapshot, node.Children[0]);
+                            nameToken = GscSemanticSyntax.Token(node.Children[2]);
+                            kind = GscWorkspaceReferenceKind.Call;
+                            break;
+
+                        case GscProduction.FunctionReferenceLocal:
+                            nameToken = GscSemanticSyntax.Token(node.Children[1]);
+                            kind = GscWorkspaceReferenceKind.FunctionReference;
+                            break;
+
+                        case GscProduction.FunctionReferenceQualified:
+                            target = ResolveQualifiedTarget(snapshot, node.Children[0]);
+                            nameToken = GscSemanticSyntax.Token(node.Children[2]);
+                            kind = GscWorkspaceReferenceKind.FunctionReference;
+                            break;
+
+                        default:
+                            throw new InvalidOperationException("Expected a named function.");
+                    }
+
+                    string sourceName = GscSemanticSyntax.Text(snapshot.Source, nameToken);
+                    yield return new GscPendingFunctionReference(
+                        new GscSourceLocation(snapshot.Path, nameToken.Token.Span),
+                        GscSemanticSyntax.IdentifierText(snapshot.Source, nameToken),
+                        sourceName,
+                        kind,
+                        target,
+                        target is null && nodeNativeKind is { } expectedKind &&
+                            Iw4GscBuiltInCatalog.Multiplayer.FindCallablesByName(sourceName)
+                                .Any(definition => kind == GscWorkspaceReferenceKind.FunctionReference || definition.Kind == expectedKind),
+                        nodeDeveloper);
+                }
+
+                for (int index = node.Children.Count - 1; index >= 0; index--)
+                {
+                    if (node.Children[index] is GscSyntaxNode child)
+                        pending.Push((child, nodeDeveloper, nodeNativeKind));
+                }
+            }
         }
     }
 

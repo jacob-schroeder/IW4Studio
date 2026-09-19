@@ -58,11 +58,13 @@ public sealed class LinkAssetProvider
                 "Provider serialized type must be a defined XAssetType.");
         }
 
-        AssetKey key = AssetKey.FromDefinition(definition);
-        string serializedName = definition.SerializedAssetName ??
+        string serializedName = source.SerializedName ??
             throw new ArgumentException(
                 "Provider definition has no serialized name.",
                 nameof(definition));
+        CanonicalAssetFamily family =
+            CanonicalAssetFamily.FromSerializedType(serializedType);
+        AssetKey key = AssetKey.FromWireName(family, serializedName);
         if (serializedType != XAssetType.Image && source.ImageStreamReferences.Count != 0)
         {
             throw new ArgumentException(

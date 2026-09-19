@@ -48,15 +48,18 @@ internal sealed class GscBoundFunction
         new(StringComparer.OrdinalIgnoreCase);
     private readonly List<GscSymbol> _parameters = [];
 
-    internal GscBoundFunction(GscSymbol symbol, GscSyntaxNode syntax)
+    internal GscBoundFunction(GscSymbol symbol, GscSyntaxNode syntax, bool developerOnly)
     {
         Symbol = symbol;
         Syntax = syntax;
+        DeveloperOnly = developerOnly;
     }
 
     internal GscSymbol Symbol { get; }
 
     internal GscSyntaxNode Syntax { get; }
+
+    internal bool DeveloperOnly { get; }
 
     internal IReadOnlyDictionary<string, GscSymbol> Variables => _variables;
 

@@ -240,7 +240,8 @@ public class DbLoadExecutionContext
         int? nativePoolCopyCapturedLength = null)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        string capturedOriginalName = originalName ?? string.Empty;
+        string capturedOriginalName = NormalizeLoadedAssetName(
+            originalName ?? string.Empty);
 
         XAssetPoolEntry entry = _assetLoadSession.RegisterAsset(
             canonicalFamily,
@@ -280,6 +281,15 @@ public class DbLoadExecutionContext
             active.Id);
         PatchProviderReference(providerRegistration, entry.Address.RawValue);
         return entry;
+    }
+
+    internal static string NormalizeLoadedAssetName(string serializedName)
+    {
+        ArgumentNullException.ThrowIfNull(serializedName);
+        string normalizedName = serializedName.Trim();
+        return normalizedName.StartsWith(",", StringComparison.Ordinal)
+            ? "," + normalizedName[1..].Trim()
+            : normalizedName;
     }
 
     /// <summary>

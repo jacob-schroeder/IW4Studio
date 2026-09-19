@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using IW4.Gsc.Syntax;
+using IW4.Gsc.Semantics;
 
 namespace IW4.Gsc.BuiltIns;
 
@@ -162,9 +163,8 @@ public sealed class Iw4GscBuiltInReferenceDocument
 }
 
 /// <summary>
-/// Built-in catalog for the IW4 multiplayer GSC runtime. Xbox 360 symbols
-/// identify the native resolver tables; matching PS3 behavior is authoritative
-/// if a platform conflict is discovered.
+/// Built-in catalog for the PS3 TU1.11 multiplayer compiler. Registrations
+/// follow the engine's resolver order; correlated Xbox symbols name handlers.
 /// </summary>
 public static partial class Iw4GscBuiltInCatalog
 {
@@ -172,6 +172,21 @@ public static partial class Iw4GscBuiltInCatalog
         Multiplayer = BuildMultiplayerDocument();
 
     public static Iw4GscBuiltInReferenceDocument Multiplayer { get; }
+
+    internal static Iw4GscBuiltInDefinition? ResolveCall(GscSourceText source, GscSyntaxNode call)
+    {
+        if (call.Production is not (GscProduction.CallExpression or GscProduction.MethodCallExpression)) return null;
+        GscSyntaxNode? kind = call.Children.OfType<GscSyntaxNode>()
+            .FirstOrDefault(child => child.Production == GscProduction.CallKindDirect);
+        GscSyntaxNode? callable = kind?.Children.OfType<GscSyntaxNode>()
+            .FirstOrDefault(child => child.Production == GscProduction.CallableNamedFunction);
+        if (callable is null) return null;
+        GscSyntaxNode named = GscSemanticSyntax.Node(callable.Children[0]);
+        if (named.Production != GscProduction.NamedFunctionLocal) return null;
+        Iw4GscBuiltInKind expected = call.Production == GscProduction.MethodCallExpression
+            ? Iw4GscBuiltInKind.Method : Iw4GscBuiltInKind.Function;
+        return Multiplayer.FindCallablesByName(source.GetText(named.Span)).FirstOrDefault(definition => definition.Kind == expected);
+    }
 
     private static Iw4GscBuiltInReferenceDocument BuildMultiplayerDocument()
     {
@@ -181,8 +196,8 @@ public static partial class Iw4GscBuiltInCatalog
             "// Generated from the native Scr_GetFunction/Scr_GetMethod resolver tables.\n" +
             "// This is read-only reference text, not compilable GSC.\n" +
             "// The registry exposes names, handlers, and developer flags; it does not expose parameters.\n" +
-            "// 204 unique global functions (205 registrations; weaponfiretime is duplicated), 228 methods, 6 VM intrinsics.\n\n");
-        var definitions = new List<Iw4GscBuiltInDefinition>(438);
+            "// PS3 TU1.11 registrations, in native resolver order.\n\n");
+        var definitions = new List<Iw4GscBuiltInDefinition>();
 
         foreach (RegistrationGroup group in groups)
         {

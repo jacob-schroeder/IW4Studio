@@ -1,3 +1,4 @@
+using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Syntax;
 
 namespace IW4.Gsc.Semantics;
@@ -18,8 +19,8 @@ internal sealed class GscBinder
     private readonly List<GscBoundReference> _references = [];
     private readonly Dictionary<int, GscBoundReference> _referencesByStart = [];
     private readonly List<GscDiagnostic> _diagnostics = [];
-    private readonly Dictionary<GscBoundFunction, HashSet<string>> _defineConflicts = [];
     private int _operations;
+    private bool _developer;
 
     private GscBinder(
         GscSourceText source,
@@ -47,10 +48,16 @@ internal sealed class GscBinder
         BindIncludes(GscSemanticSyntax.Node(root.Children[1]));
         BindTopLevelDeclarations(GscSemanticSyntax.Node(root.Children[2]));
 
-        foreach ((GscSyntaxNode syntax, GscSymbol symbol) in _functionDeclarations)
+        foreach (GscSyntaxNode item in GscSemanticSyntax.EnumerateTopLevelItems(
+                     GscSemanticSyntax.Node(root.Children[2])))
         {
             ObserveCancellation();
-            BindFunction(syntax, symbol);
+            if (item.Production == GscProduction.DefineDeclaration)
+                DeclareDefine(item);
+            else if (item.Production == GscProduction.FunctionDefinition)
+                BindFunction(item, _functionDeclarations.First(declaration => declaration.Syntax == item).Symbol);
+            else if (item.Production == GscProduction.DeveloperSectionOpen) _developer = true;
+            else if (item.Production == GscProduction.DeveloperSectionClose) _developer = false;
         }
 
         var model = new GscSemanticModel(
@@ -91,12 +98,11 @@ internal sealed class GscBinder
                 case GscProduction.FunctionDefinition:
                     DeclareFunction(item);
                     break;
-
-                case GscProduction.DefineDeclaration:
-                    DeclareDefine(item);
-                    break;
+                case GscProduction.DeveloperSectionOpen: _developer = true; break;
+                case GscProduction.DeveloperSectionClose: _developer = false; break;
             }
         }
+        _developer = false;
     }
 
     private void DeclareFunction(GscSyntaxNode declaration)
@@ -107,7 +113,16 @@ internal sealed class GscBinder
             GscSymbolKind.Function,
             name,
             nameToken.Token.Span);
-        if (!_functions.TryAdd(name, symbol))
+        // PS3 ScriptCompile checks Scr_GetFunction and Scr_GetMethod, including
+        // receiver-specific methods such as the HUD element's reset.
+        if (Iw4GscBuiltInCatalog.Multiplayer.FindCallablesByName(name).Count != 0)
+        {
+            AddDiagnostic(
+                GscDiagnosticCodes.BuiltInOverride,
+                nameToken.Token.Span,
+                $"Trying to override builtin function '{name}'.");
+        }
+        if (!_developer && !_functions.TryAdd(name, symbol))
         {
             AddDiagnostic(
                 GscDiagnosticCodes.FunctionAlreadyDefined,
@@ -141,25 +156,15 @@ internal sealed class GscBinder
 
     private void BindFunction(GscSyntaxNode syntax, GscSymbol symbol)
     {
-        var function = new GscBoundFunction(symbol, syntax);
+        var function = new GscBoundFunction(symbol, syntax, _developer);
         _boundFunctions.Add(function);
-        _defineConflicts.Add(function, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
         GscSyntaxNode optionalParameters = GscSemanticSyntax.Node(syntax.Children[2]);
         GscSyntaxTokenElement[] parameters =
             GscSemanticSyntax.EnumerateParameters(optionalParameters).ToArray();
-        if (parameters.Length > 256)
-        {
-            AddDiagnostic(
-                GscDiagnosticCodes.ParameterCountExceeded,
-                parameters[256].Token.Span,
-                "parameter count exceeds 256");
-        }
-
         foreach (GscSyntaxTokenElement parameter in parameters)
         {
             string name = GscSemanticSyntax.IdentifierText(_source, parameter);
-            ReportDefineConflict(function, name, parameter.Token.Span);
             GscSymbol parameterSymbol = function.DeclareParameter(
                 name,
                 parameter.Token.Span);
@@ -170,6 +175,7 @@ internal sealed class GscBinder
         }
 
         GscSyntaxNode body = GscSemanticSyntax.Node(syntax.Children[5]);
+        if (_developer) return;
         CollectBindingSites(body, function);
         BindElement(body, function);
     }
@@ -233,25 +239,7 @@ internal sealed class GscBinder
         GscBoundFunction function)
     {
         string name = GscSemanticSyntax.IdentifierText(_source, token);
-        if (ReportDefineConflict(function, name, token.Token.Span))
-            return;
-
         function.DeclareLocal(name, token.Token.Span);
-    }
-
-    private bool ReportDefineConflict(
-        GscBoundFunction function,
-        string name,
-        GscTextSpan span)
-    {
-        if (!_defines.ContainsKey(name) || !_defineConflicts[function].Add(name))
-            return _defines.ContainsKey(name);
-
-        AddDiagnostic(
-            GscDiagnosticCodes.VariableAlreadyDeclaredAsDefine,
-            span,
-            "Variable is already declared as a define");
-        return true;
     }
 
     private void BindElement(

@@ -2,7 +2,7 @@ using IW4.Gsc.Syntax;
 
 namespace IW4.Gsc.Semantics;
 
-internal sealed class GscContextAnalyzer
+internal sealed partial class GscContextAnalyzer
 {
     private readonly GscSourceText _source;
     private readonly GscSemanticModel _model;
@@ -18,6 +18,9 @@ internal sealed class GscContextAnalyzer
         _source = source;
         _model = model;
         _cancellationToken = cancellationToken;
+        _constants = new GscConstantEvaluator(source, _defines,
+            (span, message) => AddDiagnostic(GscDiagnosticCodes.ConstantExpressionError, span, message),
+            cancellationToken);
     }
 
     internal static IReadOnlyList<GscDiagnostic> Analyze(
@@ -35,13 +38,7 @@ internal sealed class GscContextAnalyzer
     private IReadOnlyList<GscDiagnostic> Analyze()
     {
         AnalyzeExpressionListArities();
-        foreach (GscBoundFunction function in _model.Functions)
-        {
-            AnalyzeStatementList(
-                GscSemanticSyntax.Node(function.Syntax.Children[5]),
-                new StatementContext(LoopDepth: 0, SwitchDepth: 0),
-                isDirectSwitchBody: false);
-        }
+        AnalyzeCompilerContext();
 
         return Array.AsReadOnly(_diagnostics.ToArray());
     }
@@ -54,6 +51,9 @@ internal sealed class GscContextAnalyzer
         {
             ObserveCancellation();
             if (element is not GscSyntaxNode node)
+                continue;
+            if (node.Production == GscProduction.FunctionDefinition &&
+                _model.Functions.Any(function => function.Syntax == node && function.DeveloperOnly))
                 continue;
 
             if (node.Production == GscProduction.ParenthesizedExpressionList)
@@ -90,6 +90,7 @@ internal sealed class GscContextAnalyzer
     {
         bool hasSwitchLabel = false;
         bool reportedMissingCase = false;
+        var caseValues = new HashSet<(GscConstantKind Kind, string Value)>();
         foreach (GscSyntaxNode item in GscSemanticSyntax.EnumerateStatementList(list))
         {
             ObserveCancellation();
@@ -97,6 +98,7 @@ internal sealed class GscContextAnalyzer
                 item.Production is GscProduction.CaseLabel or GscProduction.DefaultLabel)
             {
                 hasSwitchLabel = true;
+                AnalyzeCaseLabel(item, caseValues);
                 continue;
             }
 
@@ -150,6 +152,7 @@ internal sealed class GscContextAnalyzer
         GscSyntaxNode statement,
         StatementContext context)
     {
+        AnalyzeStatementExpressions(statement);
         switch (statement.Production)
         {
             case GscProduction.TerminatedStatement:
@@ -218,10 +221,16 @@ internal sealed class GscContextAnalyzer
                 return;
 
             case GscProduction.DeveloperBlockStatement:
+                bool wasDeveloper = _developer;
+                if (wasDeveloper)
+                    AddDiagnostic(GscDiagnosticCodes.DeveloperSectionError,
+                        statement.Children[0].Span, "cannot recurse /#");
+                _developer = true;
                 AnalyzeStatementList(
                     GscSemanticSyntax.Node(statement.Children[1]),
                     context,
                     isDirectSwitchBody: false);
+                _developer = wasDeveloper;
                 return;
 
             default:
@@ -250,6 +259,7 @@ internal sealed class GscContextAnalyzer
         GscSyntaxNode statementCore,
         StatementContext context)
     {
+        AnalyzeExpressions(statementCore, valueUsed: false);
         if (statementCore.Production == GscProduction.StatementCoreCall)
             return;
         if (statementCore.Production != GscProduction.StatementCoreSimple)

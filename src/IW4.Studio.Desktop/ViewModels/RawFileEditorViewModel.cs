@@ -384,7 +384,6 @@ public sealed class RawFileEditorViewModel
         GscAnalysisOperation operation = BeginGscAnalysis();
         GscAnalysisOutcome? outcome = await RunGscAnalysisAsync(
             operation,
-            useWorkspace: true,
             delay: TimeSpan.Zero,
             activeStatusMessage: "Analyzing GSC…");
         RequestSourceDiagnosticsPresentation(outcome);
@@ -592,7 +591,6 @@ public sealed class RawFileEditorViewModel
                 GscAnalysisOperation operation = BeginGscAnalysis();
                 gscOutcome = await RunGscAnalysisAsync(
                     operation,
-                    useWorkspace: true,
                     delay: TimeSpan.Zero,
                     activeStatusMessage: "Checking GSC before applying…");
                 if (gscOutcome is null)
@@ -991,7 +989,6 @@ public sealed class RawFileEditorViewModel
         GscAnalysisOperation operation = BeginGscAnalysis();
         _ = RunGscAnalysisAsync(
             operation,
-            useWorkspace: false,
             delay: LiveGscAnalysisDelay,
             activeStatusMessage: "Checking GSC…");
     }
@@ -1011,7 +1008,6 @@ public sealed class RawFileEditorViewModel
 
     private async Task<GscAnalysisOutcome?> RunGscAnalysisAsync(
         GscAnalysisOperation operation,
-        bool useWorkspace,
         TimeSpan delay,
         string activeStatusMessage)
     {
@@ -1027,9 +1023,7 @@ public sealed class RawFileEditorViewModel
             IsAnalyzingGsc = true;
             GscAnalysisStatusMessage = activeStatusMessage;
             GscAnalysisResult result = await Task.Run(
-                () => useWorkspace
-                    ? AnalyzeAuthoritativeGscSnapshot(operation, cancellationToken)
-                    : AnalyzeLocalGscSnapshot(operation, cancellationToken),
+                () => AnalyzeAuthoritativeGscSnapshot(operation, cancellationToken),
                 cancellationToken);
             if (!OwnsGscAnalysis(operation))
                 return null;
@@ -1140,16 +1134,6 @@ public sealed class RawFileEditorViewModel
         return new GscSourceText(source);
     }
 
-    private GscAnalysisResult AnalyzeLocalGscSnapshot(
-        GscAnalysisOperation operation,
-        CancellationToken cancellationToken)
-    {
-        GscSourceText sourceText = CreateGscSourceText(
-            operation.Source,
-            operation.Encoding);
-        return _gscAnalyzer.Analyze(sourceText, cancellationToken);
-    }
-
     private GscAnalysisResult AnalyzeAuthoritativeGscSnapshot(
         GscAnalysisOperation operation,
         CancellationToken cancellationToken)
@@ -1158,7 +1142,13 @@ public sealed class RawFileEditorViewModel
             operation.Source,
             operation.Encoding);
         if (_gscAnalysisLanguageSession is null)
-            return _gscAnalyzer.Analyze(sourceText, cancellationToken);
+        {
+            GscAnalysisResult local = _gscAnalyzer.Analyze(sourceText, cancellationToken);
+            var span = new GscTextSpan(0, Math.Min(1, sourceText.Length));
+            return new GscAnalysisResult(local.Tokens, local.Diagnostics.Append(new GscDiagnostic(
+                GscDiagnosticCodes.ValidationIncomplete, GscDiagnosticStage.Semantic, GscDiagnosticSeverity.Warning,
+                span, sourceText.GetLinePositionSpan(span), "Script and animation dependencies could not be checked: the GSC workspace is unavailable.")));
+        }
 
         return _gscAnalysisLanguageSession.Analyze(
             operation.AssetName,
@@ -1176,8 +1166,10 @@ public sealed class RawFileEditorViewModel
         int errorCount = outcome.Diagnostics.Count(diagnostic =>
             diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
         int warningCount = outcome.Diagnostics.Count - errorCount;
+        if (outcome.Diagnostics.Any(diagnostic => diagnostic.Code == GscDiagnosticCodes.ValidationIncomplete))
+            return $"GSC validation incomplete: {CreateFindingCountText(errorCount, warningCount)}. See diagnostics for unavailable dependencies.";
         if (errorCount == 0 && warningCount == 0)
-            return "No GSC errors.";
+            return "No GSC compilation errors found in the available source.";
 
         return $"GSC check found {CreateFindingCountText(errorCount, warningCount)}.";
     }
