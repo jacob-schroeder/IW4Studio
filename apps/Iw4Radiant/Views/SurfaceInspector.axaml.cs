@@ -1,6 +1,9 @@
 using System.Globalization;
+using System.Numerics;
 using Avalonia.Controls;
+using IW4.AssetExchange.SourceFormat.Material;
 using Iw4Radiant.Editing;
+using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 
 namespace Iw4Radiant.Views;
@@ -10,12 +13,20 @@ public partial class SurfaceInspector : UserControl
     private MapFace[] _shownFaces = [];
     private string[] _shownProjections = [];
     private MapFace? _shownReference;
+    private string? _shownWaterMaterial;
+    private Func<string, MaterialSource?>? _resolveMaterial;
     private bool _updating;
 
-    public SurfaceInspector() => InitializeComponent();
-
-    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    public SurfaceInspector()
     {
+        InitializeComponent();
+        WaterColorPicker.PreserveColorScale = true;
+    }
+
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Func<string, MaterialSource?> resolveMaterial)
+    {
+        _resolveMaterial = resolveMaterial;
         WireAdjustment(ShiftXDecrease, ShiftXIncrease, ShiftXValue, "horizontal shift", 1);
         WireAdjustment(ShiftYDecrease, ShiftYIncrease, ShiftYValue, "vertical shift", 1);
         WireAdjustment(WidthDecrease, WidthIncrease, WidthValue, "horizontal repeat size", 1);
@@ -23,12 +34,19 @@ public partial class SurfaceInspector : UserControl
         WireAdjustment(RotationDecrease, RotationIncrease, RotationValue, "rotation", 15);
         WireAdjustment(SkewDecrease, SkewIncrease, SkewValue, "skew", 0.1f);
         ApplyProjectionButton.Click += async (_, _) => await ApplyProjectionAsync(session, dialogs, finishGestures);
+        ApplyWaterButton.Click += async (_, _) => await ApplyWaterAsync(session, dialogs, finishGestures);
         FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
         RevertProjectionButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput) return;
             _shownReference = null;
             RepeatsXValue.Text = RepeatsYValue.Text = "1";
+            RefreshSelection(session);
+        };
+        RevertWaterButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput) return;
+            _shownWaterMaterial = null;
             RefreshSelection(session);
         };
         TextureLockValue.IsCheckedChanged += (_, _) =>
@@ -85,6 +103,7 @@ public partial class SurfaceInspector : UserControl
                 ProjectionInfo.Text = "";
                 ProjectionInfo.IsVisible = false;
                 foreach (var box in ProjectionBoxes()) box.Text = "";
+                RefreshWater(session, faces);
                 return;
             }
             try
@@ -113,8 +132,110 @@ public partial class SurfaceInspector : UserControl
                 ProjectionInfo.IsVisible = true;
                 foreach (var box in ProjectionBoxes()) box.Text = "";
             }
+            RefreshWater(session, faces);
         }
         finally { _updating = false; }
+    }
+
+    private void RefreshWater(EditorSession session, IReadOnlyList<MapFace> faces)
+    {
+        string[] names = faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).ToArray();
+        string? name = names.Length == 1 ? names[0] : null;
+        IReadOnlyDictionary<string, WaterMaterialDefinition> definitions =
+            new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal);
+        if (name is not null)
+            try
+            {
+                definitions = WaterMaterialAuthoring.ReadDefinitions(session.Document.World.Properties);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
+                                               FormatException or OverflowException)
+            {
+                WaterFields.IsEnabled = false;
+                ApplyWaterButton.IsEnabled = RevertWaterButton.IsEnabled = false;
+                WaterInfo.Text = $"Authored water definition error: {exception.Message}";
+                foreach (TextBox box in WaterBoxes()) box.Text = "";
+                WaterColorPicker.SelectedColor = Vector3.Zero;
+                _shownWaterMaterial = name;
+                return;
+            }
+        MaterialSource? material = name is null ? null : _resolveMaterial?.Invoke(name);
+        bool enabled = material?.Water is not null;
+        WaterFields.IsEnabled = enabled;
+        ApplyWaterButton.IsEnabled = RevertWaterButton.IsEnabled = enabled;
+        if (faces.Count == 0)
+            WaterInfo.Text = "Select a brush or face using a native water material.";
+        else if (names.Length != 1)
+            WaterInfo.Text = "Selected surfaces use mixed materials. Select surfaces with one water material.";
+        else if (!enabled)
+            WaterInfo.Text = material is null
+                ? $"Material '{name}' is unavailable. Load its source assets to edit water."
+                : $"Material '{name}' is not native water.";
+        else if (name is { } selectedName && material is { } waterMaterial)
+        {
+            WaterMaterialDefinition? definition = definitions.GetValueOrDefault(selectedName);
+            WaterInfo.Text = definition is null
+                ? $"Stock water · {selectedName}"
+                : $"Authored water · source {definition.SourceMaterial}";
+            bool changed = !string.Equals(_shownWaterMaterial, selectedName, StringComparison.Ordinal);
+            if (changed || !WaterInputFocused())
+            {
+                WaterColorPicker.SelectedColor = new Vector3(definition?.Red ?? waterMaterial.WaterColor.X,
+                    definition?.Green ?? waterMaterial.WaterColor.Y, definition?.Blue ?? waterMaterial.WaterColor.Z);
+                SetValue(WaveIntensity, definition?.WaveIntensity ?? 1);
+                SetValue(AnimationSpeed, definition?.AnimationSpeed ?? 1);
+                SetValue(FresnelMinimum, definition?.FresnelMinimum ?? waterMaterial.EnvMapParms.X);
+                SetValue(FresnelMaximum, definition?.FresnelMaximum ?? waterMaterial.EnvMapParms.Y);
+                SetValue(FresnelExponent, definition?.FresnelExponent ?? waterMaterial.EnvMapParms.Z);
+            }
+        }
+        if (!enabled && !WaterInputFocused())
+        {
+            foreach (TextBox box in WaterBoxes()) box.Text = "";
+            WaterColorPicker.SelectedColor = Vector3.Zero;
+        }
+        _shownWaterMaterial = name;
+    }
+
+    private async Task ApplyWaterAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            Vector3 color = WaterColorPicker.SelectedColor;
+            float red = color.X, green = color.Y, blue = color.Z;
+            float intensity = ReadValue(WaveIntensity, "wave intensity");
+            float speed = ReadValue(AnimationSpeed, "animation speed");
+            float fresnelMinimum = ReadValue(FresnelMinimum, "reflection minimum");
+            float fresnelMaximum = ReadValue(FresnelMaximum, "reflection maximum");
+            float fresnelExponent = ReadValue(FresnelExponent, "reflection exponent");
+            finishGestures();
+            MapFace[] faces = SurfaceEditing.GetFaces(session).Select(selection => selection.Face).ToArray();
+            string[] names = faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).ToArray();
+            if (faces.Length == 0 || names.Length != 1)
+                throw new ArgumentException("Select brush faces using one native water material.");
+            IReadOnlyDictionary<string, WaterMaterialDefinition> saved =
+                WaterMaterialAuthoring.ReadDefinitions(session.Document.World.Properties);
+            WaterMaterialDefinition? previous = saved.GetValueOrDefault(names[0]);
+            MaterialSource source = _resolveMaterial?.Invoke(previous?.SourceMaterial ?? names[0]) ??
+                throw new ArgumentException("Load the selected water material's source assets before editing it.");
+            if (source.Water is null) throw new ArgumentException("The selected material is not native water.");
+            WaterMaterialDefinition definition = WaterMaterialAuthoring.CreateDefinition(source.Name, red, green, blue,
+                intensity, speed, fresnelMinimum, fresnelMaximum, fresnelExponent);
+            if (previous == definition) return;
+            session.Edit(() =>
+            {
+                foreach (MapFace face in faces) face.Material = definition.Name;
+                var retained = saved.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                retained[definition.Name] = definition;
+                HashSet<string> used = session.Document.Brushes.SelectMany(brush => brush.Faces).Select(face => face.Material)
+                    .Concat(session.Document.Terrains.Select(terrain => terrain.Material)).ToHashSet(StringComparer.Ordinal);
+                WaterMaterialAuthoring.WriteDefinitions(session.Document.World.Properties,
+                    retained.Where(pair => used.Contains(pair.Key)).Select(pair => pair.Value));
+            });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidDataException or FormatException or OverflowException)
+        { await dialogs.MessageAsync("Water material", exception.Message); }
     }
 
     private async Task ApplyProjectionAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
@@ -148,6 +269,10 @@ public partial class SurfaceInspector : UserControl
     }
 
     private TextBox[] ProjectionBoxes() => [WidthValue, HeightValue, ShiftXValue, ShiftYValue, RotationValue, SkewValue];
+    private TextBox[] WaterBoxes() => [WaveIntensity, AnimationSpeed,
+        FresnelMinimum, FresnelMaximum, FresnelExponent];
+    private bool WaterInputFocused() => WaterColorPicker.IsKeyboardFocusWithin ||
+        WaterBoxes().Any(box => box.IsKeyboardFocusWithin);
 
     private static void SetValue(TextBox box, float value) => box.Text = value.ToString("R", CultureInfo.InvariantCulture);
 

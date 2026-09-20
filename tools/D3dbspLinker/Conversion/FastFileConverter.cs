@@ -1,4 +1,5 @@
 using System.Text;
+using IW4.AssetExchange.SourceFormat.Material;
 using IW4.Assets.Assets;
 using IW4.Assets.Assets.Fx;
 using IW4.Assets.Assets.GfxMap;
@@ -252,6 +253,34 @@ internal static class FastFileConverter
                 }
             }
         }
+        D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        IReadOnlyDictionary<string, string>? worldProperties = sourceBsp.GetEntities().FirstOrDefault(entity =>
+            entity.GetValueOrDefault("classname") == "worldspawn");
+        IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions = worldProperties is null
+            ? new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal)
+            : WaterMaterialAuthoring.ReadDefinitions(worldProperties);
+        string[] authoredWaterNames = sourceBsp.GetRenderMaterialNames()
+            .Where(WaterMaterialAuthoring.IsAuthoredMaterialName)
+            .Distinct(StringComparer.Ordinal).ToArray();
+        if (authoredWaterNames.Length != 0 && !useSourceMaterials)
+            throw new InvalidDataException("Authored water materials require --source-materials.");
+        var authoredWaterMaterials = new List<MaterialAsset>(authoredWaterNames.Length);
+        var authoredWaterImages = new List<GfxImageAsset>(authoredWaterNames.Length);
+        foreach (string name in authoredWaterNames)
+        {
+            if (!waterDefinitions.TryGetValue(name, out WaterMaterialDefinition? definition))
+                throw new InvalidDataException($"Authored water material '{name}' has no saved world definition.");
+            MaterialAsset source = availableMaterials.Values.FirstOrDefault(material =>
+                string.Equals(material.Info.Name, definition.SourceMaterial, StringComparison.Ordinal)) ??
+                throw new InvalidDataException($"Authored water material '{name}' requires provider material '{definition.SourceMaterial}'.");
+            MaterialAsset material = WaterMaterialAuthoring.CreateMaterial(source, definition, out GfxImageAsset image);
+            AssetKey key = AssetKey.FromDefinition(material);
+            if (availableMaterials.ContainsKey(key))
+                throw new InvalidDataException($"Authored water material '{name}' collides with a supplied native material.");
+            availableMaterials.Add(key, material);
+            authoredWaterMaterials.Add(material);
+            authoredWaterImages.Add(image);
+        }
         GfxLightmapArray[] lightmaps = lightmapImageNames.Select(pair => new GfxLightmapArray
         {
             Primary = ResolveLightingImage(pair.PrimaryImageName),
@@ -275,7 +304,11 @@ internal static class FastFileConverter
                 AvailableMaterials = availableMaterials.Values.ToArray(),
                 Lightmaps = lightmaps,
                 OutdoorImage = outdoorImage,
-                OutdoorLookupMatrix = outdoorLookupMatrix
+                OutdoorLookupMatrix = outdoorLookupMatrix,
+                RuntimeEntityPropertiesToRemove = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    WaterMaterialAuthoring.MapPropertyName
+                }
             });
         GfxImageAsset ResolveLightingImage(string name) =>
             availableLightingImages.TryGetValue(LightingImageKey(name), out GfxImageAsset? image)
@@ -427,6 +460,24 @@ internal static class FastFileConverter
                 existingKeys.Add(provider.Key);
                 if (!provider.IsReferencePlaceholder)
                     existingFullProviderKeys.Add(provider.Key);
+            }
+        }
+        if (authoredWaterMaterials.Count != 0)
+        {
+            BaseAsset[] authoredWaterAssets = authoredWaterMaterials.Cast<BaseAsset>()
+                .Concat(authoredWaterImages).ToArray();
+            foreach (BaseAsset asset in authoredWaterAssets)
+                if (existingKeys.Contains(AssetKey.FromDefinition(asset)))
+                    throw new InvalidDataException(
+                        $"Authored water asset '{asset.SerializedAssetName}' collides with an existing native provider.");
+            LinkAssetProviderSource[] authoredWaterProviders = authoredWaterAssets.Select(asset =>
+                    new LinkAssetProviderSource(asset).AsAuthoredDetached()).ToArray();
+            baseAssets = baseAssets.WithHighestPrecedenceProviders(authoredWaterProviders);
+            foreach (BaseAsset asset in authoredWaterAssets)
+            {
+                AssetKey key = AssetKey.FromDefinition(asset);
+                existingKeys.Add(key);
+                existingFullProviderKeys.Add(key);
             }
         }
         if (useSourceMaterials)
@@ -622,6 +673,7 @@ internal static class FastFileConverter
         Console.WriteLine($"owned-bootstrap-roots: {bootstrapXModelGraph.Models.Count + 1}");
         Console.WriteLine($"owned-additional-xmodel-roots: {additionalXModelGraph.Models.Count}");
         Console.WriteLine($"owned-additional-material-roots: {additionalMaterials.Length}");
+        Console.WriteLine($"authored-water-materials: {authoredWaterMaterials.Count}");
         Console.WriteLine($"owned-additional-fx-roots: {additionalFx.Length}");
         Console.WriteLine($"owned-rawfile-overrides: {rawFileOverrides.Length}");
         Console.WriteLine($"owned-roots: {roots.Count}");

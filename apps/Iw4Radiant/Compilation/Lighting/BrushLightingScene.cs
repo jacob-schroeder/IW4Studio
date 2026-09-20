@@ -78,20 +78,23 @@ internal sealed class BrushLightingScene
             if (!materials.TryGetValue(polygon.Material, out MaterialSource? material))
                 throw new InvalidDataException($"Lighting has no source material '{polygon.Material}'.");
             _materials[index] = material;
-            if (!images.TryGetValue(material.ImagePath, out ImageSourceMipLevel pixels))
+            if (!material.IsWater)
             {
-                if (!Path.GetExtension(material.ImagePath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
-                    throw new NotSupportedException($"The native lighting bake requires a DDS color image for '{material.Name}'.");
-                using FileStream stream = File.OpenRead(material.ImagePath);
-                ImageFileDocument image = new ImageExchange().Read(stream, ImageFileFormat.Dds);
-                if (image.Shape != (material.IsSky ? ImageFileShape.Cube : ImageFileShape.TwoDimensional) || image.MipLevels.Count == 0)
-                    throw new InvalidDataException($"The lighting image shape does not match material '{material.Name}'.");
-                if (image.UsesSrgbReads == true)
-                    throw new NotSupportedException($"Material '{material.Name}' requests sRGB image reads; this native squared-color bake profile requires ordinary texture reads.");
-                pixels = image.MipLevels[0];
-                images.Add(material.ImagePath, pixels);
+                if (!images.TryGetValue(material.ImagePath, out ImageSourceMipLevel pixels))
+                {
+                    if (!Path.GetExtension(material.ImagePath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
+                        throw new NotSupportedException($"The native lighting bake requires a DDS color image for '{material.Name}'.");
+                    using FileStream stream = File.OpenRead(material.ImagePath);
+                    ImageFileDocument image = new ImageExchange().Read(stream, ImageFileFormat.Dds);
+                    if (image.Shape != (material.IsSky ? ImageFileShape.Cube : ImageFileShape.TwoDimensional) || image.MipLevels.Count == 0)
+                        throw new InvalidDataException($"The lighting image shape does not match material '{material.Name}'.");
+                    if (image.UsesSrgbReads == true)
+                        throw new NotSupportedException($"Material '{material.Name}' requests sRGB image reads; this native squared-color bake profile requires ordinary texture reads.");
+                    pixels = image.MipLevels[0];
+                    images.Add(material.ImagePath, pixels);
+                }
+                _images[index] = pixels;
             }
-            _images[index] = pixels;
             if (material.IsSky) continue;
             foreach (Vector3 point in polygon.Vertices)
             {
@@ -107,7 +110,7 @@ internal sealed class BrushLightingScene
             bool solid = true;
             foreach (MapFace face in brush.Faces)
                 if (!materials.TryGetValue(face.Material, out var material) || material.IsSky ||
-                    material.Surface.IsBlended || material.Surface.AlphaTest is not null)
+                    material.IsWater || material.Surface.IsBlended || material.Surface.AlphaTest is not null)
                 {
                     solid = false;
                     break;
@@ -223,7 +226,8 @@ internal sealed class BrushLightingScene
         return false;
     }
 
-    internal bool CastsSunShadow(int face) => !IsSky(face) && _materials[face].Surface.HasShadowMapTechnique;
+    internal bool CastsSunShadow(int face) => !IsSky(face) && !_materials[face].IsWater &&
+        _materials[face].Surface.HasShadowMapTechnique;
 
     internal float SunVisibility(Vector3 point, Vector3 normal)
         => SampleSunVisibility(point, normal, default);
@@ -775,6 +779,15 @@ internal sealed class BrushLightingScene
     private bool TryReadWorldSurface(int index, Vector3 hitPoint, bool shadow, bool sampleColor,
         out Vector4 texel, out float opacity)
     {
+        // The native water shader derives its appearance from the runtime
+        // simulation and reflections. Do not bake its placeholder colorMap as
+        // opaque color or occlusion into editor-generated lighting and probes.
+        if (_materials[index].IsWater)
+        {
+            texel = Vector4.Zero;
+            opacity = 0;
+            return false;
+        }
         MapRenderSurface polygon = Polygons[index];
         MaterialSurfaceState state = _materials[index].Surface;
         texel = Vector4.One;

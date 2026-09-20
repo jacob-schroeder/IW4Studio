@@ -1,12 +1,19 @@
 using System.Numerics;
+using IW4.AssetExchange.SourceFormat.Material;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
+using Iw4Radiant.MapSource;
 using Iw4Radiant;
 
 namespace Iw4Radiant.Views;
 
 public partial class MainWindow
 {
+    private readonly Dictionary<string, MaterialSource> _authoredWaterMaterials = new(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, WaterMaterialDefinition> _waterDefinitions =
+        new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal);
+    private bool _waterDefinitionsDirty = true;
+
     private void InitializeAuthoring()
     {
         Inspector.PlacementRequested += className => BeginPlacement(className,
@@ -63,11 +70,62 @@ public partial class MainWindow
         finally { clearExplicitModelsRestored(); }
     }
 
-    private MaterialSource? ResolveMaterial(string name) =>
-        Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name);
+    private MaterialSource? ResolveMaterial(string name)
+    {
+        if (!WaterMaterialAuthoring.IsAuthoredMaterialName(name))
+            return Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name);
+        if (_waterDefinitionsDirty)
+        {
+            _waterDefinitionsDirty = false;
+            try
+            {
+                var properties = new Dictionary<string, string>(_session.Document.World.Properties, StringComparer.Ordinal);
+                foreach (MapEntity instance in _session.Document.Entities.Where(PrefabLibrary.IsPrefab))
+                    if (_session.Prefabs.GetPreview(instance, _session.FilePath) is { } preview)
+                        WaterMaterialAuthoring.MergeDefinitions(properties, preview.World.Properties);
+                _waterDefinitions = WaterMaterialAuthoring.ReadDefinitions(properties);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
+                                               FormatException or OverflowException)
+            {
+                _waterDefinitions = new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal);
+            }
+            foreach (string cached in _authoredWaterMaterials.Keys.Where(key => !_waterDefinitions.ContainsKey(key)).ToArray())
+                _authoredWaterMaterials.Remove(cached);
+        }
+        return ResolveMaterial(name, _waterDefinitions);
+    }
+
+    private MaterialSource? ResolveMaterial(string name,
+        IReadOnlyDictionary<string, WaterMaterialDefinition> definitions)
+    {
+        if (!definitions.TryGetValue(name, out WaterMaterialDefinition? definition))
+            return WaterMaterialAuthoring.IsAuthoredMaterialName(name)
+                ? null
+                : Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name);
+        if (_authoredWaterMaterials.TryGetValue(name, out MaterialSource? authored)) return authored;
+        MaterialSource? source = Workspace.Materials.ResolveMaterial(definition.SourceMaterial) ??
+            Workspace.Models.ResolveMaterial(definition.SourceMaterial);
+        if (source?.Water is not { } water) return null;
+        authored = new MaterialSource(definition.Name, source.ImagePath, source.IsSky, source.SamplerState)
+        {
+            TechniqueSet = source.TechniqueSet,
+            Water = WaterMaterialAuthoring.CreateWater(water, definition),
+            WaterColor = new Vector4(definition.Red, definition.Green, definition.Blue, source.WaterColor.W),
+            EnvMapParms = new Vector4(definition.FresnelMinimum, definition.FresnelMaximum,
+                definition.FresnelExponent, source.EnvMapParms.W),
+            Surface = source.Surface,
+            GameFlags = source.GameFlags,
+            SurfaceTypeBits = source.SurfaceTypeBits
+        };
+        _authoredWaterMaterials.Add(name, authored);
+        return authored;
+    }
 
     private void RefreshAssets()
     {
+        _authoredWaterMaterials.Clear();
+        _waterDefinitionsDirty = true;
         if (_session.HasPlacement) _session.CancelPlacement();
         else _session.Refresh();
         Workspace.Camera.ReloadTextures();

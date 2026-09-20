@@ -208,7 +208,9 @@ public partial class MaterialBrowser : UserControl
         {
             _preview = MaterialImages.Load(material.Material, 256);
             MaterialPreview.Source = _preview;
-            PreviewInfo.Text = Path.GetFileName(material.Material.ImagePath) + (material.IsSky ? " · Sky cube, +X face" : "");
+            PreviewInfo.Text = material.Material.IsWater
+                ? "Native PS3 water tint · camera uses GPU waves and authored reflection probes."
+                : Path.GetFileName(material.Material.ImagePath) + (material.IsSky ? " · Sky cube, +X face" : "");
             session.Material = material.Name;
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
@@ -231,8 +233,9 @@ public partial class MaterialBrowser : UserControl
                 UsePlayerClip(session);
                 return;
             }
-            if (!_materials.TryGetValue(name, out var material) || !File.Exists(material.Material.ImagePath))
-                throw new ArgumentException("Choose a material with an available image from the browser.");
+            if (!_materials.TryGetValue(name, out var material) ||
+                !material.Material.IsWater && !File.Exists(material.Material.ImagePath))
+                throw new ArgumentException("Choose a material with an available image or recognized native water profile from the browser.");
             if (material.IsSky) SkyEditing.Apply(session, material.Material);
             else
             {

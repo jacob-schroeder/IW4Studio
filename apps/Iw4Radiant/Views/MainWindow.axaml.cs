@@ -26,7 +26,7 @@ public partial class MainWindow : Window
         _dialogs = new EditorDialogs(this, SetStatus);
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus);
         Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials,
-            () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
+            ResolveMaterial, () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
             name => ResolveMaterial(name)?.UsesVertexColor == true);
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.LayoutChanged += RefreshLayoutControls;
@@ -60,7 +60,11 @@ public partial class MainWindow : Window
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
         Workspace.Camera.ResolveMaterial = ResolveMaterial;
-        _session.Changed += (_, _) => RefreshEditor();
+        _session.Changed += (_, _) =>
+        {
+            _waterDefinitionsDirty = true;
+            RefreshEditor();
+        };
         GridCombo.ItemsSource = GridSizes;
         GridCombo.SelectedItem = "16";
         TransformCombo.ItemsSource = new[] { "Move", "Rotate", "Scale" };

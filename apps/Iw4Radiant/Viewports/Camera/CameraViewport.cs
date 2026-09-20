@@ -172,6 +172,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
             session, ResolveMaterial, PreviewLighting);
+        if (_renderer.HasAnimatedWater)
+            RequestNextFrameRendering();
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)

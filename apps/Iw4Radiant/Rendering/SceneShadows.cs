@@ -155,6 +155,17 @@ internal sealed class SceneShadows
 
     private static Matrix4x4 ViewProjection(MapLight light, int face)
     {
+        float near = Math.Max(float.Epsilon, Math.Min(0.01f, light.Radius * 0.001f));
+        float far = Math.Max(near * 2, light.Radius);
+        // OpenGL -1..1 depth range, 90-degree square projection.
+        float ratio = near / far;
+        var projection = new Matrix4x4(1, 0, 0, 0, 0, 1, 0, 0,
+            0, 0, -(1 + ratio) / (1 - ratio), -1, 0, 0, -2 * near / (1 - ratio), 0);
+        return CubeView(light.Origin, face) * projection;
+    }
+
+    internal static Matrix4x4 CubeView(Vector3 origin, int face)
+    {
         (Vector3 direction, Vector3 up) = face switch
         {
             0 => (Vector3.UnitX, -Vector3.UnitY),
@@ -164,14 +175,7 @@ internal sealed class SceneShadows
             4 => (Vector3.UnitZ, -Vector3.UnitY),
             _ => (-Vector3.UnitZ, -Vector3.UnitY)
         };
-        float near = Math.Max(float.Epsilon, Math.Min(0.01f, light.Radius * 0.001f));
-        float far = Math.Max(near * 2, light.Radius);
-        // OpenGL -1..1 depth range, 90-degree square projection.
-        float ratio = near / far;
-        var projection = new Matrix4x4(1, 0, 0, 0, 0, 1, 0, 0,
-            0, 0, -(1 + ratio) / (1 - ratio), -1, 0, 0, -2 * near / (1 - ratio), 0);
-        return Matrix4x4.CreateTranslation(-light.Origin) *
-            Matrix4x4.CreateLookAt(Vector3.Zero, direction, up) * projection;
+        return Matrix4x4.CreateTranslation(-origin) * Matrix4x4.CreateLookAt(Vector3.Zero, direction, up);
     }
 
     internal void Clear(GL gl)

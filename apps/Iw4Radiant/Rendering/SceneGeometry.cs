@@ -8,6 +8,7 @@ namespace Iw4Radiant.Rendering;
 internal sealed class SceneGeometry
 {
     internal SceneVertex[] Vertices { get; }
+    internal Dictionary<int, Vector3> SurfaceCenters { get; } = [];
     internal List<(string Material, int Start, int Count, int WireStart, int WireCount)> Batches { get; } = [];
     internal int GlyphStart { get; }
     internal int GlyphCount { get; }
@@ -29,7 +30,7 @@ internal sealed class SceneGeometry
             foreach (MapTerrain terrain in entity.Terrains) selectedObjects.Add(terrain);
         }
         var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
-        var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines)>(StringComparer.Ordinal);
+        var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces)>(StringComparer.Ordinal);
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
         var clipColor = new Vector3(0.85f, 0.35f, 0.85f);
@@ -46,7 +47,10 @@ internal sealed class SceneGeometry
                 continue;
             }
             var geometry = GetMaterialGeometry(polygon.Face.Material);
+            int start = geometry.Triangles.Count;
             AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines);
+            geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
+                polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
         }
         foreach (var terrain in document.Terrains)
         {
@@ -99,6 +103,9 @@ internal sealed class SceneGeometry
         {
             int start = all.Count;
             all.AddRange(material.Value.Triangles);
+            foreach (var surface in material.Value.Surfaces)
+                for (int vertex = surface.Start; vertex < surface.Start + surface.Count; vertex += 3)
+                    SurfaceCenters.Add(start + vertex, surface.Center);
             int wireStart = all.Count;
             all.AddRange(material.Value.Lines);
             Batches.Add((material.Key, start, material.Value.Triangles.Count, wireStart, material.Value.Lines.Count));
@@ -182,10 +189,10 @@ internal sealed class SceneGeometry
                 new Vector2(Vector3.Dot(position, projection.U), Vector3.Dot(position, projection.V)) + projection.Offset, color));
         }
 
-        (List<SceneVertex> Triangles, List<SceneVertex> Lines) GetMaterialGeometry(string material)
+        (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces) GetMaterialGeometry(string material)
         {
             if (!materials.TryGetValue(material, out var geometry))
-                materials.Add(material, geometry = ([], []));
+                materials.Add(material, geometry = ([], [], []));
             return geometry;
         }
 

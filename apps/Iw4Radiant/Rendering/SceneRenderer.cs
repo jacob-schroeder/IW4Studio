@@ -2,6 +2,8 @@ using System.Numerics;
 using Avalonia;
 using Avalonia.OpenGL;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.Assets.GfxMap;
+using Iw4Radiant.Compilation;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
@@ -17,7 +19,8 @@ internal sealed class SceneRenderer
     private uint _lineTexture;
     private PixelSize _renderSize;
     private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
-        _ignoreVertexColorLocation, _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation;
+        _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
+        _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
     private readonly Dictionary<string, MaterialSurfaceState> _surfaceStates = new(StringComparer.Ordinal);
@@ -27,12 +30,19 @@ internal sealed class SceneRenderer
     private readonly SceneShadows _shadows = new();
     private readonly SceneSunlight _sunlight = new();
     private readonly SceneSkies _skies = new();
+    private readonly SceneWater _water = new();
+    private readonly SceneReflections _reflections = new();
+    private readonly List<string> _waterMaterials = [];
+    private readonly List<GfxReflectionProbe> _probeOrigins = [];
+    private readonly Dictionary<int, byte> _waterProbes = [];
+    private bool _reflectionsDirty = true, _reflectionLighting;
     private (Vector3 Min, Vector3 Max)? _surfaceBounds;
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _outlineStart, _outlineCount, _axesStart, _axesCount;
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
 
     internal string? Error { get; private set; } =
         "Camera is waiting for OpenGL. If it remains blank, a compatible OpenGL driver is required.";
+    internal bool HasAnimatedWater { get; private set; }
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
@@ -52,6 +62,10 @@ internal sealed class SceneRenderer
             _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
             _premultiplyAlphaLocation = _gl.GetUniformLocation(_program, "uPremultiplyAlpha");
             _ignoreVertexColorLocation = _gl.GetUniformLocation(_program, "uIgnoreVertexColor");
+            _waterPreviewLocation = _gl.GetUniformLocation(_program, "uWaterPreview");
+            _eyeLocation = _gl.GetUniformLocation(_program, "uEye");
+            _linearCaptureLocation = _gl.GetUniformLocation(_program, "uLinearCapture");
+            _hasWaterReflectionLocation = _gl.GetUniformLocation(_program, "uHasWaterReflection");
             _cubicClipLocation = _gl.GetUniformLocation(_program, "uCubicClip");
             _cubicClipCenterLocation = _gl.GetUniformLocation(_program, "uCubicClipCenter");
             _cubicClipDistanceLocation = _gl.GetUniformLocation(_program, "uCubicClipDistance");
@@ -59,6 +73,8 @@ internal sealed class SceneRenderer
             _shadows.Initialize(_gl, _program, header);
             _sunlight.Initialize(_gl, _program, header);
             _skies.Initialize(_gl, header);
+            _water.Initialize(_gl, _program, header);
+            _reflections.Initialize(_gl, header);
             _gl.UseProgram(_program);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
             _lineTexture = _gl.GenTexture();
@@ -109,6 +125,8 @@ internal sealed class SceneRenderer
             {
                 _materialTextures.Reload(gl);
                 _skies.Reload(gl);
+                _water.Reload(gl);
+                _reflectionsDirty = true;
                 _texturesDirty = false;
             }
             if (_sceneDirty)
@@ -119,6 +137,14 @@ internal sealed class SceneRenderer
                 _sunlight.Update(gl, document.World, _surfaceBounds, _vertexArray, _surfaceBatches,
                     resolveMaterial, _materialTextures);
                 _shadowsDirty = false;
+            }
+            _water.Update(gl, _waterMaterials, resolveMaterial);
+            if (HasAnimatedWater && (_reflectionsDirty || _reflectionLighting != previewLighting))
+            {
+                _reflections.Capture(gl, _probeOrigins, (matrix, origin) =>
+                    RenderReflectionFace(gl, matrix, origin, resolveMaterial, previewLighting));
+                _reflectionsDirty = false;
+                _reflectionLighting = previewLighting;
             }
             PrepareFramebuffer(gl, size);
             gl.Disable(EnableCap.ScissorTest);
@@ -137,6 +163,8 @@ internal sealed class SceneRenderer
             gl.Uniform1(_cubicClipLocation, session.CubicClipEnabled ? 1 : 0);
             gl.Uniform3(_cubicClipCenterLocation, eye.X, eye.Y, eye.Z);
             gl.Uniform1(_cubicClipDistanceLocation, session.CubicClipDistance);
+            gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
+            gl.Uniform1(_linearCaptureLocation, 0);
             _lighting.Bind(gl, _shadows.IsAvailable);
             _shadows.Bind(gl);
             _sunlight.Bind(gl);
@@ -149,6 +177,7 @@ internal sealed class SceneRenderer
             gl.Uniform1(_texturedLocation, 0);
             gl.Uniform1(_alphaTestLocation, 0);
             gl.Uniform1(_premultiplyAlphaLocation, 0);
+            gl.Uniform1(_waterPreviewLocation, 0);
             gl.DrawArrays(PrimitiveType.Lines, _gridStart, (uint)_gridCount);
 
             gl.Enable(EnableCap.PolygonOffsetFill);
@@ -174,7 +203,8 @@ internal sealed class SceneRenderer
             gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, (uint)framebuffer);
             gl.BlitFramebuffer(0, 0, size.Width, size.Height, 0, 0, size.Width, size.Height,
                 ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
-            string?[] notices = [session.Scene.Notice, _materialTextures.Error, _skies.Notice,
+            string?[] notices = [session.Scene.Notice, _materialTextures.Error, _skies.Notice, _water.Notice,
+                HasAnimatedWater ? _reflections.Notice : null,
                 previewLighting ? _lighting.GetNotice(_sunlight.IsAvailable) : null,
                 previewLighting ? _shadows.Notice : null, previewLighting ? _sunlight.Notice : null];
             string notice = string.Join('\n', notices.Where(value => !string.IsNullOrEmpty(value)));
@@ -194,6 +224,10 @@ internal sealed class SceneRenderer
             gl.Disable(EnableCap.DepthTest);
             gl.BindVertexArray(0);
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+            gl.ActiveTexture(TextureUnit.Texture5);
+            gl.BindTexture(TextureTarget.TextureCubeMap, 0);
+            gl.ActiveTexture(TextureUnit.Texture4);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture3);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture2);
@@ -211,7 +245,7 @@ internal sealed class SceneRenderer
     }
 
     private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting,
-        bool previewAlpha, Vector3 eye, bool transparent)
+        bool previewAlpha, Vector3 eye, bool transparent, bool capture = false)
     {
         var textures = new Dictionary<string, uint>(StringComparer.Ordinal);
         foreach (var batch in _surfaceBatches)
@@ -219,7 +253,10 @@ internal sealed class SceneRenderer
             MaterialSurfaceState state = _surfaceStates[batch.Material];
             bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
             if (drawTransparent != transparent) continue;
-            uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
+            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+            bool water = source?.IsWater == true;
+            if (capture && water) continue;
+            uint texture = water ? (_water.IsAvailable(batch.Material) ? _lineTexture : 0) : _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
             if (texture == 0)
             {
                 ResetSurfaceState(gl);
@@ -237,9 +274,19 @@ internal sealed class SceneRenderer
             SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state),
                 _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
             gl.BindTexture(TextureTarget.Texture2D, texture);
+            gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
+            if (water) _water.Bind(gl, batch.Material);
             gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
             gl.Uniform1(_texturedLocation, 1);
-            gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+            if (water)
+            {
+                for (int start = batch.Start; start < batch.Start + batch.Count; start += 3)
+                {
+                    BindWaterReflection(gl, start);
+                    gl.DrawArrays(PrimitiveType.Triangles, start, 3);
+                }
+            }
+            else gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
         }
         if (transparent)
         {
@@ -251,16 +298,46 @@ internal sealed class SceneRenderer
                 if (!textures.TryGetValue(triangle.Material, out uint texture)) continue;
                 if (material != triangle.Material)
                 {
+                    MaterialSource? source = resolveMaterial?.Invoke(triangle.Material);
+                    bool water = source?.IsWater == true;
                     SceneMaterialDrawing.Apply(gl, _surfaceStates[triangle.Material], _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
                     gl.BindTexture(TextureTarget.Texture2D, texture);
+                    gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
+                    if (water) _water.Bind(gl, triangle.Material);
                     gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
                     gl.Uniform1(_texturedLocation, 1);
                     material = triangle.Material;
                 }
+                if (_waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
             }
         }
         ResetSurfaceState(gl);
+    }
+
+    private void BindWaterReflection(GL gl, int start)
+    {
+        bool available = _reflections.Bind(gl, _waterProbes.GetValueOrDefault(start));
+        gl.Uniform1(_hasWaterReflectionLocation, available ? 1 : 0);
+    }
+
+    private unsafe void RenderReflectionFace(GL gl, Matrix4x4 matrix, Vector3 origin,
+        Func<string, MaterialSource?>? resolveMaterial, bool previewLighting)
+    {
+        gl.UseProgram(_program);
+        gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&matrix);
+        gl.Uniform3(_eyeLocation, origin.X, origin.Y, origin.Z);
+        gl.Uniform1(_cubicClipLocation, 0);
+        gl.Uniform1(_linearCaptureLocation, 1);
+        _lighting.Bind(gl, _shadows.IsAvailable);
+        _shadows.Bind(gl);
+        _sunlight.Bind(gl);
+        gl.ActiveTexture(TextureUnit.Texture0);
+        gl.BindVertexArray(_vertexArray);
+        gl.FrontFace(FrontFaceDirection.Ccw);
+        RenderSurfaces(gl, resolveMaterial, previewLighting, true, origin, false, capture: true);
+        _skies.Render(gl, matrix, origin, _vertexArray, _batches, resolveMaterial, linearCapture: true);
+        RenderSurfaces(gl, resolveMaterial, previewLighting, true, origin, true, capture: true);
     }
 
     private static MaterialSurfaceState OpaquePreview(MaterialSurfaceState state) => state with
@@ -280,6 +357,7 @@ internal sealed class SceneRenderer
         gl.DepthMask(true);
         gl.Uniform1(_alphaTestLocation, 0);
         gl.Uniform1(_premultiplyAlphaLocation, 0);
+        gl.Uniform1(_waterPreviewLocation, 0);
         gl.Disable(EnableCap.PolygonOffsetFill);
     }
 
@@ -311,8 +389,25 @@ internal sealed class SceneRenderer
         _surfaceBatches.Clear();
         _surfaceBatches.AddRange(scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky != true));
         _surfaceStates.Clear();
+        HasAnimatedWater = false;
+        _waterMaterials.Clear();
         foreach (var batch in _surfaceBatches)
+        {
             _surfaceStates.Add(batch.Material, resolveMaterial?.Invoke(batch.Material)?.Surface ?? MaterialSurfaceState.Opaque);
+            if (resolveMaterial?.Invoke(batch.Material)?.IsWater == true)
+            {
+                HasAnimatedWater = true;
+                _waterMaterials.Add(batch.Material);
+            }
+        }
+        _water.RemoveUnused(gl, _waterMaterials);
+        if (!HasAnimatedWater) _reflections.Reload(gl);
+        _probeOrigins.Clear();
+        _probeOrigins.Add(new GfxReflectionProbe(0, 0, 0));
+        foreach (MapEntity entity in session.Scene.Document.Entities)
+            if (entity.ClassName == "reflection_probe" && entity.TryGetOrigin(out Vector3 origin))
+                _probeOrigins.Add(new GfxReflectionProbe(origin.X, origin.Y, origin.Z));
+        _waterProbes.Clear();
         _glyphStart = scene.GlyphStart;
         _glyphCount = scene.GlyphCount;
         _gridStart = scene.GridStart;
@@ -333,6 +428,14 @@ internal sealed class SceneRenderer
                 for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
                     _transparentTriangles.Add((batch.Material, index,
                         data[index].Position / 3 + data[index + 1].Position / 3 + data[index + 2].Position / 3));
+        foreach (var batch in _surfaceBatches)
+            if (_waterMaterials.Contains(batch.Material))
+                for (int start = batch.Start; start < batch.Start + batch.Count; start += 3)
+                {
+                    Vector3 center = scene.SurfaceCenters.GetValueOrDefault(start,
+                        (data[start].Position + data[start + 1].Position + data[start + 2].Position) / 3);
+                    _waterProbes.Add(start, BrushRenderCompiler.NearestProbe(center, _probeOrigins));
+                }
         _surfaceBounds = null;
         foreach (var batch in _surfaceBatches)
         for (int index = batch.Start; index < batch.Start + batch.Count; index++)
@@ -351,7 +454,7 @@ internal sealed class SceneRenderer
         gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
         gl.BindVertexArray(0);
         _sceneDirty = false;
-        _shadowsDirty = true;
+        _shadowsDirty = _reflectionsDirty = true;
     }
 
     internal void ReleaseResources()
@@ -363,6 +466,8 @@ internal sealed class SceneRenderer
             _shadows.Clear(gl);
             _sunlight.Clear(gl);
             _skies.Clear(gl);
+            _water.Clear(gl);
+            _reflections.Clear(gl);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
             if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
             if (_program != 0) gl.DeleteProgram(_program);
@@ -384,10 +489,17 @@ internal sealed class SceneRenderer
         _shadows.ForgetHandles();
         _sunlight.ForgetHandles();
         _skies.ForgetHandles();
+        _water.ForgetHandles();
+        _reflections.ForgetHandles();
+        _waterMaterials.Clear();
+        _waterProbes.Clear();
+        _probeOrigins.Clear();
+        _reflectionsDirty = true;
         _batches.Clear();
         _surfaceBatches.Clear();
         _surfaceStates.Clear();
         _transparentTriangles.Clear();
+        HasAnimatedWater = false;
         _surfaceBounds = null;
         _renderSize = default;
         _sceneDirty = _texturesDirty = _shadowsDirty = true;

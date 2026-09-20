@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.SurfaceInspector">
     <StackPanel Spacing="10">
         <TextBlock x:Name="SurfaceSummary" Text="Select a brush or face." TextWrapping="Wrap" Classes="caption" />
@@ -56,6 +57,39 @@
                 <Button x:Name="FitButton" Grid.Row="1" Grid.Column="2" Content="Fit"
                         ToolTip.Tip="Fit each selected face immediately using its current map projection and these repeat counts. Apply alignment edits first to include them." />
             </Grid>
+        </StackPanel>
+        <Separator />
+        <StackPanel Spacing="8">
+            <TextBlock Text="Water" Classes="panelTitle" />
+            <TextBlock x:Name="WaterInfo" Text="Select a brush or face using a native water material."
+                       TextWrapping="Wrap" Classes="caption" />
+            <StackPanel x:Name="WaterFields" Spacing="7" IsEnabled="False">
+                <TextBlock Text="Color (linear RGB)" Classes="fieldLabel" />
+                <views:LightColorPicker x:Name="WaterColorPicker"
+                                        ToolTip.Tip="Choose a water tint with the swatches or color sliders." />
+                <Grid ColumnDefinitions="*,90" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="5">
+                    <TextBlock Text="Ripple strength" Classes="fieldLabel" />
+                    <TextBox x:Name="WaveIntensity" Grid.Column="1"
+                             ToolTip.Tip="Ripple strength for surface shading from 0 (flat) to 8; does not change water geometry height." />
+                    <TextBlock Grid.Row="1" Text="Animation speed" Classes="fieldLabel" />
+                    <TextBox x:Name="AnimationSpeed" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Wave animation speed from 0.05 to 8." />
+                </Grid>
+                <TextBlock Text="Reflection" Classes="fieldLabel" />
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
+                    <TextBlock Text="Minimum" Classes="caption" />
+                    <TextBlock Grid.Column="1" Text="Maximum" Classes="caption" />
+                    <TextBlock Grid.Column="2" Text="Exponent" Classes="caption" />
+                    <TextBox x:Name="FresnelMinimum" Grid.Row="1" ToolTip.Tip="Reflection at the most direct viewing angle, from 0 to 1." />
+                    <TextBox x:Name="FresnelMaximum" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Reflection at grazing angles, from 0 to 1." />
+                    <TextBox x:Name="FresnelExponent" Grid.Row="1" Grid.Column="2" ToolTip.Tip="Reflection falloff exponent from 0.01 to 32." />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                    <Button x:Name="ApplyWaterButton" Content="Apply water" Classes="panelAction" HorizontalAlignment="Stretch"
+                            ToolTip.Tip="Create a map-local native water material for the selected surfaces." />
+                    <Button x:Name="RevertWaterButton" Grid.Column="1" Content="Revert"
+                            ToolTip.Tip="Restore the selected water material values without editing the map." />
+                </Grid>
+            </StackPanel>
         </StackPanel>
         <Separator />
         <CheckBox x:Name="TextureLockValue" Content="Texture lock"

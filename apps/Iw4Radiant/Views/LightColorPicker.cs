@@ -22,6 +22,7 @@ public sealed class LightColorPicker : UserControl
         Margin = new Thickness(8, 0, 0, 0)
     };
     private Vector3 _selectedColor;
+    private bool _preserveColorScale;
     private bool _updating;
 
     public LightColorPicker()
@@ -46,7 +47,11 @@ public sealed class LightColorPicker : UserControl
                 Background = new SolidColorBrush(color), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
             };
             ToolTip.SetTip(button, color.ToString());
-            button.Click += (_, _) => SelectedColor = new Vector3(color.R, color.G, color.B) / 255;
+            button.Click += (_, _) =>
+            {
+                Vector3 display = new Vector3(color.R, color.G, color.B) / 255;
+                SelectedColor = _preserveColorScale ? display * display : display;
+            };
             swatches.Children.Add(button);
         }
         content.Children.Add(swatches);
@@ -61,7 +66,7 @@ public sealed class LightColorPicker : UserControl
         {
             _selectedColor = value;
             float maximum = Math.Max(value.X, Math.Max(value.Y, value.Z));
-            Vector3 display = maximum > 0 ? value / maximum : Vector3.Zero;
+            Vector3 display = DisplayColor(value, maximum);
             _updating = true;
             try
             {
@@ -71,6 +76,17 @@ public sealed class LightColorPicker : UserControl
             }
             finally { _updating = false; }
             RefreshColor();
+        }
+    }
+
+    internal bool PreserveColorScale
+    {
+        get => _preserveColorScale;
+        set
+        {
+            if (_preserveColorScale == value) return;
+            _preserveColorScale = value;
+            SelectedColor = _selectedColor;
         }
     }
 
@@ -84,7 +100,8 @@ public sealed class LightColorPicker : UserControl
         slider.PropertyChanged += (_, change) =>
         {
             if (_updating || change.Property != Slider.ValueProperty) return;
-            _selectedColor = new Vector3((float)_red.Value, (float)_green.Value, (float)_blue.Value);
+            Vector3 display = new((float)_red.Value, (float)_green.Value, (float)_blue.Value);
+            _selectedColor = _preserveColorScale ? display * display : display;
             RefreshColor();
         };
     }
@@ -92,11 +109,16 @@ public sealed class LightColorPicker : UserControl
     private void RefreshColor()
     {
         float maximum = Math.Max(_selectedColor.X, Math.Max(_selectedColor.Y, _selectedColor.Z));
-        Vector3 display = maximum > 0 ? _selectedColor / maximum : Vector3.Zero;
+        Vector3 display = DisplayColor(_selectedColor, maximum);
         _preview.Background = new SolidColorBrush(Color.FromRgb(
             (byte)Math.Clamp(MathF.Round(display.X * 255), 0, 255),
             (byte)Math.Clamp(MathF.Round(display.Y * 255), 0, 255),
             (byte)Math.Clamp(MathF.Round(display.Z * 255), 0, 255)));
         _readout.Text = FormattableString.Invariant($"RGB: {_selectedColor.X:G6} / {_selectedColor.Y:G6} / {_selectedColor.Z:G6}");
     }
+
+    private Vector3 DisplayColor(Vector3 value, float maximum) => _preserveColorScale
+        ? new(MathF.Sqrt(Math.Clamp(value.X, 0, 1)), MathF.Sqrt(Math.Clamp(value.Y, 0, 1)),
+            MathF.Sqrt(Math.Clamp(value.Z, 0, 1)))
+        : maximum > 0 ? value / maximum : Vector3.Zero;
 }

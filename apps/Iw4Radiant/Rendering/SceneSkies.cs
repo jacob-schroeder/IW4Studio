@@ -9,7 +9,7 @@ internal sealed class SceneSkies
 {
     private readonly Dictionary<string, (MaterialSource Source, uint Texture, string? Error)> _textures = new(StringComparer.Ordinal);
     private uint _program;
-    private int _viewProjectionLocation, _eyeLocation, _maximumFaceSize;
+    private int _viewProjectionLocation, _eyeLocation, _linearCaptureLocation, _maximumFaceSize;
     private float _maximumAnisotropy = 1;
     private bool _desktopSeamlessSampling;
 
@@ -21,6 +21,7 @@ internal sealed class SceneSkies
         _program = SceneShaderProgram.Create(gl, shaderHeader, "sky.vert", "sky.frag");
         _viewProjectionLocation = gl.GetUniformLocation(_program, "uViewProjection");
         _eyeLocation = gl.GetUniformLocation(_program, "uEye");
+        _linearCaptureLocation = gl.GetUniformLocation(_program, "uLinearCapture");
         _maximumFaceSize = gl.GetInteger(GetPName.MaxCubeMapTextureSize);
         if (gl.IsExtensionPresent("GL_EXT_texture_filter_anisotropic") ||
             gl.IsExtensionPresent("GL_ARB_texture_filter_anisotropic"))
@@ -31,7 +32,7 @@ internal sealed class SceneSkies
 
     internal unsafe void Render(GL gl, Matrix4x4 viewProjection, Vector3 eye, uint vertexArray,
         IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches,
-        Func<string, MaterialSource?>? resolveMaterial)
+        Func<string, MaterialSource?>? resolveMaterial, bool linearCapture = false)
     {
         Notice = null;
         if (_program == 0 || resolveMaterial is null) return;
@@ -45,6 +46,7 @@ internal sealed class SceneSkies
             gl.UseProgram(_program);
             gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
             gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
+            gl.Uniform1(_linearCaptureLocation, linearCapture ? 1 : 0);
             gl.BindVertexArray(vertexArray);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.Enable(EnableCap.DepthTest);

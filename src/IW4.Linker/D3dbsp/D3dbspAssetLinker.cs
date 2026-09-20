@@ -35,6 +35,8 @@ public sealed record D3dbspLinkRequest(
     public IReadOnlyList<GfxLightmapArray> Lightmaps { get; init; } = [];
     public GfxImageAsset? OutdoorImage { get; init; }
     public IReadOnlyList<float> OutdoorLookupMatrix { get; init; } = [];
+    public IReadOnlySet<string> RuntimeEntityPropertiesToRemove { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
 
     public IReadOnlyList<IReadOnlyList<DynEntityDef>>? DynamicEntityDefinitions
     {
@@ -90,6 +92,7 @@ public static class D3dbspAssetLinker
         ArgumentNullException.ThrowIfNull(request.AvailableXModels);
         ArgumentNullException.ThrowIfNull(request.AvailableMaterials);
         ArgumentNullException.ThrowIfNull(request.StaticScriptModelNames);
+        ArgumentNullException.ThrowIfNull(request.RuntimeEntityPropertiesToRemove);
         if (request.StaticScriptModelNames.Count != 0 && (!request.WorldOnly || !request.UseSourceMaterials))
             throw new ArgumentException("Static script-model selection requires world-only source-material linking.", nameof(request));
         ValidateSuppliedLighting(request);
@@ -120,7 +123,8 @@ public static class D3dbspAssetLinker
         int sunPrimaryLightIndex = D3dbspPrimaryLightCodec.GetLastSunPrimaryLightIndex(
             comWorld.PrimaryLights);
 
-        byte[] sourceEntities = file.GetRequiredData(D3dbspLumpType.Entities).ToArray();
+        byte[] sourceEntities = D3dbspMapEntsCodec.RemoveEntityProperties(
+            file.GetRequiredData(D3dbspLumpType.Entities), request.RuntimeEntityPropertiesToRemove);
         int discardedLightByteCount = ValidateSourceProfile(
             file,
             forceFullbright);

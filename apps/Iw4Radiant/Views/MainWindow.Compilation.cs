@@ -1,5 +1,6 @@
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using IW4.AssetExchange.SourceFormat.Material;
 using Iw4Radiant.Compilation;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
@@ -82,6 +83,8 @@ public partial class MainWindow
         ResolveBuildAssets(MapDocument document)
     {
         document = PrefabLibrary.ExpandForCompilation(document, _session.FilePath);
+        IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions =
+            WaterMaterialAuthoring.ReadDefinitions(document.World.Properties);
         var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
         foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapStaticModelCompiler.CastsShadow(entity))
                      .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
@@ -94,7 +97,7 @@ public partial class MainWindow
                      .Distinct(StringComparer.Ordinal))
         {
             if (ClipBrushMaterial.IsPlayerClip(name)) continue;
-            materials.Add(name, ResolveMaterial(name) ??
+            materials.Add(name, ResolveMaterial(name, waterDefinitions) ??
                 throw new InvalidDataException($"Material '{name}' is unavailable. Load it in the asset browser before building."));
         }
         return (materials, models);

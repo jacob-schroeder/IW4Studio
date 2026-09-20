@@ -10,6 +10,17 @@ uniform bool uTextured;
 uniform bool uLit;
 uniform bool uPremultiplyAlpha;
 uniform bool uIgnoreVertexColor;
+uniform bool uWaterPreview;
+uniform vec3 uEye;
+uniform sampler2D uWaterHeight;
+#ifdef GL_ES
+precision highp samplerCube;
+#endif
+uniform samplerCube uWaterReflection;
+uniform bool uHasWaterReflection;
+uniform vec4 uEnvMapParms;
+uniform bool uLinearCapture;
+uniform vec4 uWaterColor;
 uniform bool uCubicClip;
 uniform vec3 uCubicClipCenter;
 uniform float uCubicClipDistance;
@@ -105,6 +116,12 @@ float shadowVisibility(int lightIndex, vec3 fromLight, float radius, float diffu
     return visible / 9.0;
 }
 
+float waterHeight(vec2 uv)
+{
+    return texture(uWaterHeight, uv).r + 0.60009766 * texture(uWaterHeight, uv * 3.7).r
+        + 0.36010742 * texture(uWaterHeight, uv * 13.69).r;
+}
+
 void main()
 {
     // Derivatives must precede alpha discard and divergent lighting branches.
@@ -116,10 +133,33 @@ void main()
     if (uCubicClip && any(greaterThan(abs(vPosition - uCubicClipCenter), vec3(uCubicClipDistance))))
         discard;
     vec4 surface = uTextured && uIgnoreVertexColor ? vec4(1.0) : vColor;
-    if (uTextured)
+    if (uWaterPreview)
+    {
+        // Recovered PS3 water_l_nosun: scalar waves, three octaves, forward
+        // differences in world XY, Fresnel and an encoded reflection probe.
+        vec3 fromEye = vPosition - uEye;
+        vec3 view = fromEye / max(length(fromEye), 1e-20);
+        vec2 q = vTexCoord + view.xy * (0.5 - texture(uWaterHeight, vTexCoord * 0.5).r) * 0.0234375;
+        float center = waterHeight(q);
+        vec3 normal = normalize(vec3(waterHeight(q + vec2(0.00390625, 0.0)) - center,
+            waterHeight(q + vec2(0.0, 0.00390625)) - center, 1.0));
+        vec3 direction = reflect(view, normal);
+        direction.z = abs(direction.z);
+        vec3 reflected = uHasWaterReflection ? texture(uWaterReflection, direction).rgb : vec3(0.0);
+        float facing = clamp(1.0 - abs(dot(view, normal)), 0.0, 1.0);
+        float fresnel = clamp(uEnvMapParms.x + (uEnvMapParms.y - uEnvMapParms.x) * pow(facing, uEnvMapParms.z), 0.0, 1.0);
+        vec3 linearColor = mix(normal.z * uWaterColor.rgb, reflected * reflected, fresnel);
+        // The native shader writes linear RGB with gammaWrite enabled. Match the
+        // editor's squared-radiance capture domain; exact RSX display transfer is unverified.
+        vec3 waterColor = sqrt(clamp(linearColor, 0.0, 1.0));
+        applyMaterialAlpha(vColor.a);
+        fragmentColor = vec4(uPremultiplyAlpha ? waterColor * vColor.a : waterColor, vColor.a);
+        return;
+    }
+    else if (uTextured)
         surface *= texture(uTexture, vTexCoord);
     applyMaterialAlpha(surface.a);
-    vec3 color = surface.rgb;
+    vec3 color = uLinearCapture ? surface.rgb * surface.rgb : surface.rgb;
     if (uLit)
     {
         vec3 normal = normalize(vNormal);

@@ -29,7 +29,7 @@ internal static class MapCompiler
             "Free-for-all spawns are required before building.";
     }
 
-    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
+    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
         "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. One render cell; stage volumes, primary local lights, curves, breakable glass and bounced lighting are not compiled yet.";
 
@@ -60,9 +60,14 @@ internal static class MapCompiler
                 if (ClipBrushMaterial.IsPlayerClip(name))
                     return new ClipMaterial { Name = name, Contents = ClipBrushMaterial.Contents,
                         SurfaceFlags = ClipBrushMaterial.SurfaceFlags };
-                if (!materials.TryGetValue(name, out MaterialSource? material) || !File.Exists(material.ImagePath))
+                if (!materials.TryGetValue(name, out MaterialSource? material) ||
+                    !material.IsWater && !File.Exists(material.ImagePath))
                     throw new InvalidDataException($"Material '{name}' is unavailable. Load its material and image in the asset browser before building.");
                 MaterialSurfaceState state = material.Surface;
+                if (material.IsWater && (material.TechniqueSet is not ("w_water" or "wc_water") ||
+                    material.SurfaceTypeBits != MaterialSurfaceTypeBits.Water ||
+                    material.GameFlags != (MaterialGameFlags.NoMarks | MaterialGameFlags.HasReflection)))
+                    throw new NotSupportedException($"Water material '{name}' is outside the proven stock PS3 w_water/wc_water profile.");
                 if (!material.IsSky && (state.TechniqueType != MaterialTechniqueType.Lit ||
                     !(material.TechniqueSet.StartsWith("w_", StringComparison.Ordinal) || material.TechniqueSet.StartsWith("wc_", StringComparison.Ordinal)) ||
                     state.IsBlended && !state.SupportsAlpha || !state.IsBlended && !state.DepthWrite ||
@@ -70,8 +75,8 @@ internal static class MapCompiler
                     throw new NotSupportedException($"Material '{name}' is outside the native lit world profile. Use an opaque, alpha-tested or standard alpha-blended world material.");
                 // Native PS3 Rust and Highrise sky brushes use SKY|NOIMPACT|NOMARKS
                 // and CONTENTS_SKY without CONTENTS_SOLID.
-                return new ClipMaterial { Name = name, Contents = material.IsSky ? 0x800 : 1,
-                    SurfaceFlags = material.IsSky ? 0x34 : material.GetSurfaceTypeFlags() };
+                return new ClipMaterial { Name = name, Contents = material.IsSky ? 0x800 : material.GetCollisionContents(),
+                    SurfaceFlags = material.IsSky ? 0x34 : material.GetCollisionSurfaceFlags() };
             }).ToArray();
         var baseMaterialsByName = baseMaterials.ToDictionary(material =>
             material.Name ?? throw new InvalidDataException("A collision material has no name."), StringComparer.Ordinal);
@@ -133,8 +138,16 @@ internal static class MapCompiler
             bool playerClip = brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material));
             bool anySky = brush.Faces.Any(face => materials.TryGetValue(face.Material, out var material) && material.IsSky);
             bool sky = brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky);
+            bool anyWater = brush.Faces.Any(face => materials.TryGetValue(face.Material, out var material) && material.IsWater);
+            bool water = brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsWater);
             if (anySky && !sky)
                 throw new NotSupportedException("Apply sky materials to every face of a sky brush. Mixed sky and solid faces are not supported by compilation yet.");
+            if (anyWater && !water)
+                throw new NotSupportedException("Apply native water materials to every face of a water brush. Mixed water and solid faces have no proven collision contents.");
+            if (water && !document.World.Brushes.Contains(brush))
+                throw new NotSupportedException("Native water is supported only on world brushes, not brush entities.");
+            if (water && kind != BrushKind.Structural)
+                throw new NotSupportedException("Native water already supplies its proven DETAIL|WATER contents. Remove the brush contents override.");
             if (kind != BrushKind.Structural && (playerClip || sky))
                 throw new NotSupportedException("Brush contents directives require visible, non-sky world materials. Player clip and sky already define their native contents.");
             foreach (MapFace face in brush.Faces)
@@ -163,6 +176,8 @@ internal static class MapCompiler
                         throw new NotSupportedException($"Material '{terrain.Material}' does not consume painted vertex color or alpha. Apply a wc_ world material before painting, or reset its vertex colors to white and alpha to 100%.");
                     if (ClipBrushMaterial.IsPlayerClip(terrain.Material) || materials.TryGetValue(terrain.Material, out var material) && material.IsSky)
                         throw new NotSupportedException("Use world brushes for sky and player clip. These materials are not supported on meshes.");
+                    if (materials.TryGetValue(terrain.Material, out var terrainMaterial) && terrainMaterial.IsWater)
+                        throw new NotSupportedException("Native water requires a closed world-brush volume; water materials are not supported on terrain meshes.");
                 }
                 continue;
             }
@@ -208,6 +223,7 @@ internal static class MapCompiler
                 throw new NotSupportedException($"Entity '{entity.ClassName}' has a model reference; use misc_model for compiled static models.");
             foreach (MapBrush brush in document.World.Brushes.Where(_ => type.Category == "Spawns" || entity.ClassName == "reflection_probe"))
                 if (!brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky) &&
+                    !brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsWater) &&
                     !(entity.ClassName == "reflection_probe" && brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material))) &&
                     (brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)) ||
                      BrushContents.BlocksPlayer(BrushContents.ReadForCompilation(brush))) &&

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using Avalonia.Controls;
 using Iw4Radiant.Editing;
+using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Viewports.Orthographic;
 
@@ -43,10 +44,11 @@ public partial class SelectionInspector : UserControl
     internal void ReleaseImages() => Skies.ReleaseImages();
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials,
-        Func<OrthoPlane> editPlane, Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor)
+        Func<string, MaterialSource?> resolveMaterial, Func<OrthoPlane> editPlane,
+        Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor)
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
-        Surfaces.InitializeActions(session, dialogs, finishGestures);
+        Surfaces.InitializeActions(session, dialogs, finishGestures, resolveMaterial);
         Lights.InitializeActions(session, dialogs, finishGestures);
         Terrain.InitializeActions(session, dialogs, finishGestures);
         Sunlight.InitializeActions(session, dialogs, finishGestures);

@@ -4,9 +4,12 @@ precision highp samplerCube;
 
 in vec3 vCubeDirection;
 uniform samplerCube uSkyTexture;
+uniform bool uLinearCapture;
 out vec4 fragColor;
 
 void main()
 {
-    fragColor = texture(uSkyTexture, normalize(vCubeDirection));
+    vec4 sampleColor = texture(uSkyTexture, normalize(vCubeDirection));
+    vec3 linearColor = sampleColor.rgb * sampleColor.a;
+    fragColor = uLinearCapture ? vec4(linearColor * linearColor, 1.0) : sampleColor;
 }

@@ -118,7 +118,7 @@ internal static class BrushRenderCompiler
             {
                 Material = material,
                 LightmapIndex = faceLightmapIndices[faceIndex],
-                ReflectionProbeIndex = isSky ? (byte)0 : NearestProbe(polygon, probes),
+                ReflectionProbeIndex = isSky ? (byte)0 : NearestProbe(polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length, probes),
                 PrimaryLightIndex = isSky ? (byte)0 : (byte)1,
                 Flags = lightingScene.CastsSunShadow(faceIndex) ? GfxSurfaceFlags.CastsSunShadow : 0,
                 Triangles = new SrfTriangles
@@ -217,10 +217,9 @@ internal static class BrushRenderCompiler
         };
     }
 
-    private static byte NearestProbe(MapRenderSurface polygon, IReadOnlyList<GfxReflectionProbe> probes)
+    internal static byte NearestProbe(Vector3 center, IReadOnlyList<GfxReflectionProbe> probes)
     {
         if (probes.Count == 1) return 0;
-        Vector3 center = polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length;
         int nearest = 1;
         float distance = float.PositiveInfinity;
         for (int index = 1; index < probes.Count; index++)

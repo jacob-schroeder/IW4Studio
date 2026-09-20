@@ -79,6 +79,29 @@ internal static class D3dbspMapEntsCodec
         ReadOnlySpan<byte> source) =>
         Array.AsReadOnly(ParseEntities(source).Select(entity => entity.Values).ToArray());
 
+    public static byte[] RemoveEntityProperties(ReadOnlySpan<byte> source, IReadOnlySet<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+        if (names.Count == 0) return source.ToArray();
+        var removals = new List<(int Begin, int End)>();
+        foreach (ParsedEntity entity in ParseEntities(source))
+        foreach (string name in names)
+            foreach ((int begin, int end) in entity.GetPropertySpans(name))
+                removals.Add((begin, end));
+        if (removals.Count == 0) return source.ToArray();
+        removals.Sort((left, right) => left.Begin.CompareTo(right.Begin));
+        using var output = new MemoryStream(source.Length);
+        int position = 0;
+        foreach ((int begin, int end) in removals)
+        {
+            if (begin < position) continue;
+            output.Write(source[position..begin]);
+            position = end;
+        }
+        output.Write(source[position..]);
+        return output.ToArray();
+    }
+
     public static IReadOnlyList<string> DecodeNamedEntityModelNames(
         ReadOnlySpan<byte> source)
     {
@@ -2135,6 +2158,7 @@ internal static class D3dbspMapEntsCodec
         private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, (int Begin, int End)> _valueSpans =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(string Key, int Begin, int End)> _propertySpans = [];
 
         public ParsedEntity(int begin)
         {
@@ -2146,8 +2170,9 @@ internal static class D3dbspMapEntsCodec
         public IReadOnlyDictionary<string, string> Values =>
             new ReadOnlyDictionary<string, string>(_values);
 
-        public void Add(string key, string value, int valueBegin, int valueEnd)
+        public void Add(string key, string value, int keyBegin, int valueBegin, int valueEnd)
         {
+            _propertySpans.Add((key, keyBegin, valueEnd));
             if (_values.TryAdd(key, value))
                 _valueSpans.Add(key, (valueBegin, valueEnd));
         }
@@ -2184,6 +2209,10 @@ internal static class D3dbspMapEntsCodec
             return false;
         }
 
+        public IEnumerable<(int Begin, int End)> GetPropertySpans(string key) =>
+            _propertySpans.Where(span => StringComparer.OrdinalIgnoreCase.Equals(span.Key, key))
+                .Select(span => (span.Begin, span.End));
+
         public string GetRequiredValue(string key) =>
             TryGetValue(key, out string value)
                 ? value
@@ -2217,6 +2246,7 @@ internal static class D3dbspMapEntsCodec
             {
                 string key = ReadToken() ??
                     throw new InvalidDataException("The entity lump ended before a closing brace.");
+                int keyBegin = _tokenBegin;
                 if (key == "}")
                 {
                     entity.End = _position;
@@ -2227,7 +2257,7 @@ internal static class D3dbspMapEntsCodec
                     throw new InvalidDataException($"The entity key '{key}' has no value.");
                 if (value == "}")
                     throw new InvalidDataException($"The entity key '{key}' has no value.");
-                entity.Add(key, value, _tokenBegin, _tokenEnd);
+                entity.Add(key, value, keyBegin, _tokenBegin, _tokenEnd);
             }
         }
 

@@ -46,7 +46,9 @@ internal static class SceneMaterialDrawing
     internal static bool BindShadow(GL gl, int alphaTestLocation, string material,
         Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
     {
-        MaterialSurfaceState? state = resolveMaterial?.Invoke(material)?.Surface;
+        MaterialSource? source = resolveMaterial?.Invoke(material);
+        if (source?.IsWater == true) return false;
+        MaterialSurfaceState? state = source?.Surface;
         if (state is not { HasShadowMapTechnique: true }) return false;
         ApplyCull(gl, state.ShadowCullFace);
         gl.Uniform1(alphaTestLocation, AlphaTestCode(state.ShadowAlphaTest));

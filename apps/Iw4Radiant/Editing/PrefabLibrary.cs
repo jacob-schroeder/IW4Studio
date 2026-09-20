@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.AssetExchange.SourceFormat.Material;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
 
@@ -31,10 +32,11 @@ internal sealed class PrefabLibrary
             {
                 foreach (MapEntity nested in sourceDocument.Entities.Where(IsPrefab)) ValidateCompilationInstance(nested);
                 if (sourceDocument.World.Directives.Any(directive => !MapOrganization.IsLayerDirective(directive)) ||
-                    sourceDocument.World.Properties.Keys.Any(key => key != "classname"))
+                    sourceDocument.World.Properties.Keys.Any(key => key is not ("classname" or WaterMaterialAuthoring.MapPropertyName)))
                     throw new NotSupportedException("Prefab world properties or directives have no proven compile-time inheritance rule. Move them to the parent world before building.");
             }
             MapDocument expanded = preview.Clone();
+            WaterMaterialAuthoring.MergeDefinitions(result.World.Properties, expanded.World.Properties);
             string[] names = expanded.Entities.Select(entity => entity.Properties.GetValueOrDefault("targetname", ""))
                 .Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
             if (names.Any(targetNames.Contains))
@@ -98,7 +100,8 @@ internal sealed class PrefabLibrary
             _previews[instance] = (signature, preview, scopes, null);
             return preview;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException or ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException or
+                                           ArgumentException or InvalidOperationException or OverflowException)
         {
             _previews[instance] = (signature, null, null, exception.Message);
             return null;
@@ -208,6 +211,7 @@ internal sealed class PrefabLibrary
         Vector3 center = session.SelectionBounds is { } bounds ? bounds.Min + (bounds.Max - bounds.Min) / 2 : Vector3.Zero;
         Matrix4x4 transform = Matrix4x4.CreateTranslation(-center);
         foreach (MapEntity entity in result.Entities) SelectionTransforms.ApplyEntity(entity, transform, textureLock: true);
+        CopyUsedWaterDefinitions(session.Document, result);
         return result;
     }
 
@@ -259,6 +263,7 @@ internal sealed class PrefabLibrary
         session.Edit(() =>
         {
             foreach (object item in MapOrganization.Objects(source)) MapOrganization.Assign(item, MapOrganization.Layer(instance));
+            WaterMaterialAuthoring.MergeDefinitions(session.Document.World.Properties, source.World.Properties);
             session.Document.World.Brushes.AddRange(source.World.Brushes);
             session.Document.World.Terrains.AddRange(source.World.Terrains);
             var added = source.World.Brushes.Cast<object>().Concat(source.World.Terrains).ToList();
@@ -293,6 +298,7 @@ internal sealed class PrefabLibrary
                 MapDocument child = Expand(ResolveSourcePath(instance, referenceRoot), referenceRoot, chain, ref count, scopes, scope);
                 Matrix4x4 transform = InstanceTransform(instance);
                 foreach (MapEntity entity in child.Entities) SelectionTransforms.ApplyEntity(entity, transform, textureLock: true);
+                WaterMaterialAuthoring.MergeDefinitions(result.World.Properties, child.World.Properties);
                 result.World.Brushes.AddRange(child.World.Brushes);
                 result.World.Terrains.AddRange(child.World.Terrains);
                 result.Entities.AddRange(child.Entities.Skip(1));
@@ -310,6 +316,15 @@ internal sealed class PrefabLibrary
         foreach (var group in entities.Where(entity => entity.Properties.ContainsKey("targetname"))
                      .GroupBy(entity => entity.Properties["targetname"], StringComparer.Ordinal))
             targets.Add(group.Key, group.ToArray());
+    }
+
+    private static void CopyUsedWaterDefinitions(MapDocument source, MapDocument destination)
+    {
+        HashSet<string> used = destination.Brushes.SelectMany(brush => brush.Faces).Select(face => face.Material)
+            .Concat(destination.Terrains.Select(terrain => terrain.Material)).ToHashSet(StringComparer.Ordinal);
+        WaterMaterialDefinition[] definitions = WaterMaterialAuthoring.ReadDefinitions(source.World.Properties)
+            .Where(pair => used.Contains(pair.Key)).Select(pair => pair.Value).ToArray();
+        WaterMaterialAuthoring.WriteDefinitions(destination.World.Properties, definitions);
     }
 
     private sealed class TargetScope(TargetScope? parent)

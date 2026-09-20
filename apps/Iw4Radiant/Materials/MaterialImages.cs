@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using IW4.AssetExchange.SourceFormat.Image;
+using Vector3 = System.Numerics.Vector3;
 
 namespace Iw4Radiant.Materials;
 
@@ -10,6 +11,8 @@ internal static class MaterialImages
     internal static unsafe Bitmap Load(MaterialSource material, int maximumDimension)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumDimension, 1);
+        if (material.IsWater)
+            return CreateWaterPreview(material, Math.Min(maximumDimension, 128));
         Bitmap bitmap;
         if (material.IsSky || Path.GetExtension(material.ImagePath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
         {
@@ -33,6 +36,27 @@ internal static class MaterialImages
             return bitmap.CreateScaledBitmap(new PixelSize(Math.Max(1, (int)(bitmap.PixelSize.Width * scale)),
                 Math.Max(1, (int)(bitmap.PixelSize.Height * scale))), BitmapInterpolationMode.HighQuality);
         }
+    }
+
+    private static unsafe Bitmap CreateWaterPreview(MaterialSource material, int size)
+    {
+        var pixels = new byte[checked(size * size * 4)];
+        // A static tint swatch; the camera owns the GPU simulation and reflections.
+        Vector3 color = new(MathF.Sqrt(Math.Clamp(material.WaterColor.X, 0, 1)),
+            MathF.Sqrt(Math.Clamp(material.WaterColor.Y, 0, 1)),
+            MathF.Sqrt(Math.Clamp(material.WaterColor.Z, 0, 1)));
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            int offset = (y * size + x) * 4;
+            pixels[offset] = (byte)(Math.Clamp(color.X, 0, 1) * 255);
+            pixels[offset + 1] = (byte)(Math.Clamp(color.Y, 0, 1) * 255);
+            pixels[offset + 2] = (byte)(Math.Clamp(color.Z, 0, 1) * 255);
+            pixels[offset + 3] = byte.MaxValue;
+        }
+        fixed (byte* address = pixels)
+            return new Bitmap(PixelFormat.Rgba8888, AlphaFormat.Unpremul, (nint)address,
+                new PixelSize(size, size), new Vector(96, 96), checked(size * 4));
     }
 
     internal static ImageSourceMipLevel LoadCube(MaterialSource material, int maximumDimension)
