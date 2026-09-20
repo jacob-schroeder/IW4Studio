@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 using IW4.Assets.Assets.GfxMap;
 using IW4.Assets.Codecs.GfxMap;
@@ -25,6 +26,7 @@ internal static class BrushLightmapCompiler
             // Leave CPU capacity for the editor and other applications during a bake.
             MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 2)
         };
+        using var traversal = scene.CreateGpuTraversal();
         int cursorX = 0, cursorY = 0, rowHeight = 0;
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
         {
@@ -65,7 +67,67 @@ internal static class BrushLightmapCompiler
                     (cursorX + Border + (coordinates[vertex].X - minimum.X) / LuxelSize + 0.5f) / GfxLightmapCodec.SecondaryWidth,
                     (cursorY + Border + (coordinates[vertex].Y - minimum.Y) / LuxelSize + 0.5f) / GfxLightmapCodec.SecondaryPlaneHeight);
 
-            Parallel.For(0, height, parallelOptions, y =>
+            if (traversal is null)
+                Parallel.For(0, height, parallelOptions, y => BakeRow(y, null, null, 0));
+            else
+            {
+                const int bandHeight = 8;
+                int capacity = width * Math.Min(bandHeight, height) * 4;
+                int sunCapacity = capacity * 4;
+                var points = ArrayPool<Vector3>.Shared.Rent(capacity);
+                var normals = ArrayPool<Vector3>.Shared.Rent(capacity);
+                var irradiances = ArrayPool<Vector3>.Shared.Rent(capacity);
+                var sunPoints = ArrayPool<Vector3>.Shared.Rent(sunCapacity);
+                var sunVisibility = ArrayPool<float>.Shared.Rent(sunCapacity);
+                try
+                {
+                    for (int firstRow = 0; firstRow < height; firstRow += bandHeight)
+                    {
+                        int lastRow = Math.Min(firstRow + bandHeight, height);
+                        Parallel.For(firstRow, lastRow, parallelOptions, y =>
+                        {
+                            for (int x = 0; x < width; x++)
+                            for (int sy = 0; sy < 2; sy++)
+                            for (int sx = 0; sx < 2; sx++)
+                            {
+                                int index = ((y - firstRow) * width + x) * 4 + sy * 2 + sx;
+                                Vector3 point = Position(x + (sx - 0.5f) * 0.5f, y + (sy - 0.5f) * 0.5f);
+                                points[index] = point;
+                                normals[index] = polygon.Sample(point).Normal;
+                            }
+                            for (int x = 0; x < width; x++)
+                            for (int py = 0; py < 2; py++)
+                            for (int px = 0; px < 2; px++)
+                            for (int sy = 0; sy < 2; sy++)
+                            for (int sx = 0; sx < 2; sx++)
+                            {
+                                int index = (((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx;
+                                sunPoints[index] = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
+                                    y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
+                            }
+                        });
+                        int luxelCount = (lastRow - firstRow) * width;
+                        scene.BakeDiffuseSamples(points, normals, irradiances, luxelCount * 4,
+                            traversal, parallelOptions);
+                        scene.BakeSunSamples(sunPoints, normal, sunVisibility, luxelCount * 16,
+                            traversal, parallelOptions);
+                        Parallel.For(firstRow, lastRow, parallelOptions,
+                            y => BakeRow(y, irradiances, sunVisibility, firstRow));
+                    }
+                }
+                finally
+                {
+                    ArrayPool<float>.Shared.Return(sunVisibility);
+                    ArrayPool<Vector3>.Shared.Return(sunPoints);
+                    ArrayPool<Vector3>.Shared.Return(irradiances);
+                    ArrayPool<Vector3>.Shared.Return(normals);
+                    ArrayPool<Vector3>.Shared.Return(points);
+                }
+            }
+            cursorX += width;
+            rowHeight = Math.Max(rowHeight, height);
+
+            void BakeRow(int y, Vector3[]? baked, float[]? bakedSun, int firstRow)
             {
                 scene.CancellationToken.ThrowIfCancellationRequested();
                 for (int x = 0; x < width; x++)
@@ -74,8 +136,13 @@ internal static class BrushLightmapCompiler
                     for (int sy = 0; sy < 2; sy++)
                     for (int sx = 0; sx < 2; sx++)
                     {
-                        Vector3 point = Position(x + (sx - 0.5f) * 0.5f, y + (sy - 0.5f) * 0.5f);
-                        irradiance += scene.DiffuseIrradiance(point, polygon.Sample(point).Normal);
+                        if (baked is not null)
+                            irradiance += baked[((y - firstRow) * width + x) * 4 + sy * 2 + sx];
+                        else
+                        {
+                            Vector3 point = Position(x + (sx - 0.5f) * 0.5f, y + (sy - 0.5f) * 0.5f);
+                            irradiance += scene.DiffuseIrradiance(point, polygon.Sample(point).Normal);
+                        }
                     }
                     // Filter irradiance in linear light, before the native square-root encoding.
                     irradiance *= 0.25f;
@@ -96,17 +163,20 @@ internal static class BrushLightmapCompiler
                         for (int sy = 0; sy < 2; sy++)
                         for (int sx = 0; sx < 2; sx++)
                         {
-                            Vector3 sample = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
-                                y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
-                            visibility += scene.SunVisibility(sample, normal);
+                            if (bakedSun is not null)
+                                visibility += bakedSun[(((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx];
+                            else
+                            {
+                                Vector3 sample = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
+                                    y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
+                                visibility += scene.SunVisibility(sample, normal);
+                            }
                         }
                         int offset = ((cursorY + y) * 2 + py) * GfxLightmapCodec.PrimaryWidth + (cursorX + x) * 2 + px;
                         primary[offset] = (byte)Math.Clamp(MathF.Round(visibility * 0.25f * 255), 0, 255);
                     }
                 }
-            });
-            cursorX += width;
-            rowHeight = Math.Max(rowHeight, height);
+            }
 
             Vector3 Position(float x, float y)
             {

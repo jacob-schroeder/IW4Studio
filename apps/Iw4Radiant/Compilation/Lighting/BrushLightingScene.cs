@@ -3,6 +3,7 @@ using System.Numerics;
 using IW4.AssetExchange.SourceFormat.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Codecs.GfxMap;
+using IW4.Render.WebGpu;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
@@ -18,11 +19,15 @@ internal sealed class BrushLightingScene
     private readonly MaterialSource[] _materials;
     private readonly ImageSourceMipLevel[] _images;
     private readonly Vector3[] _skyDirections;
-    private readonly MapBrush[] _solidBrushes;
+    private readonly (Vector3 Normal, Vector3 Anchor)[][] _solidBrushes;
+    private readonly Vector3[] _lightGridNormals;
+    private readonly float[] _lightGridSkyWeights;
+    private readonly float[] _lightGridSkyWeightTotals;
     private readonly Vector3 _sunColor;
     private readonly (MapLight Light, Vector3 LinearColor)[] _localLights;
     private readonly ShadowModel[] _shadowModels;
     private readonly LightingRayHierarchy _worldRays;
+    private readonly Comparison<(int Face, float Distance, float Opacity, Vector4 Texel)> _coincidentHitComparison;
 
     private sealed record ShadowModel(Vector3 Minimum, Vector3 Maximum,
         (MapRenderSurface Surface, MaterialSource Material, ImageSourceMipLevel? Image)[] Triangles,
@@ -58,6 +63,11 @@ internal sealed class BrushLightingScene
         }
         _localLights = localLights.ToArray();
         _materials = new MaterialSource[polygons.Count];
+        _coincidentHitComparison = (a, b) =>
+        {
+            int material = _materials[b.Face].Surface.SortKey.CompareTo(_materials[a.Face].Surface.SortKey);
+            return material != 0 ? material : a.Face.CompareTo(b.Face);
+        };
         _images = new ImageSourceMipLevel[polygons.Count];
         var images = new Dictionary<string, ImageSourceMipLevel>(StringComparer.Ordinal);
         Vector3 minimum = new(float.PositiveInfinity), maximum = new(float.NegativeInfinity);
@@ -91,9 +101,24 @@ internal sealed class BrushLightingScene
         }
         if (!BrushGeometry.IsFinite(minimum) || !BrushGeometry.IsFinite(maximum))
             throw new InvalidDataException("Lighting requires finite non-sky brush bounds.");
-        _solidBrushes = document.World.Brushes.Where(brush => brush.Faces.All(face =>
-            materials.TryGetValue(face.Material, out var material) && !material.IsSky &&
-            !material.Surface.IsBlended && material.Surface.AlphaTest is null)).ToArray();
+        var solidBrushes = new List<(Vector3 Normal, Vector3 Anchor)[]>();
+        foreach (MapBrush brush in document.World.Brushes)
+        {
+            bool solid = true;
+            foreach (MapFace face in brush.Faces)
+                if (!materials.TryGetValue(face.Material, out var material) || material.IsSky ||
+                    material.Surface.IsBlended || material.Surface.AlphaTest is not null)
+                {
+                    solid = false;
+                    break;
+                }
+            if (!solid) continue;
+            var planes = new (Vector3 Normal, Vector3 Anchor)[brush.Faces.Count];
+            for (int face = 0; face < planes.Length; face++)
+                planes[face] = (brush.Faces[face].Normal, brush.Faces[face].A);
+            solidBrushes.Add(planes);
+        }
+        _solidBrushes = solidBrushes.ToArray();
         var shadowModels = new List<ShadowModel>();
         foreach (MapEntity entity in document.Entities.Where(entity => entity.ClassName == "misc_model"))
         {
@@ -157,6 +182,22 @@ internal sealed class BrushLightingScene
             float radius = MathF.Sqrt(1 - z * z);
             _skyDirections[index] = new Vector3(MathF.Cos(angle) * radius, MathF.Sin(angle) * radius, z);
         }
+        int lightGridSampleCount = GfxLightGridCodec.SampleDirections.Count;
+        _lightGridNormals = new Vector3[lightGridSampleCount];
+        _lightGridSkyWeights = new float[checked(_skyDirections.Length * lightGridSampleCount)];
+        _lightGridSkyWeightTotals = new float[lightGridSampleCount];
+        for (int sample = 0; sample < lightGridSampleCount; sample++)
+        {
+            var value = GfxLightGridCodec.SampleDirections[sample];
+            _lightGridNormals[sample] = Vector3.Normalize(new Vector3(value.X, value.Y, value.Z));
+        }
+        for (int direction = 0; direction < _skyDirections.Length; direction++)
+        for (int sample = 0; sample < lightGridSampleCount; sample++)
+        {
+            float weight = MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], _skyDirections[direction]));
+            _lightGridSkyWeights[direction * lightGridSampleCount + sample] = weight;
+            _lightGridSkyWeightTotals[sample] += weight;
+        }
     }
 
     internal IReadOnlyList<MapRenderSurface> Polygons { get; }
@@ -166,26 +207,175 @@ internal sealed class BrushLightingScene
     internal Vector3 SunDirection { get; }
     internal bool IsSky(int face) => _materials[face].IsSky;
 
-    internal bool IsInsideSolid(Vector3 point, float inset = RayOffset) => _solidBrushes.Any(brush =>
-        brush.Faces.All(face => BrushGeometry.Dot(face.Normal, point - face.A) < -inset));
+    internal bool IsInsideSolid(Vector3 point, float inset = RayOffset)
+    {
+        foreach (var brush in _solidBrushes)
+        {
+            bool inside = true;
+            foreach (var (normal, anchor) in brush)
+                if (!(BrushGeometry.Dot(normal, point - anchor) < -inset))
+                {
+                    inside = false;
+                    break;
+                }
+            if (inside) return true;
+        }
+        return false;
+    }
 
     internal bool CastsSunShadow(int face) => !IsSky(face) && _materials[face].Surface.HasShadowMapTechnique;
 
     internal float SunVisibility(Vector3 point, Vector3 normal)
+        => SampleSunVisibility(point, normal, default);
+
+    private float SampleSunVisibility(Vector3 point, Vector3 normal, ReadOnlySpan<int> candidateRow)
     {
-        float transmission = 1;
         Vector3 origin = point + normal * RayOffset;
         if (ModelOccludes(origin, SunDirection, double.PositiveInfinity,
                 normal == Vector3.Zero ? ContainingModels(point) : null)) return 0;
-        foreach (var hit in Trace(origin, SunDirection, shadow: true))
-        {
-            transmission *= 1 - hit.Opacity;
-            if (transmission <= 0) return 0;
-        }
-        return transmission;
+        int candidateCount = candidateRow.IsEmpty ? -1 : candidateRow[0];
+        bool occluded = candidateCount >= 0 && candidateCount < WebGpuRayTraversal.ResultStride
+            ? WorldOccludes(origin, SunDirection, double.PositiveInfinity, candidateRow.Slice(1, candidateCount))
+            : WorldOccludes(origin, SunDirection, double.PositiveInfinity);
+        return occluded ? 0 : 1;
     }
 
     internal Vector3 DiffuseIrradiance(Vector3 point, Vector3 normal)
+        => SampleDiffuseIrradiance(point, normal, default);
+
+    internal WebGpuRayTraversal? CreateGpuTraversal() => _worldRays.CreateGpuTraversal(CancellationToken);
+
+    internal void BakeDiffuseSamples(Vector3[] points, Vector3[] normals, Vector3[] irradiance, int count,
+        WebGpuRayTraversal traversal, ParallelOptions parallelOptions)
+    {
+        var offsets = ArrayPool<int>.Shared.Rent(count + 1);
+        var masks = ArrayPool<ulong>.Shared.Rent(count);
+        var rays = ArrayPool<WebGpuRayTraversal.Ray>.Shared.Rent(WebGpuRayTraversal.MaximumRayCount);
+        var candidates = ArrayPool<int>.Shared.Rent(
+            WebGpuRayTraversal.MaximumRayCount * WebGpuRayTraversal.ResultStride);
+        try
+        {
+            offsets[0] = 0;
+            Parallel.For(0, count, parallelOptions, sample =>
+            {
+                if ((sample & 255) == 0) CancellationToken.ThrowIfCancellationRequested();
+                ulong mask = 0;
+                int activeCount = 0;
+                for (int direction = 0; direction < SkySampleCount; direction++)
+                {
+                    float cosine = MathF.Max(0, Vector3.Dot(normals[sample], _skyDirections[direction]));
+                    if (cosine > 0)
+                    {
+                        mask |= 1UL << direction;
+                        activeCount++;
+                    }
+                }
+                masks[sample] = mask;
+                offsets[sample + 1] = activeCount;
+            });
+            for (int sample = 0; sample < count; sample++)
+            {
+                if ((sample & 255) == 0) CancellationToken.ThrowIfCancellationRequested();
+                offsets[sample + 1] = checked(offsets[sample] + offsets[sample + 1]);
+            }
+            if (count == 0) return;
+
+            int first = 0, last = BatchEnd(0);
+            bool pending = Submit(first, last);
+            while (first < count)
+            {
+                CancellationToken.ThrowIfCancellationRequested();
+                bool ready = pending && traversal.TryRead(candidates, CancellationToken);
+                int nextFirst = last;
+                int nextLast = nextFirst < count ? BatchEnd(nextFirst) : nextFirst;
+                pending = nextFirst < count && Submit(nextFirst, nextLast);
+                int batchFirst = first, sampleCount = last - first;
+                Parallel.For(0, sampleCount, parallelOptions, sample =>
+                {
+                    int index = batchFirst + sample;
+                    int firstRay = offsets[index] - offsets[batchFirst];
+                    int activeCount = offsets[index + 1] - offsets[index];
+                    irradiance[index] = SampleDiffuseIrradiance(points[index], normals[index], ready
+                        ? candidates.AsSpan(firstRay * WebGpuRayTraversal.ResultStride,
+                            activeCount * WebGpuRayTraversal.ResultStride)
+                        : default);
+                });
+                first = nextFirst;
+                last = nextLast;
+            }
+
+            int BatchEnd(int batchFirst)
+            {
+                int batchLast = batchFirst + 1;
+                while (batchLast < count &&
+                       offsets[batchLast + 1] - offsets[batchFirst] <= WebGpuRayTraversal.MaximumRayCount)
+                    batchLast++;
+                return batchLast;
+            }
+
+            bool Submit(int batchFirst, int batchLast)
+            {
+                int ray = 0;
+                for (int sample = batchFirst; sample < batchLast; sample++)
+                {
+                    Vector3 origin = points[sample] + normals[sample] * RayOffset;
+                    for (int direction = 0; direction < SkySampleCount; direction++)
+                        if ((masks[sample] & (1UL << direction)) != 0)
+                            rays[ray++] = new(origin, _skyDirections[direction]);
+                }
+                return traversal.TrySubmit(rays.AsSpan(0, ray), CancellationToken);
+            }
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(candidates);
+            ArrayPool<WebGpuRayTraversal.Ray>.Shared.Return(rays);
+            ArrayPool<ulong>.Shared.Return(masks);
+            ArrayPool<int>.Shared.Return(offsets);
+        }
+    }
+
+    internal void BakeSunSamples(Vector3[] points, Vector3 normal, float[] visibility, int count,
+        WebGpuRayTraversal traversal, ParallelOptions parallelOptions)
+    {
+        int batchCapacity = WebGpuRayTraversal.MaximumRayCount;
+        var rays = ArrayPool<WebGpuRayTraversal.Ray>.Shared.Rent(batchCapacity);
+        var candidates = ArrayPool<int>.Shared.Rent(batchCapacity * WebGpuRayTraversal.ResultStride);
+        try
+        {
+            bool pending = Submit(0);
+            for (int first = 0; first < count; first += batchCapacity)
+            {
+                CancellationToken.ThrowIfCancellationRequested();
+                int sampleCount = Math.Min(batchCapacity, count - first);
+                bool ready = pending && traversal.TryRead(candidates, CancellationToken);
+                pending = first + sampleCount < count && Submit(first + sampleCount);
+                Parallel.For(0, sampleCount, parallelOptions, sample =>
+                {
+                    int index = first + sample;
+                    int offset = sample * WebGpuRayTraversal.ResultStride;
+                    visibility[index] = SampleSunVisibility(points[index], normal, ready
+                        ? candidates.AsSpan(offset, WebGpuRayTraversal.ResultStride)
+                        : default);
+                });
+            }
+
+            bool Submit(int first)
+            {
+                int sampleCount = Math.Min(batchCapacity, count - first);
+                for (int sample = 0; sample < sampleCount; sample++)
+                    rays[sample] = new(points[first + sample] + normal * RayOffset, SunDirection);
+                return traversal.TrySubmit(rays.AsSpan(0, sampleCount), CancellationToken);
+            }
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(candidates);
+            ArrayPool<WebGpuRayTraversal.Ray>.Shared.Return(rays);
+        }
+    }
+
+    private Vector3 SampleDiffuseIrradiance(Vector3 point, Vector3 normal, ReadOnlySpan<int> skyCandidates)
     {
         Vector3 sum = Vector3.Zero;
         float totalWeight = 0;
@@ -193,12 +383,22 @@ internal sealed class BrushLightingScene
         // A face can continue underneath an adjoining brush. Subsamples inside
         // that solid must not see sky through its culled exit faces.
         bool insideSolid = IsInsideSolid(origin, 0);
-        foreach (Vector3 direction in _skyDirections)
+        int activeDirection = 0;
+        for (int directionIndex = 0; directionIndex < _skyDirections.Length; directionIndex++)
         {
+            Vector3 direction = _skyDirections[directionIndex];
             float cosine = MathF.Max(0, Vector3.Dot(normal, direction));
             if (cosine > 0)
             {
-                if (!insideSolid) sum += SkyRadiance(origin, direction) * cosine;
+                if (!insideSolid)
+                {
+                    int offset = activeDirection * WebGpuRayTraversal.ResultStride;
+                    int count = skyCandidates.IsEmpty ? -1 : skyCandidates[offset];
+                    Vector3 radiance = count < 0 ? SkyRadiance(origin, direction) : count == 0 ? Vector3.Zero :
+                        SkyRadiance(origin, direction, candidates: skyCandidates.Slice(offset + 1, count));
+                    sum += radiance * cosine;
+                }
+                activeDirection++;
                 totalWeight += cosine;
             }
         }
@@ -217,31 +417,24 @@ internal sealed class BrushLightingScene
     {
         CancellationToken.ThrowIfCancellationRequested();
         var result = new Vector3[GfxLightGridCodec.SampleDirections.Count];
-        var weights = new float[result.Length];
         HashSet<int>? containingModels = ContainingModels(point);
         bool insideSolid = IsInsideSolid(point, 0);
-        foreach (Vector3 direction in _skyDirections)
+        for (int directionIndex = 0; directionIndex < _skyDirections.Length; directionIndex++)
         {
+            Vector3 direction = _skyDirections[directionIndex];
             Vector3 radiance = insideSolid ? Vector3.Zero : SkyRadiance(point, direction, containingModels);
             for (int sample = 0; sample < result.Length; sample++)
             {
-                var value = GfxLightGridCodec.SampleDirections[sample];
-                Vector3 normal = Vector3.Normalize(new Vector3(value.X, value.Y, value.Z));
-                float weight = MathF.Max(0, Vector3.Dot(normal, direction));
+                float weight = _lightGridSkyWeights[directionIndex * result.Length + sample];
                 result[sample] += radiance * weight;
-                weights[sample] += weight;
             }
         }
-        for (int sample = 0; sample < result.Length; sample++) result[sample] /= weights[sample];
+        for (int sample = 0; sample < result.Length; sample++) result[sample] /= _lightGridSkyWeightTotals[sample];
         foreach (var (light, color) in _localLights)
         {
             Vector3 radiance = LocalRadiance(point, point, light, color, out Vector3 direction, containingModels);
             for (int sample = 0; sample < result.Length; sample++)
-            {
-                var value = GfxLightGridCodec.SampleDirections[sample];
-                Vector3 normal = Vector3.Normalize(new Vector3(value.X, value.Y, value.Z));
-                result[sample] += radiance * MathF.Max(0, Vector3.Dot(normal, direction));
-            }
+                result[sample] += radiance * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], direction));
         }
         return result;
     }
@@ -266,11 +459,7 @@ internal sealed class BrushLightingScene
 
         Vector3 shadowDirection = DirectionToLight(shadowOrigin, light.Origin, out double shadowDistance);
         if (ModelOccludes(shadowOrigin, shadowDirection, shadowDistance, containingModels)) return Vector3.Zero;
-        foreach (var hit in Trace(shadowOrigin, shadowDirection, shadow: true, maximumDistance: shadowDistance))
-        {
-            attenuation *= 1 - hit.Opacity;
-            if (attenuation <= 0) return Vector3.Zero;
-        }
+        if (WorldOccludes(shadowOrigin, shadowDirection, shadowDistance)) return Vector3.Zero;
         return color * attenuation;
     }
 
@@ -285,37 +474,56 @@ internal sealed class BrushLightingScene
     {
         Vector3 radiance = Vector3.Zero;
         float transmission = 1;
-        foreach (var hit in Trace(origin, direction, shadow: false))
+        var (hits, count) = Trace(origin, direction, sampleColor: true);
+        try
         {
-            if (IsSky(hit.Face)) return radiance + ReadSky(hit.Face, direction) * transmission;
-            Vector3 point = origin + direction * hit.Distance;
-            var attributes = Polygons[hit.Face].Sample(point);
-            Vector3 normal = attributes.Normal;
-            if (Vector3.Dot(normal, direction) > 0) normal = -normal;
-            Vector3 color = new Vector3(hit.Texel.X, hit.Texel.Y, hit.Texel.Z) *
-                new Vector3(attributes.Color.X, attributes.Color.Y, attributes.Color.Z);
-            Vector3 lighting = DiffuseIrradiance(point, normal) + _sunColor *
-                (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * SunVisibility(point, normal));
-            // Native lit alpha materials premultiply their output. Composite the
-            // diffuse capture using the texture and painted vertex alpha together.
-            radiance += color * color * lighting * (transmission * hit.Opacity);
-            transmission *= 1 - hit.Opacity;
-            if (transmission <= 0) break;
+            for (int index = 0; index < count; index++)
+            {
+                var hit = hits[index];
+                if (IsSky(hit.Face)) return radiance + ReadSky(hit.Face, direction) * transmission;
+                Vector3 point = origin + direction * hit.Distance;
+                var attributes = Polygons[hit.Face].Sample(point);
+                Vector3 normal = attributes.Normal;
+                if (Vector3.Dot(normal, direction) > 0) normal = -normal;
+                Vector3 color = new Vector3(hit.Texel.X, hit.Texel.Y, hit.Texel.Z) *
+                    new Vector3(attributes.Color.X, attributes.Color.Y, attributes.Color.Z);
+                Vector3 lighting = DiffuseIrradiance(point, normal) + _sunColor *
+                    (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * SunVisibility(point, normal));
+                // Native lit alpha materials premultiply their output. Composite the
+                // diffuse capture using the texture and painted vertex alpha together.
+                radiance += color * color * lighting * (transmission * hit.Opacity);
+                transmission *= 1 - hit.Opacity;
+                if (transmission <= 0) break;
+            }
+            return radiance;
         }
-        return radiance;
+        finally
+        {
+            ArrayPool<(int Face, float Distance, float Opacity, Vector4 Texel)>.Shared.Return(hits);
+        }
     }
 
-    private Vector3 SkyRadiance(Vector3 point, Vector3 direction, HashSet<int>? containingModels = null)
+    private Vector3 SkyRadiance(Vector3 point, Vector3 direction, HashSet<int>? containingModels = null,
+        ReadOnlySpan<int> candidates = default)
     {
         if (ModelOccludes(point, direction, double.PositiveInfinity, containingModels)) return Vector3.Zero;
         float transmission = 1;
-        foreach (var hit in Trace(point, direction, shadow: false))
+        var (hits, count) = TraceCandidates(point, direction, sampleColor: false, candidates);
+        try
         {
-            if (IsSky(hit.Face)) return ReadSky(hit.Face, direction) * transmission;
-            transmission *= 1 - hit.Opacity;
-            if (transmission <= 0) break;
+            for (int index = 0; index < count; index++)
+            {
+                var hit = hits[index];
+                if (IsSky(hit.Face)) return ReadSky(hit.Face, direction) * transmission;
+                transmission *= 1 - hit.Opacity;
+                if (transmission <= 0) break;
+            }
+            return Vector3.Zero;
         }
-        return Vector3.Zero;
+        finally
+        {
+            ArrayPool<(int Face, float Distance, float Opacity, Vector4 Texel)>.Shared.Return(hits);
+        }
     }
 
     private bool ModelOccludes(Vector3 origin, Vector3 direction, double maximumDistance, HashSet<int>? excluded)
@@ -334,7 +542,7 @@ internal sealed class BrushLightingScene
                 if (material.Surface.ShadowCullFace == GfxCullFace.Back && back ||
                     material.Surface.ShadowCullFace == GfxCullFace.Front && !back) continue;
                 if (!SurfaceRaycast.RayTriangle(origin, direction, surface.Vertices[0], surface.Vertices[1],
-                        surface.Vertices[2], out float distance, out _) || distance >= maximumDistance ||
+                        surface.Vertices[2], out float distance) || distance >= maximumDistance ||
                     distance <= 0.0001f && Vector3.Dot(surface.Normal, direction) >= 0) continue;
                 if (image is { } pixels)
                 {
@@ -367,7 +575,7 @@ internal sealed class BrushLightingScene
             {
                 Vector3 a = surface.Vertices[0] - point, b = surface.Vertices[1] - point, c = surface.Vertices[2] - point;
                 if (SurfaceRaycast.RayTriangle(point + surface.Normal * RayOffset, -surface.Normal,
-                        surface.Vertices[0], surface.Vertices[1], surface.Vertices[2], out float distance, out _) &&
+                        surface.Vertices[0], surface.Vertices[1], surface.Vertices[2], out float distance) &&
                     MathF.Abs(distance - RayOffset) <= 0.0001f)
                 {
                     contact = true;
@@ -401,89 +609,186 @@ internal sealed class BrushLightingScene
         return value * value;
     }
 
-    private List<(int Face, float Distance, float Opacity, Vector4 Texel)> Trace(Vector3 origin, Vector3 direction, bool shadow,
-        double maximumDistance = double.PositiveInfinity)
+    private bool WorldOccludes(Vector3 origin, Vector3 direction, double maximumDistance)
     {
         CancellationToken.ThrowIfCancellationRequested();
-        var hits = new List<(int Face, float Distance, float Opacity, Vector4 Texel)>();
-        Span<int> candidates = stackalloc int[64];
-        int[]? rented = null;
+        var candidates = _worldRays.Query(origin, direction, maximumDistance, CancellationToken);
+        while (candidates.MoveNext())
+            if (WorldSurfaceOccludes(candidates.Current, origin, direction, maximumDistance)) return true;
+        return false;
+    }
+
+    private bool WorldOccludes(Vector3 origin, Vector3 direction, double maximumDistance,
+        ReadOnlySpan<int> candidates)
+    {
+        if (candidates.IsEmpty) return false;
+        var query = _worldRays.Query(origin, direction, double.PositiveInfinity, CancellationToken);
+        foreach (int index in candidates)
+        {
+            CancellationToken.ThrowIfCancellationRequested();
+            if (query.IntersectsSurface(index) &&
+                WorldSurfaceOccludes(index, origin, direction, maximumDistance)) return true;
+        }
+        return false;
+    }
+
+    private bool WorldSurfaceOccludes(int index, Vector3 origin, Vector3 direction, double maximumDistance)
+    {
+        if (!CastsSunShadow(index) ||
+            !TryWorldSurfaceHit(index, origin, direction, maximumDistance, shadow: true,
+                out _, out Vector3 hitPoint)) return false;
+        return TryReadWorldSurface(index, hitPoint, shadow: true, sampleColor: false, out _, out _);
+    }
+
+    private ((int Face, float Distance, float Opacity, Vector4 Texel)[] Hits, int Count) Trace(
+        Vector3 origin, Vector3 direction, bool sampleColor)
+        => TraceCandidates(origin, direction, sampleColor, default);
+
+    private ((int Face, float Distance, float Opacity, Vector4 Texel)[] Hits, int Count) TraceCandidates(
+        Vector3 origin, Vector3 direction, bool sampleColor, ReadOnlySpan<int> gpuCandidates)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        var hitPool = ArrayPool<(int Face, float Distance, float Opacity, Vector4 Texel)>.Shared;
+        var hits = hitPool.Rent(16);
+        int hitCount = 0;
         try
         {
-            int count = 0;
-            var query = _worldRays.Query(origin, direction, maximumDistance, CancellationToken);
-            while (query.MoveNext())
+            Span<int> candidates = stackalloc int[64];
+            int[]? rented = null;
+            try
             {
-                if (count == candidates.Length)
+                int candidateCount = 0;
+                if (!gpuCandidates.IsEmpty)
                 {
-                    int[] grown = ArrayPool<int>.Shared.Rent(checked(count * 2));
-                    candidates.CopyTo(grown);
-                    if (rented is not null) ArrayPool<int>.Shared.Return(rented);
-                    rented = grown;
-                    candidates = grown;
+                    // GPU slabs are deliberately wider. The original leaf predicate
+                    // restores the exact CPU candidate set before intersection/order rules.
+                    var query = _worldRays.Query(origin, direction, double.PositiveInfinity, CancellationToken);
+                    foreach (int surface in gpuCandidates)
+                        if (query.IntersectsSurface(surface))
+                            candidates[candidateCount++] = surface;
                 }
-                candidates[count++] = query.Current;
-            }
-            candidates = candidates[..count];
-            // Shared-boundary suppression depends on the original face order.
-            candidates.Sort();
-            foreach (int index in candidates)
-            {
-                CancellationToken.ThrowIfCancellationRequested();
-                if (shadow && !CastsSunShadow(index)) continue;
-                MapRenderSurface polygon = Polygons[index];
-                MaterialSurfaceState state = _materials[index].Surface;
-                // Shadow visibility is viewed from the light toward this point,
-                // opposite the receiver-to-light ray used for intersection.
-                bool back = Vector3.Dot(polygon.Normal, shadow ? -direction : direction) >= 0;
-                GfxCullFace cull = shadow ? state.ShadowCullFace : state.CullFace;
-                if (!IsSky(index) && (cull == GfxCullFace.Back && back || cull == GfxCullFace.Front && !back))
-                    continue;
-                for (int corner = 1; corner < polygon.Vertices.Length - 1; corner++)
+                else
                 {
-                    if (!SurfaceRaycast.RayTriangle(origin, direction, polygon.Vertices[0], polygon.Vertices[corner],
-                            polygon.Vertices[corner + 1], out float candidate, out _) || candidate >= maximumDistance) continue;
-                    // A receiver on a floor/wall join can start on the adjoining face.
-                    // Keep entering contacts so rays cannot escape through that solid.
-                    if (candidate <= 0.0001f && Vector3.Dot(polygon.Normal, direction) >= 0) continue;
-                    Vector3 hitPoint = origin + direction * candidate;
-                    if (hits.Any(hit => MathF.Abs(hit.Distance - candidate) < 0.001f &&
-                        (Polygons[hit.Face].SourceIndex == polygon.SourceIndex || polygon.SharesBoundaryAt(Polygons[hit.Face], hitPoint))))
-                        break;
-                    Vector4 texel = Vector4.One;
-                    float opacity = 1;
-                    if (!IsSky(index) && (!shadow || state.ShadowAlphaTest is not null))
+                    var query = _worldRays.Query(origin, direction, double.PositiveInfinity, CancellationToken);
+                    while (query.MoveNext())
                     {
-                        var attributes = polygon.Sample(hitPoint);
-                        texel = ReadPixel(_images[index], 0, attributes.Texture.X, attributes.Texture.Y, _materials[index].SamplerState);
-                        float alpha = Math.Clamp(texel.W * attributes.Color.W, 0, 1);
-                        if (!PassesAlphaTest(shadow ? state.ShadowAlphaTest : state.AlphaTest, alpha)) break;
-                        opacity = !shadow && state.IsBlended ? alpha : 1;
+                        if (candidateCount == candidates.Length)
+                        {
+                            int[] grown = ArrayPool<int>.Shared.Rent(checked(candidateCount * 2));
+                            candidates.CopyTo(grown);
+                            if (rented is not null) ArrayPool<int>.Shared.Return(rented);
+                            rented = grown;
+                            candidates = grown;
+                        }
+                        candidates[candidateCount++] = query.Current;
                     }
-                    if (opacity > 0) hits.Add((index, candidate, opacity, texel));
-                    break;
+                }
+                candidates = candidates[..candidateCount];
+                // Shared-boundary suppression depends on the original face order.
+                if (candidates.Length > 1) candidates.Sort();
+                for (int candidate = 0; candidate < candidateCount; candidate++)
+                {
+                    CancellationToken.ThrowIfCancellationRequested();
+                    int index = candidates[candidate];
+                    MapRenderSurface polygon = Polygons[index];
+                    if (!TryWorldSurfaceHit(index, origin, direction, double.PositiveInfinity, shadow: false,
+                            out float distance, out Vector3 hitPoint)) continue;
+                    bool duplicate = false;
+                    for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
+                    {
+                        var hit = hits[hitIndex];
+                        if (MathF.Abs(hit.Distance - distance) < 0.001f &&
+                            (Polygons[hit.Face].SourceIndex == polygon.SourceIndex ||
+                             polygon.SharesBoundaryAt(Polygons[hit.Face], hitPoint)))
+                        {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (duplicate || !TryReadWorldSurface(index, hitPoint, shadow: false, sampleColor,
+                            out Vector4 texel, out float opacity)) continue;
+                    if (hitCount == hits.Length)
+                    {
+                        var grown = hitPool.Rent(checked(hitCount * 2));
+                        Array.Copy(hits, grown, hitCount);
+                        hitPool.Return(hits);
+                        hits = grown;
+                    }
+                    hits[hitCount++] = (index, distance, opacity, texel);
                 }
             }
-        }
-        finally
-        {
-            if (rented is not null) ArrayPool<int>.Shared.Return(rented);
-        }
-        hits.Sort((a, b) => a.Distance.CompareTo(b.Distance));
-        // Resolve coincident overlays in native material order. Group against a
-        // fixed distance so the comparison remains transitive.
-        for (int start = 0; start < hits.Count;)
-        {
-            int end = start + 1;
-            while (end < hits.Count && hits[end].Distance - hits[start].Distance < 0.001f) end++;
-            hits.Sort(start, end - start, Comparer<(int Face, float Distance, float Opacity, Vector4 Texel)>.Create((a, b) =>
+            finally
             {
-                int material = _materials[b.Face].Surface.SortKey.CompareTo(_materials[a.Face].Surface.SortKey);
-                return material != 0 ? material : a.Face.CompareTo(b.Face);
-            }));
-            start = end;
+                if (rented is not null) ArrayPool<int>.Shared.Return(rented);
+            }
+            if (hitCount > 1)
+                hits.AsSpan(0, hitCount).Sort(static (a, b) => a.Distance.CompareTo(b.Distance));
+            // Resolve coincident overlays in native material order. Group against a
+            // fixed distance so the comparison remains transitive.
+            for (int start = 0; start < hitCount;)
+            {
+                int end = start + 1;
+                while (end < hitCount && hits[end].Distance - hits[start].Distance < 0.001f) end++;
+                if (end - start > 1) hits.AsSpan(start, end - start).Sort(_coincidentHitComparison);
+                start = end;
+            }
+            return (hits, hitCount);
         }
-        return hits;
+        catch
+        {
+            hitPool.Return(hits);
+            throw;
+        }
+    }
+
+    private bool TryWorldSurfaceHit(int index, Vector3 origin, Vector3 direction, double maximumDistance, bool shadow,
+        out float distance, out Vector3 hitPoint)
+    {
+        MapRenderSurface polygon = Polygons[index];
+        MaterialSurfaceState state = _materials[index].Surface;
+        // Shadow visibility is viewed from the light toward this point,
+        // opposite the receiver-to-light ray used for intersection.
+        bool back = Vector3.Dot(polygon.Normal, shadow ? -direction : direction) >= 0;
+        GfxCullFace cull = shadow ? state.ShadowCullFace : state.CullFace;
+        if (!IsSky(index) && (cull == GfxCullFace.Back && back || cull == GfxCullFace.Front && !back))
+        {
+            distance = 0;
+            hitPoint = default;
+            return false;
+        }
+        for (int corner = 1; corner < polygon.Vertices.Length - 1; corner++)
+        {
+            if (!SurfaceRaycast.RayTriangle(origin, direction, polygon.Vertices[0], polygon.Vertices[corner],
+                    polygon.Vertices[corner + 1], out float candidate) || candidate >= maximumDistance) continue;
+            // A receiver on a floor/wall join can start on the adjoining face.
+            // Keep entering contacts so rays cannot escape through that solid.
+            if (candidate <= 0.0001f && Vector3.Dot(polygon.Normal, direction) >= 0) continue;
+            distance = candidate;
+            hitPoint = origin + direction * candidate;
+            return true;
+        }
+        distance = 0;
+        hitPoint = default;
+        return false;
+    }
+
+    private bool TryReadWorldSurface(int index, Vector3 hitPoint, bool shadow, bool sampleColor,
+        out Vector4 texel, out float opacity)
+    {
+        MapRenderSurface polygon = Polygons[index];
+        MaterialSurfaceState state = _materials[index].Surface;
+        texel = Vector4.One;
+        opacity = 1;
+        if (!IsSky(index) && (shadow && state.ShadowAlphaTest is not null ||
+                !shadow && (sampleColor || state.IsBlended || state.AlphaTest is not null)))
+        {
+            var attributes = polygon.Sample(hitPoint);
+            texel = ReadPixel(_images[index], 0, attributes.Texture.X, attributes.Texture.Y, _materials[index].SamplerState);
+            float alpha = Math.Clamp(texel.W * attributes.Color.W, 0, 1);
+            if (!PassesAlphaTest(shadow ? state.ShadowAlphaTest : state.AlphaTest, alpha)) return false;
+            opacity = !shadow && state.IsBlended ? alpha : 1;
+        }
+        return opacity > 0;
     }
 
     internal static Vector3 CubeDirection(int face, float u, float v)

@@ -10,16 +10,39 @@ internal sealed record MapRenderSurface(string Material, Vector3[] Vertices, Vec
     internal bool SharesBoundaryAt(MapRenderSurface other, Vector3 point)
     {
         if (Material != other.Material) return false;
-        Vector3[] shared = Vertices.Intersect(other.Vertices).ToArray();
-        if (shared.Length == 1) return Vector3.DistanceSquared(point, shared[0]) < 0.000001f;
-        if (shared.Length != 2) return false;
-        bool Edge(Vector3[] vertices, Vector3 a, Vector3 b) => Enumerable.Range(0, vertices.Length)
-            .Any(index => vertices[index] == a && vertices[(index + 1) % vertices.Length] == b);
-        if (!(Edge(Vertices, shared[0], shared[1]) && Edge(other.Vertices, shared[1], shared[0]) ||
-              Edge(Vertices, shared[1], shared[0]) && Edge(other.Vertices, shared[0], shared[1]))) return false;
-        Vector3 edge = shared[1] - shared[0];
-        float along = Math.Clamp(Vector3.Dot(point - shared[0], edge) / edge.LengthSquared(), 0, 1);
-        return Vector3.DistanceSquared(point, shared[0] + edge * along) < 0.000001f;
+        Vector3 first = default, second = default;
+        int sharedCount = 0;
+        foreach (Vector3 vertex in Vertices)
+        {
+            if (sharedCount > 0 && vertex.Equals(first) || sharedCount > 1 && vertex.Equals(second)) continue;
+            bool shared = false;
+            foreach (Vector3 otherVertex in other.Vertices)
+                if (vertex.Equals(otherVertex))
+                {
+                    shared = true;
+                    break;
+                }
+            if (!shared) continue;
+            if (sharedCount == 0) first = vertex;
+            else if (sharedCount == 1) second = vertex;
+            else return false;
+            sharedCount++;
+        }
+        if (sharedCount == 1) return Vector3.DistanceSquared(point, first) < 0.000001f;
+        if (sharedCount != 2) return false;
+        if (!(Edge(Vertices, first, second) && Edge(other.Vertices, second, first) ||
+              Edge(Vertices, second, first) && Edge(other.Vertices, first, second))) return false;
+        Vector3 edge = second - first;
+        float along = Math.Clamp(Vector3.Dot(point - first, edge) / edge.LengthSquared(), 0, 1);
+        return Vector3.DistanceSquared(point, first + edge * along) < 0.000001f;
+
+        static bool Edge(Vector3[] vertices, Vector3 a, Vector3 b)
+        {
+            for (int index = 0; index < vertices.Length; index++)
+                if (vertices[index] == a && vertices[(index + 1) % vertices.Length] == b)
+                    return true;
+            return false;
+        }
     }
 
     internal (Vector2 Texture, Vector4 Color, Vector3 Normal) Sample(Vector3 point)

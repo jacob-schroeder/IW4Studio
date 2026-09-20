@@ -18,30 +18,49 @@ internal static class BrushReflectionCompiler
         const int size = GfxReflectionProbeCodec.ReflectionProbeEdgeLength;
         const int faceCount = GfxReflectionProbeCodec.ReflectionProbeFaceCount;
         var directions = new Vector3[size * size * faceCount];
+        var directionXs = new float[directions.Length];
+        var directionYs = new float[directions.Length];
+        var directionZs = new float[directions.Length];
         for (int face = 0; face < faceCount; face++)
         for (int y = 0; y < size; y++)
         for (int x = 0; x < size; x++)
-            directions[(face * size + y) * size + x] = BrushLightingScene.CubeDirection(face,
+        {
+            int pixel = (face * size + y) * size + x;
+            Vector3 direction = BrushLightingScene.CubeDirection(face,
                 (float)x / (size - 1), (float)y / (size - 1));
+            directions[pixel] = direction;
+            directionXs[pixel] = direction.X;
+            directionYs[pixel] = direction.Y;
+            directionZs[pixel] = direction.Z;
+        }
+        var parallelOptions = new ParallelOptions
+        {
+            CancellationToken = scene.CancellationToken,
+            MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 2)
+        };
 
         foreach (Vector3 origin in origins)
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
             var pixels = new byte[directions.Length * 4];
-            for (int pixel = 0; pixel < directions.Length; pixel++)
+            Parallel.For(0, faceCount * size, parallelOptions, row =>
             {
-                if (pixel % size == 0) scene.CancellationToken.ThrowIfCancellationRequested();
-                Vector3 radiance = scene.CaptureRadiance(origin, directions[pixel]);
-                for (int channel = 0; channel < 3; channel++)
+                scene.CancellationToken.ThrowIfCancellationRequested();
+                int firstPixel = row * size;
+                for (int pixel = firstPixel; pixel < firstPixel + size; pixel++)
                 {
-                    if (!float.IsFinite(radiance[channel]) || radiance[channel] < 0)
-                        throw new InvalidDataException("A captured reflection pixel has invalid radiance.");
-                    // The native probe is an LDR square-root encoding. Saturation
-                    // matches that finite framebuffer range, before mip filtering.
-                    pixels[pixel * 4 + channel] = (byte)MathF.Round(255 * MathF.Sqrt(Math.Clamp(radiance[channel], 0, 1)));
+                    Vector3 radiance = scene.CaptureRadiance(origin, directions[pixel]);
+                    for (int channel = 0; channel < 3; channel++)
+                    {
+                        if (!float.IsFinite(radiance[channel]) || radiance[channel] < 0)
+                            throw new InvalidDataException("A captured reflection pixel has invalid radiance.");
+                        // The native probe is an LDR square-root encoding. Saturation
+                        // matches that finite framebuffer range, before mip filtering.
+                        pixels[pixel * 4 + channel] = (byte)MathF.Round(255 * MathF.Sqrt(Math.Clamp(radiance[channel], 0, 1)));
+                    }
+                    pixels[pixel * 4 + 3] = 255;
                 }
-                pixels[pixel * 4 + 3] = 255;
-            }
+            });
             var mips = new List<ReadOnlyMemory<byte>> { pixels };
             for (int mip = 1; mip < GfxReflectionProbeCodec.ReflectionProbeMipCount; mip++)
             {
@@ -56,17 +75,44 @@ internal static class BrushReflectionCompiler
                     4 => 0.78539819f, 2 => MathF.PI * 0.5f, 1 => MathF.PI,
                     _ => throw new InvalidOperationException("Unexpected native reflection mip size.")
                 });
-                for (int face = 0; face < faceCount; face++)
-                for (int y = 0; y < edge; y++)
+                Parallel.For(0, faceCount * edge, parallelOptions, row =>
                 {
                     scene.CancellationToken.ThrowIfCancellationRequested();
+                    int face = row / edge, y = row % edge;
                     for (int x = 0; x < edge; x++)
                     {
                         Vector3 direction = BrushLightingScene.CubeDirection(face,
                             edge == 1 ? 0.5f : (float)x / (edge - 1), edge == 1 ? 0.5f : (float)y / (edge - 1));
                         Vector3 sum = Vector3.Zero;
                         float totalWeight = 0;
-                        for (int sample = 0; sample < directions.Length; sample++)
+                        int sample = 0;
+                        if (Vector.IsHardwareAccelerated)
+                        {
+                            int width = Vector<float>.Count;
+                            var xDirection = new Vector<float>(direction.X);
+                            var yDirection = new Vector<float>(direction.Y);
+                            var zDirection = new Vector<float>(direction.Z);
+                            // This SIMD dot is only a conservative broadphase. The
+                            // 1e-5 slack exceeds the maximum rounding difference
+                            // between the vector and scalar three-term dot products.
+                            var rejection = new Vector<float>(minimumDot - 1e-5f);
+                            for (; sample <= directions.Length - width; sample += width)
+                            {
+                                var dot = new Vector<float>(directionXs, sample) * xDirection +
+                                    new Vector<float>(directionYs, sample) * yDirection +
+                                    new Vector<float>(directionZs, sample) * zDirection;
+                                if (!Vector.GreaterThanAny(dot, rejection)) continue;
+                                for (int candidate = sample; candidate < sample + width; candidate++)
+                                {
+                                    float weight = Vector3.Dot(directions[candidate], direction) - minimumDot;
+                                    if (weight <= 0) continue;
+                                    sum += new Vector3(pixels[candidate * 4], pixels[candidate * 4 + 1],
+                                        pixels[candidate * 4 + 2]) * weight;
+                                    totalWeight += weight;
+                                }
+                            }
+                        }
+                        for (; sample < directions.Length; sample++)
                         {
                             float weight = Vector3.Dot(directions[sample], direction) - minimumDot;
                             if (weight <= 0) continue;
@@ -79,7 +125,7 @@ internal static class BrushReflectionCompiler
                         for (int channel = 0; channel < 3; channel++) filtered[offset + channel] = (byte)Math.Clamp((int)sum[channel], 0, 255);
                         filtered[offset + 3] = 255;
                     }
-                }
+                });
                 if (edge == 1)
                     for (int channel = 0; channel < 3; channel++)
                     {

@@ -52,7 +52,7 @@ internal static class CameraPicking
         {
             if (!scene.CanSelect(item)) return;
             object owner = scene.Owner(item);
-            if (SurfaceRaycast.RayTriangle(origin, direction, a, b, c, out float distance, out _) &&
+            if (SurfaceRaycast.RayTriangle(origin, direction, a, b, c, out float distance) &&
                 InCubicClip(session, origin + direction * distance, origin) &&
                 distance >= 0.5f && (!hits.TryGetValue(owner, out var previous) || distance < previous.Distance))
             {

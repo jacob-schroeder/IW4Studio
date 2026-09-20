@@ -8,10 +8,9 @@ namespace Iw4Radiant.Editing;
 internal static class SurfaceRaycast
 {
     internal static bool RayTriangle(Vector3 origin, Vector3 direction, Vector3 a, Vector3 b, Vector3 c,
-        out float distance, out Vector3 normal)
+        out float distance)
     {
         distance = 0;
-        normal = Vector3.Zero;
         Vector3 edge1 = b - a, edge2 = c - a;
         Vector3 p = Vector3.Cross(direction, edge2);
         float determinant = Vector3.Dot(edge1, p);
@@ -24,8 +23,6 @@ internal static class SurfaceRaycast
         if (v < 0 || u + v > 1) return false;
         distance = Vector3.Dot(edge2, q) / determinant;
         if (!float.IsFinite(distance) || distance < 0) return false;
-        normal = Vector3.Normalize(Vector3.Cross(edge1, edge2));
-        if (Vector3.Dot(normal, direction) > 0) normal = -normal;
         return true;
     }
 
@@ -60,7 +57,9 @@ internal static class SurfaceRaycast
         {
             if (ClipBrushMaterial.IsPlayerClip(material)) return;
             if (resolveMaterial?.Invoke(material) is { IsSky: true }) return;
-            if (!RayTriangle(origin, direction, a, b, c, out float distance, out Vector3 triangleNormal) || distance >= closest) return;
+            if (!RayTriangle(origin, direction, a, b, c, out float distance) || distance >= closest) return;
+            Vector3 triangleNormal = Vector3.Normalize(Vector3.Cross(b - a, c - a));
+            if (Vector3.Dot(triangleNormal, direction) > 0) triangleNormal = -triangleNormal;
             closest = distance;
             hitNormal = triangleNormal;
         }
