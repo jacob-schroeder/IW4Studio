@@ -26,6 +26,9 @@ internal sealed class SceneGeometry
         Func<string, MaterialSource?>? resolveMaterial)
     {
         MapDocument document = editor.Document;
+        var shore = new WaterShoreGeometry(document, name => resolveMaterial?.Invoke(name));
+        var staticBrushes = document.Entities.Where(entity => entity.ClassName is "worldspawn" or "func_group")
+            .SelectMany(entity => entity.Brushes).ToHashSet();
         EditorSelection selection = editor.Selection;
         var selectedObjects = new HashSet<object>(selection.Items, ReferenceEqualityComparer.Instance);
         foreach (MapEntity entity in selection.Items.OfType<MapEntity>())
@@ -44,8 +47,10 @@ internal sealed class SceneGeometry
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         {
-            bool selected = selectedObjects.Contains(brush) || selectedFaces.Contains(polygon.Face);
+            bool faceSelected = selectedFaces.Contains(polygon.Face);
+            bool selected = selectedObjects.Contains(brush) || faceSelected;
             MaterialSource? source = resolveMaterial?.Invoke(polygon.Face.Material);
+            if (faceSelected) AddHighlight(polygon);
             if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
                 !OceanSurfaceGeometry.IsVisibleSurface(polygon, source?.IsWater == true))
             {
@@ -58,8 +63,7 @@ internal sealed class SceneGeometry
             var geometry = GetMaterialGeometry(polygon.Face.Material);
             int start = geometry.Triangles.Count;
             AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines,
-                source?.Ocean);
-            if (selectedFaces.Contains(polygon.Face)) AddHighlight(polygon);
+                source?.Ocean, source?.IsWater == true && staticBrushes.Contains(brush) ? shore.Contacts(polygon) : null);
             geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
                 polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
         }
@@ -180,11 +184,12 @@ internal sealed class SceneGeometry
         Vertices = all.ToArray();
 
         void AddPolygon(MapPolygon polygon, List<SceneVertex> vertices, Vector3 color, Vector3? outlineColor,
-            List<SceneVertex>? wireframe = null, OceanWaveSettings? ocean = null)
+            List<SceneVertex>? wireframe = null, OceanWaveSettings? ocean = null,
+            IReadOnlyList<(Vector3 A, Vector3 B)>? contacts = null)
         {
             Vector3 normal = polygon.Face.Normal;
             var projection = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
-            foreach (MapPolygon tile in OceanSurfaceGeometry.Subdivide(polygon, ocean))
+            foreach (MapPolygon tile in OceanSurfaceGeometry.Subdivide(polygon, ocean, contacts))
             for (int i = 1; i < tile.Vertices.Length - 1; i++)
             {
                 Add(tile.Vertices[0]);
@@ -200,9 +205,13 @@ internal sealed class SceneGeometry
                     AddLine(wireframe, a, b, wireColor);
             }
 
-            void Add(Vector3 position) => vertices.Add(new SceneVertex(position, normal,
-                new Vector2(Vector3.Dot(position, projection.U), Vector3.Dot(position, projection.V)) + projection.Offset,
-                ocean is null ? new Vector4(color, 1) : OceanSurfaceGeometry.VertexColor(polygon, ocean, position)));
+            void Add(Vector3 position)
+            {
+                Vector4 vertexColor = ocean is null ? new Vector4(color, 1) : OceanSurfaceGeometry.VertexColor(polygon, ocean, position, contacts);
+                if (contacts is not null) vertexColor.W = WaterShoreGeometry.VertexAlpha(position, contacts);
+                vertices.Add(new SceneVertex(position, normal,
+                    new Vector2(Vector3.Dot(position, projection.U), Vector3.Dot(position, projection.V)) + projection.Offset, vertexColor));
+            }
         }
 
         void AddHighlight(MapPolygon polygon)

@@ -12,7 +12,7 @@ internal static class MaterialCatalog
     private static readonly string[] ImageExtensions = [".dds", ".png", ".jpg", ".jpeg", ".bmp"];
     private const MaterialSamplerState ImagePreviewSampler = MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapLinear;
 
-    internal static Dictionary<string, MaterialSource> Read(string root)
+    internal static (Dictionary<string, MaterialSource> Materials, int Unsupported) Read(string root)
     {
         root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         if (!Directory.Exists(root))
@@ -45,17 +45,23 @@ internal static class MaterialCatalog
                 images.TryAdd(name, path);
             }
         if (materialRoot is null)
-            return Ordered(images.ToDictionary(pair => pair.Key,
-                pair => new MaterialSource(pair.Key, pair.Value, false, ImagePreviewSampler), StringComparer.Ordinal));
+            return (Ordered(images.ToDictionary(pair => pair.Key,
+                pair => new MaterialSource(pair.Key, pair.Value, false, ImagePreviewSampler), StringComparer.Ordinal)), 0);
 
         string[] materialFiles = Directory.EnumerateFiles(materialRoot, "*", options)
             .Order(StringComparer.Ordinal).ToArray();
         string[] jsonFiles = materialFiles.Where(path => Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)).ToArray();
         var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
+        int unsupported = 0;
         foreach (string path in jsonFiles)
         {
             string name = Path.ChangeExtension(Path.GetRelativePath(materialRoot, path), null).Replace('\\', '/');
-            var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = ReadMaterial(path);
+            (string? colorMap, bool isSky, MaterialWater? water, Vector4 waterColor, Vector4 envMapParms,
+                MaterialSamplerState samplerState, MaterialSurfaceState surface, MaterialGameFlags gameFlags,
+                MaterialSurfaceTypeBits surfaceTypeBits, string techniqueSet) material;
+            try { material = ReadMaterial(path); }
+            catch (NotSupportedException) { unsupported++; continue; }
+            var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = material;
             string? image = colorMap is null ? null : ResolveImage(colorMap);
             if (image is not null || isSky || water is not null)
                 materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState)
@@ -64,7 +70,7 @@ internal static class MaterialCatalog
                     SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet
                 };
         }
-        return Ordered(materials);
+        return (Ordered(materials), unsupported);
 
         string? ResolveImage(string assetName)
         {

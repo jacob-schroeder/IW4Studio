@@ -152,11 +152,20 @@ void main()
         float facing = clamp(1.0 - abs(dot(view, normal)), 0.0, 1.0);
         float fresnel = clamp(uEnvMapParms.x + (uEnvMapParms.y - uEnvMapParms.x) * pow(facing, uEnvMapParms.z), 0.0, 1.0);
         vec3 linearColor = mix(abs(normal.z) * uWaterColor.rgb, reflected * reflected, fresnel);
+        // Alpha carries baked distance to a real solid/water intersection, not
+        // brush opacity. Match the native RSX foam and six-unit contact fade.
+        float distanceToShore = clamp(vColor.a, 0.0, 1.0);
+        float shore = 1.0 - smoothstep(0.0, 1.0, distanceToShore);
+        float breakup = clamp((abs(normal.x) + abs(normal.y)) * 8.0 + 0.15, 0.0, 1.0);
+        float foam = gl_FrontFacing ? shore * shore * breakup * 0.65 : 0.0;
+        linearColor = mix(linearColor, vec3(0.72, 0.8, 0.78), foam);
+        float opacity = gl_FrontFacing ? smoothstep(0.0, 0.25, distanceToShore) : 1.0;
+        opacity += foam * (1.0 - opacity);
         // The native shader writes linear RGB with gammaWrite enabled. Match the
         // editor's squared-radiance capture domain; exact RSX display transfer is unverified.
         vec3 waterColor = sqrt(clamp(linearColor, 0.0, 1.0));
-        applyMaterialAlpha(vColor.a);
-        fragmentColor = vec4(uPremultiplyAlpha ? waterColor * vColor.a : waterColor, vColor.a);
+        applyMaterialAlpha(opacity);
+        fragmentColor = vec4(uPremultiplyAlpha ? waterColor * opacity : waterColor, opacity);
         return;
     }
     else if (uTextured)

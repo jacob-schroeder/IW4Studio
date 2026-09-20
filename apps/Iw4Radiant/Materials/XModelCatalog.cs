@@ -29,7 +29,8 @@ internal sealed class XModelCatalog
         if (!Directory.Exists(modelRoot))
             throw new DirectoryNotFoundException("Choose an extracted raw asset folder containing xmodel metadata and model_export geometry.");
         var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
-        var materials = new ConcurrentDictionary<string, MaterialSource>(MaterialCatalog.Read(root), StringComparer.Ordinal);
+        var (catalogMaterials, _) = MaterialCatalog.Read(root);
+        var materials = new ConcurrentDictionary<string, MaterialSource>(catalogMaterials, StringComparer.Ordinal);
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = true, IgnoreInaccessible = true,

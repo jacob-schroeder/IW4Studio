@@ -70,6 +70,8 @@
             <StackPanel x:Name="WaterFields" Spacing="7" IsEnabled="False">
                 <TextBlock Text="The upper surface is visible from both sides. Moving the player's eyes inside the brush applies underwater tint and sound in game."
                            TextWrapping="Wrap" Classes="caption" />
+                <TextBlock Text="Shore blending and foam follow contact with solid world brushes and terrain automatically. Shared water edges stay clear."
+                           TextWrapping="Wrap" Classes="caption" />
                 <TextBlock Text="Color (linear RGB)" Classes="fieldLabel" />
                 <views:LightColorPicker x:Name="WaterColorPicker"
                                         ToolTip.Tip="Choose a water tint with the swatches or color sliders." />

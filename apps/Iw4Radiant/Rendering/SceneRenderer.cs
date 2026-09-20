@@ -295,10 +295,16 @@ internal sealed class SceneRenderer
         if (transparent)
         {
             string? material = null;
+            bool waterDrawn = false;
             // Respect material sort keys, then order individual translucent triangles back to front.
             foreach (var triangle in _transparentTriangles.OrderBy(triangle => _surfaceStates[triangle.Material].SortKey)
                          .ThenByDescending(triangle => Vector3.DistanceSquared(eye, triangle.Center)))
             {
+                if (!waterDrawn && _surfaceStates[triangle.Material].SortKey >= (int)MaterialSortKey.TransparentWater)
+                {
+                    DrawWater();
+                    material = null;
+                }
                 if (!textures.TryGetValue(triangle.Material, out uint texture)) continue;
                 if (material != triangle.Material)
                 {
@@ -314,6 +320,30 @@ internal sealed class SceneRenderer
                 }
                 if (_waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
+            }
+            if (!waterDrawn) DrawWater();
+
+            void DrawWater()
+            {
+                waterDrawn = true;
+                // Depth-writing water needs no per-frame CPU triangle sort.
+                // Draw cached material/probe ranges after ground decals and before glass.
+                foreach (var batch in _surfaceBatches)
+                {
+                    if (!_waterMaterials.Contains(batch.Material) || !textures.TryGetValue(batch.Material, out uint texture)) continue;
+                    SceneMaterialDrawing.Apply(gl, _surfaceStates[batch.Material],
+                        _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
+                    gl.BindTexture(TextureTarget.Texture2D, texture);
+                    gl.Uniform1(_waterPreviewLocation, 1);
+                    _water.Bind(gl, batch.Material);
+                    gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+                    gl.Uniform1(_texturedLocation, 1);
+                    foreach (var range in _waterDrawRanges[batch.Material])
+                    {
+                        BindWaterReflection(gl, range.Start);
+                        gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
+                    }
+                }
             }
         }
         ResetSurfaceState(gl);
@@ -428,8 +458,9 @@ internal sealed class SceneRenderer
             {
                 HasAnimatedWater = true;
                 _waterMaterials.Add(batch.Material);
-                state = state with { BlendOperation = GfxBlendOperation.Disabled, DepthWrite = true,
-                    CullFace = GfxCullFace.None, AlphaTest = null, SortKey = (int)MaterialSortKey.Opaque };
+                state = state with { BlendOperation = GfxBlendOperation.Add,
+                    Source = GfxBlend.SourceAlpha, Destination = GfxBlend.InverseSourceAlpha, DepthWrite = true,
+                    CullFace = GfxCullFace.None, AlphaTest = null, SortKey = (int)MaterialSortKey.TransparentWater };
             }
             _surfaceStates.Add(batch.Material, state);
         }
@@ -466,7 +497,7 @@ internal sealed class SceneRenderer
         SceneVertex[] data = scene.Vertices;
         _transparentTriangles.Clear();
         foreach (var batch in _surfaceBatches)
-            if (_surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
+            if (!_waterMaterials.Contains(batch.Material) && _surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
                 for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
                     _transparentTriangles.Add((batch.Material, index,
                         data[index].Position / 3 + data[index + 1].Position / 3 + data[index + 2].Position / 3));

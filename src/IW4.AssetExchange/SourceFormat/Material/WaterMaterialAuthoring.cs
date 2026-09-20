@@ -279,7 +279,7 @@ public static class WaterMaterialAuthoring
             {
                 Name = definition.Name,
                 GameFlags = source.Info.GameFlags,
-                SortKey = MaterialSortKey.Opaque,
+                SortKey = MaterialSortKey.TransparentWater,
                 TextureAtlasRowCount = source.Info.TextureAtlasRowCount,
                 TextureAtlasColumnCount = source.Info.TextureAtlasColumnCount,
                 DrawSurf = source.Info.DrawSurf,
@@ -293,7 +293,7 @@ public static class WaterMaterialAuthoring
             StateBitsCount = checked((byte)source.StateBits.Count),
             StateFlags = (source.StateFlags & ~(MaterialStateFlags.CullBack | MaterialStateFlags.CullFront)) |
                 MaterialStateFlags.WritesDepth | MaterialStateFlags.UsesDepthBuffer,
-            CameraRegion = GfxCameraRegionType.LitOpaque,
+            CameraRegion = GfxCameraRegionType.LitTrans,
             XStringCount = checked((byte)source.XStrings.Count),
             Pad43 = source.Pad43,
             InlineTechniqueSlotStateBits = source.InlineTechniqueSlotStateBits.ToArray(),
@@ -318,14 +318,18 @@ public static class WaterMaterialAuthoring
             uint[] bits = state.LoadBits.ToArray();
             if (colorStates.Contains(checked((byte)index)))
             {
-                // Brush water has opaque coverage. Write depth before glass/FX,
-                // and shade the same surface from either side without duplicate faces.
+                // Only the narrow shore contact fades. Deep water stays fully
+                // covered; depth writes still prevent overlapping sheets and FX.
                 bits[0] = (bits[0] & ~(GfxStateBitsEncoding.CullFaceMask |
                     GfxStateBitsEncoding.BlendOperationRgbMask | GfxStateBitsEncoding.BlendOperationAlphaMask |
                     GfxStateBitsEncoding.SourceBlendRgbMask | GfxStateBitsEncoding.DestinationBlendRgbMask |
                     GfxStateBitsEncoding.SourceBlendAlphaMask | GfxStateBitsEncoding.DestinationBlendAlphaMask |
                     GfxStateBitsEncoding.AlphaTestMask)) |
-                    ((uint)GfxCullFace.None << GfxStateBitsEncoding.CullFaceShift) | (uint)GfxStateBits0Flags.AlphaTestDisabled;
+                    ((uint)GfxCullFace.None << GfxStateBitsEncoding.CullFaceShift) |
+                    ((uint)GfxBlendOperation.Add << GfxStateBitsEncoding.BlendOperationRgbShift) |
+                    ((uint)GfxBlend.SourceAlpha << GfxStateBitsEncoding.SourceBlendRgbShift) |
+                    ((uint)GfxBlend.InverseSourceAlpha << GfxStateBitsEncoding.DestinationBlendRgbShift) |
+                    (uint)GfxStateBits0Flags.AlphaTestDisabled;
                 bits[1] |= (uint)GfxStateBits1Flags.DepthWrite;
             }
             return new GfxStateBits { LoadBits = bits, CommandWordCount = 0 };

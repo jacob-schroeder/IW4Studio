@@ -125,7 +125,7 @@ public partial class MaterialBrowser : UserControl
         try
         {
             dialogs.SetBusy(true);
-            var (materials, skipped) = await Task.Run(() => LoadThumbnails(root));
+            var (materials, skippedImages, unsupportedMaterials) = await Task.Run(() => LoadThumbnails(root));
             ReleaseImages();
             foreach (var material in materials) _materials.Add(material.Name, material);
             session.Material = "";
@@ -135,7 +135,8 @@ public partial class MaterialBrowser : UserControl
             CatalogChanged?.Invoke();
             loaded = true;
             setStatus($"Loaded {materials.Count(material => material.Preview is not null)} material previews from {root}." +
-                (skipped > 0 ? $" {skipped} images could not be read." : ""));
+                (skippedImages > 0 ? $" {skippedImages} images could not be read." : "") +
+                (unsupportedMaterials > 0 ? $" {unsupportedMaterials} unsupported material definitions were skipped." : ""));
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { dialogs.SetBusy(false); await dialogs.MessageAsync("Cannot read materials", exception.Message); }
         finally { dialogs.SetBusy(false); }
@@ -143,13 +144,14 @@ public partial class MaterialBrowser : UserControl
         return loaded;
     }
 
-    private static (List<MaterialThumbnail> Materials, int Skipped) LoadThumbnails(string root)
+    private static (List<MaterialThumbnail> Materials, int SkippedImages, int UnsupportedMaterials) LoadThumbnails(string root)
     {
         var thumbnails = new List<MaterialThumbnail>();
         int skipped = 0;
         try
         {
-            foreach (var material in MaterialCatalog.Read(root))
+            var (catalog, unsupported) = MaterialCatalog.Read(root);
+            foreach (var material in catalog)
             {
                 try
                 {
@@ -163,7 +165,7 @@ public partial class MaterialBrowser : UserControl
                         thumbnails.Add(new MaterialThumbnail(material.Value, null));
                 }
             }
-            return (thumbnails, skipped);
+            return (thumbnails, skipped, unsupported);
         }
         catch
         {

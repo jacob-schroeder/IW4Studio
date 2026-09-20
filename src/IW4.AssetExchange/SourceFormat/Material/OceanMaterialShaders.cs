@@ -16,7 +16,8 @@ internal static class OceanMaterialShaders
         routing[0] = new(MaterialStreamSource.Position, MaterialStreamDestination.Position);
         routing[1] = new(MaterialStreamSource.Color, MaterialStreamDestination.Color0);
         routing[2] = new(MaterialStreamSource.TexCoord0, MaterialStreamDestination.TexCoord0);
-        // The native wc_water declaration. Color holds the static envelope, not a tint.
+        // The native wc_water declaration: RGB is the wave envelope/gradient;
+        // alpha is baked shoreline distance. Neither channel is a material tint.
         var declaration = new MaterialVertexDeclarationAsset { StreamCount = 3, HasOptionalSourceRaw = 1, Routing = routing };
         // Flat water shares the corrected underside shading with zero displacement.
         var (first, second) = ocean?.GetWaves() ?? (Vector4.Zero, Vector4.Zero);

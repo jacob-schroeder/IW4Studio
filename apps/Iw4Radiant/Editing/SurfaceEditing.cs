@@ -109,12 +109,17 @@ internal static class SurfaceEditing
                 .ToArray();
             if (covers.Length == 0) continue;
             var (u, v) = PlaneAxes(normal);
+            Vector3 origin = candidate.Vertices[0];
             List<Vector2> target = CounterClockwise(candidate.Vertices.Select(Project).ToList());
             List<List<Vector2>> coverPolygons = covers.Select(cover =>
                 CounterClockwise(cover.Vertices.Select(Project).ToList())).ToList();
             if (IsFullyCovered(target, coverPolygons)) changes.Add(candidate.Face);
 
-            Vector2 Project(Vector3 point) => new((float)BrushGeometry.Dot(point, u), (float)BrushGeometry.Dot(point, v));
+            Vector2 Project(Vector3 point)
+            {
+                Vector3 local = point - origin;
+                return new((float)BrushGeometry.Dot(local, u), (float)BrushGeometry.Dot(local, v));
+            }
         }
         if (changes.Count == 0) return 0;
         session.Edit(() =>

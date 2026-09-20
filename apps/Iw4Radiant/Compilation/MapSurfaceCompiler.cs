@@ -39,14 +39,15 @@ internal static class MapSurfaceCompiler
 
     internal static MapRenderSurface[] Compile(MapDocument document, IReadOnlyDictionary<string, MaterialSource> materials)
     {
-        var surfaces = CompileEntity(document.World, materials).ToList();
+        var shore = new WaterShoreGeometry(document, name => materials.GetValueOrDefault(name));
+        var surfaces = CompileEntity(document.World, materials, shore).ToList();
         int index = 0;
         foreach (MapEntity entity in MapCompiler.BrushEntities(document))
         {
             index++;
             if (entity.ClassName != "script_brushmodel") continue;
             int first = surfaces.Count;
-            surfaces.AddRange(CompileEntity(entity, materials).Select(surface => surface with
+            surfaces.AddRange(CompileEntity(entity, materials, null).Select(surface => surface with
             {
                 ModelIndex = index, SourceIndex = surface.SourceIndex + first
             }));
@@ -54,7 +55,8 @@ internal static class MapSurfaceCompiler
         return surfaces.ToArray();
     }
 
-    private static MapRenderSurface[] CompileEntity(MapEntity entity, IReadOnlyDictionary<string, MaterialSource> materials)
+    private static MapRenderSurface[] CompileEntity(MapEntity entity, IReadOnlyDictionary<string, MaterialSource> materials,
+        WaterShoreGeometry? shore)
     {
         var surfaces = new List<MapRenderSurface>();
         foreach (MapPolygon boundary in entity.Brushes.SelectMany(brush => brush.GetPolygons()))
@@ -63,7 +65,8 @@ internal static class MapSurfaceCompiler
             MaterialSource material = materials[boundary.Face.Material];
             if (!OceanSurfaceGeometry.IsVisibleSurface(boundary, material.IsWater)) continue;
             OceanWaveSettings? ocean = material.Ocean;
-            foreach (MapPolygon polygon in OceanSurfaceGeometry.Subdivide(boundary, ocean))
+            var contacts = material.IsWater ? shore?.Contacts(boundary) ?? [] : [];
+            foreach (MapPolygon polygon in OceanSurfaceGeometry.Subdivide(boundary, ocean, contacts))
             {
                 Vector3 normal = polygon.Face.Normal;
                 var mapping = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
@@ -81,8 +84,12 @@ internal static class MapSurfaceCompiler
                     (float)(BrushGeometry.Dot(mapping.V, point) + mapping.Offset.Y))).ToArray();
                 surfaces.Add(new(polygon.Face.Material, polygon.Vertices, normal,
                     Enumerable.Repeat(normal, count).ToArray(), Enumerable.Repeat(tangent, count).ToArray(),
-                    Enumerable.Repeat(binormal, count).ToArray(), uv, polygon.Vertices.Select(point => ocean is null ? Vector4.One :
-                        OceanSurfaceGeometry.VertexColor(boundary, ocean, point)).ToArray(), surfaces.Count)
+                    Enumerable.Repeat(binormal, count).ToArray(), uv, polygon.Vertices.Select(point =>
+                    {
+                        Vector4 color = ocean is null ? Vector4.One : OceanSurfaceGeometry.VertexColor(boundary, ocean, point, contacts);
+                        if (material.IsWater) color.W = WaterShoreGeometry.VertexAlpha(point, contacts);
+                        return color;
+                    }).ToArray(), surfaces.Count)
                 {
                     Displacement = ocean is not null && OceanSurfaceGeometry.IsTop(boundary) ? ocean.Height : 0,
                     ReflectionCenter = boundary.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / boundary.Vertices.Length
