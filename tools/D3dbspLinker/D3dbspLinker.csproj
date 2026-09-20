@@ -15,4 +15,8 @@
     <ProjectReference Include="..\..\src\IW4.Unlinker\IW4.Unlinker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources/water-volumes.gsc" LogicalName="IW4.WaterVolumes.gsc" />
+  </ItemGroup>
+
 </Project>

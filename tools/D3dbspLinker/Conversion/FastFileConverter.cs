@@ -7,8 +7,10 @@ using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.Physics;
 using IW4.Assets.Assets.RawFile;
+using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.Sound;
 using IW4.Assets.Assets.StringTable;
+using IW4.Assets.Assets.TechniqueSet;
 using IW4.Assets.Assets.XModel;
 using IW4.Assets.Assets.Weapon;
 using IW4.Assets.D3dbsp;
@@ -265,7 +267,7 @@ internal static class FastFileConverter
         if (authoredWaterNames.Length != 0 && !useSourceMaterials)
             throw new InvalidDataException("Authored water materials require --source-materials.");
         var authoredWaterMaterials = new List<MaterialAsset>(authoredWaterNames.Length);
-        var authoredWaterImages = new List<GfxImageAsset>(authoredWaterNames.Length);
+        var authoredWaterDependencies = new List<BaseAsset>();
         foreach (string name in authoredWaterNames)
         {
             if (!waterDefinitions.TryGetValue(name, out WaterMaterialDefinition? definition))
@@ -279,7 +281,18 @@ internal static class FastFileConverter
                 throw new InvalidDataException($"Authored water material '{name}' collides with a supplied native material.");
             availableMaterials.Add(key, material);
             authoredWaterMaterials.Add(material);
-            authoredWaterImages.Add(image);
+            authoredWaterDependencies.Add(image);
+            if (material.TechniqueSet is { } oceanTechniques)
+            {
+                authoredWaterDependencies.Add(oceanTechniques);
+                foreach (MaterialTechniqueSlot slot in oceanTechniques.TechniqueSlots.Where(slot =>
+                             slot.Type is >= MaterialTechniqueType.Lit and <= MaterialTechniqueType.LitInstancedSunDfog))
+                foreach (MaterialPassAsset pass in slot.Technique?.Passes ?? [])
+                {
+                    if (pass.VertexShader is { } vertex) authoredWaterDependencies.Add(vertex);
+                    if (pass.PixelShader is { } pixel) authoredWaterDependencies.Add(pixel);
+                }
+            }
         }
         GfxLightmapArray[] lightmaps = lightmapImageNames.Select(pair => new GfxLightmapArray
         {
@@ -302,6 +315,8 @@ internal static class FastFileConverter
                 UseCompiledLighting = useCompiledLighting,
                 StaticScriptModelNames = staticScriptModelNames,
                 AvailableMaterials = availableMaterials.Values.ToArray(),
+                MaterialVerticalDisplacements = waterDefinitions.Values.Where(definition => definition.Ocean is not null)
+                    .ToDictionary(definition => definition.Name, definition => definition.Ocean?.Height ?? 0, StringComparer.Ordinal),
                 Lightmaps = lightmaps,
                 OutdoorImage = outdoorImage,
                 OutdoorLookupMatrix = outdoorLookupMatrix,
@@ -319,13 +334,21 @@ internal static class FastFileConverter
         static AssetKey LightingImageKey(string name) =>
             new(CanonicalAssetFamily.FromSerializedType(XAssetType.Image), name);
         string mapScriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        RawFileAsset? waterScript = WaterVolumeScript.Create(assetName, graph.Roots.OfType<ClipMapAsset>().Single(),
+            authoredWaterNames.ToDictionary(name => name, name => waterDefinitions[name], StringComparer.Ordinal));
+        if (waterScript is not null && rawFileOverrides.Any(rawFile => rawFile.Name == waterScript.Name))
+            throw new InvalidDataException($"RawFile '{waterScript.Name}' is generated from the map's water volumes and cannot be overridden.");
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
-            CreateMapScript(assetName);
+            CreateMapScript(assetName, waterScript);
+        if (waterScript is not null && rawFileOverrides.Contains(mapScript))
+            Console.WriteLine($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
+                "The water helper owns its HUD overlay and the level-priority reverb slot.");
         BaseAsset[] fastFileMapRoots =
         [
             .. graph.Roots,
             mapScript,
+            .. waterScript is null ? Array.Empty<RawFileAsset>() : new[] { waterScript },
             CreateMapMarker(assetName),
             .. rawFileOverrides.Where(rawFile =>
                 !string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal))
@@ -465,7 +488,7 @@ internal static class FastFileConverter
         if (authoredWaterMaterials.Count != 0)
         {
             BaseAsset[] authoredWaterAssets = authoredWaterMaterials.Cast<BaseAsset>()
-                .Concat(authoredWaterImages).ToArray();
+                .Concat(authoredWaterDependencies).DistinctBy(AssetKey.FromDefinition).ToArray();
             foreach (BaseAsset asset in authoredWaterAssets)
                 if (existingKeys.Contains(AssetKey.FromDefinition(asset)))
                     throw new InvalidDataException(
@@ -730,11 +753,11 @@ internal static class FastFileConverter
             opaqueHeader: null);
     }
 
-    private static RawFileAsset CreateMapScript(string assetName)
+    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         // These factions own the player-model closure selected below.
-        const string script =
+        string script =
             "main()\r\n" +
             "{\r\n" +
             "\tmaps\\mp\\_load::main();\r\n" +
@@ -742,6 +765,7 @@ internal static class FastFileConverter
             "\tgame[\"axis\"] = \"opforce_airborne\";\r\n" +
             "\tgame[\"attackers\"] = \"allies\";\r\n" +
             "\tgame[\"defenders\"] = \"axis\";\r\n" +
+            (waterScript is null ? "" : "\t" + WaterVolumeScript.Startup(waterScript) + "\r\n") +
             "}\r\n";
         byte[] content = Encoding.ASCII.GetBytes(script);
         return new RawFileAsset

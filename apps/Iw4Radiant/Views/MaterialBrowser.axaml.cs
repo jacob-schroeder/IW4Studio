@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Iw4Radiant.Editing;
@@ -40,7 +42,26 @@ public partial class MaterialBrowser : UserControl
         {
             if (!_filtering) PreviewMaterial(session);
         };
-        ApplyMaterialButton.Click += async (_, _) => await ApplyMaterialAsync(session, dialogs, finishGestures);
+        MaterialList.AddHandler(InputElement.PointerReleasedEvent, OnMaterialPointerReleased,
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        MaterialList.AddHandler(InputElement.KeyDownEvent, OnMaterialKeyDown,
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        async void OnMaterialPointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (e.InitialPressMouseButton != MouseButton.Left || dialogs.BlocksInput ||
+                e.Source is not Control { DataContext: MaterialThumbnail material } ||
+                !ReferenceEquals(MaterialList.SelectedItem, material)) return;
+            await ApplyMaterialAsync(session, dialogs, finishGestures, material);
+        }
+
+        async void OnMaterialKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key is not (Key.Enter or Key.Space) || dialogs.BlocksInput ||
+                MaterialList.SelectedItem is not MaterialThumbnail material) return;
+            e.Handled = true;
+            await ApplyMaterialAsync(session, dialogs, finishGestures, material);
+        }
     }
 
     internal event Action? CatalogChanged;
@@ -220,23 +241,20 @@ public partial class MaterialBrowser : UserControl
         }
         session.Refresh();
     }
-    private async Task ApplyMaterialAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    private async Task ApplyMaterialAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        MaterialThumbnail material)
     {
         if (dialogs.BlocksInput) return;
         finishGestures();
         try
         {
-            string name = (MaterialName.Text ?? "").Trim();
-            if (ClipBrushMaterial.IsPlayerClip(name))
-            {
-                PlayerClipEditing.Apply(session);
-                UsePlayerClip(session);
-                return;
-            }
-            if (!_materials.TryGetValue(name, out var material) ||
-                !material.Material.IsWater && !File.Exists(material.Material.ImagePath))
+            string name = material.Name;
+            if (!material.Material.IsWater && !File.Exists(material.Material.ImagePath))
                 throw new ArgumentException("Choose a material with an available image or recognized native water profile from the browser.");
-            if (material.IsSky) SkyEditing.Apply(session, material.Material);
+            bool hasSurfaceSelection = SurfaceEditing.GetFaces(session).Any() ||
+                session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>().Any() ||
+                session.Selection.Items.OfType<MapEntity>().Any(entity => entity.Terrains.Count > 0);
+            if (material.IsSky && hasSurfaceSelection) SkyEditing.Apply(session, material.Material);
             else
             {
                 using var image = MaterialImages.Load(material.Material, 256);

@@ -1,4 +1,5 @@
 in vec3 vNormal;
+in vec2 vOceanSlope;
 in vec3 vPosition;
 in vec2 vTexCoord;
 in vec4 vColor;
@@ -141,14 +142,16 @@ void main()
         vec3 view = fromEye / max(length(fromEye), 1e-20);
         vec2 q = vTexCoord + view.xy * (0.5 - texture(uWaterHeight, vTexCoord * 0.5).r) * 0.0234375;
         float center = waterHeight(q);
-        vec3 normal = normalize(vec3(waterHeight(q + vec2(0.00390625, 0.0)) - center,
-            waterHeight(q + vec2(0.0, 0.00390625)) - center, 1.0));
+        vec3 normal = normalize(vec3(waterHeight(q + vec2(0.00390625, 0.0)) - center - vOceanSlope.x,
+            waterHeight(q + vec2(0.0, 0.00390625)) - center - vOceanSlope.y, 1.0));
+        float side = gl_FrontFacing ? 1.0 : -1.0;
+        normal *= side;
         vec3 direction = reflect(view, normal);
-        direction.z = abs(direction.z);
+        direction.z = abs(direction.z) * side;
         vec3 reflected = uHasWaterReflection ? texture(uWaterReflection, direction).rgb : vec3(0.0);
         float facing = clamp(1.0 - abs(dot(view, normal)), 0.0, 1.0);
         float fresnel = clamp(uEnvMapParms.x + (uEnvMapParms.y - uEnvMapParms.x) * pow(facing, uEnvMapParms.z), 0.0, 1.0);
-        vec3 linearColor = mix(normal.z * uWaterColor.rgb, reflected * reflected, fresnel);
+        vec3 linearColor = mix(abs(normal.z) * uWaterColor.rgb, reflected * reflected, fresnel);
         // The native shader writes linear RGB with gammaWrite enabled. Match the
         // editor's squared-radiance capture domain; exact RSX display transfer is unverified.
         vec3 waterColor = sqrt(clamp(linearColor, 0.0, 1.0));

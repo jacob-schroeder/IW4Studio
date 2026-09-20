@@ -8,26 +8,72 @@ namespace Iw4Radiant.Viewports.Orthographic;
 
 internal static class OrthographicSelection
 {
+    internal sealed record VertexHandle(Vector2 Position, object[] Vertices, bool IsEdge)
+    {
+        internal float Depth(OrthographicProjection projection) =>
+            Vertices.Select(SelectionGeometry.Bounds).OfType<(Vector3 Min, Vector3 Max)>()
+                .Select(bounds => projection.MissingAxis(bounds.Min)).DefaultIfEmpty(float.NegativeInfinity).Max();
+    }
+
+    internal static VertexHandle? HitTestVertexHandle(EditorSession session, OrthographicProjection projection, Point point)
+    {
+        VertexHandle? closest = null;
+        double distance = 8;
+        float depth = float.NegativeInfinity;
+        foreach (VertexHandle handle in GetVertexHandles(session, projection))
+        {
+            double candidate = OrthographicGeometry.Distance(point, projection.ToScreen(handle.Position));
+            float candidateDepth = handle.Depth(projection);
+            if (candidate > distance || Math.Abs(candidate - distance) < 0.001 && candidateDepth <= depth) continue;
+            closest = handle;
+            distance = candidate;
+            depth = candidateDepth;
+        }
+        return closest;
+    }
+
+    internal static IEnumerable<VertexHandle> GetVertexHandles(EditorSession session, OrthographicProjection projection)
+    {
+        object[] vertices = SelectionGeometry.GetVertexHandles(session.Selection)
+            .Where(handle => session.Visibility.CanSelect(session.Document, handle)).ToArray();
+        foreach (var owner in vertices.GroupBy(EditorSelection.Owner, ReferenceEqualityComparer.Instance))
+        {
+            var corners = new List<(Vector2 Position, List<object> Vertices)>();
+            foreach (object vertex in owner)
+            {
+                if (SelectionGeometry.Bounds(vertex) is not { } bounds) continue;
+                Vector2 position = projection.Project(bounds.Min);
+                int index = corners.FindIndex(corner =>
+                    Vector2.DistanceSquared(corner.Position, position) < BrushGeometry.PointTolerance * BrushGeometry.PointTolerance);
+                if (index < 0) corners.Add((position, [vertex]));
+                else corners[index].Vertices.Add(vertex);
+            }
+            foreach (var corner in corners)
+                yield return new(corner.Position, corner.Vertices.ToArray(), IsEdge: false);
+
+            if (owner.Key is not MapBrush brush) continue;
+            var edges = new HashSet<(int A, int B)>();
+            foreach (MapPolygon polygon in brush.GetPolygons())
+            for (int index = 0; index < polygon.Vertices.Length; index++)
+            {
+                int a = FindCorner(projection.Project(polygon.Vertices[index]));
+                int b = FindCorner(projection.Project(polygon.Vertices[(index + 1) % polygon.Vertices.Length]));
+                if (a < 0 || b < 0 || a == b) continue;
+                if (a > b) (a, b) = (b, a);
+                if (!edges.Add((a, b))) continue;
+                yield return new((corners[a].Position + corners[b].Position) / 2,
+                    corners[a].Vertices.Concat(corners[b].Vertices).ToArray(), IsEdge: true);
+            }
+
+            int FindCorner(Vector2 position) => corners.FindIndex(corner =>
+                Vector2.DistanceSquared(corner.Position, position) < BrushGeometry.PointTolerance * BrushGeometry.PointTolerance);
+        }
+    }
+
     internal static object? HitTest(EditorSession session, OrthographicProjection projection, Point point)
     {
         if (session.Tool == EditorTool.Vertex)
-        {
-            object? closest = null;
-            double distance = 8;
-            float depth = float.NegativeInfinity;
-            foreach (object handle in SelectionGeometry.GetVertexHandles(session.Selection))
-            {
-                if (!session.Visibility.CanSelect(session.Document, handle)) continue;
-                if (SelectionGeometry.Bounds(handle) is not { } bounds) continue;
-                double candidate = OrthographicGeometry.Distance(point, projection.ToScreen(bounds.Min));
-                float candidateDepth = projection.MissingAxis(bounds.Min);
-                if (candidate > distance || (Math.Abs(candidate - distance) < 0.001 && candidateDepth <= depth)) continue;
-                closest = handle;
-                distance = candidate;
-                depth = candidateDepth;
-            }
-            return closest;
-        }
+            return HitTestVertexHandle(session, projection, point)?.Vertices.FirstOrDefault();
         if (session.Tool != EditorTool.Face) return OrthographicGeometry.HitTest(session, projection, point);
         object? best = null;
         double bestDistance = double.PositiveInfinity;

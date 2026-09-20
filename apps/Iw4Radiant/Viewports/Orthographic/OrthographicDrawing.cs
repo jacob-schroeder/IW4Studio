@@ -198,13 +198,12 @@ internal sealed class OrthographicDrawing
 
     private void DrawVertices(DrawingContext context, EditorSession session)
     {
-        foreach (object handle in SelectionGeometry.GetVertexHandles(session.Selection))
+        foreach (OrthographicSelection.VertexHandle handle in OrthographicSelection.GetVertexHandles(session, _projection))
         {
-            if (!session.Visibility.CanSelect(session.Document, handle)) continue;
-            if (SelectionGeometry.Bounds(handle) is not { } bounds) continue;
-            Point point = _projection.ToScreen(bounds.Min);
-            context.DrawRectangle(session.Selection.Contains(handle) ? SelectionBrush : BackgroundBrush, SelectedPen,
-                new Rect(point.X - 3, point.Y - 3, 6, 6));
+            Point point = _projection.ToScreen(handle.Position);
+            IBrush fill = handle.Vertices.All(session.Selection.Contains) ? SelectionBrush : BackgroundBrush;
+            if (handle.IsEdge) context.DrawEllipse(fill, SelectedPen, point, 3, 3);
+            else context.DrawRectangle(fill, SelectedPen, new Rect(point.X - 3.5, point.Y - 3.5, 7, 7));
         }
     }
 

@@ -59,10 +59,15 @@ internal static class SelectionEditing
 
     internal static void ApplyMaterial(EditorSession session, string material)
     {
-        MapFace[] faces = SurfaceEditing.GetFaces(session).Select(face => face.Face).ToArray();
-        MapTerrain[] terrains = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>()
-            .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains))
-            .Where(terrain => session.Visibility.CanSelect(session.Document, terrain)).Distinct().ToArray();
+        MapFace[] explicitlySelectedFaces = session.Selection.Items.OfType<BrushFaceSelection>()
+            .Where(face => face.Brush.Faces.Contains(face.Face) && session.Visibility.CanSelect(session.Document, face.Brush))
+            .Select(face => face.Face).Distinct().ToArray();
+        MapFace[] faces = explicitlySelectedFaces.Length > 0 ? explicitlySelectedFaces :
+            SurfaceEditing.GetFaces(session).Select(face => face.Face).ToArray();
+        MapTerrain[] terrains = explicitlySelectedFaces.Length > 0 ? [] :
+            session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>()
+                .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains))
+                .Where(terrain => session.Visibility.CanSelect(session.Document, terrain)).Distinct().ToArray();
         ApplyMaterial(session, material, faces, terrains);
     }
 

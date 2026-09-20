@@ -33,7 +33,9 @@ internal static class BrushLightmapCompiler
             scene.CancellationToken.ThrowIfCancellationRequested();
             MapRenderSurface polygon = scene.Polygons[faceIndex];
             faceUvs[faceIndex] = new Vector2[polygon.Vertices.Length];
-            if (scene.IsSky(faceIndex))
+            // Water shaders use native spectra, lights and reflection probes, not lightmaps.
+            // Subdivision must not turn every wave cell into an unused CPU lighting bake.
+            if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex))
             {
                 faceIndices[faceIndex] = 31;
                 continue;

@@ -45,10 +45,10 @@ public partial class SelectionInspector : UserControl
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials,
         Func<string, MaterialSource?> resolveMaterial, Func<OrthoPlane> editPlane,
-        Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor)
+        Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor, Action<string> setStatus)
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
-        Surfaces.InitializeActions(session, dialogs, finishGestures, resolveMaterial);
+        Surfaces.InitializeActions(session, dialogs, finishGestures, resolveMaterial, setStatus);
         Lights.InitializeActions(session, dialogs, finishGestures);
         Terrain.InitializeActions(session, dialogs, finishGestures);
         Sunlight.InitializeActions(session, dialogs, finishGestures);

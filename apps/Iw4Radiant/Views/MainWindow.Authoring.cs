@@ -111,6 +111,7 @@ public partial class MainWindow
         {
             TechniqueSet = source.TechniqueSet,
             Water = WaterMaterialAuthoring.CreateWater(water, definition),
+            Ocean = definition.Ocean,
             WaterColor = new Vector4(definition.Red, definition.Green, definition.Blue, source.WaterColor.W),
             EnvMapParms = new Vector4(definition.FresnelMinimum, definition.FresnelMaximum,
                 definition.FresnelExponent, source.EnvMapParms.W),

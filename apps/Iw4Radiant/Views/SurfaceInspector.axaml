@@ -7,7 +7,7 @@
         <StackPanel Spacing="4">
             <TextBlock Text="Texture" Classes="panelTitle" />
             <TextBox x:Name="TextureName" IsReadOnly="True" PlaceholderText="No selected surface"
-                     ToolTip.Tip="The selected surfaces' material. Choose a material in the browser and use Apply to Selection to replace it." />
+                     ToolTip.Tip="The selected surfaces' material. Click a material thumbnail to replace it immediately." />
         </StackPanel>
         <TextBlock x:Name="ProjectionInfo" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
         <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False">
@@ -49,14 +49,18 @@
             </Grid>
             <Separator />
             <TextBlock Text="Fit texture" Classes="panelTitle" />
-            <Grid ColumnDefinitions="*,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
+            <Grid ColumnDefinitions="*,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
                 <TextBlock Classes="caption" Text="Horizontal repeats" />
                 <TextBlock Grid.Column="1" Classes="caption" Text="Vertical repeats" />
                 <TextBox x:Name="RepeatsXValue" Grid.Row="1" Text="1" ToolTip.Tip="Number of horizontal (S) repeats across each face for Fit." />
                 <TextBox x:Name="RepeatsYValue" Grid.Row="1" Grid.Column="1" Text="1" ToolTip.Tip="Number of vertical (T) repeats across each face for Fit." />
                 <Button x:Name="FitButton" Grid.Row="1" Grid.Column="2" Content="Fit"
                         ToolTip.Tip="Fit each selected face immediately using its current map projection and these repeat counts. Apply alignment edits first to include them." />
+                <Button x:Name="AxialButton" Grid.Row="1" Grid.Column="3" Content="Axial"
+                        ToolTip.Tip="Immediately reset shifts, rotation and skew to axis-aligned mapping while retaining each face's repeat sizes." />
             </Grid>
+            <Button x:Name="AutoCaulkButton" Content="Auto Caulk" Classes="panelAction" HorizontalAlignment="Stretch"
+                    ToolTip.Tip="Apply caulk only to fully covered coplanar faces between selected opaque brushes. Partially exposed faces are unchanged." />
         </StackPanel>
         <Separator />
         <StackPanel Spacing="8">
@@ -64,6 +68,8 @@
             <TextBlock x:Name="WaterInfo" Text="Select a brush or face using a native water material."
                        TextWrapping="Wrap" Classes="caption" />
             <StackPanel x:Name="WaterFields" Spacing="7" IsEnabled="False">
+                <TextBlock Text="The upper surface is visible from both sides. Moving the player's eyes inside the brush applies underwater tint and sound in game."
+                           TextWrapping="Wrap" Classes="caption" />
                 <TextBlock Text="Color (linear RGB)" Classes="fieldLabel" />
                 <views:LightColorPicker x:Name="WaterColorPicker"
                                         ToolTip.Tip="Choose a water tint with the swatches or color sliders." />
@@ -71,9 +77,23 @@
                     <TextBlock Text="Ripple strength" Classes="fieldLabel" />
                     <TextBox x:Name="WaveIntensity" Grid.Column="1"
                              ToolTip.Tip="Ripple strength for surface shading from 0 (flat) to 8; does not change water geometry height." />
-                    <TextBlock Grid.Row="1" Text="Animation speed" Classes="fieldLabel" />
-                    <TextBox x:Name="AnimationSpeed" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Wave animation speed from 0.05 to 8." />
+                    <TextBlock Grid.Row="1" Text="Ripple speed" Classes="fieldLabel" />
+                    <TextBox x:Name="AnimationSpeed" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Ripple animation speed multiplier from 0.05 to 8." />
                 </Grid>
+                <CheckBox x:Name="OceanEnabled" Content="Ocean waves" />
+                <StackPanel x:Name="OceanFields" Spacing="5" IsVisible="False">
+                    <Grid ColumnDefinitions="*,90" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="5">
+                        <TextBlock Text="Height (units)" Classes="fieldLabel" />
+                        <TextBox x:Name="OceanHeight" Grid.Column="1" ToolTip.Tip="Maximum displacement above or below the resting surface, from 0 to 256 units." />
+                        <TextBlock Grid.Row="1" Text="Wavelength (units)" Classes="fieldLabel" />
+                        <TextBox x:Name="OceanWavelength" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Distance between main crests, from 32 to 4096 units. Shorter waves require more vertices." />
+                        <TextBlock Grid.Row="2" Text="Speed (units/s)" Classes="fieldLabel" />
+                        <TextBox x:Name="OceanSpeed" Grid.Row="2" Grid.Column="1" ToolTip.Tip="Main wave travel speed, from 0 (stationary) to 512 units per second." />
+                        <TextBlock Grid.Row="3" Text="Direction (degrees)" Classes="fieldLabel" />
+                        <TextBox x:Name="OceanDirection" Grid.Row="3" Grid.Column="1" ToolTip.Tip="Main wave direction: 0 travels toward +X, 90 toward +Y." />
+                    </Grid>
+                    <TextBlock Text="Horizontal water tops only. Edges stay fixed. Collision and selection use the resting brush; leave room beneath troughs." TextWrapping="Wrap" Classes="caption" />
+                </StackPanel>
                 <TextBlock Text="Reflection" Classes="fieldLabel" />
                 <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
                     <TextBlock Text="Minimum" Classes="caption" />

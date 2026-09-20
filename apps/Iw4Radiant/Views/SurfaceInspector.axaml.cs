@@ -21,10 +21,11 @@ public partial class SurfaceInspector : UserControl
     {
         InitializeComponent();
         WaterColorPicker.PreserveColorScale = true;
+        OceanEnabled.IsCheckedChanged += (_, _) => OceanFields.IsVisible = OceanEnabled.IsChecked == true;
     }
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures,
-        Func<string, MaterialSource?> resolveMaterial)
+        Func<string, MaterialSource?> resolveMaterial, Action<string> setStatus)
     {
         _resolveMaterial = resolveMaterial;
         WireAdjustment(ShiftXDecrease, ShiftXIncrease, ShiftXValue, "horizontal shift", 1);
@@ -36,6 +37,8 @@ public partial class SurfaceInspector : UserControl
         ApplyProjectionButton.Click += async (_, _) => await ApplyProjectionAsync(session, dialogs, finishGestures);
         ApplyWaterButton.Click += async (_, _) => await ApplyWaterAsync(session, dialogs, finishGestures);
         FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
+        AxialButton.Click += async (_, _) => await AxialAsync(session, dialogs, finishGestures);
+        AutoCaulkButton.Click += async (_, _) => await AutoCaulkAsync(session, dialogs, finishGestures, setStatus);
         RevertProjectionButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput) return;
@@ -93,6 +96,8 @@ public partial class SurfaceInspector : UserControl
             _shownReference = reference;
             TextureLockValue.IsChecked = session.TextureLock;
             ProjectionFields.IsEnabled = reference is not null;
+            AutoCaulkButton.IsEnabled = session.Selection.Items.Count(item => item is MapBrush or MapEntity) > 1 ||
+                session.Selection.Items.OfType<MapEntity>().Any(entity => entity.Brushes.Count > 1);
             SurfaceSummary.Text = faces.Length == 0 ? "Select a brush or face." :
                 $"{faces.Length} selected surface{(faces.Length == 1 ? "" : "s")}";
             bool mixedMaterials = faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).Count() > 1;
@@ -184,6 +189,11 @@ public partial class SurfaceInspector : UserControl
                     definition?.Green ?? waterMaterial.WaterColor.Y, definition?.Blue ?? waterMaterial.WaterColor.Z);
                 SetValue(WaveIntensity, definition?.WaveIntensity ?? 1);
                 SetValue(AnimationSpeed, definition?.AnimationSpeed ?? 1);
+                OceanEnabled.IsChecked = definition?.Ocean is not null;
+                SetValue(OceanHeight, definition?.Ocean?.Height ?? 8);
+                SetValue(OceanWavelength, definition?.Ocean?.Wavelength ?? 128);
+                SetValue(OceanSpeed, definition?.Ocean?.Speed ?? 32);
+                SetValue(OceanDirection, definition?.Ocean?.Direction ?? 0);
                 SetValue(FresnelMinimum, definition?.FresnelMinimum ?? waterMaterial.EnvMapParms.X);
                 SetValue(FresnelMaximum, definition?.FresnelMaximum ?? waterMaterial.EnvMapParms.Y);
                 SetValue(FresnelExponent, definition?.FresnelExponent ?? waterMaterial.EnvMapParms.Z);
@@ -221,7 +231,23 @@ public partial class SurfaceInspector : UserControl
                 throw new ArgumentException("Load the selected water material's source assets before editing it.");
             if (source.Water is null) throw new ArgumentException("The selected material is not native water.");
             WaterMaterialDefinition definition = WaterMaterialAuthoring.CreateDefinition(source.Name, red, green, blue,
-                intensity, speed, fresnelMinimum, fresnelMaximum, fresnelExponent);
+                intensity, speed, fresnelMinimum, fresnelMaximum, fresnelExponent,
+                OceanEnabled.IsChecked == true ? new OceanWaveSettings(ReadValue(OceanHeight, "ocean height"),
+                    ReadValue(OceanWavelength, "ocean wavelength"), ReadValue(OceanSpeed, "ocean speed"),
+                    ReadValue(OceanDirection, "ocean direction")) : null);
+            if (definition.Ocean is { } ocean)
+            {
+                foreach (MapBrush brush in session.Document.Brushes.Where(brush => brush.Faces.Any(faces.Contains)))
+                {
+                    if (!session.Document.World.Brushes.Contains(brush) ||
+                        !brush.Faces.All(face => _resolveMaterial?.Invoke(face.Material)?.IsWater == true))
+                        throw new ArgumentException("Ocean waves require a closed world brush with water on every face.");
+                    MapPolygon[] tops = brush.GetPolygons().Where(OceanSurfaceGeometry.IsTop).ToArray();
+                    if (!tops.Any(top => faces.Contains(top.Face)))
+                        throw new ArgumentException("Select the horizontal top surface or the whole water brush to enable ocean waves.");
+                    foreach (MapPolygon top in tops) _ = OceanSurfaceGeometry.Subdivide(top, ocean).Count();
+                }
+            }
             if (previous == definition) return;
             session.Edit(() =>
             {
@@ -268,11 +294,37 @@ public partial class SurfaceInspector : UserControl
         { await dialogs.MessageAsync("Fit texture", exception.Message); }
     }
 
+    private static async Task AxialAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            finishGestures();
+            SurfaceEditing.Axial(session);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        { await dialogs.MessageAsync("Axial texture alignment", exception.Message); }
+    }
+
+    private async Task AutoCaulkAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Action<string> setStatus)
+    {
+        if (dialogs.BlocksInput || _resolveMaterial is not { } resolveMaterial) return;
+        try
+        {
+            finishGestures();
+            int count = SurfaceEditing.AutoCaulk(session, resolveMaterial);
+            setStatus(count == 0 ? "Auto Caulk found no fully covered faces between selected opaque brushes." :
+                $"Caulked {count} face{(count == 1 ? "" : "s")}.");
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException)
+        { await dialogs.MessageAsync("Auto Caulk", exception.Message); }
+    }
+
     private TextBox[] ProjectionBoxes() => [WidthValue, HeightValue, ShiftXValue, ShiftYValue, RotationValue, SkewValue];
     private TextBox[] WaterBoxes() => [WaveIntensity, AnimationSpeed,
-        FresnelMinimum, FresnelMaximum, FresnelExponent];
-    private bool WaterInputFocused() => WaterColorPicker.IsKeyboardFocusWithin ||
-        WaterBoxes().Any(box => box.IsKeyboardFocusWithin);
+        FresnelMinimum, FresnelMaximum, FresnelExponent, OceanHeight, OceanWavelength, OceanSpeed, OceanDirection];
+    private bool WaterInputFocused() => WaterFields.IsKeyboardFocusWithin;
 
     private static void SetValue(TextBox box, float value) => box.Text = value.ToString("R", CultureInfo.InvariantCulture);
 

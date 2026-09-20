@@ -96,7 +96,7 @@ public partial class MainWindow
                      .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
                      .Distinct(StringComparer.Ordinal))
         {
-            if (ClipBrushMaterial.IsPlayerClip(name)) continue;
+            if (ClipBrushMaterial.IsPlayerClip(name) || CaulkMaterial.IsCaulk(name)) continue;
             materials.Add(name, ResolveMaterial(name, waterDefinitions) ??
                 throw new InvalidDataException($"Material '{name}' is unavailable. Load it in the asset browser before building."));
         }

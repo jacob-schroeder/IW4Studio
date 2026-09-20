@@ -9,7 +9,11 @@ internal static class SkyEditing
     internal static BrushFaceSelection[] SelectedWorldFaces(EditorSession session)
     {
         var brushes = session.Document.World.Brushes.ToHashSet();
-        return SurfaceEditing.GetFaces(session).Where(face => brushes.Contains(face.Brush)).ToArray();
+        BrushFaceSelection[] explicitFaces = session.Selection.Items.OfType<BrushFaceSelection>()
+            .Where(face => face.Brush.Faces.Contains(face.Face)).ToArray();
+        IEnumerable<BrushFaceSelection> faces = explicitFaces.Length > 0 ? explicitFaces : SurfaceEditing.GetFaces(session);
+        return faces.Where(face => brushes.Contains(face.Brush) &&
+            session.Visibility.CanSelect(session.Document, face.Brush)).ToArray();
     }
 
     internal static void Apply(EditorSession session, MaterialSource material)

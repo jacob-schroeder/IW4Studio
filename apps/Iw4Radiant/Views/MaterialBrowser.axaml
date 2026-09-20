@@ -16,7 +16,7 @@
         </Grid>
         <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">
             <ListBox x:Name="MaterialList" Background="Transparent" BorderThickness="0" Padding="0"
-                     ToolTip.Tip="Choose a material for new geometry. Use Apply to Selection to change existing geometry."
+                     ToolTip.Tip="Choose a material to apply it to selected faces or geometry and use it for new geometry."
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListBox.ItemsPanel>
@@ -60,14 +60,12 @@
         </Grid>
         <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,4,8,3">
             <Grid RowDefinitions="Auto,Auto" RowSpacing="2">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-                    <TextBlock Text="New geometry" Classes="fieldLabel" VerticalAlignment="Center"
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                    <TextBlock Text="Active material" Classes="fieldLabel" VerticalAlignment="Center"
                                ToolTip.Tip="The material used for new geometry" />
                     <TextBox x:Name="MaterialName" Grid.Column="1" Classes="compact"
-                             PlaceholderText="Choose a material"
-                             ToolTip.Tip="Choose a thumbnail for new geometry, or enter a loaded material name and apply it to the selection." />
-                    <Button x:Name="ApplyMaterialButton" Grid.Column="2" Classes="panelAction"
-                            Content="Apply to Selection" ToolTip.Tip="Apply this material to the selected surfaces and use it for new geometry" />
+                             IsReadOnly="True" PlaceholderText="Choose a material"
+                             ToolTip.Tip="Choose a thumbnail to apply it to the current selection and use it for new geometry." />
                 </Grid>
                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                     <TextBlock x:Name="MaterialInfo" Classes="caption" VerticalAlignment="Center"

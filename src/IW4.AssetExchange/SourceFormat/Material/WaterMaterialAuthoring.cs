@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using IW4.Assets.Assets.Image;
 using IW4.Assets.Assets.Material;
+using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.AssetExchange.SourceFormat.Material;
 
@@ -16,7 +17,8 @@ public sealed record WaterMaterialDefinition(
     float AnimationSpeed,
     float FresnelMinimum,
     float FresnelMaximum,
-    float FresnelExponent);
+    float FresnelExponent,
+    OceanWaveSettings? Ocean = null);
 
 public static class WaterMaterialAuthoring
 {
@@ -27,12 +29,20 @@ public static class WaterMaterialAuthoring
     public const float MinimumFresnelExponent = 0.01f;
     public const float MaximumFresnelExponent = 32;
 
+    // Presentation opacity shared by the editor and the generated native water script.
+    public const float UnderwaterOpacity = 0.24f;
+    public const float UnderwaterFadeSeconds = 0.25f;
+    public const float UnderwaterBoundaryInset = 0.5f;
+
     private const int ManifestVersion = 1;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public static bool IsAuthoredMaterialName(string name) =>
         name.StartsWith("w/iw4r_", StringComparison.Ordinal) ||
         name.StartsWith("wc/iw4r_", StringComparison.Ordinal);
+
+    public static MaterialVec4 CreateUnderwaterTint(float red, float green, float blue) =>
+        new(red, green, blue, UnderwaterOpacity);
 
     public static WaterMaterialDefinition CreateDefinition(
         string sourceMaterial,
@@ -43,8 +53,10 @@ public static class WaterMaterialAuthoring
         float animationSpeed,
         float fresnelMinimum,
         float fresnelMaximum,
-        float fresnelExponent)
+        float fresnelExponent,
+        OceanWaveSettings? ocean = null)
     {
+        ocean = ocean?.Normalize();
         ValidateSourceName(sourceMaterial);
         ValidateSettings(red, green, blue, waveIntensity, animationSpeed,
             fresnelMinimum, fresnelMaximum, fresnelExponent);
@@ -54,10 +66,11 @@ public static class WaterMaterialAuthoring
         waveIntensity = NormalizeZero(waveIntensity);
         fresnelMinimum = NormalizeZero(fresnelMinimum);
         fresnelMaximum = NormalizeZero(fresnelMaximum);
-        string name = CreateMaterialName(sourceMaterial, red, green, blue, waveIntensity,
-            animationSpeed, fresnelMinimum, fresnelMaximum, fresnelExponent);
+        float[] values = [red, green, blue, waveIntensity, animationSpeed, fresnelMinimum, fresnelMaximum, fresnelExponent];
+        if (ocean is not null) values = [.. values, ocean.Height, ocean.Wavelength, ocean.Speed, ocean.Direction];
+        string name = CreateMaterialName(sourceMaterial, values);
         return new WaterMaterialDefinition(name, sourceMaterial, red, green, blue,
-            waveIntensity, animationSpeed, fresnelMinimum, fresnelMaximum, fresnelExponent);
+            waveIntensity, animationSpeed, fresnelMinimum, fresnelMaximum, fresnelExponent, ocean);
     }
 
     public static IReadOnlyDictionary<string, WaterMaterialDefinition> ReadDefinitions(
@@ -91,7 +104,11 @@ public static class WaterMaterialAuthoring
                     RequiredFloat(material, "speed"),
                     RequiredFloat(material, "fresnelMinimum"),
                     RequiredFloat(material, "fresnelMaximum"),
-                    RequiredFloat(material, "fresnelExponent"));
+                    RequiredFloat(material, "fresnelExponent"),
+                    material.TryGetProperty("ocean", out JsonElement ocean)
+                        ? new OceanWaveSettings(RequiredFloat(ocean, "height"), RequiredFloat(ocean, "wavelength"),
+                            RequiredFloat(ocean, "speed"), RequiredFloat(ocean, "direction"))
+                        : null);
                 if (!string.Equals(name, definition.Name, StringComparison.Ordinal))
                     throw new InvalidDataException($"Authored water material '{name}' does not match its saved values.");
                 if (!result.TryAdd(name, definition))
@@ -118,7 +135,7 @@ public static class WaterMaterialAuthoring
             WaterMaterialDefinition validated = CreateDefinition(definition.SourceMaterial,
                 definition.Red, definition.Green, definition.Blue, definition.WaveIntensity,
                 definition.AnimationSpeed, definition.FresnelMinimum, definition.FresnelMaximum,
-                definition.FresnelExponent);
+                definition.FresnelExponent, definition.Ocean);
             if (!string.Equals(definition.Name, validated.Name, StringComparison.Ordinal))
                 throw new InvalidDataException($"Authored water material '{definition.Name}' does not match its values.");
             if (!distinct.Add(definition.Name))
@@ -148,6 +165,15 @@ public static class WaterMaterialAuthoring
                 writer.WriteNumber("fresnelMinimum", definition.FresnelMinimum);
                 writer.WriteNumber("fresnelMaximum", definition.FresnelMaximum);
                 writer.WriteNumber("fresnelExponent", definition.FresnelExponent);
+                if (definition.Ocean is { } ocean)
+                {
+                    writer.WriteStartObject("ocean");
+                    writer.WriteNumber("height", ocean.Height);
+                    writer.WriteNumber("wavelength", ocean.Wavelength);
+                    writer.WriteNumber("speed", ocean.Speed);
+                    writer.WriteNumber("direction", ocean.Direction);
+                    writer.WriteEndObject();
+                }
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -253,7 +279,7 @@ public static class WaterMaterialAuthoring
             {
                 Name = definition.Name,
                 GameFlags = source.Info.GameFlags,
-                SortKey = source.Info.SortKey,
+                SortKey = MaterialSortKey.Opaque,
                 TextureAtlasRowCount = source.Info.TextureAtlasRowCount,
                 TextureAtlasColumnCount = source.Info.TextureAtlasColumnCount,
                 DrawSurf = source.Info.DrawSurf,
@@ -265,23 +291,45 @@ public static class WaterMaterialAuthoring
             TextureCount = checked((byte)textures.Length),
             ConstantCount = checked((byte)constants.Length),
             StateBitsCount = checked((byte)source.StateBits.Count),
-            StateFlags = source.StateFlags,
-            CameraRegion = source.CameraRegion,
+            StateFlags = (source.StateFlags & ~(MaterialStateFlags.CullBack | MaterialStateFlags.CullFront)) |
+                MaterialStateFlags.WritesDepth | MaterialStateFlags.UsesDepthBuffer,
+            CameraRegion = GfxCameraRegionType.LitOpaque,
             XStringCount = checked((byte)source.XStrings.Count),
             Pad43 = source.Pad43,
             InlineTechniqueSlotStateBits = source.InlineTechniqueSlotStateBits.ToArray(),
             Pad8E = source.Pad8E,
             RuntimeTechniqueSlotStateBits = source.RuntimeTechniqueSlotStateBits.ToArray(),
-            TechniqueSet = source.TechniqueSet,
+            TechniqueSet = OceanMaterialShaders.Create(source.TechniqueSet ??
+                throw new InvalidDataException("Missing source water technique set."), definition),
             Textures = textures,
             Constants = constants,
-            StateBits = source.StateBits.Select(value => new GfxStateBits
-            {
-                LoadBits = value.LoadBits.ToArray(),
-                CommandWordCount = value.CommandWordCount
-            }).ToArray(),
+            StateBits = CreateSurfaceStates(source),
             XStrings = source.XStrings.Select(value => new MaterialXStringEntry(value.Index, default, value.Value)).ToArray()
         };
+    }
+
+    private static GfxStateBits[] CreateSurfaceStates(MaterialAsset source)
+    {
+        HashSet<byte> colorStates = source.StateBitsEntries.Where((_, slot) => slot == (int)MaterialTechniqueType.Unlit ||
+                slot >= (int)MaterialTechniqueType.Lit && slot <= (int)MaterialTechniqueType.LitInstancedSunDfog)
+            .Select(entry => entry.StateBitsIndex).ToHashSet();
+        return source.StateBits.Select((state, index) =>
+        {
+            uint[] bits = state.LoadBits.ToArray();
+            if (colorStates.Contains(checked((byte)index)))
+            {
+                // Brush water has opaque coverage. Write depth before glass/FX,
+                // and shade the same surface from either side without duplicate faces.
+                bits[0] = (bits[0] & ~(GfxStateBitsEncoding.CullFaceMask |
+                    GfxStateBitsEncoding.BlendOperationRgbMask | GfxStateBitsEncoding.BlendOperationAlphaMask |
+                    GfxStateBitsEncoding.SourceBlendRgbMask | GfxStateBitsEncoding.DestinationBlendRgbMask |
+                    GfxStateBitsEncoding.SourceBlendAlphaMask | GfxStateBitsEncoding.DestinationBlendAlphaMask |
+                    GfxStateBitsEncoding.AlphaTestMask)) |
+                    ((uint)GfxCullFace.None << GfxStateBitsEncoding.CullFaceShift) | (uint)GfxStateBits0Flags.AlphaTestDisabled;
+                bits[1] |= (uint)GfxStateBits1Flags.DepthWrite;
+            }
+            return new GfxStateBits { LoadBits = bits, CommandWordCount = 0 };
+        }).ToArray();
     }
 
     private static GfxImageAsset CreateWaterImage(WaterMaterialDefinition definition, GfxImageAsset source)
@@ -363,7 +411,7 @@ public static class WaterMaterialAuthoring
         ArgumentNullException.ThrowIfNull(definition);
         WaterMaterialDefinition expected = CreateDefinition(definition.SourceMaterial, definition.Red, definition.Green,
             definition.Blue, definition.WaveIntensity, definition.AnimationSpeed, definition.FresnelMinimum,
-            definition.FresnelMaximum, definition.FresnelExponent);
+            definition.FresnelMaximum, definition.FresnelExponent, definition.Ocean);
         if (!string.Equals(expected.Name, definition.Name, StringComparison.Ordinal))
             throw new InvalidDataException($"Authored water material '{definition.Name}' does not match its values.");
     }
@@ -409,7 +457,8 @@ public static class WaterMaterialAuthoring
 
     private static float RequiredFloat(JsonElement element, string name)
     {
-        if (!element.TryGetProperty(name, out JsonElement value) || value.ValueKind != JsonValueKind.Number ||
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(name, out JsonElement value) || value.ValueKind != JsonValueKind.Number ||
             !value.TryGetSingle(out float result))
             throw new InvalidDataException($"An authored-water entry requires finite numeric '{name}'.");
         return result;

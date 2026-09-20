@@ -35,9 +35,11 @@ internal sealed class SceneRenderer
     private readonly List<string> _waterMaterials = [];
     private readonly List<GfxReflectionProbe> _probeOrigins = [];
     private readonly Dictionary<int, byte> _waterProbes = [];
+    private readonly Dictionary<string, List<(int Start, int Count)>> _waterDrawRanges = new(StringComparer.Ordinal);
     private bool _reflectionsDirty = true, _reflectionLighting;
     private (Vector3 Min, Vector3 Max)? _surfaceBounds;
-    private int _glyphStart, _glyphCount, _gridStart, _gridCount, _outlineStart, _outlineCount, _axesStart, _axesCount;
+    private int _glyphStart, _glyphCount, _gridStart, _gridCount, _highlightStart, _highlightCount,
+        _outlineStart, _outlineCount, _axesStart, _axesCount;
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
 
     internal string? Error { get; private set; } =
@@ -189,6 +191,7 @@ internal sealed class SceneRenderer
             gl.Uniform1(_texturedLocation, 0);
             gl.DrawArrays(PrimitiveType.Triangles, _glyphStart, (uint)_glyphCount);
             RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
+            RenderFaceHighlights(gl);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Disable(EnableCap.PolygonOffsetFill);
             gl.Uniform1(_litLocation, 0);
@@ -196,6 +199,7 @@ internal sealed class SceneRenderer
             gl.DrawArrays(PrimitiveType.Lines, _outlineStart, (uint)_outlineCount);
             gl.Disable(EnableCap.DepthTest);
             gl.DrawArrays(PrimitiveType.Lines, _axesStart, (uint)_axesCount);
+            _water.RenderUnderwater(gl, eye);
             gl.BindVertexArray(0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.UseProgram(0);
@@ -280,10 +284,10 @@ internal sealed class SceneRenderer
             gl.Uniform1(_texturedLocation, 1);
             if (water)
             {
-                for (int start = batch.Start; start < batch.Start + batch.Count; start += 3)
+                foreach (var range in _waterDrawRanges[batch.Material])
                 {
-                    BindWaterReflection(gl, start);
-                    gl.DrawArrays(PrimitiveType.Triangles, start, 3);
+                    BindWaterReflection(gl, range.Start);
+                    gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
                 }
             }
             else gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
@@ -319,6 +323,31 @@ internal sealed class SceneRenderer
     {
         bool available = _reflections.Bind(gl, _waterProbes.GetValueOrDefault(start));
         gl.Uniform1(_hasWaterReflectionLocation, available ? 1 : 0);
+    }
+
+    private void RenderFaceHighlights(GL gl)
+    {
+        if (_highlightCount == 0) return;
+        gl.ActiveTexture(TextureUnit.Texture0);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.Uniform1(_litLocation, 0);
+        gl.Uniform1(_texturedLocation, 0);
+        gl.Uniform1(_alphaTestLocation, 0);
+        gl.Uniform1(_premultiplyAlphaLocation, 0);
+        gl.Uniform1(_ignoreVertexColorLocation, 0);
+        gl.Uniform1(_waterPreviewLocation, 0);
+        gl.Enable(EnableCap.DepthTest);
+        gl.DepthFunc(DepthFunction.Lequal);
+        gl.DepthMask(false);
+        gl.Enable(EnableCap.Blend);
+        gl.BlendEquation(BlendEquationModeEXT.FuncAdd);
+        gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        gl.Enable(EnableCap.PolygonOffsetFill);
+        gl.PolygonOffset(-1, -1);
+        gl.DrawArrays(PrimitiveType.Triangles, _highlightStart, (uint)_highlightCount);
+        gl.DepthMask(true);
+        gl.Disable(EnableCap.Blend);
+        gl.Disable(EnableCap.PolygonOffsetFill);
     }
 
     private unsafe void RenderReflectionFace(GL gl, Matrix4x4 matrix, Vector3 origin,
@@ -382,7 +411,7 @@ internal sealed class SceneRenderer
 
     private unsafe void UploadScene(GL gl, EditorSession session, Func<string, MaterialSource?>? resolveMaterial)
     {
-        var scene = new SceneGeometry(session.Scene, session.TransformMode, session.Tool);
+        var scene = new SceneGeometry(session.Scene, session.TransformMode, session.Tool, resolveMaterial);
         _lighting.Update(gl, session.Scene);
         _batches.Clear();
         _batches.AddRange(scene.Batches);
@@ -393,14 +422,24 @@ internal sealed class SceneRenderer
         _waterMaterials.Clear();
         foreach (var batch in _surfaceBatches)
         {
-            _surfaceStates.Add(batch.Material, resolveMaterial?.Invoke(batch.Material)?.Surface ?? MaterialSurfaceState.Opaque);
-            if (resolveMaterial?.Invoke(batch.Material)?.IsWater == true)
+            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+            MaterialSurfaceState state = source?.Surface ?? MaterialSurfaceState.Opaque;
+            if (source?.IsWater == true)
             {
                 HasAnimatedWater = true;
                 _waterMaterials.Add(batch.Material);
+                state = state with { BlendOperation = GfxBlendOperation.Disabled, DepthWrite = true,
+                    CullFace = GfxCullFace.None, AlphaTest = null, SortKey = (int)MaterialSortKey.Opaque };
             }
+            _surfaceStates.Add(batch.Material, state);
         }
         _water.RemoveUnused(gl, _waterMaterials);
+        _water.SetVolumes(session.Scene.Document.World.Brushes.Where(brush =>
+            brush.Faces.Count != 0 && brush.Faces.All(face => resolveMaterial?.Invoke(face.Material)?.IsWater == true))
+            .Select(brush => (brush, resolveMaterial?.Invoke(brush.Faces
+                .OrderByDescending(face => face.Normal.Z)
+                .ThenBy(face => face.Material, StringComparer.Ordinal)
+                .First().Material))));
         if (!HasAnimatedWater) _reflections.Reload(gl);
         _probeOrigins.Clear();
         _probeOrigins.Add(new GfxReflectionProbe(0, 0, 0));
@@ -408,10 +447,13 @@ internal sealed class SceneRenderer
             if (entity.ClassName == "reflection_probe" && entity.TryGetOrigin(out Vector3 origin))
                 _probeOrigins.Add(new GfxReflectionProbe(origin.X, origin.Y, origin.Z));
         _waterProbes.Clear();
+        _waterDrawRanges.Clear();
         _glyphStart = scene.GlyphStart;
         _glyphCount = scene.GlyphCount;
         _gridStart = scene.GridStart;
         _gridCount = scene.GridCount;
+        _highlightStart = scene.HighlightStart;
+        _highlightCount = scene.HighlightCount;
         _outlineStart = scene.OutlineStart;
         _outlineCount = scene.OutlineCount;
         _axesStart = scene.AxesStart;
@@ -436,13 +478,32 @@ internal sealed class SceneRenderer
                         (data[start].Position + data[start + 1].Position + data[start + 2].Position) / 3);
                     _waterProbes.Add(start, BrushRenderCompiler.NearestProbe(center, _probeOrigins));
                 }
+        // Ocean subdivision can create thousands of triangles. Batch contiguous
+        // triangles sharing a reflection probe once, instead of issuing one draw each frame.
+        foreach (var batch in _surfaceBatches.Where(batch => _waterMaterials.Contains(batch.Material)))
+        {
+            var ranges = new List<(int Start, int Count)>();
+            for (int start = batch.Start; start < batch.Start + batch.Count;)
+            {
+                int end = start + 3;
+                while (end < batch.Start + batch.Count && _waterProbes[end] == _waterProbes[start]) end += 3;
+                ranges.Add((start, end - start));
+                start = end;
+            }
+            _waterDrawRanges.Add(batch.Material, ranges);
+        }
         _surfaceBounds = null;
         foreach (var batch in _surfaceBatches)
-        for (int index = batch.Start; index < batch.Start + batch.Count; index++)
         {
-            Vector3 position = data[index].Position;
-            _surfaceBounds = _surfaceBounds is { } bounds
-                ? (Vector3.Min(bounds.Min, position), Vector3.Max(bounds.Max, position)) : (position, position);
+            float height = resolveMaterial?.Invoke(batch.Material)?.Ocean?.Height ?? 0;
+            for (int index = batch.Start; index < batch.Start + batch.Count; index++)
+            {
+                Vector3 position = data[index].Position;
+                Vector3 extent = Vector3.UnitZ * height * data[index].Color.X;
+                _surfaceBounds = _surfaceBounds is { } bounds
+                    ? (Vector3.Min(bounds.Min, position - extent), Vector3.Max(bounds.Max, position + extent))
+                    : (position - extent, position + extent);
+            }
         }
         fixed (SceneVertex* pointer = data)
             gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(data.Length * sizeof(SceneVertex)), pointer, BufferUsageARB.StaticDraw);
@@ -493,6 +554,7 @@ internal sealed class SceneRenderer
         _reflections.ForgetHandles();
         _waterMaterials.Clear();
         _waterProbes.Clear();
+        _waterDrawRanges.Clear();
         _probeOrigins.Clear();
         _reflectionsDirty = true;
         _batches.Clear();

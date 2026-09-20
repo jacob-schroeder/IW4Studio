@@ -64,7 +64,8 @@ internal static class D3dbspGfxCodec
         IReadOnlyList<ushort>? dynamicEntityCounts = null,
         bool useSourceMaterials = false,
         GfxImageAsset? outdoorImage = null,
-        IReadOnlyList<float>? outdoorLookupMatrix = null)
+        IReadOnlyList<float>? outdoorLookupMatrix = null,
+        IReadOnlyDictionary<string, float>? materialVerticalDisplacements = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
@@ -76,6 +77,8 @@ internal static class D3dbspGfxCodec
         ArgumentNullException.ThrowIfNull(reflectionProbeOrigins);
         ArgumentNullException.ThrowIfNull(staticModelInstances);
         ArgumentNullException.ThrowIfNull(staticModelDrawInstances);
+        if (materialVerticalDisplacements?.Values.Any(value => !float.IsFinite(value) || value < 0) == true)
+            throw new InvalidDataException("Material vertical displacement bounds must be finite and nonnegative.");
         dynamicEntityCounts ??= [0, 0];
         if (dynamicEntityCounts.Count != 2)
         {
@@ -173,6 +176,9 @@ internal static class D3dbspGfxCodec
 
             int baseIndex = outputIndices.Count;
             BoundsAccumulator bounds = new();
+            string materialName = materials[materialIndex].Info.Name?.TrimStart(',') ?? "";
+            float amplitude = materialVerticalDisplacements?.GetValueOrDefault(materialName) ?? 0;
+            float displacement = 0;
             for (int localIndexOffset = 0; localIndexOffset < localIndexCount; localIndexOffset++)
             {
                 ushort localIndex = BinaryPrimitives.ReadUInt16LittleEndian(
@@ -185,9 +191,16 @@ internal static class D3dbspGfxCodec
 
                 outputIndices.Add(localIndex);
                 bounds.Add(positions[firstVertex + localIndex]);
+                // DiskGfxVertex color is BGRA. Ocean edge weights survive BSP export in red.
+                displacement = System.Math.Max(displacement, amplitude * vertexBytes[(firstVertex + localIndex) * DiskVertexSize + 26] / 255);
             }
 
             Bounds decodedBounds = bounds.ToBounds($"Render surface {surfaceIndex}");
+            decodedBounds.HalfSize = new Vec3
+            {
+                X = decodedBounds.HalfSize.X, Y = decodedBounds.HalfSize.Y,
+                Z = decodedBounds.HalfSize.Z + displacement
+            };
             worldBounds.Add(decodedBounds);
             byte primaryLightIndex = row[4];
             if (primaryLightIndex >= primaryLightCount)

@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.AssetExchange.SourceFormat.Material;
 using IW4.Assets.Assets.Material;
 
 namespace Iw4Radiant.Materials;
@@ -12,6 +13,7 @@ internal sealed record MaterialSource(
     internal string TechniqueSet { get; init; } = "";
     internal bool UsesVertexColor => TechniqueSet.StartsWith("wc_", StringComparison.Ordinal);
     internal MaterialWater? Water { get; init; }
+    internal OceanWaveSettings? Ocean { get; init; }
     internal bool IsWater => Water is not null;
     internal Vector4 WaterColor { get; init; }
     internal Vector4 EnvMapParms { get; init; }

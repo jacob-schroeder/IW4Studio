@@ -109,8 +109,10 @@ internal sealed class BrushLightingScene
         {
             bool solid = true;
             foreach (MapFace face in brush.Faces)
-                if (!materials.TryGetValue(face.Material, out var material) || material.IsSky ||
+                if (!CaulkMaterial.IsCaulk(face.Material) &&
+                    (!materials.TryGetValue(face.Material, out var material) || material.IsSky ||
                     material.IsWater || material.Surface.IsBlended || material.Surface.AlphaTest is not null)
+                )
                 {
                     solid = false;
                     break;
@@ -209,6 +211,7 @@ internal sealed class BrushLightingScene
     internal Vector3 Maximum { get; }
     internal Vector3 SunDirection { get; }
     internal bool IsSky(int face) => _materials[face].IsSky;
+    internal bool IsWater(int face) => _materials[face].IsWater;
 
     internal bool IsInsideSolid(Vector3 point, float inset = RayOffset)
     {

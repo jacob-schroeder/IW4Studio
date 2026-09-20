@@ -163,6 +163,17 @@ internal sealed class OrthographicGestures
 
     private void BeginSelection(EditorSession session)
     {
+        if (session.Tool == EditorTool.Vertex &&
+            OrthographicSelection.HitTestVertexHandle(session, _projection, _startScreen) is { } vertexHandle)
+        {
+            SelectVertices(vertexHandle.Vertices, toggle: _toggle);
+            if (!_toggle && session.CanTransformSelection && session.TransformMode == TransformMode.Move)
+            {
+                _transform.Begin(session, _startScreen);
+                _gesture = Gesture.Transform;
+            }
+            return;
+        }
         if (!_toggle && _transform.TryBegin(session, _startScreen)) { _gesture = Gesture.Transform; return; }
         object? hit = OrthographicSelection.HitTest(session, _projection, _startScreen);
         if (!_toggle)
@@ -191,6 +202,30 @@ internal sealed class OrthographicGestures
             return;
         }
         Select(hit, additive: true, toggle: true);
+    }
+
+    private void SelectVertices(IReadOnlyList<object> vertices, bool toggle)
+    {
+        if (Session is not { } session) return;
+        _changingSelection = true;
+        try
+        {
+            if (!toggle)
+            {
+                if (vertices.Any(vertex => !session.Selection.Contains(vertex)))
+                    session.Selection.SetRange(vertices);
+            }
+            else
+            {
+                bool select = vertices.Any(vertex => !session.Selection.Contains(vertex));
+                foreach (object vertex in vertices)
+                    if (session.Selection.Contains(vertex) != select)
+                        session.Selection.Set(vertex, additive: true, toggle: true);
+            }
+            session.Refresh();
+        }
+        finally { _changingSelection = false; }
+        _gestureItems = session.Selection.Items.ToArray();
     }
 
     internal void PointerMoved(PointerEventArgs e)

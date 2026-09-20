@@ -27,7 +27,7 @@ public partial class MainWindow : Window
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus);
         Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials,
             ResolveMaterial, () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
-            name => ResolveMaterial(name)?.UsesVertexColor == true);
+            name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus);
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.LayoutChanged += RefreshLayoutControls;
         Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
@@ -155,7 +155,7 @@ public partial class MainWindow : Window
             EditorTool.Terrain => "Drag a rectangle in XY to create terrain. Vertices per side controls the grid.",
             EditorTool.Sculpt => "Select terrain, choose Raise/lower, Smooth or Flatten in the inspector, then drag in XY. Escape cancels.",
             EditorTool.Face => "Shift-click a face in the camera to select or deselect it. Apply materials in the browser and adjust UVs in Surface.",
-            EditorTool.Vertex => "Shift-click vertices to select or deselect them; drag a selected handle or use numeric transforms.",
+            EditorTool.Vertex => "Drag projected corner or edge handles to reshape brushes; Shift-click toggles handle vertices.",
             EditorTool.Clip => "Select brushes, drag a clip line in a grid view, then choose Apply clip or press Enter. Left/right follows the line direction; Escape cancels.",
             _ => "Drag in a grid to create a brush when nothing is selected. Shift-click or Shift-drag to select/deselect; Esc clears selection."
         });
@@ -343,15 +343,15 @@ public partial class MainWindow : Window
         "Inspector: Selection, Surface and Entity tabs keep related controls together. Terrain appears for terrain tools or selections. Revert discards un-applied field changes; Apply edits the map.\n" +
         "Q/Esc: default brush workflow · S: faces · E: vertices · X: clipper · T: terrain · V: sculpt. Click an active tool again to leave it.\n" +
         "Selection: Shift-click selects/deselects. Shift-drag paints selection or deselection, starting with the first object. Plain left-drag draws a brush when nothing is selected; otherwise it moves the selected geometry. Escape clears selection.\n" +
-        "Surfaces: choose Face and Shift-click in the camera. Surface adjusts horizontal/vertical shift and repeat size, rotation, skew and Fit. Texture lock follows brush transforms.\n" +
-        "Vertices: Shift-click an object's vertex handles. Drag selected handles to edit. Invalid/collapsed brush edits are rejected.\n" +
+        "Surfaces: choose Face and Shift-click in the camera. Surface adjusts shift, repeat size, rotation and skew; Fit, Axial and Auto Caulk apply immediately. Texture lock follows brush transforms.\n" +
+        "Vertices: drag projected corner or edge-midpoint handles in any grid view. Overlapping depth vertices move together and the hidden axis stays fixed. Shift-click toggles handle vertices. Invalid/collapsed brush edits are rejected.\n" +
         "Clipper: select brushes, drag a line in a grid view, choose Split/Keep left/Keep right, then Apply or Enter. Cancel or Escape discards the preview.\n" +
         "Terrain: create/sculpt in XY; choose Raise/lower, Smooth or Flatten. Shift lowers. Select vertices for exact Smooth/Flatten, or two whole patches to Stitch their adjoining edges.\n" +
         "Camera: Shift-click selects; right-click lists overlapping objects and their materials. Right-drag orbits; Shift+right-drag or middle-drag pans; scroll zooms. Hold right and use WASD to move, Q/E down/up. End frames selection in camera and 2D views.\n" +
         "Fly: enable Fly in the camera header, then use WASD to move, Q/E down/up, right-drag to look, and Shift for speed. Scroll moves forward/back. Escape returns to orbit. Movement keys apply only while the camera is focused.\n" +
         "Lights: select a light and open Entity for color, radius and intensity. Expand Target and cone to create a spotlight target. The camera bulb button toggles lighting and shadows.\n" +
         "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
-        "Materials: click a thumbnail to choose the material for new geometry; Apply to Selection repaints selected surfaces. In Use shows map materials and combines with search. Preview shows image details and Size adjusts the tiles.\n" +
+        "Materials: click a thumbnail to repaint selected faces or geometry immediately and use it for new geometry. Explicit face selections take priority over whole brushes. In Use combines map materials with search. Preview shows image details and Size adjusts the tiles.\n" +
         "Grid: [ decreases and ] increases. Keys 1–9 choose 1, 2, 4, 8, 16, 32, 64, 256 and 512. The grid list also includes 0.25, 0.5 and 128. F opens visibility filters; M opens map statistics.\n" +
         "Classic toolbar: Modify mirrors flip/rotate, texture projection, CSG and patch commands. CT/PT select through the map; Touching/Inside use Base and Depth as a finite selection volume. Axis locks constrain movement. Cubic clipping, alpha preview and quick category visibility affect only the editor view.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +

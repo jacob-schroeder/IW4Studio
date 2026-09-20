@@ -7,6 +7,8 @@ internal sealed record MapRenderSurface(string Material, Vector3[] Vertices, Vec
     Vector3[] Normals, Vector3[] Tangents, Vector3[] Binormals, Vector2[] TextureCoordinates, Vector4[] Colors, int SourceIndex)
 {
     internal int ModelIndex { get; init; }
+    internal float Displacement { get; init; }
+    internal Vector3? ReflectionCenter { get; init; }
     internal bool SharesBoundaryAt(MapRenderSurface other, Vector3 point)
     {
         if (Material != other.Material) return false;

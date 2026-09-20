@@ -15,4 +15,8 @@
       <Compile Remove="SourceFormat\SourceExchange.cs" />
     </ItemGroup>
 
+    <ItemGroup>
+      <EmbeddedResource Include="SourceFormat/Material/Shaders/*.cg" LogicalName="IW4.Ocean.%(Filename)%(Extension)" />
+    </ItemGroup>
+
 </Project>

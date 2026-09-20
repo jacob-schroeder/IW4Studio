@@ -1,3 +1,4 @@
+using IW4.AssetExchange.SourceFormat.Material;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
@@ -36,16 +37,16 @@ internal static class MapSurfaceCompiler
             throw new InvalidDataException($"Terrain '{terrain.Material}' has no visible triangles.");
     }
 
-    internal static MapRenderSurface[] Compile(MapDocument document)
+    internal static MapRenderSurface[] Compile(MapDocument document, IReadOnlyDictionary<string, MaterialSource> materials)
     {
-        var surfaces = CompileEntity(document.World).ToList();
+        var surfaces = CompileEntity(document.World, materials).ToList();
         int index = 0;
         foreach (MapEntity entity in MapCompiler.BrushEntities(document))
         {
             index++;
             if (entity.ClassName != "script_brushmodel") continue;
             int first = surfaces.Count;
-            surfaces.AddRange(CompileEntity(entity).Select(surface => surface with
+            surfaces.AddRange(CompileEntity(entity, materials).Select(surface => surface with
             {
                 ModelIndex = index, SourceIndex = surface.SourceIndex + first
             }));
@@ -53,29 +54,42 @@ internal static class MapSurfaceCompiler
         return surfaces.ToArray();
     }
 
-    private static MapRenderSurface[] CompileEntity(MapEntity entity)
+    private static MapRenderSurface[] CompileEntity(MapEntity entity, IReadOnlyDictionary<string, MaterialSource> materials)
     {
         var surfaces = new List<MapRenderSurface>();
-        foreach (MapPolygon polygon in entity.Brushes.SelectMany(brush => brush.GetPolygons()))
+        foreach (MapPolygon boundary in entity.Brushes.SelectMany(brush => brush.GetPolygons()))
         {
-            if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material)) continue;
-            Vector3 normal = polygon.Face.Normal;
-            var mapping = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
-            Vector3 projectedU = mapping.U - normal * Vector3.Dot(normal, mapping.U);
-            Vector3 projectedV = mapping.V - normal * Vector3.Dot(normal, mapping.V);
-            Vector3 alongU = Vector3.Cross(projectedV, normal);
-            float determinant = Vector3.Dot(projectedU, alongU);
-            if (!float.IsFinite(determinant) || determinant == 0)
-                throw new InvalidDataException("A brush face has a degenerate texture basis.");
-            Vector3 tangent = Vector3.Normalize(alongU / determinant);
-            Vector3 binormal = Vector3.Normalize(Vector3.Cross(normal, projectedU) / determinant);
-            int count = polygon.Vertices.Length;
-            Vector2[] uv = polygon.Vertices.Select(point => new Vector2(
-                (float)(BrushGeometry.Dot(mapping.U, point) + mapping.Offset.X),
-                (float)(BrushGeometry.Dot(mapping.V, point) + mapping.Offset.Y))).ToArray();
-            surfaces.Add(new(polygon.Face.Material, polygon.Vertices, normal,
-                Enumerable.Repeat(normal, count).ToArray(), Enumerable.Repeat(tangent, count).ToArray(),
-                Enumerable.Repeat(binormal, count).ToArray(), uv, Enumerable.Repeat(Vector4.One, count).ToArray(), surfaces.Count));
+            if (ClipBrushMaterial.IsPlayerClip(boundary.Face.Material) || CaulkMaterial.IsCaulk(boundary.Face.Material)) continue;
+            MaterialSource material = materials[boundary.Face.Material];
+            if (!OceanSurfaceGeometry.IsVisibleSurface(boundary, material.IsWater)) continue;
+            OceanWaveSettings? ocean = material.Ocean;
+            foreach (MapPolygon polygon in OceanSurfaceGeometry.Subdivide(boundary, ocean))
+            {
+                Vector3 normal = polygon.Face.Normal;
+                var mapping = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
+                Vector3 projectedU = mapping.U - normal * Vector3.Dot(normal, mapping.U);
+                Vector3 projectedV = mapping.V - normal * Vector3.Dot(normal, mapping.V);
+                Vector3 alongU = Vector3.Cross(projectedV, normal);
+                float determinant = Vector3.Dot(projectedU, alongU);
+                if (!float.IsFinite(determinant) || determinant == 0)
+                    throw new InvalidDataException("A brush face has a degenerate texture basis.");
+                Vector3 tangent = Vector3.Normalize(alongU / determinant);
+                Vector3 binormal = Vector3.Normalize(Vector3.Cross(normal, projectedU) / determinant);
+                int count = polygon.Vertices.Length;
+                Vector2[] uv = polygon.Vertices.Select(point => new Vector2(
+                    (float)(BrushGeometry.Dot(mapping.U, point) + mapping.Offset.X),
+                    (float)(BrushGeometry.Dot(mapping.V, point) + mapping.Offset.Y))).ToArray();
+                surfaces.Add(new(polygon.Face.Material, polygon.Vertices, normal,
+                    Enumerable.Repeat(normal, count).ToArray(), Enumerable.Repeat(tangent, count).ToArray(),
+                    Enumerable.Repeat(binormal, count).ToArray(), uv, polygon.Vertices.Select(point => ocean is null ? Vector4.One :
+                        OceanSurfaceGeometry.VertexColor(boundary, ocean, point)).ToArray(), surfaces.Count)
+                {
+                    Displacement = ocean is not null && OceanSurfaceGeometry.IsTop(boundary) ? ocean.Height : 0,
+                    ReflectionCenter = boundary.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / boundary.Vertices.Length
+                });
+                if (surfaces.Count > ushort.MaxValue)
+                    throw new InvalidDataException("Compilation supports at most 65535 render surfaces. Increase the ocean wavelength to reduce subdivision.");
+            }
         }
 
         var meshIndices = entity.Terrains.Select((terrain, index) => (terrain, index: index + surfaces.Count))

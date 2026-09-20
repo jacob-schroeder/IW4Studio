@@ -48,7 +48,7 @@ internal static class BrushRenderCompiler
         IReadOnlyList<Vector3> probeOrigins,
         CancellationToken cancellationToken)
     {
-        MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document);
+        MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document, materialSources);
         Matrix4x4[] modelTransforms = [Matrix4x4.Identity, .. MapCompiler.BrushEntities(document).Select(entity =>
             Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) * Matrix4x4.Transpose(EntityOrientation.Rotation(entity)))];
         int worldSurfaceCount = polygons.Count(polygon => polygon.ModelIndex == 0);
@@ -69,7 +69,7 @@ internal static class BrushRenderCompiler
         {
             string name = collisionMaterial.Name ?? throw new InvalidDataException("A collision material has no name.");
             // Collision rows repeat a material name for each authored brush contents category.
-            if (ClipBrushMaterial.IsPlayerClip(name) || materials.ContainsKey(name)) continue;
+            if (ClipBrushMaterial.IsPlayerClip(name) || CaulkMaterial.IsCaulk(name) || materials.ContainsKey(name)) continue;
             materials.Add(name, new MaterialAsset
             {
                 Info = new MaterialInfo
@@ -118,7 +118,7 @@ internal static class BrushRenderCompiler
             {
                 Material = material,
                 LightmapIndex = faceLightmapIndices[faceIndex],
-                ReflectionProbeIndex = isSky ? (byte)0 : NearestProbe(polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length, probes),
+                ReflectionProbeIndex = isSky ? (byte)0 : NearestProbe(polygon.ReflectionCenter ?? polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length, probes),
                 PrimaryLightIndex = isSky ? (byte)0 : (byte)1,
                 Flags = lightingScene.CastsSunShadow(faceIndex) ? GfxSurfaceFlags.CastsSunShadow : 0,
                 Triangles = new SrfTriangles
@@ -138,7 +138,7 @@ internal static class BrushRenderCompiler
         // every stored surface (inline brush-model vertices are entity-local).
         Bounds bounds = GetBounds(document.Brushes.SelectMany(brush => brush.GetVertices())
             .Concat(document.Terrains.SelectMany(terrain => terrain.Vertices))
-            .Concat(polygons.SelectMany(polygon => polygon.Vertices.Select(point => Vector3.Transform(point, modelTransforms[polygon.ModelIndex])))));
+            .Concat(polygons.SelectMany(polygon => RenderBoundsVertices(polygon, modelTransforms[polygon.ModelIndex]))));
         ushort[] surfaceIndices = Enumerable.Range(0, worldSurfaceCount).Select(index => checked((ushort)index)).ToArray();
         uint surfaceCount = checked((uint)worldSurfaceCount);
         uint surfaceWords = checked(4 * ((surfaceCount + 127) >> 7));
@@ -229,6 +229,16 @@ internal static class BrushRenderCompiler
             if (candidate < distance) { distance = candidate; nearest = index; }
         }
         return checked((byte)nearest);
+    }
+
+    private static IEnumerable<Vector3> RenderBoundsVertices(MapRenderSurface surface, Matrix4x4 local)
+    {
+        foreach (Vector3 point in surface.Vertices)
+        {
+            Vector3 position = Vector3.Transform(point, local);
+            yield return position - Vector3.UnitZ * surface.Displacement;
+            yield return position + Vector3.UnitZ * surface.Displacement;
+        }
     }
 
     private static Bounds GetBounds(IEnumerable<Vector3> vertices)

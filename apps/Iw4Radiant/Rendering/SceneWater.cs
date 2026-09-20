@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Numerics;
+using IW4.AssetExchange.SourceFormat.Material;
 using IW4.Assets.Assets.Material;
 using Iw4Radiant.Materials;
+using Iw4Radiant.MapSource;
 using Silk.NET.OpenGL;
 
 namespace Iw4Radiant.Rendering;
@@ -13,17 +15,26 @@ internal sealed class SceneWater
     private sealed class Wave(MaterialSource source)
     {
         internal readonly MaterialSource Source = source;
+        internal readonly (Vector4 First, Vector4 Second) OceanWaves = source.Ocean?.GetWaves() ?? (Vector4.Zero, Vector4.Zero);
+        internal readonly float InverseFadeWidth = source.Ocean is { } ocean ? 1 / ocean.FadeWidth : 0;
         internal uint Spectrum, First, Second, Height;
         internal string? Error;
     }
 
     private readonly Dictionary<string, Wave> _waves = new(StringComparer.Ordinal);
     private readonly long _started = Stopwatch.GetTimestamp();
-    private uint _program, _framebuffer, _vertexArray;
+    private uint _program, _framebuffer, _vertexArray, _underwaterProgram;
+    private int _underwaterTintLocation;
+    private readonly List<(Vector3 Minimum, Vector3 Maximum, Vector4[] Planes, MaterialVec4 Tint)> _volumes = [];
+    private bool _submerged;
+    private float _underwaterMix;
+    private double _lastUnderwaterTime;
+    private MaterialVec4 _underwaterTint;
     private int _pass, _time, _axis, _span, _size;
-    private int _enabled, _color, _environment;
+    private int _enabled, _color, _environment, _oceanTime, _oceanFirst, _oceanSecond, _oceanFade;
     private int _maximumSize;
     private bool _floatTargets;
+    private float _oceanSeconds;
 
     internal string? Notice { get; private set; }
 
@@ -33,6 +44,8 @@ internal sealed class SceneWater
             gl.IsExtensionPresent("GL_EXT_color_buffer_float");
         _maximumSize = gl.GetInteger(GetPName.MaxTextureSize);
         _program = SceneShaderProgram.Create(gl, header, "water-pass.vert", "water-spectrum.frag");
+        _underwaterProgram = SceneShaderProgram.Create(gl, header, "water-pass.vert", "underwater.frag");
+        _underwaterTintLocation = gl.GetUniformLocation(_underwaterProgram, "uTint");
         _pass = gl.GetUniformLocation(_program, "uPass");
         _time = gl.GetUniformLocation(_program, "uTime");
         _axis = gl.GetUniformLocation(_program, "uAxis");
@@ -43,6 +56,10 @@ internal sealed class SceneWater
         _enabled = gl.GetUniformLocation(sceneProgram, "uWaterPreview");
         _color = gl.GetUniformLocation(sceneProgram, "uWaterColor");
         _environment = gl.GetUniformLocation(sceneProgram, "uEnvMapParms");
+        _oceanTime = gl.GetUniformLocation(sceneProgram, "uOceanTime");
+        _oceanFirst = gl.GetUniformLocation(sceneProgram, "uOceanFirst");
+        _oceanSecond = gl.GetUniformLocation(sceneProgram, "uOceanSecond");
+        _oceanFade = gl.GetUniformLocation(sceneProgram, "uOceanInverseFade");
         gl.UseProgram(sceneProgram);
         gl.Uniform1(gl.GetUniformLocation(sceneProgram, "uWaterHeight"), 4);
         gl.Uniform1(gl.GetUniformLocation(sceneProgram, "uWaterReflection"), 5);
@@ -64,7 +81,9 @@ internal sealed class SceneWater
         gl.Disable(EnableCap.Blend);
         gl.Disable(EnableCap.PolygonOffsetFill);
         gl.ColorMask(true, true, true, true);
-        gl.Uniform1(_time, (float)Stopwatch.GetElapsedTime(_started).TotalSeconds);
+        double seconds = Stopwatch.GetElapsedTime(_started).TotalSeconds;
+        _oceanSeconds = (float)(seconds % 43200);
+        gl.Uniform1(_time, (float)seconds);
         foreach (string name in materials)
         {
             if (resolve(name) is not { Water: { } water } source) continue;
@@ -117,10 +136,70 @@ internal sealed class SceneWater
         Vector4 color = wave.Source.WaterColor, environment = wave.Source.EnvMapParms;
         gl.Uniform4(_color, color.X, color.Y, color.Z, color.W);
         gl.Uniform4(_environment, environment.X, environment.Y, environment.Z, environment.W);
+        var (first, second) = wave.OceanWaves;
+        gl.Uniform4(_oceanFirst, first.X, first.Y, first.Z, first.W);
+        gl.Uniform4(_oceanSecond, second.X, second.Y, second.Z, second.W);
+        gl.Uniform1(_oceanTime, _oceanSeconds);
+        gl.Uniform1(_oceanFade, wave.InverseFadeWidth);
         gl.ActiveTexture(TextureUnit.Texture4);
         gl.BindTexture(TextureTarget.Texture2D, wave.Height);
         gl.ActiveTexture(TextureUnit.Texture0);
         return true;
+    }
+
+    internal void SetVolumes(IEnumerable<(MapBrush Brush, MaterialSource? Material)> brushes)
+    {
+        _volumes.Clear();
+        foreach ((MapBrush brush, MaterialSource? material) in brushes)
+        {
+            if (material is null) continue;
+            var (minimum, maximum) = brush.GetBounds();
+            _volumes.Add((minimum, maximum, brush.Faces.Select(face =>
+                new Vector4(face.Normal, (float)BrushGeometry.Dot(face.Normal, face.A))).ToArray(),
+                WaterMaterialAuthoring.CreateUnderwaterTint(material.WaterColor.X, material.WaterColor.Y,
+                    material.WaterColor.Z)));
+        }
+        if (_volumes.Count == 0) { _submerged = false; _underwaterMix = 0; }
+    }
+
+    internal void RenderUnderwater(GL gl, Vector3 eye)
+    {
+        float margin = (_submerged ? 1 : -1) * WaterMaterialAuthoring.UnderwaterBoundaryInset;
+        _submerged = false;
+        foreach (var volume in _volumes)
+        {
+            if (eye.X < volume.Minimum.X - margin || eye.X > volume.Maximum.X + margin ||
+                eye.Y < volume.Minimum.Y - margin || eye.Y > volume.Maximum.Y + margin ||
+                eye.Z < volume.Minimum.Z - margin || eye.Z > volume.Maximum.Z + margin) continue;
+            bool inside = true;
+            foreach (Vector4 plane in volume.Planes)
+                if (eye.X * plane.X + eye.Y * plane.Y + eye.Z * plane.Z > plane.W + margin)
+                { inside = false; break; }
+            if (inside)
+            {
+                _submerged = true;
+                _underwaterTint = volume.Tint;
+                break;
+            }
+        }
+        double seconds = Stopwatch.GetElapsedTime(_started).TotalSeconds;
+        float step = (float)Math.Clamp(seconds - _lastUnderwaterTime, 0, 0.1) / WaterMaterialAuthoring.UnderwaterFadeSeconds;
+        _lastUnderwaterTime = seconds;
+        _underwaterMix = Math.Clamp(_underwaterMix + (_submerged ? step : -step), 0, 1);
+        if (_underwaterMix == 0) return;
+        gl.UseProgram(_underwaterProgram);
+        gl.Uniform4(_underwaterTintLocation, _underwaterTint.X, _underwaterTint.Y, _underwaterTint.Z,
+            _underwaterTint.W * _underwaterMix);
+        gl.Disable(EnableCap.DepthTest);
+        gl.Disable(EnableCap.CullFace);
+        gl.Enable(EnableCap.Blend);
+        gl.BlendEquation(BlendEquationModeEXT.FuncAdd);
+        gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        gl.BindVertexArray(_vertexArray);
+        gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
+        gl.BindVertexArray(0);
+        gl.Disable(EnableCap.Blend);
+        gl.UseProgram(0);
     }
 
     private void Draw(GL gl, uint source, uint target)
@@ -228,6 +307,7 @@ internal sealed class SceneWater
     {
         Reload(gl);
         if (_program != 0) gl.DeleteProgram(_program);
+        if (_underwaterProgram != 0) gl.DeleteProgram(_underwaterProgram);
         if (_framebuffer != 0) gl.DeleteFramebuffer(_framebuffer);
         if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
         ForgetHandles();
@@ -236,7 +316,11 @@ internal sealed class SceneWater
     internal void ForgetHandles()
     {
         _waves.Clear();
-        _program = _framebuffer = _vertexArray = 0;
+        _program = _framebuffer = _vertexArray = _underwaterProgram = 0;
+        _volumes.Clear();
+        _submerged = false;
+        _underwaterMix = 0;
+        _lastUnderwaterTime = 0;
         Notice = null;
     }
 }

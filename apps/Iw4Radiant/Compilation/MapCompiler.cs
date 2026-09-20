@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text;
+using IW4.AssetExchange.SourceFormat.Material;
 using IW4.Assets.Assets.ColMap;
 using IW4.Assets.Assets.FxMap;
 using IW4.Assets.Assets.GameMap;
@@ -29,7 +30,7 @@ internal static class MapCompiler
             "Free-for-all spawns are required before building.";
     }
 
-    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
+    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
         "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. One render cell; stage volumes, primary local lights, curves, breakable glass and bounced lighting are not compiled yet.";
 
@@ -52,6 +53,7 @@ internal static class MapCompiler
             MapOrganization.Ungroup(document, group);
         }
         Vector3[] probeOrigins = Validate(document, assetName, materials);
+        materials = PrepareWaterMaterials(document, materials);
         ClipMaterial[] baseMaterials = document.Brushes.SelectMany(brush => brush.Faces)
             .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
@@ -60,6 +62,9 @@ internal static class MapCompiler
                 if (ClipBrushMaterial.IsPlayerClip(name))
                     return new ClipMaterial { Name = name, Contents = ClipBrushMaterial.Contents,
                         SurfaceFlags = ClipBrushMaterial.SurfaceFlags };
+                if (CaulkMaterial.IsCaulk(name))
+                    return new ClipMaterial { Name = name, Contents = CaulkMaterial.Contents,
+                        SurfaceFlags = CaulkMaterial.SurfaceFlags };
                 if (!materials.TryGetValue(name, out MaterialSource? material) ||
                     !material.IsWater && !File.Exists(material.ImagePath))
                     throw new InvalidDataException($"Material '{name}' is unavailable. Load its material and image in the asset browser before building.");
@@ -113,6 +118,29 @@ internal static class MapCompiler
         ]));
     }
 
+    private static IReadOnlyDictionary<string, MaterialSource> PrepareWaterMaterials(MapDocument document,
+        IReadOnlyDictionary<string, MaterialSource> materials)
+    {
+        // Give unedited stock water the same two-sided native surface path as
+        // inspector-authored water, without modifying the user's source document.
+        var prepared = new Dictionary<string, MaterialSource>(materials, StringComparer.Ordinal);
+        var definitions = new Dictionary<string, WaterMaterialDefinition>(
+            WaterMaterialAuthoring.ReadDefinitions(document.World.Properties), StringComparer.Ordinal);
+        foreach (MapFace face in document.World.Brushes.SelectMany(brush => brush.Faces))
+        {
+            if (!prepared.TryGetValue(face.Material, out MaterialSource? source) || !source.IsWater ||
+                WaterMaterialAuthoring.IsAuthoredMaterialName(face.Material)) continue;
+            Vector4 color = source.WaterColor, reflection = source.EnvMapParms;
+            WaterMaterialDefinition definition = WaterMaterialAuthoring.CreateDefinition(source.Name,
+                color.X, color.Y, color.Z, 1, 1, reflection.X, reflection.Y, reflection.Z);
+            definitions[definition.Name] = definition;
+            prepared.TryAdd(definition.Name, source with { Name = definition.Name });
+            face.Material = definition.Name;
+        }
+        WaterMaterialAuthoring.WriteDefinitions(document.World.Properties, definitions.Values);
+        return prepared;
+    }
+
     private static Vector3[] Validate(MapDocument document, string assetName, IReadOnlyDictionary<string, MaterialSource> materials)
     {
         var probeOrigins = new List<Vector3>();
@@ -146,6 +174,9 @@ internal static class MapCompiler
                 throw new NotSupportedException("Apply native water materials to every face of a water brush. Mixed water and solid faces have no proven collision contents.");
             if (water && !document.World.Brushes.Contains(brush))
                 throw new NotSupportedException("Native water is supported only on world brushes, not brush entities.");
+            if (brush.Faces.Any(face => materials.TryGetValue(face.Material, out var material) && material.Ocean is not null) &&
+                !brush.GetPolygons().Any(OceanSurfaceGeometry.IsTop))
+                throw new NotSupportedException("Ocean waves require an upward horizontal water surface. Select a horizontal water top and apply ocean waves.");
             if (water && kind != BrushKind.Structural)
                 throw new NotSupportedException("Native water already supplies its proven DETAIL|WATER contents. Remove the brush contents override.");
             if (kind != BrushKind.Structural && (playerClip || sky))

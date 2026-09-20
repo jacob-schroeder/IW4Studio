@@ -1,3 +1,4 @@
+using IW4.AssetExchange.SourceFormat.Material;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Editing;
@@ -14,12 +15,15 @@ internal sealed class SceneGeometry
     internal int GlyphCount { get; }
     internal int GridStart { get; }
     internal int GridCount { get; }
+    internal int HighlightStart { get; }
+    internal int HighlightCount { get; }
     internal int OutlineStart { get; }
     internal int OutlineCount { get; }
     internal int AxesStart { get; }
     internal int AxesCount { get; }
 
-    internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool)
+    internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool,
+        Func<string, MaterialSource?>? resolveMaterial)
     {
         MapDocument document = editor.Document;
         EditorSelection selection = editor.Selection;
@@ -31,24 +35,31 @@ internal sealed class SceneGeometry
         }
         var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces)>(StringComparer.Ordinal);
+        var highlights = new List<SceneVertex>();
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
         var clipColor = new Vector3(0.85f, 0.35f, 0.85f);
+        var caulkColor = new Vector3(0.45f, 0.68f, 0.72f);
         var wireColor = new Vector3(0.48f, 0.51f, 0.55f);
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         {
             bool selected = selectedObjects.Contains(brush) || selectedFaces.Contains(polygon.Face);
-            if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material))
+            MaterialSource? source = resolveMaterial?.Invoke(polygon.Face.Material);
+            if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
+                !OceanSurfaceGeometry.IsVisibleSurface(polygon, source?.IsWater == true))
             {
                 for (int index = 0; index < polygon.Vertices.Length; index++)
                     AddLine(outlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
-                        selected ? highlight : clipColor);
+                        selected ? highlight : CaulkMaterial.IsCaulk(polygon.Face.Material) ? caulkColor :
+                            source?.IsWater == true ? wireColor : clipColor);
                 continue;
             }
             var geometry = GetMaterialGeometry(polygon.Face.Material);
             int start = geometry.Triangles.Count;
-            AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines);
+            AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines,
+                source?.Ocean);
+            if (selectedFaces.Contains(polygon.Face)) AddHighlight(polygon);
             geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
                 polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
         }
@@ -137,6 +148,9 @@ internal sealed class SceneGeometry
                 offset == 0 ? new Vector3(0.45f, 0.23f, 0.23f) : color);
         }
         GridCount = all.Count - GridStart;
+        HighlightStart = all.Count;
+        all.AddRange(highlights);
+        HighlightCount = all.Count - HighlightStart;
         OutlineStart = all.Count;
         all.AddRange(outlines);
         OutlineCount = all.Count - OutlineStart;
@@ -166,15 +180,16 @@ internal sealed class SceneGeometry
         Vertices = all.ToArray();
 
         void AddPolygon(MapPolygon polygon, List<SceneVertex> vertices, Vector3 color, Vector3? outlineColor,
-            List<SceneVertex>? wireframe = null)
+            List<SceneVertex>? wireframe = null, OceanWaveSettings? ocean = null)
         {
             Vector3 normal = polygon.Face.Normal;
             var projection = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
-            for (int i = 1; i < polygon.Vertices.Length - 1; i++)
+            foreach (MapPolygon tile in OceanSurfaceGeometry.Subdivide(polygon, ocean))
+            for (int i = 1; i < tile.Vertices.Length - 1; i++)
             {
-                Add(polygon.Vertices[0]);
-                Add(polygon.Vertices[i]);
-                Add(polygon.Vertices[i + 1]);
+                Add(tile.Vertices[0]);
+                Add(tile.Vertices[i]);
+                Add(tile.Vertices[i + 1]);
             }
             for (int i = 0; i < polygon.Vertices.Length; i++)
             {
@@ -186,7 +201,22 @@ internal sealed class SceneGeometry
             }
 
             void Add(Vector3 position) => vertices.Add(new SceneVertex(position, normal,
-                new Vector2(Vector3.Dot(position, projection.U), Vector3.Dot(position, projection.V)) + projection.Offset, color));
+                new Vector2(Vector3.Dot(position, projection.U), Vector3.Dot(position, projection.V)) + projection.Offset,
+                ocean is null ? new Vector4(color, 1) : OceanSurfaceGeometry.VertexColor(polygon, ocean, position)));
+        }
+
+        void AddHighlight(MapPolygon polygon)
+        {
+            Vector3 normal = polygon.Face.Normal;
+            Vector4 color = new(highlight, 0.32f);
+            for (int index = 1; index < polygon.Vertices.Length - 1; index++)
+            {
+                Add(polygon.Vertices[0]);
+                Add(polygon.Vertices[index]);
+                Add(polygon.Vertices[index + 1]);
+            }
+
+            void Add(Vector3 position) => highlights.Add(new SceneVertex(position, normal, Vector2.Zero, color));
         }
 
         (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces) GetMaterialGeometry(string material)
