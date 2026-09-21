@@ -1,3 +1,4 @@
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -12,6 +13,7 @@ namespace Iw4Radiant.Views;
 public partial class MaterialBrowser : UserControl
 {
     private readonly Dictionary<string, MaterialThumbnail> _materials = new(StringComparer.Ordinal);
+    private readonly AvaloniaList<MaterialThumbnail> _visibleMaterials = [];
     private HashSet<string> _usedMaterials = new(StringComparer.Ordinal);
     private bool _filtering;
     private Bitmap? _preview;
@@ -97,6 +99,7 @@ public partial class MaterialBrowser : UserControl
     {
         if (invalidateLoad) _loadRevision++;
         MaterialList.ItemsSource = null;
+        _visibleMaterials.Clear();
         ReleasePreview();
         foreach (var material in _materials.Values) material.Preview?.Dispose();
         _materials.Clear();
@@ -125,25 +128,43 @@ public partial class MaterialBrowser : UserControl
         if (_dialogs is not { } dialogs || _session is not { } session || _setStatus is not { } setStatus) return false;
         int revision = ++_loadRevision;
         bool loaded = false;
+        bool catalogInstalled = false;
         try
         {
             if (nonBlocking) setStatus("Loading saved material previews…");
             else dialogs.SetBusy(true);
-            var (materials, skippedImages, unsupportedMaterials) = await Task.Run(() => LoadThumbnails(root));
+            var (catalog, unsupportedMaterials) = await Task.Run(() => MaterialCatalog.Read(root));
             if (revision != _loadRevision)
-            {
-                foreach (var material in materials) material.Preview?.Dispose();
                 return false;
-            }
             ReleaseImages(invalidateLoad: false);
-            foreach (var material in materials) _materials.Add(material.Name, material);
+            MaterialSource[] sources = catalog.Values.ToArray();
+            catalogInstalled = true;
             session.Material = "";
             MaterialName.Text = "";
             MaterialFilter.Text = "";
             FilterMaterials();
+            int skippedImages = 0;
+            for (int index = 0; index < sources.Length;)
+            {
+                int batchSize = index == 0 ? 16 : 64;
+                var batch = sources[index..Math.Min(index + batchSize, sources.Length)];
+                var (thumbnails, skipped) = await Task.Run(() => LoadThumbnails(batch));
+                if (revision != _loadRevision)
+                {
+                    foreach (var thumbnail in thumbnails) thumbnail.Preview?.Dispose();
+                    return false;
+                }
+                skippedImages += skipped;
+                foreach (var thumbnail in thumbnails)
+                {
+                    _materials.Add(thumbnail.Name, thumbnail);
+                }
+                FilterMaterials();
+                index += batch.Length;
+            }
             CatalogChanged?.Invoke();
             loaded = true;
-            setStatus($"Loaded {materials.Count(material => material.Preview is not null)} material previews from {root}." +
+            setStatus($"Loaded {_materials.Values.Count(material => material.Preview is not null)} material previews from {root}." +
                 (skippedImages > 0 ? $" {skippedImages} images could not be read." : "") +
                 (unsupportedMaterials > 0 ? $" {unsupportedMaterials} unsupported material definitions were skipped." : ""));
         }
@@ -151,6 +172,7 @@ public partial class MaterialBrowser : UserControl
         {
             if (revision == _loadRevision)
             {
+                if (catalogInstalled) ReleaseImages(invalidateLoad: false);
                 if (nonBlocking) setStatus($"Could not load saved materials: {exception.Message}");
                 else
                 {
@@ -159,33 +181,37 @@ public partial class MaterialBrowser : UserControl
                 }
             }
         }
+        catch
+        {
+            if (catalogInstalled && revision == _loadRevision) ReleaseImages(invalidateLoad: false);
+            throw;
+        }
         finally { if (!nonBlocking) dialogs.SetBusy(false); }
         if (loaded && FolderLoaded is { } loadRelatedAssets) await loadRelatedAssets(root, nonBlocking);
         return loaded;
     }
 
-    private static (List<MaterialThumbnail> Materials, int SkippedImages, int UnsupportedMaterials) LoadThumbnails(string root)
+    private static (List<MaterialThumbnail> Materials, int SkippedImages) LoadThumbnails(
+        IReadOnlyList<MaterialSource> sources)
     {
         var thumbnails = new List<MaterialThumbnail>();
         int skipped = 0;
         try
         {
-            var (catalog, unsupported) = MaterialCatalog.Read(root);
-            foreach (var material in catalog)
+            foreach (var material in sources)
             {
                 try
                 {
-                    var preview = MaterialImages.Load(material.Value, 96);
-                    thumbnails.Add(new MaterialThumbnail(material.Value, preview));
+                    var preview = MaterialImages.Load(material, 96);
+                    thumbnails.Add(new MaterialThumbnail(material, preview));
                 }
                 catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
                 {
                     skipped++;
-                    if (material.Value.IsSky)
-                        thumbnails.Add(new MaterialThumbnail(material.Value, null));
+                    if (material.IsSky) thumbnails.Add(new MaterialThumbnail(material, null));
                 }
             }
-            return (thumbnails, skipped, unsupported);
+            return (thumbnails, skipped);
         }
         catch
         {
@@ -226,7 +252,15 @@ public partial class MaterialBrowser : UserControl
         _filtering = true;
         try
         {
-            MaterialList.ItemsSource = shown;
+            if (!ReferenceEquals(MaterialList.ItemsSource, _visibleMaterials)) MaterialList.ItemsSource = _visibleMaterials;
+            for (int index = 0; index < shown.Length; index++)
+            {
+                if (index < _visibleMaterials.Count && ReferenceEquals(_visibleMaterials[index], shown[index])) continue;
+                int currentIndex = _visibleMaterials.IndexOf(shown[index]);
+                if (currentIndex >= index) _visibleMaterials.RemoveAt(currentIndex);
+                _visibleMaterials.Insert(index, shown[index]);
+            }
+            while (_visibleMaterials.Count > shown.Length) _visibleMaterials.RemoveAt(_visibleMaterials.Count - 1);
             MaterialList.SelectedItem = selected is not null && shown.Contains(selected) ? selected : null;
         }
         finally { _filtering = false; }
