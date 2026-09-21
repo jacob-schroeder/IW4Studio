@@ -134,7 +134,12 @@ internal static class MapSurfaceCompiler
                 normals.Select(n => Unit(tangent - n * Vector3.Dot(tangent, n))).ToArray(),
                 normals.Select(n => Unit(binormal - n * Vector3.Dot(binormal, n))).ToArray(),
                 indices.Select(index => terrain.TextureCoordinates[index]).ToArray(),
-                indices.Select(index => terrain.Colors[index]).ToArray(), meshIndices[terrain]));
+                indices.Select(index => terrain.Colors[index]).ToArray(), meshIndices[terrain])
+            {
+                // MapTerrain.LightmapSize is authored world-units-per-secondary-luxel. Preserve it
+                // on every terrain render triangle; brush surfaces intentionally leave this null.
+                LightmapSize = terrain.LightmapSize
+            });
         }
         return surfaces.ToArray();
     }

@@ -20,14 +20,17 @@ internal static class BrushLightGridCompiler
             mins[axis] = checked((ushort)(MathF.Floor(minimum) - 1));
             maxs[axis] = checked((ushort)(MathF.Ceiling(maximum) + 1));
         }
-        int entryCount = checked((maxs[0] - mins[0] + 1) * (maxs[1] - mins[1] + 1) * (maxs[2] - mins[2] + 1));
+        // Use a long for the product: imported bounds can overflow a 32-bit count before the
+        // native dense representation's ushort.MaxValue sample cap is checked.
+        long entryCount = (long)(maxs[0] - mins[0] + 1) * (maxs[1] - mins[1] + 1) * (maxs[2] - mins[2] + 1);
+        Vector3 sceneCenter = (scene.Minimum + scene.Maximum) * 0.5f;
         if (entryCount > ushort.MaxValue)
-            throw new NotSupportedException("The direct-light brush profile supports at most 65535 light-grid samples. Reduce the compiled world bounds.");
-        var entries = new List<GfxLightGridEntry>(entryCount);
+            return CreateFallbackLightGrid(scene, sceneCenter);
+        var entries = new List<GfxLightGridEntry>(checked((int)entryCount));
         var colors = new List<GfxLightGridColors>
         {
             new(new byte[GfxLightGridColors.SerializedSize]),
-            Encode(scene.DiffuseIrradianceDirections((scene.Minimum + scene.Maximum) * 0.5f))
+            Encode(scene.DiffuseIrradianceDirections(sceneCenter))
         };
         var colorIndices = new Dictionary<string, ushort>(StringComparer.Ordinal);
         for (ushort index = 0; index < colors.Count; index++) colorIndices[Convert.ToHexString(colors[index].RgbBytes.ToArray())] = index;
@@ -58,6 +61,32 @@ internal static class BrushLightGridCompiler
         // row separate from the authored Colors[1] used by native fallback sampling.
         colors.Add(GfxLightGridCodec.CreateDefault());
         return GfxLightGridCodec.CreateDenseGrid(mins, maxs, entries, colors, 1);
+    }
+
+    private static GfxLightGrid CreateFallbackLightGrid(BrushLightingScene scene, Vector3 sceneCenter)
+    {
+        // Oversized maps use the canonical zero-entry/no-bake grid. Native model/static lighting
+        // then falls back to the scene-center/default colors while surface lightmaps stay baked.
+        return new GfxLightGrid
+        {
+            SunPrimaryLightIndex = 1,
+            Mins = [0, 0, 0],
+            Maxs = [0, 0, 0],
+            RowAxis = GfxLightGridHorizontalAxis.X,
+            ColAxis = GfxLightGridHorizontalAxis.Y,
+            RowDataStart = [ushort.MaxValue],
+            RawRowDataSize = 0,
+            RawRowData = [],
+            EntryCount = 0,
+            Entries = [],
+            ColorCount = 3,
+            Colors =
+            [
+                new GfxLightGridColors(new byte[GfxLightGridColors.SerializedSize]),
+                Encode(scene.DiffuseIrradianceDirections(sceneCenter)),
+                GfxLightGridCodec.CreateDefault()
+            ]
+        };
     }
 
     private static GfxLightGridColors Encode(IReadOnlyList<Vector3> irradiance)

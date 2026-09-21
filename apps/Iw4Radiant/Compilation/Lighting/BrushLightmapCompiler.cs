@@ -8,9 +8,11 @@ namespace Iw4Radiant.Compilation.Lighting;
 
 internal static class BrushLightmapCompiler
 {
-    // One secondary luxel covers four map units; primary sun visibility has twice the resolution.
-    private const float LuxelSize = 4;
+    // Brushes do not author a usable bake density; retain the existing four-unit baseline when capacity permits.
+    private const float BrushLuxelSize = 4;
     private const int Border = 2;
+    // v22 has 31 baked arrays; index 31 is reserved for unlightmapped sky/water faces.
+    private const int LightmapLimit = 31;
 
     internal static (IReadOnlyList<GfxLightmapArray> Lightmaps, Vector2[][] FaceUvs, byte[] FaceLightmapIndices)
         BakeLightmaps(BrushLightingScene scene)
@@ -18,6 +20,7 @@ internal static class BrushLightmapCompiler
         var lightmaps = new List<GfxLightmapArray>();
         var faceUvs = new Vector2[scene.Polygons.Count][];
         var faceIndices = new byte[scene.Polygons.Count];
+        float[] luxelSizes = ChooseLuxelSizes(scene);
         byte[] primary = new byte[GfxLightmapCodec.PrimaryWidth * GfxLightmapCodec.PrimaryHeight];
         byte[] secondary = new byte[GfxLightmapCodec.SecondaryWidth * GfxLightmapCodec.SecondaryHeight * 4];
         var parallelOptions = new ParallelOptions
@@ -37,19 +40,16 @@ internal static class BrushLightmapCompiler
             // Subdivision must not turn every wave cell into an unused CPU lighting bake.
             if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex))
             {
-                faceIndices[faceIndex] = 31;
+                faceIndices[faceIndex] = LightmapLimit;
                 continue;
             }
             Vector3 normal = polygon.Normal, anchor = polygon.Vertices[0];
             Vector3 uAxis = Vector3.Normalize(polygon.Vertices[1] - anchor);
             Vector3 vAxis = Vector3.Normalize(Vector3.Cross(normal, uAxis));
-            Vector2[] coordinates = polygon.Vertices.Select(point => new Vector2(
-                Vector3.Dot(point - anchor, uAxis), Vector3.Dot(point - anchor, vAxis))).ToArray();
-            Vector2 minimum = coordinates.Aggregate(Vector2.Min), maximum = coordinates.Aggregate(Vector2.Max);
-            int width = checked((int)MathF.Ceiling((maximum.X - minimum.X) / LuxelSize) + 1 + Border * 2);
-            int height = checked((int)MathF.Ceiling((maximum.Y - minimum.Y) / LuxelSize) + 1 + Border * 2);
-            if (width > GfxLightmapCodec.SecondaryWidth || height > GfxLightmapCodec.SecondaryPlaneHeight)
-                throw new NotSupportedException($"Surface {faceIndex} exceeds one baked lightmap tile. Split the surface into smaller brushes or mesh cells.");
+            var (coordinates, minimum, maximum) = Project(polygon);
+            float luxelSize = luxelSizes[faceIndex];
+            int width = TileLength(maximum.X - minimum.X, luxelSize);
+            int height = TileLength(maximum.Y - minimum.Y, luxelSize);
             if (cursorX + width > GfxLightmapCodec.SecondaryWidth)
             {
                 cursorX = 0;
@@ -66,8 +66,8 @@ internal static class BrushLightmapCompiler
             faceIndices[faceIndex] = checked((byte)lightmaps.Count);
             for (int vertex = 0; vertex < coordinates.Length; vertex++)
                 faceUvs[faceIndex][vertex] = new Vector2(
-                    (cursorX + Border + (coordinates[vertex].X - minimum.X) / LuxelSize + 0.5f) / GfxLightmapCodec.SecondaryWidth,
-                    (cursorY + Border + (coordinates[vertex].Y - minimum.Y) / LuxelSize + 0.5f) / GfxLightmapCodec.SecondaryPlaneHeight);
+                    (cursorX + Border + (coordinates[vertex].X - minimum.X) / luxelSize + 0.5f) / GfxLightmapCodec.SecondaryWidth,
+                    (cursorY + Border + (coordinates[vertex].Y - minimum.Y) / luxelSize + 0.5f) / GfxLightmapCodec.SecondaryPlaneHeight);
 
             if (traversal is null)
                 Parallel.For(0, height, parallelOptions, y => BakeRow(y, null, null, 0));
@@ -182,8 +182,8 @@ internal static class BrushLightmapCompiler
 
             Vector3 Position(float x, float y)
             {
-                Vector3 point = anchor + uAxis * (minimum.X + (x - Border) * LuxelSize) +
-                    vAxis * (minimum.Y + (y - Border) * LuxelSize);
+                Vector3 point = anchor + uAxis * (minimum.X + (x - Border) * luxelSize) +
+                    vAxis * (minimum.Y + (y - Border) * luxelSize);
                 bool inside = true;
                 Vector3 closest = point;
                 float closestDistance = float.PositiveInfinity;
@@ -204,10 +204,135 @@ internal static class BrushLightmapCompiler
 
         void Flush()
         {
-            if (lightmaps.Count >= 31)
+            if (lightmaps.Count >= LightmapLimit)
                 throw new NotSupportedException("The baked world exceeds the 31-lightmap v22 limit.");
             lightmaps.Add(GfxLightmapCodec.Create(lightmaps.Count, primary, secondary));
         }
+    }
+
+    private static float[] ChooseLuxelSizes(BrushLightingScene scene)
+    {
+        // Keep authored terrain density and the automatic 4-unit brush baseline where possible.
+        // Oversized individual faces are locally coarsened by AtlasCount; only then do automatic
+        // brush densities coarsen to fit the cap, with authored mesh density scaled as a last resort.
+        var spans = new Vector2[scene.Polygons.Count];
+        for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
+        {
+            scene.CancellationToken.ThrowIfCancellationRequested();
+            if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex)) continue;
+            var (_, minimum, maximum) = Project(scene.Polygons[faceIndex]);
+            spans[faceIndex] = maximum - minimum;
+        }
+
+        float brushLower = 1, brushUpper = 1;
+        float maximumBrushScale = MaximumScale(scene, spans, authored: false);
+        while (AtlasCount(scene, spans, brushUpper, 1, null) > LightmapLimit && brushUpper < maximumBrushScale)
+        {
+            brushLower = brushUpper;
+            brushUpper = MathF.Min(brushUpper * 2, maximumBrushScale);
+        }
+        float authoredScale = 1;
+        if (AtlasCount(scene, spans, brushUpper, authoredScale, null) <= LightmapLimit && brushUpper > 1)
+        {
+            // Preserve authored mesh density and find the finest automatic brush density that fits.
+            for (int iteration = 0; iteration < 24; iteration++)
+            {
+                float middle = brushLower + (brushUpper - brushLower) * 0.5f;
+                if (middle == brushLower || middle == brushUpper) break;
+                if (AtlasCount(scene, spans, middle, authoredScale, null) <= LightmapLimit) brushUpper = middle;
+                else brushLower = middle;
+            }
+        }
+        else if (AtlasCount(scene, spans, brushUpper, authoredScale, null) > LightmapLimit)
+        {
+            // Only a map whose authored meshes cannot fit after brushes reach minimum size
+            // needs its relative authored densities scaled together.
+            float authoredLower = 1, authoredUpper = 1;
+            float maximumAuthoredScale = MaximumScale(scene, spans, authored: true);
+            while (AtlasCount(scene, spans, brushUpper, authoredUpper, null) > LightmapLimit && authoredUpper < maximumAuthoredScale)
+            {
+                authoredLower = authoredUpper;
+                authoredUpper = MathF.Min(authoredUpper * 2, maximumAuthoredScale);
+            }
+            if (AtlasCount(scene, spans, brushUpper, authoredUpper, null) > LightmapLimit)
+                throw new NotSupportedException("The baked world exceeds the 31-lightmap v22 limit even at minimum lightmap density.");
+            for (int iteration = 0; iteration < 24; iteration++)
+            {
+                float middle = authoredLower + (authoredUpper - authoredLower) * 0.5f;
+                if (middle == authoredLower || middle == authoredUpper) break;
+                if (AtlasCount(scene, spans, brushUpper, middle, null) <= LightmapLimit) authoredUpper = middle;
+                else authoredLower = middle;
+            }
+            authoredScale = authoredUpper;
+        }
+
+        var result = new float[scene.Polygons.Count];
+        _ = AtlasCount(scene, spans, brushUpper, authoredScale, result);
+        return result;
+    }
+
+    private static float MaximumScale(BrushLightingScene scene, Vector2[] spans, bool authored)
+    {
+        float result = 1;
+        for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
+        {
+            MapRenderSurface surface = scene.Polygons[faceIndex];
+            if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex) || surface.LightmapSize.HasValue != authored) continue;
+            float baseline = surface.LightmapSize ?? BrushLuxelSize;
+            float scale = MathF.Max(spans[faceIndex].X, spans[faceIndex].Y) / baseline;
+            result = MathF.Max(result, float.IsFinite(scale) ? scale : float.MaxValue);
+        }
+        return result < float.MaxValue ? MathF.BitIncrement(result) : result;
+    }
+
+    private static int AtlasCount(BrushLightingScene scene, Vector2[] spans, float brushScale, float authoredScale,
+        float[]? luxelSizes)
+    {
+        int count = 1, cursorX = 0, cursorY = 0, rowHeight = 0;
+        for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
+        {
+            if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex)) continue;
+            MapRenderSurface surface = scene.Polygons[faceIndex];
+            float requestedSize = (surface.LightmapSize ?? BrushLuxelSize) *
+                (surface.LightmapSize.HasValue ? authoredScale : brushScale);
+            if (!float.IsFinite(requestedSize)) requestedSize = float.MaxValue;
+            float luxelSize = MathF.Max(requestedSize,
+                MathF.Max(spans[faceIndex].X / (GfxLightmapCodec.SecondaryWidth - 1 - Border * 2),
+                    spans[faceIndex].Y / (GfxLightmapCodec.SecondaryPlaneHeight - 1 - Border * 2)));
+            while (TileLength(spans[faceIndex].X, luxelSize) > GfxLightmapCodec.SecondaryWidth ||
+                   TileLength(spans[faceIndex].Y, luxelSize) > GfxLightmapCodec.SecondaryPlaneHeight)
+                luxelSize = MathF.BitIncrement(luxelSize);
+            if (luxelSizes is not null) luxelSizes[faceIndex] = luxelSize;
+            int width = TileLength(spans[faceIndex].X, luxelSize);
+            int height = TileLength(spans[faceIndex].Y, luxelSize);
+            if (cursorX + width > GfxLightmapCodec.SecondaryWidth)
+            {
+                cursorX = 0;
+                cursorY += rowHeight;
+                rowHeight = 0;
+            }
+            if (cursorY + height > GfxLightmapCodec.SecondaryPlaneHeight)
+            {
+                count++;
+                cursorX = cursorY = rowHeight = 0;
+            }
+            cursorX += width;
+            rowHeight = Math.Max(rowHeight, height);
+        }
+        return count;
+    }
+
+    private static int TileLength(float span, float luxelSize) =>
+        checked((int)MathF.Ceiling(span / luxelSize) + 1 + Border * 2);
+
+    private static (Vector2[] Coordinates, Vector2 Minimum, Vector2 Maximum) Project(MapRenderSurface polygon)
+    {
+        Vector3 anchor = polygon.Vertices[0];
+        Vector3 uAxis = Vector3.Normalize(polygon.Vertices[1] - anchor);
+        Vector3 vAxis = Vector3.Normalize(Vector3.Cross(polygon.Normal, uAxis));
+        Vector2[] coordinates = polygon.Vertices.Select(point => new Vector2(
+            Vector3.Dot(point - anchor, uAxis), Vector3.Dot(point - anchor, vAxis))).ToArray();
+        return (coordinates, coordinates.Aggregate(Vector2.Min), coordinates.Aggregate(Vector2.Max));
     }
 
     private static byte EncodeIrradiance(float value)
