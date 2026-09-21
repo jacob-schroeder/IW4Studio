@@ -14,7 +14,9 @@
 
 /** For GL_NV_vertex_program */
 /*@{*/
-#define MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS 256
+/* Keep emitted Cg programs within the 512 instructions supported by the
+ * repository's RSX decoder and Cg tooling (not the RSX storage capacity). */
+#define MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS 512
 #define MAX_NV_VERTEX_PROGRAM_TEMPS         16
 #define MAX_NV_VERTEX_PROGRAM_PARAMS        96
 #define MAX_NV_VERTEX_PROGRAM_INPUTS        16

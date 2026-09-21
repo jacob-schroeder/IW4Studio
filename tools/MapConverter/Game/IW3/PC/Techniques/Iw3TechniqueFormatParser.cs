@@ -183,18 +183,25 @@ internal sealed class Iw3TechniqueFormatParser
                 techniquePath);
         }
 
-        var reader = CreateReader(techniquePath, techniqueSet: false);
+        Iw3TechniqueSource technique = ParseTechnique(techniquePath) with { Name = techniqueName };
+        _techniqueCache.Add(techniqueName, technique);
+        return technique;
+    }
+
+    internal static Iw3TechniqueSource ParseTechnique(string techniquePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(techniquePath);
+        string fullPath = Path.GetFullPath(techniquePath);
+        var reader = CreateReader(fullPath, techniqueSet: false);
         var passes = new List<Iw3TechniquePassSource>();
         while (reader.Peek().Kind != TokenKind.End)
             passes.Add(ParsePass(reader));
         if (passes.Count == 0)
             throw reader.Error(reader.Peek(), "An IW3 technique must contain at least one pass.");
 
-        var technique = new Iw3TechniqueSource(
-            techniqueName,
+        return new Iw3TechniqueSource(
+            Path.GetFileNameWithoutExtension(fullPath),
             Array.AsReadOnly(passes.ToArray()));
-        _techniqueCache.Add(techniqueName, technique);
-        return technique;
     }
 
     private static Iw3TechniquePassSource ParsePass(TokenReader reader)

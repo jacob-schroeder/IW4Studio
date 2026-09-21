@@ -514,7 +514,8 @@ void CCompilerFP::emit_src(struct nvfx_insn *insn,s32 pos,bool *have_const)
 
 	switch(src->reg.type) {
 		case NVFXSR_INPUT:
-			if(src->reg.index<0 || src->reg.index>=MAX_NV_FRAGMENT_PROGRAM_INPUTS)
+			// Input 14 is RSX signed triangle area (SM3 VFACE), not a varying.
+			if(src->reg.index<0 || (src->reg.index>=MAX_NV_FRAGMENT_PROGRAM_INPUTS && src->reg.index!=14))
 				throw std::runtime_error("Fragment input register is out of range.");
 			sr |= (NVFX_FP_REG_TYPE_INPUT << NVFX_FP_REG_TYPE_SHIFT);
 			hw[0] |= (src->reg.index << NVFX_FP_OP_INPUT_SRC_SHIFT);

@@ -14,6 +14,7 @@ internal sealed record MaterialSource(
     internal bool UsesVertexColor => TechniqueSet.StartsWith("wc_", StringComparison.Ordinal);
     internal MaterialWater? Water { get; init; }
     internal OceanWaveSettings? Ocean { get; init; }
+    internal string OceanFoamImagePath { get; init; } = "";
     internal bool IsWater => Water is not null;
     internal Vector4 WaterColor { get; init; }
     internal Vector4 EnvMapParms { get; init; }

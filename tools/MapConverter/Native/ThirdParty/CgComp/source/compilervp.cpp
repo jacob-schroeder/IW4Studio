@@ -601,6 +601,9 @@ struct nvfx_reg CCompilerVP::constant(s32 pipe, f32 x, f32 y, f32 z, f32 w)
 
 int CCompilerVP::grow_insns(int count)
 {
+	if(count<0 || count>MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS - m_nInstructions)
+		throw std::runtime_error("Vertex program exceeds the supported Cg limit of " +
+			std::to_string(MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS) + " instructions.");
 	int pos = m_nInstructions;
 
 	m_nInstructions += count;

@@ -32,8 +32,8 @@ public sealed record D3dbspLinkRequest(
     public bool UseCompiledLighting { get; init; }
     public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<MaterialAsset> AvailableMaterials { get; init; } = [];
-    // Authored vertical displacement, weighted by the render vertex red channel.
-    public IReadOnlyDictionary<string, float> MaterialVerticalDisplacements { get; init; } =
+    // Conservative displacement on each axis, weighted by the render vertex red channel.
+    public IReadOnlyDictionary<string, float> MaterialDisplacements { get; init; } =
         new Dictionary<string, float>(StringComparer.Ordinal);
     public IReadOnlyList<GfxLightmapArray> Lightmaps { get; init; } = [];
     public GfxImageAsset? OutdoorImage { get; init; }
@@ -359,7 +359,7 @@ public static class D3dbspAssetLinker
             useSourceMaterials: request.UseSourceMaterials,
             outdoorImage: request.OutdoorImage,
             outdoorLookupMatrix: request.OutdoorLookupMatrix,
-            materialVerticalDisplacements: request.MaterialVerticalDisplacements);
+            materialDisplacements: request.MaterialDisplacements);
 
         var fxWorld = new FxWorldAsset
         {

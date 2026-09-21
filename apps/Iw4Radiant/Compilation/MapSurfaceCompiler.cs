@@ -66,7 +66,7 @@ internal static class MapSurfaceCompiler
             if (!OceanSurfaceGeometry.IsVisibleSurface(boundary, material.IsWater)) continue;
             OceanWaveSettings? ocean = material.Ocean;
             var contacts = material.IsWater ? shore?.Contacts(boundary) ?? [] : [];
-            foreach (MapPolygon polygon in OceanSurfaceGeometry.Subdivide(boundary, ocean, contacts))
+            foreach (MapPolygon polygon in OceanSurfaceGeometry.Subdivide(boundary, ocean, contacts, shore))
             {
                 Vector3 normal = polygon.Face.Normal;
                 var mapping = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
@@ -86,16 +86,14 @@ internal static class MapSurfaceCompiler
                     Enumerable.Repeat(normal, count).ToArray(), Enumerable.Repeat(tangent, count).ToArray(),
                     Enumerable.Repeat(binormal, count).ToArray(), uv, polygon.Vertices.Select(point =>
                     {
-                        Vector4 color = ocean is null ? Vector4.One : OceanSurfaceGeometry.VertexColor(boundary, ocean, point, contacts);
-                        if (material.IsWater) color.W = WaterShoreGeometry.VertexAlpha(point, contacts);
+                        Vector4 color = ocean is null ? Vector4.One : OceanSurfaceGeometry.VertexColor(boundary, ocean, point, shore);
+                        if (material.IsWater && ocean is null) color.W = WaterShoreGeometry.VertexAlpha(point, contacts);
                         return color;
                     }).ToArray(), surfaces.Count)
                 {
                     Displacement = ocean is not null && OceanSurfaceGeometry.IsTop(boundary) ? ocean.Height : 0,
                     ReflectionCenter = boundary.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / boundary.Vertices.Length
                 });
-                if (surfaces.Count > ushort.MaxValue)
-                    throw new InvalidDataException("Compilation supports at most 65535 render surfaces. Increase the ocean wavelength to reduce subdivision.");
             }
         }
 

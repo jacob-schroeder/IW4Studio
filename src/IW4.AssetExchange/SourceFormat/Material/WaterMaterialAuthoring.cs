@@ -23,11 +23,16 @@ public sealed record WaterMaterialDefinition(
 public static class WaterMaterialAuthoring
 {
     public const string MapPropertyName = "_iw4radiant_water";
+    public const string OceanFoamImageName = "water_ocean_foam_scrolling_col";
     public const float MaximumWaveIntensity = 8;
     public const float MinimumAnimationSpeed = 0.05f;
     public const float MaximumAnimationSpeed = 8;
     public const float MinimumFresnelExponent = 0.01f;
     public const float MaximumFresnelExponent = 32;
+
+    // Keep authored water in the opaque draw group, after ordinary ground and before decals,
+    // while retaining shoreline blending.
+    public const MaterialSortKey SurfaceSortKey = (MaterialSortKey)((byte)MaterialSortKey.DecalBottom1 - 1);
 
     // Presentation opacity shared by the editor and the generated native water script.
     public const float UnderwaterOpacity = 0.24f;
@@ -36,6 +41,8 @@ public static class WaterMaterialAuthoring
 
     private const int ManifestVersion = 1;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private static readonly byte[] OceanShapeName = Encoding.ASCII.GetBytes("oceanShape\0\0");
+    private static readonly byte[] OceanMotionName = Encoding.ASCII.GetBytes("oceanMotion\0");
 
     public static bool IsAuthoredMaterialName(string name) =>
         name.StartsWith("w/iw4r_", StringComparison.Ordinal) ||
@@ -225,7 +232,7 @@ public static class WaterMaterialAuthoring
     }
 
     public static MaterialAsset CreateMaterial(MaterialAsset source, WaterMaterialDefinition definition,
-        out GfxImageAsset waterImage)
+        out GfxImageAsset waterImage, GfxImageAsset? foamImage = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ValidateDefinition(definition);
@@ -254,6 +261,20 @@ public static class WaterMaterialAuthoring
                 ? CreateWater(water, definition, createdWaterImage)
                 : null
         }).ToArray();
+        if (definition.Ocean is not null)
+        {
+            if (foamImage is null || foamImage.Name != OceanFoamImageName)
+                throw new InvalidDataException($"Ocean material '{definition.Name}' requires stock image '{OceanFoamImageName}'. Supply its mp_rust provider.");
+            textures = [.. textures, new MaterialTextureDef
+            {
+                NameHash = MaterialExchange.HashSourcePropertyName("foamMap"),
+                NameStart = (byte)'f', NameEnd = (byte)'p',
+                SamplerState = MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapLinear,
+                Semantic = TextureSemantic.ColorMap,
+                Image = foamImage
+            }];
+            textures = textures.OrderBy(texture => texture.NameHash).ToArray();
+        }
         int waterColorCount = 0, environmentCount = 0;
         MaterialConstantDef[] constants = source.Constants.Select(constant =>
         {
@@ -273,13 +294,28 @@ public static class WaterMaterialAuthoring
         }).ToArray();
         if (waterColorCount != 1 || environmentCount != 1)
             throw new InvalidDataException($"Source material '{definition.SourceMaterial}' requires one waterColor and one envMapParms constant.");
+        var (shape, motion) = definition.Ocean?.GetParameters() ?? (System.Numerics.Vector4.Zero, System.Numerics.Vector4.Zero);
+        constants = [.. constants,
+            new MaterialConstantDef
+            {
+                NameHash = MaterialExchange.HashSourcePropertyName("oceanShape"),
+                NameBytes = OceanShapeName.ToArray(),
+                Literal = new MaterialVec4(shape.X, shape.Y, shape.Z, shape.W)
+            },
+            new MaterialConstantDef
+            {
+                NameHash = MaterialExchange.HashSourcePropertyName("oceanMotion"),
+                NameBytes = OceanMotionName.ToArray(),
+                Literal = new MaterialVec4(motion.X, motion.Y, motion.Z, motion.W)
+            }];
+        constants = constants.OrderBy(constant => constant.NameHash).ToArray();
         return new MaterialAsset
         {
             Info = new MaterialInfo
             {
                 Name = definition.Name,
                 GameFlags = source.Info.GameFlags,
-                SortKey = MaterialSortKey.TransparentWater,
+                SortKey = SurfaceSortKey,
                 TextureAtlasRowCount = source.Info.TextureAtlasRowCount,
                 TextureAtlasColumnCount = source.Info.TextureAtlasColumnCount,
                 DrawSurf = source.Info.DrawSurf,
@@ -293,7 +329,7 @@ public static class WaterMaterialAuthoring
             StateBitsCount = checked((byte)source.StateBits.Count),
             StateFlags = (source.StateFlags & ~(MaterialStateFlags.CullBack | MaterialStateFlags.CullFront)) |
                 MaterialStateFlags.WritesDepth | MaterialStateFlags.UsesDepthBuffer,
-            CameraRegion = GfxCameraRegionType.LitTrans,
+            CameraRegion = GfxCameraRegionType.LitOpaque,
             XStringCount = checked((byte)source.XStrings.Count),
             Pad43 = source.Pad43,
             InlineTechniqueSlotStateBits = source.InlineTechniqueSlotStateBits.ToArray(),
@@ -329,6 +365,10 @@ public static class WaterMaterialAuthoring
                     ((uint)GfxBlendOperation.Add << GfxStateBitsEncoding.BlendOperationRgbShift) |
                     ((uint)GfxBlend.SourceAlpha << GfxStateBitsEncoding.SourceBlendRgbShift) |
                     ((uint)GfxBlend.InverseSourceAlpha << GfxStateBitsEncoding.DestinationBlendRgbShift) |
+                    // Keep native water's framebuffer coverage when RGB blending is enabled.
+                    ((uint)GfxBlendOperation.Add << GfxStateBitsEncoding.BlendOperationAlphaShift) |
+                    ((uint)GfxBlend.InverseDestinationAlpha << GfxStateBitsEncoding.SourceBlendAlphaShift) |
+                    ((uint)GfxBlend.One << GfxStateBitsEncoding.DestinationBlendAlphaShift) |
                     (uint)GfxStateBits0Flags.AlphaTestDisabled;
                 bits[1] |= (uint)GfxStateBits1Flags.DepthWrite;
             }

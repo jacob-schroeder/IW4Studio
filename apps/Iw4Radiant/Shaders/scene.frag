@@ -3,8 +3,11 @@ in vec2 vOceanSlope;
 in vec3 vPosition;
 in vec2 vTexCoord;
 in vec4 vColor;
+in vec4 vOceanSurface;
 
 #include "material-alpha.glsl"
+#define IW4_OPENGL
+#include "ocean-surface.hlsl"
 
 uniform sampler2D uTexture;
 uniform bool uTextured;
@@ -22,6 +25,9 @@ uniform bool uHasWaterReflection;
 uniform vec4 uEnvMapParms;
 uniform bool uLinearCapture;
 uniform vec4 uWaterColor;
+uniform sampler2D uOceanFoam;
+uniform vec4 uOceanShape;
+uniform float uOceanTime;
 uniform bool uCubicClip;
 uniform vec3 uCubicClipCenter;
 uniform float uCubicClipDistance;
@@ -142,8 +148,9 @@ void main()
         vec3 view = fromEye / max(length(fromEye), 1e-20);
         vec2 q = vTexCoord + view.xy * (0.5 - texture(uWaterHeight, vTexCoord * 0.5).r) * 0.0234375;
         float center = waterHeight(q);
-        vec3 normal = normalize(vec3(waterHeight(q + vec2(0.00390625, 0.0)) - center - vOceanSlope.x,
-            waterHeight(q + vec2(0.0, 0.00390625)) - center - vOceanSlope.y, 1.0));
+        float detailScale = uOceanShape.z > 0.0 ? 4.0 : 1.0;
+        vec3 normal = normalize(vec3((waterHeight(q + vec2(0.00390625, 0.0)) - center) * detailScale - vOceanSlope.x,
+            (waterHeight(q + vec2(0.0, 0.00390625)) - center) * detailScale - vOceanSlope.y, 1.0));
         float side = gl_FrontFacing ? 1.0 : -1.0;
         normal *= side;
         vec3 direction = reflect(view, normal);
@@ -151,15 +158,33 @@ void main()
         vec3 reflected = uHasWaterReflection ? texture(uWaterReflection, direction).rgb : vec3(0.0);
         float facing = clamp(1.0 - abs(dot(view, normal)), 0.0, 1.0);
         float fresnel = clamp(uEnvMapParms.x + (uEnvMapParms.y - uEnvMapParms.x) * pow(facing, uEnvMapParms.z), 0.0, 1.0);
+        if (uOceanShape.z > 0.0)
+        {
+            float first = texture(uOceanFoam, OceanFoamCoordinate(vOceanSurface.xy, uOceanTime, uOceanShape.xy)).a;
+            float second = texture(uOceanFoam, OceanFoamCoordinate2(vOceanSurface.xy, uOceanTime, uOceanShape.xy)).a;
+            float foam = gl_FrontFacing ? OceanFoam(vOceanSurface.z, vOceanSurface.w, first, second) : 0.0;
+            vec3 color = OceanSurfaceColor(uWaterColor.rgb, reflected * reflected, fresnel, vOceanSurface.z, foam);
+            if (uSunEnabled && gl_FrontFacing)
+            {
+                vec3 halfVector = normalize(uSunDirection - view);
+                float specular = pow(clamp(dot(normal, halfVector), 0.0, 1.0), 96.0) * (1.0 - foam);
+                color += uSunColor * specular * 0.45;
+            }
+            float opacity = gl_FrontFacing ? OceanCoverage(vOceanSurface.z, foam) : 1.0;
+            if (opacity < 0.0039215686) discard;
+            color = sqrt(clamp(color, 0.0, 1.0));
+            applyMaterialAlpha(opacity);
+            fragmentColor = vec4(uPremultiplyAlpha ? color * opacity : color, opacity);
+            return;
+        }
         vec3 linearColor = mix(abs(normal.z) * uWaterColor.rgb, reflected * reflected, fresnel);
-        // Alpha carries baked distance to a real solid/water intersection, not
-        // brush opacity. Match the native RSX foam and six-unit contact fade.
+        // Flat water retains its static contact fade and native shading.
         float distanceToShore = clamp(vColor.a, 0.0, 1.0);
         float shore = 1.0 - smoothstep(0.0, 1.0, distanceToShore);
         float breakup = clamp((abs(normal.x) + abs(normal.y)) * 8.0 + 0.15, 0.0, 1.0);
         float foam = gl_FrontFacing ? shore * shore * breakup * 0.65 : 0.0;
         linearColor = mix(linearColor, vec3(0.72, 0.8, 0.78), foam);
-        float opacity = gl_FrontFacing ? smoothstep(0.0, 0.25, distanceToShore) : 1.0;
+        float opacity = gl_FrontFacing ? smoothstep(0.0, 1.0, distanceToShore) : 1.0;
         opacity += foam * (1.0 - opacity);
         // The native shader writes linear RGB with gammaWrite enabled. Match the
         // editor's squared-radiance capture domain; exact RSX display transfer is unverified.

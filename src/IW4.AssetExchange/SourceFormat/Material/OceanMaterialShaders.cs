@@ -1,4 +1,3 @@
-using System.Numerics;
 using IW4.Assets.Assets.TechniqueSet;
 
 namespace IW4.AssetExchange.SourceFormat.Material;
@@ -8,19 +7,18 @@ internal static class OceanMaterialShaders
     private static readonly MaterialShaderAsset Vertex = Load("ocean.vert.cg", MaterialShaderKind.Vertex);
     private static readonly MaterialShaderAsset Pixel = Load("ocean.frag.cg", MaterialShaderKind.Pixel);
     private static readonly MaterialShaderAsset SunPixel = Load("ocean-sun.frag.cg", MaterialShaderKind.Pixel);
+    private static readonly MaterialShaderAsset FlatPixel = Load("water.frag.cg", MaterialShaderKind.Pixel);
+    private static readonly MaterialShaderAsset FlatSunPixel = Load("water-sun.frag.cg", MaterialShaderKind.Pixel);
 
     internal static MaterialTechniqueSetAsset Create(MaterialTechniqueSetAsset source, WaterMaterialDefinition definition)
     {
-        OceanWaveSettings? ocean = definition.Ocean;
         var routing = new MaterialVertexStreamRouting[MaterialVertexDeclarationAsset.RoutingCount];
         routing[0] = new(MaterialStreamSource.Position, MaterialStreamDestination.Position);
         routing[1] = new(MaterialStreamSource.Color, MaterialStreamDestination.Color0);
         routing[2] = new(MaterialStreamSource.TexCoord0, MaterialStreamDestination.TexCoord0);
         // The native wc_water declaration: RGB is the wave envelope/gradient;
-        // alpha is baked shoreline distance. Neither channel is a material tint.
+        // ocean alpha is signed seabed depth, flat-water alpha is contact distance.
         var declaration = new MaterialVertexDeclarationAsset { StreamCount = 3, HasOptionalSourceRaw = 1, Routing = routing };
-        // Flat water shares the corrected underside shading with zero displacement.
-        var (first, second) = ocean?.GetWaves() ?? (Vector4.Zero, Vector4.Zero);
         MaterialTechniqueAsset noSun = CreateTechnique(false);
         MaterialTechniqueAsset sun = CreateTechnique(true);
         return new MaterialTechniqueSetAsset
@@ -46,18 +44,47 @@ internal static class OceanMaterialShaders
             // PS destinations are Cg parameter ordinals; VS destinations are registers.
             var stable = new List<MaterialShaderArgumentAsset>
             {
-                Literal(9, first), Literal(10, second), Literal(11, new(ocean is null ? 0 : 1 / ocean.FadeWidth, 0, 0, 0)),
+                // SPU draw path does not relocate literal vertex pointers, so use material constants.
+                new(0, MaterialShaderArgumentType.MaterialVertexConst, 9,
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("oceanShape")), null),
+                new(0, MaterialShaderArgumentType.MaterialVertexConst, 10,
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("oceanMotion")), null),
                 new(0, MaterialShaderArgumentType.MaterialPixelSampler, 5, unchecked((int)MaterialExchange.HashSourcePropertyName("normalMap")), null),
                 Code(MaterialShaderArgumentType.CodeVertexConst, 8, MaterialConstantSource.GameTime),
-                Code(MaterialShaderArgumentType.CodeVertexConst, 21, MaterialConstantSource.Fog),
-                Code(MaterialShaderArgumentType.CodePixelConst, (ushort)(sunlight ? 5 : 3), MaterialConstantSource.FogColorLinear),
-                new(0, MaterialShaderArgumentType.MaterialPixelConst, (ushort)(sunlight ? 6 : 4), unchecked((int)MaterialExchange.HashSourcePropertyName("envMapParms")), null),
-                new(0, MaterialShaderArgumentType.MaterialPixelConst, (ushort)(sunlight ? 9 : 7), unchecked((int)MaterialExchange.HashSourcePropertyName("waterColor")), null)
+                Code(MaterialShaderArgumentType.CodeVertexConst, 21, MaterialConstantSource.Fog)
             };
-            if (sunlight)
+            bool ocean = definition.Ocean is not null;
+            if (ocean)
             {
-                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 3, MaterialConstantSource.LightPosition));
-                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 4, MaterialConstantSource.LightSpecular));
+                // Cg parameter ordinals from the two ocean.frag.hlsl entry points.
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, 0,
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("envMapParms")), null));
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelSampler, 6,
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("foamMap")), null));
+                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 2, MaterialConstantSource.GameTime));
+                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 4, MaterialConstantSource.FogColorLinear));
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, 6,
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("oceanShape")), null));
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, (ushort)(sunlight ? 9 : 7),
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("waterColor")), null));
+                if (sunlight)
+                {
+                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 7, MaterialConstantSource.LightSpecular));
+                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 8, MaterialConstantSource.LightPosition));
+                }
+            }
+            else
+            {
+                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, (ushort)(sunlight ? 5 : 3), MaterialConstantSource.FogColorLinear));
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, (ushort)(sunlight ? 6 : 4),
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("envMapParms")), null));
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, (ushort)(sunlight ? 9 : 7),
+                    unchecked((int)MaterialExchange.HashSourcePropertyName("waterColor")), null));
+                if (sunlight)
+                {
+                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 3, MaterialConstantSource.LightPosition));
+                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 4, MaterialConstantSource.LightSpecular));
+                }
             }
             return new MaterialTechniqueAsset
             {
@@ -68,14 +95,16 @@ internal static class OceanMaterialShaders
                 {
                     VertexDeclaration = declaration,
                     VertexShader = Vertex,
-                    PixelShader = sunlight ? SunPixel : Pixel,
+                    PixelShader = ocean ? sunlight ? SunPixel : Pixel : sunlight ? FlatSunPixel : FlatPixel,
                     PerPrimArgCount = 1,
                     PerObjArgCount = 1,
                     StableArgCount = checked((byte)stable.Count),
                     CustomSamplerFlags = MaterialCustomSamplerFlags.ReflectionProbe,
                     PrecompiledVertexShader = MaterialPrecompiledVertexShader.None,
+                    // ShaderConvert lowers worldMatrix to native stored rows. HLSL's
+                    // column-major viewProjectionMatrix still consumes transposed rows.
                     Args = [Code(MaterialShaderArgumentType.CodeVertexConst, 4, MaterialConstantSource.WorldMatrix0, 4),
-                        Code(MaterialShaderArgumentType.CodeVertexConst, 0, MaterialConstantSource.ViewProjectionMatrix, 4),
+                        Code(MaterialShaderArgumentType.CodeVertexConst, 0, MaterialConstantSource.TransposeViewProjectionMatrix, 4),
                         .. stable.OrderBy(argument => argument.Type).ThenBy(argument => argument.Dest)]
                 }]
             };
@@ -84,9 +113,6 @@ internal static class OceanMaterialShaders
 
     private static MaterialShaderArgumentAsset Code(MaterialShaderArgumentType type, ushort destination,
         MaterialConstantSource source, byte rows = 1) => new(0, type, destination, new MaterialCodeConstantArgument(source, 0, rows).Raw, null);
-
-    private static MaterialShaderArgumentAsset Literal(ushort destination, Vector4 value) =>
-        new(0, MaterialShaderArgumentType.LiteralVertexConst, destination, 0, new(value.X, value.Y, value.Z, value.W));
 
     private static MaterialShaderAsset Load(string resource, MaterialShaderKind kind)
     {

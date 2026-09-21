@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
+using IW4.AssetExchange.SourceFormat.Material;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.TechniqueSet;
 
@@ -67,7 +68,8 @@ internal static class MaterialCatalog
                 materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState)
                 {
                     Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface, GameFlags = gameFlags,
-                    SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet
+                    SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet,
+                    OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName) ?? ""
                 };
         }
         return (Ordered(materials), unsupported);
@@ -164,10 +166,10 @@ internal static class MaterialCatalog
             if (waterMap is { } nativeWaterMap)
             {
                 if (techniqueSet is not ("w_water" or "wc_water"))
-                    throw Invalid("The supported native water profile requires the w_water or wc_water technique set");
+                    throw new NotSupportedException($"Material '{path}': the supported native water profile requires the w_water or wc_water technique set.");
                 if (surfaceTypeBits != MaterialSurfaceTypeBits.Water ||
                     gameFlags != (MaterialGameFlags.NoMarks | MaterialGameFlags.HasReflection))
-                    throw Invalid("The supported native water profile requires the proven Water surface type and 0x14 game flags");
+                    throw new NotSupportedException($"Material '{path}': the supported native water profile requires the proven Water surface type and 0x14 game flags.");
                 water = ReadWaterMap(nativeWaterMap);
                 waterColor = ReadWaterConstant("waterColor");
                 envMapParms = ReadWaterConstant("envMapParms");

@@ -1,6 +1,7 @@
 using System.Numerics;
 using Avalonia;
 using Avalonia.OpenGL;
+using IW4.AssetExchange.SourceFormat.Material;
 using IW4.Assets.Assets.Material;
 using IW4.Assets.Assets.GfxMap;
 using Iw4Radiant.Compilation;
@@ -300,7 +301,7 @@ internal sealed class SceneRenderer
             foreach (var triangle in _transparentTriangles.OrderBy(triangle => _surfaceStates[triangle.Material].SortKey)
                          .ThenByDescending(triangle => Vector3.DistanceSquared(eye, triangle.Center)))
             {
-                if (!waterDrawn && _surfaceStates[triangle.Material].SortKey >= (int)MaterialSortKey.TransparentWater)
+                if (!waterDrawn && _surfaceStates[triangle.Material].SortKey >= (int)WaterMaterialAuthoring.SurfaceSortKey)
                 {
                     DrawWater();
                     material = null;
@@ -327,7 +328,7 @@ internal sealed class SceneRenderer
             {
                 waterDrawn = true;
                 // Depth-writing water needs no per-frame CPU triangle sort.
-                // Draw cached material/probe ranges after ground decals and before glass.
+                // Draw cached material/probe ranges after opaque ground and before decals/transparency.
                 foreach (var batch in _surfaceBatches)
                 {
                     if (!_waterMaterials.Contains(batch.Material) || !textures.TryGetValue(batch.Material, out uint texture)) continue;
@@ -460,7 +461,7 @@ internal sealed class SceneRenderer
                 _waterMaterials.Add(batch.Material);
                 state = state with { BlendOperation = GfxBlendOperation.Add,
                     Source = GfxBlend.SourceAlpha, Destination = GfxBlend.InverseSourceAlpha, DepthWrite = true,
-                    CullFace = GfxCullFace.None, AlphaTest = null, SortKey = (int)MaterialSortKey.TransparentWater };
+                    CullFace = GfxCullFace.None, AlphaTest = null, SortKey = (int)WaterMaterialAuthoring.SurfaceSortKey };
             }
             _surfaceStates.Add(batch.Material, state);
         }
@@ -530,7 +531,7 @@ internal sealed class SceneRenderer
             for (int index = batch.Start; index < batch.Start + batch.Count; index++)
             {
                 Vector3 position = data[index].Position;
-                Vector3 extent = Vector3.UnitZ * height * data[index].Color.X;
+                Vector3 extent = new Vector3(height * data[index].Color.X);
                 _surfaceBounds = _surfaceBounds is { } bounds
                     ? (Vector3.Min(bounds.Min, position - extent), Vector3.Max(bounds.Max, position + extent))
                     : (position - extent, position + extent);

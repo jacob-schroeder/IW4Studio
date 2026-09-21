@@ -15,13 +15,13 @@ internal sealed class SceneWater
     private sealed class Wave(MaterialSource source)
     {
         internal readonly MaterialSource Source = source;
-        internal readonly (Vector4 First, Vector4 Second) OceanWaves = source.Ocean?.GetWaves() ?? (Vector4.Zero, Vector4.Zero);
-        internal readonly float InverseFadeWidth = source.Ocean is { } ocean ? 1 / ocean.FadeWidth : 0;
-        internal uint Spectrum, First, Second, Height;
+        internal readonly (Vector4 Shape, Vector4 Motion) OceanParameters = source.Ocean?.GetParameters() ?? (Vector4.Zero, Vector4.Zero);
+        internal uint Spectrum, First, Second, Height, Foam;
         internal string? Error;
     }
 
     private readonly Dictionary<string, Wave> _waves = new(StringComparer.Ordinal);
+    private readonly SceneMaterialTextures _foamTextures = new();
     private readonly long _started = Stopwatch.GetTimestamp();
     private uint _program, _framebuffer, _vertexArray, _underwaterProgram;
     private int _underwaterTintLocation;
@@ -31,7 +31,7 @@ internal sealed class SceneWater
     private double _lastUnderwaterTime;
     private MaterialVec4 _underwaterTint;
     private int _pass, _time, _axis, _span, _size;
-    private int _enabled, _color, _environment, _oceanTime, _oceanFirst, _oceanSecond, _oceanFade;
+    private int _enabled, _color, _environment, _oceanTime, _oceanShape, _oceanMotion;
     private int _maximumSize;
     private bool _floatTargets;
     private float _oceanSeconds;
@@ -57,12 +57,12 @@ internal sealed class SceneWater
         _color = gl.GetUniformLocation(sceneProgram, "uWaterColor");
         _environment = gl.GetUniformLocation(sceneProgram, "uEnvMapParms");
         _oceanTime = gl.GetUniformLocation(sceneProgram, "uOceanTime");
-        _oceanFirst = gl.GetUniformLocation(sceneProgram, "uOceanFirst");
-        _oceanSecond = gl.GetUniformLocation(sceneProgram, "uOceanSecond");
-        _oceanFade = gl.GetUniformLocation(sceneProgram, "uOceanInverseFade");
+        _oceanShape = gl.GetUniformLocation(sceneProgram, "uOceanShape");
+        _oceanMotion = gl.GetUniformLocation(sceneProgram, "uOceanMotion");
         gl.UseProgram(sceneProgram);
         gl.Uniform1(gl.GetUniformLocation(sceneProgram, "uWaterHeight"), 4);
         gl.Uniform1(gl.GetUniformLocation(sceneProgram, "uWaterReflection"), 5);
+        gl.Uniform1(gl.GetUniformLocation(sceneProgram, "uOceanFoam"), 6);
         _framebuffer = gl.GenFramebuffer();
         _vertexArray = gl.GenVertexArray();
     }
@@ -136,13 +136,14 @@ internal sealed class SceneWater
         Vector4 color = wave.Source.WaterColor, environment = wave.Source.EnvMapParms;
         gl.Uniform4(_color, color.X, color.Y, color.Z, color.W);
         gl.Uniform4(_environment, environment.X, environment.Y, environment.Z, environment.W);
-        var (first, second) = wave.OceanWaves;
-        gl.Uniform4(_oceanFirst, first.X, first.Y, first.Z, first.W);
-        gl.Uniform4(_oceanSecond, second.X, second.Y, second.Z, second.W);
+        var (shape, motion) = wave.OceanParameters;
+        gl.Uniform4(_oceanShape, shape.X, shape.Y, shape.Z, shape.W);
+        gl.Uniform4(_oceanMotion, motion.X, motion.Y, motion.Z, motion.W);
         gl.Uniform1(_oceanTime, _oceanSeconds);
-        gl.Uniform1(_oceanFade, wave.InverseFadeWidth);
         gl.ActiveTexture(TextureUnit.Texture4);
         gl.BindTexture(TextureTarget.Texture2D, wave.Height);
+        gl.ActiveTexture(TextureUnit.Texture6);
+        gl.BindTexture(TextureTarget.Texture2D, wave.Foam);
         gl.ActiveTexture(TextureUnit.Texture0);
         return true;
     }
@@ -216,6 +217,15 @@ internal sealed class SceneWater
         try
         {
             MaterialWater water = source.Water ?? throw new InvalidOperationException("Missing water simulation.");
+            if (source.Ocean is not null)
+            {
+                if (string.IsNullOrEmpty(source.OceanFoamImagePath))
+                    throw new NotSupportedException($"Ocean preview requires '{WaterMaterialAuthoring.OceanFoamImageName}' in the selected raw assets.");
+                var foamSource = new MaterialSource(WaterMaterialAuthoring.OceanFoamImageName,
+                    source.OceanFoamImagePath, false, MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapLinear);
+                wave.Foam = _foamTextures.GetTexture(gl, source.OceanFoamImagePath, _ => foamSource);
+                if (_foamTextures.Error is { } foamError) throw new InvalidOperationException(foamError);
+            }
             if (!_floatTargets)
                 throw new NotSupportedException("GPU water requires renderable float textures (EXT_color_buffer_float on OpenGL ES).");
             if (water.M != water.N || water.M < 4 || water.M > _maximumSize || !BitOperations.IsPow2((uint)water.M))
@@ -285,12 +295,15 @@ internal sealed class SceneWater
             Delete(gl, _waves[name]);
             _waves.Remove(name);
         }
+        _foamTextures.RemoveUnused(gl, _waves.Values.Where(wave => wave.Source.Ocean is not null)
+            .Select(wave => wave.Source.OceanFoamImagePath));
     }
 
     internal void Reload(GL gl)
     {
         foreach (Wave wave in _waves.Values) Delete(gl, wave);
         _waves.Clear();
+        _foamTextures.Reload(gl);
         Notice = null;
     }
 
@@ -316,6 +329,7 @@ internal sealed class SceneWater
     internal void ForgetHandles()
     {
         _waves.Clear();
+        _foamTextures.ForgetHandles();
         _program = _framebuffer = _vertexArray = _underwaterProgram = 0;
         _volumes.Clear();
         _submerged = false;

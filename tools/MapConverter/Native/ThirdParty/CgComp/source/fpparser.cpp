@@ -117,6 +117,8 @@ static const size_t FP_OPCODES_CNT = sizeof(fp_opcodes)/sizeof(struct _opcode);
 static ioset fp_inputs[] =
 {
 	{ "fragment.position", 0 },
+	// RSX signed triangle area supplies the sign of the SM3 VFACE input.
+	{ "fragment.facing", 14 },
 	{ "fragment.color.secondary", 2},
 	{ "fragment.color.primary", 1},
 	{ "fragment.color", 1 },

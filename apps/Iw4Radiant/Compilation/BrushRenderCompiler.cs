@@ -51,9 +51,8 @@ internal static class BrushRenderCompiler
         MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document, materialSources);
         Matrix4x4[] modelTransforms = [Matrix4x4.Identity, .. MapCompiler.BrushEntities(document).Select(entity =>
             Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) * Matrix4x4.Transpose(EntityOrientation.Rotation(entity)))];
-        int worldSurfaceCount = polygons.Count(polygon => polygon.ModelIndex == 0);
-        if (polygons.Length is 0 or > ushort.MaxValue)
-            throw new InvalidDataException("Compilation requires between 1 and 65535 renderable brush faces or mesh triangles.");
+        if (polygons.Length == 0)
+            throw new InvalidDataException("Compilation requires at least one renderable brush face or mesh triangle.");
         var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, cancellationToken);
         var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene);
         GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene);
@@ -134,6 +133,12 @@ internal static class BrushRenderCompiler
             firstVertex = checked(firstVertex + localVertexCount);
         }
 
+        int[] surfaceModels = polygons.Select(polygon => polygon.ModelIndex).ToArray();
+        MergeOceanDraws(polygons, vertexCount, ref surfaces, ref surfaceBounds, ref indices, ref surfaceModels);
+        if (surfaces.Length > ushort.MaxValue)
+            throw new InvalidDataException("Compilation supports at most 65535 native render surfaces after ocean patches are merged.");
+        int worldSurfaceCount = surfaceModels.Count(model => model == 0);
+
         // The canonical BSP cell must enclose both the authored placements and
         // every stored surface (inline brush-model vertices are entity-local).
         Bounds bounds = GetBounds(document.Brushes.SelectMany(brush => brush.GetVertices())
@@ -183,7 +188,8 @@ internal static class BrushRenderCompiler
             Models = Enumerable.Range(0, clip.NumSubModels).Select(index =>
             {
                 CModel collision = clip.CModels[index];
-                var owned = polygons.Select((polygon, surface) => (polygon, surface)).Where(pair => pair.polygon.ModelIndex == index).ToArray();
+                int[] owned = surfaceModels.Select((model, surface) => (model, surface))
+                    .Where(pair => pair.model == index).Select(pair => pair.surface).ToArray();
                 Bounds modelBounds = index == 0 ? bounds : new Bounds { MidPoint = collision.Mins, HalfSize = collision.Maxs };
                 return new GfxBrushModel
                 {
@@ -192,7 +198,7 @@ internal static class BrushRenderCompiler
                     WritableMins = [modelBounds.MidPoint.X, modelBounds.MidPoint.Y, modelBounds.MidPoint.Z],
                     WritableMaxs = [modelBounds.HalfSize.X, modelBounds.HalfSize.Y, modelBounds.HalfSize.Z],
                     Radius = collision.Radius,
-                    StartSurfIndex = owned.Length == 0 ? (ushort)0 : checked((ushort)owned[0].surface),
+                    StartSurfIndex = owned.Length == 0 ? (ushort)0 : checked((ushort)owned[0]),
                     SurfaceCount = checked((ushort)owned.Length)
                 };
             }).ToArray(),
@@ -217,6 +223,74 @@ internal static class BrushRenderCompiler
         };
     }
 
+    private static void MergeOceanDraws(MapRenderSurface[] polygons, int vertexCount,
+        ref GfxSurface[] surfaces, ref GfxSurfaceBounds[] bounds, ref List<ushort> indices, ref int[] models)
+    {
+        var merged = new List<GfxSurface>();
+        var mergedBounds = new List<GfxSurfaceBounds>();
+        var mergedIndices = new List<ushort>(indices.Count);
+        var mergedModels = new List<int>();
+        for (int first = 0; first < surfaces.Length;)
+        {
+            GfxSurface original = surfaces[first];
+            bool displaced = polygons[first].Displacement > 0;
+            int end = first + 1, vertices = original.Triangles.VertexCount, triangles = original.Triangles.TriCount;
+            while (displaced && end < surfaces.Length && polygons[end].Displacement > 0 &&
+                   models[end] == models[first] && surfaces[end].Material == original.Material &&
+                   surfaces[end].LightmapIndex == original.LightmapIndex && surfaces[end].ReflectionProbeIndex == original.ReflectionProbeIndex &&
+                   surfaces[end].PrimaryLightIndex == original.PrimaryLightIndex && surfaces[end].Flags == original.Flags &&
+                   surfaces[end].Triangles.BaseVertex == original.Triangles.BaseVertex + vertices &&
+                   vertices + surfaces[end].Triangles.VertexCount <= ushort.MaxValue &&
+                   (triangles + surfaces[end].Triangles.TriCount) * 3 <= ushort.MaxValue)
+            {
+                vertices += surfaces[end].Triangles.VertexCount;
+                triangles += surfaces[end++].Triangles.TriCount;
+            }
+
+            int baseVertex = original.Triangles.BaseVertex;
+            if (displaced)
+            {
+                // A final draw split can be small. Its conservative vertex span
+                // may include real, unreferenced neighboring rows. Both streams
+                // and every index are rebased together; no fabricated geometry.
+                vertices = Math.Max(vertices, SrfTriangles.SoftwareTriangleCullVertexLimit + 1);
+                if (vertexCount < vertices)
+                    throw new InvalidDataException("An ocean draw has insufficient mesh vertices for native GPU clipping.");
+                baseVertex = Math.Min(baseVertex, vertexCount - vertices);
+            }
+            int baseIndex = mergedIndices.Count;
+            Vector3 minimum = new(float.PositiveInfinity), maximum = new(float.NegativeInfinity);
+            for (int index = first; index < end; index++)
+            {
+                SrfTriangles source = surfaces[index].Triangles;
+                for (int triangleIndex = 0; triangleIndex < source.TriCount * 3; triangleIndex++)
+                    mergedIndices.Add(checked((ushort)(source.BaseVertex + indices[source.BaseIndex + triangleIndex] - baseVertex)));
+                Bounds box = bounds[index].Bounds;
+                Vector3 midpoint = new(box.MidPoint.X, box.MidPoint.Y, box.MidPoint.Z);
+                Vector3 halfSize = new(box.HalfSize.X, box.HalfSize.Y, box.HalfSize.Z);
+                minimum = Vector3.Min(minimum, midpoint - halfSize);
+                maximum = Vector3.Max(maximum, midpoint + halfSize);
+            }
+            merged.Add(new GfxSurface
+            {
+                Material = original.Material, LightmapIndex = original.LightmapIndex,
+                ReflectionProbeIndex = original.ReflectionProbeIndex, PrimaryLightIndex = original.PrimaryLightIndex, Flags = original.Flags,
+                Triangles = new SrfTriangles
+                {
+                    BaseVertex = baseVertex, VertexLayerData = checked(baseVertex * WorldVertexCodec.LayerStride),
+                    VertexCount = checked((ushort)vertices), TriCount = checked((ushort)triangles), BaseIndex = baseIndex
+                }
+            });
+            mergedBounds.Add(new GfxSurfaceBounds { Bounds = GetBounds([minimum, maximum]) });
+            mergedModels.Add(models[first]);
+            first = end;
+        }
+        surfaces = merged.ToArray();
+        bounds = mergedBounds.ToArray();
+        indices = mergedIndices;
+        models = mergedModels.ToArray();
+    }
+
     internal static byte NearestProbe(Vector3 center, IReadOnlyList<GfxReflectionProbe> probes)
     {
         if (probes.Count == 1) return 0;
@@ -236,8 +310,8 @@ internal static class BrushRenderCompiler
         foreach (Vector3 point in surface.Vertices)
         {
             Vector3 position = Vector3.Transform(point, local);
-            yield return position - Vector3.UnitZ * surface.Displacement;
-            yield return position + Vector3.UnitZ * surface.Displacement;
+            yield return position - new Vector3(surface.Displacement);
+            yield return position + new Vector3(surface.Displacement);
         }
     }
 

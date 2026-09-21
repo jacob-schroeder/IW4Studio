@@ -10,9 +10,6 @@ internal static class MaterialShaderVertexReservation
     private const int ParameterSize = 0x30;
     private const int DescriptorSize = 0x18;
     private const int PixelCommandReservationSize = 0x48;
-    private const int VertexCommandReservationSize = 0x2bc;
-    private const int VertexExtendedCommandReservationSize = 0x4d8;
-    private const int VertexExtendedDefaultWordThreshold = 12;
 
     public static LinkStorageSymbol Create(
         MaterialShaderKind kind,
@@ -125,10 +122,12 @@ internal static class MaterialShaderVertexReservation
                     fieldPath));
         }
 
-        return VertexReservation(
-            defaultWords > VertexExtendedDefaultWordThreshold
-                ? VertexExtendedCommandReservationSize
-                : VertexCommandReservationSize);
+        // Three start words, four words per instruction and one header per group
+        // of up to eight, four end words, and the builder's final RETURN word.
+        int instructionHeaderCount = checked((instructionCount + 7) / 8);
+        int commandWordCount = checked(
+            8 + instructionBytes / sizeof(uint) + instructionHeaderCount + defaultWords);
+        return VertexReservation(checked(commandWordCount * sizeof(uint)));
     }
 
     private static LinkStorageSymbol CreatePixel(

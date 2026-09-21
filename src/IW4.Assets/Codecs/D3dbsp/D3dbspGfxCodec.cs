@@ -65,7 +65,7 @@ internal static class D3dbspGfxCodec
         bool useSourceMaterials = false,
         GfxImageAsset? outdoorImage = null,
         IReadOnlyList<float>? outdoorLookupMatrix = null,
-        IReadOnlyDictionary<string, float>? materialVerticalDisplacements = null)
+        IReadOnlyDictionary<string, float>? materialDisplacements = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
@@ -77,8 +77,8 @@ internal static class D3dbspGfxCodec
         ArgumentNullException.ThrowIfNull(reflectionProbeOrigins);
         ArgumentNullException.ThrowIfNull(staticModelInstances);
         ArgumentNullException.ThrowIfNull(staticModelDrawInstances);
-        if (materialVerticalDisplacements?.Values.Any(value => !float.IsFinite(value) || value < 0) == true)
-            throw new InvalidDataException("Material vertical displacement bounds must be finite and nonnegative.");
+        if (materialDisplacements?.Values.Any(value => !float.IsFinite(value) || value < 0) == true)
+            throw new InvalidDataException("Material displacement bounds must be finite and nonnegative.");
         dynamicEntityCounts ??= [0, 0];
         if (dynamicEntityCounts.Count != 2)
         {
@@ -177,7 +177,7 @@ internal static class D3dbspGfxCodec
             int baseIndex = outputIndices.Count;
             BoundsAccumulator bounds = new();
             string materialName = materials[materialIndex].Info.Name?.TrimStart(',') ?? "";
-            float amplitude = materialVerticalDisplacements?.GetValueOrDefault(materialName) ?? 0;
+            float amplitude = materialDisplacements?.GetValueOrDefault(materialName) ?? 0;
             float displacement = 0;
             for (int localIndexOffset = 0; localIndexOffset < localIndexCount; localIndexOffset++)
             {
@@ -198,7 +198,7 @@ internal static class D3dbspGfxCodec
             Bounds decodedBounds = bounds.ToBounds($"Render surface {surfaceIndex}");
             decodedBounds.HalfSize = new Vec3
             {
-                X = decodedBounds.HalfSize.X, Y = decodedBounds.HalfSize.Y,
+                X = decodedBounds.HalfSize.X + displacement, Y = decodedBounds.HalfSize.Y + displacement,
                 Z = decodedBounds.HalfSize.Z + displacement
             };
             worldBounds.Add(decodedBounds);

@@ -2,23 +2,27 @@ using System.Numerics;
 
 namespace IW4.AssetExchange.SourceFormat.Material;
 
-// The same packed waves drive Radiant's GPU preview and the packaged RSX program.
+// The same reference-preset controls drive the GPU preview and converted RSX program.
 public sealed record OceanWaveSettings(float Height, float Wavelength, float Speed, float Direction)
 {
     public float FadeWidth => Wavelength * 0.1575f;
-    public float MeshSpacing => Wavelength * (0.63f / 12);
+    public float MeshSpacing => Wavelength / 36;
+    public float ShoreDepth => 12;
+    // Preserve a full transmission column even when geometric waves are disabled.
+    public float DepthRange => 2 * Height + 96;
+    public float SwashDepth => Height * 0.12f;
+    public float GradientScale => Math.Max(4 / Math.Max(Height, 1), 1.5f / FadeWidth);
 
-    public (Vector4 First, Vector4 Second) GetWaves()
+    public (Vector4 Shape, Vector4 Motion) GetParameters()
     {
         float angle = Direction * (MathF.PI / 180);
-        return (Wave(angle, Wavelength, Speed, Height * 0.65f),
-            Wave(angle + MathF.PI * 0.37f, Wavelength * 0.63f, Speed * 0.8f, Height * 0.35f));
-
-        static Vector4 Wave(float angle, float length, float speed, float amplitude)
-        {
-            float frequency = 2 * MathF.PI / length;
-            return new(MathF.Cos(angle) * frequency, MathF.Sin(angle) * frequency, -speed * frequency, amplitude);
-        }
+        // The longest reference wave spans 6 / 0.06 = 100 source units.
+        // The four reference vertical wave components have a conservative
+        // envelope of 2.3668; scaling by Height/2.4 stays within the +/-Height
+        // render bounds.
+        return (new(MathF.Cos(angle), MathF.Sin(angle), 100 / Wavelength, Height / 2.4f),
+            new(-2 * MathF.PI * Speed / Wavelength, GradientScale,
+                DepthRange / ShoreDepth, -Height / ShoreDepth));
     }
 
     internal OceanWaveSettings Normalize()

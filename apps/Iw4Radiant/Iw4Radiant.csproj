@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <None Update="Shaders/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../src/IW4.AssetExchange/SourceFormat/Material/Shaders/ocean-waves.hlsl" Link="Shaders/ocean-waves.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../src/IW4.AssetExchange/SourceFormat/Material/Shaders/ocean-surface.hlsl" Link="Shaders/ocean-surface.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

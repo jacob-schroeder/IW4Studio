@@ -189,7 +189,7 @@ internal sealed class SceneGeometry
         {
             Vector3 normal = polygon.Face.Normal;
             var projection = SurfaceProjection.Parse(polygon.Face.Projection).GetMapping(normal);
-            foreach (MapPolygon tile in OceanSurfaceGeometry.Subdivide(polygon, ocean, contacts))
+            foreach (MapPolygon tile in OceanSurfaceGeometry.Subdivide(polygon, ocean, contacts, contacts is null ? null : shore))
             for (int i = 1; i < tile.Vertices.Length - 1; i++)
             {
                 Add(tile.Vertices[0]);
@@ -207,8 +207,8 @@ internal sealed class SceneGeometry
 
             void Add(Vector3 position)
             {
-                Vector4 vertexColor = ocean is null ? new Vector4(color, 1) : OceanSurfaceGeometry.VertexColor(polygon, ocean, position, contacts);
-                if (contacts is not null) vertexColor.W = WaterShoreGeometry.VertexAlpha(position, contacts);
+                Vector4 vertexColor = ocean is null ? new Vector4(color, 1) : OceanSurfaceGeometry.VertexColor(polygon, ocean, position, contacts is null ? null : shore);
+                if (contacts is not null && ocean is null) vertexColor.W = WaterShoreGeometry.VertexAlpha(position, contacts);
                 vertices.Add(new SceneVertex(position, normal,
                     new Vector2(Vector3.Dot(position, projection.U), Vector3.Dot(position, projection.V)) + projection.Offset, vertexColor));
             }

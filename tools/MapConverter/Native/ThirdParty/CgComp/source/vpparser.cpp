@@ -136,7 +136,8 @@ static const size_t VP_OUTPUTS_CNT = sizeof(vp_outputs)/sizeof(ioset);
 
 CVPParser::CVPParser() : CParser()
 {
-	m_pInstructions = new struct nvfx_insn[MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS];
+	/* END is parsed separately but sets LAST on the preceding emitted op. */
+	m_pInstructions = new struct nvfx_insn[MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS + 1];
 }
 
 CVPParser::~CVPParser()
@@ -252,7 +253,8 @@ int CVPParser::Parse(const char *str)
 				opc = FindOpcode(opcode);
 				if(!opc)
 					throw std::runtime_error(std::string("Unsupported vertex opcode or declaration: ") + opcode);
-				if(m_nInstructions>=MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS)
+				if(m_nInstructions>MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS ||
+				   (m_nInstructions==MAX_NV_VERTEX_PROGRAM_INSTRUCTIONS && opc->opcode!=OPCODE_END))
 					throw std::runtime_error("Too many vertex instructions.");
 				insn = &m_pInstructions[m_nInstructions];
 

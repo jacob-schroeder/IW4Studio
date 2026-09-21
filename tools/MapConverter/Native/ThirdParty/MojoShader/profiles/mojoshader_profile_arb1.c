@@ -1379,8 +1379,8 @@ void emit_ARB1_SINCOS(Context *ctx)
             output_line(ctx, "SIN %s.y, %s;", dst, src0);
         else if (writemask_xy(mask))
         {
-            output_line(ctx, "SIN %s.x, %s;", dst, src0);
-            output_line(ctx, "COS %s.y, %s;", dst, src0);
+            output_line(ctx, "COS %s.x, %s;", dst, src0);
+            output_line(ctx, "SIN %s.y, %s;", dst, src0);
         } // else if
     } // if
 

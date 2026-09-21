@@ -1,5 +1,6 @@
 using System.Numerics;
 using IW4.AssetExchange.SourceFormat.Material;
+using IW4.Assets.Assets.GfxMap;
 
 namespace Iw4Radiant.MapSource;
 
@@ -14,7 +15,7 @@ internal static class OceanSurfaceGeometry
     internal static bool IsVisibleSurface(MapPolygon polygon, bool water) => !water || polygon.Face.Normal.Z > 0.000001f;
 
     internal static IEnumerable<MapPolygon> Subdivide(MapPolygon polygon, OceanWaveSettings? ocean,
-        IReadOnlyList<(Vector3 A, Vector3 B)>? shore = null)
+        IReadOnlyList<(Vector3 A, Vector3 B)>? shore = null, WaterShoreGeometry? bed = null)
     {
         if ((ocean is null || !IsTop(polygon)) && shore is not { Count: > 0 })
         {
@@ -39,7 +40,15 @@ internal static class OceanSurfaceGeometry
             float top = minimum.Y + (maximum.Y - minimum.Y) * (y + 1) / rows;
             tiles.AddRange(Cell(polygon.Vertices, left, right, bottom, top));
         }
-        foreach (MapPolygon tile in shore is { Count: > 0 } ? JoinEdges(tiles) : tiles) yield return tile;
+        IEnumerable<MapPolygon> joined = shore is { Count: > 0 } || ocean is not null ? JoinEdges(tiles) : tiles;
+        if (ocean is not null && bed is not null && IsTop(polygon))
+            joined = RefineBedInterpolation(joined, ocean, bed);
+        // Native displaced draws must bypass the SPU's rest-position clipper.
+        // Refine real small meshes; the compiler merges their patches into one
+        // draw above the native threshold. No dummy vertices or CPU animation.
+        if (ocean is { Height: > 0 } && IsTop(polygon))
+            joined = RefineGpuClippedMesh(joined);
+        foreach (MapPolygon tile in joined) yield return tile;
 
         IEnumerable<MapPolygon> Cell(Vector3[] vertices, float left, float right, float bottom, float top)
         {
@@ -52,8 +61,24 @@ internal static class OceanSurfaceGeometry
             if (Math.Abs(area) <= 0.000001) yield break;
             Vector3 center = clipped.Aggregate(Vector3.Zero, (sum, point) => sum + point) / clipped.Length;
             float radius = MathF.Sqrt(clipped.Max(point => Vector3.DistanceSquared(point, center)));
-            if (shore is { Count: > 0 } && Math.Max(right - left, top - bottom) > WaterShoreGeometry.MeshSpacing &&
-                WaterShoreGeometry.Distance(center, shore) < WaterShoreGeometry.Width + radius)
+            bool nearContact = shore is { Count: > 0 } &&
+                WaterShoreGeometry.Distance(center, shore) < WaterShoreGeometry.Width + radius;
+            bool shallow = false;
+            if (ocean is not null && bed is not null && IsTop(polygon))
+            {
+                float minimumDepth = float.PositiveInfinity, maximumDepth = float.NegativeInfinity;
+                foreach (Vector3 point in clipped.Append(center))
+                {
+                    float depth = bed.Depth(point, ocean.Height, out _);
+                    minimumDepth = Math.Min(minimumDepth, depth);
+                    maximumDepth = Math.Max(maximumDepth, depth);
+                }
+                float quantization = (ocean.DepthRange + ocean.Height) / 510;
+                float foamDepth = ocean.ShoreDepth + quantization;
+                float activeDepth = Math.Min(2 * foamDepth + ocean.SwashDepth, foamDepth + ocean.Height);
+                shallow = minimumDepth <= activeDepth && maximumDepth >= -ocean.SwashDepth - quantization;
+            }
+            if ((nearContact || shallow) && Math.Max(right - left, top - bottom) > WaterShoreGeometry.MeshSpacing)
             {
                 float middleX = (left + right) * 0.5f, middleY = (bottom + top) * 0.5f;
                 foreach (var bounds in new[] { (left, middleX, bottom, middleY), (middleX, right, bottom, middleY),
@@ -64,7 +89,23 @@ internal static class OceanSurfaceGeometry
             }
             if (++cells > 4096)
                 throw new InvalidDataException("A water surface requires more than 4096 mesh cells. Divide the water brush to simplify its shoreline.");
-            if (ocean is not null && IsTop(polygon) && clipped.All(point => VertexColor(polygon, ocean, point, shore).X == 0))
+            if (ocean is not null && bed is not null && shallow)
+            {
+                var tile = new MapPolygon(polygon.Face, clipped);
+                if (BedInterpolationError(tile, ocean, bed) > ocean.DepthRange / 255)
+                {
+                    var boundary = new List<Vector3>(clipped.Length * 2);
+                    for (int i = 0; i < clipped.Length; i++)
+                    {
+                        boundary.Add(clipped[i]);
+                        boundary.Add(Interpolate(clipped[i], clipped[(i + 1) % clipped.Length], 0.5f));
+                    }
+                    for (int i = 0; i < boundary.Count; i++)
+                        yield return new(polygon.Face, [boundary[i], boundary[(i + 1) % boundary.Count], center]);
+                    yield break;
+                }
+            }
+            if (ocean is not null && IsTop(polygon) && clipped.All(point => VertexColor(polygon, ocean, point).X == 0))
             {
                 // Thin or triangular tops can have only pinned grid intersections.
                 // A convex cell's centroid supplies an interior displacement sample.
@@ -72,6 +113,78 @@ internal static class OceanSurfaceGeometry
                     yield return new(polygon.Face, [clipped[i], clipped[(i + 1) % clipped.Length], center]);
             }
             else yield return new(polygon.Face, clipped);
+        }
+    }
+
+    private static IEnumerable<MapPolygon> RefineBedInterpolation(IEnumerable<MapPolygon> source,
+        OceanWaveSettings ocean, WaterShoreGeometry bed)
+    {
+        foreach (MapPolygon tile in source)
+        {
+            if (BedInterpolationError(tile, ocean, bed) <= ocean.DepthRange / 255)
+            {
+                yield return tile;
+                continue;
+            }
+            Vector3 center = tile.Vertices.Aggregate(Vector3.Zero, (sum, point) => sum + point) / tile.Vertices.Length;
+            for (int i = 0; i < tile.Vertices.Length; i++)
+                yield return new(tile.Face, [tile.Vertices[i], tile.Vertices[(i + 1) % tile.Vertices.Length], center]);
+        }
+    }
+
+    private static float BedInterpolationError(MapPolygon polygon, OceanWaveSettings ocean, WaterShoreGeometry bed)
+    {
+        float quantization = ocean.DepthRange / 255;
+        float minimumDepth = -ocean.SwashDepth - quantization;
+        float maximumDepth = ocean.ShoreDepth + quantization;
+        float error = 0;
+        for (int i = 1; i < polygon.Vertices.Length - 1; i++)
+        {
+            Vector3[] triangle = [polygon.Vertices[0], polygon.Vertices[i], polygon.Vertices[i + 1]];
+            float[] values = triangle.Select(BakedDepth).ToArray();
+            foreach (Vector3 weights in new[] { new Vector3(1f / 3), new(.5f, .25f, .25f),
+                         new Vector3(.25f, .5f, .25f), new Vector3(.25f, .25f, .5f),
+                         new Vector3(.5f, .5f, 0), new Vector3(.5f, 0, .5f), new Vector3(0, .5f, .5f) })
+            {
+                Vector3 point = triangle[0] * weights.X + triangle[1] * weights.Y + triangle[2] * weights.Z;
+                float actual = RawDepth(point);
+                if (actual < minimumDepth || actual > maximumDepth) continue;
+                float interpolated = values[0] * weights.X + values[1] * weights.Y + values[2] * weights.Z;
+                error = Math.Max(error, Math.Abs(actual - interpolated));
+            }
+        }
+        return error;
+
+        float RawDepth(Vector3 point) => Math.Clamp(bed.Depth(point, ocean.Height, out _),
+            -ocean.Height, ocean.DepthRange - ocean.Height);
+        float BakedDepth(Vector3 point)
+        {
+            return EncodeDepth(ocean, RawDepth(point)) * ocean.DepthRange - ocean.Height;
+        }
+    }
+
+    private static IEnumerable<MapPolygon> RefineGpuClippedMesh(IEnumerable<MapPolygon> source)
+    {
+        var queue = new PriorityQueue<MapPolygon, (float Area, int Order)>();
+        int count = 0, order = 0;
+        foreach (MapPolygon tile in source) Add(tile);
+        while (queue.Count > 0 && count <= SrfTriangles.SoftwareTriangleCullVertexLimit)
+        {
+            MapPolygon tile = queue.Dequeue();
+            count -= tile.Vertices.Length;
+            Vector3 center = tile.Vertices.Aggregate(Vector3.Zero, (sum, point) => sum + point) / tile.Vertices.Length;
+            for (int corner = 0; corner < tile.Vertices.Length; corner++)
+                Add(new(tile.Face, [tile.Vertices[corner], tile.Vertices[(corner + 1) % tile.Vertices.Length], center]));
+        }
+        return queue.UnorderedItems.OrderBy(item => item.Priority.Order).Select(item => item.Element);
+
+        void Add(MapPolygon tile)
+        {
+            float area = 0;
+            for (int corner = 1; corner < tile.Vertices.Length - 1; corner++)
+                area += Vector3.Cross(tile.Vertices[corner] - tile.Vertices[0], tile.Vertices[corner + 1] - tile.Vertices[0]).Z;
+            queue.Enqueue(tile, (-Math.Abs(area), order++));
+            count += tile.Vertices.Length;
         }
     }
 
@@ -100,7 +213,7 @@ internal static class OceanSurfaceGeometry
                 foreach (float coordinate in start < end ? coordinates : coordinates.Reverse())
                 {
                     if (coordinate == start || coordinate == end) continue;
-                    Vector3 point = Vector3.Lerp(a, b, (coordinate - start) / (end - start));
+                    Vector3 point = Interpolate(a, b, (coordinate - start) / (end - start));
                     if (alongX) point.X = coordinate; else point.Y = coordinate;
                     boundary.Add(point);
                 }
@@ -113,7 +226,7 @@ internal static class OceanSurfaceGeometry
     }
 
     internal static Vector4 VertexColor(MapPolygon boundary, OceanWaveSettings ocean, Vector3 point,
-        IReadOnlyList<(Vector3 A, Vector3 B)>? shore = null)
+        WaterShoreGeometry? shore = null)
     {
         if (!IsTop(boundary)) return new(0, 128f / 255, 128f / 255, 1);
         Vector3 center = boundary.Vertices.Aggregate(Vector3.Zero, (sum, p) => sum + p) / boundary.Vertices.Length;
@@ -127,20 +240,40 @@ internal static class OceanSurfaceGeometry
             float candidate = Vector2.Dot(inward, new Vector2(point.X - a.X, point.Y - a.Y));
             if (candidate < distance) { distance = candidate; gradient = inward; }
         }
-        if (shore is { Count: > 0 })
+        float edge = Math.Clamp(distance / ocean.FadeWidth, 0, 1);
+        float perimeterWeight = edge * edge * (3 - 2 * edge);
+        Vector2 perimeterGradient = gradient * (6 * edge * (1 - edge) / ocean.FadeWidth);
+        float depthWeight = 1;
+        Vector2 depthGradient = Vector2.Zero;
+        float depth = shore?.Depth(point, ocean.Height, out depthGradient) ?? float.PositiveInfinity;
+        if (ocean.Height > 0)
         {
-            float contactDistance = WaterShoreGeometry.Distance(point, shore, out Vector3 contactGradient);
-            if (contactDistance < distance)
-            {
-                distance = contactDistance;
-                gradient = new(contactGradient.X, contactGradient.Y);
-            }
+            // A small swash remains at the resting shoreline. Away from that band,
+            // even the deepest trough retains water above the bed.
+            float shallow = Math.Clamp((depth + ocean.SwashDepth) / (2 * ocean.Height), 0, 1);
+            depthWeight = shallow * shallow * (3 - 2 * shallow);
+            depthGradient *= 6 * shallow * (1 - shallow) / (2 * ocean.Height);
         }
-        float weight = Math.Clamp(distance / ocean.FadeWidth, 0, 1);
-        if (distance >= ocean.FadeWidth) gradient = Vector2.Zero;
+        float weight = perimeterWeight * depthWeight;
+        gradient = perimeterGradient * depthWeight + depthGradient * perimeterWeight;
+        gradient /= ocean.GradientScale;
         // Quantize exactly as the native vertex color stream, including its zero-gradient byte.
         return new(MathF.Round(weight * 255) / 255,
-            MathF.Round(128 + 127 * gradient.X) / 255, MathF.Round(128 + 127 * gradient.Y) / 255, 1);
+            MathF.Round(128 + 127 * Math.Clamp(gradient.X, -1, 1)) / 255,
+            MathF.Round(128 + 127 * Math.Clamp(gradient.Y, -1, 1)) / 255,
+            EncodeDepth(ocean, depth));
+    }
+
+    private static float EncodeDepth(OceanWaveSettings ocean, float depth) =>
+        MathF.Round(Math.Clamp((depth + ocean.Height) / ocean.DepthRange, 0, 1) * 255) / 255;
+
+    private static Vector3 Interpolate(Vector3 a, Vector3 b, float amount)
+    {
+        Vector3 point = Vector3.Lerp(a, b, amount);
+        if (a.X == b.X) point.X = a.X;
+        if (a.Y == b.Y) point.Y = a.Y;
+        if (a.Z == b.Z) point.Z = a.Z;
+        return point;
     }
 
     private static Vector3[] Clip(Vector3[] points, int axis, float limit, bool keepGreater)
@@ -154,7 +287,7 @@ internal static class OceanSurfaceGeometry
             float distance = Distance(point);
             if ((distance >= 0) != (previousDistance >= 0))
             {
-                Vector3 intersection = Vector3.Lerp(previous, point, previousDistance / (previousDistance - distance));
+                Vector3 intersection = Interpolate(previous, point, previousDistance / (previousDistance - distance));
                 if (axis == 0) intersection.X = limit; else intersection.Y = limit;
                 Add(intersection);
             }

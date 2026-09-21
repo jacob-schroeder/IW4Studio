@@ -9,6 +9,9 @@ namespace IW4.Assets.Assets.GfxMap;
 public sealed class SrfTriangles
 {
     public const int SerializedSize = 0x14;
+    // PS3 Event32 (0x4AA8 / 0x64C0): larger spans use original indices and
+    // leave clipping to RSX. The SPU clipper only knows resting vertex positions.
+    public const int SoftwareTriangleCullVertexLimit = 3831;
 
     public int VertexLayerData { get; init; }
     public int BaseVertex { get; init; }

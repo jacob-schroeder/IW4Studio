@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ShaderConvert" />
     <ProjectReference Include="..\..\src\IW4.AssetExchange\IW4.AssetExchange.csproj" />
     <ProjectReference Include="..\..\src\IW4.Assets\IW4.Assets.csproj" />
     <ProjectReference Include="..\..\src\IW4.Linker\IW4.Linker.csproj" />

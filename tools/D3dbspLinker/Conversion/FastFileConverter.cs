@@ -275,7 +275,10 @@ internal static class FastFileConverter
             MaterialAsset source = availableMaterials.Values.FirstOrDefault(material =>
                 string.Equals(material.Info.Name, definition.SourceMaterial, StringComparison.Ordinal)) ??
                 throw new InvalidDataException($"Authored water material '{name}' requires provider material '{definition.SourceMaterial}'.");
-            MaterialAsset material = WaterMaterialAuthoring.CreateMaterial(source, definition, out GfxImageAsset image);
+            GfxImageAsset? foamImage = definition.Ocean is null ? null : availableMaterials.Values
+                .SelectMany(material => material.Textures).Select(texture => texture.Image)
+                .FirstOrDefault(image => image?.Name == WaterMaterialAuthoring.OceanFoamImageName);
+            MaterialAsset material = WaterMaterialAuthoring.CreateMaterial(source, definition, out GfxImageAsset image, foamImage);
             AssetKey key = AssetKey.FromDefinition(material);
             if (availableMaterials.ContainsKey(key))
                 throw new InvalidDataException($"Authored water material '{name}' collides with a supplied native material.");
@@ -315,7 +318,7 @@ internal static class FastFileConverter
                 UseCompiledLighting = useCompiledLighting,
                 StaticScriptModelNames = staticScriptModelNames,
                 AvailableMaterials = availableMaterials.Values.ToArray(),
-                MaterialVerticalDisplacements = waterDefinitions.Values.Where(definition => definition.Ocean is not null)
+                MaterialDisplacements = waterDefinitions.Values.Where(definition => definition.Ocean is not null)
                     .ToDictionary(definition => definition.Name, definition => definition.Ocean?.Height ?? 0, StringComparer.Ordinal),
                 Lightmaps = lightmaps,
                 OutdoorImage = outdoorImage,

@@ -46,12 +46,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Iw4Radiant", "apps\Iw4Radia
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IW4.Render.WebGpu", "src\IW4.Render.WebGpu\IW4.Render.WebGpu.csproj", "{EB8FB00D-7FE8-4D86-82BC-970E6CFFD85D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShaderConvert", "tools\ShaderConvert\ShaderConvert.csproj", "{961E4CE2-8199-4E0F-828F-0394C18556AA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{961E4CE2-8199-4E0F-828F-0394C18556AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{961E4CE2-8199-4E0F-828F-0394C18556AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{961E4CE2-8199-4E0F-828F-0394C18556AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{961E4CE2-8199-4E0F-828F-0394C18556AA}.Release|Any CPU.Build.0 = Release|Any CPU
 		{EB8FB00D-7FE8-4D86-82BC-970E6CFFD85D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{EB8FB00D-7FE8-4D86-82BC-970E6CFFD85D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EB8FB00D-7FE8-4D86-82BC-970E6CFFD85D}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -133,6 +139,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{961E4CE2-8199-4E0F-828F-0394C18556AA} = {F659F56D-FE25-4723-937D-640C118C5BB1}
 		{EB8FB00D-7FE8-4D86-82BC-970E6CFFD85D} = {700AC5D8-90E7-41DC-BBDA-9C39A52C49B7}
 		{9E13A04E-38C2-475C-8543-017C61195C1B} = {FCDD3239-F358-4994-865E-BC1974E865CF}
 		{B4AFB11A-DDE2-443B-B8DE-B633963E068F} = {F659F56D-FE25-4723-937D-640C118C5BB1}

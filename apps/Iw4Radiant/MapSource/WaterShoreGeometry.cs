@@ -3,14 +3,15 @@ using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.MapSource;
 
-// Static water/solid intersections. The same contact distance reaches both GPUs
-// in vertex alpha; it is not recomputed while the water animates.
+// Static solid geometry supplies flat-water contact distance and ocean seabed depth.
+// Ocean shaders combine the baked depth with their animated surface height.
 internal sealed class WaterShoreGeometry
 {
     internal const float Width = 24;
     internal const float MeshSpacing = Width / 4;
     private const float Epsilon = 0.001f;
     private readonly List<Vector3[]> _surfaces = [];
+    private readonly Dictionary<(Vector3 Point, float Rise), (float Depth, Vector2 Gradient)> _depths = [];
 
     internal WaterShoreGeometry(MapDocument document, Func<string, MaterialSource?> resolveMaterial)
     {
@@ -34,6 +35,36 @@ internal sealed class WaterShoreGeometry
 
         bool VisibleSolid(string name) => !ClipBrushMaterial.IsPlayerClip(name) && !CaulkMaterial.IsCaulk(name) &&
             resolveMaterial(name) is { IsWater: false, IsSky: false, Surface.IsBlended: false };
+    }
+
+    internal float Depth(Vector3 point, float maximumRise, out Vector2 gradient)
+    {
+        if (_depths.TryGetValue((point, maximumRise), out var cached))
+        {
+            gradient = cached.Gradient;
+            return cached.Depth;
+        }
+        float depth = float.PositiveInfinity;
+        gradient = Vector2.Zero;
+        foreach (Vector3[] surface in _surfaces)
+        for (int i = 1; i + 1 < surface.Length; i++)
+        {
+            Vector3 a = surface[0], u = surface[i] - a, v = surface[i + 1] - a;
+            float determinant = u.X * v.Y - u.Y * v.X;
+            // Only upper faces can be a seabed. Vertical walls are handled by depth testing.
+            if (determinant <= Epsilon) continue;
+            float x = point.X - a.X, y = point.Y - a.Y;
+            float b = (x * v.Y - y * v.X) / determinant;
+            float c = (u.X * y - u.Y * x) / determinant;
+            if (b < -Epsilon || c < -Epsilon || b + c > 1 + Epsilon) continue;
+            float candidate = point.Z - (a.Z + b * u.Z + c * v.Z);
+            if (candidate < -maximumRise || candidate >= depth) continue;
+            depth = candidate;
+            gradient = new((u.Y * v.Z - u.Z * v.Y) / determinant,
+                (u.Z * v.X - u.X * v.Z) / determinant);
+        }
+        _depths.Add((point, maximumRise), (depth, gradient));
+        return depth;
     }
 
     internal (Vector3 A, Vector3 B)[] Contacts(MapPolygon water)

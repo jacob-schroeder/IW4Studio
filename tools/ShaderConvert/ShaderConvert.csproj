@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../MapConverter/MapConverter.csproj" />
+  </ItemGroup>
+
+  <Target Name="BuildHlslFrontend" BeforeTargets="CoreCompile" Condition="$([MSBuild]::IsOSPlatform('OSX'))"
+          Inputs="Native/hlsl_frontend.c;Native/kernel32.def;Native/shell32.def"
+          Outputs="$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe">
+    <PropertyGroup>
+      <HlslClang Condition="Exists('/opt/homebrew/opt/llvm/bin/clang')">/opt/homebrew/opt/llvm/bin/clang</HlslClang>
+      <HlslClang Condition="'$(HlslClang)' == ''">clang</HlslClang>
+      <HlslLink Condition="Exists('/opt/homebrew/opt/llvm/bin/lld-link')">/opt/homebrew/opt/llvm/bin/lld-link</HlslLink>
+      <HlslLink Condition="'$(HlslLink)' == ''">lld-link</HlslLink>
+    </PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)Native" />
+    <Exec Command="&quot;$(HlslClang)&quot; --target=x86_64-pc-windows-msvc -std=c99 -O2 -ffreestanding -fno-stack-protector -fno-builtin -Wall -Wextra -Werror -c &quot;$(MSBuildProjectDirectory)/Native/hlsl_frontend.c&quot; -o &quot;$(IntermediateOutputPath)Native/hlsl_frontend.obj&quot;" />
+    <Exec Command="&quot;$(HlslLink)&quot; /lib /def:&quot;$(MSBuildProjectDirectory)/Native/kernel32.def&quot; /machine:x64 /out:&quot;$(IntermediateOutputPath)Native/kernel32.lib&quot;" />
+    <Exec Command="&quot;$(HlslLink)&quot; /lib /def:&quot;$(MSBuildProjectDirectory)/Native/shell32.def&quot; /machine:x64 /out:&quot;$(IntermediateOutputPath)Native/shell32.lib&quot;" />
+    <Exec Command="&quot;$(HlslLink)&quot; /entry:entry /subsystem:console /nodefaultlib /machine:x64 /out:&quot;$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe&quot; &quot;$(IntermediateOutputPath)Native/hlsl_frontend.obj&quot; &quot;$(IntermediateOutputPath)Native/kernel32.lib&quot; &quot;$(IntermediateOutputPath)Native/shell32.lib&quot;" />
+  </Target>
+
+  <Target Name="CopyShaderTools" AfterTargets="Build">
+    <MSBuild Projects="../MapConverter/MapConverter.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="MapConverterTarget" />
+    </MSBuild>
+    <ItemGroup>
+      <ShaderTools Include="@(MapConverterTarget->'%(RootDir)%(Directory)Native/mapconverter-mojoshader');@(MapConverterTarget->'%(RootDir)%(Directory)Native/mapconverter-cgcomp')" />
+      <ShaderTools Include="$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe" Condition="Exists('$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ShaderTools)" DestinationFolder="$(OutDir)Native" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
