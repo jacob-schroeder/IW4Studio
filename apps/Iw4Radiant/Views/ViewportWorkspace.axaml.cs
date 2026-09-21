@@ -98,6 +98,7 @@ public partial class ViewportWorkspace : UserControl
 
     internal void ShowModels() => ShowBrowser(1);
     internal void ShowPrefabs() => ShowBrowser(2);
+    internal void ShowConsole() => ShowBrowser(3);
 
     private void ShowBrowser(int index)
     {

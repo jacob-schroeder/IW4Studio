@@ -270,6 +270,7 @@ public partial class MainWindow : Window
     private void Maximize_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaximize();
     private void Materials_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaterials();
     private void Models_Click(object? sender, RoutedEventArgs e) => Workspace.ShowModels();
+    private void Console_Click(object? sender, RoutedEventArgs e) => Workspace.ShowConsole();
     private void Painter_Click(object? sender, RoutedEventArgs e)
     {
         if (_dialogs.BlocksInput) return;

@@ -73,6 +73,7 @@
                     <MenuItem Header="Side · YZ" Tag="Side" Click="Plane_Click" />
                 </MenuItem>
                 <MenuItem Header="Show / hide asset browser" Click="Materials_Click" />
+                <MenuItem Header="Console output" Click="Console_Click" />
                 <MenuItem Header="Show / hide inspector" Click="Inspector_Click" />
                 <MenuItem Header="Environment · sunlight and skies" Click="Environment_Click" />
                 <MenuItem Header="Camera preview">

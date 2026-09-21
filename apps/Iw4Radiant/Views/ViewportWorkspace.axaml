@@ -30,10 +30,6 @@
                             IsHitTestVisible="False">
                         <TextBlock x:Name="CameraControlsHint" FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />
                     </Border>
-                    <Border x:Name="RendererErrorPanel" Background="#E52A2425" Padding="9" IsVisible="False"
-                            VerticalAlignment="Bottom" IsHitTestVisible="False">
-                        <TextBlock x:Name="RendererErrorText" TextWrapping="Wrap" Foreground="#E5B8AC" FontSize="11" />
-                    </Border>
                 </Grid>
             </Grid>
         </Border>
@@ -83,6 +79,14 @@
             <TabItem Header="Materials"><views:MaterialBrowser x:Name="MaterialBrowserView" /></TabItem>
             <TabItem Header="Models"><views:XModelBrowser x:Name="XModelBrowserView" /></TabItem>
             <TabItem Header="Prefabs"><views:PrefabBrowser x:Name="PrefabBrowserView" /></TabItem>
+            <TabItem Header="Console Output">
+                <Border x:Name="RendererErrorPanel" Padding="9" IsVisible="False">
+                    <TextBox x:Name="RendererErrorText" IsReadOnly="True" AcceptsReturn="True"
+                             TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace" FontSize="11"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             AutomationProperties.Name="Renderer status" />
+                </Border>
+            </TabItem>
         </TabControl>
     </Grid>
 </UserControl>
