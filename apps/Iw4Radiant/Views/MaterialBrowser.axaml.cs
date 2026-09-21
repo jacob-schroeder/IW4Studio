@@ -18,6 +18,7 @@ public partial class MaterialBrowser : UserControl
     private EditorDialogs? _dialogs;
     private EditorSession? _session;
     private Action<string>? _setStatus;
+    private int _loadRevision;
 
     public MaterialBrowser() => InitializeComponent();
 
@@ -65,7 +66,7 @@ public partial class MaterialBrowser : UserControl
     }
 
     internal event Action? CatalogChanged;
-    internal event Func<string, Task>? FolderLoaded;
+    internal event Func<string, bool, Task>? FolderLoaded;
     internal MaterialSource? ResolveMaterial(string name) => _materials.GetValueOrDefault(name)?.Material;
     internal IReadOnlyList<MaterialSource> AvailableSkies => _materials.Values
         .Where(material => material.IsSky && material.Preview is not null)
@@ -92,8 +93,9 @@ public partial class MaterialBrowser : UserControl
         session.Refresh();
     }
 
-    internal void ReleaseImages()
+    internal void ReleaseImages(bool invalidateLoad = true)
     {
+        if (invalidateLoad) _loadRevision++;
         MaterialList.ItemsSource = null;
         ReleasePreview();
         foreach (var material in _materials.Values) material.Preview?.Dispose();
@@ -118,15 +120,22 @@ public partial class MaterialBrowser : UserControl
         await LoadFolderAsync(root);
     }
 
-    internal async Task<bool> LoadFolderAsync(string root)
+    internal async Task<bool> LoadFolderAsync(string root, bool nonBlocking = false)
     {
         if (_dialogs is not { } dialogs || _session is not { } session || _setStatus is not { } setStatus) return false;
+        int revision = ++_loadRevision;
         bool loaded = false;
         try
         {
-            dialogs.SetBusy(true);
+            if (nonBlocking) setStatus("Loading saved material previews…");
+            else dialogs.SetBusy(true);
             var (materials, skippedImages, unsupportedMaterials) = await Task.Run(() => LoadThumbnails(root));
-            ReleaseImages();
+            if (revision != _loadRevision)
+            {
+                foreach (var material in materials) material.Preview?.Dispose();
+                return false;
+            }
+            ReleaseImages(invalidateLoad: false);
             foreach (var material in materials) _materials.Add(material.Name, material);
             session.Material = "";
             MaterialName.Text = "";
@@ -138,9 +147,20 @@ public partial class MaterialBrowser : UserControl
                 (skippedImages > 0 ? $" {skippedImages} images could not be read." : "") +
                 (unsupportedMaterials > 0 ? $" {unsupportedMaterials} unsupported material definitions were skipped." : ""));
         }
-        catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { dialogs.SetBusy(false); await dialogs.MessageAsync("Cannot read materials", exception.Message); }
-        finally { dialogs.SetBusy(false); }
-        if (loaded && FolderLoaded is { } loadRelatedAssets) await loadRelatedAssets(root);
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            if (revision == _loadRevision)
+            {
+                if (nonBlocking) setStatus($"Could not load saved materials: {exception.Message}");
+                else
+                {
+                    dialogs.SetBusy(false);
+                    await dialogs.MessageAsync("Cannot read materials", exception.Message);
+                }
+            }
+        }
+        finally { if (!nonBlocking) dialogs.SetBusy(false); }
+        if (loaded && FolderLoaded is { } loadRelatedAssets) await loadRelatedAssets(root, nonBlocking);
         return loaded;
     }
 

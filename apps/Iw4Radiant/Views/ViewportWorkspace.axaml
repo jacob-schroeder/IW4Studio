@@ -25,6 +25,7 @@
                 </Border>
                 <Grid Grid.Row="1" ClipToBounds="True">
                     <camera:CameraViewport x:Name="CameraView" />
+                    <camera:CameraFoliageOverlay x:Name="CameraFoliageBrush" IsHitTestVisible="False" />
                     <Border Background="#BF1B1D21" Padding="7,4" VerticalAlignment="Top" HorizontalAlignment="Left"
                             IsHitTestVisible="False">
                         <TextBlock x:Name="CameraControlsHint" FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />

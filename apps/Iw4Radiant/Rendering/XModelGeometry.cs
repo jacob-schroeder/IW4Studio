@@ -45,19 +45,28 @@ internal static class XModelGeometry
         Matrix4x4 transform = Transform(entity);
         if (!Matrix4x4.Invert(transform, out var inverse)) throw new ArgumentException("The model transform must be invertible.");
         Matrix4x4 normalTransform = Matrix4x4.Transpose(inverse);
+        foreach (var triangle in GetLocalTriangles(source))
+            yield return (triangle.Material, Vertex(triangle.A), Vertex(triangle.B), Vertex(triangle.C));
+
+        SceneVertex Vertex(SceneVertex vertex)
+        {
+            Vector3 normal = Vector3.TransformNormal(vertex.Normal, normalTransform);
+            if (normal.LengthSquared() > 0.000001f) normal = Vector3.Normalize(normal);
+            return new SceneVertex(Vector3.Transform(vertex.Position, transform), normal, vertex.Uv, vertex.Color);
+        }
+    }
+
+    internal static IEnumerable<(string Material, SceneVertex A, SceneVertex B, SceneVertex C)> GetLocalTriangles(
+        XModelSource source)
+    {
         XModelExportDocument document = source.Document;
         foreach (var triangle in document.Triangles)
             yield return (document.Materials[triangle.MaterialIndex].Name,
                 // XMODEL_EXPORT uses clockwise-front winding; Radiant expects counter-clockwise.
                 Vertex(triangle.First), Vertex(triangle.Third), Vertex(triangle.Second));
 
-        SceneVertex Vertex(XModelExportCorner corner)
-        {
-            Vector3 normal = Vector3.TransformNormal(corner.Normal, normalTransform);
-            if (normal.LengthSquared() > 0.000001f) normal = Vector3.Normalize(normal);
-            return new SceneVertex(Vector3.Transform(document.Vertices[corner.VertexIndex].Position, transform),
-                normal, corner.Uv0, corner.Color);
-        }
+        SceneVertex Vertex(XModelExportCorner corner) => new(
+            document.Vertices[corner.VertexIndex].Position, corner.Normal, corner.Uv0, corner.Color);
     }
 
     private static float Number(string text) => float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) &&

@@ -30,6 +30,10 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private ContextMenu? _objectMenu;
     private bool _previewLighting = true;
     private bool _flyMode;
+    private bool _foliagePaintingEnabled, _paintingFoliage, _foliageChanged;
+    private MapDocument? _foliageSurfaceDocument;
+    private Vector3? _lastFoliageStamp;
+    private readonly List<(MapEntity Entity, XModelSource Model)> _foliagePreview = [];
 
     public CameraViewport()
     {
@@ -40,6 +44,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
+        PointerExited += (_, _) => { if (!_paintingFoliage) FoliageBrushChanged?.Invoke(null); };
         PointerCaptureLost += (_, _) => { if (_dragPointer is not null) FinishGesture(cancel: true); };
         PointerWheelChanged += OnPointerWheelChanged;
         KeyDown += (_, e) => HandleNavigationKeyDown(e);
@@ -47,6 +52,9 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
         DetachedFromVisualTree += (_, _) => { FinishGesture(cancel: true); _objectMenu?.Close(); };
+        DragDrop.SetAllowDrop(this, true);
+        DragDrop.AddDragOverHandler(this, OnModelDragOver);
+        DragDrop.AddDropHandler(this, OnModelDrop);
     }
 
     internal EditorSession? Session
@@ -79,11 +87,32 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
+    internal Func<bool>? CanAcceptModelDrop { get; set; }
+    internal IReadOnlyList<XModelSource> FoliageModels { get; set; } = [];
+    internal float FoliageRadius { get; set; } = 64;
+    internal int FoliageDensity { get; set; } = 1;
+    internal float FoliageSpacing { get; set; } = 32;
+    internal float FoliageMinimumScale { get; set; } = 0.8f;
+    internal float FoliageMaximumScale { get; set; } = 1.2f;
+    internal bool FoliageRandomYaw { get; set; } = true;
+    internal bool FoliageAlignSurface { get; set; } = true;
+    internal bool FoliagePaintingEnabled
+    {
+        get => _foliagePaintingEnabled;
+        set
+        {
+            if (_foliagePaintingEnabled == value) return;
+            if (_paintingFoliage) FinishGesture(cancel: true);
+            _foliagePaintingEnabled = value;
+            if (!value) FoliageBrushChanged?.Invoke(null);
+        }
+    }
     internal string? RendererError => _renderer.Error;
     internal event EventHandler? RendererStatusChanged;
     internal event Action<string>? InteractionStatusChanged;
     internal event Action? NavigationModeChanged;
     internal event Action<BrushKind>? BrushKindRequested;
+    internal event Action<IReadOnlyList<Point>?>? FoliageBrushChanged;
     internal bool HasPointerGesture => _dragPointer is not null;
     internal bool CanFlyMove => FlyMode || _dragPointer is not null && _dragButton == MouseButton.Right;
 
@@ -146,14 +175,28 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         if (!FlyMode) _flyMovement.Stop();
         var transform = _transform;
         var pointer = _dragPointer;
+        bool paintingFoliage = _paintingFoliage;
+        bool foliageChanged = _foliageChanged;
         _transform = null;
         _dragPointer = null;
+        _paintingFoliage = _foliageChanged = false;
+        _foliageSurfaceDocument = null;
+        _lastFoliageStamp = null;
+        _foliagePreview.Clear();
+        _renderer.SetFoliagePreview(_foliagePreview);
         _painted.Clear();
         _paintSelecting = null;
         // Clear ownership before releasing capture or refreshing the editor: either
         // operation can synchronously reenter this control.
         pointer?.Capture(null);
         transform?.Complete(cancel);
+        if (paintingFoliage && _session is { } session)
+        {
+            if (cancel) session.CancelEdit();
+            else session.CompleteEdit(foliageChanged);
+            InteractionStatusChanged?.Invoke(cancel ? "Foliage stroke cancelled." :
+                foliageChanged ? "Foliage stroke completed." : "No foliage was placed.");
+        }
     }
 
     private float Aspect => (float)(Math.Max(1, Bounds.Width) / Math.Max(1, Bounds.Height));
@@ -162,8 +205,16 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     bool ICustomHitTest.HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
 
     protected override void OnOpenGlInit(GlInterface gl) => _renderer.Initialize(gl);
-    protected override void OnOpenGlDeinit(GlInterface gl) => _renderer.ReleaseResources();
-    protected override void OnOpenGlLost() => _renderer.ContextLost();
+    protected override void OnOpenGlDeinit(GlInterface gl)
+    {
+        FinishGesture(cancel: true);
+        _renderer.ReleaseResources();
+    }
+    protected override void OnOpenGlLost()
+    {
+        FinishGesture(cancel: true);
+        _renderer.ContextLost();
+    }
 
     protected override void OnOpenGlRender(GlInterface glInterface, int framebuffer)
     {
@@ -200,13 +251,15 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         _flyMovement.Stop();
         try
         {
+            if (FoliagePaintingEnabled && e.KeyModifiers == KeyModifiers.None)
+            {
+                BeginFoliageStroke(session, e.Pointer, point);
+                e.Handled = true;
+                return;
+            }
             if (session.HasPlacement)
             {
-                var (origin, direction) = _navigation.PickRay((float)(point.X / Math.Max(1, Bounds.Width) * 2 - 1),
-                    (float)(1 - point.Y / Math.Max(1, Bounds.Height) * 2), Aspect);
-                if (SurfaceRaycast.TryHit(session.Scene.Document, origin, direction,
-                        name => session.Scene.ResolveModel?.Invoke(name), ResolveMaterial, null,
-                        out Vector3 hit, out Vector3 normal) && CameraPicking.InCubicClip(session, hit, origin))
+                if (TryMapHit(point, includeModels: true, out Vector3 hit, out Vector3 normal))
                 {
                     string? label = session.PlacementLabel;
                     session.Place(hit, normal, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
@@ -257,48 +310,63 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (!ReferenceEquals(e.Pointer, _dragPointer)) return;
-        Point position = e.GetPosition(this);
-        if (_transform is { } transform)
-            UpdateTransform(transform, position);
-        else if (_dragButton == MouseButton.Left)
-            UpdateSelectionPaint(position);
-        else
+        try
         {
-            Avalonia.Vector fromPress = position - _pressPoint;
-            if (!_navigationMoved && fromPress.SquaredLength < 16) return;
-            _navigationMoved = true;
-            Avalonia.Vector delta = position - _lastPointer;
-            _lastPointer = position;
-            if (_panning) _navigation.Pan((float)delta.X, (float)delta.Y, (float)Math.Max(1, Bounds.Height));
-            else if (FlyMode) _navigation.Look((float)delta.X, (float)delta.Y);
-            else _navigation.Orbit((float)delta.X, (float)delta.Y);
-            RequestNextFrameRendering();
+            Point position = e.GetPosition(this);
+            UpdateFoliageBrush(position);
+            if (!ReferenceEquals(e.Pointer, _dragPointer)) return;
+            if (_paintingFoliage)
+                ContinueFoliageStroke(position);
+            else if (_transform is { } transform)
+                UpdateTransform(transform, position);
+            else if (_dragButton == MouseButton.Left)
+                UpdateSelectionPaint(position);
+            else
+            {
+                Avalonia.Vector fromPress = position - _pressPoint;
+                if (!_navigationMoved && fromPress.SquaredLength < 16) return;
+                _navigationMoved = true;
+                Avalonia.Vector delta = position - _lastPointer;
+                _lastPointer = position;
+                if (_panning) _navigation.Pan((float)delta.X, (float)delta.Y, (float)Math.Max(1, Bounds.Height));
+                else if (FlyMode) _navigation.Look((float)delta.X, (float)delta.Y);
+                else _navigation.Orbit((float)delta.X, (float)delta.Y);
+                RequestNextFrameRendering();
+            }
+            e.Handled = true;
         }
-        e.Handled = true;
+        catch (Exception exception) when (IsEditError(exception))
+        {
+            FinishGesture(cancel: true);
+            FoliageBrushChanged?.Invoke(null);
+            InteractionStatusChanged?.Invoke(exception.Message);
+            e.Handled = true;
+        }
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!ReferenceEquals(e.Pointer, _dragPointer) || e.InitialPressMouseButton != _dragButton) return;
-        Point point = e.GetPosition(this);
-        Avalonia.Vector fromPress = point - _pressPoint;
-        bool showMenu = _dragButton == MouseButton.Right && !_navigationMoved && fromPress.SquaredLength < 16;
-        if (_transform is { } transform) UpdateTransform(transform, point);
-        else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
-        FinishPointerGesture();
-        if (showMenu && _session is { } session)
+        try
         {
-            try
+            Point point = e.GetPosition(this);
+            Avalonia.Vector fromPress = point - _pressPoint;
+            bool showMenu = _dragButton == MouseButton.Right && !_navigationMoved && fromPress.SquaredLength < 16;
+            if (_paintingFoliage) ContinueFoliageStroke(point);
+            else if (_transform is { } transform) UpdateTransform(transform, point);
+            else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
+            FinishPointerGesture();
+            if (showMenu && _session is { } session)
             {
                 _objectMenu = CameraObjectMenu.Open(this, session,
                     CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Select),
                     kind => BrushKindRequested?.Invoke(kind));
             }
-            catch (Exception exception) when (IsEditError(exception))
-            {
-                InteractionStatusChanged?.Invoke(exception.Message);
-            }
+        }
+        catch (Exception exception) when (IsEditError(exception))
+        {
+            FinishGesture(cancel: true);
+            InteractionStatusChanged?.Invoke(exception.Message);
         }
         e.Handled = true;
     }
@@ -348,6 +416,172 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         else _navigation.Zoom((float)delta);
         RequestNextFrameRendering();
         e.Handled = true;
+    }
+
+    private void BeginFoliageStroke(EditorSession session, IPointer pointer, Point point)
+    {
+        if (FoliageModels.Count == 0)
+        {
+            InteractionStatusChanged?.Invoke("Add one or more models to the foliage palette first.");
+            return;
+        }
+        _foliageSurfaceDocument = session.Scene.Document;
+        if (!TryMapHit(point, includeModels: false, out Vector3 hit, out Vector3 normal))
+        {
+            _foliageSurfaceDocument = null;
+            InteractionStatusChanged?.Invoke("Point at an existing map surface to paint foliage.");
+            return;
+        }
+        session.BeginEdit();
+        _paintingFoliage = true;
+        _foliageChanged = false;
+        _lastFoliageStamp = null;
+        _dragPointer = pointer;
+        _dragButton = MouseButton.Left;
+        _pressPoint = _lastPointer = point;
+        pointer.Capture(this);
+        if (StampFoliage(session, hit, normal)) RequestNextFrameRendering();
+    }
+
+    private void ContinueFoliageStroke(Point point)
+    {
+        if (!_paintingFoliage || _session is not { } session) return;
+        if (!TryMapHit(point, includeModels: false, out Vector3 hit, out Vector3 normal))
+        {
+            _lastFoliageStamp = null;
+            return;
+        }
+        if (_lastFoliageStamp is not { } previous)
+        {
+            if (StampFoliage(session, hit, normal)) RequestNextFrameRendering();
+            return;
+        }
+        float spacing = Math.Max(1, FoliageSpacing);
+        Vector3 delta = hit - previous;
+        float distance = delta.Length();
+        if (distance < spacing) return;
+        Vector3 direction = delta / distance;
+        int stamps = Math.Min(32, (int)(distance / spacing));
+        bool changed = false;
+        for (int index = 0; index < stamps; index++)
+            changed |= StampFoliage(session, previous + direction * spacing * (index + 1), normal);
+        if (stamps == 32 && distance >= spacing * 33) _lastFoliageStamp = hit;
+        if (changed) RequestNextFrameRendering();
+    }
+
+    private bool StampFoliage(EditorSession session, Vector3 center, Vector3 normal)
+    {
+        if (_foliageSurfaceDocument is not { } surfaces || FoliageModels.Count == 0) return false;
+        float radius = Math.Clamp(FoliageRadius, 1, 100000);
+        int count = Math.Clamp(FoliageDensity, 1, 128);
+        (Vector3 tangent, Vector3 bitangent) = SurfaceBasis(normal);
+        bool added = false;
+        for (int index = 0; index < count; index++)
+        {
+            float angle = Random.Shared.NextSingle() * MathF.Tau;
+            float distance = MathF.Sqrt(Random.Shared.NextSingle()) * radius;
+            Vector3 sample = center + tangent * (MathF.Cos(angle) * distance) + bitangent * (MathF.Sin(angle) * distance);
+            Vector3 rayOrigin = sample + normal * 60;
+            if (!SurfaceRaycast.TryHitSurfaces(surfaces, rayOrigin, -normal, ResolveMaterial,
+                    out Vector3 hit, out Vector3 hitNormal) || Vector3.Distance(hit, sample) > 120) continue;
+            XModelSource model = FoliageModels[Random.Shared.Next(FoliageModels.Count)];
+            float minimum = Math.Max(0.01f, Math.Min(FoliageMinimumScale, FoliageMaximumScale));
+            float maximum = Math.Max(minimum, Math.Max(FoliageMinimumScale, FoliageMaximumScale));
+            float scale = minimum + Random.Shared.NextSingle() * (maximum - minimum);
+            float yaw = FoliageRandomYaw ? Random.Shared.NextSingle() * 360 : 0;
+            MapEntity entity = XModelEditing.Add(session, model, hit, FoliageAlignSurface ? hitNormal : null, yaw, scale);
+            _foliagePreview.Add((entity, model));
+            added = true;
+        }
+        _lastFoliageStamp = center;
+        if (!added) return false;
+        _foliageChanged = true;
+        _renderer.SetFoliagePreview(_foliagePreview);
+        return true;
+    }
+
+    private bool TryMapHit(Point point, bool includeModels, out Vector3 hit, out Vector3 normal)
+    {
+        hit = normal = default;
+        if (_session is not { } session || !new Rect(Bounds.Size).Contains(point)) return false;
+        MapDocument surfaces = includeModels ? session.Scene.Document : _foliageSurfaceDocument ?? session.Scene.Document;
+        var (origin, direction) = _navigation.PickRay((float)(point.X / Math.Max(1, Bounds.Width) * 2 - 1),
+            (float)(1 - point.Y / Math.Max(1, Bounds.Height) * 2), Aspect);
+        bool found = includeModels
+            ? SurfaceRaycast.TryHit(surfaces, origin, direction, name => session.Scene.ResolveModel?.Invoke(name),
+                ResolveMaterial, null, out hit, out normal)
+            : SurfaceRaycast.TryHitSurfaces(surfaces, origin, direction, ResolveMaterial, out hit, out normal);
+        return found && CameraPicking.InCubicClip(session, hit, origin);
+    }
+
+    private void UpdateFoliageBrush(Point point)
+    {
+        if (!FoliagePaintingEnabled || !TryMapHit(point, includeModels: false, out Vector3 hit, out Vector3 normal))
+        {
+            FoliageBrushChanged?.Invoke(null);
+            return;
+        }
+        (Vector3 tangent, Vector3 bitangent) = SurfaceBasis(normal);
+        var points = new List<Point>(48);
+        for (int index = 0; index < 48; index++)
+        {
+            float angle = index * (MathF.Tau / 48);
+            Vector3 edge = hit + (tangent * MathF.Cos(angle) + bitangent * MathF.Sin(angle)) * FoliageRadius;
+            if (!CameraPicking.Project(_navigation, edge, Bounds.Size, out Point screen, out _))
+            {
+                FoliageBrushChanged?.Invoke(null);
+                return;
+            }
+            points.Add(screen);
+        }
+        FoliageBrushChanged?.Invoke(points);
+    }
+
+    private static (Vector3 Tangent, Vector3 Bitangent) SurfaceBasis(Vector3 normal)
+    {
+        Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal,
+            MathF.Abs(Vector3.Dot(normal, Vector3.UnitZ)) < 0.95f ? Vector3.UnitZ : Vector3.UnitX));
+        return (tangent, Vector3.Normalize(Vector3.Cross(normal, tangent)));
+    }
+
+    private void OnModelDragOver(object? sender, DragEventArgs e)
+    {
+        try
+        {
+            e.DragEffects = CanAcceptModelDrop?.Invoke() != false && XModelDrag.TryRead(e.DataTransfer, out _, out _) &&
+                TryMapHit(e.GetPosition(this), includeModels: true, out _, out _) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+        }
+        catch (Exception exception) when (IsEditError(exception))
+        {
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+            InteractionStatusChanged?.Invoke(exception.Message);
+        }
+    }
+
+    private void OnModelDrop(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        e.DragEffects = DragDropEffects.None;
+        try
+        {
+            if (CanAcceptModelDrop?.Invoke() == false || _session is not { } session ||
+                !XModelDrag.TryRead(e.DataTransfer, out string name, out bool align) ||
+                session.Scene.ResolveModel?.Invoke(name) is not { } model ||
+                !TryMapHit(e.GetPosition(this), includeModels: true, out Vector3 hit, out Vector3 normal))
+            {
+                InteractionStatusChanged?.Invoke("Drop the model onto an existing visible map surface.");
+                return;
+            }
+            FinishGesture(cancel: true);
+            if (session.HasPlacement) session.CancelPlacement();
+            XModelEditing.Place(session, model, hit, align ? normal : null);
+            e.DragEffects = DragDropEffects.Copy;
+            InteractionStatusChanged?.Invoke($"Placed {name}.");
+        }
+        catch (Exception exception) when (IsEditError(exception))
+        { InteractionStatusChanged?.Invoke(exception.Message); }
     }
 
     private static bool IsEditError(Exception exception) => exception is ArgumentException or FormatException or InvalidOperationException or IOException;

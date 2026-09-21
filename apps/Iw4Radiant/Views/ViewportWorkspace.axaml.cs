@@ -42,6 +42,7 @@ public partial class ViewportWorkspace : UserControl
             RendererErrorPanel.IsVisible = CameraView.RendererError is not null;
         });
         CameraView.NavigationModeChanged += RefreshCameraControls;
+        CameraView.FoliageBrushChanged += CameraFoliageBrush.SetBrush;
         RefreshCameraControls();
         ApplyLayout();
     }

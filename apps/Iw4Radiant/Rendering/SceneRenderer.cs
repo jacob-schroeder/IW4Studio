@@ -21,7 +21,7 @@ internal sealed class SceneRenderer
     private PixelSize _renderSize;
     private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
         _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
-        _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation;
+        _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation, _modelLocation, _normalTransformLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
     private readonly Dictionary<string, MaterialSurfaceState> _surfaceStates = new(StringComparer.Ordinal);
@@ -42,6 +42,9 @@ internal sealed class SceneRenderer
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _highlightStart, _highlightCount,
         _outlineStart, _outlineCount, _axesStart, _axesCount;
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
+    private readonly Dictionary<XModelSource, PreviewModelMesh> _previewMeshes = new(ReferenceEqualityComparer.Instance);
+    private IReadOnlyList<(MapEntity Entity, XModelSource Model)> _foliagePreview = [];
+    private bool _previewMeshesDirty;
 
     internal string? Error { get; private set; } =
         "Camera is waiting for OpenGL. If it remains blank, a compatible OpenGL driver is required.";
@@ -50,6 +53,11 @@ internal sealed class SceneRenderer
 
     internal void RefreshScene() => _sceneDirty = true;
     internal void ReloadTextures() => _texturesDirty = _sceneDirty = true;
+    internal void SetFoliagePreview(IReadOnlyList<(MapEntity Entity, XModelSource Model)> preview)
+    {
+        _foliagePreview = preview;
+        _previewMeshesDirty = true;
+    }
 
     internal unsafe void Initialize(GlInterface gl)
     {
@@ -60,6 +68,8 @@ internal sealed class SceneRenderer
                 ? "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" : "#version 150\n";
             _program = SceneShaderProgram.Create(_gl, header, "scene.vert", "scene.frag");
             _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
+            _modelLocation = _gl.GetUniformLocation(_program, "uModel");
+            _normalTransformLocation = _gl.GetUniformLocation(_program, "uNormalTransform");
             _texturedLocation = _gl.GetUniformLocation(_program, "uTextured");
             _litLocation = _gl.GetUniformLocation(_program, "uLit");
             _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
@@ -79,6 +89,9 @@ internal sealed class SceneRenderer
             _water.Initialize(_gl, _program, header);
             _reflections.Initialize(_gl, header);
             _gl.UseProgram(_program);
+            Matrix4x4 identity = Matrix4x4.Identity;
+            _gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
+            _gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
             _lineTexture = _gl.GenTexture();
             _gl.ActiveTexture(TextureUnit.Texture0);
@@ -124,6 +137,7 @@ internal sealed class SceneRenderer
         try
         {
             MapDocument document = session.Scene.Document;
+            RemoveUnusedPreviewMeshes(gl);
             if (_texturesDirty)
             {
                 _materialTextures.Reload(gl);
@@ -163,6 +177,9 @@ internal sealed class SceneRenderer
             gl.ColorMask(true, true, true, false);
             gl.UseProgram(_program);
             gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
+            Matrix4x4 identity = Matrix4x4.Identity;
+            gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
+            gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
             gl.Uniform1(_cubicClipLocation, session.CubicClipEnabled ? 1 : 0);
             gl.Uniform3(_cubicClipCenterLocation, eye.X, eye.Y, eye.Z);
             gl.Uniform1(_cubicClipDistanceLocation, session.CubicClipDistance);
@@ -186,12 +203,14 @@ internal sealed class SceneRenderer
             gl.Enable(EnableCap.PolygonOffsetFill);
             gl.PolygonOffset(1, 1);
             RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: false);
+            RenderFoliagePreview(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: false);
             _skies.Render(gl, viewProjection, eye, _vertexArray, _batches, resolveMaterial);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
             gl.DrawArrays(PrimitiveType.Triangles, _glyphStart, (uint)_glyphCount);
             RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
+            RenderFoliagePreview(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
             RenderFaceHighlights(gl);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Disable(EnableCap.PolygonOffsetFill);
@@ -247,6 +266,62 @@ internal sealed class SceneRenderer
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
             gl.BindFramebuffer(FramebufferTarget.Framebuffer, (uint)framebuffer);
         }
+    }
+
+    private unsafe void RenderFoliagePreview(GL gl, Func<string, MaterialSource?>? resolveMaterial,
+        bool previewLighting, bool previewAlpha, Vector3 eye, bool transparent)
+    {
+        if (_foliagePreview.Count == 0) return;
+        gl.Uniform1(_waterPreviewLocation, 0);
+        IEnumerable<(MapEntity Entity, XModelSource Model)> instances = transparent
+            ? _foliagePreview.OrderByDescending(item => Vector3.DistanceSquared(
+                EditorSession.EntityOrigin(item.Entity), eye)) : _foliagePreview;
+        foreach (var (entity, model) in instances)
+        {
+            if (!_previewMeshes.TryGetValue(model, out PreviewModelMesh? mesh))
+            {
+                mesh = PreviewModelMesh.Create(gl, model);
+                _previewMeshes.Add(model, mesh);
+            }
+            Matrix4x4 transform = XModelGeometry.Transform(entity);
+            if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse)) continue;
+            Matrix4x4 normalTransform = Matrix4x4.Transpose(inverse);
+            gl.UniformMatrix4(_modelLocation, 1, false, (float*)&transform);
+            gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&normalTransform);
+            gl.BindVertexArray(mesh.VertexArray);
+            foreach (var batch in mesh.Batches)
+            {
+                MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+                MaterialSurfaceState state = source?.Surface ?? MaterialSurfaceState.Opaque;
+                bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
+                if (drawTransparent != transparent) continue;
+                uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
+                if (texture == 0) continue;
+                SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state), _alphaTestLocation,
+                    _premultiplyAlphaLocation, _ignoreVertexColorLocation);
+                gl.BindTexture(TextureTarget.Texture2D, texture);
+                gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+                gl.Uniform1(_texturedLocation, 1);
+                gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+            }
+        }
+        Matrix4x4 identity = Matrix4x4.Identity;
+        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
+        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
+        gl.BindVertexArray(_vertexArray);
+        ResetSurfaceState(gl);
+    }
+
+    private void RemoveUnusedPreviewMeshes(GL gl)
+    {
+        if (!_previewMeshesDirty) return;
+        var used = _foliagePreview.Select(item => item.Model).ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (XModelSource model in _previewMeshes.Keys.Where(model => !used.Contains(model)).ToArray())
+        {
+            _previewMeshes[model].Delete(gl);
+            _previewMeshes.Remove(model);
+        }
+        _previewMeshesDirty = false;
     }
 
     private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting,
@@ -385,6 +460,9 @@ internal sealed class SceneRenderer
         Func<string, MaterialSource?>? resolveMaterial, bool previewLighting)
     {
         gl.UseProgram(_program);
+        Matrix4x4 identity = Matrix4x4.Identity;
+        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
+        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
         gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&matrix);
         gl.Uniform3(_eyeLocation, origin.X, origin.Y, origin.Z);
         gl.Uniform1(_cubicClipLocation, 0);
@@ -561,6 +639,7 @@ internal sealed class SceneRenderer
             _skies.Clear(gl);
             _water.Clear(gl);
             _reflections.Clear(gl);
+            foreach (PreviewModelMesh mesh in _previewMeshes.Values) mesh.Delete(gl);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
             if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
             if (_program != 0) gl.DeleteProgram(_program);
@@ -593,6 +672,9 @@ internal sealed class SceneRenderer
         _surfaceBatches.Clear();
         _surfaceStates.Clear();
         _transparentTriangles.Clear();
+        _previewMeshes.Clear();
+        _foliagePreview = [];
+        _previewMeshesDirty = false;
         HasAnimatedWater = false;
         _surfaceBounds = null;
         _renderSize = default;
@@ -609,4 +691,61 @@ internal sealed class SceneRenderer
 
     internal static bool IsRenderException(Exception exception) => exception is IOException or FormatException or
         InvalidOperationException or ArgumentException or NotSupportedException or OverflowException;
+
+    private sealed class PreviewModelMesh
+    {
+        internal required uint VertexArray { get; init; }
+        internal required uint VertexBuffer { get; init; }
+        internal required IReadOnlyList<(string Material, int Start, int Count)> Batches { get; init; }
+
+        internal static unsafe PreviewModelMesh Create(GL gl, XModelSource model)
+        {
+            var materials = new Dictionary<string, List<SceneVertex>>(StringComparer.Ordinal);
+            foreach (var triangle in XModelGeometry.GetLocalTriangles(model))
+            {
+                if (!materials.TryGetValue(triangle.Material, out List<SceneVertex>? vertices))
+                    materials.Add(triangle.Material, vertices = []);
+                vertices.AddRange([triangle.A, triangle.B, triangle.C]);
+            }
+            var data = new List<SceneVertex>();
+            var batches = new List<(string Material, int Start, int Count)>();
+            foreach (var material in materials)
+            {
+                int start = data.Count;
+                data.AddRange(material.Value);
+                batches.Add((material.Key, start, material.Value.Count));
+            }
+            uint vertexArray = 0, vertexBuffer = 0;
+            try
+            {
+                vertexArray = gl.GenVertexArray();
+                vertexBuffer = gl.GenBuffer();
+                gl.BindVertexArray(vertexArray);
+                gl.BindBuffer(BufferTargetARB.ArrayBuffer, vertexBuffer);
+                SceneVertex[] verticesArray = data.ToArray();
+                fixed (SceneVertex* pointer = verticesArray)
+                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(verticesArray.Length * sizeof(SceneVertex)), pointer,
+                        BufferUsageARB.StaticDraw);
+                for (uint attribute = 0; attribute < 4; attribute++) gl.EnableVertexAttribArray(attribute);
+                gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)0);
+                gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)12);
+                gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)24);
+                gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
+                gl.BindVertexArray(0);
+                return new PreviewModelMesh { VertexArray = vertexArray, VertexBuffer = vertexBuffer, Batches = batches };
+            }
+            catch
+            {
+                if (vertexBuffer != 0) gl.DeleteBuffer(vertexBuffer);
+                if (vertexArray != 0) gl.DeleteVertexArray(vertexArray);
+                throw;
+            }
+        }
+
+        internal void Delete(GL gl)
+        {
+            gl.DeleteBuffer(VertexBuffer);
+            gl.DeleteVertexArray(VertexArray);
+        }
+    }
 }

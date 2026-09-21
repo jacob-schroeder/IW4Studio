@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
@@ -24,6 +25,9 @@ public sealed class OrthoViewport : Control
         Focusable = true;
         ClipToBounds = true;
         PointerCaptureLost += (_, _) => { if (_gestures.IsActive) _gestures.CancelGesture(); };
+        DragDrop.SetAllowDrop(this, true);
+        DragDrop.AddDragOverHandler(this, OnModelDragOver);
+        DragDrop.AddDropHandler(this, OnModelDrop);
     }
 
     internal EditorSession? Session
@@ -72,6 +76,7 @@ public sealed class OrthoViewport : Control
     internal event Action? ModelsRequested;
     internal event Action? PrefabsRequested;
     internal event Action? OrganizationRequested;
+    internal Func<bool>? CanAcceptModelDrop { get; set; }
 
     internal bool HasClipPreview => _gestures.CanCommitClip;
     internal bool HasActiveGesture => _gestures.IsActive || _gestures.HasClipPreview;
@@ -155,6 +160,35 @@ public sealed class OrthoViewport : Control
     {
         base.OnPointerExited(e);
         _gestures.PointerExited();
+    }
+
+    private void OnModelDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = CanAcceptModelDrop?.Invoke() != false && XModelDrag.TryRead(e.DataTransfer, out _, out _)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnModelDrop(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        e.DragEffects = DragDropEffects.None;
+        if (CanAcceptModelDrop?.Invoke() == false || Session is not { } session ||
+            !XModelDrag.TryRead(e.DataTransfer, out string name, out _) ||
+            session.Scene.ResolveModel?.Invoke(name) is not { } model) return;
+        try
+        {
+            _gestures.CancelGesture();
+            if (session.HasPlacement) session.CancelPlacement();
+            Vector2 point = _projection.ToWorld(e.GetPosition(this));
+            point = new Vector2(session.Snap(point.X), session.Snap(point.Y));
+            Vector3 position = _projection.Unproject(point, session.Snap(session.BrushBottom));
+            XModelEditing.Place(session, model, position);
+            CursorStatusChanged?.Invoke($"Placed {name} on the {Plane.ToString().ToLowerInvariant()} grid.");
+            e.DragEffects = DragDropEffects.Copy;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or IOException)
+        { CursorStatusChanged?.Invoke(exception.Message); }
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

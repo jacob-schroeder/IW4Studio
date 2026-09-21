@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Globalization;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
 using Iw4Radiant.Rendering;
@@ -9,12 +10,30 @@ internal static class XModelEditing
 {
     internal static MapEntity Place(EditorSession session, XModelSource source, Vector3 position, Vector3? normal = null)
     {
+        MapEntity entity = Create(source, position, normal, 0, 1);
+        session.Edit(() => Add(session, entity));
+        return entity;
+    }
+
+    internal static MapEntity Add(EditorSession session, XModelSource source, Vector3 position, Vector3? normal,
+        float yaw, float scale)
+    {
+        MapEntity entity = Create(source, position, normal, yaw, scale);
+        Add(session, entity);
+        return entity;
+    }
+
+    private static MapEntity Create(XModelSource source, Vector3 position, Vector3? normal, float yaw, float scale)
+    {
         _ = source.Document;
+        if (!float.IsFinite(yaw) || !float.IsFinite(scale) || scale <= 0)
+            throw new ArgumentException("The model rotation and scale must be finite, and scale must be positive.");
         var entity = new MapEntity();
         entity.Properties["classname"] = "misc_model";
         entity.Properties["model"] = source.Name;
         entity.Properties["origin"] = "0 0 0";
         entity.Properties["angles"] = "0 0 0";
+        if (scale != 1) entity.Properties["modelscale"] = scale.ToString("G9", CultureInfo.InvariantCulture);
         Vector3 supportNormal = normal is { } surfaceNormal ? Vector3.Normalize(surfaceNormal) : Vector3.UnitZ;
         if (normal is not null)
         {
@@ -25,15 +44,18 @@ internal static class XModelEditing
             else if (dot < 0)
                 EntityOrientation.Transform(entity, Matrix4x4.CreateRotationX(MathF.PI));
         }
+        if (yaw != 0)
+            EntityOrientation.Transform(entity, Matrix4x4.CreateFromAxisAngle(supportNormal, yaw * (MathF.PI / 180)));
         Matrix4x4 rotation = XModelGeometry.Transform(entity);
         float offset = source.Document.Vertices.Min(vertex => Vector3.Dot(Vector3.Transform(vertex.Position, rotation), supportNormal));
         SetOrigin(entity, position - supportNormal * offset);
-        session.Edit(() =>
-        {
-            session.Document.Entities.Add(entity);
-            session.Selection.Set(entity);
-        });
         return entity;
+    }
+
+    private static void Add(EditorSession session, MapEntity entity)
+    {
+        session.Document.Entities.Add(entity);
+        session.Selection.Set(entity);
     }
 
     internal static int FindInstances(EditorSession session, string name)

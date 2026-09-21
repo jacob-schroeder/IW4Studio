@@ -26,18 +26,27 @@ public partial class MainWindow
         Workspace.Models.CatalogChanged += RefreshAssets;
         var settings = RadiantSettings.Load();
         bool suppressRelatedModelRestore = false;
-        Workspace.Materials.FolderLoaded += async root =>
+        Workspace.Materials.FolderLoaded += async (root, nonBlocking) =>
         {
             settings.MaterialFolder = root;
             settings.Save();
             if (suppressRelatedModelRestore) return;
             if (Path.GetFileName(Path.TrimEndingDirectorySeparator(root)) is "images" or "materials")
                 root = Path.GetDirectoryName(root) ?? root;
-            if (Directory.Exists(Path.Combine(root, "xmodel"))) await Workspace.Models.LoadFolderAsync(root);
+            if (Directory.Exists(Path.Combine(root, "xmodel"))) await Workspace.Models.LoadFolderAsync(root, nonBlocking);
         };
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
         Workspace.Models.DropRequested += DropModels;
+        Workspace.Models.CatalogReset += Inspector.Painter.ClearModels;
+        Workspace.Models.FoliageModelRequested += model =>
+        {
+            Inspector.Painter.AddModel(model);
+            Inspector.Painter.StartPainting();
+            ShowInspectorSection(Inspector.ShowPainter);
+        };
+        Inspector.Painter.Changed += RefreshFoliagePainting;
+        Inspector.Painter.ModelsRequested += Workspace.ShowModels;
         Workspace.Models.FolderLoaded += root =>
         {
             settings.XModelFolder = root;
@@ -50,7 +59,8 @@ public partial class MainWindow
         };
         _session.Scene.ResolveModel = Workspace.Models.ResolveModel;
         _session.Scene.ResolveMaterial = ResolveMaterial;
-        _ = RestoreAssetFoldersAsync(settings, () => suppressRelatedModelRestore = true,
+        RefreshFoliagePainting();
+        Opened += (_, _) => _ = RestoreAssetFoldersAsync(settings, () => suppressRelatedModelRestore = true,
             () => suppressRelatedModelRestore = false);
     }
 
@@ -60,10 +70,10 @@ public partial class MainWindow
         try
         {
             if (settings.XModelFolder is { } models && Directory.Exists(models))
-                if (await Workspace.Models.LoadFolderAsync(models)) markExplicitModelsRestored();
+                if (await Workspace.Models.LoadFolderAsync(models, nonBlocking: true)) markExplicitModelsRestored();
             if (settings.MaterialFolder is { } material && Directory.Exists(material))
             {
-                bool loaded = await Workspace.Materials.LoadFolderAsync(material);
+                bool loaded = await Workspace.Materials.LoadFolderAsync(material, nonBlocking: true);
                 if (loaded) settings.MaterialFolder = material;
             }
         }
@@ -112,6 +122,7 @@ public partial class MainWindow
             TechniqueSet = source.TechniqueSet,
             Water = WaterMaterialAuthoring.CreateWater(water, definition),
             Ocean = definition.Ocean,
+            OceanFoamImagePath = source.OceanFoamImagePath,
             WaterColor = new Vector4(definition.Red, definition.Green, definition.Blue, source.WaterColor.W),
             EnvMapParms = new Vector4(definition.FresnelMinimum, definition.FresnelMaximum,
                 definition.FresnelExponent, source.EnvMapParms.W),
@@ -134,10 +145,37 @@ public partial class MainWindow
 
     private void BeginPlacement(string label, Action<Vector3, Vector3?> place)
     {
+        Inspector.Painter.StopPainting();
         SetTool(EditorTool.Select);
         _session.BeginPlacement(label, place);
         SetStatus($"Place {label} · Click a surface or grid · Shift repeats · Esc cancels");
         Workspace.FocusActiveView();
+    }
+
+    private void RefreshFoliagePainting()
+    {
+        var painter = Inspector.Painter;
+        var camera = Workspace.Camera;
+        PainterButton.IsChecked = painter.IsPainting;
+        camera.FoliageModels = painter.Models;
+        camera.FoliageRadius = painter.BrushRadius;
+        camera.FoliageDensity = painter.BrushDensity;
+        camera.FoliageSpacing = painter.BrushSpacing;
+        camera.FoliageMinimumScale = painter.MinimumBrushScale;
+        camera.FoliageMaximumScale = painter.MaximumBrushScale;
+        camera.FoliageRandomYaw = painter.UsesRandomYaw;
+        camera.FoliageAlignSurface = painter.AlignsToSurface;
+        if (painter.IsPainting)
+        {
+            if (_session.Tool != EditorTool.Select || _session.HasPlacement)
+            {
+                _activatingFoliage = true;
+                try { SetTool(EditorTool.Select); }
+                finally { _activatingFoliage = false; }
+            }
+            SetStatus("Paint foliage in the camera · drag over map surfaces · Esc cancels a stroke");
+        }
+        camera.FoliagePaintingEnabled = painter.IsPainting;
     }
 
     private async void DropModels()

@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materials="using:Iw4Radiant.Materials"
+             x:Class="Iw4Radiant.Views.FoliagePainterInspector">
+    <StackPanel Spacing="12">
+        <TextBlock Text="Painter" Classes="panelTitle" />
+        <TextBlock Text="Choose one or more models, then paint them across camera surfaces." Classes="caption" TextWrapping="Wrap" />
+        <StackPanel x:Name="EmptyPalette" Spacing="8">
+            <TextBlock Text="Your brush has no models yet." TextWrapping="Wrap" />
+            <Button x:Name="ChooseModelsButton" Classes="panelAction" Content="Choose models…" HorizontalAlignment="Left"
+                    ToolTip.Tip="Open the Models browser, select a model, then add it to this brush." />
+        </StackPanel>
+        <StackPanel x:Name="PaletteSettings" Spacing="10" IsVisible="False">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBlock Text="Brush models" Classes="panelTitle" VerticalAlignment="Center" />
+                <Button x:Name="AddModelsButton" Grid.Column="1" Classes="panelAction" Content="Choose models…" />
+            </Grid>
+            <ListBox x:Name="Palette" MinHeight="116" MaxHeight="220" SelectionMode="Single"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="materials:XModelSource">
+                        <TextBlock Text="{CompiledBinding Name}" TextTrimming="CharacterEllipsis" Margin="4,2" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <Button x:Name="RemoveModelButton" Classes="panelAction" Content="Remove selected model" HorizontalAlignment="Left" IsEnabled="False" />
+            <Separator />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="Radius" Classes="caption" />
+                    <NumericUpDown x:Name="Radius" Value="64" Minimum="8" Maximum="2048" Increment="8" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="Density" Classes="caption" />
+                    <NumericUpDown x:Name="Density" Value="1" Minimum="1" Maximum="32" Increment="1" />
+                </StackPanel>
+            </Grid>
+            <StackPanel Spacing="3">
+                <TextBlock Text="Spacing" Classes="caption" />
+                <NumericUpDown x:Name="Spacing" Value="32" Minimum="1" Maximum="2048" Increment="4" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="Minimum scale" Classes="caption" />
+                    <NumericUpDown x:Name="MinimumScale" Value="0.8" Minimum="0.01" Maximum="100" Increment="0.1" FormatString="0.##" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="Maximum scale" Classes="caption" />
+                    <NumericUpDown x:Name="MaximumScale" Value="1.2" Minimum="0.01" Maximum="100" Increment="0.1" FormatString="0.##" />
+                </StackPanel>
+            </Grid>
+            <StackPanel Spacing="7">
+                <CheckBox x:Name="RandomYaw" Content="Random yaw" IsChecked="True" />
+                <CheckBox x:Name="AlignSurface" Content="Align to surface" IsChecked="True" />
+            </StackPanel>
+            <Separator />
+            <ToggleButton x:Name="PaintButton" Classes="panelAction" Content="Paint models" HorizontalAlignment="Left" />
+            <TextBlock x:Name="PaintHelp" Classes="caption" Text="Drag over camera surfaces to paint · Esc stops painting or cancels a stroke" TextWrapping="Wrap" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

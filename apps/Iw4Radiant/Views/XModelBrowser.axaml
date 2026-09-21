@@ -38,8 +38,9 @@
                     <Button x:Name="DropButton" Classes="panelAction" Content="Drop selection" Margin="0,0,6,0" />
                     <Button x:Name="FindButton" Classes="panelAction" Content="Find instances" IsEnabled="False" Margin="0,0,6,0" />
                     <Button x:Name="ReplaceButton" Classes="panelAction" Content="Find / replace…" IsEnabled="False" />
+                    <Button x:Name="AddFoliageButton" Classes="panelAction" Content="Add to brush" IsEnabled="False" Margin="6,0,0,0" />
                 </WrapPanel>
-                <TextBlock x:Name="ModelInfo" Grid.Row="1" Classes="caption" Text="Browse extracted raw assets to load real models and materials."
+                <TextBlock x:Name="ModelInfo" Grid.Row="1" Classes="caption" Text="Browse assets, then drag a model into a viewport or use Place model."
                            TextTrimming="CharacterEllipsis" />
             </Grid>
         </Border>

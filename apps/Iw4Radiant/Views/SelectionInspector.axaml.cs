@@ -39,6 +39,7 @@ public partial class SelectionInspector : UserControl
     }
 
     internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
+    internal void ShowPainter() => InspectorTabs.SelectedItem = PainterTab;
     internal void ShowGeometry() => InspectorTabs.SelectedItem = GeometryTab;
     internal void ShowOrganization() => InspectorTabs.SelectedItem = OrganizationTab;
     internal void ReleaseImages() => Skies.ReleaseImages();

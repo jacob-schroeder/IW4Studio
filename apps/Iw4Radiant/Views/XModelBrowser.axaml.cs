@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -17,7 +18,10 @@ public partial class XModelBrowser : UserControl
     private EditorDialogs? _dialogs;
     private Action<string>? _setStatus;
     private int _loadRevision;
+    private bool _manualLoadStarted;
     private CancellationTokenSource? _filterCancellation;
+    private Window? _previewWindow;
+    private Bitmap? _previewBitmap;
 
     public XModelBrowser() => InitializeComponent();
 
@@ -25,6 +29,9 @@ public partial class XModelBrowser : UserControl
     internal event Action<string>? FolderLoaded;
     internal event Action<XModelSource, bool>? PlacementRequested;
     internal event Action? DropRequested;
+    internal event Action? CatalogReset;
+    internal event Action<XModelSource>? FoliageModelRequested;
+    internal XModelSource? SelectedModel => (ModelList.SelectedItem as XModelThumbnail)?.Model;
     internal XModelSource? ResolveModel(string name)
     {
         var source = _catalog?.Resolve(name);
@@ -53,13 +60,31 @@ public partial class XModelBrowser : UserControl
             var selected = ModelList.SelectedItem as XModelThumbnail;
             PlaceButton.IsEnabled = selected is not null;
             PreviewButton.IsEnabled = selected?.Preview is not null;
+            AddFoliageButton.IsEnabled = selected is not null;
             FindButton.IsEnabled = ReplaceButton.IsEnabled = selected is not null;
             if (selected is not null)
             {
-                ModelInfo.Text = selected.Description;
-                ToolTip.SetTip(ModelInfo, selected.Description);
+                ModelInfo.Text = $"{selected.Description} · Drag into a viewport or use Place model.";
+                ToolTip.SetTip(ModelInfo, ModelInfo.Text);
             }
         };
+        ModelList.AddHandler(PointerPressedEvent, async (_, e) =>
+        {
+            if (dialogs.BlocksInput || !e.GetCurrentPoint(ModelList).Properties.IsLeftButtonPressed) return;
+            XModelThumbnail? selected = null;
+            for (Control? current = e.Source as Control; current is not null && !ReferenceEquals(current, ModelList);
+                 current = current.Parent as Control)
+                if (current.DataContext is XModelThumbnail thumbnail) { selected = thumbnail; break; }
+            if (selected is null) return;
+            ModelList.SelectedItem = selected;
+            try
+            {
+                _ = selected.Model.Document;
+                await DragDrop.DoDragDropAsync(e, XModelDrag.Create(selected.Model, AlignSurface.IsChecked == true), DragDropEffects.Copy);
+            }
+            catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+            { setStatus(exception.Message); }
+        }, handledEventsToo: true);
         PlaceButton.Click += async (_, _) =>
         {
             if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
@@ -82,27 +107,36 @@ public partial class XModelBrowser : UserControl
             finishGestures();
             await ReplaceAsync(owner, session, dialogs, selected.Model, setStatus);
         };
-        PreviewButton.Click += async (_, _) =>
+        PreviewButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected || _catalog is null) return;
             finishGestures();
-            await PreviewAsync(owner, dialogs, selected.Model, _catalog);
+            ShowPreview(owner, selected.Model, _catalog);
+        };
+        AddFoliageButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            FoliageModelRequested?.Invoke(selected.Model);
         };
     }
 
-    internal async Task<bool> LoadFolderAsync(string root)
+    internal async Task<bool> LoadFolderAsync(string root, bool nonBlocking = false)
     {
         if (_dialogs is not { } dialogs) return false;
+        if (nonBlocking && _manualLoadStarted) return false;
+        if (!nonBlocking) _manualLoadStarted = true;
         int revision = ++_loadRevision;
         try
         {
-            dialogs.SetBusy(true);
+            if (nonBlocking) _setStatus?.Invoke("Loading saved XModels…");
+            else dialogs.SetBusy(true);
             var catalog = await Task.Run(() => XModelCatalog.Read(root));
             if (revision != _loadRevision) return false;
-            ReleaseImages();
+            ReleaseImages(invalidateLoad: false);
             _catalog = catalog;
             ModelFilter.Text = "";
-            await FilterModelsAsync();
+            await FilterModelsAsync(revision);
+            if (revision != _loadRevision) return false;
             CatalogChanged?.Invoke();
             _setStatus?.Invoke($"Loaded {catalog.Models.Count} XModels from {root}. Search by name to browse matching thumbnails.");
             FolderLoaded?.Invoke(root);
@@ -110,23 +144,33 @@ public partial class XModelBrowser : UserControl
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
-            dialogs.SetBusy(false);
-            await dialogs.MessageAsync("Cannot load models", exception.Message);
+            if (revision == _loadRevision)
+            {
+                if (nonBlocking) _setStatus?.Invoke($"Could not load saved XModels: {exception.Message}");
+                else
+                {
+                    dialogs.SetBusy(false);
+                    await dialogs.MessageAsync("Cannot load models", exception.Message);
+                }
+            }
         }
-        finally { dialogs.SetBusy(false); }
+        finally { if (!nonBlocking) dialogs.SetBusy(false); }
         return false;
     }
 
-    internal void ReleaseImages()
+    internal void ReleaseImages(bool invalidateLoad = true)
     {
+        if (invalidateLoad) _loadRevision++;
+        ClosePreview();
         _filterCancellation?.Cancel();
+        CatalogReset?.Invoke();
         ModelList.ItemsSource = null;
         foreach (var thumbnail in _thumbnails) thumbnail.Preview?.Dispose();
         _thumbnails.Clear();
         _catalog = null;
     }
 
-    private async Task FilterModelsAsync()
+    private async Task FilterModelsAsync(int? loadRevision = null)
     {
         _filterCancellation?.Cancel();
         if (_catalog is not { } catalog) return;
@@ -142,6 +186,7 @@ public partial class XModelBrowser : UserControl
         try
         {
             await Task.Delay(180, cancellation.Token);
+            if (loadRevision is not null && loadRevision != _loadRevision) return;
             ModelInfo.Text = $"Loading {visible.Length} model previews…";
             await Task.Run(() =>
             {
@@ -155,6 +200,7 @@ public partial class XModelBrowser : UserControl
                 }
             }, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
+            if (loadRevision is not null && loadRevision != _loadRevision) return;
             _thumbnails.AddRange(loaded);
             foreach (var thumbnail in loaded) cached[thumbnail.Name] = thumbnail;
             loaded.Clear();
@@ -163,7 +209,8 @@ public partial class XModelBrowser : UserControl
             ModelList.ItemsSource = previews.Where(preview => preview.Preview is not null).ToArray();
             ModelInfo.Text = $"{models.Length} of {catalog.Models.Count} models" +
                 (models.Length > visible.Length ? " · first 120 matches; narrow search" : "") +
-                (unavailable.Length > 0 ? $" · {unavailable.Length} unavailable previews omitted" : "") + " · Place model, then click a viewport.";
+                (unavailable.Length > 0 ? $" · {unavailable.Length} unavailable previews omitted" : "") +
+                " · Drag a thumbnail or Large preview into a viewport; Place model also supports click placement.";
             ToolTip.SetTip(ModelInfo, unavailable.Length > 0 ? string.Join('\n', unavailable.Select(preview => $"{preview.Name}: {preview.Error}")) : ModelInfo.Text);
         }
         catch (OperationCanceledException) { }
@@ -199,15 +246,15 @@ public partial class XModelBrowser : UserControl
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { await dialogs.MessageAsync("Cannot replace models", exception.Message); }
     }
 
-    private static async Task PreviewAsync(Window owner, EditorDialogs dialogs, XModelSource model, XModelCatalog catalog)
+    private void ShowPreview(Window owner, XModelSource model, XModelCatalog catalog)
     {
+        ClosePreview();
         var renderer = new XModelPreviewRenderer(catalog.ResolveMaterial);
         var image = new Image { Stretch = Stretch.Uniform, MinHeight = 320 };
         var yaw = new Slider { Minimum = -180, Maximum = 180, Value = -45 };
         var pitch = new Slider { Minimum = -85, Maximum = 85, Value = 25 };
         var zoom = new Slider { Minimum = 0.5, Maximum = 3, Value = 1 };
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        Bitmap? bitmap = null;
         var dialog = new Window { Title = model.Name, Width = 640, Height = 690, MinWidth = 400, MinHeight = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var grid = new Grid { RowDefinitions = RowDefinitions.Parse("*,Auto,Auto,Auto,Auto"), Margin = new Thickness(12), RowSpacing = 8 };
         grid.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse("#303237")), Child = image });
@@ -215,9 +262,21 @@ public partial class XModelBrowser : UserControl
         Grid.SetRow(status, 4); grid.Children.Add(status);
         dialog.Content = grid;
         yaw.ValueChanged += (_, _) => Render(); pitch.ValueChanged += (_, _) => Render(); zoom.ValueChanged += (_, _) => Render();
+        image.PointerPressed += async (_, e) =>
+        {
+            if (_dialogs?.BlocksInput == true || !e.GetCurrentPoint(image).Properties.IsLeftButtonPressed) return;
+            await DragDrop.DoDragDropAsync(e, XModelDrag.Create(model, AlignSurface.IsChecked == true), DragDropEffects.Copy);
+        };
+        dialog.Closed += (_, _) =>
+        {
+            image.Source = null;
+            _previewBitmap?.Dispose();
+            _previewBitmap = null;
+            if (ReferenceEquals(_previewWindow, dialog)) _previewWindow = null;
+        };
         Render();
-        try { await dialogs.ShowModalAsync(() => dialog.ShowDialog<bool?>(owner)); }
-        finally { image.Source = null; bitmap?.Dispose(); }
+        _previewWindow = dialog;
+        dialog.Show(owner);
 
         void Render()
         {
@@ -225,10 +284,10 @@ public partial class XModelBrowser : UserControl
             {
                 var next = renderer.Render(model, 512, (float)yaw.Value, (float)pitch.Value, (float)zoom.Value);
                 image.Source = next;
-                bitmap?.Dispose(); bitmap = next;
+                _previewBitmap?.Dispose(); _previewBitmap = next;
                 var bounds = model.Bounds;
                 var size = bounds.Max - bounds.Min;
-                status.Text = FormattableString.Invariant($"{model.Document.Triangles.Count:N0} triangles · {model.Document.Materials.Count} materials · {size.X:0.#} × {size.Y:0.#} × {size.Z:0.#} units");
+                status.Text = FormattableString.Invariant($"{model.Document.Triangles.Count:N0} triangles · {model.Document.Materials.Count} materials · {size.X:0.#} × {size.Y:0.#} × {size.Z:0.#} units · Drag the image into a viewport");
             }
             catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { status.Text = exception.Message; }
         }
@@ -239,5 +298,14 @@ public partial class XModelBrowser : UserControl
             line.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
             Grid.SetColumn(slider, 1); line.Children.Add(slider); Grid.SetRow(line, row); grid.Children.Add(line);
         }
+    }
+
+    private void ClosePreview()
+    {
+        Window? window = _previewWindow;
+        _previewWindow = null;
+        window?.Close();
+        _previewBitmap?.Dispose();
+        _previewBitmap = null;
     }
 }

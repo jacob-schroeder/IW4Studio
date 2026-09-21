@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private bool _inspectorVisible = true;
     private GridLength _inspectorWidth = new(300);
     private EditorTool _shownTool;
+    private bool _activatingFoliage;
 
     public MainWindow()
     {
@@ -36,6 +37,7 @@ public partial class MainWindow : Window
         foreach (var view in gridViews)
         {
             view.Session = _session;
+            view.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
             view.CursorStatusChanged += SetStatus;
             view.BrushKindRequested += ApplyBrushKind;
             view.EntityInspectorRequested += entity =>
@@ -57,6 +59,7 @@ public partial class MainWindow : Window
             };
         }
         Workspace.Camera.Session = _session;
+        Workspace.Camera.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
         Workspace.Camera.ResolveMaterial = ResolveMaterial;
@@ -139,6 +142,7 @@ public partial class MainWindow : Window
     }
     private void SetTool(EditorTool tool)
     {
+        if (!_activatingFoliage) Inspector.Painter.StopPainting();
         FinishGestures();
         if (_session.HasPlacement) _session.CancelPlacement();
         if (tool != EditorTool.Select) _session.SelectionVolumeMode = SelectionVolumeMode.None;
@@ -168,7 +172,7 @@ public partial class MainWindow : Window
     private void ToggleTool(EditorTool tool) => SetTool(_session.Tool == tool ? EditorTool.Select : tool);
     private void ActivateTool(EditorTool tool)
     {
-        if (_session.Tool != tool || _session.HasPlacement) SetTool(tool);
+        if (_session.Tool != tool || _session.HasPlacement || Workspace.Camera.FoliagePaintingEnabled) SetTool(tool);
     }
     private void Undo_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Undo(); }
     private void Redo_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Redo(); }
@@ -266,6 +270,14 @@ public partial class MainWindow : Window
     private void Maximize_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaximize();
     private void Materials_Click(object? sender, RoutedEventArgs e) => Workspace.ToggleMaterials();
     private void Models_Click(object? sender, RoutedEventArgs e) => Workspace.ShowModels();
+    private void Painter_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        if (PainterButton.IsChecked == true) Inspector.Painter.StartPainting(Workspace.Models.SelectedModel);
+        else Inspector.Painter.StopPainting();
+        PainterButton.IsChecked = Inspector.Painter.IsPainting;
+        ShowInspectorSection(Inspector.ShowPainter);
+    }
     private void Prefabs_Click(object? sender, RoutedEventArgs e) => Workspace.ShowPrefabs();
     private void Geometry_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowGeometry);
     private void Gameplay_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowEntity);
@@ -375,6 +387,14 @@ public partial class MainWindow : Window
         {
             _session.CancelPlacement();
             SetStatus("Placement cancelled.");
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && Workspace.Camera.FoliagePaintingEnabled)
+        {
+            Workspace.Camera.FinishGesture(cancel: true);
+            Inspector.Painter.StopPainting();
+            SetStatus("Foliage painting cancelled.");
             e.Handled = true;
             return;
         }

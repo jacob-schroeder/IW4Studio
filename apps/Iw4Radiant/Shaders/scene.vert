@@ -7,6 +7,8 @@ in vec2 aTexCoord;
 in vec4 aColor;
 
 uniform mat4 uViewProjection;
+uniform mat4 uModel;
+uniform mat4 uNormalTransform;
 uniform bool uWaterPreview;
 uniform vec4 uOceanShape;
 uniform vec4 uOceanMotion;
@@ -22,7 +24,7 @@ out vec4 vOceanSurface;
 
 void main()
 {
-    vec3 position = aPosition;
+    vec3 position = (uModel * vec4(aPosition, 1.0)).xyz;
     vOceanSlope = vec2(0.0);
     vColor = aColor;
     float rise = 0.0;
@@ -40,7 +42,9 @@ void main()
         aColor.a * uOceanMotion.z + uOceanMotion.w + rise / 12.0,
         rise / max(uOceanShape.w * 2.4, 0.0001));
     gl_Position = uViewProjection * vec4(position, 1.0);
-    vNormal = aNormal;
+    vec3 transformedNormal = (uNormalTransform * vec4(aNormal, 0.0)).xyz;
+    vNormal = dot(transformedNormal, transformedNormal) > 0.000001
+        ? normalize(transformedNormal) : vec3(0.0);
     vPosition = position;
     vTexCoord = aTexCoord;
 }

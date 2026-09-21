@@ -29,6 +29,17 @@ internal static class SurfaceRaycast
     internal static bool TryHit(MapDocument document, Vector3 origin, Vector3 direction,
         Func<string, XModelSource?> resolveModel, Func<string, MaterialSource?>? resolveMaterial,
         IReadOnlySet<MapEntity>? excluded, out Vector3 point, out Vector3 normal)
+        => TryHit(document, origin, direction, resolveModel, resolveMaterial, excluded, includeModels: true,
+            out point, out normal);
+
+    internal static bool TryHitSurfaces(MapDocument document, Vector3 origin, Vector3 direction,
+        Func<string, MaterialSource?>? resolveMaterial, out Vector3 point, out Vector3 normal)
+        => TryHit(document, origin, direction, _ => null, resolveMaterial, null, includeModels: false,
+            out point, out normal);
+
+    private static bool TryHit(MapDocument document, Vector3 origin, Vector3 direction,
+        Func<string, XModelSource?> resolveModel, Func<string, MaterialSource?>? resolveMaterial,
+        IReadOnlySet<MapEntity>? excluded, bool includeModels, out Vector3 point, out Vector3 normal)
     {
         float closest = float.PositiveInfinity;
         Vector3 hitNormal = Vector3.Zero;
@@ -45,7 +56,7 @@ internal static class SurfaceRaycast
                 foreach (var (a, b, c) in surface.GetTriangles())
                     Consider(surface.Vertices[a], surface.Vertices[b], surface.Vertices[c], surface.Material);
             }
-            if (XModelGeometry.IsModel(entity) && resolveModel(entity.Properties["model"]) is { } model)
+            if (includeModels && XModelGeometry.IsModel(entity) && resolveModel(entity.Properties["model"]) is { } model)
                 foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
                     Consider(triangle.A.Position, triangle.B.Position, triangle.C.Position, triangle.Material);
         }

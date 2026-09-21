@@ -7,7 +7,7 @@
         <Style Selector="TabItem">
             <Setter Property="MinHeight" Value="32" />
             <Setter Property="MinWidth" Value="0" />
-            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Padding" Value="8,0" />
             <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="Expander">
@@ -125,6 +125,12 @@
                         <Separator />
                         <views:SkyInspector x:Name="Skies" />
                     </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="PainterTab" ToolTip.Tip="Painter · model brush palette and settings" AutomationProperties.Name="Painter">
+                <TabItem.Header><materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" /></TabItem.Header>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <views:FoliagePainterInspector x:Name="Painter" Margin="12" />
                 </ScrollViewer>
             </TabItem>
         </TabControl>

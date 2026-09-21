@@ -167,6 +167,9 @@
                 <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
                     <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
                 </ToggleButton>
+                <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click" ToolTip.Tip="Painter brush · paint selected models across camera surfaces" AutomationProperties.Name="Painter brush">
+                    <materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" />
+                </ToggleButton>
                 <Border Classes="toolbarSeparator" />
                </StackPanel>
                <StackPanel Classes="toolbarGroup">
