@@ -87,7 +87,7 @@ public sealed class GfxImageStreamResolver : IDisposable
             foreach (var candidate in image.StreamData
                          .Select((streamData, partIndex) => new { streamData, partIndex })
                          .Where(x => x.streamData.Width > 0 && x.streamData.Height > 0 && x.streamData.CumulativeByteCount != 0)
-                         .OrderByDescending(x => x.streamData.Width * x.streamData.Height))
+                         .OrderByDescending(x => GetCandidateArea(x.streamData)))
             {
                 GfxImageStreamData streamData = candidate.streamData;
                 int previousByteCount = candidate.partIndex == 0
@@ -147,7 +147,7 @@ public sealed class GfxImageStreamResolver : IDisposable
             var candidates = image.StreamData
                 .Select((streamData, partIndex) => new { streamData, partIndex })
                 .Where(x => x.streamData.Width > 0 && x.streamData.Height > 0 && x.streamData.CumulativeByteCount != 0)
-                .OrderByDescending(x => x.streamData.Width * x.streamData.Height);
+                .OrderByDescending(x => GetCandidateArea(x.streamData));
 
             string? lastReason = null;
             var resolvedMips = new List<GfxImageStreamMipPayload>();
@@ -228,6 +228,9 @@ public sealed class GfxImageStreamResolver : IDisposable
             ExitRead();
         }
     }
+
+    private static long GetCandidateArea(GfxImageStreamData streamData) =>
+        (long)streamData.Width * streamData.Height;
 
     public void Dispose()
     {
