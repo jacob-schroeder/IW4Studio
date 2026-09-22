@@ -232,9 +232,6 @@ public sealed class TechniqueExchange
         string techniqueName,
         int passIndex)
     {
-        string stateMapName = GetSourceStateMapName(
-            techniqueName,
-            passIndex);
         int declaredArgCount = checked(
             pass.PerPrimArgCount +
             pass.PerObjArgCount +
@@ -246,6 +243,9 @@ public sealed class TechniqueExchange
         }
         foreach (MaterialShaderArgumentAsset argument in pass.Args)
             _ = GetArgumentStage(argument.Type, techniqueName, passIndex);
+        string stateMapName = GetSourceStateMapName(
+            techniqueName,
+            passIndex);
 
         writer.WriteLine("{");
         writer.Write("  stateMap \"");

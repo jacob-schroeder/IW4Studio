@@ -6,6 +6,42 @@ namespace IW4.Studio.Tests;
 
 public sealed class TechniqueExchangeStateMapExportTests
 {
+    [Fact]
+    public void Unlink_when_argument_count_is_invalid_preserves_existing_failure()
+    {
+        string sourceDirectory = Directory.CreateTempSubdirectory(
+            "IW4.Studio.Tests.TechniqueExchange.").FullName;
+        try
+        {
+            var technique = new MaterialTechniqueAsset
+            {
+                Name = "m07/malformed",
+                PassCount = 1,
+                Passes =
+                [
+                    new MaterialPassAsset
+                    {
+                        PerPrimArgCount = 1
+                    }
+                ]
+            };
+
+            InvalidDataException failure = Assert.Throws<InvalidDataException>(
+                () => new TechniqueExchange([]).Unlink(
+                    sourceDirectory,
+                    technique));
+
+            Assert.Equal(
+                "Technique 'm07/malformed' pass 0 declares 1 shader arguments " +
+                "but has 0 materialized arguments.",
+                failure.Message);
+        }
+        finally
+        {
+            Directory.Delete(sourceDirectory, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
