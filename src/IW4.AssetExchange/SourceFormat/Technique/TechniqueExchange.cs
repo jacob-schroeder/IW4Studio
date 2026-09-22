@@ -232,6 +232,9 @@ public sealed class TechniqueExchange
         string techniqueName,
         int passIndex)
     {
+        string stateMapName = GetSourceStateMapName(
+            techniqueName,
+            passIndex);
         int declaredArgCount = checked(
             pass.PerPrimArgCount +
             pass.PerObjArgCount +
@@ -245,7 +248,9 @@ public sealed class TechniqueExchange
             _ = GetArgumentStage(argument.Type, techniqueName, passIndex);
 
         writer.WriteLine("{");
-        writer.WriteLine("  stateMap \"passthrough\"; // TODO");
+        writer.Write("  stateMap \"");
+        writer.Write(stateMapName);
+        writer.WriteLine("\";");
         WriteShader(
             writer,
             pass.VertexShader,
@@ -267,6 +272,12 @@ public sealed class TechniqueExchange
             passIndex);
         writer.WriteLine("}");
     }
+
+    private static string GetSourceStateMapName(
+        string techniqueName,
+        int passIndex) => throw new InvalidDataException(
+            $"Technique '{techniqueName}' pass {passIndex} cannot be exported: " +
+            "PS3 source state-map identity cannot be recovered from a standalone technique.");
 
     private void WriteShader(
         TextWriter writer,
