@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using IW4.FastFiles.Loaders.Database;
 using IW4.FastFiles.Loaders.Assets.ComWorld;
 using IW4.FastFiles.Loaders.Assets.ColMap;
@@ -36,6 +37,12 @@ namespace IW4.FastFiles.Loaders.Assets;
 
 public sealed class XAssetDispatcher
 {
+    private delegate BaseAsset PointerWrappedRoute(
+        XAssetDispatcher dispatcher,
+        FastFileCursor cursor,
+        XPointerReference pointer,
+        DbLoadContext context);
+
     private readonly MenuFileLoader _menuFileLoader = new();
     private readonly MaterialLoader _materialLoader = new();
     private readonly MaterialShaderLoader _materialShaderLoader = new();
@@ -68,6 +75,102 @@ public sealed class XAssetDispatcher
     private readonly GameWorldMpLoader _gameWorldMpLoader = new();
     private readonly LeaderboardDefLoader _leaderboardDefLoader = new();
     private readonly TracerDefLoader _tracerDefLoader = new();
+
+    private static readonly FrozenDictionary<XAssetType, PointerWrappedRoute> PointerWrappedRoutes =
+        new Dictionary<XAssetType, PointerWrappedRoute>
+        {
+            [XAssetType.PhysPreset] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._physPresetLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.PixelShader] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._materialShaderLoader.LoadFromAssetPointer(
+                    cursor,
+                    pointer,
+                    MaterialShaderKind.Pixel,
+                    context),
+            [XAssetType.VertexShader] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._materialShaderLoader.LoadFromAssetPointer(
+                    cursor,
+                    pointer,
+                    MaterialShaderKind.Vertex,
+                    context),
+            [XAssetType.Techset] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._techsetLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Image] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._imageLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Material] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._materialLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.MenuFile] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._menuFileLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Menu] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._menuFileLoader.LoadMenuFromAssetPointer(cursor, pointer, context),
+            [XAssetType.StringTable] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._stringTableLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.StructuredDataDef] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._structuredDataDefSetLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.RawFile] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._rawFileLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Localize] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._localizeLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Sound] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._soundLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.SndCurve] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._sndCurveLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.LoadedSound] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._loadedSoundLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Fx] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._fxLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.ImpactFx] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._impactFxLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.XAnim] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._xanimLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.XModelSurfs] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._xmodelLoader.LoadXModelSurfsFromAssetPointer(cursor, pointer, context),
+            [XAssetType.XModel] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._xmodelLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.PhysCollmap] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._physCollmapLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Font] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._fontLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Vehicle] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._vehicleLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.LightDef] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._lightDefLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.ComMap] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._comWorldLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.ColMapSp] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._clipMapLoader.LoadFromAssetPointer(
+                    cursor,
+                    pointer,
+                    context,
+                    XAssetType.ColMapSp),
+            [XAssetType.ColMapMp] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._clipMapLoader.LoadFromAssetPointer(
+                    cursor,
+                    pointer,
+                    context,
+                    XAssetType.ColMapMp),
+            [XAssetType.MapEnts] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._mapEntsLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.AddonMapEnts] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._addonMapEntsLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.FxMap] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._fxWorldLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.GfxMap] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._gfxWorldLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.GameMapMp] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._gameWorldMpLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.GameMapSp] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._gameWorldSpLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Weapon] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._weaponLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.LeaderboardDef] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._leaderboardDefLoader.LoadFromAssetPointer(cursor, pointer, context),
+            [XAssetType.Tracer] = static (dispatcher, cursor, pointer, context) =>
+                dispatcher._tracerDefLoader.LoadFromAssetPointer(cursor, pointer, context)
+        }.ToFrozenDictionary();
+
+    internal static bool HasPointerWrappedRoute(XAssetType assetType) =>
+        PointerWrappedRoutes.ContainsKey(assetType);
 
     public IReadOnlyList<XAssetLoadResult> LoadAll(
         FastFileCursor cursor,
@@ -127,183 +230,11 @@ public sealed class XAssetDispatcher
                         "an incomplete XZone cannot be registered.");
                 }
 
-                BaseAsset loadedAsset;
-
-                if (asset.Type == XAssetType.PhysPreset)
-                {
-                    loadedAsset = _physPresetLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.PixelShader)
-                {
-                    loadedAsset = _materialShaderLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        MaterialShaderKind.Pixel,
-                        context);
-                }
-                else if (asset.Type == XAssetType.VertexShader)
-                {
-                    loadedAsset = _materialShaderLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        MaterialShaderKind.Vertex,
-                        context);
-                }
-                else if (asset.Type == XAssetType.Techset)
-                {
-                    loadedAsset = _techsetLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Image)
-                {
-                    loadedAsset = _imageLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Material)
-                {
-                    loadedAsset = _materialLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.MenuFile)
-                {
-                    loadedAsset = _menuFileLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context);
-                }
-                else if (asset.Type == XAssetType.Menu)
-                {
-                    loadedAsset = _menuFileLoader.LoadMenuFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context);
-                }
-                else if (asset.Type == XAssetType.StringTable)
-                {
-                    loadedAsset = _stringTableLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.StructuredDataDef)
-                {
-                    loadedAsset = _structuredDataDefSetLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.RawFile)
-                {
-                    loadedAsset = _rawFileLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Localize)
-                {
-                    loadedAsset = _localizeLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Sound)
-                {
-                    loadedAsset = _soundLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.SndCurve)
-                {
-                    loadedAsset = _sndCurveLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.LoadedSound)
-                {
-                    loadedAsset = _loadedSoundLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context);
-                }
-                else if (asset.Type == XAssetType.Fx)
-                {
-                    loadedAsset = _fxLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.ImpactFx)
-                {
-                    loadedAsset = _impactFxLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.XAnim)
-                {
-                    loadedAsset = _xanimLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.XModelSurfs)
-                {
-                    loadedAsset = _xmodelLoader.LoadXModelSurfsFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context);
-                }
-                else if (asset.Type == XAssetType.XModel)
-                {
-                    loadedAsset = _xmodelLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.PhysCollmap)
-                {
-                    loadedAsset = _physCollmapLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Font)
-                {
-                    loadedAsset = _fontLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Vehicle)
-                {
-                    loadedAsset = _vehicleLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.LightDef)
-                {
-                    loadedAsset = _lightDefLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.ComMap)
-                {
-                    loadedAsset = _comWorldLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type is XAssetType.ColMapSp or XAssetType.ColMapMp)
-                {
-                    loadedAsset = _clipMapLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context,
-                        asset.Type);
-                }
-                else if (asset.Type == XAssetType.MapEnts)
-                {
-                    loadedAsset = _mapEntsLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context);
-                }
-                else if (asset.Type == XAssetType.AddonMapEnts)
-                {
-                    loadedAsset = _addonMapEntsLoader.LoadFromAssetPointer(
-                        cursor,
-                        asset.AssetPointer.Untyped,
-                        context);
-                }
-                else if (asset.Type == XAssetType.FxMap)
-                {
-                    loadedAsset = _fxWorldLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.GfxMap)
-                {
-                    loadedAsset = _gfxWorldLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.GameMapMp)
-                {
-                    loadedAsset = _gameWorldMpLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.GameMapSp)
-                {
-                    loadedAsset = _gameWorldSpLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Weapon)
-                {
-                    loadedAsset = _weaponLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.LeaderboardDef)
-                {
-                    loadedAsset = _leaderboardDefLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else if (asset.Type == XAssetType.Tracer)
-                {
-                    loadedAsset = _tracerDefLoader.LoadFromAssetPointer(cursor, asset.AssetPointer.Untyped, context);
-                }
-                else
-                {
-                    throw new InvalidOperationException(
-                        $"XAsset type {asset.Type} is marked pointer-wrapped but has no dispatcher route.");
-                }
+                BaseAsset loadedAsset = PointerWrappedRoutes[asset.Type](
+                    this,
+                    cursor,
+                    asset.AssetPointer.Untyped,
+                    context);
                 results.Add(new XAssetLoadResult(
                     asset.Index,
                     loadedAsset,
