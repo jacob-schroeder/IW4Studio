@@ -13,7 +13,6 @@ public sealed class AppSettingsStoreTests
         using var fixture = new SettingsFixture();
         var store = new AppSettingsStore(fixture.SettingsPath);
 
-        Assert.False(store.LoadDebug());
         Assert.Equal(ThemeMode.Dark, store.LoadTheme());
         Assert.Empty(store.LoadRecentFastFiles());
     }
@@ -25,7 +24,6 @@ public sealed class AppSettingsStoreTests
         Directory.CreateDirectory(fixture.SettingsPath);
         var store = new AppSettingsStore(fixture.SettingsPath);
 
-        Assert.False(store.LoadDebug());
         Assert.Equal(ThemeMode.Dark, store.LoadTheme());
         Assert.Empty(store.LoadRecentFastFiles());
     }
@@ -37,7 +35,6 @@ public sealed class AppSettingsStoreTests
         File.WriteAllText(fixture.SettingsPath, "not json");
         var malformed = new AppSettingsStore(fixture.SettingsPath);
 
-        Assert.False(malformed.LoadDebug());
         Assert.Equal(ThemeMode.Dark, malformed.LoadTheme());
         Assert.Empty(malformed.LoadRecentFastFiles());
 
@@ -45,14 +42,12 @@ public sealed class AppSettingsStoreTests
             fixture.SettingsPath,
             """
             {
-              "debug": "not-a-boolean",
               "Theme": "42",
               "Recent": ["first.ff", "FIRST.ff", 7, "skip.txt", "second.ff", "third.ff", "fourth.ff"]
             }
             """);
         var partial = new AppSettingsStore(fixture.SettingsPath);
 
-        Assert.False(partial.LoadDebug());
         Assert.Equal(ThemeMode.Dark, partial.LoadTheme());
         Assert.Equal(
             ["first.ff", "second.ff", "third.ff"],
@@ -83,7 +78,6 @@ public sealed class AppSettingsStoreTests
             fixture.LegacyPath,
             """
             {
-              "debug": true,
               "Theme": "Light",
               "Recent": ["legacy.ff"],
               "Extension": { "Enabled": true }
@@ -94,7 +88,6 @@ public sealed class AppSettingsStoreTests
             fixture.SettingsPath,
             fixture.LegacyPath);
 
-        Assert.True(store.LoadDebug());
         Assert.Equal(ThemeMode.Light, store.LoadTheme());
         Assert.Equal(["legacy.ff"], store.LoadRecentFastFiles());
         Assert.True(File.Exists(fixture.LegacyPath));
@@ -113,6 +106,7 @@ public sealed class AppSettingsStoreTests
     [Theory]
     [InlineData("not json")]
     [InlineData("[]")]
+    [InlineData("{\"debug\":true}")]
     [InlineData("{\"MaterialFolder\":\"/legacy/materials\"}")]
     public void Invalid_or_other_application_legacy_settings_do_not_seed(string json)
     {
@@ -124,7 +118,6 @@ public sealed class AppSettingsStoreTests
             fixture.LegacyPath);
 
         Assert.False(File.Exists(fixture.SettingsPath));
-        Assert.False(store.LoadDebug());
         Assert.Equal(ThemeMode.Dark, store.LoadTheme());
         Assert.True(File.Exists(fixture.LegacyPath));
     }

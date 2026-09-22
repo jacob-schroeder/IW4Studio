@@ -25,7 +25,6 @@ public sealed partial class App : Application
         AvaloniaXamlLoader.Load(this);
         NativeMenu.SetMenu(this, StudioMenu.CreateApplicationMenu(ExecuteApplicationMenuAction));
         _settingsStore = AppSettingsStore.CreateDefault();
-        LivePreviewDebugDump.Configure(_settingsStore.LoadDebug());
         _themeService = new ThemeService(this, _settingsStore);
     }
 
@@ -189,14 +188,7 @@ public sealed partial class App : Application
             // Optional sound warm-up must not interfere with application shutdown.
         }
 
-        try
-        {
-            SilkMapRenderOpenGlShareGroup.Shutdown();
-        }
-        finally
-        {
-            LivePreviewDebugDump.Shutdown();
-        }
+        SilkMapRenderOpenGlShareGroup.Shutdown();
     }
 
     private void ObserveAndDisposeSoundPreviewWarmup()

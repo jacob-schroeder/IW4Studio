@@ -5,6 +5,7 @@ using IW4.Render.Diagnostics;
 using IW4.Render.OpenGl;
 using IW4.Render.Resources;
 using IW4.Studio.Desktop.Rendering;
+using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
@@ -25,6 +26,7 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
     private readonly MapRenderScene _scene;
     private readonly RenderSceneSnapshot _sceneSnapshot;
     private readonly NativeMapRenderInteraction _interaction;
+    private readonly Action<ConsoleOutputLevel, string> _reportDiagnostic;
     private readonly DispatcherTimer _timer = new(DispatcherPriority.Render)
     {
         // A zero dispatcher interval immediately requeues the next native
@@ -54,12 +56,15 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
     public SilkMapRenderWindow(
         MapRenderScene scene,
         RenderSceneSnapshot sceneSnapshot,
-        string? mapEntityString = null,
-        Func<string, Task>? copyTextAsync = null)
+        string? mapEntityString,
+        Func<string, Task>? copyTextAsync,
+        Action<ConsoleOutputLevel, string> reportDiagnostic)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _sceneSnapshot = sceneSnapshot ??
             throw new ArgumentNullException(nameof(sceneSnapshot));
+        _reportDiagnostic = reportDiagnostic ??
+            throw new ArgumentNullException(nameof(reportDiagnostic));
         _interaction = new NativeMapRenderInteraction(
             scene,
             NativeMapRenderCamera.CreateInitial(
@@ -79,7 +84,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         if (_window is not null)
             return;
 
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             $"OpenGL Live Preview host Show started; scene={_scene.Name}");
 
         WindowOptions options = WindowOptions.Default;
@@ -100,24 +106,29 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         options.VSync = false;
         options.ShouldSwapAutomatically = false;
 
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL share-group acquisition started");
         _shareGroupLease = SilkMapRenderOpenGlShareGroup.Acquire();
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL share-group acquisition completed");
         options.SharedContext = _shareGroupLease.SharedContext;
         IWindow window;
         try
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "OpenGL native window creation started");
             window = Window.Create(options);
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "OpenGL native window creation completed");
         }
         catch (Exception exception)
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Error,
                 $"OpenGL native window creation failed: {exception}");
             _shareGroupLease.Dispose();
             _shareGroupLease = null;
@@ -132,18 +143,22 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         _window = window;
         try
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "OpenGL native window initialization started");
             window.Initialize();
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "OpenGL native window initialization completed");
             _timer.Start();
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "OpenGL render timer started");
         }
         catch (Exception exception)
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Error,
                 $"OpenGL native window initialization failed: {exception}");
             Dispose();
             throw;
@@ -175,7 +190,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             bool firstFrame = _startupRenderedFrameCount == 0;
             if (firstFrame)
             {
-                LivePreviewDebugDump.Write(
+                ReportDiagnostic(
+                    ConsoleOutputLevel.Debug,
                     "OpenGL first frame render started");
             }
             long renderStartTimestamp = Stopwatch.GetTimestamp();
@@ -222,7 +238,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             _renderer?.RecordPresentedFrame();
             if (firstFrame)
             {
-                LivePreviewDebugDump.Write(
+                ReportDiagnostic(
+                    ConsoleOutputLevel.Information,
                     $"OpenGL first frame presented; " +
                     $"renderAndSwap={Stopwatch.GetElapsedTime(renderStartTimestamp, renderEndTimestamp).TotalMilliseconds:0}ms; " +
                     $"swap={Stopwatch.GetElapsedTime(swapStartTimestamp, renderEndTimestamp).TotalMilliseconds:0}ms");
@@ -232,7 +249,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         }
         catch (Exception exception)
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Error,
                 $"OpenGL render loop failed: {exception}");
             Failed?.Invoke(this, exception);
             Dispose();
@@ -268,11 +286,13 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         }
 
         long reclaimStarted = Stopwatch.GetTimestamp();
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL settled-startup memory reclaim started");
         bool reclaimed = RenderBuildMemoryReclaimer
             .TryReclaimSettledBuildWorkspace();
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             $"OpenGL settled-startup memory reclaim completed; " +
             $"performed={reclaimed}; " +
             $"elapsed={Stopwatch.GetElapsedTime(reclaimStarted).TotalMilliseconds:0}ms");
@@ -294,7 +314,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
 
     private void Window_Load()
     {
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL Window_Load entered");
         IWindow window = _window ?? throw new InvalidOperationException(
             "The Silk map render window was not created.");
@@ -302,7 +323,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             _shareGroupLease ?? throw new InvalidOperationException(
                 "The Silk map render window has no OpenGL share-group lease.");
         GL gl = GL.GetApi(window);
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             $"OpenGL context: {DescribeOpenGlContext(gl)}");
         long successfulLinksBefore =
             shareGroupLease.ProgramCache.SuccessfulLinkCount;
@@ -312,7 +334,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             shareGroupLease.ProgramCache.ProgramBinaryLoadHitCount;
         long binaryStoresBefore =
             shareGroupLease.ProgramCache.ProgramBinaryStoreCount;
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL map renderer construction started");
         _renderer = new SilkOpenGlMapRenderer(
             gl,
@@ -320,14 +343,16 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         _renderer.EditorPreviewFogRenderingEnabled = true;
         _renderer.ShowTexturedGeometry = true;
         _renderer.SetHostFramebuffer(0);
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL map renderer construction completed");
         Vector2D<int> initialSize = window.Size;
         float initialAspectRatio =
             Math.Max(1, initialSize.X) /
             (float)Math.Max(1, initialSize.Y);
         long rendererLoadStarted = Stopwatch.GetTimestamp();
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             $"OpenGL map renderer Load started; " +
             $"window={initialSize.X}x{initialSize.Y}; " +
             $"framebuffer={window.FramebufferSize.X}x{window.FramebufferSize.Y}");
@@ -336,10 +361,9 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             _sceneSnapshot,
             _interaction.Camera,
             initialAspectRatio,
-            LivePreviewDebugDump.IsEnabled
-                ? LivePreviewDebugDump.Write
-                : null);
-        LivePreviewDebugDump.Write(
+            message => ReportDiagnostic(ConsoleOutputLevel.Debug, message));
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             $"OpenGL map renderer Load completed; " +
             $"elapsed={Stopwatch.GetElapsedTime(rendererLoadStarted).TotalMilliseconds:0}ms");
         string programReuse =
@@ -351,24 +375,30 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             $"cached={shareGroupLease.ProgramCache.CachedProgramCount}/" +
             $"{shareGroupLease.ProgramCache.MaximumEntryCount}, " +
             $"capacityBypass={shareGroupLease.ProgramCache.CapacityBypassCount}.";
-        Console.WriteLine(programReuse);
-        LivePreviewDebugDump.Write(programReuse);
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(ConsoleOutputLevel.Debug, programReuse);
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL FPS overlay construction started");
         _fpsOverlay = new SilkMapRenderFpsOverlay(gl);
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL FPS overlay construction completed");
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL initial surface resize started");
         ResizeRendererSurfaces();
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL initial surface resize completed");
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL interaction initialization started");
         _interaction.Initialize(window);
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             "OpenGL interaction initialization completed");
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             "OpenGL Window_Load completed");
     }
 
@@ -463,7 +493,8 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
         if (_disposed)
             return;
 
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             "OpenGL Live Preview host disposal started");
         _disposed = true;
         _timer.Stop();
@@ -511,9 +542,22 @@ internal sealed class SilkMapRenderWindow : INativeMapRenderWindow
             window?.Reset();
             _shareGroupLease?.Dispose();
             _shareGroupLease = null;
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Information,
                 "OpenGL Live Preview host disposal completed");
             Stopped?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void ReportDiagnostic(ConsoleOutputLevel level, string message)
+    {
+        try
+        {
+            _reportDiagnostic(level, message);
+        }
+        catch
+        {
+            // Advisory output must not alter Live Preview behavior.
         }
     }
 

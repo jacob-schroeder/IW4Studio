@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Lifecycle;
 using IW4.Studio.Desktop.Rendering;
@@ -8,12 +9,15 @@ using IW4.Studio.Desktop.Themes;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Composition;
 using IW4.Studio.Desktop.Workbench.Tools;
+using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Views;
 
 public sealed partial class EditorWindow : Window
 {
+    private const string LivePreviewConsoleSource = "Live Preview";
+
     private readonly DestructiveNavigationCoordinator _navigationCoordinator;
     private readonly IUnsavedChangesDialog _unsavedChangesDialog;
     private readonly TransactionalSaveAsService _saveAsService = new();
@@ -231,12 +235,12 @@ public sealed partial class EditorWindow : Window
         var renderWindow = new MapRenderWindow(
             workbench.Workspace,
             workbench.TargetFileName,
-            renderViewService);
+            renderViewService,
+            ReportLivePreviewOutput);
         _renderViewLifecycle.TrackPreview(renderWindow);
         renderWindow.Closed += LivePreviewWindow_Closed;
-        workbench.ConsoleOutput.Append(
-            Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information,
-            "Live Preview",
+        ReportLivePreviewOutput(
+            ConsoleOutputLevel.Information,
             "Opening the native in-game rendering preview.");
         renderWindow.Show(this);
     }
@@ -262,14 +266,45 @@ public sealed partial class EditorWindow : Window
         if (_workbench is not { } workbench)
             return;
 
-        workbench.ConsoleOutput.Append(
-            Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Error,
-            "Live Preview",
+        ReportLivePreviewOutput(
+            ConsoleOutputLevel.Error,
             $"Render service shutdown failed: {exception.Message}");
         if (workbench.DockLayout.State.Bottom.ActiveToolId !=
             StudioToolIds.ConsoleOutput)
         {
             _ = workbench.ActivateTool(StudioToolIds.ConsoleOutput);
+        }
+    }
+
+    private void ReportLivePreviewOutput(
+        ConsoleOutputLevel level,
+        string message)
+    {
+        void Append()
+        {
+            try
+            {
+                _workbench?.ConsoleOutput.Append(
+                    level,
+                    LivePreviewConsoleSource,
+                    message);
+            }
+            catch
+            {
+                // Advisory output must not alter Live Preview behavior.
+            }
+        }
+
+        try
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+                Append();
+            else
+                Dispatcher.UIThread.Post(Append);
+        }
+        catch
+        {
+            // Dispatcher teardown must not alter Live Preview behavior.
         }
     }
 

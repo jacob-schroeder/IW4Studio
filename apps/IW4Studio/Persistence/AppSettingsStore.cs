@@ -47,14 +47,6 @@ internal sealed class AppSettingsStore
                 Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
     }
 
-    public bool LoadDebug()
-    {
-        JsonObject settings = ReadSettings();
-        return settings["debug"] is JsonValue debugValue &&
-            debugValue.TryGetValue(out bool enabled) &&
-            enabled;
-    }
-
     public ThemeMode LoadTheme()
     {
         JsonObject settings = ReadSettings();
@@ -289,8 +281,7 @@ internal sealed class AppSettingsStore
     }
 
     private static bool ContainsStudioSetting(JsonObject settings) =>
-        settings.ContainsKey("debug")
-        || settings.ContainsKey("Theme")
+        settings.ContainsKey("Theme")
         || settings.ContainsKey("Recent");
 
     private static bool PathsEqual(string left, string right) =>

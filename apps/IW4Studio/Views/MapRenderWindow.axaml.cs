@@ -3,6 +3,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using IW4.Studio.Documents;
 using IW4.Studio.Desktop.Rendering;
+using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 
 namespace IW4.Studio.Desktop.Views;
 
@@ -13,6 +14,7 @@ namespace IW4.Studio.Desktop.Views;
 public sealed partial class MapRenderWindow : Window
 {
     private readonly FastFileWorkspace? _workspace;
+    private readonly Action<ConsoleOutputLevel, string>? _reportDiagnostic;
     private FastFileRenderViewService? _renderViewService;
     private readonly CancellationTokenSource _buildWaitCancellation = new();
     private bool _ownsRenderViewService;
@@ -37,19 +39,22 @@ public sealed partial class MapRenderWindow : Window
             workspace,
             documentName,
             new FastFileRenderViewService(),
-            ownsRenderViewService: true)
+            ownsRenderViewService: true,
+            reportDiagnostic: null)
     {
     }
 
     internal MapRenderWindow(
         FastFileWorkspace workspace,
         string documentName,
-        FastFileRenderViewService renderViewService)
+        FastFileRenderViewService renderViewService,
+        Action<ConsoleOutputLevel, string> reportDiagnostic)
         : this(
             workspace,
             documentName,
             renderViewService,
-            ownsRenderViewService: false)
+            ownsRenderViewService: false,
+            reportDiagnostic: reportDiagnostic)
     {
     }
 
@@ -57,7 +62,8 @@ public sealed partial class MapRenderWindow : Window
         FastFileWorkspace workspace,
         string documentName,
         FastFileRenderViewService renderViewService,
-        bool ownsRenderViewService)
+        bool ownsRenderViewService,
+        Action<ConsoleOutputLevel, string>? reportDiagnostic)
         : this()
     {
         ArgumentNullException.ThrowIfNull(workspace);
@@ -66,6 +72,7 @@ public sealed partial class MapRenderWindow : Window
         _workspace = workspace;
         _renderViewService = renderViewService;
         _ownsRenderViewService = ownsRenderViewService;
+        _reportDiagnostic = reportDiagnostic;
         Title = $"Live Preview — {documentName} — IW4 Studio";
     }
 
@@ -85,7 +92,8 @@ public sealed partial class MapRenderWindow : Window
 
         try
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Information,
                 $"Live Preview scene build started; " +
                 $"targetZone={workspace.LoadedZone.Zone.Name}");
             FastFileRenderViewService renderViewService =
@@ -97,7 +105,8 @@ public sealed partial class MapRenderWindow : Window
                     workspace,
                     progress: UpdateBuildProgress,
                     cancellationToken: _buildWaitCancellation.Token);
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Information,
                 $"Live Preview scene build completed; " +
                 $"renderable={result.IsRenderable}");
             if (_closed)
@@ -105,7 +114,8 @@ public sealed partial class MapRenderWindow : Window
 
             if (!result.IsRenderable)
             {
-                LivePreviewDebugDump.Write(
+                ReportDiagnostic(
+                    ConsoleOutputLevel.Error,
                     $"Live Preview scene is not renderable: " +
                     $"{result.NonRenderableReason}");
                 ShowStatus(
@@ -122,7 +132,8 @@ public sealed partial class MapRenderWindow : Window
         }
         catch (Exception exception)
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Error,
                 $"Live Preview scene preparation failed: {exception}");
             if (!_closed)
             {
@@ -138,7 +149,8 @@ public sealed partial class MapRenderWindow : Window
         if (_closed || string.IsNullOrWhiteSpace(progress))
             return;
 
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Debug,
             $"Live Preview scene progress: {progress}");
         if (Dispatcher.UIThread.CheckAccess())
             StatusMessage.Text = progress;
@@ -157,7 +169,8 @@ public sealed partial class MapRenderWindow : Window
         string backend = OperatingSystem.IsMacOS()
             ? "Metal"
             : "OpenGL";
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             $"Live Preview native startup began; " +
             $"backend={backend}; scene={scene.Name}");
         try
@@ -175,20 +188,24 @@ public sealed partial class MapRenderWindow : Window
                         scene,
                         sceneSnapshot,
                         mapEntityString,
-                        copyTextAsync);
+                        copyTextAsync,
+                        ReportDiagnostic);
             nativeRenderWindow.Failed += NativeRenderWindow_Failed;
             nativeRenderWindow.Stopped += NativeRenderWindow_Stopped;
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "Live Preview native Show entered");
             nativeRenderWindow.Show();
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Debug,
                 "Live Preview native Show completed");
             _nativeRenderWindow = nativeRenderWindow;
             Hide();
         }
         catch (Exception exception)
         {
-            LivePreviewDebugDump.Write(
+            ReportDiagnostic(
+                ConsoleOutputLevel.Error,
                 $"Live Preview native startup failed: {exception}");
             _nativeRendererFailed = true;
             ShowStatus("Could not start Live Preview", exception.Message);
@@ -197,7 +214,8 @@ public sealed partial class MapRenderWindow : Window
 
     private void NativeRenderWindow_Failed(object? sender, Exception exception)
     {
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Error,
             $"Live Preview native renderer failed: {exception}");
         _nativeRendererFailed = true;
         Dispatcher.UIThread.Post(() =>
@@ -212,7 +230,8 @@ public sealed partial class MapRenderWindow : Window
 
     private void NativeRenderWindow_Stopped(object? sender, EventArgs e)
     {
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             "Live Preview native renderer stopped");
         Dispatcher.UIThread.Post(() =>
         {
@@ -258,7 +277,8 @@ public sealed partial class MapRenderWindow : Window
     private void ReportOwnedRenderViewServiceShutdownFailure(
         Exception exception)
     {
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Error,
             $"Live Preview render service shutdown failed: {exception}");
         _nativeRendererFailed = true;
         _closed = false;
@@ -270,13 +290,26 @@ public sealed partial class MapRenderWindow : Window
 
     private void MapRenderWindow_Closed(object? sender, EventArgs e)
     {
-        LivePreviewDebugDump.Write(
+        ReportDiagnostic(
+            ConsoleOutputLevel.Information,
             "Live Preview preparation window closed");
         _closed = true;
         _buildWaitCancellation.Cancel();
         _renderViewService = null;
         _nativeRenderWindow?.Dispose();
         _nativeRenderWindow = null;
+    }
+
+    private void ReportDiagnostic(ConsoleOutputLevel level, string message)
+    {
+        try
+        {
+            _reportDiagnostic?.Invoke(level, message);
+        }
+        catch
+        {
+            // Advisory output must not alter Live Preview behavior.
+        }
     }
 
     private void ShowStatus(string heading, string message)
