@@ -1,6 +1,8 @@
 # Weapon generated code
 
-The scripts in this directory are the canonical source for the generated Weapon editor code. They require a `ruby` interpreter (verified with Ruby 2.6.10; no gems are required) and read the checked-in `src/IW4.Assets/Assets/Weapon/Weapon*.cs` model files in sorted path order. Inspector generation also appends `weapon_inspector_projection_tail.csfrag`.
+The types under `src/IW4.Assets/Assets/Weapon` describe the fixed, recovered IW4 Weapon engine layout. These scripts are optional developer maintenance and provenance tooling for reproducing the checked-in editor boilerplate from those types; inspector generation also appends `weapon_inspector_projection_tail.csfrag`.
+
+IW4Studio does not invoke these scripts during normal builds, application runtime, or weapon editing, so application users do not need Ruby. Developers who intentionally regenerate the checked-in outputs need a `ruby` interpreter (verified with Ruby 2.6.10; no gems are required).
 
 From the repository root, regenerate both outputs with:
 
