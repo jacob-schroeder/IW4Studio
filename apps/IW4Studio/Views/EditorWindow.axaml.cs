@@ -119,6 +119,23 @@ public sealed partial class EditorWindow : Window
     internal void SetThemeMode(ThemeMode mode)
         => ThemeMenuSelection.Set(this, WindowMenu, mode);
 
+    internal void ReportSettingsPersistenceFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        if (_workbench is not { } workbench)
+            return;
+
+        workbench.ConsoleOutput.Append(
+            Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Warning,
+            "Settings",
+            $"The theme changed, but the preference could not be saved: {exception.Message}");
+        if (workbench.DockLayout.State.Bottom.ActiveToolId !=
+            StudioToolIds.ConsoleOutput)
+        {
+            _ = workbench.ActivateTool(StudioToolIds.ConsoleOutput);
+        }
+    }
+
     /// <summary>
     /// Called by the application after the open-another guard has already
     /// authorized replacing this workspace. The token is consumed by exactly

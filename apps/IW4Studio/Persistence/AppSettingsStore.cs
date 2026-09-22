@@ -1,3 +1,4 @@
+using System.Security;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IW4.Studio.Desktop.Themes;
@@ -16,12 +17,34 @@ internal sealed class AppSettingsStore
         WriteIndented = true
     };
 
-    private readonly string _settingsPath;
+    private readonly string? _settingsPath;
+
+    private AppSettingsStore()
+    {
+    }
 
     public AppSettingsStore(string settingsPath)
+        : this(settingsPath, legacySettingsPath: null)
+    {
+    }
+
+    internal AppSettingsStore(string settingsPath, string? legacySettingsPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
         _settingsPath = Path.GetFullPath(settingsPath);
+
+        if (!string.IsNullOrWhiteSpace(legacySettingsPath))
+            TryMigrateLegacySettings(Path.GetFullPath(legacySettingsPath));
+    }
+
+    internal static AppSettingsStore CreateDefault()
+    {
+        string? settingsPath = AppSettingsPath.GetDefaultFilePath();
+        return settingsPath is null
+            ? new AppSettingsStore()
+            : new AppSettingsStore(
+                settingsPath,
+                Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
     }
 
     public bool LoadDebug()
@@ -41,13 +64,14 @@ internal sealed class AppSettingsStore
                 : null;
 
         return Enum.TryParse(value, ignoreCase: true, out ThemeMode mode)
+            && Enum.IsDefined(mode)
             ? mode
             : ThemeMode.Dark;
     }
 
     public void SaveTheme(ThemeMode mode)
     {
-        JsonObject settings = ReadSettings();
+        JsonObject settings = ReadSettingsForUpdate();
         settings["Theme"] = mode.ToString();
 
         WriteSettings(settings);
@@ -67,7 +91,7 @@ internal sealed class AppSettingsStore
         if (!string.Equals(Path.GetExtension(fullPath), ".ff", StringComparison.OrdinalIgnoreCase))
             return;
 
-        JsonObject settings = ReadSettings();
+        JsonObject settings = ReadSettingsForUpdate();
         var recentFiles = new List<string> { fullPath };
         recentFiles.AddRange(
             ReadRecentFastFiles(settings)
@@ -111,7 +135,13 @@ internal sealed class AppSettingsStore
     }
 
     private void WriteSettings(JsonObject settings)
+        => WriteSettings(settings, overwrite: true);
+
+    private void WriteSettings(JsonObject settings, bool overwrite)
     {
+        if (_settingsPath is null)
+            throw new IOException("The per-user settings directory is unavailable.");
+
         string? directory = Path.GetDirectoryName(_settingsPath);
         if (string.IsNullOrEmpty(directory))
             throw new InvalidOperationException("The appsettings path has no parent directory.");
@@ -126,7 +156,7 @@ internal sealed class AppSettingsStore
             File.WriteAllText(
                 temporaryPath,
                 settings.ToJsonString(WriterOptions) + Environment.NewLine);
-            File.Move(temporaryPath, _settingsPath, overwrite: true);
+            File.Move(temporaryPath, _settingsPath, overwrite);
         }
         finally
         {
@@ -137,25 +167,137 @@ internal sealed class AppSettingsStore
 
     private JsonObject ReadSettings()
     {
-        if (!File.Exists(_settingsPath))
+        if (_settingsPath is null || !File.Exists(_settingsPath))
             return new JsonObject();
+
+        return TryReadSettings(_settingsPath, out JsonObject settings)
+            ? settings
+            : new JsonObject();
+    }
+
+    private JsonObject ReadSettingsForUpdate()
+    {
+        if (_settingsPath is null)
+            throw new IOException("The per-user settings directory is unavailable.");
 
         try
         {
             return JsonNode.Parse(File.ReadAllText(_settingsPath)) as JsonObject
                 ?? new JsonObject();
         }
+        catch (FileNotFoundException)
+        {
+            return new JsonObject();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new JsonObject();
+        }
         catch (JsonException)
         {
             return new JsonObject();
         }
+    }
+
+    private void TryMigrateLegacySettings(string legacySettingsPath)
+    {
+        if (_settingsPath is null || PathsEqual(_settingsPath, legacySettingsPath))
+            return;
+
+        try
+        {
+            if (!IsFileConfirmedMissing(_settingsPath)
+                || !TryReadSettings(legacySettingsPath, out JsonObject settings)
+                || !ContainsStudioSetting(settings))
+            {
+                return;
+            }
+
+            WriteSettings(settings, overwrite: false);
+        }
         catch (IOException)
         {
-            return new JsonObject();
         }
         catch (UnauthorizedAccessException)
         {
-            return new JsonObject();
+        }
+        catch (SecurityException)
+        {
         }
     }
+
+    private static bool TryReadSettings(string path, out JsonObject settings)
+    {
+        settings = new JsonObject();
+        try
+        {
+            if (JsonNode.Parse(File.ReadAllText(path)) is not JsonObject parsed)
+                return false;
+
+            settings = parsed;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (SecurityException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsFileConfirmedMissing(string path)
+    {
+        try
+        {
+            using FileStream stream = File.Open(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            return false;
+        }
+        catch (FileNotFoundException)
+        {
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (SecurityException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsStudioSetting(JsonObject settings) =>
+        settings.ContainsKey("debug")
+        || settings.ContainsKey("Theme")
+        || settings.ContainsKey("Recent");
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            left,
+            right,
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
 }

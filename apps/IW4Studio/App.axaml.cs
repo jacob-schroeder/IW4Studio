@@ -24,8 +24,7 @@ public sealed partial class App : Application
     {
         AvaloniaXamlLoader.Load(this);
         NativeMenu.SetMenu(this, StudioMenu.CreateApplicationMenu(ExecuteApplicationMenuAction));
-        _settingsStore = new AppSettingsStore(
-            Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+        _settingsStore = AppSettingsStore.CreateDefault();
         LivePreviewDebugDump.Configure(_settingsStore.LoadDebug());
         _themeService = new ThemeService(this, _settingsStore);
     }
@@ -126,15 +125,19 @@ public sealed partial class App : Application
         if (_themeService is null)
             return;
 
-        _themeService.SelectTheme(mode);
+        Exception? persistenceFailure = _themeService.SelectTheme(mode);
 
         switch (_desktop?.MainWindow)
         {
             case WelcomeWindow welcomeWindow:
                 welcomeWindow.SetThemeMode(mode);
+                if (persistenceFailure is not null)
+                    welcomeWindow.ReportSettingsPersistenceFailure(persistenceFailure);
                 break;
             case EditorWindow editorWindow:
                 editorWindow.SetThemeMode(mode);
+                if (persistenceFailure is not null)
+                    editorWindow.ReportSettingsPersistenceFailure(persistenceFailure);
                 break;
         }
     }

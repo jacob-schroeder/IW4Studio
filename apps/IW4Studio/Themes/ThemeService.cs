@@ -3,6 +3,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Themes.Fluent;
+using System.Security;
 using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes.Design;
 
@@ -39,15 +40,26 @@ internal sealed class ThemeService
 
     public ITheme CurrentTheme { get; private set; }
 
-    public void SelectTheme(ThemeMode mode)
+    public Exception? SelectTheme(ThemeMode mode)
     {
-        _settingsStore.SaveTheme(mode);
+        if (CurrentTheme.Mode != mode)
+        {
+            CurrentTheme = Resolve(mode);
+            Apply(CurrentTheme);
+        }
 
-        if (CurrentTheme.Mode == mode)
-            return;
-
-        CurrentTheme = Resolve(mode);
-        Apply(CurrentTheme);
+        try
+        {
+            _settingsStore.SaveTheme(mode);
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or SecurityException)
+        {
+            return exception;
+        }
     }
 
     private static ITheme Resolve(ThemeMode mode) => mode switch

@@ -137,6 +137,14 @@ public sealed class WelcomeViewModel : ObservableObject
         HasError = true;
     }
 
+    public void ReportSettingsPersistenceFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        StatusText = "The theme changed, but the preference could not be saved.";
+        ErrorMessage = exception.Message;
+        HasError = true;
+    }
+
     public void SetRecentFiles(IEnumerable<string> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);

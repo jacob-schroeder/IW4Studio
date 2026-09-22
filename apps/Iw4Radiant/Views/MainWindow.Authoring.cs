@@ -29,11 +29,16 @@ public partial class MainWindow
         Workspace.Materials.FolderLoaded += async (root, nonBlocking) =>
         {
             settings.MaterialFolder = root;
-            settings.Save();
-            if (suppressRelatedModelRestore) return;
+            string? settingsSaveError = settings.Save();
+            if (suppressRelatedModelRestore)
+            {
+                ReportSettingsSaveFailure(settingsSaveError);
+                return;
+            }
             if (Path.GetFileName(Path.TrimEndingDirectorySeparator(root)) is "images" or "materials")
                 root = Path.GetDirectoryName(root) ?? root;
             if (Directory.Exists(Path.Combine(root, "xmodel"))) await Workspace.Models.LoadFolderAsync(root, nonBlocking);
+            ReportSettingsSaveFailure(settingsSaveError);
         };
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
@@ -50,7 +55,7 @@ public partial class MainWindow
         Workspace.Models.FolderLoaded += root =>
         {
             settings.XModelFolder = root;
-            settings.Save();
+            ReportSettingsSaveFailure(settings.Save());
         };
         Workspace.Prefabs.PlacementRequested += path =>
         {
@@ -62,6 +67,12 @@ public partial class MainWindow
         RefreshFoliagePainting();
         Opened += (_, _) => _ = RestoreAssetFoldersAsync(settings, () => suppressRelatedModelRestore = true,
             () => suppressRelatedModelRestore = false);
+    }
+
+    private void ReportSettingsSaveFailure(string? error)
+    {
+        if (error is not null)
+            SetStatus($"Could not save settings: {error}");
     }
 
     private async Task RestoreAssetFoldersAsync(RadiantSettings settings, Action markExplicitModelsRestored,

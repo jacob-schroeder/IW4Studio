@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.Security;
 using IW4.Runtime.Diagnostics;
 using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Themes;
@@ -21,7 +22,7 @@ public sealed partial class WelcomeWindow : Window
     private bool _isClosing;
 
     public WelcomeWindow()
-        : this(new AppSettingsStore(Path.Combine(AppContext.BaseDirectory, "appsettings.json")))
+        : this(AppSettingsStore.CreateDefault())
     {
     }
 
@@ -52,6 +53,9 @@ public sealed partial class WelcomeWindow : Window
 
     internal void SetThemeMode(ThemeMode mode)
         => ThemeMenuSelection.Set(this, WindowMenu, mode);
+
+    internal void ReportSettingsPersistenceFailure(Exception exception) =>
+        _viewModel.ReportSettingsPersistenceFailure(exception);
 
     private async void BrowseButton_Click(object? sender, RoutedEventArgs e)
     {
@@ -394,6 +398,10 @@ public sealed partial class WelcomeWindow : Window
             // A workspace that opened successfully should not be blocked by its history entry.
         }
         catch (UnauthorizedAccessException)
+        {
+            // A workspace that opened successfully should not be blocked by its history entry.
+        }
+        catch (SecurityException)
         {
             // A workspace that opened successfully should not be blocked by its history entry.
         }
