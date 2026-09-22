@@ -10,6 +10,11 @@ namespace IW4.FastFiles.Streaming.Sound;
 /// </summary>
 public sealed class StreamedSoundResolver : IDisposable
 {
+    // The largest packed sound in the available stock PS3 corpus is
+    // 12,790,242 bytes. Keep one allocation bounded while retaining every
+    // observed payload beneath the next binary-size boundary.
+    private const int MaximumPayloadByteCount = 16 * 1024 * 1024;
+
     private readonly StreamPackagePathResolver _packagePaths;
     private readonly ConcurrentDictionary<
         uint,
@@ -65,6 +70,12 @@ public sealed class StreamedSoundResolver : IDisposable
             if (source.StreamFileLength == 0)
             {
                 reason = "sound stream length is zero";
+                return false;
+            }
+            if (source.StreamFileLength > MaximumPayloadByteCount)
+            {
+                reason =
+                    $"sound stream length {source.StreamFileLength} exceeds the {MaximumPayloadByteCount}-byte payload limit";
                 return false;
             }
             if (!_packagePaths.TryResolve(
