@@ -1,0 +1,131 @@
+    private static void AddIndexedRows(WeaponEditorViewModel vm, WeaponDraft draft, WeaponDef definition, WeaponIndexedRowItemViewModel selected, List<InspectorPropertyRowViewModel> rows)
+    {
+        if (selected.Kind != WeaponIndexedRowKind.LocationDamage)
+        {
+            rows.Add(ReadOnly("Role", "weapon.selection.role", selected.Title));
+            rows.Add(ReadOnly("Index", "weapon.selection.index", selected.Index.ToString(CultureInfo.InvariantCulture)));
+        }
+        if (selected.Kind.IsModel() && vm.ModelSlots.FirstOrDefault(slot => slot.Kind == selected.Kind && slot.Index == selected.Index) is { } modelSlot)
+        {
+            rows.Add(ReadOnly("Preview state", "weapon.selection.previewState", modelSlot.StateText));
+            if (!string.IsNullOrWhiteSpace(modelSlot.SourceDetail))
+                rows.Add(ReadOnly("Source", "weapon.selection.provider", modelSlot.SourceDetail));
+        }
+        if (selected.IsTableAbsent)
+        {
+            rows.Add(ReadOnly("Storage", "weapon.selection.storage", "Table absent"));
+            return;
+        }
+        if (selected.IsMalformed)
+            rows.Add(ReadOnly("Storage", "weapon.selection.storage", "Malformed native table; collection shape must be corrected outside this non-resizing editor."));
+        if (!selected.CanEditValue)
+            return;
+        int index = selected.Index;
+        switch (selected.Kind)
+        {
+            case WeaponIndexedRowKind.GunModel: AddAsset<XModelAsset>(vm, rows, "XModel", $"weapon.definition.gunModels[{index}]", definition.GunModels[index], XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionGunModels(index, value)) : null); break;
+            case WeaponIndexedRowKind.HandModel: AddAsset<XModelAsset>(vm, rows, "XModel", "weapon.definition.handModel", definition.HandModel, XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionHandModel(value)) : null); break;
+            case WeaponIndexedRowKind.WorldGunModel: AddAsset<XModelAsset>(vm, rows, "XModel", $"weapon.definition.worldGunModels[{index}]", definition.WorldGunModels[index], XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionWorldGunModels(index, value)) : null); break;
+            case WeaponIndexedRowKind.WorldClipModel: AddAsset<XModelAsset>(vm, rows, "XModel", "weapon.definition.worldClipModel", definition.WorldClipModel, XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionWorldClipModel(value)) : null); break;
+            case WeaponIndexedRowKind.RocketModel: AddAsset<XModelAsset>(vm, rows, "XModel", "weapon.definition.rocketModel", definition.RocketModel, XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionRocketModel(value)) : null); break;
+            case WeaponIndexedRowKind.KnifeModel: AddAsset<XModelAsset>(vm, rows, "XModel", "weapon.definition.knifeModel", definition.KnifeModel, XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionKnifeModel(value)) : null); break;
+            case WeaponIndexedRowKind.WorldKnifeModel: AddAsset<XModelAsset>(vm, rows, "XModel", "weapon.definition.worldKnifeModel", definition.WorldKnifeModel, XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionWorldKnifeModel(value)) : null); break;
+            case WeaponIndexedRowKind.ProjectileModel: AddAsset<XModelAsset>(vm, rows, "XModel", "weapon.definition.projectile.model", definition.Projectile.Model, XAssetType.XModel, vm.IsEditable ? value => vm.MutateModel(selected.Kind, index, () => draft.SetDefinitionProjectileModel(value)) : null); break;
+            case WeaponIndexedRowKind.VariantAnimation: AddNameAsset(vm, rows, "XAnim", $"weapon.variant.animationNames[{index}]", draft.Variant.AnimationNames[index], XAssetType.XAnim, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAnimationNames(index, value)) : null); break;
+            case WeaponIndexedRowKind.RightAnimation: AddNameAsset(vm, rows, "XAnim", $"weapon.definition.rightHandAnimationNames[{index}]", definition.RightHandAnimationNames[index], XAssetType.XAnim, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionRightHandAnimationNames(index, value)) : null); break;
+            case WeaponIndexedRowKind.LeftAnimation: AddNameAsset(vm, rows, "XAnim", $"weapon.definition.leftHandAnimationNames[{index}]", definition.LeftHandAnimationNames[index], XAssetType.XAnim, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionLeftHandAnimationNames(index, value)) : null); break;
+            case WeaponIndexedRowKind.HideTag: AddScriptString(vm, rows, "Text", $"weapon.variant.hideTags[{index}]", draft.Variant.HideTags[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantHideTags(index, value)) : null); break;
+            case WeaponIndexedRowKind.SoundNoteMapping:
+                AddScriptString(vm, rows, "Notetrack", $"weapon.definition.noteTrackMaps.soundMappings[{index}].key", definition.NoteTrackMaps.SoundMappings[index].Key, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionNoteTrackMapsSoundMappings(index, WithKey(RequireDefinition(draft).NoteTrackMaps.SoundMappings[index], value))) : null);
+                AddScriptString(vm, rows, "Sound alias", $"weapon.definition.noteTrackMaps.soundMappings[{index}].value", definition.NoteTrackMaps.SoundMappings[index].Value, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionNoteTrackMapsSoundMappings(index, WithValue(RequireDefinition(draft).NoteTrackMaps.SoundMappings[index], value))) : null);
+                break;
+            case WeaponIndexedRowKind.RumbleNoteMapping:
+                AddScriptString(vm, rows, "Notetrack", $"weapon.definition.noteTrackMaps.rumbleMappings[{index}].key", definition.NoteTrackMaps.RumbleMappings[index].Key, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionNoteTrackMapsRumbleMappings(index, WithKey(RequireDefinition(draft).NoteTrackMaps.RumbleMappings[index], value))) : null);
+                AddScriptString(vm, rows, "Rumble effect", $"weapon.definition.noteTrackMaps.rumbleMappings[{index}].value", definition.NoteTrackMaps.RumbleMappings[index].Value, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionNoteTrackMapsRumbleMappings(index, WithValue(RequireDefinition(draft).NoteTrackMaps.RumbleMappings[index], value))) : null);
+                break;
+            case WeaponIndexedRowKind.AiVsAiCurrentAccuracyGraph: AddGraph(vm, rows, $"weapon.variant.aiVsAiAccuracyGraphKnots[{index}]", draft.Variant.AiVsAiAccuracyGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAiVsAiAccuracyGraphKnots(index, value)) : null); break;
+            case WeaponIndexedRowKind.AiVsPlayerCurrentAccuracyGraph: AddGraph(vm, rows, $"weapon.variant.aiVsPlayerAccuracyGraphKnots[{index}]", draft.Variant.AiVsPlayerAccuracyGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAiVsPlayerAccuracyGraphKnots(index, value)) : null); break;
+            case WeaponIndexedRowKind.AiVsAiOriginalAccuracyGraph: AddGraph(vm, rows, $"weapon.definition.accuracy.originalAiVsAiGraphKnots[{index}]", definition.Accuracy.OriginalAiVsAiGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionAccuracyOriginalAiVsAiGraphKnots(index, value)) : null); break;
+            case WeaponIndexedRowKind.AiVsPlayerOriginalAccuracyGraph: AddGraph(vm, rows, $"weapon.definition.accuracy.originalAiVsPlayerGraphKnots[{index}]", definition.Accuracy.OriginalAiVsPlayerGraphKnots[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionAccuracyOriginalAiVsPlayerGraphKnots(index, value)) : null); break;
+            case WeaponIndexedRowKind.LocationDamage: AddFloat(vm, rows, "Multiplier", $"weapon.definition.locationDamageMultipliers[{index}]", definition.LocationDamageMultipliers[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionLocationDamageMultipliers(index, value), rebuildInspector: false) : null, Math.Min(0f, definition.LocationDamageMultipliers[index]), Math.Max(2f, definition.LocationDamageMultipliers[index]), 0.05f); break;
+            case WeaponIndexedRowKind.ProjectileParallelBounce:
+            case WeaponIndexedRowKind.ProjectilePerpendicularBounce:
+                if (index < definition.Projectile.ParallelBounce.Count)
+                    AddFloat(vm, rows, "Parallel", $"weapon.definition.projectile.parallelBounce[{index}]", definition.Projectile.ParallelBounce[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionProjectileParallelBounce(index, value), rebuildInspector: false) : null, Math.Min(0f, definition.Projectile.ParallelBounce[index]), Math.Max(1f, definition.Projectile.ParallelBounce[index]), 0.01f);
+                if (index < definition.Projectile.PerpendicularBounce.Count)
+                    AddFloat(vm, rows, "Perpendicular", $"weapon.definition.projectile.perpendicularBounce[{index}]", definition.Projectile.PerpendicularBounce[index], vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionProjectilePerpendicularBounce(index, value), rebuildInspector: false) : null, Math.Min(0f, definition.Projectile.PerpendicularBounce[index]), Math.Max(1f, definition.Projectile.PerpendicularBounce[index]), 0.01f);
+                break;
+            case WeaponIndexedRowKind.BounceSound: AddNameAsset(vm, rows, "Sound", $"weapon.definition.bounceSounds[{index}].name", definition.BounceSounds[index].Name, XAssetType.Sound, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionBounceSounds(index, WithName(RequireDefinition(draft).BounceSounds[index], value))) : null); break;
+            case WeaponIndexedRowKind.TurretSpinUpSound: AddNameAsset(vm, rows, "Sound", $"weapon.definition.turret.barrelSpinUpSounds[{index}].name", definition.Turret.BarrelSpinUpSounds[index].Name, XAssetType.Sound, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionTurretBarrelSpinUpSounds(index, WithName(RequireDefinition(draft).Turret.BarrelSpinUpSounds[index], value))) : null); break;
+            case WeaponIndexedRowKind.TurretSpinDownSound: AddNameAsset(vm, rows, "Sound", $"weapon.definition.turret.barrelSpinDownSounds[{index}].name", definition.Turret.BarrelSpinDownSounds[index].Name, XAssetType.Sound, vm.IsEditable ? value => vm.Mutate(() => draft.SetDefinitionTurretBarrelSpinDownSounds(index, WithName(RequireDefinition(draft).Turret.BarrelSpinDownSounds[index], value))) : null); break;
+        }
+    }
+
+    private static WeaponDef RequireDefinition(WeaponDraft draft) => draft.Definition ?? throw new InvalidOperationException("The Weapon definition is unavailable.");
+    private static WeaponNoteTrackMapEntry WithKey(WeaponNoteTrackMapEntry source, ScriptStringReference value) => new() { Key = value, Value = source.Value };
+    private static WeaponNoteTrackMapEntry WithValue(WeaponNoteTrackMapEntry source, ScriptStringReference value) => new() { Key = source.Key, Value = value };
+    private static WeaponSoundAliasField WithName(WeaponSoundAliasField source, string? value) => new() { Pointer = source.Pointer, ValuePointer = source.ValuePointer, Name = value };
+
+    private static void AddString(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, string? value, Action<string?>? apply) => rows.Add(new InspectorTextPropertyRowViewModel(label, path, value, apply is null ? null : text => apply(string.IsNullOrEmpty(text) ? null : text), ValidateText));
+    private static void AddInteger(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, int value, Action<int>? apply) => rows.Add(new InspectorIntegerPropertyRowViewModel(label, path, value, apply));
+    private static void AddUnsigned(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, uint value, Action<uint>? apply) => rows.Add(new InspectorUnsignedIntegerPropertyRowViewModel(label, path, value, apply));
+    private static void AddUShort(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, ushort value, Action<ushort>? apply) => rows.Add(new InspectorUnsignedIntegerPropertyRowViewModel(label, path, value, apply is null ? null : number => apply(checked((ushort)number)), maxValue: ushort.MaxValue));
+    private static void AddBoolean(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, bool value, Action<bool>? apply) => rows.Add(new InspectorBooleanPropertyRowViewModel(label, path, value, apply));
+    private static void AddByteFlag(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, byte value, Action<byte>? apply)
+    {
+        var choices = new List<InspectorChoice> { new("0", "0 — Off"), new("1", "1 — On") };
+        string selected = value.ToString(CultureInfo.InvariantCulture);
+        if (value > 1) choices.Add(new(selected, $"{selected} — Unknown imported value"));
+        rows.Add(new InspectorChoicePropertyRowViewModel(label, path, choices, selected, apply is null ? null : text => apply(byte.Parse(text, CultureInfo.InvariantCulture))));
+    }
+    private static void AddEnum<T>(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, T value, Action<T>? apply) where T : struct, Enum
+    {
+        string selected = Convert.ToInt32(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
+        var choices = Enum.GetValues<T>()
+            .Where(item => !string.Equals(item.ToString(), "Count", StringComparison.Ordinal))
+            .Select(item => new InspectorChoice(Convert.ToInt32(item, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture), WeaponSemanticLabels.HumanizeIdentifier(item.ToString())))
+            .ToList();
+        if (!choices.Any(choice => choice.Value == selected)) choices.Add(new(selected, $"{selected} — Unknown imported value"));
+        rows.Add(new InspectorChoicePropertyRowViewModel(label, path, choices, selected, apply is null ? null : text => apply((T)Enum.ToObject(typeof(T), int.Parse(text, CultureInfo.InvariantCulture)))));
+    }
+    private static void AddFloat(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, float value, Action<float>? apply, float? sliderMinimum = null, float? sliderMaximum = null, float sliderTickFrequency = 0.01f)
+    {
+        if (float.IsFinite(value)) { rows.Add(new InspectorFloatPropertyRowViewModel(label, path, value, apply, sliderMinimum: sliderMinimum, sliderMaximum: sliderMaximum, sliderTickFrequency: sliderTickFrequency)); return; }
+        rows.Add(ReadOnly($"{label} · imported", path + ".raw", $"{value:R} · 0x{BitConverter.SingleToInt32Bits(value):X8}"));
+        rows.Add(new InspectorTextPropertyRowViewModel($"{label} replacement", path, string.Empty, apply is null ? null : text => apply(float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture)), ValidateFinite));
+    }
+    private static void AddVec2(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, Vec2 value, Action<Vec2>? apply)
+    {
+        AddFloat(vm, rows, label + " X", path + ".x", value.a, apply is null ? null : number => apply(new Vec2 { a = number, b = value.b }));
+        AddFloat(vm, rows, label + " Y", path + ".y", value.b, apply is null ? null : number => apply(new Vec2 { a = value.a, b = number }));
+    }
+    private static void AddVec3(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, Vec3 value, Action<Vec3>? apply)
+    {
+        AddFloat(vm, rows, label + " X", path + ".x", value.X, apply is null ? null : number => apply(new Vec3 { X = number, Y = value.Y, Z = value.Z }));
+        AddFloat(vm, rows, label + " Y", path + ".y", value.Y, apply is null ? null : number => apply(new Vec3 { X = value.X, Y = number, Z = value.Z }));
+        AddFloat(vm, rows, label + " Z", path + ".z", value.Z, apply is null ? null : number => apply(new Vec3 { X = value.X, Y = value.Y, Z = number }));
+    }
+    private static void AddGraph(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string path, Vec2 value, Action<Vec2>? apply)
+    {
+        AddFloat(vm, rows, "Normalized distance", path + ".normalizedDistance", value.a, apply is null ? null : number => apply(new Vec2 { a = number, b = value.b }));
+        AddFloat(vm, rows, "Accuracy", path + ".accuracy", value.b, apply is null ? null : number => apply(new Vec2 { a = value.a, b = number }));
+    }
+    private static void AddScriptString(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, ScriptStringReference value, Action<ScriptStringReference>? apply) => rows.Add(new InspectorTextPropertyRowViewModel(label, path, value.Text, apply is null ? null : text => apply(new ScriptStringReference(0, string.IsNullOrEmpty(text) ? null : text, ScriptStringHandle.Null, default)), ValidateText));
+    private static void AddNameAsset(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, string? value, XAssetType type, Action<string?>? apply) => rows.Add(new InspectorAssetReferencePropertyRowViewModel(label, path, type, value, apply, apply is null ? null : vm.RequestAssetReferenceSelection, vm.IsReferenceMissing(type, value)));
+    private static void AddAsset<T>(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, string label, string path, T? value, XAssetType type, Action<T?>? apply, string? unresolvedName = null) where T : BaseAsset
+    {
+        string? name = value?.SerializedAssetName ?? unresolvedName;
+        rows.Add(new InspectorAssetReferencePropertyRowViewModel(label, path, type, name, apply is null ? null : selected =>
+        {
+            if (selected is null) { apply(null); return; }
+            if (!vm.Session.TryResolveWorkspaceDefinition<T>(selected, out T? resolved) || resolved is null) throw new InvalidOperationException($"Selected {type} is not a live typed workspace definition.");
+            apply(resolved);
+        }, apply is null ? null : vm.RequestAssetReferenceSelection, vm.IsReferenceMissing(type, name)));
+    }
+    private static InspectorReadOnlyPropertyRowViewModel ReadOnly(string label, string path, string value) => new(label, path, value);
+    private static string? ValidateText(string value)
+    {
+        if (value.IndexOf('\0') >= 0) return "Text cannot contain an embedded NUL.";
+        return value.Any(character => character > byte.MaxValue) ? "Text must be representable in Latin-1." : null;
+    }
+    private static string? ValidateFinite(string value) => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float number) && float.IsFinite(number) ? null : "Enter a finite number.";
