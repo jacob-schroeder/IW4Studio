@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using IW4.Linker.Plans;
 using MapConverter.Game.IW3.PC.Shaders;
 using MapConverter.Game.IW3.PC.Techniques;
 
@@ -8,6 +9,8 @@ return await RunAsync(args);
 
 static async Task<int> RunAsync(string[] arguments)
 {
+    const int vertexCommandBudgetBytes = 3 * 1024;
+
     if (arguments.Length == 0 || arguments is ["--help"] or ["-h"])
     {
         Console.WriteLine("""
@@ -24,6 +27,7 @@ static async Task<int> RunAsync(string[] arguments)
             entry main and shader model 3.0, and resolves includes beside the source.
             Masks use the existing MapConverter RSX input-slot bits (decimal or 0x hex).
             Output is a native Cg blob; stdout lists its required parameter bindings.
+            Vertex output exceeding MW2's 3 KiB SPU-merger command budget is rejected.
             """);
         return 0;
     }
@@ -106,6 +110,17 @@ static async Task<int> RunAsync(string[] arguments)
 
         Iw3ShaderCompilation compiled = new Iw3PcShaderCompiler().Compile(source, programPath, normalMask, texCoordMask);
         byte[] data = compiled.Asset.Data ?? throw new InvalidDataException("The compiler returned no Cg program.");
+        MaterialShaderVertexCommandMetrics? vertexMetrics = source.Stage == Iw3ShaderStage.Vertex
+            ? MaterialShaderVertexReservation.CalculateCommandMetrics(data, $"Converted shader '{input}'")
+            : null;
+        if (vertexMetrics is { } budgetMetrics &&
+            budgetMetrics.CommandBytes > vertexCommandBudgetBytes)
+        {
+            throw new InvalidDataException(
+                $"Converted vertex Cg requires {budgetMetrics.CommandBytes} command-list bytes, " +
+                $"exceeding ShaderConvert's {vertexCommandBudgetBytes}-byte MW2 SPU-merger compatibility budget. " +
+                "This is an unmodified-engine MW2 compatibility limit, not a general RSX limit.");
+        }
         string directory = Path.GetDirectoryName(output) ?? throw new ArgumentException("Output needs a parent directory.");
         Directory.CreateDirectory(directory);
         temporaryOutput = Path.Combine(directory, $".{Path.GetFileName(output)}.{Guid.NewGuid():N}.tmp");
@@ -115,6 +130,14 @@ static async Task<int> RunAsync(string[] arguments)
 
         Console.WriteLine($"Converted {source.Stage} SM{source.ShaderModel.Major}.{source.ShaderModel.Minor}: {input}");
         Console.WriteLine($"PS3 Cg: {output} ({data.Length} bytes)");
+        if (vertexMetrics is { } reportedMetrics)
+        {
+            Console.WriteLine(
+                $"MW2 SPU-merger vertex command list: blob={data.Length} bytes, " +
+                $"instructions={reportedMetrics.InstructionCount}, temps={reportedMetrics.TemporaryRegisterCount}, " +
+                $"default vectors={reportedMetrics.DefaultVectorCount}, default words={reportedMetrics.DefaultCommandWords}, " +
+                $"commands={reportedMetrics.CommandBytes}/{vertexCommandBudgetBytes} bytes");
+        }
         Console.WriteLine(compiled.CompilerIdentity);
         Console.WriteLine($"Native world position lowering: {compiled.WorldPositionLowered}; world matrix register: {compiled.NativeWorldMatrixRegister}");
         foreach (Iw3ShaderParameter parameter in compiled.Parameters)

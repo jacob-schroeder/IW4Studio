@@ -24,6 +24,7 @@ public sealed class ShaderExchange
         string assetName = SourceOutput.NormalizeOwnedAssetName(
             asset.Name,
             assetType);
+        string programName = Path.ChangeExtension(assetName, ".cg");
         byte[]? data = asset.Data?.ToArray();
         if (data is null || data.Length == 0)
         {
@@ -38,7 +39,7 @@ public sealed class ShaderExchange
 
         return new SourceOutput(sourceDirectory).WriteBinaryBatch([
             (
-                $"shader_bin_ps3/{stage}/{assetName}",
+                $"shader_bin_ps3/{stage}/{programName}",
                 stream => stream.Write(data))
         ]);
     }

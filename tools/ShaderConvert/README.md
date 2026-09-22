@@ -60,6 +60,16 @@ explicitly. A successful conversion does not establish that the caller's engine
 bindings or render resources match the PC shader; those must be supplied by the
 material using the converted program.
 
+For vertex shaders, ShaderConvert also calculates the exact native MW2 vertex
+command-list reservation from the generated Cg blob: instruction upload commands,
+per-eight-instruction headers, embedded default vectors, and the final RETURN.
+It rejects converted vertex shaders requiring more than 3072 command-list bytes
+before replacing the output, and prints the blob size, instruction and temporary
+register counts, default-vector/default-word counts, and command-list usage on
+success. This conservative 3 KiB check is for compatibility with the unmodified
+MW2 engine's SPU merger; it is not a general RSX vertex-program limit. Pixel
+shaders are not subject to this rejection.
+
 `--signed-normal-input-mask` and `--decoded-texcoord-input-mask` apply MapConverter's
 existing input decoding adaptations when converting shaders written for packed PC
 vertex streams. Values are 16-bit RSX input-slot bit masks, in decimal or `0x` hex.
