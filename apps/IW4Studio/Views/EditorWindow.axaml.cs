@@ -17,11 +17,11 @@ public sealed partial class EditorWindow : Window
     private readonly DestructiveNavigationCoordinator _navigationCoordinator;
     private readonly IUnsavedChangesDialog _unsavedChangesDialog;
     private readonly TransactionalSaveAsService _saveAsService = new();
-    private FastFileRenderViewService? _renderViewService;
-    private Task? _renderViewServiceDisposal;
+    private readonly SharedRenderViewServiceLifecycle<
+        MapRenderWindow,
+        FastFileRenderViewService> _renderViewLifecycle = new();
     private StudioWorkbenchViewModel? _workbench;
     private GscEngineReferenceWindow? _gscEngineReferenceWindow;
-    private readonly HashSet<MapRenderWindow> _livePreviewWindows = [];
     private int _saveAsInProgress;
     private int _navigationInProgress;
     private bool _approvedCloseRetry;
@@ -139,6 +139,9 @@ public sealed partial class EditorWindow : Window
 
     internal void DisposeAfterFailedOpen()
     {
+        // OpenEditor calls this before control can return to the dispatcher, so
+        // no Live Preview can have acquired a render service. The synchronous
+        // failed-open rollback therefore has no background render drain.
         try
         {
             PrepareApprovedCloseRetry();
@@ -156,7 +159,9 @@ public sealed partial class EditorWindow : Window
     /// </summary>
     internal Task<DestructiveNavigationResult> RequestApplicationShutdownAsync(
         Func<Task> shutdownAsync) =>
-        RequestNavigationAsync(DestructiveNavigationAction.ApplicationShutdown, shutdownAsync);
+        RequestNavigationAsync(
+            DestructiveNavigationAction.ApplicationShutdown,
+            () => ShutdownRenderViewServiceThenProceedAsync(shutdownAsync));
 
     private async void OpenAnotherButton_Click(object? sender, RoutedEventArgs e) =>
         await RequestOpenAnotherAsync();
@@ -186,35 +191,31 @@ public sealed partial class EditorWindow : Window
         object? sender,
         EventArgs e)
     {
-        if (_disposed)
+        if (_disposed || Volatile.Read(ref _navigationInProgress) != 0)
             return;
 
-        if (_renderViewServiceDisposal is { } pendingDisposal)
+        try
         {
-            try
-            {
-                await pendingDisposal;
-            }
-            finally
-            {
-                if (ReferenceEquals(
-                        _renderViewServiceDisposal,
-                        pendingDisposal))
-                {
-                    _renderViewServiceDisposal = null;
-                }
-            }
+            await _renderViewLifecycle.WaitForDisposalAsync();
         }
-        if (_disposed || _workbench is not { } workbench)
+        catch (Exception exception)
+        {
+            ReportRenderViewServiceShutdownFailure(exception);
+            return;
+        }
+        if (_disposed ||
+            Volatile.Read(ref _navigationInProgress) != 0 ||
+            _workbench is not { } workbench)
             return;
 
         FastFileRenderViewService renderViewService =
-            _renderViewService ??= new FastFileRenderViewService();
+            _renderViewLifecycle.GetOrCreateService(
+                static () => new FastFileRenderViewService());
         var renderWindow = new MapRenderWindow(
             workbench.Workspace,
             workbench.TargetFileName,
             renderViewService);
-        _livePreviewWindows.Add(renderWindow);
+        _renderViewLifecycle.TrackPreview(renderWindow);
         renderWindow.Closed += LivePreviewWindow_Closed;
         workbench.ConsoleOutput.Append(
             Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information,
@@ -229,22 +230,30 @@ public sealed partial class EditorWindow : Window
             return;
 
         renderWindow.Closed -= LivePreviewWindow_Closed;
-        _livePreviewWindows.Remove(renderWindow);
-        if (_livePreviewWindows.Count != 0)
+        _renderViewLifecycle.ReleasePreview(renderWindow);
+    }
+
+    private Task ShutdownRenderViewServiceThenProceedAsync(
+        Func<Task> proceedAsync) =>
+        _renderViewLifecycle.ShutdownThenProceedAsync(
+            static livePreviewWindow => livePreviewWindow.Close(),
+            ReportRenderViewServiceShutdownFailure,
+            proceedAsync);
+
+    private void ReportRenderViewServiceShutdownFailure(Exception exception)
+    {
+        if (_workbench is not { } workbench)
             return;
 
-        FastFileRenderViewService? renderViewService = _renderViewService;
-        _renderViewService = null;
-        if (renderViewService is null)
-            return;
-
-        if (_disposed)
+        workbench.ConsoleOutput.Append(
+            Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Error,
+            "Live Preview",
+            $"Render service shutdown failed: {exception.Message}");
+        if (workbench.DockLayout.State.Bottom.ActiveToolId !=
+            StudioToolIds.ConsoleOutput)
         {
-            renderViewService.Dispose();
-            return;
+            _ = workbench.ActivateTool(StudioToolIds.ConsoleOutput);
         }
-
-        _renderViewServiceDisposal = Task.Run(renderViewService.Dispose);
     }
 
     private async void Workbench_EditorTabCloseRequested(
@@ -389,20 +398,20 @@ public sealed partial class EditorWindow : Window
     private Task RequestOpenAnotherAsync() =>
         RequestNavigationAsync(
             DestructiveNavigationAction.OpenAnother,
-            () =>
+            () => ShutdownRenderViewServiceThenProceedAsync(() =>
             {
                 WelcomeRequested?.Invoke(this);
                 return Task.CompletedTask;
-            });
+            }));
 
     private Task RequestCloseAsync(DestructiveNavigationAction action) =>
         RequestNavigationAsync(
             action,
-            () =>
+            () => ShutdownRenderViewServiceThenProceedAsync(() =>
             {
                 CloseAfterApprovedNavigation(action);
                 return Task.CompletedTask;
-            });
+            }));
 
     private async Task<DestructiveNavigationResult> RequestNavigationAsync(
         DestructiveNavigationAction action,
@@ -674,25 +683,13 @@ public sealed partial class EditorWindow : Window
     {
         if (_disposed)
             return;
+        if (!_renderViewLifecycle.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                "The render-view service must finish shutting down before the editor is disposed.");
+        }
 
         _disposed = true;
-        foreach (MapRenderWindow livePreviewWindow in
-            _livePreviewWindows.ToArray())
-        {
-            try
-            {
-                livePreviewWindow.Close();
-            }
-            catch
-            {
-                // One child window cannot block workspace disposal.
-            }
-        }
-        _livePreviewWindows.Clear();
-        _renderViewService?.Dispose();
-        _renderViewService = null;
-        _renderViewServiceDisposal?.GetAwaiter().GetResult();
-        _renderViewServiceDisposal = null;
         _gscEngineReferenceWindow?.Close();
         _gscEngineReferenceWindow = null;
         if (_workbench is not null)

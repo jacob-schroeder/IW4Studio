@@ -15,7 +15,7 @@ namespace IW4.Studio.Desktop.Rendering;
 /// attaching render-view intent to an immutable document workspace. Graphics
 /// API selection, handles, surfaces, and execution remain Desktop concerns.
 /// </summary>
-public sealed class FastFileRenderViewService : IDisposable
+public sealed class FastFileRenderViewService : IAsyncDisposable
 {
     private const string NoRenderableMapAssetsReason =
         "The target fastfile contains neither a GfxWorld nor a ClipMap asset.";
@@ -29,7 +29,7 @@ public sealed class FastFileRenderViewService : IDisposable
     private readonly Lock _sceneBuildCacheLock = new();
     private readonly Dictionary<SceneBuildCacheKey, SceneBuildCacheEntry>
         _sceneBuilds = [];
-    private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly RenderServiceLifetime _lifetime;
     private bool _disposed;
 
     public FastFileRenderViewService()
@@ -41,6 +41,7 @@ public sealed class FastFileRenderViewService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(sceneBuilder);
         _sceneBuilder = sceneBuilder;
+        _lifetime = new RenderServiceLifetime(BeginShutdown);
     }
 
     internal static bool CanRenderTargetMap(FastFileWorkspace workspace)
@@ -195,14 +196,15 @@ public sealed class FastFileRenderViewService : IDisposable
                 if (!_sceneBuilds.TryGetValue(key, out entry!) ||
                     !entry.CanServe(currentWorldTextureRevision))
                 {
+                    CancellationToken lifetimeToken = _lifetime.Token;
                     entry = new SceneBuildCacheEntry(
                         key,
                         report => BuildSceneCore(
                             workspace,
                             snapshotRevision: 0,
                             report,
-                            _lifetimeCancellation.Token),
-                        _lifetimeCancellation.Token);
+                            lifetimeToken),
+                        lifetimeToken);
                     _sceneBuilds[key] = entry;
                 }
             }
@@ -240,36 +242,21 @@ public sealed class FastFileRenderViewService : IDisposable
             "Runtime map assets changed during three consecutive render-scene builds. Wait for the current asset refresh to finish, then try Render Map again.");
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync() => _lifetime.DisposeAsync();
+
+    private IReadOnlyCollection<Task> BeginShutdown()
     {
-        Task<RenderViewSceneBuildResult>[] activeBuilds;
         lock (_sceneBuildCacheLock)
         {
             if (_disposed)
-                return;
+                return [];
 
             _disposed = true;
-            activeBuilds = _sceneBuilds.Values
+            Task<RenderViewSceneBuildResult>[] activeBuilds = _sceneBuilds.Values
                 .Select(entry => entry.BuildTask)
                 .ToArray();
             _sceneBuilds.Clear();
-        }
-
-        // Scene construction observes this token through its existing
-        // progress checkpoints, including the long world/static loops.
-        _lifetimeCancellation.Cancel();
-        try
-        {
-            Task.WhenAll(activeBuilds).GetAwaiter().GetResult();
-        }
-        catch
-        {
-            // Build failures are reported to their waiting render windows.
-            // Disposal only needs to ensure that every build has stopped.
-        }
-        finally
-        {
-            _lifetimeCancellation.Dispose();
+            return activeBuilds;
         }
     }
 
@@ -512,6 +499,85 @@ public sealed class FastFileRenderViewService : IDisposable
                         _progressObservers.Remove(progress);
                 }
             }
+        }
+    }
+}
+
+/// <summary>
+/// Owns the cancellable lifetime of background render builds. The first
+/// shutdown request captures the complete active-build set; every caller then
+/// observes the same drain and failure result.
+/// </summary>
+internal sealed class RenderServiceLifetime : IAsyncDisposable
+{
+    private readonly Func<IReadOnlyCollection<Task>> _beginShutdown;
+    private readonly CancellationTokenSource _cancellation = new();
+    private readonly Lock _shutdownLock = new();
+    private Task? _shutdownTask;
+
+    internal RenderServiceLifetime(
+        Func<IReadOnlyCollection<Task>> beginShutdown)
+    {
+        ArgumentNullException.ThrowIfNull(beginShutdown);
+        _beginShutdown = beginShutdown;
+    }
+
+    internal CancellationToken Token => _cancellation.Token;
+
+    public ValueTask DisposeAsync()
+    {
+        TaskCompletionSource? completion = null;
+        Task shutdownTask;
+        lock (_shutdownLock)
+        {
+            if (_shutdownTask is not null)
+                return new ValueTask(_shutdownTask);
+
+            completion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            shutdownTask = _shutdownTask = completion.Task;
+        }
+
+        _ = CompleteShutdownAsync(completion);
+        return new ValueTask(shutdownTask);
+    }
+
+    private async Task CompleteShutdownAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            await ShutdownCoreAsync().ConfigureAwait(false);
+            completion.SetResult();
+        }
+        catch (Exception exception)
+        {
+            completion.SetException(exception);
+        }
+    }
+
+    private async Task ShutdownCoreAsync()
+    {
+        IReadOnlyCollection<Task> activeBuilds;
+        try
+        {
+            activeBuilds = _beginShutdown();
+
+            // Scene construction observes this token through its existing
+            // progress checkpoints, including the long world/static loops.
+            _cancellation.Cancel();
+            try
+            {
+                await Task.WhenAll(activeBuilds).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                activeBuilds.All(task => !task.IsFaulted))
+            {
+                // Lifetime cancellation is the successful shutdown path.
+            }
+        }
+        finally
+        {
+            _cancellation.Dispose();
         }
     }
 }

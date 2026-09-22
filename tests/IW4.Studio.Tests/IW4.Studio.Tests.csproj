@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\apps\IW4Studio\IW4.Studio.Desktop.csproj" />
     <ProjectReference Include="..\..\src\IW4.Studio\IW4.Studio.csproj" />
   </ItemGroup>
 

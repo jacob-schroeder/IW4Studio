@@ -20,6 +20,7 @@ public sealed partial class MapRenderWindow : Window
     private bool _closed;
     private bool _buildStarted;
     private bool _nativeRendererFailed;
+    private readonly RenderViewCloseDrainGate _ownedServiceCloseDrain = new();
 
     public MapRenderWindow()
     {
@@ -220,14 +221,59 @@ public sealed partial class MapRenderWindow : Window
         });
     }
 
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (_ownsRenderViewService &&
+            _ownedServiceCloseDrain.TryConsumeApproval())
+        {
+            base.OnClosing(e);
+            return;
+        }
+
+        if (_ownsRenderViewService &&
+            (_renderViewService is not null ||
+             _ownedServiceCloseDrain.HasPendingDrain))
+        {
+            e.Cancel = true;
+            _closed = true;
+            _buildWaitCancellation.Cancel();
+            _ownedServiceCloseDrain.BeginDrain(
+                ShutdownOwnedRenderViewServiceAsync,
+                ReportOwnedRenderViewServiceShutdownFailure,
+                () => Dispatcher.UIThread.Post(Close));
+        }
+
+        base.OnClosing(e);
+    }
+
+    private async Task ShutdownOwnedRenderViewServiceAsync()
+    {
+        FastFileRenderViewService renderViewService = _renderViewService
+            ?? throw new InvalidOperationException(
+                "The owned render-view service is unavailable.");
+        _renderViewService = null;
+        await renderViewService.DisposeAsync();
+    }
+
+    private void ReportOwnedRenderViewServiceShutdownFailure(
+        Exception exception)
+    {
+        LivePreviewDebugDump.Write(
+            $"Live Preview render service shutdown failed: {exception}");
+        _nativeRendererFailed = true;
+        _closed = false;
+        Show();
+        ShowStatus(
+            "Could not close Live Preview",
+            $"The render service reported a shutdown failure: {exception.Message} Close the window again to finish closing it.");
+    }
+
     private void MapRenderWindow_Closed(object? sender, EventArgs e)
     {
         LivePreviewDebugDump.Write(
             "Live Preview preparation window closed");
         _closed = true;
         _buildWaitCancellation.Cancel();
-        if (_ownsRenderViewService)
-            _renderViewService?.Dispose();
         _renderViewService = null;
         _nativeRenderWindow?.Dispose();
         _nativeRenderWindow = null;
