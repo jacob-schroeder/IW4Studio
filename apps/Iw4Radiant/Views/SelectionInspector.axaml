@@ -99,7 +99,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="TerrainTab" ToolTip.Tip="Terrain · sculpting, color and alpha" AutomationProperties.Name="Terrain">
+            <TabItem x:Name="TerrainTab" ToolTip.Tip="Terrain · sculpting, vertex noise, color and alpha" AutomationProperties.Name="Terrain">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="Terrain" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="12" Spacing="12">

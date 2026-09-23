@@ -83,6 +83,53 @@ internal static class SelectionEditing
             throw new ArgumentException("A material must be a single Radiant asset name.");
     }
 
+    internal static int CountMaterialMatches(EditorSession session, string from, bool selectedOnly)
+    {
+        if (string.IsNullOrEmpty(from)) return 0;
+        var (faces, terrains) = MaterialMatches(session, from, selectedOnly);
+        return faces.Length + terrains.Length;
+    }
+
+    internal static int ReplaceMaterials(EditorSession session, string from, string to, bool selectedOnly)
+    {
+        if (string.IsNullOrEmpty(from)) throw new ArgumentException("Enter a material name to find.");
+        ValidateMaterial(to);
+        if (string.Equals(from, to, StringComparison.Ordinal)) return 0;
+        var (faces, terrains) = MaterialMatches(session, from, selectedOnly);
+        int count = faces.Length + terrains.Length;
+        if (count == 0) return 0;
+        session.Edit(() =>
+        {
+            foreach (MapFace face in faces) face.Material = to;
+            foreach (MapTerrain terrain in terrains) terrain.Material = to;
+        });
+        return count;
+    }
+
+    private static (MapFace[] Faces, MapTerrain[] Terrains) MaterialMatches(EditorSession session, string from, bool selectedOnly)
+    {
+        IEnumerable<MapFace> faces;
+        IEnumerable<MapTerrain> terrains;
+        if (selectedOnly)
+        {
+            var brushes = session.Document.Brushes.ToHashSet(ReferenceEqualityComparer.Instance);
+            var documentTerrains = session.Document.Terrains.ToHashSet(ReferenceEqualityComparer.Instance);
+            faces = SurfaceEditing.GetFaces(session).Where(selection => brushes.Contains(selection.Brush))
+                .Select(selection => selection.Face);
+            terrains = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapTerrain>()
+                .Concat(session.Selection.Items.OfType<MapEntity>().SelectMany(entity => entity.Terrains))
+                .Where(terrain => documentTerrains.Contains(terrain) &&
+                    session.Visibility.CanSelect(session.Document, terrain)).Distinct();
+        }
+        else
+        {
+            faces = session.Document.Brushes.SelectMany(brush => brush.Faces);
+            terrains = session.Document.Terrains;
+        }
+        return (faces.Where(face => string.Equals(face.Material, from, StringComparison.Ordinal)).ToArray(),
+            terrains.Where(terrain => string.Equals(terrain.Material, from, StringComparison.Ordinal)).ToArray());
+    }
+
     private static void ApplyMaterial(EditorSession session, string material, MapFace[] faces, MapTerrain[] terrains)
     {
         ValidateMaterial(material);

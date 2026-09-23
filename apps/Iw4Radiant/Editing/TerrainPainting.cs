@@ -107,7 +107,7 @@ internal static class TerrainPainting
                 Quantize(source.Z + (target.Z - source.Z) * amount), source.W);
     }
 
-    private static float Quantize(float value) => MathF.Round(Math.Clamp(value, 0, 1) * 255) / 255;
+    internal static float Quantize(float value) => MathF.Round(Math.Clamp(value, 0, 1) * 255) / 255;
 
     private static void ValidateColor(Vector4 color)
     {

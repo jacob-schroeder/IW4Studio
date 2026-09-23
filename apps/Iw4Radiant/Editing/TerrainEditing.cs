@@ -25,6 +25,57 @@ internal static class TerrainEditing
         return EditVertexHeights(terrain, vertexIndices, (_, _) => height);
     }
 
+    internal static bool NoiseVertices(MapTerrain terrain, IReadOnlyCollection<int> vertexIndices,
+        Vector3 positionAmount, float alphaStrength)
+    {
+        ValidateVertices(terrain);
+        ArgumentNullException.ThrowIfNull(vertexIndices);
+        if (!float.IsFinite(positionAmount.X) || !float.IsFinite(positionAmount.Y) || !float.IsFinite(positionAmount.Z) ||
+            positionAmount.X < 0 || positionAmount.Y < 0 || positionAmount.Z < 0)
+            throw new ArgumentOutOfRangeException(nameof(positionAmount), "Position noise amounts must be finite and nonnegative.");
+        if (!float.IsFinite(alphaStrength) || alphaStrength < 0 || alphaStrength > 1)
+            throw new ArgumentOutOfRangeException(nameof(alphaStrength), "Alpha noise strength must be between zero and one.");
+        int[] indices = vertexIndices.Distinct().ToArray();
+        if (indices.Any(index => (uint)index >= (uint)terrain.Vertices.Length))
+            throw new ArgumentOutOfRangeException(nameof(vertexIndices), "A selected terrain vertex no longer exists.");
+        bool move = positionAmount != Vector3.Zero, recolor = alphaStrength > 0;
+        if (indices.Length == 0 || !move && !recolor) return false;
+        if (recolor && terrain.Colors.Length != terrain.Vertices.Length)
+            throw new InvalidOperationException("The selected terrain or patch has no matching vertex alpha data.");
+
+        var positions = new Vector3[indices.Length];
+        var alphas = new float[indices.Length];
+        bool changed = false;
+        for (int i = 0; i < indices.Length; i++)
+        {
+            int index = indices[i];
+            Vector3 source = terrain.Vertices[index];
+            Vector3 position = move ? source + new Vector3(
+                (Random.Shared.NextSingle() * 2 - 1) * positionAmount.X,
+                (Random.Shared.NextSingle() * 2 - 1) * positionAmount.Y,
+                (Random.Shared.NextSingle() * 2 - 1) * positionAmount.Z) : source;
+            if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+                throw new InvalidOperationException("Position noise would produce a nonfinite vertex.");
+            positions[i] = position;
+            changed |= position != source;
+            if (!recolor) continue;
+            float sourceAlpha = terrain.Colors[index].W;
+            if (!float.IsFinite(sourceAlpha) || sourceAlpha < 0 || sourceAlpha > 1)
+                throw new InvalidOperationException("Selected vertex alpha must be between zero and one.");
+            alphas[i] = TerrainPainting.Quantize(sourceAlpha +
+                (Random.Shared.NextSingle() - sourceAlpha) * alphaStrength);
+            changed |= alphas[i] != sourceAlpha;
+        }
+        if (!changed) return false;
+        for (int i = 0; i < indices.Length; i++)
+        {
+            int index = indices[i];
+            if (move) terrain.Vertices[index] = positions[i];
+            if (recolor) terrain.Colors[index] = terrain.Colors[index] with { W = alphas[i] };
+        }
+        return true;
+    }
+
     internal static bool Flatten(MapTerrain terrain, Vector2 center, float radius, float height, float amount)
     {
         if (!float.IsFinite(height))

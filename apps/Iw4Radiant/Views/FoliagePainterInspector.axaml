@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:materials="using:Iw4Radiant.Materials"
+             xmlns:editing="using:Iw4Radiant.Editing"
              x:Class="Iw4Radiant.Views.FoliagePainterInspector">
     <StackPanel Spacing="12">
         <TextBlock Text="Painter" Classes="panelTitle" />
@@ -18,11 +18,20 @@
             <ListBox x:Name="Palette" MinHeight="116" MaxHeight="220" SelectionMode="Single"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="materials:XModelSource">
-                        <TextBlock Text="{CompiledBinding Name}" TextTrimming="CharacterEllipsis" Margin="4,2" />
+                    <DataTemplate x:DataType="editing:FoliagePaletteModel">
+                        <Grid ColumnDefinitions="*,Auto,82" ColumnSpacing="6" Margin="4,2">
+                            <TextBlock Text="{CompiledBinding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="Weight" Classes="caption" VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Column="2" Value="{CompiledBinding Weight, Mode=TwoWay}"
+                                           Minimum="0" Maximum="100" Increment="0.25" FormatString="0.##"
+                                           AutomationProperties.Name="Foliage model weight"
+                                           ToolTip.Tip="Relative chance to paint this model; 0 or blank skips it." />
+                        </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+            <TextBlock Text="Weights are relative. Zero or blank skips a model; if all are zero, nothing is painted."
+                       Classes="caption" TextWrapping="Wrap" />
             <Button x:Name="RemoveModelButton" Classes="panelAction" Content="Remove selected model" HorizontalAlignment="Left" IsEnabled="False" />
             <Separator />
             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">

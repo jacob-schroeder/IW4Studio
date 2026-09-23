@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using Avalonia.Controls;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
@@ -14,7 +15,8 @@ public partial class TerrainInspector : UserControl
 
     public TerrainInspector() => InitializeComponent();
 
-    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures)
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Action<string> setStatus)
     {
         StitchToleranceBox.Text = Number(session.GridSize);
         TerrainCount.ValueChanged += (_, _) => UpdateSettings(session, dialogs, finishGestures);
@@ -24,6 +26,8 @@ public partial class TerrainInspector : UserControl
         FlattenHeightBox.LostFocus += async (_, _) => await UpdateFlattenHeightAsync(session, dialogs, finishGestures);
         SmoothVerticesButton.Click += async (_, _) => await EditVerticesAsync(session, dialogs, finishGestures, flatten: false);
         FlattenVerticesButton.Click += async (_, _) => await EditVerticesAsync(session, dialogs, finishGestures, flatten: true);
+        NoiseModeBox.SelectionChanged += (_, _) => UpdateNoiseMode();
+        ApplyNoiseButton.Click += async (_, _) => await EditNoiseAsync(session, dialogs, finishGestures, setStatus);
         StitchButton.Click += async (_, _) => await StitchAsync(session, dialogs, finishGestures);
         SolidCollisionValue.IsCheckedChanged += (_, _) =>
         {
@@ -40,6 +44,7 @@ public partial class TerrainInspector : UserControl
             RefreshSelection(session);
         };
         RefreshSelection(session);
+        UpdateNoiseMode();
     }
 
     internal void RefreshSelection(EditorSession session)
@@ -62,17 +67,30 @@ public partial class TerrainInspector : UserControl
             SculptParameters.IsVisible = !painting;
             HeightFields.IsVisible = !painting && (count > 0 || session.Tool == EditorTool.Sculpt && session.SculptMode == TerrainSculptMode.Flatten);
             VertexFields.IsVisible = !painting && count > 0;
+            NoiseFields.IsVisible = !painting && (session.Tool == EditorTool.Vertex || count > 0);
             StitchFields.IsVisible = !painting && session.Selection.Items.Any(item => item is MapTerrain { IsCurve: false });
             RefreshCollision(session);
             TerrainContextText.IsVisible = !CreationFields.IsVisible && !SculptFields.IsVisible &&
-                !VertexFields.IsVisible && !StitchFields.IsVisible && !CollisionFields.IsVisible;
+                !VertexFields.IsVisible && !NoiseFields.IsVisible && !StitchFields.IsVisible && !CollisionFields.IsVisible;
             VertexSelectionText.Text = $"{count} terrain {(count == 1 ? "vertex" : "vertices")} selected.";
+            int editable = session.Selection.Items.OfType<TerrainVertexSelection>()
+                .Count(vertex => !session.IsPatchVertexLocked(vertex));
+            NoiseSelectionText.Text = count == 0
+                ? "Select terrain or curved-patch vertices in Vertex mode. Brush vertices are not supported."
+                : editable == 0 ? "Selected patch controls are locked. Unlock them before applying noise."
+                : $"{editable} selected terrain/patch {(editable == 1 ? "vertex" : "vertices")} can receive noise.";
             SmoothVerticesButton.IsEnabled = FlattenVerticesButton.IsEnabled = count > 0;
             StitchButton.IsEnabled = session.Selection.Count == 2 && session.Selection.Items.All(item => item is MapTerrain { IsCurve: false });
             StitchSelectionText.IsVisible = !StitchButton.IsEnabled;
             StitchSelectionText.Text = "Select two whole terrain patches to stitch.";
         }
         finally { _updating = false; }
+    }
+
+    private void UpdateNoiseMode()
+    {
+        PositionNoiseFields.IsVisible = NoiseModeBox.SelectedIndex != 1;
+        AlphaNoiseFields.IsVisible = NoiseModeBox.SelectedIndex is 1 or 2;
     }
 
     private void RefreshCollision(EditorSession session)
@@ -220,6 +238,59 @@ public partial class TerrainInspector : UserControl
         }
     }
 
+    private async Task EditNoiseAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Action<string> setStatus)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            _updating = true;
+            int mode = NoiseModeBox.SelectedIndex;
+            if (mode is < 0 or > 2) throw new ArgumentException("Choose a vertex noise mode.");
+            Vector3 position = mode == 1 ? Vector3.Zero : new Vector3(
+                ReadNoiseAmount(NoiseX, "X noise amount"), ReadNoiseAmount(NoiseY, "Y noise amount"),
+                ReadNoiseAmount(NoiseZ, "Z noise amount"));
+            float alphaStrength = mode == 0 ? 0 : ReadNoiseAmount(NoiseAlphaStrength, "alpha noise strength") / 100;
+            finishGestures();
+            TerrainVertexSelection[] selected = session.Selection.Items.OfType<TerrainVertexSelection>()
+                .Where(vertex => !session.IsPatchVertexLocked(vertex) &&
+                    session.Visibility.CanSelect(session.Document, vertex.Terrain)).ToArray();
+            if (selected.Length == 0)
+                throw new ArgumentException("Select unlocked terrain or curved-patch vertices in Vertex mode. Brush vertices are not supported.");
+            var edits = new List<(MapTerrain Terrain, MapTerrain Proposed, int[] Indices)>();
+            foreach (var group in selected.GroupBy(vertex => vertex.Terrain))
+            {
+                int[] indices = group.Select(vertex => vertex.Index).Distinct().ToArray();
+                MapTerrain proposed = group.Key.Clone();
+                if (TerrainEditing.NoiseVertices(proposed, indices, position, alphaStrength))
+                    edits.Add((group.Key, proposed, indices));
+            }
+            if (edits.Count == 0)
+            {
+                setStatus("Vertex noise: nothing changed. Enter a nonzero amount or alpha strength.");
+                return;
+            }
+            session.Edit(() =>
+            {
+                foreach (var edit in edits)
+                foreach (int index in edit.Indices)
+                {
+                    edit.Terrain.Vertices[index] = edit.Proposed.Vertices[index];
+                    if (alphaStrength > 0) edit.Terrain.Colors[index] = edit.Proposed.Colors[index];
+                }
+            });
+            int count = edits.Sum(edit => edit.Indices.Length);
+            setStatus($"Applied vertex noise to {count} selected {(count == 1 ? "vertex" : "vertices")}.");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        { await dialogs.MessageAsync("Vertex noise", exception.Message); }
+        finally
+        {
+            _updating = false;
+            RefreshSelection(session);
+        }
+    }
+
     private async Task StitchAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
     {
         if (dialogs.BlocksInput) return;
@@ -264,6 +335,9 @@ public partial class TerrainInspector : UserControl
             throw new ArgumentException($"Enter a finite number for {name}.");
         return value;
     }
+
+    private static float ReadNoiseAmount(NumericUpDown input, string name) => input.Value is { } value
+        ? (float)value : throw new ArgumentException($"Enter {name}.");
 
     private static string Number(float value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

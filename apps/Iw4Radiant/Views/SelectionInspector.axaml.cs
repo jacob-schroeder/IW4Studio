@@ -51,7 +51,7 @@ public partial class SelectionInspector : UserControl
         Transforms.InitializeActions(session, dialogs, finishGestures);
         Surfaces.InitializeActions(session, dialogs, finishGestures, resolveMaterial, setStatus);
         Lights.InitializeActions(session, dialogs, finishGestures);
-        Terrain.InitializeActions(session, dialogs, finishGestures);
+        Terrain.InitializeActions(session, dialogs, finishGestures, setStatus);
         Sunlight.InitializeActions(session, dialogs, finishGestures);
         Skies.InitializeActions(session, dialogs, finishGestures, materials);
         Geometry.InitializeActions(session, dialogs, finishGestures, editPlane);

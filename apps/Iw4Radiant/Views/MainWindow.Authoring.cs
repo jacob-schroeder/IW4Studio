@@ -25,6 +25,7 @@ public partial class MainWindow
         Workspace.Materials.CatalogChanged += RefreshAssets;
         Workspace.Models.CatalogChanged += RefreshAssets;
         var settings = RadiantSettings.Load();
+        Workspace.Materials.InitializeFavorites(settings);
         bool suppressRelatedModelRestore = false;
         Workspace.Materials.FolderLoaded += async (root, nonBlocking) =>
         {

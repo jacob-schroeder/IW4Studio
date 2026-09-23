@@ -53,6 +53,38 @@
                         ToolTip.Tip="Flatten the selected terrain vertices to the specified height." />
             </Grid>
         </StackPanel>
+        <StackPanel x:Name="NoiseFields" Spacing="8" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Vertex noise" Classes="panelTitle" />
+            <TextBlock x:Name="NoiseSelectionText" Classes="caption" TextWrapping="Wrap" />
+            <ComboBox x:Name="NoiseModeBox" SelectedIndex="0" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Apply noise to selected terrain vertices or curved-patch controls.">
+                <ComboBoxItem Content="Position" />
+                <ComboBoxItem Content="Alpha" />
+                <ComboBoxItem Content="Position + alpha" />
+            </ComboBox>
+            <Grid x:Name="PositionNoiseFields" ColumnDefinitions="*,*,*" ColumnSpacing="5">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="X amount (±)" Classes="caption" />
+                    <NumericUpDown x:Name="NoiseX" Value="0" Minimum="0" Maximum="4096" Increment="1" FormatString="0.##" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="Y amount (±)" Classes="caption" />
+                    <NumericUpDown x:Name="NoiseY" Value="0" Minimum="0" Maximum="4096" Increment="1" FormatString="0.##" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="3">
+                    <TextBlock Text="Z amount (±)" Classes="caption" />
+                    <NumericUpDown x:Name="NoiseZ" Value="10" Minimum="0" Maximum="4096" Increment="1" FormatString="0.##" />
+                </StackPanel>
+            </Grid>
+            <Grid x:Name="AlphaNoiseFields" ColumnDefinitions="*,100" ColumnSpacing="5" IsVisible="False">
+                <TextBlock Text="Alpha strength (%)" Classes="fieldLabel"
+                           ToolTip.Tip="100 replaces vertex alpha with a random value; lower strengths blend with the current alpha." />
+                <NumericUpDown x:Name="NoiseAlphaStrength" Grid.Column="1" Value="100" Minimum="0" Maximum="100"
+                               Increment="5" FormatString="0" />
+            </Grid>
+            <Button x:Name="ApplyNoiseButton" Content="Apply noise" Classes="panelAction" HorizontalAlignment="Stretch" />
+        </StackPanel>
         <StackPanel x:Name="StitchFields" Spacing="8" IsVisible="False">
             <TextBlock Text="Stitch patches" Classes="panelTitle" />
             <Grid ColumnDefinitions="*,100" ColumnSpacing="5">

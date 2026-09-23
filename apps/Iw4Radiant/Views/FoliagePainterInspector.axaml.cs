@@ -1,11 +1,12 @@
 using Avalonia.Controls;
+using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Views;
 
 public partial class FoliagePainterInspector : UserControl
 {
-    private readonly List<XModelSource> _models = [];
+    private readonly List<FoliagePaletteModel> _models = [];
 
     public FoliagePainterInspector()
     {
@@ -14,7 +15,8 @@ public partial class FoliagePainterInspector : UserControl
         AddModelsButton.Click += (_, _) => ModelsRequested?.Invoke();
         RemoveModelButton.Click += (_, _) =>
         {
-            if (Palette.SelectedItem is not XModelSource selected) return;
+            if (Palette.SelectedItem is not FoliagePaletteModel selected) return;
+            selected.Changed -= OnWeightChanged;
             _models.Remove(selected);
             RefreshPalette();
         };
@@ -31,7 +33,7 @@ public partial class FoliagePainterInspector : UserControl
 
     internal event Action? Changed;
     internal event Action? ModelsRequested;
-    internal IReadOnlyList<XModelSource> Models => _models;
+    internal IReadOnlyList<FoliagePaletteModel> Models => _models;
     internal bool IsPainting => PaintButton.IsChecked == true;
     internal float BrushRadius => (float)(Radius.Value ?? 64);
     internal int BrushDensity => (int)(Density.Value ?? 1);
@@ -52,12 +54,15 @@ public partial class FoliagePainterInspector : UserControl
     internal void AddModel(XModelSource model)
     {
         if (_models.Any(item => item.Name == model.Name)) return;
-        _models.Add(model);
+        var item = new FoliagePaletteModel(model);
+        item.Changed += OnWeightChanged;
+        _models.Add(item);
         RefreshPalette();
     }
 
     internal void ClearModels()
     {
+        foreach (FoliagePaletteModel model in _models) model.Changed -= OnWeightChanged;
         _models.Clear();
         RefreshPalette();
     }
@@ -73,4 +78,6 @@ public partial class FoliagePainterInspector : UserControl
         if (!hasModels) PaintButton.IsChecked = false;
         Changed?.Invoke();
     }
+
+    private void OnWeightChanged() => Changed?.Invoke();
 }

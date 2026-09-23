@@ -88,7 +88,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
     internal Func<bool>? CanAcceptModelDrop { get; set; }
-    internal IReadOnlyList<XModelSource> FoliageModels { get; set; } = [];
+    internal IReadOnlyList<FoliagePaletteModel> FoliageModels { get; set; } = [];
     internal float FoliageRadius { get; set; } = 64;
     internal int FoliageDensity { get; set; } = 1;
     internal float FoliageSpacing { get; set; } = 32;
@@ -425,6 +425,11 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             InteractionStatusChanged?.Invoke("Add one or more models to the foliage palette first.");
             return;
         }
+        if (!FoliageModels.Any(item => item.Weight is > 0))
+        {
+            InteractionStatusChanged?.Invoke("Set a positive model weight before painting foliage.");
+            return;
+        }
         _foliageSurfaceDocument = session.Scene.Document;
         if (!TryMapHit(point, includeModels: false, out Vector3 hit, out Vector3 normal))
         {
@@ -472,6 +477,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private bool StampFoliage(EditorSession session, Vector3 center, Vector3 normal)
     {
         if (_foliageSurfaceDocument is not { } surfaces || FoliageModels.Count == 0) return false;
+        double totalWeight = FoliageModels.Sum(item => item.Weight is > 0 ? (double)item.Weight.Value : 0);
+        if (totalWeight <= 0) return false;
         float radius = Math.Clamp(FoliageRadius, 1, 100000);
         int count = Math.Clamp(FoliageDensity, 1, 128);
         (Vector3 tangent, Vector3 bitangent) = SurfaceBasis(normal);
@@ -484,7 +491,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             Vector3 rayOrigin = sample + normal * 60;
             if (!SurfaceRaycast.TryHitSurfaces(surfaces, rayOrigin, -normal, ResolveMaterial,
                     out Vector3 hit, out Vector3 hitNormal) || Vector3.Distance(hit, sample) > 120) continue;
-            XModelSource model = FoliageModels[Random.Shared.Next(FoliageModels.Count)];
+            if (PickFoliageModel(totalWeight) is not { } model) continue;
             float minimum = Math.Max(0.01f, Math.Min(FoliageMinimumScale, FoliageMaximumScale));
             float maximum = Math.Max(minimum, Math.Max(FoliageMinimumScale, FoliageMaximumScale));
             float scale = minimum + Random.Shared.NextSingle() * (maximum - minimum);
@@ -498,6 +505,20 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         _foliageChanged = true;
         _renderer.SetFoliagePreview(_foliagePreview);
         return true;
+    }
+
+    private XModelSource? PickFoliageModel(double totalWeight)
+    {
+        double choice = Random.Shared.NextDouble() * totalWeight;
+        XModelSource? last = null;
+        foreach (FoliagePaletteModel item in FoliageModels)
+        {
+            if (item.Weight is not > 0) continue;
+            last = item.Model;
+            choice -= (double)item.Weight.Value;
+            if (choice < 0) return item.Model;
+        }
+        return last;
     }
 
     private bool TryMapHit(Point point, bool includeModels, out Vector3 hit, out Vector3 normal)
