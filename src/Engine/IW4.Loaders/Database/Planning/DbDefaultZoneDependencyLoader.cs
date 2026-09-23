@@ -104,13 +104,15 @@ public static class DbDefaultZoneDependencyLoader
         string targetZoneName,
         string candidatePath,
         string dependencyDirectory,
-        IEnumerable<string> additionalDependencyDirectories)
+        IEnumerable<string> additionalDependencyDirectories,
+        Action<LoadedXZone> onTargetLoaded)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetZoneName);
         ArgumentException.ThrowIfNullOrWhiteSpace(candidatePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyDirectory);
         ArgumentNullException.ThrowIfNull(additionalDependencyDirectories);
+        ArgumentNullException.ThrowIfNull(onTargetLoaded);
 
         var catalog = new DbZoneCatalog(
             dependencyDirectory,
@@ -123,9 +125,12 @@ public static class DbDefaultZoneDependencyLoader
         DbZonePlanExecutionResult execution = DbLoadPlanExecutor.Execute(
             plan,
             session,
-            (_, loaded) => ValidatePs3VertexShaderCapacity(
-                session,
-                loaded.Zone.Name));
+            (request, loaded) =>
+            {
+                ValidatePs3VertexShaderCapacity(session, loaded.Zone.Name);
+                if (request.IsTarget)
+                    onTargetLoaded(loaded);
+            });
         return execution.Target;
     }
 

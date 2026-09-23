@@ -587,7 +587,8 @@ public sealed class TransactionalSaveAsService
                 candidatePath,
                 dependencyDirectory,
                 FastFileDocumentService.ResolveAdditionalDependencyDirectories(
-                    dependencyDirectory));
+                    dependencyDirectory),
+                target => _ = loadSession.FreezeLinkAssetPool(target));
         }
         else
         {
@@ -597,10 +598,9 @@ public sealed class TransactionalSaveAsService
             DbDefaultZoneDependencyLoader.ValidatePs3VertexShaderCapacity(
                 loadSession,
                 targetZoneName);
+            _ = loadSession.FreezeLinkAssetPool(loadedZone);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = loadSession.FreezeLinkAssetPool();
         cancellationToken.ThrowIfCancellationRequested();
         _ = loadedZone.FreezeLinkRoots();
         cancellationToken.ThrowIfCancellationRequested();
