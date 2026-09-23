@@ -23,7 +23,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     private IReadOnlyList<FastFileAssetNavigatorNode> _nodes;
     private FastFileAssetNavigatorRow? _selectedRow;
     private FastFileAssetNavigatorNode? _selectedNode;
-    private string _d3dbspImportStatusMessage = string.Empty;
+    private string _importStatusMessage = string.Empty;
     private bool _disposed;
 
     public FastFileAssetsNavigatorViewModel(
@@ -122,20 +122,20 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
 
     public int TotalCount => _allRows.Count;
 
-    public string D3dbspImportStatusMessage
+    public string ImportStatusMessage
     {
-        get => _d3dbspImportStatusMessage;
+        get => _importStatusMessage;
         private set
         {
-            if (!SetProperty(ref _d3dbspImportStatusMessage, value))
+            if (!SetProperty(ref _importStatusMessage, value))
                 return;
 
-            OnPropertyChanged(nameof(HasD3dbspImportStatus));
+            OnPropertyChanged(nameof(HasImportStatus));
         }
     }
 
-    public bool HasD3dbspImportStatus =>
-        !string.IsNullOrWhiteSpace(D3dbspImportStatusMessage);
+    public bool HasImportStatus =>
+        !string.IsNullOrWhiteSpace(ImportStatusMessage);
 
     public bool CanAddAssets => AddableAssetTypes.Count != 0;
 
@@ -212,7 +212,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         string discardedLighting = imported.DiscardedLightByteCount == 0
             ? string.Empty
             : $" Discarded {imported.DiscardedLightByteCount:N0} compiled light bytes using the lossy fullbright workaround.";
-        D3dbspImportStatusMessage =
+        ImportStatusMessage =
             $"Imported {Path.GetFileName(inputPath)} as {imported.AssetName}; " +
             $"replaced {imported.ReplacedRowCount} and added {imported.AddedRowCount} target rows." +
             discardedLighting;
@@ -222,7 +222,27 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     public void ReportD3dbspImportFailure(string message)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
-        D3dbspImportStatusMessage = $"D3DBSP import failed: {message}";
+        ImportStatusMessage = $"D3DBSP import failed: {message}";
+    }
+
+    public async Task ImportRawFileFolderAsync(string folderPath)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ImportStatusMessage = "Importing RawFiles...";
+        (int importedCount, int skippedCount) =
+            await _editor.EditingSession.ImportRawFileFolderAsync(folderPath);
+        if (_disposed)
+            return;
+
+        ImportStatusMessage =
+            $"Imported {importedCount:N0} RawFiles; skipped {skippedCount:N0} existing assets. " +
+            "Paths are relative to the selected folder.";
+    }
+
+    public void ReportRawFileImportFailure(string message)
+    {
+        if (!_disposed)
+            ImportStatusMessage = $"RawFile folder import failed: {message}";
     }
 
     public int VisibleCount => VisibleRows.Count;

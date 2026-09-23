@@ -1,8 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors.D3dbsp;
 
@@ -11,9 +11,11 @@ namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 public sealed partial class FastFileAssetsNavigatorView : UserControl
 {
     private bool _isD3dbspImportInProgress;
+    private bool _isRawFileImportInProgress;
+    private bool _contextIsRawFileGroup;
     private XAssetType? _contextAssetType;
 
-    public FastFileAssetsNavigatorView() => AvaloniaXamlLoader.Load(this);
+    public FastFileAssetsNavigatorView() => InitializeComponent();
 
     private async void AddAssetMenuItem_Click(
         object? sender,
@@ -39,19 +41,69 @@ public sealed partial class FastFileAssetsNavigatorView : UserControl
         object? sender,
         ContextRequestedEventArgs e)
     {
-        if (e.Source is Control
-            {
-                DataContext: FastFileAssetNavigatorNode node
-            })
+        FastFileAssetNavigatorNode? node = (e.Source as Control)?
+            .GetSelfAndVisualAncestors()
+            .OfType<Control>()
+            .Select(control => control.DataContext)
+            .OfType<FastFileAssetNavigatorNode>()
+            .FirstOrDefault();
+        node ??= !e.TryGetPosition(this, out _) &&
+            DataContext is FastFileAssetsNavigatorViewModel viewModel
+                ? viewModel.SelectedNode
+                : null;
+        _contextAssetType = node?.AssetType;
+        _contextIsRawFileGroup = node is
+            { IsGroup: true, AssetType: XAssetType.RawFile };
+        ImportRawFileFolderMenuItem.IsVisible = _contextIsRawFileGroup;
+        ImportRawFileFolderMenuItem.IsEnabled = !_isRawFileImportInProgress;
+    }
+
+    private async void ImportRawFileFolderMenuItem_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (!_contextIsRawFileGroup || _isRawFileImportInProgress ||
+            DataContext is not FastFileAssetsNavigatorViewModel viewModel ||
+            TopLevel.GetTopLevel(this) is not Window owner)
         {
-            _contextAssetType = node.AssetType;
             return;
         }
 
-        _contextAssetType = !e.TryGetPosition(this, out _) &&
-            DataContext is FastFileAssetsNavigatorViewModel viewModel
-                ? viewModel.SelectedNode?.AssetType
-                : null;
+        e.Handled = true;
+        _isRawFileImportInProgress = true;
+        ImportRawFileFolderMenuItem.IsEnabled = false;
+        try
+        {
+            IReadOnlyList<IStorageFolder> folders =
+                await owner.StorageProvider.OpenFolderPickerAsync(
+                    new FolderPickerOpenOptions
+                    {
+                        Title = "Import RawFiles — select the asset root folder",
+                        AllowMultiple = false
+                    });
+            if (folders.Count == 0)
+                return;
+
+            string folderPath = folders[0].TryGetLocalPath()
+                ?? throw new NotSupportedException(
+                    "RawFile folder import requires a local folder.");
+            await viewModel.ImportRawFileFolderAsync(folderPath);
+        }
+        catch (OperationCanceledException)
+        {
+            // Closing the editing session cancels pending file reads.
+        }
+        catch (Exception exception) when (exception is IOException or
+                   UnauthorizedAccessException or NotSupportedException or
+                   ArgumentException or InvalidOperationException or OverflowException)
+        {
+            viewModel.ReportRawFileImportFailure(exception.Message);
+        }
+        finally
+        {
+            _isRawFileImportInProgress = false;
+            ImportRawFileFolderMenuItem.IsEnabled = true;
+        }
     }
 
     private async void ImportD3dbspMenuItem_Click(

@@ -30,8 +30,8 @@
         <TextBlock Grid.Row="1"
                    Grid.ColumnSpan="2"
                    Margin="1,6,1,0"
-                   IsVisible="{Binding HasD3dbspImportStatus}"
-                   Text="{Binding D3dbspImportStatusMessage}"
+                   IsVisible="{Binding HasImportStatus}"
+                   Text="{Binding ImportStatusMessage}"
                    FontSize="9"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
@@ -42,6 +42,10 @@
           ContextRequested="AssetsGrid_ContextRequested">
       <Grid.ContextFlyout>
         <MenuFlyout>
+          <MenuItem x:Name="ImportRawFileFolderMenuItem"
+                    Header="Import folder..."
+                    IsVisible="False"
+                    Click="ImportRawFileFolderMenuItem_Click" />
           <MenuItem Header="Import .d3dbsp..."
                     Click="ImportD3dbspMenuItem_Click" />
           <Separator />

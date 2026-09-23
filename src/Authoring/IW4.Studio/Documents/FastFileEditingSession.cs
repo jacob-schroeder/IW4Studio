@@ -2,6 +2,7 @@ using System.Numerics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Image;
+using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
 using IW4.Game.Assets.TechniqueSet;
@@ -131,6 +132,106 @@ public sealed class FastFileEditingSession : IDisposable
         NotifyTargetRowsChanged();
         AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
         return entry;
+    }
+
+    /// <summary>
+    /// Imports files recursively as RawFiles using root-relative names, excluding
+    /// hidden/system entries and symbolic links.
+    /// Existing workspace assets are skipped. File reads and name validation
+    /// complete before the batch is published as one revision.
+    /// </summary>
+    public async Task<(int ImportedCount, int SkippedCount)> ImportRawFileFolderAsync(
+        string folderPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
+        string root = Path.GetFullPath(folderPath);
+        CancellationToken cancellationToken = CancellationToken;
+        RawFileAsset[] files = await Task.Run(() =>
+        {
+            var definitions = new List<RawFileAsset>();
+            var names = new HashSet<AssetKey>();
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = false,
+                AttributesToSkip = FileAttributes.Hidden | FileAttributes.System |
+                    FileAttributes.ReparsePoint
+            };
+            foreach (string path in Directory.EnumerateFiles(root, "*", options)
+                         .OrderBy(path => path, StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string name = Path.GetRelativePath(root, path).Replace('\\', '/');
+                var draft = new RawFileDraft(new RawFileAsset { Name = name });
+                draft.ReplaceCanonicalContent(File.ReadAllBytes(path));
+                RawFileAsset definition = draft.ToAsset();
+                if (!names.Add(AssetKey.FromDefinition(definition)))
+                {
+                    throw new InvalidDataException(
+                        $"Multiple files map to the RawFile asset name '{name}'.");
+                }
+                definitions.Add(definition);
+            }
+            return definitions.ToArray();
+        }, cancellationToken);
+
+        int importedCount;
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            cancellationToken.ThrowIfCancellationRequested();
+            HashSet<string> existingNames = Document.Rows
+                .Concat(Workspace.AssetCatalog.DependencyEntries)
+                .Where(entry => entry.AssetType == XAssetType.RawFile)
+                .Select(entry => entry.NormalizedName)
+                .OfType<string>()
+                .Concat(_revision.LinkRequest.Assets.Providers
+                    .Where(provider => provider.Key.Family.Type == XAssetType.RawFile)
+                    .Select(provider => provider.Key.NormalizedName))
+                .ToHashSet(StringComparer.Ordinal);
+            RawFileAsset[] definitions = files
+                .Where(definition => !existingNames.Contains(
+                    AssetKey.FromDefinition(definition).NormalizedName))
+                .ToArray();
+            if (definitions.Length == 0)
+                return (0, files.Length);
+
+            foreach (RawFileAsset definition in definitions)
+            {
+                string? error = ValidateNewAssetName(XAssetType.RawFile, definition.Name);
+                if (error is not null)
+                    throw new InvalidDataException($"RawFile '{definition.Name}': {error}");
+            }
+            IAssetAuthoringAdapter adapter = RequireHostedAdapter(definitions[0]);
+            AssetKey[] keys = definitions.Select(AssetKey.FromDefinition).ToArray();
+            LinkAssetPool authoredAssets = _authoredAssets
+                .WithHighestPrecedenceProviders(definitions.Select(definition =>
+                    new LinkAssetProviderSource(definition).AsAuthoredDetached()));
+            LinkRoot[] roots =
+            [
+                .. _revision.LinkRequest.Roots,
+                .. definitions.Select(definition => new LinkRoot(
+                    $"authored:{Guid.NewGuid():N}",
+                    XAssetType.RawFile,
+                    LinkRootIntent.Owned,
+                    AssetKey.FromDefinition(definition),
+                    definition.Name,
+                    opaqueHeader: null))
+            ];
+            Publish(authoredAssets, roots, publishedProviderKeys: keys);
+            foreach (WorkspaceAssetCatalogEntry entry in Document.AppendDefinitions(definitions))
+            {
+                TargetZoneRowIdentity identity = entry.TargetRowIdentity!.Value;
+                _drafts.Add(identity, new DraftState(entry, adapter));
+                _addedRows.Add(identity, _revision.Revision);
+            }
+            RebuildChangeSet();
+            importedCount = definitions.Length;
+        }
+
+        NotifyTargetRowsChanged();
+        AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return (importedCount, files.Length - importedCount);
     }
 
     /// <summary>
