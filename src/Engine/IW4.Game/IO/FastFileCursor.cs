@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using IW4.Game.Zone;
 
-namespace IW4.Runtime.IO;
+namespace IW4.Game.IO;
 
 public sealed class FastFileCursor
 {

@@ -30,7 +30,7 @@ using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets;
 
@@ -79,7 +79,7 @@ public sealed class XAssetDispatcher
         foreach (XAssetListEntrySnapshot asset in assetList.Assets)
         {
             context.AssetProgress?.Invoke(new(
-                context.CurrentFastFile.Name,
+                context.CurrentFastFileSourceName,
                 asset.Index + 1,
                 assetList.AssetCount,
                 asset.Type));

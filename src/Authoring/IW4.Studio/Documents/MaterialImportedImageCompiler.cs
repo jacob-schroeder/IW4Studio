@@ -3,11 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using IW4.Formats.SourceFormat.Image;
 using IW4.Game.Assets.Image;
-using IW4.Studio.Documents;
+namespace IW4.Studio.Documents;
 
-namespace IW4.Studio.Desktop.Editors.Material;
-
-internal sealed record MaterialImageImportCandidate(
+public sealed record MaterialImageImportCandidate(
     MaterialDraft Draft,
     GfxImageAsset Image,
     int TextureTableOrdinal,
@@ -21,11 +19,11 @@ internal sealed record MaterialImageImportCandidate(
 /// Converts a decoded desktop source image into one detached, inline PS3
 /// GfxImage and repoints only the selected Material texture row.
 /// </summary>
-internal static class MaterialImportedImageCompiler
+public static class MaterialImportedImageCompiler
 {
     private const int MaximumDecodedByteCount = 256 * 1024 * 1024;
 
-    internal static MaterialImageImportCandidate Compile(
+    public static MaterialImageImportCandidate Compile(
         MaterialDraft template,
         int textureTableOrdinal,
         ImageFileDocument source)

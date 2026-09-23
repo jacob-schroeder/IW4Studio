@@ -9,7 +9,7 @@ using IW4.Game.Pointers;
 using IW4.Game.ScriptStrings;
 using IW4.Game.Zone;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using WeaponAsset = IW4.Game.Assets.Weapon.WeaponAsset;
 using XString = IW4.Game.Pointers.XPointer<string>;
 

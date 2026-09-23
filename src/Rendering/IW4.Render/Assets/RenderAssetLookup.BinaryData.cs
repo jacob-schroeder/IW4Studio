@@ -5,7 +5,7 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Pointers;
 using IW4.Runtime.Assets;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using System.Text;
 
 namespace IW4.Render.Assets;
@@ -127,7 +127,7 @@ public sealed partial class RenderAssetLookup
             return null;
         }
 
-        var rootCursor = new IW4.Runtime.IO.FastFileCursor(rootBytes, address);
+        var rootCursor = new FastFileCursor(rootBytes, address);
         XPointer<string> namePointer = new(rootCursor.ReadInt32(), XPointerResolutionMode.Direct, address);
         XBlockAddress dataPointerCell = address.Add(4);
         int dataPointerRaw = rootCursor.ReadInt32();

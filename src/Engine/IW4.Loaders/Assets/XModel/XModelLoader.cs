@@ -10,7 +10,7 @@ using IW4.Game.Pointers;
 using IW4.Game.ScriptStrings;
 using IW4.Game.Zone;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using XModelAssetModel = IW4.Game.Assets.XModel.XModelAsset;
 using XModelSurfsAssetModel = IW4.Game.Assets.XModel.XModelSurfsAsset;
 using PhysPresetAssetModel = IW4.Game.Assets.Physics.PhysPresetAsset;

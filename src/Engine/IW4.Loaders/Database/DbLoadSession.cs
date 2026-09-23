@@ -3,14 +3,13 @@ using IW4.Loaders.Streaming.Images;
 using IW4.Loaders.Streaming.Sound;
 using IW4.Streaming.Images;
 using IW4.Streaming.Sound;
-using IW4.Streaming.Database.Streaming;
 using IW4.Game.Database;
 using IW4.Game.Database.Streaming;
 using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
 using IW4.Runtime.Diagnostics;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 
 namespace IW4.Loaders.Database;
 
@@ -205,10 +204,7 @@ public sealed class DbLoadSession : IDisposable
         DbLoadContext context = _runtime.CreateLoadContext();
         context.CaptureZoneObject = captureZoneObject;
         context.SelectedLanguageMask = _selectedLanguageMask;
-        context.CurrentFastFile = new StreamFileRef(
-            0,
-            sourceName,
-            StreamFileKind.CurrentFastFile);
+        context.CurrentFastFileSourceName = sourceName;
         context.AssetProgress = _assetProgress;
         return context;
     }

@@ -1,4 +1,3 @@
-using IW4.Streaming.Database.Streaming;
 using IW4.Runtime.Database;
 using IW4.Game.Database;
 using IW4.Game.Database.Streaming;
@@ -58,10 +57,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     internal bool CaptureZoneObject { get; set; } = true;
     internal ZoneObjectCaptureBridge? ZoneObjectCapture { get; private set; }
 
-    // "CurrentFastFile" is an external stream-source category used to
-    // distinguish the active .ff from imagefile%d.pak; it is not the old load
-    // result type or another model of DBFile.
-    public StreamFileRef CurrentFastFile { get; set; } = new(0, "<current fastfile>", StreamFileKind.CurrentFastFile);
+    public string CurrentFastFileSourceName { get; set; } = "<current fastfile>";
 
     public XAssetLoadSession AssetLoadSession => AssetLoadSessionCore;
     public XAssetPool AssetPool => AssetLoadSession.AssetPool;

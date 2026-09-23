@@ -1,7 +1,7 @@
 using System.Buffers;
 using IW4.Loaders.Compression;
 using IW4.Runtime.Diagnostics;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 
 namespace IW4.Loaders.Database;
 

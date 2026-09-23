@@ -1,6 +1,6 @@
 using IW4.Game.Zone;
 
-namespace IW4.Runtime.Database.Planning;
+namespace IW4.Loaders.Database.Planning;
 
 /// <summary>
 /// Builds the default multiplayer dependency lifecycle used by the engine.

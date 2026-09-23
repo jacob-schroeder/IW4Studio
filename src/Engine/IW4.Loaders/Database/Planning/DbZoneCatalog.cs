@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 
-namespace IW4.Runtime.Database.Planning;
+namespace IW4.Loaders.Database.Planning;
 
 /// <summary>
 /// Case-insensitive catalog of physical .ff files. Dependency policy belongs

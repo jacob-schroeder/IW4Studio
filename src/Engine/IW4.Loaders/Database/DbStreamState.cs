@@ -1,7 +1,7 @@
 using IW4.Runtime.Database;
 using IW4.Game.Zone;
 using IW4.Runtime.Assets;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using System.Buffers.Binary;
 using System.Text;
 

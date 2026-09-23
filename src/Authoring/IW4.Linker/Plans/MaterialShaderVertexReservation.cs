@@ -9,6 +9,9 @@ public static class MaterialShaderVertexReservation
     private const int HeaderSize = 0x20;
     private const int ParameterSize = 0x30;
     private const int DescriptorSize = 0x18;
+    private const int SmallVertexCommandReservationSize = 0x2BC;
+    private const int LargeVertexCommandReservationSize = 0x4D8;
+    private const int SmallVertexDefaultWordLimit = 12;
     private const int PixelCommandReservationSize = 0x48;
 
     internal static LinkStorageSymbol Create(
@@ -45,8 +48,13 @@ public static class MaterialShaderVertexReservation
     private static LinkStorageSymbol CreateVertex(
         ReadOnlySpan<byte> bytecode,
         CgProgramLayout layout,
-        string fieldPath) =>
-        VertexReservation(CalculateCommandMetrics(bytecode, layout, fieldPath).CommandBytes);
+        string fieldPath)
+    {
+        int defaultWords = CalculateCommandMetrics(bytecode, layout, fieldPath).DefaultCommandWords;
+        return VertexReservation(defaultWords <= SmallVertexDefaultWordLimit
+            ? SmallVertexCommandReservationSize
+            : LargeVertexCommandReservationSize);
+    }
 
     public static MaterialShaderVertexCommandMetrics CalculateCommandMetrics(
         ReadOnlySpan<byte> bytecode,

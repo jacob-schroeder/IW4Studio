@@ -2,7 +2,7 @@ using System.Numerics;
 using IW4.Game.Database;
 using IW4.Game.Database.Streaming;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 
 namespace IW4.Loaders.Database;
 

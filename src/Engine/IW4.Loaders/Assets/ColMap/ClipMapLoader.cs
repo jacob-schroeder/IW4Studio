@@ -11,7 +11,7 @@ using IW4.Game.Assets.XModel;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using ModelBounds = IW4.Game.Math.Bounds;
 using ModelVec2 = IW4.Game.Math.Vec2;
 using ModelVec3 = IW4.Game.Math.Vec3;

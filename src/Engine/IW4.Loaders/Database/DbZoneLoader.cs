@@ -1,13 +1,12 @@
 using IW4.Loaders.IO;
 using IW4.Loaders.Assets;
-using IW4.Streaming.Database.Streaming;
 using IW4.Game.Database;
 using IW4.Game.Database.Streaming;
 using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Assets.Lifecycle;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using IW4.Runtime.Strings;
 
 namespace IW4.Loaders.Database;
@@ -80,10 +79,7 @@ public sealed class DbZoneLoader
         var file = new DbFile(sysFile.File, Path.GetFileNameWithoutExtension(sourceName));
         DbRuntime activeRuntime = ResolveRuntime(context, runtime);
         DbLoadContext activeContext = context ?? activeRuntime.CreateLoadContext();
-        activeContext.CurrentFastFile = new StreamFileRef(
-            0,
-            sourceName,
-            StreamFileKind.CurrentFastFile);
+        activeContext.CurrentFastFileSourceName = sourceName;
         return DB_LoadXZone(
             file,
             sysFile,
@@ -386,7 +382,7 @@ public sealed class DbZoneLoader
             : context.FreezeZoneObjectObservation();
 
         var loaded = new LoadedXZone(
-            SourceName: context.CurrentFastFile.Name,
+            SourceName: context.CurrentFastFileSourceName,
             Zone: zone,
             Context: context,
             Header: loadState.Header,

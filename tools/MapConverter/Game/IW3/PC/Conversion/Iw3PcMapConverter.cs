@@ -17,7 +17,7 @@ using IW4.Linker.Contracts;
 using IW4.Linker.D3dbsp;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using IW4.Studio.Documents;
 using MapConverter.CommandLine;
 using MapConverter.Bootstrap.XModel;

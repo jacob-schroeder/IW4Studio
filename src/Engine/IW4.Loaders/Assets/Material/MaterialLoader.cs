@@ -7,7 +7,7 @@ using IW4.Game.Zone;
 using IW4.Loaders.Assets.Image;
 using IW4.Loaders.Assets.TechniqueSet;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using MaterialAssetModel = IW4.Game.Assets.Material.MaterialAsset;
 
 namespace IW4.Loaders.Assets.Material;

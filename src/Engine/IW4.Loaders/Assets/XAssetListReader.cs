@@ -5,7 +5,7 @@ using IW4.Game.Pointers;
 using IW4.Loaders.Pointers;
 using IW4.Game.ScriptStrings;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using IW4.Runtime.Strings;
 
 namespace IW4.Loaders.Assets;

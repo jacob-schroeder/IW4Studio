@@ -16,7 +16,7 @@ using IW4.Linker.Packaging;
 using IW4.Linker.Plans;
 using IW4.Linker.SourceLayout;
 using IW4.Runtime.Database;
-using IW4.Runtime.IO;
+using IW4.Game.IO;
 using IW4.Studio.Documents;
 using Xunit;
 
@@ -161,6 +161,12 @@ public sealed class StockFastFileRoundTripTests
 
             using FastFileWorkspace candidate = documentService.Open(
                 new FastFileDocumentOpenRequest(destinationPath, Isolated.Instance));
+            uint stockVertexSize = workspace.LoadedZone.XFile.BlockSizes[(int)XFileBlockType.VERTEX];
+            uint candidateVertexSize = candidate.LoadedZone.XFile.BlockSizes[(int)XFileBlockType.VERTEX];
+            Assert.True(
+                stockVertexSize == candidateVertexSize,
+                $"VERTEX block size differs for '{sourcePath}': " +
+                $"stock=0x{stockVertexSize:X}, linked=0x{candidateVertexSize:X}.");
             AssertByteSequencesMatch(
                 workspace.LoadedZone.ZoneBytes,
                 candidate.LoadedZone.ZoneBytes,
