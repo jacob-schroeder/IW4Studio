@@ -1,4 +1,5 @@
 using IW4.Game.Assets.StructuredData;
+using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 
@@ -20,7 +21,10 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             originalSerializedName,
             freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
-        LinkStorageSymbol? definitions = CreateDefinitions(definition.Defs, freeze);
+        LinkStorageSymbol? definitions = CreateDefinitions(
+            definition.Defs,
+            definition.DefsPointer.Type,
+            freeze);
         var writer = new LinkTemplateWriter(StructuredDataDefSetAsset.SerializedSize);
         writer.Skip(sizeof(int));
         writer.WriteInt32(definition.DefCount);
@@ -75,9 +79,10 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
 
     private static LinkStorageSymbol? CreateDefinitions(
         IReadOnlyList<StructuredDataDef> definitions,
+        PointerType pointerType,
         LinkAssetFreezeScope freeze)
     {
-        if (definitions.Count == 0)
+        if (definitions.Count == 0 && pointerType == PointerType.Null)
             return null;
 
         var enums = new LinkStorageSymbol?[definitions.Count];
@@ -89,10 +94,10 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
         for (int index = 0; index < definitions.Count; index++)
         {
             StructuredDataDef definition = definitions[index];
-            enums[index] = CreateEnums(definition.Enums, index, freeze);
-            structs[index] = CreateStructs(definition.Structs, index, freeze);
-            indexedArrays[index] = CreateIndexedArrays(definition.IndexedArrays);
-            enumedArrays[index] = CreateEnumedArrays(definition.EnumedArrays);
+            enums[index] = CreateEnums(definition.Enums, definition.EnumsPointer.Type, index, freeze);
+            structs[index] = CreateStructs(definition.Structs, definition.StructsPointer.Type, index, freeze);
+            indexedArrays[index] = CreateIndexedArrays(definition.IndexedArrays, definition.IndexedArraysPointer.Type);
+            enumedArrays[index] = CreateEnumedArrays(definition.EnumedArrays, definition.EnumedArraysPointer.Type);
 
             writer.WriteInt32(definition.Version);
             writer.WriteUInt32(definition.FormatChecksum);
@@ -167,10 +172,11 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
 
     private static LinkStorageSymbol? CreateEnums(
         IReadOnlyList<StructuredDataEnum> values,
+        PointerType pointerType,
         int definitionIndex,
         LinkAssetFreezeScope freeze)
     {
-        if (values.Count == 0)
+        if (values.Count == 0 && pointerType == PointerType.Null)
             return null;
 
         var entries = new LinkStorageSymbol?[values.Count];
@@ -181,6 +187,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             StructuredDataEnum value = values[index];
             entries[index] = CreateEnumEntries(
                 value.Entries,
+                value.EntriesPointer.Type,
                 definitionIndex,
                 index,
                 freeze);
@@ -205,11 +212,12 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
 
     private static LinkStorageSymbol? CreateEnumEntries(
         IReadOnlyList<StructuredDataEnumEntry> values,
+        PointerType pointerType,
         int definitionIndex,
         int enumIndex,
         LinkAssetFreezeScope freeze)
     {
-        if (values.Count == 0)
+        if (values.Count == 0 && pointerType == PointerType.Null)
             return null;
 
         var strings = new LinkStorageSymbol?[values.Count];
@@ -243,10 +251,11 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
 
     private static LinkStorageSymbol? CreateStructs(
         IReadOnlyList<StructuredDataStruct> values,
+        PointerType pointerType,
         int definitionIndex,
         LinkAssetFreezeScope freeze)
     {
-        if (values.Count == 0)
+        if (values.Count == 0 && pointerType == PointerType.Null)
             return null;
 
         var properties = new LinkStorageSymbol?[values.Count];
@@ -257,6 +266,7 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
             StructuredDataStruct value = values[index];
             properties[index] = CreateProperties(
                 value.Properties,
+                value.PropertiesPointer.Type,
                 definitionIndex,
                 index,
                 freeze);
@@ -282,11 +292,12 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
 
     private static LinkStorageSymbol? CreateProperties(
         IReadOnlyList<StructuredDataStructProperty> values,
+        PointerType pointerType,
         int definitionIndex,
         int structIndex,
         LinkAssetFreezeScope freeze)
     {
-        if (values.Count == 0)
+        if (values.Count == 0 && pointerType == PointerType.Null)
             return null;
 
         var names = new LinkStorageSymbol?[values.Count];
@@ -319,9 +330,10 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
     }
 
     private static LinkStorageSymbol? CreateIndexedArrays(
-        IReadOnlyList<StructuredDataIndexedArray> values)
+        IReadOnlyList<StructuredDataIndexedArray> values,
+        PointerType pointerType)
     {
-        if (values.Count == 0)
+        if (values.Count == 0 && pointerType == PointerType.Null)
             return null;
         var writer = new LinkTemplateWriter(
             checked(values.Count * StructuredDataIndexedArray.SerializedSize));
@@ -338,9 +350,10 @@ internal sealed class StructuredDataLinkPlan : AssetLinkPlan
     }
 
     private static LinkStorageSymbol? CreateEnumedArrays(
-        IReadOnlyList<StructuredDataEnumedArray> values)
+        IReadOnlyList<StructuredDataEnumedArray> values,
+        PointerType pointerType)
     {
-        if (values.Count == 0)
+        if (values.Count == 0 && pointerType == PointerType.Null)
             return null;
         var writer = new LinkTemplateWriter(
             checked(values.Count * StructuredDataEnumedArray.SerializedSize));

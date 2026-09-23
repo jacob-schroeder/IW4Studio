@@ -520,6 +520,8 @@ public sealed class ZoneLinker
 
         void VisitDependencyOnly(AssetDependency dependency)
         {
+            // A name-only reference carries its own XString. Resolving it may
+            // identify an asset, but cannot publish or serialize that provider.
             if (!TryResolveDependency(
                     provider,
                     dependency,
@@ -535,16 +537,6 @@ public sealed class ZoneLinker
             edges.TryAdd(
                 new DependencyEdge(dependency),
                 dependencyProvider);
-            VisitProvider(
-                dependencyProvider,
-                providerSelection,
-                rootAuthorities,
-                externalProviders,
-                poolProviderCount,
-                edges,
-                complete,
-                active,
-                visitedStorage);
         }
     }
 
@@ -700,7 +692,7 @@ public sealed class ZoneLinker
 
             provider.Plan.VisitReferences(
                 VisitDependency,
-                VisitDependencyIfAvailable,
+                _ => { },
                 _ => { },
                 visitedStorage);
 
@@ -717,17 +709,6 @@ public sealed class ZoneLinker
                 }
 
                 Visit(dependencyProvider);
-            }
-
-            void VisitDependencyIfAvailable(AssetDependency dependency)
-            {
-                if (TryResolveClosureEdge(
-                        dependency,
-                        dependencyClosure,
-                        out ProviderBinding dependencyProvider))
-                {
-                    Visit(dependencyProvider);
-                }
             }
         }
     }
@@ -754,16 +735,6 @@ public sealed class ZoneLinker
             }
 
             explicitRootIndex.Add(provider.Symbol, index);
-        }
-
-        var rowRequired = new HashSet<ProviderSymbol>();
-        var collectedProviders = new HashSet<ProviderSymbol>();
-        var collectedStorage = new HashSet<LinkStorageSymbol>(
-            ReferenceEqualityComparer.Instance);
-        foreach (ResolvedRoot root in resolvedRoots)
-        {
-            if (root.Provider is { } provider)
-                CollectRowRequirements(provider);
         }
 
         var rows = new List<AssetRow>();
@@ -801,49 +772,7 @@ public sealed class ZoneLinker
             }
         }
 
-        foreach (ProviderSymbol required in rowRequired)
-        {
-            if (!rowProviders.Contains(required))
-            {
-                throw new InvalidDataException(
-                    "The selected closure contains an indirect asset dependency " +
-                    "without a canonical XAsset row.");
-            }
-        }
-
         return rows.ToArray();
-
-        void CollectRowRequirements(ProviderBinding provider)
-        {
-            if (!collectedProviders.Add(provider.Symbol))
-                return;
-
-            provider.Plan.VisitReferences(
-                VisitProviderDependency,
-                VisitIndirectDependency,
-                _ => { },
-                collectedStorage);
-
-            void VisitProviderDependency(AssetDependency dependency) =>
-                CollectRowRequirements(ResolveClosureEdge(
-                    provider,
-                    dependency,
-                    dependencyClosure));
-
-            void VisitIndirectDependency(AssetDependency dependency)
-            {
-                if (!TryResolveClosureEdge(
-                    dependency,
-                    dependencyClosure,
-                    out ProviderBinding target))
-                {
-                    return;
-                }
-
-                rowRequired.Add(target.Symbol);
-                CollectRowRequirements(target);
-            }
-        }
 
         void PlanDependencies(ProviderBinding provider, int currentRootIndex)
         {
@@ -857,7 +786,9 @@ public sealed class ZoneLinker
 
             provider.Plan.VisitReferences(
                 PlanProviderDependency,
-                PlanDependencyIfAvailable,
+                // Only the supplied roots own XAsset rows. A name-only edge
+                // has no provider cell and does not emit its target.
+                _ => { },
                 _ => { },
                 plannedStorage);
             activeProviders.Remove(provider.Symbol);
@@ -867,24 +798,6 @@ public sealed class ZoneLinker
                     provider,
                     dependency,
                     dependencyClosure));
-
-            void PlanDependencyIfAvailable(AssetDependency dependency)
-            {
-                if (TryResolveClosureEdge(
-                        dependency,
-                        dependencyClosure,
-                        out ProviderBinding target))
-                {
-                    // A name-only dependency has no native provider-pointer
-                    // cell to publish before its owner. Preserve an explicit
-                    // root's stock position; only synthesize a row here when
-                    // the selected roots do not already own that provider.
-                    if (explicitRootIndex.ContainsKey(target.Symbol))
-                        return;
-
-                    PlanDependency(target);
-                }
-            }
 
             void PlanDependency(ProviderBinding target)
             {
@@ -902,16 +815,6 @@ public sealed class ZoneLinker
                 }
 
                 PlanDependencies(target, currentRootIndex);
-                if (rowRequired.Contains(target.Symbol) &&
-                    !explicitRootIndex.ContainsKey(target.Symbol) &&
-                    rowProviders.Add(target.Symbol))
-                {
-                    rows.Add(new AssetRow(
-                        target.SerializedType,
-                        target,
-                        OpaqueHeader: null,
-                        $"indirect dependency {target.Key}"));
-                }
             }
         }
     }
@@ -993,24 +896,7 @@ public sealed class ZoneLinker
                     encountered,
                     visitedStorage);
             },
-            dependency =>
-            {
-                if (!TryResolveClosureEdge(
-                        dependency,
-                        dependencyClosure,
-                        out ProviderBinding dependencyProvider))
-                {
-                    return;
-                }
-
-                if (!rootIndexByProvider.ContainsKey(dependencyProvider.Symbol))
-                {
-                    throw new InvalidDataException(
-                        $"{dependency.FieldPath} on provider {provider.Key} names " +
-                        $"indirect dependency {dependencyProvider.Key}, but that " +
-                        "provider has no canonical XAsset row.");
-                }
-            },
+            _ => { },
             _ => { },
             visitedStorage);
     }
@@ -1030,12 +916,6 @@ public sealed class ZoneLinker
 
         return provider;
     }
-
-    private static bool TryResolveClosureEdge(
-        AssetDependency dependency,
-        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure,
-        out ProviderBinding provider) =>
-        dependencyClosure.TryGetValue(new DependencyEdge(dependency), out provider);
 
     private static void EncounterProvider(
         ProviderBinding provider,
@@ -1177,7 +1057,7 @@ public sealed class ZoneLinker
 
             provider.Plan.VisitReferences(
                 VisitDependency,
-                VisitDependencyIfAvailable,
+                _ => { },
                 script =>
                 {
                     if (script.Text is null || indices.ContainsKey(script.Text))
@@ -1209,17 +1089,6 @@ public sealed class ZoneLinker
                 }
 
                 Visit(dependencyProvider);
-            }
-
-            void VisitDependencyIfAvailable(AssetDependency dependency)
-            {
-                if (TryResolveClosureEdge(
-                        dependency,
-                        dependencyClosure,
-                        out ProviderBinding dependencyProvider))
-                {
-                    Visit(dependencyProvider);
-                }
             }
         }
     }

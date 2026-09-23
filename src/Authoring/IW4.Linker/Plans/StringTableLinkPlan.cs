@@ -1,4 +1,5 @@
 using IW4.Game.Assets.StringTable;
+using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 
@@ -19,13 +20,14 @@ internal sealed class StringTableLinkPlan : AssetLinkPlan
         int rowCount,
         LinkStorageSymbol?[] cellValues,
         int[] cellHashes,
+        PointerType cellsPointerType,
         LinkAssetFreezeScope freeze)
         : base(
             key,
             originalSerializedName,
             freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
-        LinkStorageSymbol? cells = cellValues.Length == 0
+        LinkStorageSymbol? cells = cellValues.Length == 0 && cellsPointerType == PointerType.Null
             ? null
             : CreateCellStorage(cellValues, cellHashes);
         var writer = new LinkTemplateWriter(StringTableAsset.SerializedSize);
@@ -115,6 +117,7 @@ internal sealed class StringTableLinkPlan : AssetLinkPlan
             definition.RowCount,
             values,
             hashes,
+            definition.CellsPointer.Type,
             freeze);
     }
 
