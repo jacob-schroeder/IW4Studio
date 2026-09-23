@@ -67,6 +67,13 @@ public sealed class StreamedSoundResolver : IDisposable
                 reason = "sound stream length is zero";
                 return false;
             }
+            if (source.StreamFileLength > SoundFile.MaxInMemoryPayloadBytes)
+            {
+                reason =
+                    $"sound stream length {source.StreamFileLength:N0} bytes exceeds the " +
+                    $"{SoundFile.MaxInMemoryPayloadBytes / (1024 * 1024)} MiB in-memory sound limit";
+                return false;
+            }
             if (!_packagePaths.TryResolve(
                     sound.FileIndex,
                     out string packagePath,

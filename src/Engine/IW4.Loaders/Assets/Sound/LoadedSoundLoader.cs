@@ -64,6 +64,12 @@ public sealed class LoadedSoundLoader : XAssetLoader<LoadedSound>
             rootCursor,
             XPointerResolutionMode.Direct);
         int physicalDataByteCount = rootCursor.ReadInt32();
+        if (physicalDataByteCount > SoundFile.MaxInMemoryPayloadBytes)
+        {
+            throw new InvalidDataException(
+                $"LoadedSound physical data size {physicalDataByteCount:N0} bytes exceeds the " +
+                $"{SoundFile.MaxInMemoryPayloadBytes / (1024 * 1024)} MiB in-memory sound limit.");
+        }
         ushort frameCount = rootCursor.ReadUInt16();
         ushort channelCount = rootCursor.ReadUInt16();
         ushort sampleRate = rootCursor.ReadUInt16();

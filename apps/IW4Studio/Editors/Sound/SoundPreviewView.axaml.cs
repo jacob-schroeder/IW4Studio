@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using IW4.Game.Assets.Sound;
 using IW4.Studio.Desktop.ViewModels;
 
 namespace IW4.Studio.Desktop.Editors.Sound;
@@ -67,7 +68,18 @@ public sealed partial class SoundPreviewView : UserControl
             await using (Stream stream = await file.OpenReadAsync())
             {
                 using var memory = new MemoryStream();
-                await stream.CopyToAsync(memory);
+                byte[] buffer = new byte[81920];
+                int byteCount;
+                while ((byteCount = await stream.ReadAsync(buffer)) != 0)
+                {
+                    if (memory.Length + byteCount > SoundFile.MaxInMemoryPayloadBytes)
+                    {
+                        throw new InvalidDataException(
+                            $"The MP3 exceeds the {SoundFile.MaxInMemoryPayloadBytes / (1024 * 1024)} MiB in-memory sound limit.");
+                    }
+
+                    memory.Write(buffer, 0, byteCount);
+                }
                 sourceBytes = memory.ToArray();
             }
 
